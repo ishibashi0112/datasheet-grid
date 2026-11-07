@@ -363,7 +363,7 @@ describe('グルーピング中のグループ元列のソート / フィルタ�
       ref.current?.applyState({ ...ref.current.getState(), sort: [{ columnKey: 'qty', direction: 'asc' }] });
     });
     const menuButton = container.querySelector<HTMLElement>(
-      '.ssg-header-row [data-ssg-col-key="qty"] [aria-label="列メニュー"]',
+      '.ssg-header-row [data-ssg-col-key="qty"] [data-ssg-tooltip="列メニュー"]',
     );
     expect(menuButton).not.toBeNull();
     act(() => {
@@ -382,5 +382,92 @@ describe('グルーピング中のグループ元列のソート / フィルタ�
     expect(optionKeys).toContain('region');
     expect(optionKeys).toContain('qty');
     expect(optionKeys).not.toContain(GROUP_AUTO_COLUMN_KEY);
+  });
+});
+
+// 追加(dogfood DF-01 / DF-22 / DU-05): 実際にアプリを作って見つかったグルーピングの所見の回帰テストです。
+describe('グルーピングの操作(dogfood)', () => {
+  it('DF-01: グループ行のセルを押すとアクティブセルになり、Enter はその行の開閉になる(直前の葉のセルを編集しない)', () => {
+    const ref = createRef<SpreadsheetGridHandle<Row>>();
+    const onRowsChange = vi.fn();
+    const { container } = render(
+      <SpreadsheetGrid ref={ref} columns={groupedColumns} rows={rows} onRowsChange={onRowsChange} />,
+    );
+    // view: 0=関東 1=佐藤 2=leaf(佐藤) 3=関西 4=田中 5=leaf(田中)。先に葉のセルを選んでおく。
+    act(() => {
+      ref.current?.setActiveCell({ row: 2, col: 1 });
+    });
+    const kanto = centerGroupRows(container)[0] as HTMLElement;
+    const qtyCell = kanto.querySelector<HTMLElement>('[data-ssg-col-key="qty"]');
+    expect(qtyCell).not.toBeNull();
+    act(() => {
+      fireEvent.pointerDown(qtyCell!, { button: 0, pointerId: 1, pointerType: 'mouse' });
+      fireEvent.pointerUp(window, { button: 0, pointerId: 1, pointerType: 'mouse' });
+    });
+    expect(ref.current?.getActiveCell()?.row).toBe(0);
+    const shell = container.querySelector('.ssg-shell') as HTMLElement;
+    fireEvent.keyDown(shell, { key: 'Enter' });
+    // 関東が閉じる(佐藤グループ行と葉が消える)。編集は始まらない。
+    expect(centerBodyRows(container)).toHaveLength(4);
+    expect(container.querySelector('.ssg-cell-editor')).toBeNull();
+    expect(onRowsChange).not.toHaveBeenCalled();
+  });
+
+  it('DU-05: グローバルフィルターはグループ元列の値でも探せる', () => {
+    const ref = createRef<SpreadsheetGridHandle<Row>>();
+    render(<SpreadsheetGrid ref={ref} columns={groupedColumns} rows={rows} enableGlobalFilter />);
+    act(() => {
+      ref.current?.applyState({ ...ref.current.getState(), filters: { globalText: '関西', columnFilters: {} } });
+    });
+    expect((ref.current?.getGroupRows() ?? []).map((group) => group.label)).toEqual(['関西', '田中']);
+  });
+
+  it('DF-22: ツールパネルの列一覧では、グループ元列を「グループ化中」として切り替えられないようにする', () => {
+    const ref = createRef<SpreadsheetGridHandle<Row>>();
+    // 表に出る列が 2 つ(数量・数量(倍))。グループ元列は表に出る列として数えない(別視点のレビュー: 数えると最後の 1 列を
+    //   外せていた)ので、数量は外せる。
+    const columnsWithTwo: GridColumn<Row>[] = [
+      ...groupedColumns,
+      { key: 'double', title: '数量(倍)', width: 100, getValue: (row) => (row ? row.qty * 2 : null) },
+    ];
+    render(<SpreadsheetGrid ref={ref} columns={columnsWithTwo} rows={rows} onColumnsChange={() => {}} />);
+    act(() => {
+      ref.current?.openFilterManager();
+    });
+    const columnsTab = Array.from(document.querySelectorAll<HTMLButtonElement>('[role="tab"]')).find((tab) =>
+      tab.textContent?.includes('列'),
+    );
+    expect(columnsTab).toBeDefined();
+    act(() => {
+      fireEvent.click(columnsTab!);
+    });
+    const regionToggle = Array.from(document.querySelectorAll<HTMLButtonElement>('.ssg-chooser-toggle')).find(
+      (button) => button.textContent?.includes('地域'),
+    );
+    expect(regionToggle?.textContent).toContain('地域(グループ化中)');
+    expect(regionToggle?.disabled).toBe(true);
+    const qtyToggle = Array.from(document.querySelectorAll<HTMLButtonElement>('.ssg-chooser-toggle')).find((button) =>
+      button.textContent?.includes('数量'),
+    );
+    expect(qtyToggle?.disabled).toBe(false);
+  });
+
+  // 追加(別視点のレビュー): 表に出ている列が 1 つだけなら、グループ元列が表示中でも、その 1 列は外せない(表が空になるため)。
+  it('グループ元列は表に出る列として数えず、最後の 1 列は外せない', () => {
+    const ref = createRef<SpreadsheetGridHandle<Row>>();
+    render(<SpreadsheetGrid ref={ref} columns={groupedColumns} rows={rows} onColumnsChange={() => {}} />);
+    act(() => {
+      ref.current?.openFilterManager();
+    });
+    const columnsTab = Array.from(document.querySelectorAll<HTMLButtonElement>('[role="tab"]')).find((tab) =>
+      tab.textContent?.includes('列'),
+    );
+    act(() => {
+      fireEvent.click(columnsTab!);
+    });
+    const qtyToggle = Array.from(document.querySelectorAll<HTMLButtonElement>('.ssg-chooser-toggle')).find((button) =>
+      button.textContent?.includes('数量'),
+    );
+    expect(qtyToggle?.disabled).toBe(true);
   });
 });

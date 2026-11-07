@@ -46,6 +46,19 @@ description: height / maxHeight でグリッドの高さを決める。'100%' �
 
 `flex: 1` の子には `minHeight: 0` を付けます。付けないと、子が内容(全行)の高さまで伸びます。
 
+### 横に並べる(サイドバーの隣など)
+
+```tsx
+<div style={{ display: 'flex', height: '100vh' }}>
+  <nav style={{ width: 240 }}>…</nav>
+  <main style={{ flex: 1, minWidth: 0 }}>
+    <SpreadsheetGrid rows={rows} columns={columns} height="100%" />
+  </main>
+</div>
+```
+
+横に並べるときは、グリッドを入れた flex の子(CSS grid の子も同じ)に `minWidth: 0` を付けます。flex / grid の子は既定で内容より狭くならないため、付けないと子が全列の幅まで広がり、ページごと横にはみ出して、グリッドの横スクロールが効きません。
+
 ### スクロール領域を固定の高さにする
 
 ```tsx

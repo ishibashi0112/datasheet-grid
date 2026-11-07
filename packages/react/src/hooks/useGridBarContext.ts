@@ -7,7 +7,7 @@ import type {
   GridUiState,
   SpreadsheetGridSlotContext,
 } from '../model/gridTypes';
-import { buildGridDerivedSummary, createDataColumnNamer } from '../view/gridBarHelpers';
+import { buildGridDerivedSummary, createDataColumnNamer, createDataRowNumberer } from '../view/gridBarHelpers';
 
 // 追加: derivedSummary / setGlobalFilterText を載せる前の中間 slot context 型です。
 // 変更(DS-3-7): base から filteredRows(配列)を外します。サマリは件数のみ使用し、公開
@@ -39,6 +39,8 @@ type UseGridBarContextArgs<T> = {
   visibleColumns: GridColumn<T>[];
   // 追加(audit V-12): 画面の並び(合成列込み)。A1 ラベルの列名から合成列を除くのに使います(未指定は従来どおり)。
   orderedColumns?: GridColumn<T>[];
+  // 追加(dogfood DF-10): ラベル行の view index(昇順)。番地と行数をラベル行を飛ばして数えます(未指定は従来どおり)。
+  labelViewIndexes?: ArrayLike<number>;
   uiState: GridUiState;
   setGlobalFilterText: (value: string) => void;
   // 追加(F-async): グローバルフィルタの適用状態と進捗です(useGlobalFilteredOrder の戻り値)。
@@ -46,7 +48,12 @@ type UseGridBarContextArgs<T> = {
   globalFilterProgress: number;
   // 追加(選択範囲の集計): useSelectionAggregates の戻り値(未指定は null)。
   selectionAggregates?: GridSelectionAggregates | null;
+  // 追加(dogfood DF-20): フィルターが行に効くか(フィルターの機能が無い構成では false)。false のときは要約の
+  //   「Filter: …」に状態のフィルターを数えません(slotContext の globalFilterText / columnFilterValues は状態のまま)。
+  filtersApplied?: boolean;
 };
+
+const NO_COLUMN_FILTERS: Record<string, never> = {};
 
 // 追加: topBar / bottomBar へ渡す slot context と derived summary をまとめて構築します。
 export const useGridBarContext = <T,>({
@@ -57,11 +64,13 @@ export const useGridBarContext = <T,>({
   columns,
   visibleColumns,
   orderedColumns,
+  labelViewIndexes,
   uiState,
   setGlobalFilterText,
   globalFilterStatus,
   globalFilterProgress,
   selectionAggregates = null,
+  filtersApplied = true,
 }: UseGridBarContextArgs<T>) => {
   // 変更(11-B3): slotContextBase の依存を uiState 丸ごとから、bar が実際に参照する
   //   5 フィールドへ分解します。
@@ -105,11 +114,20 @@ export const useGridBarContext = <T,>({
     () => (orderedColumns ? createDataColumnNamer(orderedColumns) : undefined),
     [orderedColumns],
   );
+  const rowNumberer = useMemo(() => createDataRowNumberer(labelViewIndexes), [labelViewIndexes]);
   const derivedSummary = useMemo(
     // 変更(DS-3-7): 件数 viewRowCount を明示引数で渡します(filteredRows 配列は使いません)。
     // 変更(label-row ③): 分母 totalRowCount(未指定は rows.length)。
-    () => buildGridDerivedSummary(slotContextBase, viewRowCount, totalRowCount, columnNamer),
-    [slotContextBase, viewRowCount, totalRowCount, columnNamer],
+    // 変更(dogfood DF-20): フィルターが効かない構成では、要約をフィルターなしで作ります。
+    () =>
+      buildGridDerivedSummary(
+        filtersApplied ? slotContextBase : { ...slotContextBase, globalFilterText: '', columnFilterValues: NO_COLUMN_FILTERS },
+        viewRowCount,
+        totalRowCount,
+        columnNamer,
+        rowNumberer,
+      ),
+    [slotContextBase, filtersApplied, viewRowCount, totalRowCount, columnNamer, rowNumberer],
   );
 
   const slotContext = useMemo<SpreadsheetGridSlotContext<T>>(

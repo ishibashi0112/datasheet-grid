@@ -231,6 +231,8 @@ export const createCellEventNotifier = <T,>(): CellEventNotifier<T> => {
 
 export type ActiveCellNotifierArgs<T> = {
   activeCell: CellCoord | null;
+  // 追加(dogfood DF-15): 編集中のセル(編集中の行が動いたとき、editController が付いていく前の途中の位置を通知しないため)。
+  editingCell?: CellCoord | null;
   rowModel: RowModel<T>;
   orderedColumns: readonly GridColumn<T>[];
   onActiveCellChange: ((cell: GridCellRef<T> | null) => void) | undefined;
@@ -238,6 +240,39 @@ export type ActiveCellNotifierArgs<T> = {
 
 export type ActiveCellNotifier<T> = {
   update: (args: ActiveCellNotifierArgs<T>) => void;
+};
+
+// 追加(dogfood DF-15): 編集中(アクティブセル = 編集中のセル)に行 / 列の並びが外から変わったとき、editController は編集中の
+//   セルを行キー / 列キーで探して付いていきます(次のレイアウト effect で startEdit = アクティブセルも動く)。その前の描画では
+//   アクティブセルが同じ位置の別の行を指すため、これまでは「別の行 → 編集中の行」と 2 回通知していました。編集中のセル
+//   (= 前回通知したセル)が今の並びにまだあるとき(= editController が付いていくとき)は、途中の位置を通知しません。
+const willFollowEditingCell = <T,>(
+  next: ActiveCellNotifierArgs<T>,
+  lastRef: GridCellRef<T> | null,
+): boolean => {
+  const { activeCell, editingCell, rowModel, orderedColumns } = next;
+  if (
+    lastRef === null ||
+    activeCell === null ||
+    editingCell == null ||
+    activeCell.row !== editingCell.row ||
+    activeCell.col !== editingCell.col ||
+    !orderedColumns.some((column) => column.key === lastRef.columnKey)
+  ) {
+    return false;
+  }
+  // 変更(別視点のレビュー): 編集中の行が同じ位置のままなら(よくある場合)、全行を探さずに済ませます(同じセルなので
+  //   通知も無い)。SSRM のブロックの到着や clientSide の外からの更新のたびに、全行を走査していました。
+  if (activeCell.row < rowModel.getRowCount() && Object.is(rowModel.getRowKey(activeCell.row), lastRef.rowKey)) {
+    return false;
+  }
+  const rowCount = rowModel.getRowCount();
+  for (let row = 0; row < rowCount; row += 1) {
+    if (rowModel.getRow(row) !== undefined && Object.is(rowModel.getRowKey(row), lastRef.rowKey)) {
+      return true;
+    }
+  }
+  return false;
 };
 
 // 由来(クリック / キー操作 / handle / 表示行数の減少による詰め)を問わず、update の時点のアクティブセルを
@@ -248,7 +283,7 @@ export type ActiveCellNotifier<T> = {
 //     ロードされた / ソートで同じ座標の行が入れ替わった、といった変化もここで拾えます。
 //   - 追跡はコールバックの有無に関わらず行います(後からコールバックが付いても過去の変化を通知しない)。
 export const createActiveCellNotifier = <T,>(): ActiveCellNotifier<T> => {
-  let lastInputs: Omit<ActiveCellNotifierArgs<T>, 'onActiveCellChange'> | null = null;
+  let lastInputs: Pick<ActiveCellNotifierArgs<T>, 'activeCell' | 'rowModel' | 'orderedColumns'> | null = null;
   let lastRef: GridCellRef<T> | null = null;
   return {
     update: (next) => {
@@ -266,6 +301,13 @@ export const createActiveCellNotifier = <T,>(): ActiveCellNotifier<T> => {
         rowModel: next.rowModel,
         orderedColumns: next.orderedColumns,
       };
+      if (
+        prevInputs !== null &&
+        Object.is(prevInputs.activeCell, next.activeCell) &&
+        willFollowEditingCell(next, lastRef)
+      ) {
+        return;
+      }
       const current =
         next.activeCell === null
           ? null

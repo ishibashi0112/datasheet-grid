@@ -14,7 +14,10 @@ import { render, screen, fireEvent, cleanup } from '@testing-library/react';
 import { createRef } from 'react';
 
 import { ColumnFilterPopover } from './ColumnFilterPopover';
-import type { NumberFilterConditionDraft } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/numberFilterCondition';
+import {
+  DEFAULT_NUMBER_FILTER_DRAFT,
+  type NumberFilterConditionDraft,
+} from '@ishibashi0112/spreadsheet-grid-core/internal/logic/numberFilterCondition';
 import type { TextFilterConditionDraft } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/textFilterCondition';
 import {
   DEFAULT_DATE_FILTER_DRAFT,
@@ -644,5 +647,65 @@ describe('ColumnFilterPopover の非同期候補(async-options)', () => {
     render(<ColumnFilterPopover {...select} />);
     expect(screen.getByText('（先頭のみ・打ち切り）')).toBeTruthy();
     expect(screen.getByText(/候補数: 3/)).toBeTruthy();
+  });
+});
+
+// 追加(dogfood DF-05 / DF-21): 実際にアプリを作って確かめたチェック(docs/audits/2026-11-07/)の回帰テストです。
+describe('ColumnFilterPopover の Escape と表示(dogfood)', () => {
+  it('DF-05: 一覧のチェックボックスにフォーカスがあっても Escape で閉じる', () => {
+    const props = makeProps();
+    render(<ColumnFilterPopover {...props} />);
+    const checkbox = screen.getAllByRole('checkbox')[0];
+    checkbox.focus();
+    const notPrevented = fireEvent.keyDown(checkbox, { key: 'Escape' });
+    expect(props.onRequestClose).toHaveBeenCalledTimes(1);
+    expect(notPrevented).toBe(false);
+  });
+
+  it('DF-05: フッターのボタンにフォーカスがあっても Escape で閉じる(IME の変換中は閉じない)', () => {
+    const props = makeProps();
+    render(<ColumnFilterPopover {...props} />);
+    const button = screen.getAllByRole('button')[0];
+    fireEvent.keyDown(button, { key: 'Escape', isComposing: true });
+    expect(props.onRequestClose).not.toHaveBeenCalled();
+    fireEvent.keyDown(button, { key: 'Escape' });
+    expect(props.onRequestClose).toHaveBeenCalledTimes(1);
+  });
+
+  it('DF-05: 検索ボックスの Escape は 1 回だけ閉じる(入力欄とルートで二重に呼ばない)', () => {
+    const props = makeProps();
+    render(<ColumnFilterPopover {...props} />);
+    fireEvent.keyDown(getSearchInput(), { key: 'Escape' });
+    expect(props.onRequestClose).toHaveBeenCalledTimes(1);
+  });
+
+  it('DF-05: 日付のカレンダーのボタンで Escape → カレンダーだけ閉じて入力欄へ、もう一度でポップオーバーを閉じる', () => {
+    const props = makeDateSetProps({ ...DEFAULT_DATE_FILTER_DRAFT, operator: 'equals' });
+    render(<ColumnFilterPopover {...props} />);
+    const toggle = screen.getAllByLabelText('カレンダーを開く')[0];
+    fireEvent.keyDown(toggle, { key: 'Enter' });
+    const closeToggle = screen.getAllByLabelText('カレンダーを閉じる')[0];
+    closeToggle.focus();
+    fireEvent.keyDown(closeToggle, { key: 'Escape' });
+    expect(props.onRequestClose).not.toHaveBeenCalled();
+    expect(screen.queryAllByLabelText('カレンダーを閉じる')).toHaveLength(0);
+    expect(document.activeElement?.classList.contains('ssg-dp-input')).toBe(true);
+    const reopened = screen.getAllByLabelText('カレンダーを開く')[0];
+    fireEvent.keyDown(reopened, { key: 'Escape' });
+    expect(props.onRequestClose).toHaveBeenCalledTimes(1);
+  });
+
+  it('DF-21: 内部の種別名(「フィルター種別: …」)を出さない', () => {
+    for (const filterType of ['text', 'number', 'select', 'date'] as const) {
+      const props = {
+        ...makeProps(),
+        filterType,
+        numberConditionDraft: filterType === 'number' ? DEFAULT_NUMBER_FILTER_DRAFT : null,
+      };
+      const view = render(<ColumnFilterPopover {...props} />);
+      // ポップオーバーは document.body へポータルで描くので、body 全体を見ます。
+      expect(document.body.textContent).not.toContain('フィルター種別');
+      view.unmount();
+    }
   });
 });

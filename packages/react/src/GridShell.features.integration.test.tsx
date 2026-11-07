@@ -285,7 +285,7 @@ describe('差し込み式: scrollHint', () => {
 
 describe('差し込み式: columnAutosize', () => {
   const openColumnMenu = (container: HTMLElement) => {
-    const menuButton = container.querySelector<HTMLElement>('[aria-label="列メニュー"]');
+    const menuButton = container.querySelector<HTMLElement>('[data-ssg-tooltip="列メニュー"]');
     if (!menuButton) throw new Error('列メニューのボタンがありません');
     act(() => {
       fireEvent.pointerDown(menuButton, { button: 0 });
@@ -316,7 +316,7 @@ describe('差し込み式: columnAutosize', () => {
 
 describe('差し込み式: columnMenu', () => {
   const headerCell = (container: HTMLElement) => container.querySelector('.ssg-header-cell[data-ssg-col-key="name"]') as HTMLElement;
-  const menuButton = (container: HTMLElement) => container.querySelector<HTMLElement>('[aria-label="列メニュー"]');
+  const menuButton = (container: HTMLElement) => container.querySelector<HTMLElement>('[data-ssg-tooltip="列メニュー"]');
 
   it('機能セットに無ければ ⋮ ボタンを出さず、ヘッダーの右クリックはブラウザ標準のメニューのまま、明示した enableColumnMenu だけ開発時に 1 回警告する', () => {
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
@@ -354,7 +354,7 @@ describe('差し込み式: columnMenu', () => {
 describe('差し込み式: toolPanel', () => {
   const filterColumns: GridColumn<Row>[] = [{ key: 'name', title: '名前', width: 160, filterType: 'text' }];
   const openColumnMenu = (container: HTMLElement) => {
-    const menuButton = container.querySelector<HTMLElement>('[aria-label="列メニュー"]');
+    const menuButton = container.querySelector<HTMLElement>('[data-ssg-tooltip="列メニュー"]');
     if (!menuButton) throw new Error('列メニューのボタンがありません');
     act(() => {
       fireEvent.pointerDown(menuButton, { button: 0 });
@@ -451,7 +451,7 @@ describe('差し込み式: toolPanel', () => {
       <ToolPanelFilteringGrid rows={rows} columns={filterColumns} rowKeyGetter={(r) => r.id} enableColumnMenu onColumnsChange={() => {}} />,
     );
     // 列メニューの機能は無いので ⋮ ボタンは出ない。
-    expect(view.container.querySelector('[aria-label="列メニュー"]')).toBeNull();
+    expect(view.container.querySelector('[data-ssg-tooltip="列メニュー"]')).toBeNull();
     const chip = view.container.querySelector<HTMLElement>('[aria-label="フィルター管理パネルを開閉"]');
     expect(chip).not.toBeNull();
     act(() => {
@@ -787,7 +787,7 @@ describe('差し込み式: filtering', () => {
     Array.from(container.querySelectorAll('.ssg-body-cell[data-ssg-col-key="name"]')).map((cell) => cell.textContent);
   const searchBox = (container: HTMLElement) => container.querySelector<HTMLInputElement>('input.ssg-bar-input');
   const openColumnMenu = (container: HTMLElement) => {
-    const menuButton = container.querySelector<HTMLElement>('[aria-label="列メニュー"]');
+    const menuButton = container.querySelector<HTMLElement>('[data-ssg-tooltip="列メニュー"]');
     if (!menuButton) throw new Error('列メニューのボタンがありません');
     act(() => {
       fireEvent.pointerDown(menuButton, { button: 0 });
@@ -846,6 +846,36 @@ describe('差し込み式: filtering', () => {
     });
     expect(bodyTexts(container)).toEqual(['alpha', 'beta']);
     expect(warn.mock.calls.filter(([message]) => String(message).includes('フィルターの状態'))).toHaveLength(1);
+  });
+
+  // 追加(dogfood DF-20): 効いていないフィルターを上部 / 下部バーの「Filter: …」に数えない(「Filter: 1列」と出ていた)。
+  it('機能セットに無い構成で applyState に渡したフィルターは、バーの「Filter: …」に数えない(DF-20)', () => {
+    vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const ref = createRef<SpreadsheetGridHandle<Row>>();
+    const { container } = render(<MinimalGrid ref={ref} rows={rows} columns={columns} rowKeyGetter={(r) => r.id} />);
+    expect(container.textContent).toContain('Filter: なし');
+    act(() => {
+      ref.current?.applyState({ ...columnFilterState, filters: { globalText: 'al', columnFilters: columnFilterState.filters.columnFilters } });
+    });
+    expect(container.textContent).toContain('Filter: なし');
+    expect(container.textContent).not.toContain('1列');
+    // 追加(作り直しの確認 lite-1): 見出しの「フィルター適用中」の印(漏斗 / アクセント色)も出さない。
+    expect(container.querySelector('.ssg-header-label--filtered')).toBeNull();
+    expect(container.querySelector('[data-ssg-tooltip="フィルター適用中"]')).toBeNull();
+    // 状態には残る(getState で読める。説明どおり)。
+    expect(ref.current?.getState().filters.columnFilters).toEqual(columnFilterState.filters.columnFilters);
+  });
+
+  it('filtering を入れた構成では、applyState で渡した列フィルターに見出しの印が付く(lite-1 の対照)', () => {
+    const ref = createRef<SpreadsheetGridHandle<Row>>();
+    const { container } = render(
+      <FilteringOnlyGrid ref={ref} rows={rows} columns={filterColumns} rowKeyGetter={(r) => r.id} />,
+    );
+    act(() => {
+      ref.current?.applyState({ filters: { globalText: '', columnFilters: columnFilterState.filters.columnFilters } });
+    });
+    expect(container.querySelector('.ssg-header-label--filtered')).not.toBeNull();
+    expect(container.querySelector('[data-ssg-tooltip="フィルター適用中"]')).not.toBeNull();
   });
 
   it('フィルターの prop を使わなければ警告しない', () => {

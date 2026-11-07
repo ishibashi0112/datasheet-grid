@@ -71,6 +71,8 @@ void preloadGridPopups()
   @import '@ishibashi0112/spreadsheet-grid/style.layer.css';
   ```
 
+  宣言は `style.layer.css` より先に読まれる必要があります。上のように宣言した CSS の中で `@import` するか、JS で読み込むときは宣言した CSS の後に `import` してください(先に読み込むと `ssg-base` が一番弱いレイヤーになります)。
+
 - **Mantine** — そのまま動きます(クラス名・リセットの衝突なし。グリッドのポップオーバーは `z-index: 1000` で Mantine の既定モーダルより上)。
 - **StyleX** — そのまま動きます(reset を持たず、生成クラスは接頭辞 `x` で衝突しません)。`classNames` / `cellClassName` / `getRowClassName` などのスロットへ `stylex.props(...)` の戻り値(`{ className, style }`)をそのまま渡せます。StyleX の atomic クラスとグリッドの基底クラスは同特異度のため、グリッド CSS を先に・StyleX の出力を後に読み込むか、`style.layer.css` を使ってください(StyleX 側で `useLayers` を使う場合は `style.layer.css` が必須)。詳細は[テーマとスタイリング](/docs/guides/theming#stylex-との併用)。
 - **Astryx**(Meta のデザインシステム。StyleX 製)— そのまま動きます(グリッドの CSS はレイヤーに入れていないため、Astryx の `@layer reset` / `@layer astryx-base` に崩されません)。

@@ -501,7 +501,8 @@ describe('GridAskBar(結合)', () => {
     fireEvent.click(example);
     await flush();
     expect(ask.mock.calls[0][0].text).toBe('東京の在庫が 10 個以下');
-    expect(input.value).toBe('東京の在庫が 10 個以下');
+    // 変更(dogfood DU-19): 答えを読めたら入力欄は空になる
+    expect(input.value).toBe('');
     // チップは全文を title に持つ(狭い幅で省略されても読める)
     expect(screen.getAllByRole('listitem')[0].getAttribute('title')).toBe('倉庫: "東京"');
   });
@@ -546,4 +547,148 @@ describe('GridAskBar(結合)', () => {
     const root = document.querySelector('[data-ssg-ask]') as HTMLElement;
     expect(root.className).toBe('ssg-ask ssg-theme-dark my-bar');
   });
+  // 追加(dogfood DU-19 / DU-08 / DU-20)
+  describe('送った後の入力欄・表が手で変わったとき・columnHints の打ち間違い(dogfood)', () => {
+    it('答えを読めたら入力欄を空にし、失敗したら残す。聞いている間に書き換えた文は残す', async () => {
+      let mode: 'ok' | 'fail' | 'wait' = 'ok';
+      const waiting: Array<() => void> = [];
+      const ask = vi.fn<GridAsk>(async () => {
+        if (mode === 'fail') {
+          throw new Error('ng');
+        }
+        if (mode === 'wait') {
+          await new Promise<void>((resolve) => waiting.push(resolve));
+        }
+        return tokyoLowStock;
+      });
+      const { input } = setup(ask);
+      typeAndEnter(input, '東京の在庫が少ないもの');
+      await flush();
+      expect(input.value).toBe('');
+      mode = 'fail';
+      typeAndEnter(input, '大阪の在庫');
+      await flush();
+      expect(input.value).toBe('大阪の在庫');
+      // 聞いている間に書き換えた文は残す
+      mode = 'wait';
+      typeAndEnter(input, '東京');
+      fireEvent.change(input, { target: { value: '続きの文' } });
+      await act(async () => {
+        waiting[0]?.();
+        await Promise.resolve();
+      });
+      await flush();
+      expect(ask).toHaveBeenCalledTimes(3);
+      expect(input.value).toBe('続きの文');
+    });
+
+    it('反映したあと表が手で変わったら、チップと元に戻すを下げて知らせる(押す前に)', async () => {
+      vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval', 'setTimeout', 'clearTimeout'] });
+      try {
+        const { grid, input } = setup(async () => tokyoLowStock);
+        typeAndEnter(input, '東京の在庫が少ないもの');
+        await flush();
+        expect(screen.getByRole('button', { name: '元に戻す' })).toBeTruthy();
+        // 手で変えても、確かめるまではそのまま(押せば readUnchanged が知らせる)
+        act(() => {
+          grid.current!.applyState({ sort: [{ columnKey: 'id', direction: 'asc' }] });
+        });
+        act(() => {
+          vi.advanceTimersByTime(1000);
+        });
+        expect(screen.queryByRole('button', { name: '元に戻す' })).toBeNull();
+        expect(screen.queryByRole('button', { name: /を外す$/ })).toBeNull();
+        expect(screen.getByText(/表の条件が変わったので/)).toBeTruthy();
+        // 閉じると消える
+        fireEvent.click(screen.getByRole('button', { name: '閉じる' }));
+        expect(screen.queryByText(/表の条件が変わったので/)).toBeNull();
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it('聞いている間に表が変わっても、次の答えを反映したら「変わった」の知らせを残さない', async () => {
+      vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval', 'setTimeout', 'clearTimeout'] });
+      try {
+        const waiting: (() => void)[] = [];
+        let wait = false;
+        const ask = vi.fn(async () => {
+          if (wait) {
+            await new Promise<void>((resolve) => waiting.push(resolve));
+          }
+          return tokyoLowStock;
+        });
+        const { grid, input } = setup(ask);
+        typeAndEnter(input, '東京の在庫が少ないもの');
+        await flush();
+        wait = true;
+        typeAndEnter(input, 'もう一度');
+        await flush();
+        act(() => {
+          grid.current!.applyState({ sort: [{ columnKey: 'id', direction: 'asc' }] });
+        });
+        act(() => {
+          vi.advanceTimersByTime(1000);
+        });
+        await act(async () => {
+          waiting[0]?.();
+          await Promise.resolve();
+        });
+        await flush();
+        expect(ask).toHaveBeenCalledTimes(2);
+        expect(screen.getByRole('button', { name: '元に戻す' })).toBeTruthy();
+        expect(screen.queryByText(/表の条件が変わったので/)).toBeNull();
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it('クリックの後にも確かめる。変わっていなければそのまま', async () => {
+      vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval', 'setTimeout', 'clearTimeout'] });
+      try {
+        const { grid, input } = setup(async () => tokyoLowStock);
+        typeAndEnter(input, '東京の在庫が少ないもの');
+        await flush();
+        fireEvent.click(document.body);
+        act(() => {
+          vi.advanceTimersByTime(400);
+        });
+        expect(screen.getByRole('button', { name: '元に戻す' })).toBeTruthy();
+        act(() => {
+          grid.current!.applyState({ filters: { globalText: 'ペン' } });
+        });
+        fireEvent.click(document.body);
+        act(() => {
+          vi.advanceTimersByTime(400);
+        });
+        expect(screen.queryByRole('button', { name: '元に戻す' })).toBeNull();
+        expect(screen.getByText(/表の条件が変わったので/)).toBeTruthy();
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it('columnHints に列に無いキーがあれば開発時に 1 回だけ警告する', () => {
+      const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+      try {
+        const { rerender } = render(<HintsHost hints={{ stok: false, stock: '個' }} />);
+        expect(warn).toHaveBeenCalledTimes(1);
+        expect(String(warn.mock.calls[0]?.[0])).toContain('stok');
+        // 変更(作り直しの確認 AI-N4): useGridAsk だけの画面でも出るので、部品の名前ではなくライブラリの接頭辞。
+        expect(String(warn.mock.calls[0]?.[0])).toMatch(/^\[spreadsheet-grid\] GridAskBar \/ useGridAsk の columnHints/);
+        rerender(<HintsHost hints={{ stok: false, stock: '個' }} />);
+        expect(warn).toHaveBeenCalledTimes(1);
+        warn.mockClear();
+        rerender(<HintsHost hints={{ stock: '個' }} />);
+        expect(warn).not.toHaveBeenCalled();
+      } finally {
+        warn.mockRestore();
+      }
+    });
+  });
 });
+
+function HintsHost({ hints }: { hints: Record<string, string | false> }) {
+  const grid = createRef<SpreadsheetGridHandle<Row>>();
+  return <GridAskBar<Row> grid={grid} columns={baseColumns} ask={async () => tokyoLowStock} columnHints={hints} />;
+}

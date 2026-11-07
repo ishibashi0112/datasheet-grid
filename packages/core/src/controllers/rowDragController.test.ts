@@ -240,6 +240,113 @@ describe('rowDragController', () => {
     }
   });
 
+  // 追加(dogfood DF-02): live 方式で展開中の行を掴むと、その行の帯がポインタに追従し、間の行の帯は同じだけ退避する。
+  //   確定 / 取り消しで帯の transform を外す。帯の高さは行メトリクス(rowsHeight)に入っている前提。
+  it("motion='live': 展開行の帯も行と一緒に動き、確定 / Escape で transform を外す", () => {
+    vi.useFakeTimers();
+    try {
+      const controller = createRowDragController();
+      const { args, container, commitRowMove } = makeArgs();
+      const rows = Array.from(container.querySelectorAll<HTMLElement>('.ssg-body-row'));
+      rows.forEach((row, i) => {
+        row.style.transform = `translateY(${i * 10}px)`;
+      });
+      // 行 1(掴む行)と行 3(間の行)が展開中。帯は 3 ペイン分(ここでは 2 つずつ)。ネストしたグリッドの帯は対象外。
+      const makeBand = (index: number) => {
+        const band = document.createElement('div');
+        band.className = 'ssg-detail-band';
+        band.setAttribute('data-detail-row-index', String(index));
+        container.appendChild(band);
+        return band;
+      };
+      const band1 = [makeBand(1), makeBand(1)];
+      const band3 = makeBand(3);
+      const band7 = makeBand(7);
+      const card = document.createElement('div');
+      card.setAttribute('data-ssg-detail', '');
+      const nested = document.createElement('div');
+      nested.className = 'ssg-detail-band';
+      nested.setAttribute('data-detail-row-index', '1');
+      card.appendChild(nested);
+      band3.appendChild(card);
+      controller.update({ ...args, motion: 'live' });
+
+      controller.onRowDragHandlePointerDown(1, handleEvent());
+      // y=47 → target 4。掴んだ行の帯は +32px 追従して前面、行 3 の帯は -10px 退避、行 7 の帯は動かない。
+      dispatchPointer('pointermove', 1, 20, 47);
+      for (const band of band1) {
+        expect(band.style.transform).toBe('translateY(32px)');
+        expect(band.style.zIndex).toBe('10');
+      }
+      expect(band3.style.transform).toBe('translateY(-10px)');
+      expect(band3.style.transition).toContain('transform');
+      expect(band7.style.transform).toBe('translateY(0px)');
+      expect(nested.style.transform).toBe('');
+      dispatchPointer('pointerup', 1, 20, 47);
+      expect(commitRowMove).toHaveBeenCalledWith(1, 4);
+      for (const band of [...band1, band3, band7]) {
+        expect(band.style.transform).toBe('');
+        expect(band.style.zIndex).toBe('');
+      }
+
+      // Escape: 元の位置へ戻してから外す。
+      rows.forEach((row, i) => {
+        row.style.transform = `translateY(${i * 10}px)`;
+      });
+      controller.onRowDragHandlePointerDown(1, handleEvent());
+      dispatchPointer('pointermove', 1, 20, 47);
+      expect(band3.style.transform).toBe('translateY(-10px)');
+      window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }));
+      expect(band3.style.transform).toBe('translateY(0px)');
+      expect(band1[0].style.zIndex).toBe('');
+      vi.advanceTimersByTime(300);
+      expect(band3.style.transform).toBe('');
+      expect(band3.style.transition).toBe('');
+      expect(band1[0].style.transform).toBe('');
+      controller.dispose();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  // 追加(アプリの再確認): live 方式で展開中の行(行 10px + 帯 30px)を下へ引くと、空く隙間が掴んだ行 + 帯と重なるよう、
+  //   帯の高さぶん下の位置でスロットを決める(ポインタの位置で決めると隙間が帯の高さぶん上にずれ、間の行が帯の裏に
+  //   隠れていた)。上へ引くとき・ゴースト方式はポインタの位置のまま。
+  it("motion='live': 展開中の行を下へ引くと、帯の高さぶん下の位置でスロットを決める", () => {
+    // 行 1 だけ帯 30px。行の上端: 0, 10, 50, 60, 70, 80, ...(全高 130)。
+    const detail = (index: number) => (index === 1 ? 30 : 0);
+    const top = (index: number) => index * 10 + (index > 1 ? 30 : 0);
+    const rowMetrics = {
+      rowCount: 10,
+      rowTop: top,
+      rowsHeight: (start: number, end: number) => top(end + 1) - top(start),
+      totalBodyHeight: top(10),
+      rowAtContentY: (y: number) => {
+        for (let i = 9; i >= 0; i -= 1) if (y >= top(i)) return i;
+        return 0;
+      },
+      cellHeight: () => 10,
+      detailHeight: detail,
+    };
+    for (const motion of ['live', 'ghost'] as const) {
+      const controller = createRowDragController();
+      const { args, commitRowMove } = makeArgs();
+      controller.update({ ...args, motion, rowMetrics });
+      // 行 1 を y=15 で掴み、y=57(行 2 の下半分)へ。live は帯の下端の位置 y=87(行 5 の下半分)→ 行 5 の後ろ = 5。
+      controller.onRowDragHandlePointerDown(1, handleEvent({ clientY: 15 }));
+      dispatchPointer('pointermove', 1, 20, 57);
+      dispatchPointer('pointerup', 1, 20, 57);
+      expect(commitRowMove).toHaveBeenLastCalledWith(1, motion === 'live' ? 5 : 2);
+      // 上へ引くときはポインタの位置のまま(y=3 → 先頭)。
+      controller.onRowDragHandlePointerDown(1, handleEvent({ clientY: 15 }));
+      dispatchPointer('pointermove', 1, 20, 3);
+      dispatchPointer('pointerup', 1, 20, 3);
+      expect(commitRowMove).toHaveBeenLastCalledWith(1, 0);
+      controller.dispose();
+      document.body.innerHTML = '';
+    }
+  });
+
   // 追加(見直し): 合計行(footerHeight)の上で離しても、合計行の裏に隠れた位置へは落とさない。
   it('footerHeight があると、合計行の上のポインタは本体の見えている最後の位置として扱う', () => {
     const controller = createRowDragController();

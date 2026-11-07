@@ -9,6 +9,8 @@ import {
   decideStateChangeEmit,
   extractColumnState,
   applyColumnState,
+  migrateGridStatePatch,
+  dropUnknownColumnKeys,
 } from './gridState';
 import type {
   ColumnFilterValue,
@@ -876,5 +878,80 @@ describe('migrateGridState: 列フィルター値の防御', () => {
   it('kind が無い / オブジェクトでない値は捨てる', () => {
     const migrated = migrate({ a: { foo: 1 }, b: null, c: 'text', d: 5 });
     expect(migrated.filters.columnFilters).toEqual({});
+  });
+});
+
+// 追加(dogfood DU-06 / DF-04): applyState の部分形と、今の列定義に無い列のキーを捨てる処理です。
+describe('migrateGridStatePatch(DU-06)', () => {
+  it('渡したスライスだけを持つ(渡さないスライスは undefined = 今のまま)', () => {
+    expect(migrateGridStatePatch({ sort: [{ columnKey: 'a', direction: 'asc' }] })).toEqual({
+      sort: [{ columnKey: 'a', direction: 'asc' }],
+    });
+    expect(migrateGridStatePatch({})).toEqual({});
+    expect(migrateGridStatePatch(null)).toEqual({});
+  });
+
+  it('filters は globalText / columnFilters を別々に見る', () => {
+    expect(migrateGridStatePatch({ filters: { globalText: 'x' } })).toEqual({ filters: { globalText: 'x' } });
+    expect(
+      migrateGridStatePatch({ filters: { columnFilters: { a: { kind: 'text', value: 'v' } } } }),
+    ).toEqual({ filters: { columnFilters: { a: { kind: 'text', value: 'v' } } } });
+    // 空のオブジェクトは何も変えない。
+    expect(migrateGridStatePatch({ filters: {} })).toEqual({});
+  });
+
+  it('null など「渡したが形が違う」ものは既定へ戻す(従来どおり)', () => {
+    expect(migrateGridStatePatch({ filters: null, sort: null, columnWidths: null })).toEqual({
+      columnWidths: {},
+      filters: { globalText: '', columnFilters: {} },
+      sort: [],
+    });
+    expect(migrateGridStatePatch({ filters: { globalText: 3, columnFilters: 'x' } })).toEqual({
+      filters: { globalText: '', columnFilters: {} },
+    });
+  });
+
+  it('getState() の値(全スライス)はすべて持つ', () => {
+    const full = buildGridState({ a: 100 }, { globalText: 'g', columnFilters: {} }, [], [{ key: 'a' }]);
+    expect(migrateGridStatePatch(full)).toEqual({
+      columnWidths: { a: 100 },
+      filters: { globalText: 'g', columnFilters: {} },
+      sort: [],
+      columns: [{ key: 'a' }],
+    });
+  });
+});
+
+describe('dropUnknownColumnKeys(DF-04)', () => {
+  const known = new Set(['a', 'b']);
+  it('無い列の幅 / 列フィルター / ソートを捨て、捨てたキーを返す', () => {
+    const result = dropUnknownColumnKeys(
+      {
+        columnWidths: { a: 100, gone: 50 },
+        filters: { globalText: 'g', columnFilters: { gone: { kind: 'text', value: 'x' }, b: { kind: 'text', value: 'y' } } },
+        sort: [
+          { columnKey: 'gone', direction: 'asc' },
+          { columnKey: 'old', direction: 'desc' },
+          { columnKey: 'a', direction: 'asc' },
+        ],
+        columns: [{ key: 'gone' }, { key: 'a' }],
+      },
+      known,
+    );
+    expect(result.patch).toEqual({
+      columnWidths: { a: 100 },
+      filters: { globalText: 'g', columnFilters: { b: { kind: 'text', value: 'y' } } },
+      sort: [{ columnKey: 'a', direction: 'asc' }],
+      // 列メタは applyColumnState が無い列を捨てるので、ここでは触らない。
+      columns: [{ key: 'gone' }, { key: 'a' }],
+    });
+    expect(result.dropped).toEqual(['gone', 'old']);
+  });
+
+  it('渡していないスライスは足さない', () => {
+    expect(dropUnknownColumnKeys({ filters: { globalText: 'g' } }, known)).toEqual({
+      patch: { filters: { globalText: 'g' } },
+      dropped: [],
+    });
   });
 });

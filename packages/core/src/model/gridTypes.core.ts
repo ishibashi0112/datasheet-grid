@@ -898,9 +898,12 @@ export type GridColumnPinned = 'left' | 'right';
 
 // 追加(③): セル表示値の整形関数の契約です(UI 表示のみ)。組み込みは logic/valueFormatters.ts に集約し、
 //   利用側も同じ契約で自作できます(将来パターン追加=ファクタ追加 + バレル公開で拡張)。
+// 変更(dogfood DF-06): row は T | undefined です。グループ行の集計値と合計行の値を整形するときは行が無いので
+//   undefined が渡ります(これまで型は T で、型のとおり row.x を読むとグループ行・合計行でグリッドごと落ちていた)。
+//   AG Grid の ValueFormatterParams.data と同じ扱いです。
 export type CellValueFormatterParams<T, F extends GridFrameworkTypes = GridFrameworkTypes> = {
   value: unknown;
-  row: T;
+  row: T | undefined;
   column: GridColumn<T, F>;
 };
 export type CellValueFormatter<T, F extends GridFrameworkTypes = GridFrameworkTypes> = (params: CellValueFormatterParams<T, F>) => string;
@@ -1225,7 +1228,9 @@ export type GridColumn<T, F extends GridFrameworkTypes = GridFrameworkTypes> = {
    */
   aggFunc?: GridAggFuncName | GridAggFunc<T, F>;
   /**
-   * 値アクセサ。
+   * 値アクセサ。`setValue` の無い列へ書き込むと値は `row[key]` へ入り、表示(`getValue`)
+   * は変わらない。計算列は `editable: false` にするか `setValue` を渡す(開発時は、
+   * 行に無いプロパティを足した列ごとに 1 回 console.warn)。
    *
    * @defaultValue `row[key]`
    */
@@ -1299,6 +1304,8 @@ export type GridColumn<T, F extends GridFrameworkTypes = GridFrameworkTypes> = {
   /**
    * セル表示値の整形(UI 表示のみ)。`renderCell` 未指定の既定セルが返り値を表示。組み込み
    * `numberFormatter` 等を渡せる。元の値/編集/コピー/ソート/フィルターには影響しない。
+   * グループ行の集計値と合計行の値の整形にも使い、そのときは元の行が無いので `row` は
+   * `undefined`(型は `T | undefined`。`row` を読むときは `row?.x` と書く)。
    */
   valueFormatter?: CellValueFormatter<T, F>;
   /**
@@ -1594,7 +1601,9 @@ export type GridContextMenuParams<T, F extends GridFrameworkTypes = GridFramewor
   /**
    * 右クリック対象。`{ type:'cell', rowIndex, colIndex, rowKey, row, column, value }` か
    * `{ type:'rowHeader', rowIndex, rowKey, row }`(行NO ガター)。`rowIndex` はビュー行 index、
-   * `colIndex` は論理列 index(視覚順 左→中央→右 = `handle.selectCell` と同一空間)。
+   * `colIndex` は画面の列の並び(視覚順 左→中央→右 = `handle.selectCell` と同一空間。
+   * 行ドラッグのハンドル列・展開トグル列・自動グループ列も数える。列は `column` / `column.key`
+   * で見分ける)。
    */
   target: GridContextMenuTarget<T, F>;
   /**
@@ -2029,6 +2038,21 @@ export type GridState = {
   columns?: GridColumnState[];
 };
 
+// 追加(dogfood DU-06): applyState に渡せる形です。渡したスライスだけを変え、渡さない(undefined の)スライスは今のまま
+//   残します(`{ sort }` だけ渡すと列幅とフィルターが既定へ戻っていた)。filters も globalText / columnFilters の片方だけを
+//   渡せます。getState() の値(GridState)はそのまま渡せます(全部のスライスがあるので全部置き換わる)。
+/**
+ * `applyState` に渡す状態。`getState()` の値をそのまま渡せる。渡したスライスだけを変え、省略した(`undefined` の)
+ * スライスは今のまま残す(`filters` も `globalText` / `columnFilters` の片方だけ渡せる)。
+ */
+export type GridStatePatch = {
+  version?: number;
+  columnWidths?: Record<string, number>;
+  filters?: Partial<GridFilterState>;
+  sort?: GridSortState;
+  columns?: GridColumnState[];
+};
+
 // 追加(imperative API #1): ref ハンドル(SpreadsheetGridProps.ref で受け取る命令的 API)です。
 //   設計方針: 状態(列幅/可視/sort/filter 等)は controlled のまま。ここには「prop で表現できない
 //   一発操作」だけを載せます(スクロール / 選択操作 / CSV / 状態の保存・復元)。
@@ -2099,7 +2123,11 @@ export type SpreadsheetGridHandle<T> = {
 
   // ── 選択 / アクティブセル ──
   // 現在のアクティブセル座標(なければ null)。
-  /** 現在のアクティブセル `{ row, col }`(なければ `null`)。 */
+  /**
+   * 現在のアクティブセル `{ row, col }`(なければ `null`)。`selectCell` / `setActiveCell` /
+   * `applyState` の直後に同じ処理の中で読んでも、
+   * 変えた後の値を返す(選択・行選択・展開行の読み取りも同じ)。
+   */
   getActiveCell: () => CellCoord | null;
   // アクティブセルを設定(null で解除)。scrollIntoView:true で可視化も行います。
   /**
@@ -2131,6 +2159,46 @@ export type SpreadsheetGridHandle<T> = {
   // 選択に交差する行(distinct)を返します。SSRM はロード済み行のみ。
   /** 選択に交差する行(distinct)を返す。serverSide はロード済み行のみ。 */
   getSelectedRows: () => T[];
+  // 追加(dogfood DU-03): 行キー / 列キーから今の位置を引きます(ソート中に足した行を選ぶとき、rows.findIndex は
+  //   表示位置ではないため別の行を選んでいた)。
+  /**
+   * 行キー(`rowKeyGetter` の値)から今の表示位置(`viewRowIndex`)を返す。
+   * 表示に無い行(フィルターで外れた / 閉じたグループの中 / serverSide で未ロード)は `-1`。
+   * 表示されているラベル行(`labelRow`)のキーも引ける(グループ行は対象外)。
+   * 並び替えや絞り込みの中で行を足して選ぶときは、`rows.findIndex` の代わりにこれを使う(`rows`
+   * の位置は表示位置と違う)。
+   */
+  getViewRowIndex: (rowKey: GridRowKey) => number;
+  /**
+   * 列キーから今の `colIndex`(固定列と、行ドラッグのハンドル列などライブラリが足す列を含む視覚順)
+   * を返す。表示していない列(`visible: false` / グループ化中のグループ元列)は `-1`。
+   */
+  getColIndex: (columnKey: string) => number;
+
+  // ── フォーカス / 編集の開始 ──
+  // 追加(dogfood DU-02): モーダルを閉じた後などにキーをグリッドへ戻す / 行を足してすぐ打てるように編集を始める。
+  /**
+   * グリッド(キー操作を受ける要素)へフォーカスを移す(`imeDirectInput` 有効時は入力受けへ)。
+   * 右クリックメニューから開いたモーダルを閉じた後など、キーがグリッドへ届かなくなったときに呼ぶ。
+   */
+  focus: () => void;
+  /**
+   * そのセル(省略時はアクティブセル)の編集を始める(`F2` と同じ。今の値でエディタを開く)。
+   * セルを単一選択にして見える位置へスクロールし、フォーカスもエディタへ移す。始めたら `true`。
+   * 編集できないセル(`readOnly` / `editable: false` / `canEditCell` / checkbox 列 / グループ行 /
+   * ラベル行)・範囲外・編集中は `false` で何もしない。
+   */
+  // 変更(別視点のレビュー): 引数は「なし」か「2 つとも」だけにしました(片方だけ渡すと、黙ってアクティブセルを編集していた)。
+  /**
+   * そのセル(引数なしの `startEditing()` はアクティブセル。片方だけは渡せない)の編集を始める(`F2`
+   * と同じ。今の値でエディタを開く)。セルを単一選択にして見える位置へスクロールし、
+   * フォーカスもエディタへ移す。始めたら `true`。編集できないセル(`readOnly` / `editable: false` /
+   * `canEditCell` / checkbox 列 / グループ行 / ラベル行)・範囲外・編集中は `false` で何もしない。
+   */
+  startEditing: {
+    (): boolean;
+    (viewRowIndex: number, colIndex: number): boolean;
+  };
 
   // ── エクスポート ──
   // CSV 文字列を返します(純粋・副作用なし)。
@@ -2160,19 +2228,26 @@ export type SpreadsheetGridHandle<T> = {
    * を返す(純粋・副作用なし)。新規オブジェクトなのでそのまま `JSON.stringify` して保存できる。
    */
   getState: () => GridState;
-  // getState のスナップショット(または互換な部分形)を適用します。外部入力は内部で防御的に正規化され、
-  //   幅 reset / フィルター一括 / ソート set の 3 dispatch(1 イベント = 1 再レンダー)で反映します。
+  // getState のスナップショット(または一部のスライスだけ)を適用します。外部入力は内部で防御的に正規化され、
+  //   渡されたスライスだけを 幅 reset / フィルター一括 / ソート set の dispatch(1 イベント = 1 再レンダー)で反映します
+  //   (dogfood DU-06。今の columns に無い列のキーは捨てる = DF-04)。
   //   clientSide / serverSide 双方に効きます(SSRM では filters/sort 変化がクエリへ載り再取得)。
   //   列メタ(columns)は onColumnsChange が指定されているときのみ、現 columns へ key ベースでマージして
   //   onColumnsChange 経由で反映します(未指定時はスキップ=幅/フィルター/ソートのみ。v1 完全互換)。
   //   v1 保存値(columns フィールド無し)も読めます(列メタは触りません)。
   /**
-   * `getState()` の値(または互換な部分形)を適用する。
-   * 外部入力は内部で防御的に正規化され(形の合わない列フィルターは捨てる)、幅 reset / フィルター一括
-   * / ソート set の 3 dispatch(1 イベント = 1 再レンダー)で反映。clientSide / serverSide
+   * `getState()` の値を適用する。**渡したスライスだけを変え、省略した(`undefined` の)
+   * スライスは今のまま残す**(`{ sort }` だけなら列幅とフィルターはそのまま。`filters` も
+   * `globalText` / `columnFilters` の片方だけ渡せる。引数の型は `GridStatePatch`)。
+   * 外部入力は内部で防御的に正規化され(形の合わない列フィルターは捨てる)、**今の `columns`
+   * に無い列の幅 / 列フィルター / ソートも捨てる**(開発時に警告。列定義を渡してから呼ぶ。
+   * 自動グループ列などグリッドが足す列の幅は残す。捨てても今の状態と変わらなければ `onStateChange`
+   * は呼ばないので、列を消した後の古い保存状態は `applyState` の後の `getState()`
+   * の値で保存し直す)。1 回の再描画で反映し(フィルターと並べ替えを一度に渡しても、
+   * 並べ替えだけの画面を挟まない)、直後の `getState()` は渡した値を返す。clientSide / serverSide
    * 双方に効く(SSRM は `filters`/`sort` 変化がクエリへ載り再取得)。
    */
-  applyState: (state: GridState) => void;
+  applyState: (state: GridStatePatch) => void;
 
   // ── 行選択(チェックボックス選択。getSelectedRows()=セル範囲由来とは別物)──
   // 現在の行選択記述子を返します(include/exclude)。
@@ -2664,8 +2739,10 @@ export type SpreadsheetGridProps<T, F extends GridFrameworkTypes = GridFramework
   //   (latest-ref 経由で読むため)。clientSide では発火しません。
   /**
    * serverSide の `dataSource.updateRows` が reject したときの通知。
-   * グリッド側は楽観更新をロールバック済みで、`params.updates` に失敗した行更新(`rowKey` /
-   * `changes` / `previousRow`)が入る(利用側トースト / リトライ導線用)。
+   * グリッド側は楽観更新をロールバック済みで、`params.updates` に失敗して元に戻した行更新(`rowKey`
+   * / `changes` / `previousRow`)が入る(利用側トースト / リトライ導線用。`changes`
+   * は元に戻したセルだけで、後から同じセルを変えた編集で上書き済みの変更は入らない。`row`
+   * は今の表示の行に元に戻した変更を当てた行で、同じ行の新しい編集の値を含む)。
    * グリッド内蔵の保存失敗バーとは独立に呼ばれる。インライン関数可(latest-ref 経由で読む)。
    * 詳細は「セル編集の書き戻し」節。
    */
@@ -2711,9 +2788,18 @@ export type SpreadsheetGridProps<T, F extends GridFrameworkTypes = GridFramework
     row: T,
     ctx: { viewRowIndex: number; rowKey: GridRowKey },
   ) => boolean;
-  /** 行追加時に使う新規行ファクトリ。 */
+  /**
+   * 貼り付けが表の末尾より下へはみ出したとき、
+   * 足りない行を作る新規行ファクトリ(はみ出した行数だけ呼ぶ)。
+   * グリッドが行を足すのはこのときだけで、無ければはみ出した分は捨てる。
+   * ボタンなどで行を足すときは、利用側が `rows` に行を足す(グリッドは `createRow` を呼ばない。
+   * serverSide では使わない)。
+   */
   createRow?: () => T;
-  /** 列追加時に使う列ファクトリ。 */
+  /**
+   * 貼り付けが右端の列よりはみ出したとき、足りない列を作る列ファクトリ(`onColumnsChange`
+   * と一緒に使う)。
+   */
   createOverflowColumn?: (columnIndex: number) => GridColumn<T, F>;
   // 変更(THEME-2): 未指定時の既定は density プリセットから解決します(standard: 36 /
   //   compact: 28 / comfortable: 44)。明示指定はプリセットより常に優先されます。
@@ -2851,7 +2937,8 @@ export type SpreadsheetGridProps<T, F extends GridFrameworkTypes = GridFramework
    * 保存中は斜線 + 小さなスピナー(`[data-ssg-save="pending"]`)、成功は ✓ バッジを 1.3 秒(`"ok"`)、
    * 失敗は揺れ + 赤いフラッシュ + ✕ バッジ(`"failed"`)とセル下の「保存に失敗しました」チップ(4 秒 /
    * スクロールで消える)。既存の保存失敗バー(`onServerSideWriteError`)とは独立に出る。
-   * 描画中のセルだけが対象。clientSide では何も出ない。
+   * 描画中のセルだけが対象(保存中の印は、スクロールで外れて戻ったセルにも付き直す)。clientSide
+   * では何も出ない。
    *
    * @defaultValue `true`
    */

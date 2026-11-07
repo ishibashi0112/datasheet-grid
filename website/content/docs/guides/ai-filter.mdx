@@ -199,13 +199,14 @@ AI が入れられる条件は、**その列のフィルター画面で手で入
 
 - Enter で送ります。**日本語の変換を確定する Enter では送りません。**
 - 考えている間は「止める」か Esc で取り消せます(遅れて届いた答えは捨てます)。Esc はフォーカスがバーの中か、どこにも無いときに効きます(表の中の Esc は表のもの)。
-- 反映した条件はチップで見せ、× でその条件だけ外せます。「元に戻す」で頼む前の見え方に戻ります。反映したあとに表を手で変えたときは、元に戻さずにそう知らせます。
+- 反映した条件はチップで見せ、× でその条件だけ外せます(select / set の値は表示名で、数は列の `valueFormatter` で書きます)。「元に戻す」で頼む前の見え方に戻ります。反映したあとに表を手で変えたときは、チップと「元に戻す」を下げてそう知らせます。
+- 答えを読めたら入力欄は空になります(失敗したときは直して送れるよう残します)。
 
 ## 見た目と自前の UI
 
 色はグリッドと同じトークン(`--ssg-*`)で決まり、`themes/*.css` もバーに効きます。バーはグリッドの外にあるので、トークンを上書きしているときは `.ssg-root, .ssg-ask { --ssg-accent: … }` のように `.ssg-ask` も並べてください。ダークにするときはグリッドと同じ `theme` を渡します。
 
-自分の見た目で作るときは `useGridAsk` が状態とふるまい(`status` / `session` / `submit` / `cancel` / `undo` / `remove`)だけを返します。頼みの組み立て(`createGridAskRequest`)と答えの検査(`readGridAskAnswer`)は React に依存しない関数で、`@ishibashi0112/spreadsheet-grid-core` からも使えます。詳しくは [API リファレンス](/docs/api/ai) を見てください。
+自分の見た目で作るときは `useGridAsk` が状態とふるまい(`status` / `session` / `submit` / `cancel` / `undo` / `remove`)だけを返します。二重の送信は `submit` が防ぎますが、IME の変換を確定する Enter で送らない・聞いている間の `Esc` で止める・失敗したときに送った文で送り直す・答えを読めたら入力欄を空にする、はバーと同じにするなら自分で書きます([API リファレンス](/docs/api/ai)に書き方)。頼みの組み立て(`createGridAskRequest`)と答えの検査(`readGridAskAnswer`)は React に依存しない関数で、`@ishibashi0112/spreadsheet-grid-core` からも使えます。それらで反映するときは、隠した列が変わらなければ `columns` を外して `applyState` に渡してください(`isGridAskColumnsChanged`。そのまま渡すと、聞いている間に手で隠した列が戻ることがあります)。詳しくは [API リファレンス](/docs/api/ai) を見てください。
 
 ## AI のモデルの選び方
 

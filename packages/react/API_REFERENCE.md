@@ -21,12 +21,12 @@
 | `dataSource` | `ServerSideDataSource<T>` | — | serverSide(SSRM)モードのデータ供給口。指定すると可視窓近傍のブロックだけを `getRows` で都度取得し、`rows` 系の clientSide パイプラインをバイパスする。`updateRows`(任意)を持たせるとセル編集の書き戻し(楽観更新つき)が有効になる(「セル編集の書き戻し」節)。 |
 | `serverSideRefreshToken` | `number` | — | serverSide のソフトリフレッシュ用トークン。値を増やすと、クエリ(フィルター/ソート/グローバル)を変えずにキャッシュを破棄して現在の可視レンジをサーバから取り直す。スクロール位置は保持し、件数は到着ブロックの `totalRowCount` で追従する(clientSide では無視)。命令的に呼びたい場合は同挙動のハンドル `refreshServerSide()` を使う。 |
 | `onServerSideLoadError` | `(error, params) => void` | — | serverSide の `getRows` が reject したときの通知(abort は正常キャンセルのため通知しない)。`params` は失敗した要求の view 空間レンジ `{ startIndex, endIndex }`。グリッド内蔵のエラーバー(再試行 UI)とは独立に呼ばれる(利用側トースト / ログ用)。インライン関数可(latest-ref 経由で読む)。 |
-| `onServerSideWriteError` | `(error, params) => void` | — | serverSide の `dataSource.updateRows` が reject したときの通知。グリッド側は楽観更新をロールバック済みで、`params.updates` に失敗した行更新(`rowKey` / `changes` / `previousRow`)が入る(利用側トースト / リトライ導線用)。グリッド内蔵の保存失敗バーとは独立に呼ばれる。インライン関数可(latest-ref 経由で読む)。詳細は「セル編集の書き戻し」節。 |
+| `onServerSideWriteError` | `(error, params) => void` | — | serverSide の `dataSource.updateRows` が reject したときの通知。グリッド側は楽観更新をロールバック済みで、`params.updates` に失敗して元に戻した行更新(`rowKey` / `changes` / `previousRow`)が入る(利用側トースト / リトライ導線用。`changes` は元に戻したセルだけで、後から同じセルを変えた編集で上書き済みの変更は入らない。`row` は今の表示の行に元に戻した変更を当てた行で、同じ行の新しい編集の値を含む)。グリッド内蔵の保存失敗バーとは独立に呼ばれる。インライン関数可(latest-ref 経由で読む)。詳細は「セル編集の書き戻し」節。 |
 | `onColumnsChange` | `(nextColumns: GridColumn<T>[]) => void` | — | 列が変化したとき呼ばれる。列メニューの固定切替はこれが指定されている場合のみ反映。列の並べ替え(ヘッダーのドラッグ / 列パネル)と `applyState` で渡る `nextColumns` は、配列順が固定列ごと(左固定 → 中央 → 右固定)に並べ直される(画面上の列順は変わらない。例: 右固定列の後ろに宣言した列があると、右固定列が配列の末尾へ移る)。列メニューの固定切替は配列順を変えず `pinned` だけを更新する。 |
 | `rowKeyGetter` | `(row: T, index: number) => GridRowKey` | index ベース | 安定した行キーを返す。 |
 | `isRowExportable` | `(row: T, ctx: { viewRowIndex: number; rowKey: GridRowKey }) => boolean` | 全行 true | コピー(`Ctrl/Cmd+C` の TSV)/ `exportCsv` / `getExportData` の対象行フィルタ。`false` の行は出力から**行ごと**除く(行単位のみ。全体選択かの判定と貼り付けには影響しない)。`ctx.viewRowIndex` はフィルター / ソート適用後のビュー行 index(scope `'raw'` のみ rows 配列のソース index)、`ctx.rowKey` は `rowKeyGetter` の値。用途: プレースホルダ行など表示上の詰め物を出力から除く。 |
-| `createRow` | `() => T` | — | 行追加時に使う新規行ファクトリ。 |
-| `createOverflowColumn` | `(columnIndex: number) => GridColumn<T>` | — | 列追加時に使う列ファクトリ。 |
+| `createRow` | `() => T` | — | 貼り付けが表の末尾より下へはみ出したとき、足りない行を作る新規行ファクトリ(はみ出した行数だけ呼ぶ)。グリッドが行を足すのはこのときだけで、無ければはみ出した分は捨てる。ボタンなどで行を足すときは、利用側が `rows` に行を足す(グリッドは `createRow` を呼ばない。serverSide では使わない)。 |
+| `createOverflowColumn` | `(columnIndex: number) => GridColumn<T>` | — | 貼り付けが右端の列よりはみ出したとき、足りない列を作る列ファクトリ(`onColumnsChange` と一緒に使う)。 |
 | `rowHeight` | `number` | density 依存(standard: `36`) | uniform 行の行高(px)。未指定時は density プリセット(compact: `28` / comfortable: `44`)から解決。明示指定が常に優先。 |
 | `autoHeight` | `boolean` | `false` | auto-height 行(可変行高)を有効化する**大本のスイッチ**。これに加えて**少なくとも1列に `column.autoHeight: true`** が必要(その列が折り返して行高を駆動)。両方 true かつ**行数 ≤ 50,000**のとき有効(超過時は uniform `rowHeight` へフォールバック)。詳細は「auto-height 行」節。 |
 | `estimateRowHeight` | `number` | `rowHeight` | 未測定行の推定行高(px)。 |
@@ -38,7 +38,7 @@
 | `showCopyRange` | `boolean` | `true` | `Ctrl/Cmd+C` のあと、コピー元の範囲に Excel と同じ「動く点線」を残す(`.ssg-copy-range-overlay`。`motion` が `'off'` なら静的な点線)。`Esc` と編集開始で消え、ソート / フィルター / グループ開閉 / 行数 / 列の変化で描画しなくなる(貼り付けでは残る)。`false` で点線を出さない(コピー自体は従来どおり)。 |
 | `hoverHighlight` | `'row' \| 'cross'` | `'row'` | ホバーの強調範囲。`'row'` はポインタの行だけ(従来)。`'cross'` はその行に加えて、ポインタの列(列ヘッダー + 同じ列の他セルに薄い帯 `.ssg-col-hover-overlay`)と行番号も染めるクロスヘア表示。色はトークン `--ssg-col-hover-bg`(帯)/ `--ssg-select-bg`(ヘッダー・行番号)。横に長い表で「この値はどの列か」を視線移動なしで答えるため。 |
 | `highlightChanges` | `boolean` | `false` | `rows` が変わったとき、値が変わったセルを一瞬アクセント色で光らせ(`.ssg-body-cell--changed`、`--ssg-motion-slow`)、数値の既定セルは旧値から新値へカウントアップする(`--ssg-motion-base`。表示は `valueFormatter` で整形)。セル編集 / 貼り付け / クリア / undo・redo / 外部からの `rows` 差し替えのすべてが対象。clientSide 専用(SSRM では無効)。描画中のセルだけが対象で、変わったセルが 200 を超えるとフラッシュのみ、2,000 を超える・行の挿入 / 削除 / 並べ替えを伴う・参照の変わった行が 5,000 を超える(データの読み直し)ときは何もしない。 |
-| `showSaveStatus` | `boolean` | `true` | serverSide の書き戻し(`dataSource.updateRows`)で、確定したセルに保存状態の印を出す。保存中は斜線 + 小さなスピナー(`[data-ssg-save="pending"]`)、成功は ✓ バッジを 1.3 秒(`"ok"`)、失敗は揺れ + 赤いフラッシュ + ✕ バッジ(`"failed"`)とセル下の「保存に失敗しました」チップ(4 秒 / スクロールで消える)。既存の保存失敗バー(`onServerSideWriteError`)とは独立に出る。描画中のセルだけが対象。clientSide では何も出ない。 |
+| `showSaveStatus` | `boolean` | `true` | serverSide の書き戻し(`dataSource.updateRows`)で、確定したセルに保存状態の印を出す。保存中は斜線 + 小さなスピナー(`[data-ssg-save="pending"]`)、成功は ✓ バッジを 1.3 秒(`"ok"`)、失敗は揺れ + 赤いフラッシュ + ✕ バッジ(`"failed"`)とセル下の「保存に失敗しました」チップ(4 秒 / スクロールで消える)。既存の保存失敗バー(`onServerSideWriteError`)とは独立に出る。描画中のセルだけが対象(保存中の印は、スクロールで外れて戻ったセルにも付き直す)。clientSide では何も出ない。 |
 | `rowDragMotion` | `'ghost' \| 'live'` | `'ghost'` | 行ドラッグ並べ替え(`enableRowDrag`)の表示方式。`'ghost'` は従来(ゴースト + ガイド線、ドロップ後に新しい位置へスライド)。`'live'` は掴んだ行がポインタに追従し、通る先の行がその場で上下へ退避する(ドロップ先が「隙間」として見える。枠外で離しても直前の位置へ確定、`Esc` で元へ戻る。ウィンドウからフォーカスが外れたときも元へ戻る)。`motion` が `'off'` のときは `'ghost'` と同じ。 |
 | `columnDragMotion` | `'ghost' \| 'live'` | `'ghost'` | 列ヘッダーのドラッグ並べ替え(`onColumnsChange` 指定時)の表示方式。`'ghost'` は従来(ゴースト + 縦線、ドロップ後に新しい位置へスライド)。`'live'` は同じペイン内では掴んだ列(ヘッダー + 描画中のセル)がポインタに追従し、通る先の列がその場で左右へ退避する(ドロップ先が「隙間」として見える。枠外で離しても直前の位置へ確定、`Esc` で元へ戻る。ウィンドウからフォーカスが外れたときも元へ戻る)。固定列のペインをまたいで移す(固定の変更)ときは、掴んだ列の複製(浮かぶ列)がポインタに付いてきて元のペインは列が抜けた分だけ詰まり、移動先は縦線で示す(浮かぶ列の見出しに、固定ペインへはピン / 中央へは移動の矢印のアイコン。浮かぶ列は表の枠の内側に収まり、離すと新しい位置へ滑り込む)。`motion` が `'off'` のときは `'ghost'` と同じ。 |
 | `find` | `boolean \| FindOptions` | `false` | **セル内検索**。`true` でグリッド右上の検索バー(`.ssg-find-bar`)と `Ctrl/Cmd+F`(グリッドにフォーカスがあるときだけ横取り)が有効になる。表示文字列(`valueFormatter` 適用後)への部分一致で、ヒットをすべて `<mark class="ssg-find-mark">` で強調し、`Enter` / `↓` で次、`Shift+Enter` / `↑` で前へ(アクティブセルとスクロールが追従)、`Esc` で閉じる。行は消さない(絞り込みのフィルターとは別)。`FindOptions` = `{ shortcut?: boolean(既定 true。false でブラウザ標準の検索に譲る), caseSensitive?: boolean(既定 false) }`。走査は時間分割(1 チャンク 10ms)で入力を止めない。SSRM はロード済み範囲だけが対象。ヒットは 10,000 件で打ち切り(件数に `+`)。詳細は「セル内検索」節。 |
@@ -228,7 +228,7 @@ renderBottomBar={(ctx) => {
 
 データセルのクリック / ダブルクリック / アクティブセルの変化を受け取る通知口。3 つとも省略可で、指定しなければ従来どおり(グリッドの既定の動作は変わらない)。
 
-- **渡るもの**: `GridCellRef<T> = { row, rowKey, rowIndex, sourceRowIndex, column, columnKey, colIndex, value }`。行は index ではなく**行データ `row` と `rowKey` を主に使う**(`rowIndex` はフィルター / ソート後の表示位置 = `handle.selectCell` と同じ空間、`sourceRowIndex` は元 `rows` の index、`colIndex` は論理列 index)。`value` はセルの生値(`getValue` 指定列はその戻り値。`valueFormatter` 適用前)。クリック / ダブルクリックには `event`(DOM 標準の `MouseEvent`。React の合成イベントではない)が付く。修飾キー(`ctrlKey` / `shiftKey` / `metaKey` / `altKey`)はここから読む。
+- **渡るもの**: `GridCellRef<T> = { row, rowKey, rowIndex, sourceRowIndex, column, columnKey, colIndex, value }`。行は index ではなく**行データ `row` と `rowKey` を主に使う**(`rowIndex` はフィルター / ソート後の表示位置 = `handle.selectCell` と同じ空間、`sourceRowIndex` は元 `rows` の index、`colIndex` は画面の列の並び = `handle.selectCell` と同じ空間で、行ドラッグのハンドル列・展開トグル列・自動グループ列も数える。列は `columnKey` で見分け、位置が要るときは `handle.getColIndex(columnKey)`)。`value` はセルの生値(`getValue` 指定列はその戻り値。`valueFormatter` 適用前)。クリック / ダブルクリックには `event`(DOM 標準の `MouseEvent`。React の合成イベントではない)が付く。修飾キー(`ctrlKey` / `shiftKey` / `metaKey` / `altKey`)はここから読む。
 - **対象**: データ行 × 利用側の列のセルだけ。列ヘッダー / 行番号「#」/ グループ行 / ラベル行 / 展開行の帯 / SSRM の未ロード行(スケルトン)/ 合成列(展開トグル列・行ドラッグハンドル列・自動グループ列)ではクリック / ダブルクリックを通知せず、アクティブセルがこれらへ移ったときの `onActiveCellChange` は `null`。
 - **クリックの判定**: ブラウザの `click` イベントに従う。左ボタンのみで、押したセルと離したセルが違う(範囲選択のドラッグ)ときは呼ばれない。セル内に置いた自前の要素のクリックもそのセルのクリックとして届くため、セルの通知に含めたくない要素は自分で `event.stopPropagation()` する。
 - **順番**: マウスで別のセルをクリックすると `onActiveCellChange`(pointerdown でアクティブセルが移った分)→ `onCellClick` の順。ダブルクリックはブラウザの仕様どおり `onCellClick` × 2 → `onCellDoubleClick` の順。
@@ -279,13 +279,14 @@ renderBottomBar={(ctx) => {
 - **ヘッダー右クリックは対象外**(列メニュー `enableColumnMenu` が担当)。本メニューはボディの **データセル**と **行NO ガター**専用。
 - **SSRM 未ロード行**(まだ取得できていない行)の上では開かない(標準メニューになる)。
 - uncontrolled のみ。右クリックしても**セル選択は変化しない**(対象セル/行の情報は `params` で受け取る)。
-- close 契機: 項目選択 / 外側クリック / Escape / スクロール。項目間のキーボード移動(矢印キー)は持たない。
+- close 契機: 項目選択 / 外側クリック / Escape / Tab / スクロール。
+- キーボード: 開いている間、`↓` / `↑` で項目の間を移る(使えない項目は飛ばし、端で反対側へ回る。開いた直後は `↓` で先頭、`↑` で末尾)。`Home` / `End` で先頭 / 末尾、`Enter` / `Space` で実行。開いている間は後ろのグリッドをキーでスクロールしない。`custom` 項目の中の入力欄にフォーカスがあるときは、矢印キーなどはその入力欄のまま。
 
 **`GridContextMenuParams<T>`**(コールバック引数)
 
 | フィールド | 型 | 説明 |
 | --- | --- | --- |
-| `target` | `GridContextMenuTarget<T>` | 右クリック対象。`{ type:'cell', rowIndex, colIndex, rowKey, row, column, value }` か `{ type:'rowHeader', rowIndex, rowKey, row }`(行NO ガター)。`rowIndex` はビュー行 index、`colIndex` は論理列 index(視覚順 左→中央→右 = `handle.selectCell` と同一空間)。 |
+| `target` | `GridContextMenuTarget<T>` | 右クリック対象。`{ type:'cell', rowIndex, colIndex, rowKey, row, column, value }` か `{ type:'rowHeader', rowIndex, rowKey, row }`(行NO ガター)。`rowIndex` はビュー行 index、`colIndex` は画面の列の並び(視覚順 左→中央→右 = `handle.selectCell` と同一空間。行ドラッグのハンドル列・展開トグル列・自動グループ列も数える。列は `column` / `column.key` で見分ける)。 |
 | `clientX` / `clientY` | `number` | 右クリックのビューポート座標(メニュー配置に使用済み。分岐の判断材料にも)。 |
 | `selection` | `GridSelection` | 現在のセル範囲選択。チェックボックス行選択は `handle.getRowSelection()` で別途取得。 |
 | `activeCell` | `CellCoord \| null` | 現在のアクティブセル。 |
@@ -476,8 +477,14 @@ const gridRef = useRef<SpreadsheetGridHandle<Row>>(null);
 
 | キー | 操作 |
 | --- | --- |
-| 矢印(+ `Shift` で範囲拡張)/ `Tab` / `Shift+Tab` | アクティブセル移動(`labelRow` 有効時、↑ / ↓ はラベル行に止まらず読み飛ばす)。最終列での `Tab` / 先頭列での `Shift+Tab` はグリッドで止めず、ブラウザ既定のフォーカス移動でグリッド外の次 / 前の要素へ移る(キーボードトラップ回避)。 |
+| 矢印(+ `Shift` で範囲拡張)/ `Tab` / `Shift+Tab` | アクティブセル移動(`labelRow` 有効時、↑ / ↓ はラベル行に止まらず読み飛ばす)。最終列での `Tab` / 先頭列での `Shift+Tab` はグリッドで止めず、ブラウザ既定のフォーカス移動でグリッド外の次 / 前の要素へ移る(キーボードトラップ回避)。列見出しの `⋮`・グループ行の開閉ボタン・展開トグルは `Tab` の順番に入れない(`tabindex="-1"`)ので、`Tab` 1 回でグリッドを出入りできる(列メニューはアクティブセルで `Alt+↓` で開く。`renderCell` / `renderHeader` で置いたボタンやリンクと、展開行のカードの中の入力欄などは `Tab` で止まる。カードは DOM の順 = 開いているカードの上から順で、最終列の `Tab` はまず先頭の開いているカードへ入り、すべてのカードを通ってからグリッドの外へ出る。セルや見出し、カードの部品を止めたくなければ `tabIndex={-1}` を付ける)。 |
+| `Ctrl/Cmd+矢印`(+ `Shift`) | その向きの端の行 / 列へ(表の端。値の切れ目では止まらない)。 |
+| `Home` / `End`(+ `Shift`) | 行の先頭 / 末尾の列へ。 |
+| `Ctrl/Cmd+Home` / `Ctrl/Cmd+End`(+ `Shift`) | 先頭のセル / 末尾のセルへ。 |
+| `PageUp` / `PageDown`(+ `Shift`) | 見えている本体の高さ 1 画面ぶん上 / 下の行へ(少なくとも 1 行)。 |
+| `Alt+↓`(Mac は `Option+↓`) | アクティブセルの列の列メニューを開く(`enableColumnMenu` のとき。見出しの下に開き、先頭の項目へフォーカスを移す)。メニューの中は `↓` / `↑` / `Home` / `End` で項目を移り、`Enter` / `Space` で実行、`Escape` / `Tab` で閉じてグリッドへ戻る(マウスで開いたときも同じ)。列メニューの無い合成列(自動グループ列など)ではふつうの `↓`。 |
 | `Enter` / `F2` / 印字キー直打ち | 編集開始(印字キーはその 1 文字を初期値に。select エディタではその文字で始まる候補を頭出しする)。編集可否は `readOnly` / 列 / `canEditCell` に従う。 |
+| `Enter` / `Space`(グループ行 / 展開トグル列のセル) | そのグループ / 展開行の開閉(編集は始めない)。 |
 | `Escape` | 選択解除。 |
 | `Ctrl/Cmd+C` / ペースト(`Ctrl/Cmd+V`) | 選択範囲の TSV コピー(`isRowExportable` 指定時は `false` の行を除く)/ アクティブセル起点の貼り付け(readOnly では no-op)。TSV は Excel / Google スプレッドシート互換(改行・タブ・`"` を含むセルは `"…"` で囲み `"` は `""`。貼り付けはこの引用符を解釈し、途中の空行も行として保持する)。合成列(行ドラッグのハンドル列・展開トグル列・自動グループ列)はコピーの列に数えず(TSV に空の列を作らない)、貼り付けでも飛ばす(合成列のセルから貼るとその右のデータ列から書く)。 |
 | `Ctrl/Cmd+F` | セル内検索バーを開く(`find` が有効なとき。無効ならブラウザ標準の検索)。 |
@@ -485,7 +492,11 @@ const gridRef = useRef<SpreadsheetGridHandle<Row>>(null);
 | `Delete` / `Backspace` | 選択セル(なければアクティブセル)の値クリア。編集不可セルは対象外。クリア値は「空文字のペースト」と同じ規則(`parseClipboardValue('')` 経由、未定義なら `''`)。変更が無ければ no-op(undo 履歴にも積まれない)。 |
 | `Ctrl/Cmd+Z` / `Ctrl/Cmd+Shift+Z` / `Ctrl/Cmd+Y` | undo / redo(詳細は命令的 API の「undo / redo」節)。 |
 
-編集エディタ内: `Enter` = 確定して下へ(移動先は `editorEnterMove` で変更可。既定 `'down'`)、`Tab` / `Shift+Tab` = 確定して右 / 左へ、`Escape` = キャンセル、フォーカスアウト = 確定。値を変えずに確定したとき(F2 → `Enter` など)は書き込まない(`onRowsChange` / `dataSource.updateRows` を呼ばず、undo 履歴にも積まない。確定後の移動はふつうどおり)。IME 変換中(`isComposing`。Safari が変換の確定で送る `keyCode` 229 の keydown も含む)の `Enter` / `Escape` / `Tab` は IME の操作としてのみ扱われ、セル編集の確定 / キャンセルには使われない。
+端の行 / 列はラベル行を飛ばし、先頭の列は操作用の合成列(行ドラッグのハンドル列・展開トグル列)を飛ばした最初の列(`←` ではこれらの列へも移れる。自動グループ列には止まる)。`Shift` で範囲を広げるときは今の範囲の終わりから動かす(ドラッグや `Shift`+クリックで選んだ範囲もそのまま広がる。キー操作だけで広げた範囲はこれまでどおり)。アクティブセルが無いとき(`Tab` でグリッドに入った直後など)の最初の矢印 / `Tab` / `Enter` / `PageUp` / `PageDown` は、先頭のセル(ラベル行を飛ばした最初の行 × 上の先頭の列)に止まる(編集は始めない。`Shift+Tab` はグリッドの外へ。`Ctrl/Cmd+End` などは無くても端へ)。
+
+マウス: セルを押すとアクティブセル、そのままドラッグで範囲選択。`Shift` を押しながらセルを押すと、今の範囲の起点(範囲が無ければアクティブセル)から押したセルまでを選ぶ(アクティブセルは起点のまま。`Shift`+矢印と同じ起点。`enableRangeSelection={false}` では押したセルだけ)。
+
+編集エディタ内: `Enter` = 確定して下へ(移動先は `editorEnterMove` で変更可。既定 `'down'`)、`Tab` / `Shift+Tab` = 確定して右 / 左へ、`Escape` = キャンセル、フォーカスアウト = 確定。`PageUp` / `PageDown` はグリッドをスクロールしない(select エディタでは候補を 8 件ずつ移る)。`Home` / `End` は text / number ではカーソルの移動、select では先頭 / 末尾の候補、date では何もしない(どれもグリッドをスクロールしない)。値を変えずに確定したとき(F2 → `Enter` など)は書き込まない(`onRowsChange` / `dataSource.updateRows` を呼ばず、undo 履歴にも積まない。確定後の移動はふつうどおり)。IME 変換中(`isComposing`。Safari が変換の確定で送る `keyCode` 229 の keydown も含む)の `Enter` / `Escape` / `Tab` は IME の操作としてのみ扱われ、セル編集の確定 / キャンセルには使われない。
 
 確定 / キャンセル後のフォーカス: `Enter` / `Tab` / `Escape` で確定・キャンセルしたときはグリッドへ戻る(`imeDirectInput` 有効時は入力受けへ)。フォーカスアウトで確定したときは、フォーカスの移り先がグリッド外の要素(グリッドの上のフォームの入力欄 / 上部バーのグローバルフィルター等)ならそこに残し、グリッドへ奪い返さない(クリックした入力欄へそのまま入力できる)。グリッド内の別のセルをクリックしたとき・移り先がないとき(フォーカスを取らない余白のクリック等)はグリッドへ戻る。展開行カード内のフォーカスは奪わない。
 
@@ -506,6 +517,7 @@ WAI-ARIA の grid パターンに沿って、表・行・セルに役割と状�
 | 見出し行 / データ行 | `role="row"`。`aria-rowindex` は見出し行が 1、データ行は表示順 + 2。行選択のチェックボックスがあるときは `aria-selected`。未ロード行(SSRM のスケルトン)は `aria-busy`。 |
 | 列見出し | `role="columnheader"`。`aria-colindex`(行番号列が 1)。ソートの第 1 キーの列だけ `aria-sort`(`ascending` / `descending`)。 |
 | 行番号 / 左上の角 | `role="rowheader"` / `role="columnheader"`。 |
+| 列見出しの `⋮` / グループ行の開閉ボタン / 展開トグル | `tabindex="-1"`(`Tab` の順番に入れない。グリッドのキー操作はフォーカスを受ける要素で行い、`Tab` 1 回でグリッドを出入りする)。`⋮` の `aria-label` は「`<列名> の列メニュー`」(列名の後ろに半角の空白。例: `数量 の列メニュー`。ツールチップは「列メニュー」)。キーボードでは、アクティブセルで `Alt+↓` を押すとその列の列メニューが開く。開閉ボタン / トグルは `aria-expanded` と `aria-label` を持ち、キーボードではアクティブセルでの `Enter` / `Space` で開閉する。 |
 | セル | `role="gridcell"`。`aria-colindex` / `aria-selected`(選択範囲内)/ `aria-readonly`(編集できないセル)。 |
 | 行選択のチェックボックス | `role="checkbox"`。`aria-checked`(一部選択は `mixed`)/ `aria-label`(「すべての行を選択」「行 N を選択」)。 |
 | `editor: { type: 'checkbox' }` のセル | `role="checkbox"`。`aria-label` は列の `title`(無ければ `key`)。 |
@@ -538,11 +550,11 @@ WAI-ARIA の grid パターンに沿って、表・行・セルに役割と状�
 | `pinned` | `'left' \| 'right'` | undefined = 中央スクロール | 列固定の方向。 |
 | `rowGroup` | `boolean` | — | `true` でこの列を行グルーピングの対象にする(複数指定時は `columns` 配列の出現順が階層順)。有効時はグループ元列が表示から外れ、先頭に自動グループ列(ツリー表示)が注入される。**clientSide 限定**(serverSide では無視 + 開発時警告)。詳細は「行グルーピング + 集計」節。 |
 | `aggFunc` | `'sum' \| 'min' \| 'max' \| 'avg' \| 'count' \| GridAggFunc<T>` | — | グルーピング時と合計行(`totalRow`)のこの列の集計。組み込みは数値と数値の文字列だけを数える集計(空値・空白だけの文字列・`true` / `false`・`Date`・配列などは対象外、`count` は配下 leaf 行数 / 合計行では対象の行数)。関数でカスタム集計可(返り値がグループ行 / 合計行に表示)。`rowGroup` 列も `totalRow` もないときは無視。 |
-| `getValue` | `(row: T) => unknown` | `row[key]` | 値アクセサ。 |
+| `getValue` | `(row: T) => unknown` | `row[key]` | 値アクセサ。`setValue` の無い列へ書き込むと値は `row[key]` へ入り、表示(`getValue`)は変わらない。計算列は `editable: false` にするか `setValue` を渡す(開発時は、行に無いプロパティを足した列ごとに 1 回 console.warn)。 |
 | `setValue` | `(row: T, value: unknown) => T` | — | 値ライター(新しい行を返す)。 |
 | `renderCell` | `(ctx: CellRenderContext<T>) => ReactNode` | プレーン `<span>` | カスタムセル描画。 |
 | `align` | `'left' \| 'center' \| 'right'` | `'left'` | セル内容の水平寄せ(UI 表示のみ・元の値は不変)。セル表示と編集 input に反映。 |
-| `valueFormatter` | `(params: CellValueFormatterParams<T>) => string` | — | セル表示値の整形(UI 表示のみ)。`renderCell` 未指定の既定セルが返り値を表示。組み込み `numberFormatter` 等を渡せる。元の値/編集/コピー/ソート/フィルターには影響しない。 |
+| `valueFormatter` | `(params: CellValueFormatterParams<T>) => string` | — | セル表示値の整形(UI 表示のみ)。`renderCell` 未指定の既定セルが返り値を表示。組み込み `numberFormatter` 等を渡せる。元の値/編集/コピー/ソート/フィルターには影響しない。グループ行の集計値と合計行の値の整形にも使い、そのときは元の行が無いので `row` は `undefined`(型は `T \| undefined`。`row` を読むときは `row?.x` と書く)。 |
 | `cellClassName` | `GridSlotProps \| ((ctx: CellStyleContext<T>) => GridSlotProps \| undefined)` | — | セルへ付与する追加 class(条件付きスタイル)。`GridSlotProps` = `string \| { className?, style? }` で、StyleX の `stylex.props(...)` をそのまま返せる(`style` はセルへインライン付与。座標 / 寸法はグリッドが後勝ち)。関数版は値 / 状態に応じて返せる。`ctx` には view の `rowIndex` に加え source 基準の `sourceRowIndex` / `rowKey` が入る(ソート / フィルター ON でも source 行基準のデータと突き合わせ可能。「補助型」節参照)。基底 `.ssg-body-cell` は未レイヤー・特異度 (0,1,0)。確実な上書きは `.ssg-body-cell.my-class` の連結を推奨。 |
 | `cellNote` | `(ctx: CellStyleContext<T>) => string \| null \| undefined` | — | セルのメモ(FarPoint SPREAD のセルメモ / Excel のメモ相当)。文字列を返したセルの右上に印(10px の三角。色はトークン `--ssg-note-indicator`)を出し、マウスを乗せるとその文字列をツールチップで表示する(`\n` で改行)。`undefined` / `null` / 空文字(空白だけを含む)なら何も出さない。`ctx` は `cellClassName` の関数版と同じ。入力エラー(`validate` の mark)と同じセルでは、エラーの 6px の赤い三角がメモの三角の上に重なって両方見え、ツールチップは「エラー → 改行 → メモ」の順。描画中のセルだけ評価する(`cellClassName` 関数と同じコスト階級)。CSV / TSV / クリップボード / `getExportData` には含めない。詳細は「セルのメモ(`cellNote`)」節。 |
 | `conditionalFormat` | `GridConditionalFormat<T>` | — | **条件付き書式**。既定セルの描画に、値の「量」/「向き」/「状態」を重ねる。`dataBar`(背景の帯。`min` / `max` 省略時はビュー行 = フィルター / ソート適用後の数値から自動集計、負の値は 0 の軸から左へ。`color` / `negativeColor` / `showValue: false` で帯だけ)/ `colorScale`(セル背景を段階的に染める。`type: 'sequential'`(既定。淡 → 濃)/ `'diverging'`(`mid` を中立色に負側 / 正側を別の色相で。`colors` で色の段を差し替え)/ `chips`(値 → 色味 `'neutral' \| 'info' \| 'good' \| 'warning' \| 'critical'` か `{ tone, label, icon, color }` のマップ、または `ctx` から返す関数。アイコン + ラベルのピル)。複数を同時指定可。表示だけで、エクスポート / コピー / ソート / フィルターには影響しない。色はトークン `--ssg-cf-*`。詳細は「条件付き書式(`conditionalFormat`)」節。 |
@@ -690,7 +702,7 @@ renderFilterDateInput={({ value, onChange, ariaLabel }) => (
 
 `valueFormatter` はセルの**表示文字列だけ**を変えます(元の値・編集・コピー・ソート・フィルターは生値のまま)。組み込みファクタは `logic/valueFormatters.ts` に集約し、バレルから公開します。利用側も同じ契約(`CellValueFormatter<T>`)で自作でき、将来パターン(日付/％/通貨等)はファクタ追加 + バレル公開で拡張できます。
 
-- `numberFormatter(options?)` — 数値を 3 桁区切りで整形。既定は**元の精度を保持**(小数桁を勝手に丸めない)。`minimumFractionDigits` / `maximumFractionDigits` で固定桁、`useGrouping: false` で区切り無効、`locale` 指定可。`null` / `undefined` / `''` は `emptyText`(既定 `''`)、数値化できない値は原値の文字列をそのまま表示。
+- `numberFormatter(options?)` — 数値を 3 桁区切りで整形。既定は**元の精度を保持**(小数桁を勝手に丸めない)。`minimumFractionDigits` / `maximumFractionDigits` で固定桁、`useGrouping: false` で区切り無効、`locale` 指定可。`null` / `undefined` / `''` は `emptyText`(既定 `''`)、数値化できない値は原値の文字列をそのまま表示。型引数なしで作ったもの(`const amount = numberFormatter()`)は、行の型の違う列やグリッドでも使い回せる。
 
 使用例:
 
@@ -711,7 +723,7 @@ const columns = [
 | `'text'` | 従来のテキスト input(既定) | — | パススルー(生文字列のまま) |
 | `'number'` | `<input type="number">`(スピナー / ↑↓ステップ / 不正文字抑止)。セルを選んで `-` / `+` / `.` から打ち始めたときは、その文字を消さないよう文字の入力欄(`inputmode="decimal"`)で開き、確定した文字列を列のパーサで数値に直す(`-5`→`-5`、`.5`→`0.5`、`-` だけなら空。数値として読めない文字列は貼り付けと同じくそのまま)。英字など数値にならない文字から打ち始めたとき・数値でない文字列の値を開いたときも文字の入力欄で開き、その文字をそのまま見せる。数値の文字列の値(`'1,234'` / `'１２'`)は半角の数値(`1234` / `12`)で開く | `min` / `max` / `step` / `integer`(`min` / `max` / `integer` は値の検査にも使う。「バリデーション」節) | `''`・空白だけ→`null` / 有限数値文字列→`number`(全角の数字・符号・小数点と 3 桁区切りも読む: `'１，２３４'`→`1234`、`'ー５'`→`-5`)/ 非数値→生文字列のまま(mark が拾う) |
 | `'select'` | 候補ドロップダウン(body 直下ポータル)。↑↓=ハイライト移動 / Enter=確定(下へ)/ Tab=確定(左右へ)/ クリック=確定 / 印字キー=label 前方一致のタイプアヘッド(約 700ms でリセット) | `options: GridSelectEditorOption[] \| (row) => GridSelectEditorOption[]`(静的 or 行依存。関数はレンダー中に呼ばれるため純粋であること) | パススルー(`option.value` は string。型変換したい場合は `parseClipboardValue` を併用) |
-| `'date'` | ネイティブ `<input type="date">`。ドラフトは `'YYYY-MM-DD' \| ''` | — | `''`→`null` / 解釈可能→`'YYYY-MM-DD'` へ正規化 / 解釈不可→生文字列のまま |
+| `'date'` | ネイティブ `<input type="date">`。ドラフトは `'YYYY-MM-DD' \| ''` | — | `''`→`null` / 解釈可能→`'YYYY-MM-DD'` へ正規化 / 解釈不可→生文字列のまま(数字だけの文字列 = Excel の日付のシリアル値「45678」や「5」と、年が 4 桁にならない文字列も解釈不可) |
 | `'checkbox'` | **直接トグル**(編集セッションなし)。クリック / Space で即トグル。Enter / F2 / ダブルクリックではエディタが開かない | `checkedValue`(既定 `true`)/ `uncheckedValue`(既定 `false`)。checked 判定は `Object.is(value, checkedValue)` のみ | `''`→unchecked / checked・unchecked の文字列表現→対応値 / `'true'`・`'1'`→checked / その他→unchecked |
 | `'custom'` | `render(ctx)` の返り値を編集オーバーレイ内に描画。**フォーカス管理・キーバインドは利用側の責務** | `render: (ctx: CellEditorContext<T>) => ReactNode` | パススルー |
 
@@ -723,6 +735,7 @@ const columns = [
 - **date の Tab はグリッド流(確定 + 移動)**です。ピッカー内のセグメント移動は ← → 矢印で行えます。
 - **checkbox のダブルクリックは click 2 回**(トグル往復)として扱われます(Excel / AG Grid と同様)。`renderCell` 指定時はそちらが優先され、組み込みチェックボックスセルは描画されません。
 - **custom の `ctx.commit(value)`** は、`value` が string なら列パーサ(`parseClipboardValue` ?? editor 既定)を通し、**非 string ならパースをバイパスしてドメイン値をそのまま書き込みます**。`ctx` には `row` / `rowIndex`(ビュー行)/ `sourceRowIndex`・`rowKey`(source 基準)/ `colIndex` / `column` / `value`(編集開始時の生値)/ `initialText`(印字キー開始時はそのキー)/ `align` / `commit` / `cancel` が入ります。`commit` の返り値(`EditorCommitResult`)で reject 列の検証結果を受け取れます(無視しても安全)。`commit(value, direction)` の第 2 引数(`'down' | 'up' | 'right' | 'left'`)で確定後のアクティブセル移動を指定できます(省略時は移動しない。`editorEnterMove` prop は custom エディタには効かないため、Enter で下へ進めたい場合は `'down'` を明示)。編集が終わった後(確定 / 取消 / 別のセルの編集が始まった後)に呼んだ前の編集の `ctx.commit` / `ctx.cancel` は何もしない(`ctx.commit` は `{ status: 'noop' }` を返す)。非同期の検査の後で確定する作りでも、遅れて届いた値が別のセルへ書かれることはない。
+- **custom の枠**: `render(ctx)` の返り値は、編集中のセルと同じ位置・大きさの枠(`.ssg-cell-editor`。`position: absolute`)の中に描く。枠は透明なので、返す要素の根に `width: 100%; height: 100%; box-sizing: border-box` と背景色(`var(--ssg-cell-bg)` など)を付ける(付けないと内容の高さにしかならず、下のセルの文字が透ける)。デザインシステムの入力部品は、外側の要素だけでなく内側の入力欄にも高さを渡す(Mantine なら `styles={{ wrapper: { height: '100%' }, input: { height: '100%', minHeight: 0 } }}`)。枠より大きい部品(星のピッカーなど)ははみ出して描いてよい。枠の中身はクリックを受ける(0.61.0 までは受けず、下のセルに当たっていた)。
 
 ### バリデーション(validate / validationMode)
 
@@ -869,7 +882,7 @@ const columns: GridColumn<Row>[] = [
 ];
 ```
 
-- **データバー(`dataBar`)**: 値の大きさを背景の帯(`.ssg-cf-bar`。上下 4px の余白、右端を角丸)で示す。`min` / `max` を省略すると、**ビュー行**(フィルター / ソート適用後。SSRM はロード済み範囲)の数値の最小 / 最大を使い、編集 / フィルターで変われば取り直す(内容が同じなら再描画しない)。負の値を含む列は 0 を軸に左へ伸び(`.ssg-cf-bar--negative`。色は `negativeColor` / `--ssg-cf-bar-negative`)、負だけの列は右端が軸(Excel と同じ)。`color` で帯の色(既定 `--ssg-cf-bar` = アクセントの淡色)、`showValue: false` で文字を出さず帯だけにする。数値以外のセルには出ない。
+- **データバー(`dataBar`)**: 値の大きさを背景の帯(`.ssg-cf-bar`。上下 4px の余白、右端を角丸)で示す。`min` / `max` を省略すると、**ビュー行**(フィルター / ソート適用後。SSRM はロード済み範囲)の数値の最小 / 最大を使い、編集 / フィルターで変われば取り直す(内容が同じなら再描画しない)。負の値を含む列は 0 を軸に左へ伸び(`.ssg-cf-bar--negative`。色は `negativeColor` / `--ssg-cf-bar-negative`)、負だけの列は右端が軸(Excel と同じ)。`color` で帯の色(既定 `--ssg-cf-bar` = 固定の青の淡色。`--ssg-accent` を変えても追従しないので、合わせたいときは `--ssg-cf-bar` も上書きする)、`showValue: false` で文字を出さず帯だけにする。数値以外のセルには出ない。
 - **カラースケール(`colorScale`)**: セル背景(`.ssg-body-cell--cf-scale`)を値に応じて染める。文字色は変えない(明るい段に制限してコントラストを保つ)。`type: 'sequential'`(既定)は 1 色相の淡 → 濃(`--ssg-cf-seq-min` → `--ssg-cf-seq-max`)。`'diverging'` は `mid`(省略時は `min < 0 < max` なら 0、それ以外は中央)を中立色(`--ssg-cf-div-mid`)にして、負側(`--ssg-cf-div-negative`)/ 正側(`--ssg-cf-div-positive`)を別の色相で濃くする。`colors` に CSS 色の配列(`[淡, 濃]` / `[負側, 中立, 正側]`)を渡すと差し替え。色の補間は CSS の `color-mix()` で行う(トークンや任意の CSS 色をそのまま混ぜられる)。
 - **状態チップ(`chips`)**: 値(`String(value)`)→ 色味のマップ、または `ctx`(`cellClassName` の関数版と同じ)からチップを返す関数。チップ(`.ssg-chip.ssg-chip--<tone>`)はアイコン + ラベルのピルで、色だけで意味を運ばない(`icon: false` でアイコンなし)。`label` 省略時はセルの表示文字列(`valueFormatter` 適用後。セル内検索の強調もそのまま)、`color` で任意の色(`.ssg-chip--custom`)。マップに載っていない値 / 関数が `null` を返した値はふつうの文字のまま。
 - **組み合わせ**: 1 列に `dataBar` と `colorScale` を同時に指定できる(帯は背景色の上)。`cellClassName` / `getRowClassName` の明示 style は条件付き書式より後勝ち。
@@ -894,7 +907,7 @@ const columns: GridColumn<Row>[] = [
   renderCell で独自 DOM(バッジ等)を描く列は、テキストでは幅が出ないため `estimateCellWidth` を指定します。指定列は Phase 1/2 のテキスト計測を使わず、**`estimateCellWidth(row)` が返す content 幅の全行 running-max + セル枠**で確定します(consumer 申告を信頼。mount なし)。\
   **制約 — `autoHeight: true` の列は autoSize の対象外です**(列メニュー / 境界ダブルクリック / すべての列の自動調整すべてでスキップし、`width` を維持)。autoHeight 列は「幅を固定して長文を**折り返す**」のが本来の挙動ですが、autoSize の計測は**単一行**で行うため、autoHeight 列を測ると折り返したい長文を1行幅にし、**極端に横長になる**ためです(列幅に既定の上限は無いため、長文ぶんだけ際限なく広がります)。長文列は autoHeight(折り返し)か、`maxWidth` 付きの固定幅(切り詰め)で運用してください。
 
-flex 列を**手動リサイズ**すると、その列はドラッグした幅で**固定 px**に変わります(以後その列は flex 対象外)。固定は、その列の `flex` / `pinned` / `width` の指定が変わる(pin 切替 / 親による差し替え)か、列のリセットを行うまで維持され、その後は再び flex に復帰します。表示切替 / 並べ替えや、同じ内容の `columns` を別参照で渡し直しただけでは解除されません。
+flex 列を**手動リサイズ**すると、その列はドラッグした幅で**固定 px**に変わります(以後その列は flex 対象外)。**autoSize**(列メニュー / 境界のダブルクリック / 「すべての列の幅を自動調整」/ `autoSizeColumns`)で内容に合わせたときも同じで、合わせた幅の固定 px になり、窓の幅に追従しなくなります(flex のまま使いたい列は `suppressAutoSize: true`)。固定は、その列の `flex` / `pinned` / `width` の指定が変わる(pin 切替 / 親による差し替え)か、列のリセットを行うまで維持され、その後は再び flex に復帰します。表示切替 / 並べ替えや、同じ内容の `columns` を別参照で渡し直しただけでは解除されません。
 
 ### autoSizeColumns(データ投入時の自動フィット)
 
@@ -991,9 +1004,9 @@ const columns: GridColumn<Order>[] = [
 
 - **自動グループ列**: グルーピング有効時、先頭にツリー表示列(インデント + 開閉シェブロン + ラベル + 件数)が注入され、グループ元列は表示から自動的に外れます。自動グループ列は合成列で、列メニュー / ソート / 並べ替え DnD / autoSize / エクスポートの対象外です(手動リサイズ・列範囲選択は可能)。
 - **集計**: `aggFunc` 指定列は、グループ行の同じ列位置に集計値を表示します。組み込み(`'sum' | 'min' | 'max' | 'avg' | 'count'`)は数値(`number`)と数値の文字列(`Number()` で有限になる文字列。`'1,200'` のような区切り入りは対象外)だけを数え、空値(`null` / `undefined` / `''` / 空白だけの文字列)・`true` / `false`・`Date`・配列などは対象外(`count` のみ配下 leaf 行数)。数値対象 0 件の sum / avg / min / max は空セルになります。カスタム関数(`GridAggFunc<T>` = `({ values, rows, column }) => unknown`)は返り値がそのまま表示されるため、整形済み文字列を返すこともできます。
-- **集計値の整形**: 列に `valueFormatter` があれば集計値にも適用され、leaf セルと表示が揃います(`numberFormatter()` の 3 桁区切り等)。ただしグループ行に leaf 行は無いため **formatter の `row` は `undefined`** です。`row` を読む formatter を使う列では、`aggFunc` をカスタム関数にして整形済み文字列を返してください。
-- **開閉**: シェブロン click / グループ行 double-click / グループ行上の `Enter`・`Space`。命令的 API(下記)からも操作できます。開閉状態は UI 状態で、undo/redo・`getState()` の対象外です。
-- **並び / フィルター**: グループの並びは「ソート適用後の初出順」です(グループ元列をソートすればグループごと並び替わる)。グループ元列は表示から外れますが、そのソートと列フィルターは効きます(「並び替えを管理…」パネルの候補にはグループ元列が入り、自動グループ列は入りません。列フィルターは `applyState` などで掛けられ、フィルターの管理パネルとチップバーには非表示の列と同じく「(非表示列)」として出て × で外せます)。フィルターは leaf 行に適用され、0 件になったグループは表示から消えます。空値は 1 つの「(空白)」グループへ集約されます。
+- **集計値の整形**: 列に `valueFormatter` があれば集計値にも適用され、leaf セルと表示が揃います(`numberFormatter()` の 3 桁区切り等)。ただしグループ行に leaf 行は無いため **formatter の `row` は `undefined`** です。`row` を読む formatter は `row?.x` のように `row` が無いときも動くように書いてください(カスタムの `aggFunc` の戻り値にも formatter は掛かります。型でも `row` は `T | undefined`)。
+- **開閉**: シェブロン click / グループ行 double-click / グループ行上の `Enter`・`Space`。グループ行のセルを押すとそのセルがアクティブセルになるので、押してから `Enter` / `Space` でも開閉できます(矢印キーでグループ行へ移ったときと同じ)。命令的 API(下記)からも操作できます。開閉状態は UI 状態で、undo/redo・`getState()` の対象外です。
+- **並び / フィルター**: グループの並びは「ソート適用後の初出順」です(グループ元列をソートすればグループごと並び替わる)。グループ元列は表示から外れますが、そのソートと列フィルターは効きます(「並び替えを管理…」パネルの候補にはグループ元列が入り、自動グループ列は入りません。列フィルターは `applyState` などで掛けられ、フィルターの管理パネルとチップバーには非表示の列と同じく「(非表示列)」として出て × で外せます)。フィルターは leaf 行に適用され、0 件になったグループは表示から消えます。グローバルフィルター(`enableGlobalFilter`)はグループ元列の値も探します(「関東」でその地域の行が残る)。ツールパネルの「列」タブではグループ元列を「(グループ化中)」として出し、表示 / 非表示は切り替えられません(値は自動グループ列に出るため)。ドラッグで並べ替えると階層の順番も入れ替わります(階層は `columns` の並び順)。空値は 1 つの「(空白)」グループへ集約されます。
 - **leaf 限定の各機能**: グループ行は編集 / ペースト / クリア / コピー / 行選択 / エクスポートの対象外です(すべて leaf 行のみが対象)。エクスポート(scope `'view'`)は開閉状態に関わらず、フィルター / ソート後の leaf 行をすべて出力します(折りたたんだグループの配下も含む。`isRowExportable` の `ctx.viewRowIndex` は全展開時のビュー行 index)。件数表示(bar の Rows / 行選択件数)も leaf 基準です。
 - **clientSide 限定**: serverSide(`dataSource`)では `rowGroup` は無視されます(開発時警告)。
 
@@ -1069,6 +1082,7 @@ const columns: GridColumn<Order>[] = [
 - **状態**: 展開状態は `rowKeyGetter` の行キーで保持されるため、ソート / フィルター / 行の追加削除を跨いで同じ行に追従します(フィルターで除外中の行は帯が出ず、復帰すると再表示)。UI 状態で undo/redo・`getState()` の対象外。永続化は `onExpandedDetailRowKeysChange` + `setDetailRowExpanded()` で行います。
 - **マウント**: カードは仮想化の描画窓に載っている間だけマウントされます(スクロールアウトでアンマウント、戻ると再マウント)。カード内で保持したい状態は消費側で `rowKey` をキーに持ってください。
 - **イベント境界**: カード内のキーボード / クリップボード / 右クリック / ダブルクリック / ドラッグ開始はグリッド本体へ伝播しません(カード内の input で矢印キーを押してもアクティブセルは動かない)。カード内にフォーカスがある間は、グリッド側のフォーカス復帰(編集確定・popover close 後)がフォーカスを奪いません。**カード内に別の `SpreadsheetGrid` をネスト**しても、外側の自動高さ実測 / 列ヘッダー検索は内側のセルを対象にしません。
+- **開閉の操作**: トグル列の ▸ / ▾ を押すと開閉します(押してもアクティブセルと選択は動かず、`onActiveCellChange` も呼ばれません)。キーボードでは、アクティブセルをトグル列へ移して(行の先頭のデータ列から `←`)`Enter` / `Space` で開閉します(開閉できない行では何もしない)。命令的 API(`setDetailRowExpanded` ほか)からも操作できます。
 - **`renderCell` からの操作(`ctx.detail`)**: `detailRow` 有効時、`CellRenderContext` に `detail: { expanded, expandable, toggle(), setExpanded(bool) }` が入ります(無効時は `undefined`)。`showToggleColumn: false` と組み合わせて、商品名セルの横などにトグルを自前配置できます。
 - **選択 / アクティブセル**: 帯はセルではないため選択・アクティブセルの対象外です。帯を跨ぐ範囲選択のハイライトは帯を避けて分割描画されます。
 - **serverSide(`dataSource`)**: 使えますが、(1) クエリ(フィルター / ソート / グローバル)が変わると展開状態は**すべて閉じ**ます(結果セットが総入れ替えされ、未ロード行のキーを走査できないため)。(2) 未ロード行の帯は表示されません。
@@ -1154,12 +1168,12 @@ const [rows, setRows] = useState(initialRows);
 />
 ```
 
-- **操作**: ハンドルを押して上下へドラッグすると、挿入位置に水平のガイド線が出ます。ドロップで確定し、影響行が新しい位置へスライドします(`prefers-reduced-motion` では即時)。グリッドの枠外で離す / `Escape` / ドラッグ中にウィンドウからフォーカスが外れるとキャンセルします。上下端に近づくと自動スクロールします(仮想化された画面外の行へも運べます)。
+- **操作**: ハンドルを押して上下へドラッグすると、挿入位置に水平のガイド線が出ます。ドロップで確定し、影響行が新しい位置へスライドします(`prefers-reduced-motion` では即時)。`Escape` / ドラッグ中にウィンドウからフォーカスが外れるとキャンセルします。グリッドの枠外で離したときは、既定の `'ghost'` はキャンセル、`rowDragMotion: 'live'` は直前に見えていた位置へ確定します。上下端に近づくと自動スクロールします(仮想化された画面外の行へも運べます)。
 - **ゴースト**: ドラッグ中はポインタ追従のピルに、先頭の(合成列でない)表示列の表示値(`valueFormatter` 適用後)を出します。空なら「行 N」。
 - **データ契約**: 確定時は「1 要素を移動した新配列」(未変更行は参照共有)を `onRowsChange` に渡し、その直後に `onRowMove` を呼びます。掴んだ行の直上 / 直下(動かない位置)で離した場合はどちらも呼ばれません。履歴ラッパ経由のため `Ctrl/Cmd+Z` / `undo()` で戻せます。
 - **有効条件**: clientSide(`rows` + `onRowsChange`)専用です。`dataSource`(serverSide)/ 行グルーピング中 / `onRowsChange` 未指定ではハンドル列を挿入しません。`readOnly` は関係しません(並び替えはセル編集ではないため)。読み取り専用時に並べ替えも止めたい場合は `enableRowDrag={!readOnly}` を渡します。
 - **ソート / フィルター中**: 表示順と `rows` の順が一致しないため、ハンドルは淡色(`.ssg-row-drag-handle--disabled`)+ 理由のツールチップになり操作できません(列はそのまま残るのでレイアウトは跳ねません)。解除すると復帰します。
-- **展開行との併用**: 展開中のマスター行は詳細パネルごと一緒に移動します。ドロップ位置の判定は詳細パネルの高さ込みで、パネルの上は「マスター行の下」として扱います。
+- **展開行との併用**: 展開中のマスター行は詳細パネルごと一緒に移動します(`rowDragMotion: 'live'` でも、掴んだ行のパネルはポインタに付いてきて、退避する行のパネルも一緒に退避します。下へ引くときは、空く隙間が掴んだ行 + パネルと重なるよう、パネルの下端の位置で落とす位置を決めます)。ドロップ位置の判定は詳細パネルの高さ込みで、パネルの上は「マスター行の下」として扱います。
 - **ハンドル列**: 合成列のため、列メニュー / ソート / 列 DnD / autoSize / エクスポート / 並び替え管理パネルの対象外です。左固定列があるときは左固定側に、展開行トグル列よりさらに先頭に入ります。
 - **命令的 API**: `moveRow(rowKey, toIndex)` は表示状態(ソート / フィルター)に関わらず元配列上で移動します(`onRowsChange` → `onRowMove` の順)。
 - **表示方式**: `rowDragMotion: 'live'` で、ドラッグ中に掴んだ行がポインタに追従し、周囲の行がリアルタイムに退避する見せ方になります(スロット解決は `'ghost'` と共通)。
@@ -1167,7 +1181,7 @@ const [rows, setRows] = useState(initialRows);
 
 ## 命令的 API(ref ハンドル / `SpreadsheetGridHandle<T>`)
 
-状態(列幅・可視・sort・filter 等)は controlled のまま、**prop では表現しづらい一発操作**だけを ref ハンドルで提供する。`ref` prop で受け取る(利用側で `forwardRef` は不要。React 19 は ref-as-prop のまま、React 18.3 ではグリッドが内部で `forwardRef` に包むので、どちらも同じ書き方)。
+状態(列幅・可視・sort・filter 等)は controlled のまま、**prop では表現しづらい一発操作**だけを ref ハンドルで提供する。`ref` prop で受け取る(利用側で `forwardRef` は不要。React 19 は ref-as-prop のまま、React 18.3 ではグリッドが内部で `forwardRef` に包むので、どちらも同じ書き方)。ただし、グリッドを自分の関数コンポーネントで包んで(`function Grid(props) { return <SpreadsheetGrid {...props} /> }`)その包んだ側へ `ref` を渡すときは、React 18 では包む側を `forwardRef` にする(React 18 では `ref` が props として届かない。`SpreadsheetGridProps` に `ref` があるので型は通る)。
 
 ```tsx
 import { useRef } from 'react';
@@ -1182,7 +1196,7 @@ const gridRef = useRef<SpreadsheetGridHandle<Row>>(null);
 // const csv = gridRef.current?.exportCsv({ scope: 'selection' });
 ```
 
-`viewRowIndex` / `colIndex` は**ビュー座標**(フィルター/ソート適用後の表示 index。`colIndex` は固定列を含む視覚順 = 左→中央→右)。範囲外 index は内部でクランプ/無視する。表示行数が減った(rows 差し替え / フィルター / グループの折りたたみ等)ときも、はみ出したアクティブセル / 選択範囲は範囲内へ詰められる(アクティブセルは最終行へ寄せ、範囲ははみ出した部分を切り詰める。0 行になったらセル / 行の選択とアクティブセルは解除)。このため `getActiveCell()` / `getSelection()` が存在しない行を返すことはない。
+`viewRowIndex` / `colIndex` は**ビュー座標**(フィルター/ソート適用後の表示 index。`colIndex` は固定列を含む視覚順 = 左→中央→右)。`viewRowIndex` はラベル行・グループ行も 1 行に数え、`colIndex` は行ドラッグのハンドル列・展開トグル列・自動グループ列(ライブラリが足す列)も数える。行キー / 列キーからは `getViewRowIndex(rowKey)` / `getColIndex(columnKey)` で引ける。アクティブセルは表示位置に付く(上の行を消すと、同じ位置に来た別の行を指す。Excel と同じ)。範囲外 index は内部でクランプ/無視する。表示行数が減った(rows 差し替え / フィルター / グループの折りたたみ等)ときも、はみ出したアクティブセル / 選択範囲は範囲内へ詰められる(アクティブセルは最終行へ寄せ、範囲ははみ出した部分を切り詰める。0 行になったらセル / 行の選択とアクティブセルは解除)。このため `getActiveCell()` / `getSelection()` が存在しない行を返すことはない。
 
 ### スクロール
 
@@ -1201,15 +1215,38 @@ const gridRef = useRef<SpreadsheetGridHandle<Row>>(null);
 
 | メソッド | 説明 |
 | --- | --- |
-| `getActiveCell()` | 現在のアクティブセル `{ row, col }`(なければ `null`)。 |
+| `getActiveCell()` | 現在のアクティブセル `{ row, col }`(なければ `null`)。`selectCell` / `setActiveCell` / `applyState` の直後に同じ処理の中で読んでも、変えた後の値を返す(選択・行選択・展開行の読み取りも同じ)。 |
 | `setActiveCell(cell \| null, { scrollIntoView? })` | アクティブセル設定(`null` で解除)。`scrollIntoView: true` で可視化も行う(固定列のセルでも縦方向へスクロールする)。中央ペイン(固定でない列)のセルは、指定が無くてもアクティブセルの位置が変わると見える位置までスクロールされる(クリック / キー操作と同じ動き)。 |
 | `getSelection()` | 現在の選択状態(`GridSelection`)。 |
 | `selectCell(viewRowIndex, colIndex, { scrollIntoView? })` | 単一セル選択(クリック相当)。スクロールの扱いは `setActiveCell` と同じ。 |
 | `selectRange(range, { scrollIntoView? })` | セル範囲選択(ドラッグ相当)。アンカーは `range.start`。 |
 | `clearSelection()` | 選択解除。 |
 | `getSelectedRows()` | 選択に交差する行(distinct)を返す。serverSide はロード済み行のみ。 |
+| `getViewRowIndex(rowKey)` | 行キー(`rowKeyGetter` の値)から今の表示位置(`viewRowIndex`)を返す。表示に無い行(フィルターで外れた / 閉じたグループの中 / serverSide で未ロード)は `-1`。表示されているラベル行(`labelRow`)のキーも引ける(グループ行は対象外)。並び替えや絞り込みの中で行を足して選ぶときは、`rows.findIndex` の代わりにこれを使う(`rows` の位置は表示位置と違う)。 |
+| `getColIndex(columnKey)` | 列キーから今の `colIndex`(固定列と、行ドラッグのハンドル列などライブラリが足す列を含む視覚順)を返す。表示していない列(`visible: false` / グループ化中のグループ元列)は `-1`。 |
 
 > 注: `getSelectedRows()` は**セル範囲選択**に交差する行です。下の**チェックボックス行選択**(`enableRowSelection`)とは別レイヤーで、そちらは `getSelectedRowKeys()` / `getSelectedRowData()` を使います。
+
+### フォーカス / 編集の開始
+
+| メソッド | 説明 |
+| --- | --- |
+| `focus()` | グリッド(キー操作を受ける要素)へフォーカスを移す(`imeDirectInput` 有効時は入力受けへ)。右クリックメニューから開いたモーダルを閉じた後など、キーがグリッドへ届かなくなったときに呼ぶ。 |
+| `startEditing(viewRowIndex, colIndex)` | そのセル(引数なしの `startEditing()` はアクティブセル。片方だけは渡せない)の編集を始める(`F2` と同じ。今の値でエディタを開く)。セルを単一選択にして見える位置へスクロールし、フォーカスもエディタへ移す。始めたら `true`。編集できないセル(`readOnly` / `editable: false` / `canEditCell` / checkbox 列 / グループ行 / ラベル行)・範囲外・編集中は `false` で何もしない。 |
+
+```tsx
+import { flushSync } from 'react-dom';
+
+// 行を足して、その行の「名前」をすぐ編集する(並び替え中でも、足した行の表示位置を行キーで引く)。
+const addRow = () => {
+  const row = { id: crypto.randomUUID(), name: '' };
+  flushSync(() => setRows((prev) => [...prev, row]));
+  const grid = gridRef.current;
+  const viewRowIndex = grid?.getViewRowIndex(row.id) ?? -1;
+  const colIndex = grid?.getColIndex('name') ?? -1;
+  if (viewRowIndex >= 0 && colIndex >= 0) grid?.startEditing(viewRowIndex, colIndex);
+};
+```
 
 ### 行選択(チェックボックス選択)
 
@@ -1440,9 +1477,9 @@ const buffer = await writeXlsx({
 | メソッド | 説明 |
 | --- | --- |
 | `getState()` | 永続化対象(手動リサイズ幅 / フィルター / ソート)のスナップショット `GridState` を返す(純粋・副作用なし)。新規オブジェクトなのでそのまま `JSON.stringify` して保存できる。 |
-| `applyState(state)` | `getState()` の値(または互換な部分形)を適用する。外部入力は内部で防御的に正規化され(形の合わない列フィルターは捨てる)、幅 reset / フィルター一括 / ソート set の 3 dispatch(1 イベント = 1 再レンダー)で反映。clientSide / serverSide 双方に効く(SSRM は `filters`/`sort` 変化がクエリへ載り再取得)。 |
+| `applyState(state)` | `getState()` の値を適用する。**渡したスライスだけを変え、省略した(`undefined` の)スライスは今のまま残す**(`{ sort }` だけなら列幅とフィルターはそのまま。`filters` も `globalText` / `columnFilters` の片方だけ渡せる。引数の型は `GridStatePatch`)。外部入力は内部で防御的に正規化され(形の合わない列フィルターは捨てる)、**今の `columns` に無い列の幅 / 列フィルター / ソートも捨てる**(開発時に警告。列定義を渡してから呼ぶ。自動グループ列などグリッドが足す列の幅は残す。捨てても今の状態と変わらなければ `onStateChange` は呼ばないので、列を消した後の古い保存状態は `applyState` の後の `getState()` の値で保存し直す)。1 回の再描画で反映し(フィルターと並べ替えを一度に渡しても、並べ替えだけの画面を挟まない)、直後の `getState()` は渡した値を返す。clientSide / serverSide 双方に効く(SSRM は `filters`/`sort` 変化がクエリへ載り再取得)。 |
 
-`GridState`: `{ version, columnWidths, filters, sort, columns? }`。`version` はマイグレーション用(現行 `2`)。`columns` は **列メタ(可視 / 順序 / ピン)のスナップショット**(`GridColumnState[]` = `{ key, visible?, pinned? }`。配列順 = 列順)で、`getState()` は常に出力し、`applyState()` は **`onColumnsChange` が指定されているときだけ** `columns` prop へ反映する(列順 / ピン / 可視も復元される点に注意。v1 形式 = `columns` 無しの保存値は列メタを触らない後方互換)。復元した `columns` 配列は固定列ごと(左固定 → 中央 → 右固定)の順に並べ直される(画面上の列順は同じ。列のドラッグ並べ替えと同じ規則で、2 回目以降の `applyState` では順序は変わらない)。`flex` / 列定義そのものは含めない。`activeCell` / `selection` などの一時 UI も含めない。`columnWidths` は**手動リサイズ / autoSize / `applyState` で幅が決まった列だけ**を持つ(それ以外の列は `width` / `flex` で描画され、エントリを持たない)。`columns` を同じ内容の別参照で渡し直しても消えず、列が削除されたとき・その列の `flex` / `pinned` 指定が変わったとき・`width` がエントリと異なる値に指定し直されたとき・列のリセット時にだけ捨てられる。そのため `applyState(getState())` は冪等で、保存値に既定幅が焼き込まれることもない(後からコードで `width` を変えれば、手動リサイズしていない列には反映される)。`custom` フィルターの `value`(`unknown`)は深いコピーをしないため、シリアライズ可能性は consumer 責務。`applyState` は壊れた / 部分的な入力にも耐える(非数値の幅・`kind` 無し / 未知 `kind` / 配列であるべき `values` が欠けた列フィルター・不正な `direction` は捨てる)。
+`GridState`: `{ version, columnWidths, filters, sort, columns? }`。`applyState` の引数の `GridStatePatch` は、その各フィールドを省略できる形(`filters` は `{ globalText?, columnFilters? }`)で、`getState()` の値はそのまま渡せる(全部のフィールドがあるので全部置き換わる)。`version` はマイグレーション用(現行 `2`)。`columns` は **列メタ(可視 / 順序 / ピン)のスナップショット**(`GridColumnState[]` = `{ key, visible?, pinned? }`。配列順 = 列順)で、`getState()` は常に出力し、`applyState()` は **`onColumnsChange` が指定されているときだけ** `columns` prop へ反映する(列順 / ピン / 可視も復元される点に注意。v1 形式 = `columns` 無しの保存値は列メタを触らない後方互換)。復元した `columns` 配列は固定列ごと(左固定 → 中央 → 右固定)の順に並べ直される(画面上の列順は同じ。列のドラッグ並べ替えと同じ規則で、2 回目以降の `applyState` では順序は変わらない)。`flex` / 列定義そのものは含めない。`activeCell` / `selection` などの一時 UI も含めない。`columnWidths` は**手動リサイズ / autoSize / `applyState` で幅が決まった列だけ**を持つ(それ以外の列は `width` / `flex` で描画され、エントリを持たない)。`columns` を同じ内容の別参照で渡し直しても消えず、列が削除されたとき・その列の `flex` / `pinned` 指定が変わったとき・`width` がエントリと異なる値に指定し直されたとき・列のリセット時にだけ捨てられる。そのため `applyState(getState())` は冪等で、保存値に既定幅が焼き込まれることもない(後からコードで `width` を変えれば、手動リサイズしていない列には反映される)。`custom` フィルターの `value`(`unknown`)は深いコピーをしないため、シリアライズ可能性は consumer 責務。`applyState` は壊れた / 部分的な入力にも耐える(非数値の幅・`kind` 無し / 未知 `kind` / 配列であるべき `values` が欠けた列フィルター・不正な `direction` は捨てる)。
 
 ```ts
 // 保存(任意の永続先へ)。
@@ -1495,12 +1532,13 @@ clientSide の操作状態(グローバルフィルター・列フィルター�
 
 - **`ServerSideQuery`**: `{ globalText?: string; columnFilters?: Record<string, ColumnFilterValue>; sort?: GridSortState }`。全フィールドが空のときは `{}` を渡す。
 - **列フィルターの wire format**: `ColumnFilterValue` は `kind` を持つ discriminated union で、**そのまま**送出される(サーバはこの記述子を解釈して WHERE を組む)。`kind` 別の shape:
-  - `{ kind: 'set'; mode?: 'include' | 'exclude'; values: string[] }` — `values` は常に小さい側のみ保持する(全候補が多いとき `mode: 'exclude'` で非選択側を送る)。サーバは `mode` に応じて IN / NOT IN を組む。
+  - `{ kind: 'set'; mode?: 'include' | 'exclude'; values: string[] }` — `mode` で `values` の意味が変わる(`'include'` = 選んだ値 / `'exclude'` = 外した値。省略は `'include'`)。どちらになるかは候補の数では決まらない: 全選択から外し始めたとき、`filterOptions` の無い列は `'exclude'`(外した値)、`filterOptions` のある列は `'include'`(残った値)になり、その後のチェックの付け外しでは `mode` を保つ。検索して Enter は `'include'`(検索に合う値)、0 件の選択は `'include'` の空配列。空白のセルは `''`。サーバは `mode` に応じて IN / NOT IN を組む(NULL と空文字を `''` として扱う)。
   - `{ kind: 'number'; raw: string; parsed }` — `parsed` が `comparison`(演算子 `>` `>=` `<` `<=` `=` `!=`)/ `range` / `blank` / `notBlank` / `null`(=`raw` で部分一致。旧 UI の互換値)。判定は常に `parsed` が正で、`raw` は人間可読の表示文字列(現行 UI は「10 以上」のような日本語。旧値は「>=10」等の式文字列)。比較 / 範囲では**空白セル(null / undefined / 空文字)は不一致**(空白の抽出は `blank` / `notBlank`)。
   - `{ kind: 'numberSet'; condition; set }` — 条件 AND 選択の複合(`filterType: 'numberSet'`)。`condition` は上記 `parsed` と同形(`null` = 条件なし)、`set` は `{ mode?: 'include' | 'exclude'; values: string[] }`(`null` = 全選択)。サーバは **condition AND set** で WHERE を組む(例: `qty >= 10 AND qty NOT IN (12)`)。両方 `null` の値は送出されない(クライアント側で clear へ正規化)。
   - `{ kind: 'textSet'; condition; set }` — テキスト版の複合(`filterType: 'textSet'`)。`condition` は `{ mode: 'contains' | 'equals' | 'startsWith' | 'endsWith'; value }` / `{ mode: 'blank' | 'notBlank' }` / `null`(判定は大文字小文字無視・`value` は trim 済み)。`set` と AND 結合の規約は numberSet と同一。
   - `{ kind: 'dateSet'; condition; set }` — 日付版の複合(`filterType: 'dateSet'`)。`condition` は `{ mode: 'range'; from; to }` / `{ mode: 'onOrAfter' | 'onOrBefore' | 'equals' | 'notEquals'; value }` / `{ mode: 'blank' | 'notBlank' }` / **`{ mode: 'preset'; preset: string }`**(ビルトインは `'today'` / `'thisMonth'` / `'last30days'`。列の `dateFilterPresets` で定義したカスタム ID もそのまま載る)/ `null`。日付は `'YYYY-MM-DD'`(ゼロ埋め ISO)。相対プリセットは**相対のまま送出される**ため、サーバ側も受信時点の「今日」を基準に解決すること(クライアントの clientSide 評価も同じ規約)。グリッドを開いたまま日付が変わると、相対プリセットの範囲が変わる日(「今日」なら毎日、「今月」なら月初)はブロックを取り直す(送る `query` の中身は同じ。キャッシュの区別は内部のキーで行う。列定義に無いプリセット ID は範囲が分からないため毎日取り直す)。カスタム ID の解釈(id → WHERE 句)もサーバ側の責務(`resolve` はクライアント評価専用で送出されない)。`set.values` はセル生値ではなく**正規化済み日付キー**(`'YYYY-MM-DD'`。空白 = `''` / 日付として解釈できない値 = 生値)。
-  - `{ kind: 'text'; value }` / `{ kind: 'date'; value }` / `{ kind: 'select'; value }`
+  - `{ kind: 'text'; value }` / `{ kind: 'date'; value }` — どちらも `value`(trim 済み)の**部分一致**(大文字小文字無視)。`filterType: 'date'` も日付の範囲ではなく文字列の部分一致で、例えば `{ kind: 'date', value: '2025-01' }` はセルの値の文字列(`getValue` の戻り値。`valueFormatter` の前)に「2025-01」を含む行(日付の範囲で絞るなら `filterType: 'dateSet'`)。
+  - `{ kind: 'select'; value }` — セルの値の文字列と `value` の完全一致。
   - `{ kind: 'custom'; value }` — `column.filterFn` 利用列の自由形値(サーバ解釈は利用側責務)。
   - アクティブなフィルターのみ送出される。キーは安定 queryKey のため昇順整列される。
 - **debounce**: query(filter/sort)の変更は約 300ms 静止後に一度だけ送出する(キーストロークごとの再フェッチを合体)。入力欄の表示自体は即時反映される。
@@ -1512,6 +1550,7 @@ clientSide の操作状態(グローバルフィルター・列フィルター�
 set / select / 複合(numberSet / textSet / dateSet)の候補集合はクライアントが供給する必要がある。**clientSide** は `rows` 全件から自動収集できるが、**serverSide** はクライアントが全件を持たないため自動収集できず候補が空になる(複合の条件欄は候補に依存しないため serverSide でも常に機能する)。
 
 - **低カーディナリティ列**(状態・区分など): 列定義に `filterOptions` を静的指定する(serverSide でも set として機能する)。
+- **空白のセル**: 候補(`filterOptions` / `getFilterOptions` の戻り値)に `''` が無いと「(空白)」の項目が出ず、`'include'` の選択(`filterOptions` のある列で値を外したとき / 検索して Enter など)には空白が入らないので、空白の行も消える。空白の行を残せるようにするには、候補に `{ value: '', label: '(空白)' }` を入れる(サーバは `''` を NULL / 空文字に読み替える)。
 - **高カーディナリティ列**(品番・ID など): そもそも set 不適。`filterType: 'text'`(部分一致)や `number` 範囲を使う。
 - **サーバから非同期に供給**: グリッド prop `getFilterOptions`(async-options)を指定すると、popover を開くたびに `{ columnKey, column, columnFilters(他列), globalText, signal }` で呼ばれ、返した `{ options, truncated? }` が候補になる(読み込み中 / 失敗 + 再試行 / 打ち切り注記の表示付き。反転可)。高カーディナリティ列でも上限付き DISTINCT + `truncated: true` で set フィルターにできる。
 - `filterOptions` も `getFilterOptions` も無い set/select 列を serverSide で開くと、候補リストに「候補が未指定」である旨が表示される(バグではなく設定不足)。
@@ -1562,13 +1601,14 @@ const dataSource: ServerSideDataSource<Row> = {
 ```
 
 - **楽観更新**: 編集はまず画面へ即時反映され(楽観値)、`updateRows` の resolve で確定する。確定までの間にブロックの再取得や LRU 退避が起きても楽観値の表示は消えない(確定前の編集はキャッシュとは別レイヤーで保持)。
-- **失敗時のロールバック**: `updateRows` が reject する(Promise を返す前に同期で throw したときも同じ)と、該当セルは**編集前の値へ自動で戻り**、グリッド下部に保存失敗バー(「変更の保存に失敗しました(N 行)。値を元に戻しました」+ 閉じる)が表示される。値は復元済みのため再試行ボタンは無い(リトライ導線が必要なら `onServerSideWriteError` の `params.updates` から自前で再送する)。
-- **`onServerSideWriteError(error, { updates })`**: バーとは独立の外部通知(トースト / ログ / リトライ導線用)。`updates` は失敗した行更新(ロールバック済み)。
-- **同一行への連続編集**: 前の書き込みが確定する前に同じ行を再編集してよい(新しい編集が表示を支配し、古い書き込みの遅延決着が新しい値を巻き戻すことはない)。確定はその書き込みで変えたセルにだけ効き、同じセルを新しい書き込みが先に確定させていれば古い書き込みはそのセルを書かない。古い書き込みが失敗したときは、その書き込みで変えたセルだけを戻す(保存中の新しい書き込みの値は残る)。失敗時のロールバック先は常に「最後にサーバー確定した値」。
+- **失敗時のロールバック**: `updateRows` が reject する(Promise を返す前に同期で throw したときも同じ)と、該当セルは**編集前の値へ自動で戻り**、グリッド下部に保存失敗バー(「変更の保存に失敗しました(N 行)。値を元に戻しました」+ 閉じる)が表示される(閉じるか、次の取り直し = `refreshServerSide()` / フィルター / ソートの変更で消える)。値は復元済みのため再試行ボタンは無い(リトライ導線が必要なら `onServerSideWriteError` の `params.updates` から自前で再送する)。
+- **`onServerSideWriteError(error, { updates })`**: バーとは独立の外部通知(トースト / ログ / リトライ導線用)。`updates` は失敗して元に戻した行更新で、`changes` は元に戻したセルだけ。同じセルを新しい書き込みが変えていた(上書き済みの)変更は戻すものが無いので入らず、全部が上書き済みならバーも通知も出ない(古い値で新しい値を上書きする再送を防ぐため)。同じ理由で、`row` は今の表示の行(同じ行の新しい編集の値を含む)に元に戻した変更を当てた行になる(`previousRow` はその書き込みの前の行のまま)。
+- **同一行への連続編集**: 前の書き込みが確定する前に同じ行を再編集してよい(新しい編集が表示を支配し、古い書き込みの遅延決着が新しい値を巻き戻すことはない)。確定はその書き込みで変えたセルにだけ効き、同じセルを新しい書き込みが先に確定させていれば古い書き込みはそのセルを書かない。古い書き込みが失敗したときは、その書き込みで変えたセルだけを戻す(保存中の新しい書き込みの値は残る)。失敗時のロールバック先は「最後にサーバー確定した値」(同じセルを変えた古い書き込みがまだ保存中なら、その書き込みの値)。
 - **バリデーションとの関係**: `validate` / `validationMode` は clientSide と同一規則で機能する(`reject` 列は確定拒否・ペースト/クリアのセル単位スキップ、`mark` 列は不正値も書き戻した上でマーク表示)。
+- **コピーの範囲**: `Ctrl/Cmd+C` は読み込み済みの行だけを写す(未ロード行は空行にもせず飛ばす)。`Ctrl/Cmd+A` で全体を選んでも、写るのは読み込み済みの行だけ(全件が要るときはエクスポートと同じくサーバーから取る)。
 - **ペースト / Delete クリアの範囲**: 未ロード行(スケルトン)はスキップされる。ペーストの**行/列自動拡張は行わない**(`createRow` / `createOverflowColumn` は serverSide では不発。行追加は「サーバへ反映 → `refreshServerSide()`」運用)。
 - **undo/redo**: serverSide では無効のまま(適用先の全件 rows が無いため。取り消しはサーバ側の履歴で扱う)。
-- **`refreshServerSide()` / クエリ変更との関係**: 確定前(in-flight)の編集はリフレッシュ・フィルター/ソート変更で破棄され、以後の遅延決着も無視される(サーバ正本を取り直す操作が常に優先)。
+- **`refreshServerSide()` / クエリ変更との関係**: 保存中(in-flight)の書き込みがあるときにリフレッシュ・フィルター/ソート変更をすると、楽観値は外し(行はスケルトン)、**保存の決着を待ってから**サーバー正本を取り直す(待つのは最大 3 秒。過ぎたら待たずに取り直し、その後に保存が成功したら、取り直した行がサーバーへ反映する前の古い値のことがあるので、行は出したまま見えている範囲をもう一度取り直す。その後に失敗したら知らせだけを出す)。保存は捨てないので、「行を足して `refreshServerSide()`」のような使い方でも直前の編集が古い値で表示されない。待っている間に決着した保存の失敗も保存失敗バー / `onServerSideWriteError` で知らせる(待っている間の行はスケルトンなので、セルの ✓ / ✕ の印は出ない。取り直した行の位置は変わりうるので、決着の `rows` はキャッシュへ書かない)。unmount したときだけは決着を知らせない。
 - **識別子**: `rowKey` は `rowKeyGetter` 由来(既定は view index のため、**書き戻しを使う場合は安定キーを返す `rowKeyGetter` の指定を推奨**)。`rowIndex` は view 空間(現在のフィルター/ソート適用後)の行位置で、`previousRow` にはサーバーが行を特定するための編集前スナップショットが入る。
 
 ### clientSide ↔ serverSide の切替(remount 契約)
@@ -1594,50 +1634,50 @@ export const OrdersTable = () => <Grid columns={columns} dataSource={dataSource}
 | `createSpreadsheetGrid({ features }): <T extends object>(props: SpreadsheetGridProps<T>) => JSX.Element` | 機能セットを差し込んだグリッドのコンポーネントを作る。`features` は `{ キー: 機能の部品 }`(下の表)。機能の組み合わせは作ったときに固定される(描画のたびに作り直すとグリッドの状態が消える)。 |
 | `standardFeatures` | よく使う組み合わせ(プリセット): `filtering` / `columnMenu` / `toolPanel` / `columnAutosize` / `export`。ほかの機能は `{ ...standardFeatures, find: findFeature }` のように広げて足す。 |
 | `xxxFeature`(20 個) | 機能の部品。名前は「キー + `Feature`」(下の表)。中身は内部の部品なので、そのまま `features` に渡す(自分で作ったり書き換えたりしない)。 |
-| 型 `GridFeatures` / `CreateSpreadsheetGridOptions` | `features` の型と、`createSpreadsheetGrid` の引数の型。 |
+| 型 `GridFeatures` / `CreateSpreadsheetGridOptions` | `features` の型と、`createSpreadsheetGrid` の引数の型。機能の組み合わせを変数にして export するときは `GridFeatures` を注釈する(`export const companyFeatures: GridFeatures = { ...standardFeatures, find: findFeature }`。注釈しないと推論された型が内部の型を指し、`declaration: true` で TS2742 になる)。 |
 | `numberFormatter` / `preloadGridPopups` と公開型すべて | 全部入りの入口と同じ名前・使い方。`preloadGridPopups` は同じ入口のグリッドの部品を読み込むので、`/lite` のグリッドには `/lite` から import したものを使う。 |
 
 - **props・ref ハンドル・型は全部入りと共通**。差し込んでいない機能の prop を渡したり、その機能のメソッドを呼んだりしても何もしない(落ちない)。開発ビルドでだけ、prop ごとに 1 回 `console.warn` で「`features` に `fillHandle: fillHandleFeature` を入れてください」のように足すべき機能を知らせる(本番ビルドでは出さない)。prop を持たない機能のメソッド(`exportCsv` / `downloadCsv` / `getExportData` と、`toolPanel` か `filtering` が無いときの `openFilterManager`)は、呼ばれた時点で同じように知らせる。ほかの機能のメソッド(`openFind` など)は全部入りでもその機能の prop が無いと動かないので、prop の警告で知らせる。
-- **全部入りで既定オンの機能は、差し込んだときだけ既定オン**: 列フィルター / グローバルフィルター(`filtering`)、列メニュー(`columnMenu`)、列のドラッグ並べ替え(`columnReorder`。`onColumnsChange` 指定時)、列境界のダブルクリックでの幅の自動調整(`columnAutosize`)、選択範囲の集計(`selectionAggregates`)、コピー範囲の点線(`motionExtras`)。
-- **機能なしで残るもの(本体)**: 表示(縦横の仮想スクロール・固定列)、セル / 範囲選択、キー操作、編集(6 種のエディタと検証)、コピー / 貼り付け / 削除、元に戻す / やり直し、列幅の変更、ソート、行選択(チェックボックス)、展開行(`detailRow`)、セルのメモ(`cellNote`)、`getState` / `applyState`、テーマ / 密度 / モーション、ツールチップ、上部 / 下部バー、ARIA。ソートを画面から操作する入口は列メニューにあるため、`columnMenu` が無い構成のソートは `applyState` 等の API からになる。
+- **全部入りで既定オンの機能は、差し込んだときだけ既定オン**: 列フィルター / グローバルフィルター(`filtering`)、列メニュー(`columnMenu`)、列のドラッグ並べ替え(`columnReorder`。`onColumnsChange` 指定時)、列境界のダブルクリックでの幅の自動調整(`columnAutosize`)、選択範囲の集計(`selectionAggregates`)、コピー範囲の点線(`motionExtras`)。これらは prop を書かずに効くので、入れなくても開発時の警告は出ない。全部入りと同じ既定の動きにするなら `{ ...standardFeatures, columnReorder: columnReorderFeature, selectionAggregates: selectionAggregatesFeature, motionExtras: motionExtrasFeature }`(`standardFeatures` に入っていないのは後ろの 3 つ)。
+- **機能なしで残るもの(本体)**: 表示(縦横の仮想スクロール・固定列)、セル / 範囲選択、キー操作、編集(6 種のエディタと検証)、コピー / 貼り付け / 削除、元に戻す / やり直し、列幅の変更、ソート、行選択(チェックボックス)、展開行(`detailRow`)、セルのメモ(`cellNote`)、`getState` / `applyState`、テーマ / 密度 / モーション、ツールチップ、上部 / 下部バー、ARIA。列見出しからソートする入口は列メニューにあり、`columnMenu` が無い構成で画面からソートできるのはツールパネル(`toolPanel`)の「並び替え」タブだけ(どちらも無ければ `applyState` 等の API から)。
 - **画面の入口は機能の組み合わせで決まる**: 列フィルターを画面から掛ける入口は列メニューの「フィルター…」と、適用中フィルターのチップ(ツールパネル)なので、`filtering` だけでは列フィルターを追加できない(グローバル検索欄は使える)。ツールパネルを開く入口は列メニューの項目、適用中フィルターのチップ、`openFilterManager` なので、`toolPanel` は `columnMenu` か `filtering` と一緒に使う(どちらも無いと代役になり、部品も読み込まない)。列メニューの「幅の自動調整」は `columnAutosize` があるときだけ出る。
-- **機能が無いときの扱い(注意が要るもの)**: `filtering` が無いとグローバル / 列フィルターは無効(`enableGlobalFilter` / `enableColumnFilter` を false として扱う)で、`applyState` で渡したフィルターは状態には残るが行には効かない(開発時に警告)。`serverSide` が無いと `dataSource` を無視して clientSide で動く。`labelRow` が無いとラベル行の述語に当たる行もデータ行として並ぶ。`rowGroup` の列は `grouping` が無ければグループ化せずそのまま表示。`autoHeight` が無いと行の高さは一定(`rowHeight`)。`toolPanel` があっても `filtering` が無ければフィルタータブは出ず、`openFilterManager` は何もしない(全部入りで `enableColumnFilter={false}` にしたときと同じ。開発時に警告)。
+- **機能が無いときの扱い(注意が要るもの)**: `filtering` が無いとグローバル / 列フィルターは無効(`enableGlobalFilter` / `enableColumnFilter` を false として扱う)で、`applyState` で渡したフィルターは状態には残るが行には効かない(開発時に警告。上部 / 下部バーの「Filter: …」にも数えない)。`serverSide` が無いと `dataSource` を無視して clientSide で動く。`labelRow` が無いとラベル行の述語に当たる行もデータ行として並ぶ。`rowGroup` の列は `grouping` が無ければグループ化せずそのまま表示。`autoHeight` が無いと行の高さは一定(`rowHeight`)。`toolPanel` があっても `filtering` が無ければフィルタータブは出ず、`openFilterManager` は何もしない(全部入りで `enableColumnFilter={false}` にしたときと同じ。開発時に警告)。
 - Next.js(App Router)では、`createSpreadsheetGrid` を呼ぶファイルに `'use client'` を付ける。作ったコンポーネントや `standardFeatures` は関数なので、サーバーコンポーネントから props で渡せない(クライアントコンポーネントの中で import して使う)。
-- 全部入りの `SpreadsheetGrid` と同じアプリで混ぜることはできるが、共通部分が二重に入る(`/lite` は機能ごとのファイルに分けた別のビルドのため)。どちらかの入口に揃える。
+- 全部入りの `SpreadsheetGrid` と同じアプリで混ぜることはできるが、`/lite` は機能ごとのファイルに分けた別のビルドなので共通部分を共有しない。同じページで両方を使うと共通部分が二重に入り、ページを分けても `/lite` だけのページが大きくなることがある(Next.js 16 の Turbopack の実測で、`standardFeatures` のページが約 85KB → 約 92KB)。どちらかの入口に揃える。
 
 | キー | 部品 | 中身(関係する prop) | 目安(gzip) |
 | --- | --- | --- | --- |
-| `filtering` | `filteringFeature` | グローバル / 列フィルター、フィルターのポップオーバー(遅延読み込み)、チップバー、非同期の候補(`enableGlobalFilter` / `enableColumnFilter` / `columns[].filterType` / `getFilterOptions` / `showFilterChipBar` / `onFiltersChange` / `manualFiltering` ほか) | +11.8KB(+ 遅延 6.1KB) |
-| `fillHandle` | `fillHandleFeature` | フィルハンドル(`fillHandle`) | +8.6KB |
+| `filtering` | `filteringFeature` | グローバル / 列フィルター、フィルターのポップオーバー(遅延読み込み)、チップバー、非同期の候補(`enableGlobalFilter` / `enableColumnFilter` / `columns[].filterType` / `getFilterOptions` / `showFilterChipBar` / `onFiltersChange` / `manualFiltering` ほか) | +12.2KB(+ 遅延 6.1KB) |
+| `fillHandle` | `fillHandleFeature` | フィルハンドル(`fillHandle`) | +8.7KB |
 | `columnReorder` | `columnReorderFeature` | 列ヘッダーのドラッグ並べ替え(`onColumnsChange` 指定時 / `columnDragMotion`) | +5.8KB |
-| `rowDrag` | `rowDragFeature` | 行のドラッグ並べ替え(`enableRowDrag` / `isRowDraggable` / `onRowMove` / `rowDragMotion`。ハンドルの `moveRow()` は本体にあるので無くても使える) | +3.4KB |
-| `serverSide` | `serverSideFeature` | サーバーサイド行モデル(SSRM)の読み取りと書き戻し、保存状態の表示(`dataSource` / `serverSideRefreshToken` / `showSaveStatus` ほか) | +3.2KB |
-| `columnMenu` | `columnMenuFeature` | 列メニュー(ソート・固定。幅の自動調整は `columnAutosize`、フィルターの入口は `filtering`、パネルの入口は `toolPanel` があるとき。`enableColumnMenu`) | +2.4KB |
+| `rowDrag` | `rowDragFeature` | 行のドラッグ並べ替え(`enableRowDrag` / `isRowDraggable` / `onRowMove` / `rowDragMotion`。ハンドルの `moveRow()` は本体にあるので無くても使える) | +4.5KB |
+| `serverSide` | `serverSideFeature` | サーバーサイド行モデル(SSRM)の読み取りと書き戻し、保存状態の表示(`dataSource` / `serverSideRefreshToken` / `showSaveStatus` ほか) | +4.5KB |
+| `columnMenu` | `columnMenuFeature` | 列メニュー(ソート・固定。幅の自動調整は `columnAutosize`、フィルターの入口は `filtering`、パネルの入口は `toolPanel` があるとき。`enableColumnMenu`) | +2.7KB |
 | `columnAutosize` | `columnAutosizeFeature` | 列幅の自動調整(境界のダブルクリック・列メニューの項目・`autoSizeColumns`) | +2.2KB |
 | `find` | `findFeature` | セル内検索(`find` / `onFindChange`) | +2.0KB |
 | `scrollHint` | `scrollHintFeature` | スクロール位置インジケーター(`scrollHint`) | +2.0KB |
 | `export` | `exportFeature` | CSV / TSV / `getExportData`(ハンドルの `exportCsv` / `downloadCsv` / `getExportData`) | +1.9KB |
 | `labelRow` | `labelRowFeature` | ラベル行(`labelRow`) | +1.9KB |
 | `selectionAggregates` | `selectionAggregatesFeature` | 選択範囲の集計(`showSelectionAggregates`) | +1.9KB |
+| `contextMenu` | `contextMenuFeature` | セル / 行の右クリックメニュー(`enableContextMenu` / `getContextMenuItems`) | +1.9KB |
 | `grouping` | `groupingFeature` | 行グルーピングと集計(`columns[].rowGroup` / `aggFunc`) | +1.8KB |
 | `totalRow` | `totalRowFeature` | 合計行(`totalRow`) | +1.7KB |
-| `contextMenu` | `contextMenuFeature` | セル / 行の右クリックメニュー(`enableContextMenu` / `getContextMenuItems`) | +1.6KB |
-| `toolPanel` | `toolPanelFeature` | ツールパネル(フィルター管理 / 列の表示 / 並び替え。部品は遅延読み込み) | +1.6KB(+ 遅延 5.3KB) |
-| `conditionalFormat` | `conditionalFormatFeature` | 条件付き書式とチップ(`columns[].conditionalFormat`) | +1.4KB |
-| `imeDirectInput` | `imeDirectInputFeature` | IME オンのままの直接入力(`imeDirectInput`) | +1.3KB |
+| `toolPanel` | `toolPanelFeature` | ツールパネル(フィルター管理 / 列の表示 / 並び替え。部品は遅延読み込み) | +1.6KB(+ 遅延 5.4KB) |
+| `conditionalFormat` | `conditionalFormatFeature` | 条件付き書式とチップ(`columns[].conditionalFormat`) | +1.3KB |
+| `imeDirectInput` | `imeDirectInputFeature` | IME オンのままの直接入力(`imeDirectInput`) | +1.2KB |
 | `motionExtras` | `motionExtrasFeature` | 変更のハイライト、コピー範囲の点線、十字ホバー(`highlightChanges` / `showCopyRange` / `hoverHighlight`) | +1.2KB |
-| `autoHeight` | `autoHeightFeature` | 行の高さの実測(`autoHeight` / `columns[].autoHeight`) | +1.0KB |
+| `autoHeight` | `autoHeightFeature` | 行の高さの実測(`autoHeight` / `columns[].autoHeight`) | +0.9KB |
 
-サイズ(初期読み込みの JS の gzip。esbuild で minify・React は外部化・`@tanstack/virtual-core` 込み。2026-10-25 の公開 dist で計測):
+サイズ(初期読み込みの JS の gzip。esbuild で minify・React は外部化・`@tanstack/virtual-core` 込み。2026-11-07 の dist で計測):
 
 | 構成 | 初期 JS(gzip) |
 | --- | --- |
-| 全部入り(`SpreadsheetGrid`) | 約 112KB |
-| `/lite` 機能なし | 約 60KB |
-| `/lite` + `standardFeatures` | 約 78KB |
-| `/lite` + `standardFeatures` + `serverSideFeature` | 約 82KB |
+| 全部入り(`SpreadsheetGrid`) | 約 120KB |
+| `/lite` 機能なし | 約 65KB |
+| `/lite` + `standardFeatures` | 約 84KB |
+| `/lite` + `standardFeatures` + `serverSideFeature` | 約 88KB |
 
-- 各機能の目安は「機能なし」に 1 つだけ足したときの増え方で、組み合わせると共通部分のぶん合計より少し小さくなる。Vite(Rolldown)と webpack で束ねると全体に数 KB 小さく出る(例: Vite で全部入り 約 108KB / 機能なし 約 56KB)。
+- 各機能の目安は「機能なし」に 1 つだけ足したときの増え方で、組み合わせると共通部分のぶん合計より少し小さくなる。バンドラーによって数 KB 前後する(0.61.0 の全部入りの実測で、Vite 8(Rolldown)は esbuild より約 1.5KB 小さく、Vite 7(Rollup)はほぼ同じ。Next.js 16 では webpack が Turbopack より約 4KB 大きい)。
 - 使わない機能がバンドルから落ちることは、Vite 8・webpack 5・Next.js 16(既定の Turbopack)・esbuild で確かめている(バンドラーが `package.json` の `sideEffects` と `/* @__PURE__ */` を解釈する必要がある)。
 
 ## ポップオーバー部品の遅延読み込み(`preloadGridPopups`)
@@ -1735,7 +1775,7 @@ export async function POST(req: Request) {
 | `columns` | `readonly GridColumn<T>[]` | グリッドと同じ列定義。AI に見せるのは `key` / `title` / `filterType` / 候補(`filterOptions`、select エディタの静的な選択肢)/ dateSet のプリセットだけ。 |
 | `ask` | `GridAsk` = `(request, { signal }) => Promise<unknown> \| unknown` | AI に聞く関数。`request` は `{ system, prompt, schema, text }`(`text` は利用者の文そのもの)。答えはオブジェクトか JSON の文字列。`signal` は「止める」/ Esc / アンマウントで abort される(聞いている間の次の頼みは受け付けない)。 |
 | `examples` | `readonly string[]` | 入力欄の下に出す例の文。押すとその文で聞く。 |
-| `columnHints` | `Record<string, string \| false>` | 列ごとの補足(単位や値の書き方。例 `{ stock: '個', price: '円・税抜' }`)。`false` でその列を AI に見せない(その列の条件も変えない)。 |
+| `columnHints` | `Record<string, string \| false>` | 列ごとの補足(単位や値の書き方。例 `{ stock: '個', price: '円・税抜' }`)。`false` でその列を AI に見せない(その列の条件も変えない)。列に無いキー(打ち間違い)は効かないので、開発時に console へ警告する。 |
 | `allowFilter` | `boolean` | 列の条件(フィルター)を変えてよいか。既定 `true`(グリッドの `enableColumnFilter` を `false` にしているときは `false` にする。表の見出しから外せない条件を入れないため)。 |
 | `allowSort` | `boolean` | 並びを変えてよいか。既定 `true`(グリッドの `enableSorting` を `false` にしているときは `false` にする)。 |
 | `allowSearch` | `boolean` | グローバル検索の文字を変えてよいか。既定 `true`(`enableGlobalFilter` を `false` にしているときは `false` にする)。 |
@@ -1771,8 +1811,8 @@ export async function POST(req: Request) {
 
 - **送るもの**: 列の `key` / `title` / 使える条件 / 列定義にある候補(最大 50 件を並べ、残りは件数だけ)/ `columnHints` / 今の条件(AI が変えられる列の分。値の選択は 1 列 500 件まで)/ 今日の日付 / 利用者の文。**行のデータは送らない**(列定義に候補が無い列の「値の選択」は、AI が文から書いた値をそのまま使う)。
 - **答えはすべて検査する**: 表への指示に見えない答え(サーバーのエラーの `{ error }` など。`mode` も `filters` も無い答え)は表を変えずに知らせる(`mode` があって `filters` だけが無い答えは条件なしとして読む)。無い列・その列で使えない条件・候補に無い値・数や日付として読めない値・長すぎる値(条件と検索の文字は 200 字、選ぶ値は 1 つ 1000 字・1 列 1000 件まで。切り詰めずに捨てる)は捨て、何を捨てたかを「使えなかった部分」に日本語で出す(20 件まで)。列は `key` で引き、無ければ見出し(同じ見出しが 1 列だけのとき)で引く。候補は値・表示名のどちらで答えても値へ直す(select の値 `''` は「すべて」と同じなので選ばない)。数は全角や 3 桁区切りも読み、日付は `YYYY-MM-DD` へ揃える。範囲の逆転は入れ替える。並びの向きは大文字や `ascending` / `descending` も読む(refine で書いてきた並びが 1 つも使えないときは今の並びのまま)。形の読めない条件・列の指定・検索の文字も、件数を「使えなかった部分」に出す。AI が「できなかった」と書いてきた文(`unsupported`)は「AI から: …」として出す。列が 100 を超える表では、`schema` で列を enum にしない(enum の数に上限がある AI があるため。無い列は検査で捨てる)。
-- **反映と元に戻す**: 答えはすぐ反映し、反映した状態の条件をチップ(列フィルター → 並び → 検索 → 隠した列)で見せる。チップの × でその条件だけ外せる。「元に戻す」で頼む前の見え方(フィルター・並び・検索・隠した列)へ戻す(列幅・列の順番・固定はそのまま)。反映したあとに表を手で変えたときは、元に戻さず「表の条件が変わったので…」と知らせる(列の表示を AI に任せていないときは、手で隠した列は比べず、元に戻すでも変えない)。列の表示が変わらないときは `applyState` に `columns` を渡さない(列定義を `onColumnsChange` で書き直さない)。
-- **入力**: Enter で送る。日本語の変換を確定する Enter では送らない。考えている間は「止める」か Esc で取り消せる(届いた答えは捨てる)。Esc はフォーカスがバーの中か、どこにも無いときに効く(表やほかの部品の Esc は取らない。日本語の変換中の Esc では止めない。バーを shadow root の中に置いても効く)。「聞く」「止める」のダブルクリックの 2 回目は無視する(止めたつもりで送り直したり、送ってすぐ止めたりしない)。考えている間、例のボタンは `aria-disabled`。失敗したときは表を変えずに「もう一度」を出す(失敗した文を送り直す)。表(`grid` の ref)がまだ無いときは知らせる。聞いている間に props(列・`allow*`・`onApply` など)が変わったら、答えは変わったあとの設定で読む。押したボタン(チップの × / 元に戻す / 閉じる)が消えたら、フォーカスは次のチップか入力欄へ移す。チップと例は全文を `title` に持つ(狭い幅では省略表示)。
+- **反映と元に戻す**: 答えはすぐ反映し、反映した状態の条件をチップ(列フィルター → 並び → 検索 → 隠した列)で見せる。チップの select / set の値は表示名(`filterOptions` / select エディタの選択肢。無ければ値のまま)で、数の条件は列の `valueFormatter` で書く(グリッドのチップバー・フィルターの管理と同じ)。チップの × でその条件だけ外せる。「元に戻す」で頼む前の見え方(フィルター・並び・検索・隠した列)へ戻す(列幅・列の順番・固定はそのまま)。反映したあとに表を手で変えたときは(チップバーの ×・グローバル検索・`applyState` など。クリック / キー操作の後と 1 秒ごとに `getState()` で確かめる)、チップと「元に戻す」を下げて「表の条件が変わったので…」と知らせる(押してから知らせるのではない。列の表示を AI に任せていないときは、手で隠した列は比べず、元に戻すでも変えない)。列の表示が変わらないときは `applyState` に `columns` を渡さない(列定義を `onColumnsChange` で書き直さない)。
+- **入力**: Enter で送る。日本語の変換を確定する Enter では送らない。答えを読めたら入力欄を空にする(考えている間に書き換えていれば残す。失敗したときは直して送れるよう残す)。考えている間は「止める」か Esc で取り消せる(届いた答えは捨てる)。Esc はフォーカスがバーの中か、どこにも無いときに効く(表やほかの部品の Esc は取らない。日本語の変換中の Esc では止めない。バーを shadow root の中に置いても効く)。「聞く」「止める」のダブルクリックの 2 回目は無視する(止めたつもりで送り直したり、送ってすぐ止めたりしない)。考えている間、例のボタンは `aria-disabled`。失敗したときは表を変えずに「もう一度」を出す(失敗した文を送り直す)。表(`grid` の ref)がまだ無いときは知らせる。聞いている間に props(列・`allow*`・`onApply` など)が変わったら、答えは変わったあとの設定で読む。押したボタン(チップの × / 元に戻す / 閉じる)が消えたら、フォーカスは次のチップか入力欄へ移す。チップと例は全文を `title` に持つ(狭い幅では省略表示)。
 - **見た目**: 色はグリッドと同じトークン(`--ssg-*`)で決まる。バーはグリッドの外にあるので、トークンを `.ssg-root { … }` で上書きしているときは `.ssg-root, .ssg-ask { … }` のように `.ssg-ask` も並べる。`themes/*.css` はバーにも効く。クラスは `.ssg-ask` / `.ssg-ask-form` / `.ssg-ask-input` / `.ssg-ask-examples` / `.ssg-ask-chips` / `.ssg-ask-chip` / `.ssg-ask-note`(公開契約。ほかの `ssg-ask-*` は内部)。
 
 ### 自前の見た目で作る(`useGridAsk`)と core の関数
@@ -1783,8 +1823,16 @@ export async function POST(req: Request) {
 | --- | --- |
 | `status` | `'idle' \| 'asking'` |
 | `error` / `notice` | 失敗の文 / 元に戻せなかったときなどの知らせ(無ければ `null`) |
-| `session` | 最後の頼みの結果 `{ phase: 'applied' \| 'unchanged' \| 'undone', text, items, dropped, unsupported }`(`items` はチップ `{ id, label, text }[]`) |
-| `submit(text)` / `cancel()` / `undo()` / `remove(id)` / `dismiss()` | 聞いて反映する / 止める / 元に戻す / チップを外す / 結果を閉じる |
+| `session` | 最後の頼みの結果 `{ phase: 'applied' \| 'unchanged' \| 'undone' \| 'changed', text, items, dropped, unsupported }`(`items` はチップ `{ id, label, text }[]`。`'changed'` は反映したあと表が手で変わったとき。チップは古いので外す・元に戻すはできず、`notice` に知らせが入る) |
+| `submit(text)` / `cancel()` / `undo()` / `remove(id)` / `dismiss()` | 聞いて反映する / 止める / 元に戻す / チップを外す / 結果を閉じる。`submit` は答えを読めたら(反映した / 変える条件が無かった)`true`、失敗・止めた・聞かなかったときは `false` で終わる(送った後に入力欄を空にするかの判断に) |
+
+自分の UI を作るときは、`GridAskBar` がしている次のことを自分で書く:
+
+- **二重の送信**: 聞いている間の `submit` は何もせず `false` を返すので、二重には送られない。「聞く」と「止める」を同じボタンにするときは、ダブルクリックの 2 回目(`event.detail > 1`)を無視する(止めた直後に同じ文を送り直さないため)。
+- **IME**: 変換を確定する Enter で送らない(`event.nativeEvent.isComposing` か `event.keyCode === 229` の Enter は `preventDefault()`。Safari は確定の keydown が `isComposing: false` / `keyCode: 229` で届く)。
+- **Esc**: 聞いている間の `Esc` で `cancel()` する(バーは、フォーカスがバーの中にあるか、どこにも無いときだけ止める。変換中の `Esc` は除く)。
+- **もう一度**: 失敗したとき(`error`)に送り直すなら、送った文を自分で持っておいて `submit` する(`error` は失敗の文だけで、送った文は持たない)。
+- **入力欄**: 答えを読めたら(`submit` が `true`)入力欄を空にする。ただし考えている間に書き換えていたら残す(送った文と今の入力欄が同じときだけ空にする。バーと同じ)。失敗したときは残す(直して送れるように)。
 
 頼みの組み立てと答えの検査は React に依存しない core の関数(`@ishibashi0112/spreadsheet-grid-core` の入口と、`/ai` から再エクスポート)。サーバー側で頼みを組み立て直したり、ほかのフレームワークで使える。
 
@@ -1794,7 +1842,22 @@ export async function POST(req: Request) {
 | `readGridAskAnswer(answer, state, options): GridAskResult` | 答えを検査して `{ ok: true, state, changed, dropped, unsupported }`(`state` は `applyState` に渡せる状態)か `{ ok: false, message }` を返す。 |
 | `gridAskSystemPrompt` | `system` の文(いつも同じ)。 |
 | `describeGridAskView(state, options)` / `removeGridAskItem(state, id)` | 状態のチップの一覧 / チップ 1 件を外した状態。 |
+| `isGridAskColumnsChanged(a, b)` / `isSameGridAskView(a, b)` | 隠した列が 2 つの状態で違うか / 見え方(フィルター・並び・検索・隠した列)が同じか(列幅・列の順番・固定は見ない)。反映するときと、反映したあと表が手で変わったかの判定に使う(下の例)。 |
 | 型 `GridAskAnswer` / `GridAskFilter` / `GridAskSort` / `GridAskOp` | 答えの形(`mode: 'replace' \| 'refine'`、`filters: { column, op, value, values, to }[]`、`sort`、`search`、`hide`、`show`、`unsupported`)。 |
+
+core の関数で反映するときは、`readGridAskAnswer` の `state` をそのまま `applyState` に渡さず、隠した列が変わらないときは `columns` を外して渡す(`state.columns` は答えを読んだときの `getState()` のものなので、そのまま渡すと列定義を `onColumnsChange` で書き直し、聞いている間に手で隠した列が戻ることがある。`applyState` は渡さなかった部分を今のまま残す)。
+
+```ts
+import { createGridAskRequest, readGridAskAnswer, isGridAskColumnsChanged } from '@ishibashi0112/spreadsheet-grid/ai';
+
+const controller = new AbortController(); // 止めるときは controller.abort()
+const answer = await ask(createGridAskRequest(text, grid.getState(), options), { signal: controller.signal });
+const now = grid.getState(); // 答えが届いた時点の状態で読む
+const result = readGridAskAnswer(answer, now, options);
+if (result.ok && result.changed) {
+  grid.applyState(isGridAskColumnsChanged(now, result.state) ? result.state : { ...result.state, columns: undefined });
+}
+```
 
 ## テスト支援(`/testing` サブパス)
 
@@ -1990,6 +2053,7 @@ function Grid(props: SpreadsheetGridProps<Row>) {
 
 見た目を変える主な手段。`style.css` が `.ssg-root` と各ポータル(ポップオーバー / メニュー / ドラッグのゴースト / ツールチップ)と `GridAskBar` の `.ssg-ask` に `:where`(特異度 0)で定義しているため、利用側の上書きは読み込み順に関係なく既定値・ダークのプリセット(`.ssg-theme-dark`)・`themes/*.css` に勝つ。
 
+- ポータル(ポップオーバー / ツールチップ / ドラッグのゴースト)は `document.body` 直下にあるので、`className` で付けたクラスに書いた上書きは届かない。同じクラスを `classNames` の `popover` / `tooltip` / `dragGhost` にも渡す(または `:root` に書く)。
 - 下の表の名前が公開契約で、消す・改名する・意味を変えるのは破壊的変更。既定値(色・寸法)の調整は minor で行うことがある(CHANGELOG に書く)。
 - 表に無い `--ssg-*`(要素ごとに内部で使う変数や、`themes/*.css` の中継の `--ssg-ds-*`)は内部。
 - `style.css` にトークンを足したらこの表にも足す(`packages/react/src/cssContract.test.ts` が検査する)。

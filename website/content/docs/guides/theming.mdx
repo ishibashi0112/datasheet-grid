@@ -25,7 +25,7 @@ description: ダークテーマ(light / dark / auto)、密度(density)、CSS ト
 <SpreadsheetGrid density="compact" ... />  // 'standard'(既定) | 'compact' | 'comfortable'
 ```
 
-行高(40 / 32 / 48px)・セル padding・アイコン寸法・文字の相対サイズが一括で切り替わります。`rowHeight` / `headerHeight` の明示指定はプリセットより優先されます。
+行の高さ(standard / compact / comfortable の順に 36 / 28 / 44px。見出しの行は 40 / 32 / 48px)・セル padding・アイコン寸法・文字の相対サイズが一括で切り替わります。`rowHeight` / `headerHeight` の明示指定はプリセットより優先されます。
 
 ## CSS トークンによるカスタマイズ
 
@@ -37,7 +37,7 @@ description: ダークテーマ(light / dark / auto)、密度(density)、CSS ト
   --ssg-header-bg: #f8fafc;       /* ヘッダー背景 */
   --ssg-invalid: #dc2626;         /* バリデーション NG の色 */
   --ssg-note-indicator: #f59e0b;  /* セルのメモ(cellNote)の印 */
-  --ssg-cf-bar: rgba(52, 97, 201, 0.26); /* 条件付き書式のデータバー(--ssg-cf-seq-* / --ssg-cf-div-* / --ssg-cf-good 等も) */
+  --ssg-cf-bar: rgba(124, 58, 237, 0.26); /* 条件付き書式のデータバー。既定は固定の青でアクセントに追従しない(--ssg-cf-seq-* / --ssg-cf-div-* / --ssg-cf-good 等も) */
   --ssg-tooltip-bg: #1e293b;      /* ツールチップ背景 */
 }
 ```
@@ -45,6 +45,18 @@ description: ダークテーマ(light / dark / auto)、密度(density)、CSS ト
 ```tsx
 <SpreadsheetGrid className="my-grid" ... />
 ```
+
+ポップオーバー(列メニュー / フィルター / コンテキストメニュー / select の候補 / ツールパネル)・ツールチップ・ドラッグのゴーストは `document.body` 直下に描くため、`.my-grid` の中ではありません。クラスで上書きしたトークンをそこにも効かせるには、同じクラスを `classNames` の `popover` / `tooltip` / `dragGhost` にも渡します(ページ全体で同じでよいなら `:root` に書く方法もあります)。
+
+```tsx
+<SpreadsheetGrid
+  className="my-grid"
+  classNames={{ popover: 'my-grid', tooltip: 'my-grid', dragGhost: 'my-grid' }}
+  ...
+/>
+```
+
+ツールチップは body 直下の 1 つを全グリッドで使い回すため、複数のグリッドが別の `tooltip` を渡すと最後に更新したグリッドの値になります。
 
 ## テーマビルダー
 

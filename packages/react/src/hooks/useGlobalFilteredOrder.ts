@@ -23,6 +23,8 @@ type UseGlobalFilteredOrderArgs<T> = {
   baseOrder: RowOrder;
   columns: GridColumn<T>[];
   globalText: string;
+  // 追加(dogfood DF-18): true のときは文字を遅らせずに評価します(applyState で入れた検索。並べ替えだけの画面を挟まない)。
+  urgent?: boolean;
   enabled: boolean;
 };
 
@@ -31,9 +33,11 @@ export const useGlobalFilteredOrder = <T,>({
   baseOrder,
   columns,
   globalText,
+  urgent = false,
   enabled,
 }: UseGlobalFilteredOrderArgs<T>): GlobalFilteredOrderResult => {
-  const deferredText = useDeferredValue(globalText);
+  const laggingText = useDeferredValue(globalText);
+  const deferredText = urgent ? globalText : laggingText;
   const needle = deferredText.trim().toLowerCase();
   const key = useMemo(
     () => ({ rows, baseOrder, columns, needle }),

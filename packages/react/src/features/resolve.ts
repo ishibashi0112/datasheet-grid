@@ -83,6 +83,7 @@ const INERT_COLUMN_MENU = {
   openColumnMenuFromButton: () => {},
   openColumnMenuFromButtonClick: () => {},
   openColumnMenuFromContextMenu: () => {},
+  openColumnMenuFromKeyboard: () => {},
   closeColumnMenu: () => {},
 };
 
@@ -200,6 +201,7 @@ const useInertFilterOrder: GridShellFeatures['filtering']['useFilterOrder'] = (a
     globalFilterStatus: 'idle',
     globalFilterProgress: 1,
     relativeDateKey: '',
+    available: false,
   };
 };
 

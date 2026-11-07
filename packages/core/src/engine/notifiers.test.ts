@@ -228,6 +228,71 @@ describe('セル操作の通知(G-1)', () => {
       expect(onActiveCellChange).toHaveBeenLastCalledWith(null);
     });
 
+    // 追加(dogfood DF-15): 編集中に行の並びが変わったら、editController が付いていく前の途中の位置(同じ位置の別の行)は
+    //   通知せず、付いていった後の 1 回だけ。編集中の行が消えたときは、同じ位置の行を 1 回だけ通知する。
+    it('編集中に行が動いても、同じ位置の別の行を通知せず、付いていった後の 1 回だけ通知する', () => {
+      const notifier = createActiveCellNotifier<Row>();
+      const onActiveCellChange = vi.fn();
+      const editing = { row: 0, col: 0 };
+      notifier.update({ activeCell: editing, editingCell: editing, rowModel: makeModel([0, 1]), orderedColumns: columns, onActiveCellChange });
+      // 外から並びが変わった描画(アクティブセルはまだ元の位置 = 別の行 'b' を指す)
+      const moved = makeModel([1, 0]);
+      notifier.update({ activeCell: editing, editingCell: editing, rowModel: moved, orderedColumns: columns, onActiveCellChange });
+      expect(onActiveCellChange).not.toHaveBeenCalled();
+      // editController が付いていった描画(startEdit で編集中のセルとアクティブセルが 'a' の新しい位置へ)
+      const followed = { row: 1, col: 0 };
+      notifier.update({ activeCell: followed, editingCell: followed, rowModel: moved, orderedColumns: columns, onActiveCellChange });
+      expect(onActiveCellChange).toHaveBeenCalledTimes(1);
+      expect(onActiveCellChange).toHaveBeenLastCalledWith(expect.objectContaining({ rowKey: 'a', rowIndex: 1 }));
+    });
+
+    it('編集中の行が消えたら、同じ位置の行を 1 回だけ通知する。編集していなければ並びの変化をそのまま通知する', () => {
+      const notifier = createActiveCellNotifier<Row>();
+      const onActiveCellChange = vi.fn();
+      const editing = { row: 0, col: 0 };
+      notifier.update({ activeCell: editing, editingCell: editing, rowModel: makeModel([0, 1]), orderedColumns: columns, onActiveCellChange });
+      const removed = makeModel([1]);
+      notifier.update({ activeCell: editing, editingCell: editing, rowModel: removed, orderedColumns: columns, onActiveCellChange });
+      expect(onActiveCellChange).toHaveBeenCalledTimes(1);
+      expect(onActiveCellChange).toHaveBeenLastCalledWith(expect.objectContaining({ rowKey: 'b' }));
+      // editController が編集を終えた描画(アクティブセルは同じ参照)では呼ばない
+      notifier.update({ activeCell: editing, editingCell: null, rowModel: removed, orderedColumns: columns, onActiveCellChange });
+      expect(onActiveCellChange).toHaveBeenCalledTimes(1);
+
+      // 編集していない(アクティブセルだけ)なら、同じ位置の別の行を通知する(従来どおり)
+      const other = createActiveCellNotifier<Row>();
+      const onOther = vi.fn();
+      const active = { row: 0, col: 0 };
+      other.update({ activeCell: active, editingCell: null, rowModel: makeModel([0, 1]), orderedColumns: columns, onActiveCellChange: onOther });
+      other.update({ activeCell: active, editingCell: null, rowModel: makeModel([1, 0]), orderedColumns: columns, onActiveCellChange: onOther });
+      expect(onOther).toHaveBeenLastCalledWith(expect.objectContaining({ rowKey: 'b' }));
+      // 編集中でもアクティブセルが編集中のセルと違えば、従来どおり通知する
+      const third = createActiveCellNotifier<Row>();
+      const onThird = vi.fn();
+      third.update({ activeCell: active, editingCell: { row: 1, col: 0 }, rowModel: makeModel([0, 1]), orderedColumns: columns, onActiveCellChange: onThird });
+      third.update({ activeCell: active, editingCell: { row: 1, col: 0 }, rowModel: makeModel([1, 0]), orderedColumns: columns, onActiveCellChange: onThird });
+      expect(onThird).toHaveBeenLastCalledWith(expect.objectContaining({ rowKey: 'b' }));
+    });
+
+    // 追加(別視点のレビュー): 編集中の行が同じ位置のままの新しい rowModel(SSRM のブロックの到着など)では、全行を探さない。
+    it('編集中に rowModel が変わっても、編集中の行が同じ位置なら全行を走査しない', () => {
+      const notifier = createActiveCellNotifier<Row>();
+      const onActiveCellChange = vi.fn();
+      // 10 万行の 9 万行目を編集中。
+      const makeBig = () => {
+        const getRow = vi.fn((i: number) => ({ id: `k${i}`, name: `n${i}` }) as unknown as Row);
+        const getRowKey = vi.fn((i: number) => `k${i}`);
+        const model: RowModel<Row> = { getRowCount: () => 100_000, getRow, getSourceIndex: (i) => i, getRowKey };
+        return { model, getRow, getRowKey };
+      };
+      const editing = { row: 90_000, col: 0 };
+      notifier.update({ activeCell: editing, editingCell: editing, rowModel: makeBig().model, orderedColumns: columns, onActiveCellChange });
+      const next = makeBig();
+      notifier.update({ activeCell: editing, editingCell: editing, rowModel: next.model, orderedColumns: columns, onActiveCellChange });
+      expect(onActiveCellChange).not.toHaveBeenCalled();
+      expect(next.getRow.mock.calls.length + next.getRowKey.mock.calls.length).toBeLessThan(10);
+    });
+
     it('コールバック未指定のあいだも追跡し、後から付いても過去の変化は通知しない', () => {
       const notifier = createActiveCellNotifier<Row>();
       const rowModel = makeModel([0, 1]);

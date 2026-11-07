@@ -101,10 +101,13 @@ export const decideCellWrite = <T,>(
 // rows × 検査のある列の全走査です(handle.getInvalidCells 用のオンデマンド計算)。
 //   列は宣言順(非表示列も対象 — 保存前チェックでは見えない列の不正値も検出したい)。
 //   変更(数値の検査): validate 指定列に加え、number エディタの min / max / integer の列も対象です。
+// 変更(dogfood DF-03): isLabelRow(labelRow の述語)を渡すとラベル行を検査しません(ラベル行はセルを持たず、
+//   画面にも印を出さないため。渡していなかったので、見出し行の空の値が「必須」の検査に掛かって返っていた)。
 export const scanInvalidCells = <T,>(
   rows: T[],
   columns: GridColumn<T>[],
   getRowKey: (row: T, sourceRowIndex: number) => GridRowKey | undefined,
+  isLabelRow?: (row: T, sourceRowIndex: number) => boolean,
 ): GridInvalidCell[] => {
   const validateColumns = columns.filter(hasCellValidation);
   if (validateColumns.length === 0) {
@@ -112,6 +115,9 @@ export const scanInvalidCells = <T,>(
   }
   const invalidCells: GridInvalidCell[] = [];
   rows.forEach((row, sourceRowIndex) => {
+    if (isLabelRow?.(row, sourceRowIndex)) {
+      return;
+    }
     for (const column of validateColumns) {
       const message = getInvalidMessage(
         column,

@@ -118,4 +118,21 @@ describe('ColumnChooserPanel(全選択トグル 13-B2-4)', () => {
     fireEvent.click(hiddenToggle);
     expect(props.onToggleColumnVisibility).toHaveBeenCalledWith('col1', true);
   });
+
+  // 追加(別視点のレビュー): グループ元列(grouped)は列として出ていないので、表示中の数にも全表示の判定にも数えない。
+  it('グループ元列は表示中の数に数えない(最後の 1 列のガードと全表示の判定)', () => {
+    const items = makeItems([true, true]);
+    items[0] = { ...items[0], grouped: true };
+    const props = makeProps(items);
+    render(<ColumnChooserPanel {...props} />);
+    // 表に出ている列は col1 だけなので、col1 は外せない
+    const onlyVisibleToggle = screen.getByText('列1').closest('button') as HTMLButtonElement;
+    expect(onlyVisibleToggle.disabled).toBe(true);
+    cleanup();
+    // グループ元列が非表示でも、ほかが全部表示なら全表示
+    const hiddenGrouped = makeItems([false, true, true]);
+    hiddenGrouped[0] = { ...hiddenGrouped[0], grouped: true };
+    render(<ColumnChooserPanel {...makeProps(hiddenGrouped)} />);
+    expect(screen.getByRole('button', { name: 'すべての列を非表示(先頭の列は残ります)' })).toBeTruthy();
+  });
 });

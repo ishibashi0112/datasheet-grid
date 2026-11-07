@@ -1044,7 +1044,9 @@ describe('useServerSideRowModel', () => {
       expect(result.current.writeError).toEqual({ failedRowCount: 1 });
     });
 
-    it('refresh をまたいだ決着は無視される(epoch ガード)', async () => {
+    // 変更(dogfood DF-07): refresh は保存中の書き込みを捨てず、決着してから取り直します。決着の行(位置が変わりうる)は
+    //   キャッシュへ書かず、取り直した行(サーバーの正本)を表示します。
+    it('refresh をまたいだ書き込みは決着を待ってから取り直し、決着の行はキャッシュへ書かない', async () => {
       const writable = createWritable({ totalRowCount: 100 });
       const onWriteError = vi.fn();
       const { result } = renderHook(() =>
@@ -1060,18 +1062,22 @@ describe('useServerSideRowModel', () => {
       act(() => {
         result.current.applyCellEdits([{ viewIndex: 5, column, value: 500 }]);
       });
-      // refresh で overlay 破棄 + epoch 前進(サーバー正本の取り直し)。
+      const callsBeforeRefresh = writable.getRowsCalls.length;
+      // refresh: 楽観値は外し(未ロード = スケルトン)、保存の決着まで取得を待つ。
       act(() => {
         result.current.refresh();
       });
       await flush();
-      expect(result.current.rowModel.getRow(5)).toEqual({ v: 5 });
+      expect(writable.getRowsCalls.length).toBe(callsBeforeRefresh);
+      expect(result.current.rowModel.getRow(5)).toBeUndefined();
 
-      // 旧世代の成功到着(rows つき)はキャッシュへ書かれない。
+      // 決着(rows つき)の後に取り直す。決着の行はキャッシュへ書かれず、取り直した行を表示する。
       await act(async () => {
         writable.deferred[0].resolve({ rows: [{ v: 999 }] });
       });
       await flush();
+      await flush();
+      expect(writable.getRowsCalls.length).toBeGreaterThan(callsBeforeRefresh);
       expect(result.current.rowModel.getRow(5)).toEqual({ v: 5 });
       expect(result.current.writeError).toBeNull();
       expect(onWriteError).not.toHaveBeenCalled();

@@ -51,6 +51,19 @@ describe('NumberCellEditor', () => {
     expect(input.value).toBe('10');
   });
 
+  // 追加(dogfood DF-13): 1 行の入力欄では PageUp / PageDown の既定の動作(グリッドのスクロール)を止め、Home / End はカーソルの
+  //   移動なので止めない。
+  it('PageUp / PageDown の既定の動作を止め、Home / End は止めない', () => {
+    const { onCommit, input } = renderNumberEditor();
+    // fireEvent は既定の動作が止められると false を返します。
+    const press = (key: string) => !fireEvent.keyDown(input, { key });
+    expect(press('PageUp')).toBe(true);
+    expect(press('PageDown')).toBe(true);
+    expect(press('Home')).toBe(false);
+    expect(press('End')).toBe(false);
+    expect(onCommit).not.toHaveBeenCalled();
+  });
+
   it('Enter でドラフト文字列を down 方向 commit する(パースは書き込み側の責務)', () => {
     const { onCommit, input } = renderNumberEditor();
     fireEvent.change(input, { target: { value: '42' } });

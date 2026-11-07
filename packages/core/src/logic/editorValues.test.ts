@@ -136,6 +136,20 @@ describe('resolveCellParser', () => {
     expect(parser('2026/07/14', makeRow())).toBe('2026-07-14');
     expect(parser('日付でない', makeRow())).toBe('日付でない');
   });
+
+  // 追加(dogfood DF-19): 数字だけの文字列(Excel のシリアル値など)は日付にしない(生の文字列のまま = 検査の印が拾う)。
+  it('editor:date の既定パーサ: 数字だけの文字列と、年が 4 桁にならない文字列は生のまま', () => {
+    const column: GridColumn<Row> = { key: 'name', width: 120, editor: { type: 'date' } };
+    const parser = resolveCellParser(column);
+    expect(parser('45678', makeRow())).toBe('45678');
+    expect(parser('5', makeRow())).toBe('5');
+    expect(parser(' 2026 ', makeRow())).toBe(' 2026 ');
+    expect(parser('45678/1/2', makeRow())).toBe('45678/1/2');
+    expect(parser('+045678-01-01', makeRow())).toBe('+045678-01-01');
+    // これまでどおり読めるもの
+    expect(parser('2026/7/4', makeRow())).toBe('2026-07-04');
+    expect(parser('Jul 14 2026', makeRow())).toBe('2026-07-14');
+  });
 });
 
 describe('toDateInputValue', () => {

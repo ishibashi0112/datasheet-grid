@@ -155,6 +155,34 @@ describe('getGridSelectionStats (cell / row / col 分岐)', () => {
     });
   });
 
+  // 追加(アプリの再確認): 範囲の中の合成列(展開トグル列・行ドラッグのハンドル列)は列数とセル数に数えない
+  //   (Ctrl+A で「Cells 450 / Cols 9」のように多く出ていた。正しくは 350 / 7)。
+  it('cell / col selection do not count synthetic columns inside the range', () => {
+    const columns = [makeCol(ROW_DRAG_HANDLE_COLUMN_KEY), makeCol(DETAIL_TOGGLE_COLUMN_KEY), ...makeCols(3)];
+    expect(
+      getGridSelectionStats(
+        {
+          selection: { type: 'cell', range: { start: { row: 0, col: 0 }, end: { row: 49, col: 4 } } },
+          visibleColumns: columns,
+        },
+        50,
+      ),
+    ).toEqual({ selectedCellCount: 150, selectedRowCount: 50, selectedColumnCount: 3 });
+    expect(
+      getGridSelectionStats({ selection: { type: 'col', startCol: 1, endCol: 3 }, visibleColumns: columns }, 50),
+    ).toEqual({ selectedCellCount: 100, selectedRowCount: 50, selectedColumnCount: 2 });
+    // 合成列だけの範囲は 0
+    expect(
+      getGridSelectionStats(
+        {
+          selection: { type: 'cell', range: { start: { row: 0, col: 1 }, end: { row: 1, col: 1 } } },
+          visibleColumns: columns,
+        },
+        50,
+      ),
+    ).toEqual({ selectedCellCount: 0, selectedRowCount: 2, selectedColumnCount: 0 });
+  });
+
   it('formatGridSelectionStatsLabel renders cells / rows', () => {
     expect(
       formatGridSelectionStatsLabel(

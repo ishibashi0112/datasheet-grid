@@ -36,7 +36,15 @@ type CreateEditorKeyDownHandlerArgs = {
   onRejected?: (message: string) => void;
   // 追加(enter-move ②): Enter 確定後の移動先です(未指定 = 'down' で従来どおり)。
   enterMove?: EditorEnterMove;
+  // 追加(dogfood DF-13): Home / End もブラウザの既定の動作(グリッドのスクロール)を止めます。文字の入力欄(text / number)では
+  //   Home / End はカーソルの移動なので止めず、日付の入力欄(type="date")だけで true にします。
+  blockHomeEnd?: boolean;
 };
+
+// 追加(dogfood DF-13): 1 行の入力欄では PageUp / PageDown(と日付の Home / End)は入力欄の操作にならず、ブラウザが
+//   グリッドをスクロールしてエディタが画面の外へ出ていました。編集中はこれらのキーでスクロールしません(編集は続く)。
+export const isEditorScrollKey = (key: string, blockHomeEnd: boolean): boolean =>
+  key === 'PageUp' || key === 'PageDown' || (blockHomeEnd && (key === 'Home' || key === 'End'));
 
 export const createEditorKeyDownHandler =
   ({
@@ -45,9 +53,15 @@ export const createEditorKeyDownHandler =
     onCancel,
     onRejected,
     enterMove,
+    blockHomeEnd = false,
   }: CreateEditorKeyDownHandlerArgs) =>
   (event: KeyboardEvent<HTMLInputElement>): void => {
     if (isImeComposingKeyEvent(event.nativeEvent)) {
+      return;
+    }
+
+    if (isEditorScrollKey(event.key, blockHomeEnd)) {
+      event.preventDefault();
       return;
     }
 

@@ -30,10 +30,14 @@ import {
   type ServerSidePendingChange,
 } from '../logic/serverSideEdits';
 import { createValueStore } from '../logic/valueStore';
+import { setCellValue } from '../utils/permissions';
 
 const DEFAULT_BLOCK_SIZE = 100;
 const DEFAULT_MAX_CACHED_BLOCKS = 64;
 const DEFAULT_DEBOUNCE_MS = 120;
+// 追加(dogfood DF-07): 保存中に取り直す(refresh / クエリ変化)とき、保存の決着を待つ上限(ms)。これを過ぎたら待たずに取り直します
+//   (保存が返ってこないときに表がスケルトンのまま残らないように)。
+export const SERVER_SIDE_WRITE_WAIT_MS = 3000;
 
 export type ServerSideRowModelArgs<T> = {
   dataSource?: ServerSideDataSource<T>;
@@ -90,7 +94,9 @@ export const createServerSideRowModel = <T,>(
   const blockSize = initial.dataSource?.blockSize ?? DEFAULT_BLOCK_SIZE;
   const maxBlocks = initial.dataSource?.maxCachedBlocks ?? DEFAULT_MAX_CACHED_BLOCKS;
   const cache = createServerSideRowCache<T>({ blockSize, maxBlocks });
-  const pendingEdits = createServerSidePendingEdits<T>();
+  // 変更(dogfood DF-07): 取り直し(refresh / クエリ変化)のたびに作り直します。保存中の書き込みは作ったときのものを持ち続け、
+  //   決着の記録(どのセルの印を ok / failed にするか)だけに使います(行の位置は取り直しで意味が変わるので、表示には使わない)。
+  let pendingEdits = createServerSidePendingEdits<T>();
 
   let rowCount = initial.dataSource?.initialRowCount ?? 0;
   let loadError: ServerSideLoadErrorState | null = null;
@@ -105,6 +111,15 @@ export const createServerSideRowModel = <T,>(
   let timer: ReturnType<typeof setTimeout> | null = null;
   let latestRange = { start: 0, end: 0 };
   let writeEpoch = 0;
+  // 追加(dogfood DF-07): unmount(dispose)の世代。dispose の後に決着した書き込みは印を外すだけにします。
+  let disposeEpoch = 0;
+  // 追加(dogfood DF-07): 保存中の書き込み(updateRows の決着待ち)。取り直しはこれが決着するまで待ちます。
+  const inFlightWrites = new Set<number>();
+  let nextWriteToken = 1;
+  // 取り直しを待っている書き込みと、待ち終わったら行う取り直し。null なら待っていない。
+  let waitingWrites: Set<number> | null = null;
+  let afterWrites: (() => void) | null = null;
+  let writeWaitTimer: ReturnType<typeof setTimeout> | null = null;
   let hasInitialized = false;
   let prevQueryKey: string | undefined;
   let prevRefreshToken = initial.refreshToken;
@@ -150,8 +165,51 @@ export const createServerSideRowModel = <T,>(
 
   const resetWriteState = () => {
     writeEpoch += 1;
-    pendingEdits.clear();
+    // 変更(dogfood DF-07): 保存中の書き込みは捨てずに決着を待ちます(古い位置の楽観行は表示しないので、新しく作り直す)。
+    pendingEdits = createServerSidePendingEdits<T>();
     writeError = null;
+  };
+
+  // 追加(dogfood DF-07): 保存中に取り直すと、これまでは楽観値を捨て、取り直した行はサーバーへまだ反映していない古い値のまま、
+  //   後で保存が成功しても無視され、失敗しても知らせていませんでした(「行を足して refreshServerSide()」の使い方で起きる)。
+  //   そこで、取り直しの時点で保存中の書き込みが決着するまで(最大 SERVER_SIDE_WRITE_WAIT_MS)取得を待ちます(その間はスケルトン)。
+  //   決着したら(成功ならサーバーに反映済みの)行を取り直し、失敗は保存失敗バーと onServerSideWriteError で知らせます。
+  const clearWriteWait = () => {
+    if (writeWaitTimer !== null) {
+      clearTimeout(writeWaitTimer);
+      writeWaitTimer = null;
+    }
+    waitingWrites = null;
+    afterWrites = null;
+  };
+  const endWriteWait = () => {
+    const run = afterWrites;
+    clearWriteWait();
+    run?.();
+  };
+  const fetchAfterWrites = (run: () => void) => {
+    if (waitingWrites === null && inFlightWrites.size === 0) {
+      run();
+      return;
+    }
+    if (waitingWrites === null) {
+      waitingWrites = new Set(inFlightWrites);
+      writeWaitTimer = setTimeout(() => {
+        writeWaitTimer = null;
+        endWriteWait();
+      }, SERVER_SIDE_WRITE_WAIT_MS);
+    } else {
+      for (const token of inFlightWrites) {
+        waitingWrites.add(token);
+      }
+    }
+    afterWrites = run;
+  };
+  const settleWriteToken = (token: number) => {
+    inFlightWrites.delete(token);
+    if (waitingWrites !== null && waitingWrites.delete(token) && waitingWrites.size === 0) {
+      endWriteWait();
+    }
   };
 
   const syncLoadError = () => {
@@ -181,6 +239,10 @@ export const createServerSideRowModel = <T,>(
   const fetchBlock = (blockIndex: number): void => {
     const { dataSource, query } = args;
     if (dataSource == null) {
+      return;
+    }
+    // 追加(dogfood DF-07): 保存の決着を待っている間は取りません(待ち終わったら取り直す)。
+    if (waitingWrites !== null) {
       return;
     }
     if ((cache.hasBlock(blockIndex) && !staleBlocks.has(blockIndex)) || inFlight.has(blockIndex)) {
@@ -238,6 +300,15 @@ export const createServerSideRowModel = <T,>(
       });
   };
 
+  // 追加(アプリの再確認): 読み込み済みのブロックを出したまま取り直し対象にし、取得中のものは止めて、見えている範囲を取り直します。
+  const refetchLoadedBlocks = (): void => {
+    abortAll();
+    for (const blockIndex of cache.loadedBlockIndexes()) {
+      staleBlocks.add(blockIndex);
+    }
+    runFetch();
+  };
+
   const runFetch = (): void => {
     const { start, end } = latestRange;
     const needed = computeBlockIndexes(start, end, blockSize, rowCount);
@@ -293,12 +364,15 @@ export const createServerSideRowModel = <T,>(
     }
     resetCaches();
     bumpVersion();
-    const { start, end } = latestRange;
-    if (computeBlockIndexes(start, end, blockSize, rowCount).length === 0) {
-      fetchBlock(0);
-      return;
-    }
-    runFetch();
+    // 変更(dogfood DF-07): 保存中の書き込みがあれば、決着してから取り直します。
+    fetchAfterWrites(() => {
+      const { start, end } = latestRange;
+      if (computeBlockIndexes(start, end, blockSize, rowCount).length === 0) {
+        fetchBlock(0);
+        return;
+      }
+      runFetch();
+    });
   };
 
   const retryFailedBlocks = (): void => {
@@ -323,6 +397,12 @@ export const createServerSideRowModel = <T,>(
       return 0;
     }
     const epoch = writeEpoch;
+    const lifetime = disposeEpoch;
+    // 追加(dogfood DF-07): この書き込みの楽観行の置き場(取り直しで pendingEdits が作り直されても、決着はここで記録する)。
+    const writeEdits = pendingEdits;
+    const token = nextWriteToken;
+    nextWriteToken += 1;
+    inFlightWrites.add(token);
     // 変更(1.0 前の最終チェック FC-04 / FC-05): 書き込みごとにセルの変更を持たせます(確定値は変更のぶんだけ進め、失敗した
     //   変更は残りの保存中の変更を当て直して外す = serverSideEdits の settleWrite)。
     const changesByRow = new Map<number, ServerSidePendingChange<T>[]>();
@@ -338,7 +418,7 @@ export const createServerSideRowModel = <T,>(
     const writes = updates.map((update) => ({
       viewIndex: update.rowIndex,
       rowKey: update.rowKey,
-      writeId: pendingEdits.beginWrite(update.rowIndex, update.row, changesByRow.get(update.rowIndex) ?? []),
+      writeId: writeEdits.beginWrite(update.rowIndex, update.row, changesByRow.get(update.rowIndex) ?? []),
     }));
     bumpVersion();
     // 追加(motion-7 / M-9): セル単位の保存状態(rowKey × 変更列)。
@@ -359,42 +439,90 @@ export const createServerSideRowModel = <T,>(
       resolve(updateRows({ updates }));
     })
       .then((result) => {
-        if (writeEpoch !== epoch) {
+        if (disposeEpoch !== lifetime) {
           notifyWriteState('cleared');
           return;
         }
+        // 変更(dogfood DF-07): 取り直した後に決着したとき(detached)は、行の位置が変わっているのでキャッシュへは書きません
+        //   (取り直しは保存の決着を待つので、取り直した行にはサーバーの確定値が入る)。印は rowKey で付けます。
+        const detached = writeEpoch !== epoch;
         const confirmedRows = result === undefined ? undefined : result.rows;
         // 変更(FC-05): 保存状態の印は、同じセルを変える新しい書き込みが保存中でないセルだけ ok にします(古い書き込みの完了で
         //   新しい書き込みの保存中の印が消えていた)。
         const settledCells = writes.map((write, index) => {
-          const settlement = pendingEdits.settleWrite(
+          const settlement = writeEdits.settleWrite(
             write.viewIndex,
             write.writeId,
             { ok: true, serverRow: confirmedRows?.[index] },
-            cache.getRow(write.viewIndex),
+            detached ? undefined : cache.getRow(write.viewIndex),
           );
-          if (settlement.confirmedRow !== undefined) {
+          if (!detached && settlement.confirmedRow !== undefined) {
             cache.updateRow(write.viewIndex, settlement.confirmedRow);
           }
           return { rowKey: write.rowKey, columnKeys: settlement.settledColumnKeys };
         });
-        bumpVersion();
+        if (!detached) {
+          bumpVersion();
+        } else if (waitingWrites === null || !waitingWrites.has(token)) {
+          // 追加(アプリの再確認): 待つ上限(SERVER_SIDE_WRITE_WAIT_MS)を過ぎてから成功した書き込みです。取り直しは待たずに
+          //   済ませた(または取得中な)ので、取った行はサーバーへ反映する前の古い値のことがあります(古い値に ✓ が付き、
+          //   次の取り直しまでそのままだった)。見えている範囲を取り直します(行は出したまま、届いたら差し替える)。
+          refetchLoadedBlocks();
+        }
         notifyWriteState('ok', settledCells);
       })
       .catch((error: unknown) => {
-        if (writeEpoch !== epoch) {
+        if (disposeEpoch !== lifetime) {
           notifyWriteState('cleared');
           return;
         }
+        const detached = writeEpoch !== epoch;
         const settledCells = writes.map((write) => ({
           rowKey: write.rowKey,
-          columnKeys: pendingEdits.settleWrite(write.viewIndex, write.writeId, { ok: false }, cache.getRow(write.viewIndex))
-            .settledColumnKeys,
+          columnKeys: writeEdits.settleWrite(
+            write.viewIndex,
+            write.writeId,
+            { ok: false },
+            detached ? undefined : cache.getRow(write.viewIndex),
+          ).settledColumnKeys,
         }));
-        writeError = { failedRowCount: updates.length };
-        args.onWriteError?.(error, { updates });
-        bumpVersion();
+        // 変更(dogfood DF-09): 同じセルを新しい書き込みが変えていた(上書き済みの)変更は、元に戻すものが無いので知らせません。
+        //   これまでは値は新しいままなのに「値を元に戻しました」のバーが出て、onServerSideWriteError に古い値が渡っていました
+        //   (書いてあるとおりに再送すると新しい値を古い値で上書きする)。知らせるのは、元に戻した変更だけです。
+        //   変更(別視点のレビュー): 知らせる row は「今の表示の行 + 元に戻した変更」にします。この書き込みの row のままだと、
+        //   上書き済みの列や同じ行の新しい書き込みで変えた列に古い値が残り、row を再送すると新しい値を巻き戻していました。
+        //   取り直した後(detached)は行の位置が変わっているので、この書き込みの row のままにします。
+        const rolledBack = updates.flatMap((update, index) => {
+          const columnKeys = settledCells[index]?.columnKeys ?? [];
+          if (columnKeys.length === 0) {
+            return [];
+          }
+          const changes = update.changes.filter((change) => columnKeys.includes(change.columnKey));
+          const current = detached ? undefined : getDisplayRow(update.rowIndex);
+          if (current === undefined || args.rowKeyGetter(current, update.rowIndex) !== update.rowKey) {
+            return [{ ...update, changes }];
+          }
+          let row: T = current;
+          for (const change of changesByRow.get(update.rowIndex) ?? []) {
+            if (columnKeys.includes(change.column.key)) {
+              row = setCellValue(row, change.column, change.value);
+            }
+          }
+          return [{ ...update, row, changes }];
+        });
+        if (rolledBack.length > 0) {
+          writeError = { failedRowCount: rolledBack.length };
+          args.onWriteError?.(error, { updates: rolledBack });
+        }
+        if (detached) {
+          publish();
+        } else {
+          bumpVersion();
+        }
         notifyWriteState('failed', settledCells);
+      })
+      .finally(() => {
+        settleWriteToken(token);
       });
     return updates.length;
   };
@@ -418,7 +546,17 @@ export const createServerSideRowModel = <T,>(
         fetchBlock(0);
       }
     } else {
-      fetchBlock(0);
+      // 変更(dogfood DF-07): 保存中の書き込みがあれば、決着してから取り直します。待っている間のスクロールの要求は取らずに
+      //   捨てているので、待った後は見えている範囲も取ります(block 0 だけだと、待っている間にスクロールした位置がスケルトンの
+      //   まま残っていた)。runFetch は範囲外の取得中のブロックを止めるので、block 0 はその後に足します。待たないときは
+      //   これまでどおり block 0 だけ(見えている範囲はこの後のスクロールの戻しで決まる)。
+      const waits = waitingWrites !== null || inFlightWrites.size > 0;
+      fetchAfterWrites(() => {
+        if (waits && latestRange.end > latestRange.start) {
+          runFetch();
+        }
+        fetchBlock(0);
+      });
     }
   };
 
@@ -486,7 +624,11 @@ export const createServerSideRowModel = <T,>(
       abortAll();
       clearTimer();
       writeEpoch += 1;
+      disposeEpoch += 1;
       pendingEdits.clear();
+      // 追加(dogfood DF-07): 取り直しの待ちもやめます(保存中の書き込みは決着しても印を外すだけ)。
+      clearWriteWait();
+      inFlightWrites.clear();
       disposed = true;
     },
   };

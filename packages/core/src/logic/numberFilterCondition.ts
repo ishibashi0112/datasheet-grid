@@ -125,27 +125,33 @@ export const buildParsedNumberFilterFromDraft = (
 
 // parsed を人間可読の表示文字列へ整形します(raw として保存し、チップ / 管理パネル /
 //   現在値表示にそのまま出ます)。演算子ラベルとの対応を保つこと。
-export const formatParsedNumberFilter = (parsed: ParsedNumberFilter): string => {
+// 変更(dogfood DU-07): 数値の書き方を任意で受けます(チップ / 管理パネルで列の valueFormatter を当てるため。
+//   raw として保存する文字列は従来どおり書き方なし)。
+export const formatParsedNumberFilter = (
+  parsed: ParsedNumberFilter,
+  formatNumber: (value: number) => string = String,
+): string => {
   switch (parsed.mode) {
     case 'comparison': {
+      const value = formatNumber(parsed.value);
       switch (parsed.operator) {
         case '>=':
-          return `${parsed.value} 以上`;
+          return `${value} 以上`;
         case '>':
-          return `${parsed.value} より大きい`;
+          return `${value} より大きい`;
         case '<=':
-          return `${parsed.value} 以下`;
+          return `${value} 以下`;
         case '<':
-          return `${parsed.value} 未満`;
+          return `${value} 未満`;
         case '!=':
-          return `${parsed.value} に等しくない`;
+          return `${value} に等しくない`;
         case '=':
         default:
-          return `${parsed.value} に等しい`;
+          return `${value} に等しい`;
       }
     }
     case 'range':
-      return `${parsed.min} 〜 ${parsed.max}`;
+      return `${formatNumber(parsed.min)} 〜 ${formatNumber(parsed.max)}`;
     case 'blank':
       return '(空白)';
     case 'notBlank':

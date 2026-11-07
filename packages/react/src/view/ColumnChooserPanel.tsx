@@ -51,6 +51,9 @@ export type ColumnChooserItem = {
   title: string;
   visible: boolean;
   pane: ColumnPane;
+  // 追加(dogfood DF-22): 行グルーピング中のグループ元列(rowGroup)。値は自動グループ列に出ていて列としては
+  //   表示されないため、表示 / 非表示は切り替えられません(これまでは表示中に見え、外しても何も変わらなかった)。
+  grouped?: boolean;
 };
 
 type ColumnChooserPanelProps = {
@@ -220,11 +223,14 @@ export function ColumnChooserPanel({
 
   // 注記: master / guard の判定は「全列(検索フィルタ前)」を基準にします。
   //       検索はあくまで一覧の絞り込み表示で、全選択の意味は変えません。
+  // 変更(別視点のレビュー): グループ元列(grouped)は列として出ていないので数えません(数えると、表に出ている最後の
+  //   1 列を外せたり、グループ元列の表示の値で全表示の判定が変わったりしていた)。
+  const toggleableCount = useMemo(() => items.filter((item) => item.grouped !== true).length, [items]);
   const visibleCount = useMemo(
-    () => items.filter((item) => item.visible).length,
+    () => items.filter((item) => item.visible && item.grouped !== true).length,
     [items],
   );
-  const allVisible = visibleCount === items.length && items.length > 0;
+  const allVisible = visibleCount === toggleableCount && toggleableCount > 0;
 //   const hasHidden = items.some((item) => !item.visible);
 
   // 全選択の状態: 全表示 = checked、一部非表示 = indeterminate。
@@ -452,7 +458,7 @@ export function ColumnChooserPanel({
   ) => {
     // 最後の 1 列ガード: 表示中が 1 列だけのとき、その列はチェックを外せません。
     const isOnlyVisible = item.visible && visibleCount === 1;
-    const disabled = !canToggle || isOnlyVisible;
+    const disabled = !canToggle || isOnlyVisible || item.grouped === true;
     const isDragging = draggingKey === item.key;
     // ドロップインジケータ: ソースペインのこの行の直前に挿入される位置のとき細線を出します。
     // 末尾(dropIndex === セクション件数)はセクション描画後に別途描画します。
@@ -498,6 +504,9 @@ export function ColumnChooserPanel({
         <button
           type="button"
           disabled={disabled}
+          data-ssg-tooltip={
+            item.grouped ? 'グループ化している列です(値は自動グループ列に出ます)' : undefined
+          }
           onClick={() => {
             if (disabled) {
               return;
@@ -507,16 +516,16 @@ export function ColumnChooserPanel({
           className="ssg-chooser-toggle"
         >
           <CheckBox
-            state={item.visible ? 'checked' : 'unchecked'}
+            state={item.visible && !item.grouped ? 'checked' : 'unchecked'}
             disabled={disabled}
           />
           <span
             className={cx(
               'ssg-chooser-label',
-              disabled && !item.visible && 'ssg-chooser-label--muted',
+              disabled && (!item.visible || item.grouped) && 'ssg-chooser-label--muted',
             )}
           >
-            {item.title}
+            {item.grouped ? `${item.title}(グループ化中)` : item.title}
           </span>
         </button>
       </div>

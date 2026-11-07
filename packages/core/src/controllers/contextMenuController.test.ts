@@ -44,4 +44,57 @@ describe('contextMenuController', () => {
     // dispose 後はリスナーが無いので状態は残る(アンマウント時のみ呼ばれる想定)。
     expect(c.getSnapshot().state).not.toBeNull();
   });
+
+  // 追加(dogfood DF-17): 開いている間の ↓ / ↑ / Home / End は項目の間を移り、後ろのグリッドをスクロールさせない。
+  //   Tab は閉じる。custom 項目の入力欄にフォーカスがあるときは触らない。
+  it('↓ / ↑ / Home / End で項目(使えない項目は飛ばす)の間を移り、既定の動作を止め、Tab で閉じる', () => {
+    const c = createContextMenuController<unknown>();
+    c.update({ gridRootRef: { current: null } });
+    c.open(params(10, 10), items);
+    const panel = document.createElement('div');
+    panel.setAttribute('role', 'menu');
+    const makeItem = (label: string, disabled = false) => {
+      const button = document.createElement('button');
+      button.setAttribute('role', 'menuitem');
+      button.textContent = label;
+      button.disabled = disabled;
+      panel.appendChild(button);
+      return button;
+    };
+    const first = makeItem('A');
+    makeItem('B', true);
+    const third = makeItem('C');
+    const input = document.createElement('input');
+    panel.appendChild(input);
+    document.body.appendChild(panel);
+    c.panelRef.current = panel;
+    const press = (key: string) => {
+      const event = new KeyboardEvent('keydown', { key, bubbles: true, cancelable: true });
+      (document.activeElement ?? document.body).dispatchEvent(event);
+      return event.defaultPrevented;
+    };
+
+    expect(press('PageDown')).toBe(true);
+    expect(press('ArrowDown')).toBe(true);
+    expect(document.activeElement).toBe(first);
+    press('ArrowDown');
+    expect(document.activeElement).toBe(third);
+    press('ArrowDown');
+    expect(document.activeElement).toBe(first);
+    press('ArrowUp');
+    expect(document.activeElement).toBe(third);
+    press('Home');
+    expect(document.activeElement).toBe(first);
+    press('End');
+    expect(document.activeElement).toBe(third);
+    // custom 項目の入力欄では触らない(カーソルの移動のまま)。
+    input.focus();
+    expect(press('Home')).toBe(false);
+    expect(document.activeElement).toBe(input);
+    expect(c.getSnapshot().state).not.toBeNull();
+    third.focus();
+    expect(press('Tab')).toBe(true);
+    expect(c.getSnapshot().state).toBeNull();
+    c.dispose();
+  });
 });

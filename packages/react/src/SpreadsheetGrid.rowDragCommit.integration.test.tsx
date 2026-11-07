@@ -389,3 +389,34 @@ describe('並びを反映しなかったときの滑り込みの予約(FC-31)', 
     }
   });
 });
+// 追加(アプリの再確認): ドラッグで離したら行のホバーを外す。ドラッグ中はハンドルがポインタを受けるのでホバーは掴んだ行の
+//   位置のまま残り、離した後はそこへ来た別の行に印が付いていた。
+describe('離した後の行のホバー', () => {
+  it('ドラッグで離すと行のホバーを外す(onHoveredRowChange に null)', () => {
+    const hovered: (number | null)[] = [];
+    const HoverHarness = () => {
+      const [rows, setRows] = useState(initialRows);
+      return (
+        <SpreadsheetGrid
+          columns={columns}
+          rows={rows}
+          rowKeyGetter={(row: Row) => row.id}
+          onRowsChange={setRows}
+          enableRowDrag
+          rowHeight={ROW_HEIGHT}
+          headerHeight={HEADER_HEIGHT}
+          onHoveredRowChange={(index) => hovered.push(index)}
+        />
+      );
+    };
+    const { container } = render(<HoverHarness />);
+    const cell = container.querySelector<HTMLElement>('[data-pane="center"][data-row-index="0"] [data-ssg-col-key="name"]');
+    act(() => {
+      fireEvent.pointerEnter(cell as HTMLElement);
+    });
+    expect(hovered.at(-1)).toBe(0);
+    dragRow(container, 0, lowerHalfY(2));
+    expect(centerRows(container).length).toBeGreaterThan(0);
+    expect(hovered.at(-1)).toBeNull();
+  });
+});

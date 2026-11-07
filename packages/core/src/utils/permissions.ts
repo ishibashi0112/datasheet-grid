@@ -82,6 +82,29 @@ export const getCellValue = <T,>(row: T, column: GridColumn<T>): unknown => {
   return (row as Record<string, unknown>)[column.key];
 };
 
+// 型だけの宣言です(ブラウザに process は無く、利用側のバンドラが process.env.NODE_ENV を文字列へ置き換える)。
+declare const process: { env: { NODE_ENV?: string } };
+
+const warnedComputedColumns = new Set<string>();
+
+// 追加(dogfood DD-05): getValue だけの列(計算列)へ書き込むと、行に無いプロパティ row[key] が足され、表示は getValue の
+//   ままで変わりません。編集させない / setValue を渡す、のどちらかに気づけるよう、開発時だけ列ごとに 1 回知らせます。
+//   行に key のプロパティが既にある列(getValue で読み方だけ変えている列)は、key へ書くのが意図どおりなので知らせません。
+const warnComputedColumnWrite = (row: unknown, key: string): void => {
+  if (process.env.NODE_ENV === 'production') {
+    return;
+  }
+  if (warnedComputedColumns.has(key) || typeof row !== 'object' || row === null || Object.hasOwn(row, key)) {
+    return;
+  }
+  warnedComputedColumns.add(key);
+  console.warn(
+    `[spreadsheet-grid] 列 \`${key}\` は getValue だけで setValue が無いため、書き込んだ値は行に新しいプロパティ ` +
+      `\`${key}\` として足され、表示(getValue)は変わりません。編集させないなら \`editable: false\`、` +
+      '書き戻すなら `setValue` を渡してください。',
+  );
+};
+
 // 追加: 列定義を使ってセル値を書き換えます。setValue 未指定時は key ベース shallow copy を行います。
 export const setCellValue = <T,>(
   row: T,
@@ -90,6 +113,9 @@ export const setCellValue = <T,>(
 ): T => {
   if (column.setValue) {
     return column.setValue(row, value);
+  }
+  if (column.getValue) {
+    warnComputedColumnWrite(row, column.key);
   }
 
   return {
