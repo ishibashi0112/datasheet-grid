@@ -955,6 +955,24 @@ export function useGridShell<T extends object>({
     () => rowPipeline.resolveLabelRowLayout(rows, isServerSide ? undefined : labelIsLabelRow),
     [rowPipeline, rows, isServerSide, labelIsLabelRow],
   );
+  // 追加(dogfood DF-12): 列フィルターの候補(set / textSet の rows からの自動収集)はデータ行だけから集めます
+  //   (ラベル行の値や、ラベル行の空の値による「(空白)」が候補に混ざっていた)。ラベル行が無ければ rows のまま。
+  const filterCandidateRows = useMemo(() => {
+    if (!labelLayout) {
+      return rows;
+    }
+    const labels = labelLayout.labelIndexes;
+    const dataRows: T[] = [];
+    let next = 0;
+    for (let index = 0; index < rows.length; index += 1) {
+      if (next < labels.length && labels[next] === index) {
+        next += 1;
+        continue;
+      }
+      dataRows.push(rows[index]);
+    }
+    return dataRows;
+  }, [rows, labelLayout]);
   // 変更(label-row ②): ラベル行があるときはラベル行を除いた恒等 order(データ行のみ)。無ければ従来どおり
   //   長さのみ依存の恒等 order。
   const baseOrder = useMemo(
@@ -3069,7 +3087,8 @@ export function useGridShell<T extends object>({
   const renderedFilterPopover = features.filtering.useFilterPopoverContent<T>({
     filterPopover,
     views: filterPopoverViews,
-    rows,
+    // 変更(dogfood DF-12): 候補はデータ行だけから集めます。
+    rows: filterCandidateRows,
     columnFilters: uiState.filters.columnFilters,
     globalFilterText,
     getFilterOptions,
@@ -3311,6 +3330,8 @@ export function useGridShell<T extends object>({
     visibleColumns,
     // 追加(audit V-12): A1 ラベルの列名から合成列を除くための画面の並び。
     orderedColumns,
+    // 追加(dogfood DF-10): 番地と行数をラベル行を飛ばして数えます(行ヘッダーの番号と揃える)。
+    labelViewIndexes: labelDisplay?.labelViewIndexes,
     uiState,
     setGlobalFilterText,
     // 追加(F-async): グローバルフィルタの適用状態/進捗を slotContext へ渡します(ローディング表示用)。

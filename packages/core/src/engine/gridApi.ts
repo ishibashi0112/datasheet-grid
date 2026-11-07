@@ -576,7 +576,8 @@ export const createGridApi = <T,>(features: Pick<GridCoreFeatures, 'export'> = {
         console.warn('[SpreadsheetGrid] getInvalidCells は serverSide モードでは利用できません(空配列を返します)。');
         return [];
       }
-      return scanInvalidCells(s.rows, s.columns, s.resolvedRowKeyGetter);
+      // 変更(dogfood DF-03): ラベル行は検査しません。
+      return scanInvalidCells(s.rows, s.columns, s.resolvedRowKeyGetter, s.labelRowExport?.isLabelRow);
     },
 
     // ── serverSide(SSRM)──

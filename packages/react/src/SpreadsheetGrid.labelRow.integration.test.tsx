@@ -4,7 +4,7 @@
 //   未指定時の不変」を確認します。行の DOM を検証するため detail 結合テストと同じ寸法スタブを使います。
 // @vitest-environment jsdom
 import { describe, it, expect, beforeAll, afterEach } from 'vitest';
-import { render, cleanup, act } from '@testing-library/react';
+import { render, cleanup, act, fireEvent } from '@testing-library/react';
 import { createRef } from 'react';
 
 import { SpreadsheetGrid } from './SpreadsheetGrid';
@@ -335,5 +335,112 @@ describe('SpreadsheetGrid × ラベル行(エクスポート)', () => {
     expect(handle.exportCsv({ includeHeaders: false, includeLabelRows: true })).toContain('[セクション 1],memo,0');
     const data = handle.getExportData({ includeLabelRows: true });
     expect(data.rows[0].map((cell) => cell.value)).toEqual(['[セクション 1]', 'memo', 0]);
+  });
+});
+
+
+// 追加(dogfood DF-03 / 10 / 11 / 12): 実際にアプリを作って見つかった、ラベル行を数える / 検査する / 候補に入れる不具合の回帰テストです。
+describe('SpreadsheetGrid × ラベル行(検査・下部バー・フィルターの候補)', () => {
+  it('DF-03: getInvalidCells() はラベル行を検査しない(画面の印と同じ)', () => {
+    const ref = createRef<SpreadsheetGridHandle<Row>>();
+    const validated: GridColumn<Row>[] = [
+      { key: 'id', title: 'ID', width: 80, pinned: 'left' },
+      // ラベル行の qty は 0 なので、qty > 0 の検査を通らない。
+      { key: 'qty', title: '数量', width: 100, validate: ({ value }) => (Number(value) > 0 ? true : '1 以上') },
+    ];
+    render(
+      <SpreadsheetGrid ref={ref} rows={rows} columns={validated} rowKeyGetter={rowKeyGetter} labelRow={labelRow} />,
+    );
+    expect(ref.current!.getInvalidCells()).toEqual([]);
+    // ラベル行でない行は従来どおり検査する。
+    const withBad = rows.map((row) => (row.id === 'c' ? { ...row, qty: 0 } : row));
+    cleanup();
+    render(
+      <SpreadsheetGrid ref={ref} rows={withBad} columns={validated} rowKeyGetter={rowKeyGetter} labelRow={labelRow} />,
+    );
+    expect(ref.current!.getInvalidCells().map((cell) => cell.rowKey)).toEqual(['c']);
+  });
+
+  it('DF-10: 下部バーの番地と Cells / Rows はラベル行を飛ばして数える(行ヘッダーの番号と同じ)', () => {
+    const ref = createRef<SpreadsheetGridHandle<Row>>();
+    const { container } = render(
+      <SpreadsheetGrid ref={ref} rows={rows} columns={columns} rowKeyGetter={rowKeyGetter} labelRow={labelRow} />,
+    );
+    // view: 0=[S1] 1=a 2=b 3=[S2] 4=c 5=d 6=e。c は行番号 3。
+    act(() => {
+      ref.current!.selectCell(4, 1);
+    });
+    expect(container.textContent).toContain('Active: B3');
+    // b(行番号 2)から d(行番号 4)まで、ラベル行 [S2] をまたいで 2 列。
+    act(() => {
+      ref.current!.selectRange({ start: { row: 2, col: 1 }, end: { row: 5, col: 2 } });
+    });
+    expect(container.textContent).toContain('Selection: B2 - C4');
+    expect(container.textContent).toContain('Cells: 6 / Rows: 3');
+  });
+
+  it('DF-12: set の候補はデータ行の値だけ(ラベル行の値も、ラベル行の空の値の「(空白)」も出ない)', () => {
+    type LRow = { id: string; kind?: 'label'; name: string; owner: string };
+    const lrows: LRow[] = [
+      { id: 's1', kind: 'label', name: '第1節', owner: '' },
+      { id: 'a', name: 'alpha', owner: '佐藤' },
+      { id: 's2', kind: 'label', name: '第2節', owner: '' },
+      { id: 'b', name: 'beta', owner: '鈴木' },
+    ];
+    const lcolumns: GridColumn<LRow>[] = [
+      { key: 'name', title: '名称', width: 160, filterType: 'set' },
+      { key: 'owner', title: '担当', width: 120, filterType: 'set' },
+    ];
+    const openFilter = (container: HTMLElement, key: string) => {
+      const button = container.querySelector<HTMLButtonElement>(
+        `.ssg-header-row [data-ssg-col-key="${key}"] [data-ssg-tooltip="列メニュー"]`,
+      );
+      expect(button).not.toBeNull();
+      act(() => {
+        fireEvent.pointerDown(button!, { button: 0 });
+        fireEvent.click(button!);
+      });
+      const item = Array.from(document.querySelectorAll<HTMLButtonElement>('.ssg-menu-item')).find((el) =>
+        el.textContent?.includes('フィルター…'),
+      );
+      act(() => {
+        fireEvent.click(item!);
+      });
+      return document.querySelector<HTMLElement>('.ssg-filter-popover')?.textContent ?? '';
+    };
+    const { container } = render(
+      <SpreadsheetGrid
+        rows={lrows}
+        columns={lcolumns}
+        rowKeyGetter={(row) => row.id}
+        labelRow={{ isLabelRow: (row) => row.kind === 'label', getLabel: (row) => row.name }}
+      />,
+    );
+    const nameText = openFilter(container, 'name');
+    expect(nameText).toContain('alpha');
+    expect(nameText).not.toContain('第1節');
+    act(() => {
+      fireEvent.keyDown(document.querySelector('.ssg-filter-popover input')!, { key: 'Escape' });
+    });
+    const ownerText = openFilter(container, 'owner');
+    expect(ownerText).toContain('佐藤');
+    expect(ownerText).not.toContain('(空白)');
+  });
+});
+
+describe('SpreadsheetGrid × 合成列の数え方(DF-11)', () => {
+  it('「Columns: N / M」は行ドラッグのハンドル列と展開トグル列を数えない', () => {
+    const plain = rows.filter((row) => row.kind !== 'label');
+    const { container } = render(
+      <SpreadsheetGrid
+        rows={plain}
+        columns={columns}
+        rowKeyGetter={rowKeyGetter}
+        enableRowDrag
+        onRowsChange={() => {}}
+        detailRow={{ render: () => null }}
+      />,
+    );
+    expect(container.textContent).toContain('Columns: 3 / 3');
   });
 });

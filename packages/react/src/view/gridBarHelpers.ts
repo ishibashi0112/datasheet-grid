@@ -10,6 +10,8 @@ import type {
 } from '../model/gridTypes';
 import { toExcelColumnName } from '@ishibashi0112/spreadsheet-grid-core/internal/utils/excelColumnName';
 import { isSyntheticColumnKey } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/detailRow';
+// 追加(dogfood DF-10): 番地と件数をラベル行を飛ばして数えます(行ヘッダーの番号と揃える)。
+import { countLabelsBefore } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/labelRows';
 // 追加(12-A): set フィルター対応のフィルター有効判定を共有します。
 import { isActiveColumnFilterValue } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/filtering';
 
@@ -56,21 +58,53 @@ export const createDataColumnNamer = (orderedColumns: ReadonlyArray<{ key: strin
     toExcelColumnName(Math.max(columnIndex - (syntheticBefore[columnIndex] ?? count), 0));
 };
 
+// 追加(dogfood DF-10): 行の番号(行ヘッダーの番号と同じ = ラベル行を飛ばした通し番号)と、範囲の中のデータ行の数。
+//   numberOf は範囲の始まり / アクティブセル向け(ラベル行なら次のデータ行の番号)、lastNumberOf は範囲の終わり向け
+//   (ラベル行なら前のデータ行の番号)。ラベル行が無ければ view index + 1 と行数そのもの(従来どおり)。
+export type GridRowNumberer = {
+  numberOf: (viewRowIndex: number) => number;
+  lastNumberOf: (viewRowIndex: number) => number;
+  countRows: (startRow: number, endRow: number) => number;
+};
+
+const PLAIN_ROW_NUMBERER: GridRowNumberer = {
+  numberOf: (viewRowIndex) => viewRowIndex + 1,
+  lastNumberOf: (viewRowIndex) => viewRowIndex + 1,
+  countRows: (startRow, endRow) => endRow - startRow + 1,
+};
+
+export const createDataRowNumberer = (labelViewIndexes: ArrayLike<number> | undefined): GridRowNumberer => {
+  if (!labelViewIndexes || labelViewIndexes.length === 0) {
+    return PLAIN_ROW_NUMBERER;
+  }
+  return {
+    numberOf: (viewRowIndex) => viewRowIndex - countLabelsBefore(labelViewIndexes, viewRowIndex) + 1,
+    lastNumberOf: (viewRowIndex) => viewRowIndex + 1 - countLabelsBefore(labelViewIndexes, viewRowIndex + 1),
+    countRows: (startRow, endRow) =>
+      endRow -
+      startRow +
+      1 -
+      (countLabelsBefore(labelViewIndexes, endRow + 1) - countLabelsBefore(labelViewIndexes, startRow)),
+  };
+};
+
 // 追加: ActiveCell を A1 形式へ整形します。
 export const formatGridCellLabel = (
   cell: CellCoord | null,
   toColumnName: GridColumnNamer = toExcelColumnName,
+  rowNumberer: GridRowNumberer = PLAIN_ROW_NUMBERER,
 ) => {
   if (!cell) {
     return 'なし';
   }
-  return `${toColumnName(cell.col)}${cell.row + 1}`;
+  return `${toColumnName(cell.col)}${rowNumberer.numberOf(cell.row)}`;
 };
 
 // 追加: selection の概要を短く整形します。
 export const formatGridSelectionLabel = (
   selection: GridSelection,
   toColumnName: GridColumnNamer = toExcelColumnName,
+  rowNumberer: GridRowNumberer = PLAIN_ROW_NUMBERER,
 ) => {
   if (!selection) {
     return 'なし';
@@ -94,15 +128,15 @@ export const formatGridSelectionLabel = (
       selection.range.end.col,
     );
 
-    return `${toColumnName(startCol)}${startRow + 1} - ${toColumnName(
+    return `${toColumnName(startCol)}${rowNumberer.numberOf(startRow)} - ${toColumnName(
       endCol,
-    )}${endRow + 1}`;
+    )}${rowNumberer.lastNumberOf(endRow)}`;
   }
 
   if (selection.type === 'row') {
     const startRow = Math.min(selection.startRow, selection.endRow);
     const endRow = Math.max(selection.startRow, selection.endRow);
-    return `Row ${startRow + 1} - ${endRow + 1}`;
+    return `Row ${rowNumberer.numberOf(startRow)} - ${rowNumberer.lastNumberOf(endRow)}`;
   }
 
   const startCol = Math.min(selection.startCol, selection.endCol);
@@ -121,15 +155,29 @@ export const formatGridRowSummary = <T,>(
 ) => `Rows: ${filteredRowCount} / ${totalRowCount}`;
 
 // 追加: columns / visibleColumns の概要テキストです。
+// 変更(dogfood DF-11): 表示中の列は合成列(行ドラッグのハンドル / 展開トグル / 自動グループ列)を数えません
+//   (分母の columns は利用者の列だけなので、合成列があると「7 / 6」になっていた)。
+const countDataColumns = <T,>(columns: ReadonlyArray<GridColumn<T>>) => {
+  let count = 0;
+  for (const column of columns) {
+    if (!isSyntheticColumnKey(column.key)) {
+      count += 1;
+    }
+  }
+  return count;
+};
+
 export const formatGridColumnSummary = <T,>(
   context: Pick<SpreadsheetGridSlotContext<T>, 'columns' | 'visibleColumns'>,
-) => `Columns: ${context.visibleColumns.length} / ${context.columns.length}`;
+) => `Columns: ${countDataColumns(context.visibleColumns)} / ${context.columns.length}`;
 
 // 追加: selection から選択セル数 / 行数 / 列数を算出します。
 export const getGridSelectionStats = <T,>(
   context: Pick<SpreadsheetGridSlotContext<T>, 'selection' | 'visibleColumns'>,
   // 変更(DS-3-7): filteredRows(配列)→ 件数 filteredRowCount(数値)を引数で受けます。
   filteredRowCount: number,
+  // 追加(dogfood DF-10): 行数はラベル行を数えません(未指定は従来どおり)。
+  rowNumberer: GridRowNumberer = PLAIN_ROW_NUMBERER,
 ): SpreadsheetGridSelectionStats => {
   const selection = context.selection;
   if (!selection) {
@@ -157,7 +205,7 @@ export const getGridSelectionStats = <T,>(
       selection.range.start.col,
       selection.range.end.col,
     );
-    const selectedRowCount = endRow - startRow + 1;
+    const selectedRowCount = rowNumberer.countRows(startRow, endRow);
     const selectedColumnCount = endCol - startCol + 1;
     return {
       selectedCellCount: selectedRowCount * selectedColumnCount,
@@ -169,8 +217,9 @@ export const getGridSelectionStats = <T,>(
   if (selection.type === 'row') {
     const startRow = Math.min(selection.startRow, selection.endRow);
     const endRow = Math.max(selection.startRow, selection.endRow);
-    const selectedRowCount = endRow - startRow + 1;
-    const selectedColumnCount = context.visibleColumns.length;
+    const selectedRowCount = rowNumberer.countRows(startRow, endRow);
+    // 変更(dogfood DF-11): 合成列は数えません。
+    const selectedColumnCount = countDataColumns(context.visibleColumns);
     return {
       selectedCellCount: selectedRowCount * selectedColumnCount,
       selectedRowCount,
@@ -193,8 +242,9 @@ export const getGridSelectionStats = <T,>(
 export const formatGridSelectionStatsLabel = <T,>(
   context: Pick<SpreadsheetGridSlotContext<T>, 'selection' | 'visibleColumns'>,
   filteredRowCount: number,
+  rowNumberer: GridRowNumberer = PLAIN_ROW_NUMBERER,
 ) => {
-  const stats = getGridSelectionStats(context, filteredRowCount);
+  const stats = getGridSelectionStats(context, filteredRowCount, rowNumberer);
   return `Cells: ${stats.selectedCellCount} / Rows: ${stats.selectedRowCount}`;
 };
 
@@ -284,8 +334,10 @@ export const buildGridDerivedSummary = <T,>(
   totalRowCount?: number,
   // 追加(audit V-12): A1 の列名(未指定は合成列を考慮しない toExcelColumnName)。
   toColumnName: GridColumnNamer = toExcelColumnName,
+  // 追加(dogfood DF-10): 行の番号と行数(未指定はラベル行を考慮しない)。
+  rowNumberer: GridRowNumberer = PLAIN_ROW_NUMBERER,
 ): SpreadsheetGridDerivedSummary => {
-  const selectionStats = getGridSelectionStats(context, filteredRowCount);
+  const selectionStats = getGridSelectionStats(context, filteredRowCount, rowNumberer);
   const hasGlobalFilter = context.globalFilterText.trim().length > 0;
   const globalFilterPreview = hasGlobalFilter
     ? truncateSummaryText(context.globalFilterText.trim())
@@ -307,9 +359,9 @@ export const buildGridDerivedSummary = <T,>(
     columnSummaryText: formatGridColumnSummary(context),
     filterSummaryText: formatGridFilterSummary(context),
     sortSummaryText: formatGridSortSummary(context),
-    activeCellLabel: formatGridCellLabel(context.activeCell, toColumnName),
-    selectionLabel: formatGridSelectionLabel(context.selection, toColumnName),
-    selectionStatsText: formatGridSelectionStatsLabel(context, filteredRowCount),
+    activeCellLabel: formatGridCellLabel(context.activeCell, toColumnName, rowNumberer),
+    selectionLabel: formatGridSelectionLabel(context.selection, toColumnName, rowNumberer),
+    selectionStatsText: formatGridSelectionStatsLabel(context, filteredRowCount, rowNumberer),
     selectionStats,
     hasGlobalFilter,
     globalFilterPreview,
