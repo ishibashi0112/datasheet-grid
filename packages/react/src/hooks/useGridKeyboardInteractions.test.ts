@@ -276,7 +276,11 @@ describe('useGridKeyboardInteractions × 端 / ページの移動(dogfood)', () 
   };
   const setupPage = (
     activeCell: CellCoord | null,
-    extra: Partial<{ selection: GridUiState['selection']; resolvePageRow: (row: number, direction: 1 | -1) => number }> = {},
+    extra: Partial<{
+      selection: GridUiState['selection'];
+      resolvePageRow: (row: number, direction: 1 | -1) => number;
+      rowModel: RowModel<PRow>;
+    }> = {},
   ) => {
     const uiState: GridUiState = { ...createInitialGridUiState(), activeCell, selection: extra.selection ?? null };
     const dispatch = vi.fn<(a: GridUiAction) => void>();
@@ -284,7 +288,7 @@ describe('useGridKeyboardInteractions × 端 / ページの移動(dogfood)', () 
     const view = renderHook(() =>
       useGridKeyboardInteractions<PRow>({
         uiState,
-        rowModel: pageRowModel,
+        rowModel: extra.rowModel ?? pageRowModel,
         visibleColumns: pageColumns,
         readOnly: false,
         canEditCell: undefined,
@@ -395,5 +399,32 @@ describe('useGridKeyboardInteractions × 端 / ページの移動(dogfood)', () 
     const end = setupPage(null);
     await end.press('End', { ctrlKey: true });
     expect(end.lastActivated()).toEqual({ row: 28, col: 3 });
+  });
+
+  // 追加(別視点のレビュー): 範囲の終わりがラベル行のとき(末尾がラベル行の表で全選択した後など)、横に広げてもアクティブセルを
+  //   ラベル行に置かない(近いデータ行へ寄せる)。
+  it('範囲の終わりがラベル行でも、Shift+← / Shift+Home でアクティブセルはデータ行に置く', async () => {
+    const selection = { type: 'cell' as const, range: { start: { row: 1, col: 1 }, end: { row: 29, col: 3 } } };
+    const t = setupPage({ row: 1, col: 1 }, { selection });
+    await t.press('ArrowLeft', { shiftKey: true });
+    expect(t.dispatch.mock.calls.find(([a]) => a.type === 'selection/update')?.[0]).toMatchObject({ cell: { row: 28, col: 2 } });
+    expect(t.lastActivated()).toEqual({ row: 28, col: 2 });
+    const home = setupPage({ row: 1, col: 1 }, { selection });
+    await home.press('Home', { shiftKey: true });
+    expect(home.lastActivated()).toEqual({ row: 28, col: 1 });
+  });
+
+  // 追加(別視点のレビュー): 行が 0 件なら止まるセルが無いので、Tab はグリッドの外へ出る(止めると出られなかった)。
+  it('DU-16: 行が 0 件のときの Tab は既定の動きのまま(グリッドの外へ)', async () => {
+    const empty: RowModel<PRow> = {
+      getRowCount: () => 0,
+      getRow: (i) => pageRows[i] as PRow,
+      getSourceIndex: (i) => i,
+      getRowKey: (i) => i,
+    };
+    const t = setupPage(null, { rowModel: empty });
+    const event = await t.press('Tab');
+    expect(event.preventDefault).not.toHaveBeenCalled();
+    expect(t.dispatch).not.toHaveBeenCalled();
   });
 });

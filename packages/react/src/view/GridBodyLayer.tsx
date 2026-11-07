@@ -470,9 +470,13 @@ function GridBodyRowInner<T>({
             data-ssg-tooltip={tooltipText ?? undefined}
             data-ssg-tooltip-overflow={markOverflowTooltip ? '' : undefined}
             className={cellClassName}
-            onPointerDown={(event) =>
-              onCellPointerDown({ row: rowIndex, col: colIndex }, event)
-            }
+            onPointerDown={(event) => {
+              // 追加(別視点のレビュー): 展開行の ▸ / ▾ から始まった pointerdown はセルの操作にしません(開閉だけ。DF-16)。
+              if (event.target instanceof Element && event.target.closest('.ssg-detail-toggle')) {
+                return;
+              }
+              onCellPointerDown({ row: rowIndex, col: colIndex }, event);
+            }}
             onPointerEnter={(event) =>
               onCellPointerEnter({ row: rowIndex, col: colIndex }, event)
             }

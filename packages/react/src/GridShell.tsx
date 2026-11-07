@@ -259,12 +259,13 @@ const renderDetailToggleCell = (ctx: CellRenderContext<unknown>) => {
       aria-expanded={detail.expanded}
       aria-label={detail.expanded ? '詳細を閉じる' : '詳細を開く'}
       onClick={detail.toggle}
-      // 変更(dogfood DF-16): ▸ / ▾ は開閉だけにして、アクティブセルと選択を動かしません(セルの pointerdown へ伝えない)。
-      //   これまではトグル列(合成列)がアクティブセルになり、onActiveCellChange に null が来ていました(アクティブセルに
-      //   連動させた詳細パネルが、展開しただけで空になる)。続けてキー操作できるよう、フォーカスはボタンではなくグリッドへ
-      //   置きます(セルを押したときと同じ)。
+      // 変更(dogfood DF-16): ▸ / ▾ は開閉だけにして、アクティブセルと選択を動かしません(セルの pointerdown は
+      //   GridBodyLayer がこのボタンから始まったものを無視する)。これまではトグル列(合成列)がアクティブセルになり、
+      //   onActiveCellChange に null が来ていました(アクティブセルに連動させた詳細パネルが、展開しただけで空になる)。
+      //   続けてキー操作できるよう、フォーカスはボタンではなくグリッドへ置きます(セルを押したときと同じ)。
+      //   変更(別視点のレビュー): 伝播は止めません(止めると window まで届かず、開いている右クリックメニューや
+      //   ポップオーバーが外側の pointerdown で閉じなかった)。
       onPointerDown={(event) => {
-        event.stopPropagation();
         if (event.button !== 0) {
           return;
         }

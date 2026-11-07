@@ -411,6 +411,39 @@ describe('展開行の操作(dogfood)', () => {
     expect(document.activeElement).toBe(getShell(container));
   });
 
+  // 追加(別視点のレビュー): ▸ の pointerdown は window まで届く(開いている右クリックメニューやポップオーバーは、外側の
+  //   pointerdown を window で見て閉じるため。伝播を止めると開いたまま残っていた)。アクティブセルは動かさないまま。
+  it('DF-16: ▸ の pointerdown は window へ届く(開いているメニューが閉じる)', () => {
+    const ref = createRef<SpreadsheetGridHandle<Row>>();
+    const { container } = render(
+      <SpreadsheetGrid ref={ref} columns={columns} rows={rows} rowKeyGetter={rowKeyGetter} detailRow={detailRow} />,
+    );
+    act(() => {
+      ref.current?.setActiveCell({ row: 2, col: 2 });
+    });
+    const seen = vi.fn();
+    window.addEventListener('pointerdown', seen);
+    try {
+      const toggle = toggleAt(container, 0);
+      act(() => {
+        fireEvent.pointerDown(toggle!, { button: 0, pointerId: 1, pointerType: 'mouse' });
+        fireEvent.pointerUp(window, { button: 0, pointerId: 1, pointerType: 'mouse' });
+        fireEvent.click(toggle!);
+      });
+      expect(seen).toHaveBeenCalledTimes(1);
+      expect(ref.current?.getExpandedDetailRowKeys()).toEqual(['a']);
+      expect(ref.current?.getActiveCell()).toEqual({ row: 2, col: 2 });
+      // タッチで押しても、アクティブセルは動かない
+      act(() => {
+        fireEvent.pointerDown(toggle!, { button: 0, pointerId: 2, pointerType: 'touch', clientX: 5, clientY: 5 });
+        fireEvent.pointerUp(window, { button: 0, pointerId: 2, pointerType: 'touch', clientX: 5, clientY: 5 });
+      });
+      expect(ref.current?.getActiveCell()).toEqual({ row: 2, col: 2 });
+    } finally {
+      window.removeEventListener('pointerdown', seen);
+    }
+  });
+
   it('DU-04: 展開トグル列のセルで Enter / Space を押すと開閉する(開閉できない行では何もしない)', () => {
     const ref = createRef<SpreadsheetGridHandle<Row>>();
     const onRowsChange = vi.fn();

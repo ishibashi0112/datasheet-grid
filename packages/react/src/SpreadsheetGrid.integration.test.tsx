@@ -955,6 +955,47 @@ describe('applyState(dogfood)', () => {
     }
   });
 
+  // 追加(別視点のレビュー): columns(列メタ)も、同じ処理の中の直後の getState() で渡した値を返す。
+  it('DU-06: columns を渡した直後の getState() も渡した並びと表示を返す', () => {
+    const ref = createRef<SpreadsheetGridHandle<Row>>();
+    function Host() {
+      const [cols, setCols] = useState(columns);
+      return <SpreadsheetGrid ref={ref} columns={cols} onColumnsChange={setCols} rows={rows} />;
+    }
+    render(<Host />);
+    const next = [{ key: 'qty' }, { key: 'id', visible: false }, { key: 'name' }];
+    let readBack: GridState | undefined;
+    act(() => {
+      ref.current?.applyState({ columns: next });
+      readBack = ref.current?.getState();
+    });
+    expect(readBack?.columns).toEqual([{ key: 'qty' }, { key: 'id', visible: false }, { key: 'name' }]);
+    expect(ref.current!.getState().columns).toEqual(readBack?.columns);
+  });
+
+  // 追加(別視点のレビュー): 自動グループ列(ライブラリが足す列)の幅は手で変えられ、getState() に入るので捨てない。
+  it('DF-04: 自動グループ列の幅は捨てず、警告もしない(applyState(getState()) が冪等)', () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    try {
+      const ref = createRef<SpreadsheetGridHandle<Row>>();
+      const grouped: GridColumn<Row>[] = columns.map((column) =>
+        column.key === 'name' ? { ...column, rowGroup: true } : column,
+      );
+      render(<SpreadsheetGrid ref={ref} columns={grouped} rows={rows} />);
+      act(() => {
+        ref.current?.applyState({ columnWidths: { __ssg_group__: 340 } });
+      });
+      expect(ref.current!.getState().columnWidths).toEqual({ __ssg_group__: 340 });
+      act(() => {
+        ref.current?.applyState(ref.current!.getState());
+      });
+      expect(ref.current!.getState().columnWidths).toEqual({ __ssg_group__: 340 });
+      expect(warn).not.toHaveBeenCalled();
+    } finally {
+      warn.mockRestore();
+    }
+  });
+
   it('DF-18: フィルターと並べ替えを一度に渡したとき、並べ替えだけの画面を挟まない', () => {
     const restore = installJsdomLayoutStubs();
     try {

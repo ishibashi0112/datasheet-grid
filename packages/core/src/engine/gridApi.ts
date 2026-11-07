@@ -172,6 +172,11 @@ const BOTTOM_PIN_MS = 1000;
 //   (engine/exportCommands)。無ければ代役(空を返す)。
 export const createGridApi = <T,>(features: Pick<GridCoreFeatures, 'export'> = {}): GridApi<T> => {
   let args: GridApiArgs<T> | null = null;
+  // 追加(別視点のレビュー): applyState で onColumnsChange に渡した列(次のレンダーで columns に入るまでの間、getState() と
+  //   続けて呼んだ applyState はこちらを今の列として読む)。update(次のレンダー)で外します。
+  let pendingColumns: { base: GridColumn<T>[]; next: GridColumn<T>[] } | null = null;
+  const currentColumns = (s: GridApiArgs<T>): GridColumn<T>[] =>
+    pendingColumns !== null && pendingColumns.base === s.columns ? pendingColumns.next : s.columns;
   const exportCommands = (features.export?.createExportCommands ?? createInertExportCommands)<T>(() => args);
   // 追加(監査 M-05): 行高を実測するモードでは、scrollToBottom() で末尾へ飛んだ直後に新しく描画された行が
   //   計測されて総高が伸び、1 回では末尾に届きませんでした。呼び出し直後の BOTTOM_PIN_MS の間だけ「末尾固定」を
@@ -493,7 +498,7 @@ export const createGridApi = <T,>(features: Pick<GridCoreFeatures, 'export'> = {
       // 永続スライス(手動リサイズ幅 / フィルター / ソート)+ 列メタ(可視 / 順序 / ピン)を純粋にスナップショット。
       // 変更(dogfood DU-06): store の今の状態を読みます(applyState の直後でも渡した値が返る)。
       const ui = s.getUiState?.() ?? s.uiState;
-      return buildGridState(ui.columnWidths, ui.filters, ui.sort, extractColumnState(s.columns));
+      return buildGridState(ui.columnWidths, ui.filters, ui.sort, extractColumnState(currentColumns(s)));
     },
 
     applyState: (state) => {
@@ -516,7 +521,9 @@ export const createGridApi = <T,>(features: Pick<GridCoreFeatures, 'export'> = {
       // 列メタ(v2): onColumnsChange があり、かつ正規化後に columns があるときだけ反映(手動リサイズ幅の
       //   column.width 焼き込み込み。幅を渡さないときは今の幅で焼き込み、今の幅を保ちます)。
       if (s.onColumnsChange && patch.columns) {
-        s.onColumnsChange(applyColumnState(s.columns, patch.columns, patch.columnWidths ?? ui.columnWidths));
+        const nextColumns = applyColumnState(currentColumns(s), patch.columns, patch.columnWidths ?? ui.columnWidths);
+        pendingColumns = { base: s.columns, next: nextColumns };
+        s.onColumnsChange(nextColumns);
       }
       // 幅 reset / フィルター一括 / ソート set を、渡されたものだけ dispatch(同一イベント内で自動バッチ)。
       if (patch.columnWidths) {
@@ -752,6 +759,7 @@ export const createGridApi = <T,>(features: Pick<GridCoreFeatures, 'export'> = {
     update: (next) => {
       const previousHeight = args?.physicalBodyHeight;
       args = next;
+      pendingColumns = null;
       // 追加(監査 M-05): 末尾固定中に総高が変わったら末尾へ合わせ直します。
       if (bottomPin === null || previousHeight === next.physicalBodyHeight) {
         return;

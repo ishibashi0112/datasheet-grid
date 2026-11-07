@@ -12,6 +12,7 @@ import type {
 // 追加(state v2): 列メタ適用時、pinned/order を AG Grid 互換の視覚順(left→center→right)へ
 //   正規化するために再利用します。grid 本体の reorder 経路と同じ関数で、適用結果の pane 連結を
 //   一致させます(視覚順 = 論理 index 空間の不変条件を applyState でも守るため)。
+import { isSyntheticColumnKey } from './detailRow';
 import { reorderColumnsByPane } from './geometry';
 
 // 追加(state #1): 列状態のシリアライズ(getState / applyState)の純ロジックです。ハンドル
@@ -367,6 +368,8 @@ export const migrateGridStatePatch = (input: unknown): NormalizedGridStatePatch 
 //   戻したとき、無い列のフィルターが残って 0 件になり、チップにもフィルターの管理にも出ないので画面から外せなかった
 //   ため。捨てた列キー(重複なし・見つけた順)も返します(開発時の警告用)。columns(列メタ)は applyColumnState が
 //   無い列を捨てるのでここでは触りません。
+// 変更(別視点のレビュー): ライブラリが足す列(自動グループ列など)の幅は捨てません(自動グループ列は手で幅を変えられ、
+//   getState() の columnWidths に入るため。捨てると applyState(getState()) で幅が戻り、見当違いの警告も出ていた)。
 export const dropUnknownColumnKeys = (
   patch: NormalizedGridStatePatch,
   knownKeys: ReadonlySet<string>,
@@ -381,7 +384,7 @@ export const dropUnknownColumnKeys = (
   if (patch.columnWidths) {
     const widths: Record<string, number> = {};
     for (const key of Object.keys(patch.columnWidths)) {
-      if (knownKeys.has(key)) {
+      if (knownKeys.has(key) || isSyntheticColumnKey(key)) {
         widths[key] = patch.columnWidths[key] as number;
       } else {
         drop(key);

@@ -89,6 +89,11 @@ export const createKeyboardController = <T,>(): KeyboardController<T> => {
     return candidate >= 0 && candidate < rowCount ? candidate : fallback;
   };
 
+  // 追加(別視点のレビュー): 横の移動の行です。ラベル行なら近いデータ行(上、無ければ下)へ寄せます(範囲の終わりがラベル行の
+  //   とき = 末尾がラベル行の表で全選択した後など、横に広げるとアクティブセルがラベル行に乗っていた)。
+  const nearestDataRow = (rowModel: RowModel<T>, row: number): number =>
+    skipLabelRows(rowModel, row, -1, skipLabelRows(rowModel, row, 1, row));
+
   // 追加(dogfood DU-01 / DU-16): 端の行(ラベル行を飛ばした最初 / 最後の行)と端の列(先頭は操作用の合成列を飛ばす)。
   const firstRowIndex = (rowModel: RowModel<T>): number => skipLabelRows(rowModel, 0, 1, 0);
   const lastRowIndex = (rowModel: RowModel<T>): number => {
@@ -168,9 +173,10 @@ export const createKeyboardController = <T,>(): KeyboardController<T> => {
     }
     const currentCell = movingCell(extendSelection);
     let nextRow = clamp(currentCell.row + deltaRow, 0, rowCount - 1);
-    if (deltaRow !== 0) {
-      nextRow = skipLabelRows(rowModel, nextRow, deltaRow > 0 ? 1 : -1, currentCell.row);
-    }
+    nextRow =
+      deltaRow !== 0
+        ? skipLabelRows(rowModel, nextRow, deltaRow > 0 ? 1 : -1, currentCell.row)
+        : nearestDataRow(rowModel, nextRow);
     const nextCell = {
       row: nextRow,
       col: clamp(currentCell.col + deltaCol, 0, visibleColumns.length - 1),
@@ -198,7 +204,7 @@ export const createKeyboardController = <T,>(): KeyboardController<T> => {
     commitMove(
       currentCell,
       {
-        row: clamp(next.row, 0, rowModel.getRowCount() - 1),
+        row: nearestDataRow(rowModel, clamp(next.row, 0, rowModel.getRowCount() - 1)),
         col: clamp(next.col, 0, visibleColumns.length - 1),
       },
       extendSelection && uiState.activeCell !== null,
@@ -374,7 +380,11 @@ export const createKeyboardController = <T,>(): KeyboardController<T> => {
       // 列の端(最終列で Tab / 先頭列で Shift+Tab)は既定動作に任せ、フォーカスをグリッド外へ出します
       //   (キーボードトラップ回避。WCAG 2.1.2 / 監査 C-5)。端以外は従来どおりアクティブセル移動。
       // 変更(dogfood DU-16): アクティブセルが無いときの Tab は先頭のセルに止まります(Shift+Tab はグリッドの外へ)。
+      //   変更(別視点のレビュー): 行や列が 0 件なら止まるセルが無いので、Tab は既定の動きのまま外へ出します(止めると出られなかった)。
       if (!uiState.activeCell && !event.shiftKey) {
+        if (args.rowModel.getRowCount() === 0 || args.visibleColumns.length === 0) {
+          return;
+        }
         event.preventDefault();
         activateFirstCellIfNone();
         return;
