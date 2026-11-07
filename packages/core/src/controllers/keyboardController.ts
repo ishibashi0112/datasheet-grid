@@ -16,6 +16,7 @@ import type {
 import { clamp } from '../logic/geometry';
 import { isImeInputTarget, isPrintableKey, shouldIgnoreGridKeydown } from '../logic/domGuards';
 import { isViewCellEditable } from '../utils/permissions';
+import { DETAIL_TOGGLE_COLUMN_KEY } from '../logic/detailRow';
 
 export type GridKeyboardEventLike = {
   key: string;
@@ -49,6 +50,8 @@ export type KeyboardControllerArgs<T> = {
   enableClearOnDelete: boolean;
   onToggleCheckboxCell: (cell: CellCoord) => void;
   onToggleGroup: (groupKey: string) => void;
+  // 追加(dogfood DU-04): 展開トグル列(合成列)のセルでの Enter / Space の開閉です。開閉したら true(展開行が無い構成は未指定)。
+  onToggleDetailRow?: (cell: CellCoord) => boolean;
 };
 
 export type KeyboardController<T> = {
@@ -132,6 +135,7 @@ export const createKeyboardController = <T,>(): KeyboardController<T> => {
       enableClearOnDelete,
       onToggleCheckboxCell,
       onToggleGroup,
+      onToggleDetailRow,
     } = args;
 
     // 入力部品(input / textarea / select / button / contenteditable)配下では発火させません。
@@ -241,6 +245,16 @@ export const createKeyboardController = <T,>(): KeyboardController<T> => {
       if (groupRow) {
         event.preventDefault();
         onToggleGroup(groupRow.groupKey);
+        return;
+      }
+      // 追加(dogfood DU-04): 展開トグル列のセルでは Enter / Space が展開行の開閉(▸ を押したのと同じ)。これまではキーボードで
+      //   開閉できませんでした。
+      if (
+        onToggleDetailRow &&
+        visibleColumns[uiState.activeCell.col]?.key === DETAIL_TOGGLE_COLUMN_KEY &&
+        onToggleDetailRow(uiState.activeCell)
+      ) {
+        event.preventDefault();
         return;
       }
     }

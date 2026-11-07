@@ -148,6 +148,30 @@ const collectRowElements = (container: HTMLElement): HTMLElement[] => {
   return result;
 };
 
+// 追加(dogfood DF-02): 展開行の帯(3 ペイン分。展開行カード内のネストしたグリッドの帯は除外)を、view index と位置を引く
+//   キー(同じ index の帯はペインごとに 1 つずつあるので、DOM の順で何番目か)付きで列挙します。帯は行と違い `top` で置かれ
+//   transform を持たないので、live 方式の追従 / 退避と確定後のスライドでは translateY を相対の移動量として当て、終わったら外します。
+//   これまでは帯を動かさず、live 方式で展開中の行を掴むと帯が元の位置に残って、退避した後ろの行を覆っていました。
+type DetailBandElement = { el: HTMLElement; index: number; key: string };
+const collectDetailBandElements = (container: HTMLElement): DetailBandElement[] => {
+  const result: DetailBandElement[] = [];
+  const ordinals = new Map<number, number>();
+  container.querySelectorAll<HTMLElement>('.ssg-detail-band[data-detail-row-index]').forEach((band) => {
+    if (isInsideDetailCardOf(container, band)) return;
+    const index = Number(band.getAttribute('data-detail-row-index'));
+    const ordinal = ordinals.get(index) ?? 0;
+    ordinals.set(index, ordinal + 1);
+    result.push({ el: band, index, key: `band|${ordinal}|${index}` });
+  });
+  return result;
+};
+const resetDetailBandStyle = (band: HTMLElement) => {
+  band.style.transition = '';
+  band.style.transform = '';
+  band.style.willChange = '';
+  band.style.zIndex = '';
+};
+
 type RowDropHit = { slot: number; top: number };
 type LiveBase = { index: number; baseY: number; applied?: string };
 
@@ -173,6 +197,8 @@ export const createRowDragController = (): RowDragController => {
   //   applied は最後にこのコントローラが書いた transform(FC-12: ドラッグ中に React が書き直したかを見分ける)。
   let liveBases: Map<HTMLElement, LiveBase> | null = null;
   let liveStartScrollTop = 0;
+  // 追加(dogfood DF-02): live 方式で transform を当てた展開行の帯(後始末で外す)。
+  let liveBands: Set<HTMLElement> | null = null;
 
   const isLive = () => args?.motion === 'live';
 
@@ -350,6 +376,27 @@ export const createRowDragController = (): RowDragController => {
       row.style.transform = `translateY(${baseY + shift}px)`;
       base.applied = row.style.transform;
     });
+    // 追加(dogfood DF-02): 展開行の帯も行と一緒に動かします(掴んだ行の帯は追従、間の行の帯は同じだけ退避)。
+    const bands = liveBands ?? new Set<HTMLElement>();
+    liveBands = bands;
+    for (const { el, index } of collectDetailBandElements(container)) {
+      bands.add(el);
+      if (index === from) {
+        el.style.transition = 'none';
+        el.style.transform = `translateY(${dragDelta}px)`;
+        el.style.willChange = 'transform';
+        el.style.zIndex = '10';
+        continue;
+      }
+      let shift = 0;
+      if (target !== null) {
+        if (from < index && index <= target) shift = -height;
+        else if (target <= index && index < from) shift = height;
+      }
+      el.style.transition = LIVE_SHIFT_TRANSITION;
+      el.style.transform = `translateY(${shift}px)`;
+      el.style.zIndex = '';
+    }
   };
 
   // clientX/clientY → { slot, top(ガイド線の transform 層内 y) } | null(枠外)。
@@ -469,6 +516,10 @@ export const createRowDragController = (): RowDragController => {
     for (const row of collectRowElements(container)) {
       map.set(rowPositionKey(row, Number(row.getAttribute('data-row-index'))), row.getBoundingClientRect().top);
     }
+    // 追加(dogfood DF-02): 展開行の帯も記録し、確定後に行と一緒に滑らせます。
+    for (const band of collectDetailBandElements(container)) {
+      map.set(band.key, band.el.getBoundingClientRect().top);
+    }
     return map;
   };
 
@@ -505,6 +556,29 @@ export const createRowDragController = (): RowDragController => {
     //   書き直さず、確定後の画面の並びがデータとずれていた(見えている行と、クリックや入力で書き換わる行が違った)。
     const liveTops =
       bases && willCommit && args !== null && !isMotionOff(args.scrollContainerRef.current) ? captureRowTops() : null;
+    // 追加(dogfood DF-02): 展開行の帯の transform も、確定するときはすぐ外し(確定後のスライドは applyReorderSettle)、
+    //   取り消すときは元の位置へ戻してから外します。
+    const bands = liveBands;
+    liveBands = null;
+    if (bands) {
+      if (willCommit) {
+        bands.forEach(resetDetailBandStyle);
+      } else {
+        bands.forEach((band) => {
+          if (!band.isConnected) return;
+          band.style.transition = LIVE_SHIFT_TRANSITION;
+          band.style.transform = 'translateY(0px)';
+          band.style.zIndex = '';
+        });
+        window.setTimeout(() => {
+          bands.forEach((band) => {
+            // 戻している間に次のドラッグが始まっていれば、そちらが当てた transform を消さない。
+            if (liveBands?.has(band)) return;
+            resetDetailBandStyle(band);
+          });
+        }, LIVE_SHIFT_MS + 40);
+      }
+    }
     if (bases) {
       if (willCommit) {
         bases.forEach(({ baseY }, row) => {
@@ -585,7 +659,20 @@ export const createRowDragController = (): RowDragController => {
       row.style.willChange = 'transform';
       animated.push(row);
     });
-    if (animated.length === 0) return;
+    // 追加(dogfood DF-02): 展開行の帯も同じ対応で滑らせます(帯は transform を持たないので 0 へ戻し、終わったら外す)。
+    const animatedBands: HTMLElement[] = [];
+    collectDetailBandElements(container).forEach(({ el, index, key }) => {
+      const previousIndex = previousIndexOf(index);
+      const oldTop = tops.get(key.slice(0, key.lastIndexOf('|') + 1) + previousIndex);
+      if (oldTop === undefined) return;
+      const delta = oldTop - el.getBoundingClientRect().top;
+      if (Math.abs(delta) < 0.5) return;
+      el.style.transition = 'none';
+      el.style.transform = `translateY(${delta}px)`;
+      el.style.willChange = 'transform';
+      animatedBands.push(el);
+    });
+    if (animated.length === 0 && animatedBands.length === 0) return;
 
     // 初期(逆 transform)を確定させるため 1 回だけ強制リフロー。
     void container.getBoundingClientRect();
@@ -593,10 +680,19 @@ export const createRowDragController = (): RowDragController => {
       row.style.transition = `transform ${SETTLE_MS}ms ${SETTLE_EASING}`;
       row.style.transform = `translateY(${targetYByRow.get(row) ?? 0}px)`;
     }
+    for (const band of animatedBands) {
+      band.style.transition = `transform ${SETTLE_MS}ms ${SETTLE_EASING}`;
+      band.style.transform = 'translateY(0px)';
+    }
     window.setTimeout(() => {
       for (const row of animated) {
         row.style.transition = '';
         row.style.willChange = '';
+      }
+      for (const band of animatedBands) {
+        // 滑らせている間に live 方式の次のドラッグが始まっていれば、そちらが当てた transform を消さない。
+        if (liveBands?.has(band)) continue;
+        resetDetailBandStyle(band);
       }
     }, SETTLE_MS + 80);
   };
@@ -768,6 +864,8 @@ export const createRowDragController = (): RowDragController => {
       draggingRow = null;
       dropSlot = null;
       liveBases = null;
+      liveBands?.forEach(resetDetailBandStyle);
+      liveBands = null;
       settlePending = null;
     },
   };

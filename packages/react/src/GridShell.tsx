@@ -255,6 +255,18 @@ const renderDetailToggleCell = (ctx: CellRenderContext<unknown>) => {
       aria-expanded={detail.expanded}
       aria-label={detail.expanded ? '詳細を閉じる' : '詳細を開く'}
       onClick={detail.toggle}
+      // 変更(dogfood DF-16): ▸ / ▾ は開閉だけにして、アクティブセルと選択を動かしません(セルの pointerdown へ伝えない)。
+      //   これまではトグル列(合成列)がアクティブセルになり、onActiveCellChange に null が来ていました(アクティブセルに
+      //   連動させた詳細パネルが、展開しただけで空になる)。続けてキー操作できるよう、フォーカスはボタンではなくグリッドへ
+      //   置きます(セルを押したときと同じ)。
+      onPointerDown={(event) => {
+        event.stopPropagation();
+        if (event.button !== 0) {
+          return;
+        }
+        event.preventDefault();
+        event.currentTarget.closest<HTMLElement>('.ssg-shell')?.focus({ preventScroll: true });
+      }}
       onDoubleClick={(event) => event.stopPropagation()}
     >
       {detail.expanded ? '▾' : '▸'}
@@ -2461,6 +2473,25 @@ export function useGridShell<T extends object>({
     gridRootRef.current?.focus({ preventScroll: true });
   }, [engine]);
 
+  // 追加(dogfood DU-04): 展開トグル列のセルで Enter / Space を押したときの開閉です(▸ を押したのと同じ)。読み込み済みで
+  //   開閉できる行(detailRow.isExpandable)だけを開閉し、開閉したら true を返します(キーの既定の動作を止める)。
+  const toggleDetailRowFromKeyboard = useCallback(
+    (cell: CellCoord): boolean => {
+      const row = rowModel.getRow(cell.row);
+      if (row === undefined) {
+        return false;
+      }
+      const rowKey = rowModel.getRowKey(cell.row) ?? cell.row;
+      const sourceRowIndex = rowModel.getSourceIndex(cell.row) ?? cell.row;
+      if (detailIsExpandable && !detailIsExpandable(row, { rowKey, sourceRowIndex })) {
+        return false;
+      }
+      toggleDetailRowAt(rowKey, cell.row);
+      return true;
+    },
+    [rowModel, detailIsExpandable, toggleDetailRowAt],
+  );
+
   const { handleKeyDown } = useGridKeyboardInteractions({
     uiState,
     // 変更(DS-3-1): filteredRows 配列 → rowModel シームを渡します(keyboard consumer 移行)。
@@ -2490,6 +2521,8 @@ export function useGridShell<T extends object>({
     onToggleCheckboxCell: toggleCheckboxCell,
     // 追加(grouping ④): グループ行の Enter / Space 開閉トグル配線です。
     onToggleGroup: handleGroupToggle,
+    // 追加(dogfood DU-04): 展開トグル列のセルでの Enter / Space の開閉配線です。
+    onToggleDetailRow: detailRowEnabled ? toggleDetailRowFromKeyboard : undefined,
   });
 
   // ── edit controller ───────────────────────────────────

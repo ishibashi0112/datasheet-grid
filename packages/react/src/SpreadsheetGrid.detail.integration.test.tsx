@@ -378,3 +378,72 @@ describe('展開行(結合)', () => {
     expect(centerBands(container)).toHaveLength(0);
   });
 });
+
+// 追加(dogfood DF-16 / DU-04): 実際にアプリを作って見つかった展開行の操作の所見の回帰テストです。
+describe('展開行の操作(dogfood)', () => {
+  it('DF-16: ▸ を押してもアクティブセルは動かず onActiveCellChange も呼ばれない(開閉だけ)。フォーカスはグリッドへ', () => {
+    const ref = createRef<SpreadsheetGridHandle<Row>>();
+    const onActiveCellChange = vi.fn();
+    const { container } = render(
+      <SpreadsheetGrid
+        ref={ref}
+        columns={columns}
+        rows={rows}
+        rowKeyGetter={rowKeyGetter}
+        detailRow={detailRow}
+        onActiveCellChange={onActiveCellChange}
+      />,
+    );
+    act(() => {
+      ref.current?.setActiveCell({ row: 2, col: 2 });
+    });
+    onActiveCellChange.mockClear();
+    const toggle = toggleAt(container, 0);
+    expect(toggle).not.toBeNull();
+    act(() => {
+      fireEvent.pointerDown(toggle!, { button: 0, pointerId: 1, pointerType: 'mouse' });
+      fireEvent.pointerUp(window, { button: 0, pointerId: 1, pointerType: 'mouse' });
+      fireEvent.click(toggle!);
+    });
+    expect(ref.current?.getExpandedDetailRowKeys()).toEqual(['a']);
+    expect(ref.current?.getActiveCell()).toEqual({ row: 2, col: 2 });
+    expect(onActiveCellChange).not.toHaveBeenCalled();
+    expect(document.activeElement).toBe(getShell(container));
+  });
+
+  it('DU-04: 展開トグル列のセルで Enter / Space を押すと開閉する(開閉できない行では何もしない)', () => {
+    const ref = createRef<SpreadsheetGridHandle<Row>>();
+    const onRowsChange = vi.fn();
+    const { container } = render(
+      <SpreadsheetGrid
+        ref={ref}
+        columns={columns}
+        rows={rows}
+        rowKeyGetter={rowKeyGetter}
+        detailRow={detailRow}
+        onRowsChange={onRowsChange}
+      />,
+    );
+    const shell = getShell(container);
+    act(() => {
+      ref.current?.setActiveCell({ row: 0, col: 0 });
+    });
+    fireEvent.keyDown(shell, { key: 'Enter' });
+    expect(ref.current?.getExpandedDetailRowKeys()).toEqual(['a']);
+    fireEvent.keyDown(shell, { key: ' ' });
+    expect(ref.current?.getExpandedDetailRowKeys()).toEqual([]);
+    // 行 b は isExpandable が false。
+    act(() => {
+      ref.current?.setActiveCell({ row: 1, col: 0 });
+    });
+    fireEvent.keyDown(shell, { key: 'Enter' });
+    expect(ref.current?.getExpandedDetailRowKeys()).toEqual([]);
+    // データ列の Enter はこれまでどおり編集の開始(開閉しない)。
+    act(() => {
+      ref.current?.setActiveCell({ row: 0, col: 2 });
+    });
+    fireEvent.keyDown(shell, { key: 'Enter' });
+    expect(ref.current?.getExpandedDetailRowKeys()).toEqual([]);
+    expect(container.querySelector('.ssg-cell-editor, [data-ssg-editor]')).not.toBeNull();
+  });
+});
