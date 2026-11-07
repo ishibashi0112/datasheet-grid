@@ -542,7 +542,7 @@ WAI-ARIA の grid パターンに沿って、表・行・セルに役割と状�
 | `setValue` | `(row: T, value: unknown) => T` | — | 値ライター(新しい行を返す)。 |
 | `renderCell` | `(ctx: CellRenderContext<T>) => ReactNode` | プレーン `<span>` | カスタムセル描画。 |
 | `align` | `'left' \| 'center' \| 'right'` | `'left'` | セル内容の水平寄せ(UI 表示のみ・元の値は不変)。セル表示と編集 input に反映。 |
-| `headerAlign` | `'left' \| 'center' \| 'right'` | `align` と同じ | 列見出しの水平寄せ(書かなければ `align` に合わせる。見出しだけ変えたい列に書く)。`'right'` は並びを鏡写しにする(並べ替えの矢印とフィルターの印をラベルの左、ホバーで出る grip と ⋮ も左)。`'center'` は文字だけ中央で、印と操作は右。`renderHeader` の中身にも効く(器の `text-align`)。列幅の自動調整の見出しの幅は変わらない。 |
+| `headerAlign` | `'left' \| 'center' \| 'right'` | `align` と同じ | 列見出しの水平寄せ(書かなければ `align` に合わせる。見出しだけ変えたい列に書く)。`'right'` は並びを鏡写しにする(並べ替えの矢印とフィルターの印をラベルの左、ホバーで出る grip と ⋮ も左)。`'center'` は文字だけ中央で、印と操作は右(印が出ているときは印を除いた幅の中で中央)。`renderHeader` の中身にも効く(器の `text-align`)。列幅の自動調整の見出しの幅は変わらない。 |
 | `valueFormatter` | `(params: CellValueFormatterParams<T>) => string` | — | セル表示値の整形(UI 表示のみ)。`renderCell` 未指定の既定セルが返り値を表示。組み込み `numberFormatter` 等を渡せる。元の値/編集/コピー/ソート/フィルターには影響しない。 |
 | `cellClassName` | `GridSlotProps \| ((ctx: CellStyleContext<T>) => GridSlotProps \| undefined)` | — | セルへ付与する追加 class(条件付きスタイル)。`GridSlotProps` = `string \| { className?, style? }` で、StyleX の `stylex.props(...)` をそのまま返せる(`style` はセルへインライン付与。座標 / 寸法はグリッドが後勝ち)。関数版は値 / 状態に応じて返せる。`ctx` には view の `rowIndex` に加え source 基準の `sourceRowIndex` / `rowKey` が入る(ソート / フィルター ON でも source 行基準のデータと突き合わせ可能。「補助型」節参照)。基底 `.ssg-body-cell` は未レイヤー・特異度 (0,1,0)。確実な上書きは `.ssg-body-cell.my-class` の連結を推奨。 |
 | `cellNote` | `(ctx: CellStyleContext<T>) => string \| null \| undefined` | — | セルのメモ(FarPoint SPREAD のセルメモ / Excel のメモ相当)。文字列を返したセルの右上に印(10px の三角。色はトークン `--ssg-note-indicator`)を出し、マウスを乗せるとその文字列をツールチップで表示する(`\n` で改行)。`undefined` / `null` / 空文字(空白だけを含む)なら何も出さない。`ctx` は `cellClassName` の関数版と同じ。入力エラー(`validate` の mark)と同じセルでは、エラーの 6px の赤い三角がメモの三角の上に重なって両方見え、ツールチップは「エラー → 改行 → メモ」の順。描画中のセルだけ評価する(`cellClassName` 関数と同じコスト階級)。CSV / TSV / クリップボード / `getExportData` には含めない。詳細は「セルのメモ(`cellNote`)」節。 |
@@ -1995,8 +1995,9 @@ function Grid(props: SpreadsheetGridProps<Row>) {
 `document.body` の直下に出す部品(列メニュー / 列フィルター / 右クリックメニュー / select エディタの候補 / ツールパネル / フィルハンドルのメニューと値のツールチップ / ツールチップ / ドラッグのゴースト)は表の中に無いので、表やその祖先に書いたトークンは継承では届かない。グリッドは部品を出すときに、表の root で決まったトークンの値をその部品の root へインラインで写す。
 
 - `.ssg-root { … }` / `className` のクラス / `.card .ssg-root { … }` のような祖先のセレクタ / 祖先の変数を使った値(`--ssg-panel-bg: var(--card-head)`)も、部品に同じ値で出る。
-- 部品の側で決めた値は写さない(`classNames.popover` / `classNames.tooltip` / `classNames.dragGhost` の style や、`.ssg-menu-panel { … }` / `.ssg-tooltip { … }` のように部品だけに当てた指定がそのまま効く)。`density` の寸法も部品には写さない(部品は密度の対象外)。
-- 写すのは部品を出したとき(メニューやパネルを開いたとき、ツールチップを出すとき、ドラッグを始めたとき)と、`theme` / `motion` が変わったとき。開いたまま利用側の CSS を差し替えたときは、次に出すときに合う。
+- 部品の側で決めた値は写さない(`classNames.popover` / `classNames.tooltip` / `classNames.dragGhost` の style や、`.ssg-menu-panel { … }` / `.ssg-tooltip { … }` のように部品だけに当てた指定がそのまま効く)。ただし部品だけに当てた CSS の値が既定値と同じだと区別できず、表の値が写る(部品を既定の色のままにしたいときは `classNames.popover` などの style で書く。style は既定値と同じ値でも残る)。
+- 密度の寸法(`--ssg-cell-pad-x` / `--ssg-bar-pad-x` / `--ssg-bar-pad-y` / `--ssg-icon-btn-size`)は写さない(部品は `density` の対象外。表に書いた値も写さない)。
+- 写すのは部品を出したとき(メニューやパネルを開いたとき、ツールチップを出すとき、ドラッグを始めたとき)と、`theme` / `motion` が変わったとき。メニューやパネルを開いている間は、`<html>` / `<body>` の属性(ダークモードのクラスなど)、表の root の class / style、OS の配色(`prefers-color-scheme`)が変わったときにも写し直す。それ以外の方法で利用側の CSS を差し替えたときは、次に出すときに合う。
 
 - 下の表の名前が公開契約で、消す・改名する・意味を変えるのは破壊的変更。既定値(色・寸法)の調整は minor で行うことがある(CHANGELOG に書く)。
 - 表に無い `--ssg-*`(要素ごとに内部で使う変数や、`themes/*.css` の中継の `--ssg-ds-*`)は内部。

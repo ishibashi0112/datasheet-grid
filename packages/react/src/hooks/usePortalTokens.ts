@@ -1,9 +1,9 @@
 // 追加(DevBI の報告 2026-11-07): document.body の直下に出すポップアップへ、表で決まった CSS トークン(--ssg-*)を写します
-//   (中身は core utils/portalTokens の syncPortalTokens)。表の要素はシェルが PortalTokenSourceContext で渡します。
-//   ポップアップが出たとき(active が true になったとき)とテーマ / モーションの修飾子が変わったときに写し直します。
-//   開いたまま利用側の CSS を変えたときは、次に開いたときに合います。
+//   (中身は core utils/portalTokens の watchPortalTokens)。表の要素はシェルが PortalTokenSourceContext で渡します。
+//   ポップアップが出たとき(active が true になったとき)とテーマ / モーションの修飾子が変わったときに写し、開いている間は
+//   <html> / <body> の属性・表の root の class / style・OS の配色の変化でも写し直します。
 import { createContext, useContext, type RefObject } from 'react';
-import { syncPortalTokens } from '@ishibashi0112/spreadsheet-grid-core/internal/utils/portalTokens';
+import { watchPortalTokens } from '@ishibashi0112/spreadsheet-grid-core/internal/utils/portalTokens';
 
 import { useIsomorphicLayoutEffect } from './useController';
 
@@ -16,8 +16,10 @@ export function usePortalTokens(
 ): void {
   const sourceRef = useContext(PortalTokenSourceContext);
   useIsomorphicLayoutEffect(() => {
-    if (active) {
-      syncPortalTokens(sourceRef?.current, portalRef.current);
+    const portal = portalRef.current;
+    if (!active || !portal) {
+      return undefined;
     }
+    return watchPortalTokens(() => sourceRef?.current, portal);
   }, [active, modifierClassName, sourceRef, portalRef]);
 }

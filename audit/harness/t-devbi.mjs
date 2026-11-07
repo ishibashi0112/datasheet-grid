@@ -168,6 +168,95 @@ const closeAll = async (page) => {
   await close();
 }
 
+// ---- ポップアップの色: 別の目のレビュー(2026-11-07)の指摘の確認 ----
+{
+  const { page, close, pageErrors } = await open('basic', { query: 'n=50' });
+  await addStyle(
+    page,
+    `.devbi-card { --card-head: rgb(230, 240, 250); }
+     html.devbi-dark .devbi-card { --card-head: rgb(20, 20, 20); }
+     .devbi-card .ssg-root { --ssg-panel-bg: var(--card-head); --ssg-accent: rgb(0, 128, 0); --ssg-icon-btn-size: 28px; }`,
+  );
+  await page.evaluate(() => {
+    const root = document.querySelector('.ssg-root');
+    const card = document.createElement('div');
+    card.className = 'devbi-card';
+    root.parentElement.insertBefore(card, root);
+    card.appendChild(root);
+  });
+  await waitIdle(page, 100);
+  // 列の固定のサブメニュー(入れ子の .ssg-menu-panel)にも届く。
+  await openColumnMenu(page, 'name');
+  await page.locator('.ssg-menu-item:has-text("列の固定")').hover();
+  await waitIdle(page, 150);
+  const submenu = await page.evaluate(() => {
+    const panels = document.querySelectorAll('.ssg-menu-panel .ssg-menu-panel');
+    const el = panels[panels.length - 1];
+    return el ? getComputedStyle(el).getPropertyValue('--ssg-panel-bg').trim() : null;
+  });
+  check('review: the pin submenu gets the grid tokens too', submenu === 'rgb(230, 240, 250)', { submenu });
+  // 密度の寸法は、利用側が表に書いた値でも写さない(standard でも)。
+  check('review: density sizes written on the grid are not copied (standard)', (await tokenOf(page, '.ssg-menu-panel', '--ssg-icon-btn-size')) === '20px');
+  await closeAll(page);
+  await closeAll(page);
+  // ポップアップのインラインの値は、既定値と同じ値でも残す。
+  await page.evaluate(() => window.__setProps({ classNames: { popover: { style: { '--ssg-accent': '#3461c9' } } } }));
+  await waitIdle(page, 100);
+  await openColumnMenu(page, 'name');
+  check('review: classNames.popover style equal to the default is kept', (await tokenOf(page, '.ssg-menu-panel', '--ssg-accent')) === '#3461c9');
+  await closeAll(page);
+  await page.evaluate(() => window.__setProps({ classNames: undefined }));
+  // ツールパネルを開いた直後に、色の transition が走らない(既定の色から写した色へ一瞬動いていた)。
+  //   2 回目に開いたとき(パネルは置き続ける)も見る。
+  const openAndCollect = () =>
+    page.evaluate(async () => {
+      const seen = [];
+      const onRun = (event) => {
+        if (event.target.closest?.('.ssg-toolpanel') && /color|background|border|shadow|fill/.test(event.propertyName)) {
+          seen.push(`${String(event.target.className).split(' ')[0]}:${event.propertyName}`);
+        }
+      };
+      document.addEventListener('transitionrun', onRun, true);
+      window.__grid.openFilterManager();
+      await new Promise((resolve) => setTimeout(resolve, 400));
+      document.removeEventListener('transitionrun', onRun, true);
+      return seen;
+    });
+  const firstOpen = await openAndCollect();
+  await closeAll(page);
+  const secondOpen = await openAndCollect();
+  check('review: opening the tool panel starts no color transition', firstOpen.length === 0 && secondOpen.length === 0, { firstOpen, secondOpen });
+  //   開いたまま写し直す(<body> の属性の変化。値は同じ)ときも動かない。止めるクラスを効かなくすると動く(確認の確認)。
+  const resyncTransitions = (disableSuppression) =>
+    page.evaluate(async (disableSuppression) => {
+      const undo = document.createElement('style');
+      undo.textContent = '.ssg-token-sync, .ssg-token-sync * { transition: color 300ms, background-color 300ms !important; }';
+      if (disableSuppression) document.head.appendChild(undo);
+      const seen = [];
+      const onRun = (event) => {
+        if (event.target.closest?.('.ssg-toolpanel')) seen.push(`${String(event.target.className).split(' ')[0]}:${event.propertyName}`);
+      };
+      document.addEventListener('transitionrun', onRun, true);
+      document.body.classList.toggle('some-app-state');
+      await new Promise((resolve) => setTimeout(resolve, 400));
+      document.removeEventListener('transitionrun', onRun, true);
+      undo.remove();
+      return seen;
+    }, disableSuppression);
+  const resync = await resyncTransitions(false);
+  const resyncUnsuppressed = await resyncTransitions(true);
+  check('review: re-copying while open starts no transition (and the check sees them when not suppressed)', resync.length === 0 && resyncUnsuppressed.length > 0, { resync, resyncUnsuppressed: resyncUnsuppressed.length });
+  // 開いたまま CSS だけでダークへ切り替えても、表の値を写し直す(背景だけ前の色で残っていた)。
+  check('review: tool panel has the grid value before the switch', (await tokenOf(page, '.ssg-toolpanel', '--ssg-panel-bg')) === 'rgb(230, 240, 250)');
+  await page.evaluate(() => document.documentElement.classList.add('devbi-dark'));
+  await waitIdle(page, 150);
+  check('review: a CSS-only dark switch while open is followed', (await tokenOf(page, '.ssg-toolpanel', '--ssg-panel-bg')) === 'rgb(20, 20, 20)');
+  await page.evaluate(() => document.documentElement.classList.remove('devbi-dark'));
+  await closeAll(page);
+  check('review: no unexpected page errors', unexpectedPageErrors(pageErrors).length === 0, pageErrors);
+  await close();
+}
+
 // ---- getRowClassName: 行だけに効かせる書き方(ドキュメントの例)----
 //   class と style は行・「#」セル・各セルに付くので、素のクラスの opacity は 2 回掛かり、`.ssg-body-row.<class>` なら 1 回。
 {

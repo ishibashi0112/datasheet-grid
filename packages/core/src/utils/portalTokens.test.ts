@@ -5,7 +5,7 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { syncPortalTokens, TOKEN_PROBE_CLASS } from './portalTokens';
+import { syncPortalTokens, TOKEN_PROBE_CLASS, watchPortalTokens } from './portalTokens';
 
 type Rule = { matches: (el: Element) => boolean; vars: Record<string, string> };
 
@@ -149,6 +149,35 @@ describe('syncPortalTokens', () => {
     expect(inlineTokens(portal)).toEqual({});
   });
 
+  it('密度の寸法は、利用側が表に書いた値でも写さない(密度によって結果が変わらないように)', () => {
+    rules = [{ matches: (el) => el.classList.contains('ssg-root'), vars: { '--ssg-icon-btn-size': '28px', '--ssg-accent': 'green' } }];
+    const { shell, portal } = setup();
+    syncPortalTokens(shell, portal);
+    expect(inlineTokens(portal)).toEqual({ '--ssg-accent': 'green' });
+  });
+
+  it('ポップアップのインラインの値は既定値と同じ値でも残す', () => {
+    rules = [{ matches: (el) => el.classList.contains('ssg-root'), vars: { '--ssg-accent': 'green' } }];
+    const { shell, portal } = setup();
+    portal.style.setProperty('--ssg-accent', DEFAULTS['--ssg-accent']);
+    syncPortalTokens(shell, portal);
+    expect(inlineTokens(portal)).toEqual({ '--ssg-accent': DEFAULTS['--ssg-accent'] });
+  });
+
+  it('写す間だけ transition を止めるクラスを付け、終わったら外す', () => {
+    rules = [{ matches: (el) => el.classList.contains('ssg-root'), vars: { '--ssg-accent': 'green' } }];
+    const { shell, portal } = setup();
+    const seen: boolean[] = [];
+    const setProperty = portal.style.setProperty.bind(portal.style);
+    vi.spyOn(portal.style, 'setProperty').mockImplementation((name, value) => {
+      seen.push(portal.classList.contains('ssg-token-sync'));
+      setProperty(name, value);
+    });
+    syncPortalTokens(shell, portal);
+    expect(seen).toEqual([true]);
+    expect(portal.classList.contains('ssg-token-sync')).toBe(false);
+  });
+
   it('写し直すときは前に写した値を外してから決め直す(利用側が後から書いた値は残す)', () => {
     rules = [{ matches: (el) => el.classList.contains('ssg-root'), vars: { '--ssg-accent': 'green', '--ssg-panel-bg': 'teal' } }];
     const { shell, portal } = setup();
@@ -182,6 +211,28 @@ describe('syncPortalTokens', () => {
     document.body.appendChild(tooltip);
     syncPortalTokens(item, tooltip);
     expect(inlineTokens(tooltip)).toEqual({ '--ssg-panel-bg': 'teal' });
+  });
+
+  it('watchPortalTokens: 開いている間は <html> の属性の変化で写し直し、やめたら見張らない', async () => {
+    // 値はルールを評価するたびに今の <html> から決める。
+    rules = [
+      {
+        matches: (el) => el.classList.contains('ssg-root'),
+        get vars() {
+          return { '--ssg-panel-bg': document.documentElement.classList.contains('dark') ? 'black' : 'teal' };
+        },
+      } as Rule,
+    ];
+    const { root, portal } = setup();
+    const stop = watchPortalTokens(() => root, portal);
+    expect(inlineTokens(portal)).toEqual({ '--ssg-panel-bg': 'teal' });
+    document.documentElement.classList.add('dark');
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(inlineTokens(portal)).toEqual({ '--ssg-panel-bg': 'black' });
+    stop();
+    document.documentElement.classList.remove('dark');
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(inlineTokens(portal)).toEqual({ '--ssg-panel-bg': 'black' });
   });
 
   it('読むための見えない要素は後片付けする', () => {

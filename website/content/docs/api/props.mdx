@@ -853,8 +853,9 @@ function Grid(props: SpreadsheetGridProps<Row>) {
 `document.body` の直下に出す部品(列メニュー / 列フィルター / 右クリックメニュー / select エディタの候補 / ツールパネル / フィルハンドルのメニューと値のツールチップ / ツールチップ / ドラッグのゴースト)は表の中に無いので、表やその祖先に書いたトークンは継承では届かない。グリッドは部品を出すときに、表の root で決まったトークンの値をその部品の root へインラインで写す。
 
 - `.ssg-root { … }` / `className` のクラス / `.card .ssg-root { … }` のような祖先のセレクタ / 祖先の変数を使った値(`--ssg-panel-bg: var(--card-head)`)も、部品に同じ値で出る。
-- 部品の側で決めた値は写さない(`classNames.popover` / `classNames.tooltip` / `classNames.dragGhost` の style や、`.ssg-menu-panel { … }` / `.ssg-tooltip { … }` のように部品だけに当てた指定がそのまま効く)。`density` の寸法も部品には写さない(部品は密度の対象外)。
-- 写すのは部品を出したとき(メニューやパネルを開いたとき、ツールチップを出すとき、ドラッグを始めたとき)と、`theme` / `motion` が変わったとき。開いたまま利用側の CSS を差し替えたときは、次に出すときに合う。
+- 部品の側で決めた値は写さない(`classNames.popover` / `classNames.tooltip` / `classNames.dragGhost` の style や、`.ssg-menu-panel { … }` / `.ssg-tooltip { … }` のように部品だけに当てた指定がそのまま効く)。ただし部品だけに当てた CSS の値が既定値と同じだと区別できず、表の値が写る(部品を既定の色のままにしたいときは `classNames.popover` などの style で書く。style は既定値と同じ値でも残る)。
+- 密度の寸法(`--ssg-cell-pad-x` / `--ssg-bar-pad-x` / `--ssg-bar-pad-y` / `--ssg-icon-btn-size`)は写さない(部品は `density` の対象外。表に書いた値も写さない)。
+- 写すのは部品を出したとき(メニューやパネルを開いたとき、ツールチップを出すとき、ドラッグを始めたとき)と、`theme` / `motion` が変わったとき。メニューやパネルを開いている間は、`<html>` / `<body>` の属性(ダークモードのクラスなど)、表の root の class / style、OS の配色(`prefers-color-scheme`)が変わったときにも写し直す。それ以外の方法で利用側の CSS を差し替えたときは、次に出すときに合う。
 
 - 下の表の名前が公開契約で、消す・改名する・意味を変えるのは破壊的変更。既定値(色・寸法)の調整は minor で行うことがある(CHANGELOG に書く)。
 - 表に無い `--ssg-*`(要素ごとに内部で使う変数や、`themes/*.css` の中継の `--ssg-ds-*`)は内部。

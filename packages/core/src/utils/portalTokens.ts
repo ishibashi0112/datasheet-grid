@@ -13,11 +13,17 @@
 //   - 素の root の値: 表の root と同じライブラリのクラスだけを付けた見えない要素。利用側の `.ssg-root { … }` のように
 //     どの表にも当たる指定の値になります。
 //   `.ssg-menu-panel { --ssg-panel-bg: … }` や classNames.popover の style のように、ポップアップの側で変えている指定は
-//   どちらとも違うので残します。密度の寸法(表の root だけに修飾子が付く)も同じ理由で写しません。
+//   どちらとも違うので残します。ポップアップの root にインラインで書かれた値(classNames.popover の style)は、既定値と
+//   同じ値でも残します。密度の寸法(DENSITY_TOKENS)は写しません(ポップアップは density の対象外)。
 // 値はポップアップの root にインラインで書き、前に写した値は毎回外してから決め直します(そのあとで同じ名前が別の値で
-//   書かれていたら、それは残します)。変数の名前は getComputedStyle の一覧から取ります(対応ブラウザの Chrome / Edge /
+//   書かれていたら、それは残します)。外す / 書く間はポップアップの中の transition を止めます(既定の色からの色の
+//   移り変わりが一瞬見えていたため)。変数の名前は getComputedStyle の一覧から取ります(対応ブラウザの Chrome / Edge /
 //   Firefox / Safari はカスタムプロパティを一覧に含みます。含まない環境では何も写さず、今までどおりの色になります)。
 const TOKEN_PREFIX = '--ssg-';
+// density の修飾子が決める寸法。表の root だけに修飾子が付くため、写すと密度ごとに結果が変わります。
+const DENSITY_TOKENS = ['--ssg-cell-pad-x', '--ssg-bar-pad-x', '--ssg-bar-pad-y', '--ssg-icon-btn-size'];
+// 写す間だけポップアップへ付ける内部のクラス(style.css で transition: none)。
+const SYNCING_CLASS = 'ssg-token-sync';
 // トークンの既定値を直接持つ要素のクラス(style.css の既定値のセレクタの並びのうちクラスのもの)。
 const TOKEN_ROOT_CLASSES = [
   'ssg-root',
@@ -39,17 +45,25 @@ export function syncPortalTokens(
   if (!portal) {
     return;
   }
+  const source = from?.closest(TOKEN_ROOT_CLASSES.map((name) => `.${name}`).join());
+  const canRead = source && source !== portal && typeof getComputedStyle === 'function';
   const previous = writtenByPortal.get(portal);
+  if (!previous && !canRead) {
+    return;
+  }
+  portal.classList.add(SYNCING_CLASS);
+  let changed = false;
   if (previous) {
     writtenByPortal.delete(portal);
     previous.forEach((value, name) => {
       if (portal.style.getPropertyValue(name) === value) {
         portal.style.removeProperty(name);
+        changed = true;
       }
     });
   }
-  const source = from?.closest(TOKEN_ROOT_CLASSES.map((name) => `.${name}`).join());
-  if (!source || source === portal || typeof getComputedStyle !== 'function') {
+  if (!canRead) {
+    finishSync(portal, changed);
     return;
   }
   const doc = portal.ownerDocument;
@@ -75,7 +89,7 @@ export function syncPortalTokens(
     const next = new Map<string, string>();
     for (let index = 0; index < sourceStyle.length; index += 1) {
       const name = sourceStyle[index];
-      if (!name.startsWith(TOKEN_PREFIX)) {
+      if (!name.startsWith(TOKEN_PREFIX) || DENSITY_TOKENS.includes(name) || portal.style.getPropertyValue(name) !== '') {
         continue;
       }
       const value = sourceStyle.getPropertyValue(name);
@@ -90,9 +104,51 @@ export function syncPortalTokens(
     next.forEach((value, name) => portal.style.setProperty(name, value));
     if (next.size > 0) {
       writtenByPortal.set(portal, next);
+      changed = true;
     }
   } finally {
     bareProbe.remove();
     rootProbe.remove();
+    finishSync(portal, changed);
   }
+}
+
+// 変えた値でいったん計算させてから(transition を止めたまま)、止めるクラスを外します。
+function finishSync(portal: HTMLElement, changed: boolean): void {
+  if (changed) {
+    void portal.offsetWidth;
+  }
+  portal.classList.remove(SYNCING_CLASS);
+}
+
+// 開いている間、ページのテーマの切り替え(<html> / <body> の属性)、表の root の class / style、OS の配色の変化でも
+//   写し直します(写した値はその時点の値のため、CSS だけでダークへ切り替えると背景だけ前の色で残っていました)。
+//   返り値で見張りをやめます。
+export function watchPortalTokens(
+  getFrom: () => Element | null | undefined,
+  portal: HTMLElement,
+): () => void {
+  const sync = () => syncPortalTokens(getFrom(), portal);
+  sync();
+  const doc = portal.ownerDocument;
+  const view = doc.defaultView;
+  if (!view || typeof view.MutationObserver !== 'function') {
+    return () => {};
+  }
+  const observer = new view.MutationObserver(sync);
+  for (const target of [doc.documentElement, doc.body]) {
+    if (target) {
+      observer.observe(target, { attributes: true });
+    }
+  }
+  const source = getFrom();
+  if (source) {
+    observer.observe(source, { attributes: true, attributeFilter: ['class', 'style'] });
+  }
+  const media = view.matchMedia?.('(prefers-color-scheme: dark)');
+  media?.addEventListener?.('change', sync);
+  return () => {
+    observer.disconnect();
+    media?.removeEventListener?.('change', sync);
+  };
 }

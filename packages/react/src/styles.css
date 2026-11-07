@@ -201,6 +201,15 @@
     --ssg-motion-slow: 0ms;
   }
 
+  /* 追加(DevBI の報告): ポップアップへ表のトークンを写す間だけ付く内部のクラス(core utils/portalTokens)。写す前の
+     既定の色から写した色への transition が一瞬見えないよう、その間はポップアップの中の transition を止めます。 */
+  .ssg-token-sync,
+  .ssg-token-sync *,
+  .ssg-token-sync *::before,
+  .ssg-token-sync *::after {
+    transition: none !important;
+  }
+
   /* 密度プリセット(THEME-2)。density prop が root へ付与する修飾子で寸法トークンを一括切替します。
      'standard' は修飾子なし(既定値のまま=従来と同値)。:where(特異度 0)なので、利用側のトークン
      上書き(特異度 (0,1,0) 以上)が常に勝ちます。rowHeight / headerHeight の既定値切替は JS 側
@@ -3402,6 +3411,10 @@
   }
   .ssg-header-cell--align-center .ssg-header-label {
     text-align: center;
+  }
+  /* 中央は、印が無いときに空の状態スロットと gap のぶん左へずれないよう、空のスロットを外します。 */
+  .ssg-header-cell--align-center .ssg-header-status:empty {
+    display: none;
   }
   .ssg-header-cell--align-right .ssg-header-actions {
     right: auto;

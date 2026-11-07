@@ -1298,8 +1298,8 @@ export type GridColumn<T, F extends GridFrameworkTypes = GridFrameworkTypes> = {
   /**
    * 列見出しの水平寄せ(書かなければ `align` に合わせる。見出しだけ変えたい列に書く)。`'right'`
    * は並びを鏡写しにする(並べ替えの矢印とフィルターの印をラベルの左、ホバーで出る grip と ⋮ も左)。
-   * `'center'` は文字だけ中央で、印と操作は右。`renderHeader` の中身にも効く(器の `text-align`)。
-   * 列幅の自動調整の見出しの幅は変わらない。
+   * `'center'` は文字だけ中央で、印と操作は右(印が出ているときは印を除いた幅の中で中央)。
+   * `renderHeader` の中身にも効く(器の `text-align`)。列幅の自動調整の見出しの幅は変わらない。
    *
    * @defaultValue `align` と同じ
    */

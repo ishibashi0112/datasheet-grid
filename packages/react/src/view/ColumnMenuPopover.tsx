@@ -12,7 +12,7 @@
 // 追加(13-B2-3 / gpt5.5対応): ルート項目「列のリセット」を追加します。
 //             既存の ColumnChooserPanel フッターと同じ reset 処理を呼び出し、列メニュー側からも
 //             AG Grid の Reset Columns 相当を実行できるようにします。
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { cx } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/cx';
 import type {
@@ -159,6 +159,9 @@ export function ColumnMenuPopover({
   }, [columnKey, isOpen]);
   // 追加(DevBI の報告): 表で決まったトークン(--ssg-*)をメニューへ写します(body 直下のため継承で届かない)。
   usePortalTokens(popoverRef, isOpen && layout !== null, themeClassName);
+  // 列の固定のサブメニューも同じトークンの既定値を持つ要素(.ssg-menu-panel)なので、外側のメニューからは継承されません。
+  const pinSubmenuRef = useRef<HTMLDivElement>(null);
+  usePortalTokens(pinSubmenuRef, isOpen && layout !== null && openSubmenuKey === PIN_SUBMENU_KEY, themeClassName);
 
   if (!isOpen || !layout) {
     return null;
@@ -423,6 +426,7 @@ export function ColumnMenuPopover({
         {/* ── サブメニュー: 固定しない / 左に固定 / 右に固定 ── */}
         {isPinSubmenuOpen && (
           <div
+            ref={pinSubmenuRef}
             className={cx(
               'ssg-menu-panel',
               themeClassName,
