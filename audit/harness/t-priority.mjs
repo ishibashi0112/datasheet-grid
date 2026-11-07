@@ -194,9 +194,11 @@ const center = async (page, locator) => {
   await page.mouse.move(5, 5);
 
   // C1: ヘッダーの見出し部分のクリックは列の範囲選択。
+  //   単価は align: 'right' で、見出しも右寄せ(ホバーの grip / ⋮ は左端に出る。DevBI の報告 2026-11-07 の headerAlign)。
+  //   左端ではなく見出しの中ほどを押す。
   await page.evaluate(() => window.__grid.clearSelection());
   const headerBox = await header(page, 'price').boundingBox();
-  await page.mouse.click(headerBox.x + 12, headerBox.y + headerBox.height / 2);
+  await page.mouse.click(headerBox.x + headerBox.width / 2, headerBox.y + headerBox.height / 2);
   await waitIdle(page);
   const colSel = await selection(page);
   check('C1 ヘッダーの見出しのクリック: その列の列選択', colSel?.type === 'col' && colSel.startCol === 3 && colSel.endCol === 3 && (await count(page, '.ssg-menu-panel')) === 0, colSel);
@@ -206,7 +208,7 @@ const center = async (page, locator) => {
   await page.keyboard.press('Escape');
   await waitIdle(page);
   // C3: ヘッダーの右クリックは列メニュー。
-  await page.mouse.click(headerBox.x + 12, headerBox.y + headerBox.height / 2, { button: 'right' });
+  await page.mouse.click(headerBox.x + headerBox.width / 2, headerBox.y + headerBox.height / 2, { button: 'right' });
   await waitIdle(page, 150);
   const menuTitle = await page.evaluate(() => document.querySelector('.ssg-menu-panel .ssg-menu-title')?.textContent ?? null);
   check('C3 ヘッダーの右クリック: その列の列メニューを開く', (await count(page, '.ssg-menu-panel')) === 1 && menuTitle !== null, { menus: await count(page, '.ssg-menu-panel'), menuTitle });

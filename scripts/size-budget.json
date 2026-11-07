@@ -1,14 +1,14 @@
 {
-  "_note": "scripts/measure-size.mjs の上限(初期 JS の gzip、KB)。意図して大きくするときは --update で書き直し、理由をコミットに書く。どの構成も公開 dist を束ねて測る(plugin-arch 2-3 で src 直から切り替え。src 直はモジュールの並び順が dist と違い、機能の部品を別ファイルへ移しただけで gzip が ±1KB 揺れて誤判定するため)。full は「差し込み式への移行前 108.25KB(dist)+ 4KB」= 112.3KB で固定する(2026-10-24 ユーザー判断: 全機能を分ける代わりにフル版の増加を +4KB まで認める)。2026-10-28 に React 18 対応(React 19 未満だけ forwardRef で包む。+0.06KB)のため 112.4KB へ上げた(ユーザー判断)。同日、ブラウザ対応の修正(BR-1 = ResizeObserver の通知の次のフレームで書く / BR-5 = 下端合わせのスクロール位置を切り上げ。+0.12KB)のため 112.5KB へ上げた(ユーザー判断)。同日、その見直し(隠れている間の大きさ 0 を列の仮想化へ渡さない = Firefox で隠している間に描き直したグリッドを出した最初のフレームの列の欠け / auto-height で高さ 0 を記録しない / WebKit の見えている行への auto。+0.03KB)のため 112.6KB へ上げた(ユーザー判断)。lite(/lite 機能なし)と standard(/lite + standardFeatures)は段階 6(2026-10-25)で minimal(src の機能セットなしのシェル)から置き換えた。本体や機能を変えて小さくなったら `node scripts/measure-size.mjs --update=lite,standard` で今の値 + 0.5KB へ詰める(full は書き換えない)。2026-11-05、1.0 前の最終チェック(docs/audits/2026-11-05/)の不具合 29 件と見直しの修正で 115.18KB(+2.66KB。大きいのは行ドラッグ・SSRM の書き戻し・applyState の検査)になったため、full を 115.3KB、lite / standard を今の値 + 0.5KB へ上げた(ユーザー判断)。ai(入口 /ai の GridAskBar だけ。/ai を使うときだけ足されるぶん)は 2026-10-27 に追加(ことばで絞り込み)。 2026-11-07、実際にアプリを作って確かめたチェック(docs/audits/2026-11-07/)の 62 件の修正で 118.96KB(+3.78KB。大きいのはキー操作の Excel 互換 +0.99・SSRM の保存待ち +0.64・applyState の部分の反映 +0.56・展開行 +0.54)になったため、full を 119.1KB、lite / standard / ai を今の値 + 0.5KB へ上げた(ユーザー判断)。 同日、その修正の別視点のレビューと直した版でアプリを作り直した確認で見つかったものの修正(+0.79KB。大きいのは列メニューをキーボードで開く Alt+↓ +0.29・SSRM / フィルター / AI の見直し +0.17・applyState / getState / Tab の見直し +0.12)で 119.75KB になったため、full を 119.9KB、standard を今の値 + 0.5KB へ上げた(ユーザー判断)。",
+  "_note": "scripts/measure-size.mjs の上限(初期 JS の gzip、KB)。意図して大きくするときは --update で書き直し、理由をコミットに書く。どの構成も公開 dist を束ねて測る(plugin-arch 2-3 で src 直から切り替え。src 直はモジュールの並び順が dist と違い、機能の部品を別ファイルへ移しただけで gzip が ±1KB 揺れて誤判定するため)。full は「差し込み式への移行前 108.25KB(dist)+ 4KB」= 112.3KB で固定する(2026-10-24 ユーザー判断: 全機能を分ける代わりにフル版の増加を +4KB まで認める)。2026-10-28 に React 18 対応(React 19 未満だけ forwardRef で包む。+0.06KB)のため 112.4KB へ上げた(ユーザー判断)。同日、ブラウザ対応の修正(BR-1 = ResizeObserver の通知の次のフレームで書く / BR-5 = 下端合わせのスクロール位置を切り上げ。+0.12KB)のため 112.5KB へ上げた(ユーザー判断)。同日、その見直し(隠れている間の大きさ 0 を列の仮想化へ渡さない = Firefox で隠している間に描き直したグリッドを出した最初のフレームの列の欠け / auto-height で高さ 0 を記録しない / WebKit の見えている行への auto。+0.03KB)のため 112.6KB へ上げた(ユーザー判断)。lite(/lite 機能なし)と standard(/lite + standardFeatures)は段階 6(2026-10-25)で minimal(src の機能セットなしのシェル)から置き換えた。本体や機能を変えて小さくなったら `node scripts/measure-size.mjs --update=lite,standard` で今の値 + 0.5KB へ詰める(full は書き換えない)。2026-11-05、1.0 前の最終チェック(docs/audits/2026-11-05/)の不具合 29 件と見直しの修正で 115.18KB(+2.66KB。大きいのは行ドラッグ・SSRM の書き戻し・applyState の検査)になったため、full を 115.3KB、lite / standard を今の値 + 0.5KB へ上げた(ユーザー判断)。ai(入口 /ai の GridAskBar だけ。/ai を使うときだけ足されるぶん)は 2026-10-27 に追加(ことばで絞り込み)。 2026-11-07、実際にアプリを作って確かめたチェック(docs/audits/2026-11-07/)の 62 件の修正で 118.96KB(+3.78KB。大きいのはキー操作の Excel 互換 +0.99・SSRM の保存待ち +0.64・applyState の部分の反映 +0.56・展開行 +0.54)になったため、full を 119.1KB、lite / standard / ai を今の値 + 0.5KB へ上げた(ユーザー判断)。 同日、その修正の別視点のレビューと直した版でアプリを作り直した確認で見つかったものの修正(+0.79KB。大きいのは列メニューをキーボードで開く Alt+↓ +0.29・SSRM / フィルター / AI の見直し +0.17・applyState / getState / Tab の見直し +0.12)で 119.75KB になったため、full を 119.9KB、standard を今の値 + 0.5KB へ上げた(ユーザー判断)。 同日、DevBI(このライブラリを使うアプリ)の報告の対応(列見出しの寄せ headerAlign / 自動調整の丸め / body 直下のポップアップへ表の --ssg-* を写す)で 120.85KB(+1.02KB。ほぼ全部がポップアップへトークンを写す処理)になったため、full を 121.0KB、lite / standard を今の値 + 0.5KB へ上げた(ユーザー判断)。",
   "limits": {
     "full": {
-      "initialGzipKB": 119.9
+      "initialGzipKB": 121.0
     },
     "lite": {
-      "initialGzipKB": 64.7
+      "initialGzipKB": 66
     },
     "standard": {
-      "initialGzipKB": 84.2
+      "initialGzipKB": 85.2
     },
     "ai": {
       "initialGzipKB": 12.9

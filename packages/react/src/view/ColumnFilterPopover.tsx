@@ -91,6 +91,7 @@ import {
 //   ネイティブ <input type="date"> を置き換える既定 UI で、renderFilterDateInput
 //   (利用側スロット)指定時はそちらが優先されます。
 import { FilterDateField } from './FilterDateField';
+import { usePortalTokens } from '../hooks/usePortalTokens';
 // 追加(filter-ext D): dateSet の年月日ツリー(平坦化された可視行)です。
 import {
   buildDateTreeRows,
@@ -1283,6 +1284,8 @@ export function ColumnFilterPopover({
   //   1 回だけ確保します(表示用途のみ。行の判定本体は filtering 側が再計算のたびに解決します。
   //   日付を跨いで開きっぱなしのケースは表示のみ僅かに stale になりますが許容します)。
   const [comboNow] = useState(() => new Date());
+  // 追加(DevBI の報告): 表で決まったトークン(--ssg-*)をポップオーバーへ写します(body 直下のため継承で届かない)。
+  usePortalTokens(popoverRef, isOpen && layout !== null, themeClassName);
 
   if (typeof document === 'undefined' || !isOpen || !layout) {
     return null;

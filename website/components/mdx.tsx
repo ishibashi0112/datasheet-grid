@@ -16,6 +16,7 @@ import { ScrollHintDemo } from '@/components/demo/scroll-hint-demo';
 import { DetailRowDemo } from '@/components/demo/detail-row-demo';
 import { RowDragDemo } from '@/components/demo/row-drag-demo';
 import { ColumnDragDemo } from '@/components/demo/column-drag-demo';
+import { HeaderAlignDemo } from '@/components/demo/header-align-demo';
 import { LabelRowDemo } from '@/components/demo/label-row-demo';
 import { TotalRowDemo } from '@/components/demo/total-row-demo';
 import { FillHandleDemo } from '@/components/demo/fill-handle-demo';
@@ -48,6 +49,7 @@ export function getMDXComponents(components?: MDXComponents) {
     DetailRowDemo,
     RowDragDemo,
     ColumnDragDemo,
+    HeaderAlignDemo,
     LabelRowDemo,
     TotalRowDemo,
     FillHandleDemo,

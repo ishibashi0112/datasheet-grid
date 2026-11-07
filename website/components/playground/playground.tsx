@@ -204,6 +204,8 @@ type Settings = {
   totalRow: boolean;
   // フィルハンドル。ON で選択範囲の右下の四角を引いて連続データ / コピーで埋める(readOnly では出ない)。
   fillHandle: boolean;
+  // 列見出しの寄せ(GridColumn.headerAlign)。'follow' は未指定(列の align に合わせる = 既定)、ほかは全列へ書く。
+  headerAlign: 'follow' | 'left' | 'center' | 'right';
 };
 
 const DEFAULTS: Settings = {
@@ -251,6 +253,7 @@ const DEFAULTS: Settings = {
   conditionalFormat: false,
   totalRow: false,
   fillHandle: false,
+  headerAlign: 'follow',
 };
 
 function buildSnippet(s: Settings): string {
@@ -334,6 +337,9 @@ function buildSnippet(s: Settings): string {
   // セルのメモは列定義側の指定のため、ON のときはコメントで示す。
   if (s.conditionalFormat) {
     lines.push("  // columns の数量列: conditionalFormat: { dataBar: {} } / 単価列: { colorScale: {} } / 状態列: { chips: { 受注: 'info', 出荷準備: 'warning', 出荷済: 'good', キャンセル: 'critical' } }");
+  }
+  if (s.headerAlign !== 'follow') {
+    lines.push(`  // columns の各列: headerAlign: '${s.headerAlign}'(未指定なら列の align に合わせる)`);
   }
   if (s.cellNote) {
     lines.push("  // columns の単価列: cellNote: ({ value }) => (value < 300 ? '販売単価が 300 円未満です。\\n仕入単価を確認してください。' : undefined)");
@@ -447,8 +453,10 @@ function PlaygroundGrid({ settings }: { settings: Settings }) {
           };
         }
         return column;
-      }),
-    [columns, settings.cellNote, settings.conditionalFormat, settings.totalRow],
+      })
+        // 列見出しの寄せ。'follow' は undefined(列の align に合わせる)。onColumnsChange で state へ戻った値も毎回上書きする。
+        .map((column) => ({ ...column, headerAlign: settings.headerAlign === 'follow' ? undefined : settings.headerAlign })),
+    [columns, settings.cellNote, settings.conditionalFormat, settings.totalRow, settings.headerAlign],
   );
   // セル操作の通知のログ(新しい順に 5 件)。
   const [eventLog, setEventLog] = useState<string[]>([]);
@@ -762,6 +770,19 @@ export function Playground() {
             >
               <option value="ghost">ghost</option>
               <option value="live">live</option>
+            </select>
+          </label>
+          <label className="flex items-center justify-between gap-2 text-sm">
+            <code className="text-xs">headerAlign</code>
+            <select
+              className={selectClass}
+              value={settings.headerAlign}
+              onChange={(e) => set('headerAlign', e.target.value as Settings['headerAlign'])}
+            >
+              <option value="follow">未指定(align)</option>
+              <option value="left">left</option>
+              <option value="center">center</option>
+              <option value="right">right</option>
             </select>
           </label>
           <label className="flex items-center justify-between gap-2 text-sm">

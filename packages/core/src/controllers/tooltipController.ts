@@ -29,6 +29,7 @@
 import { computeTooltipPlacement } from '../logic/tooltipGeometry';
 import { applySlotToElement, type AppliedSlot } from '../logic/slotDom';
 import type { GridResolvedSlot } from '../model/gridTypes.unbound';
+import { syncPortalTokens } from '../utils/portalTokens';
 
 const TOOLTIP_ATTRIBUTE = 'data-ssg-tooltip';
 const TOOLTIP_OVERFLOW_ATTRIBUTE = 'data-ssg-tooltip-overflow';
@@ -152,6 +153,9 @@ function showTooltipFor(target: Element) {
     'ssg-motion-off',
     target.closest('.ssg-motion-off') !== null,
   );
+  // 追加(DevBI の報告): 表示対象の表(またはポップアップ)で決まったトークン(--ssg-*)を写します(body 直下のため
+  //   継承で届かない)。グリッドの外の利用側の要素なら、前に写した値を外すだけです。
+  syncPortalTokens(target, el);
   el.textContent = text;
   // 実寸(offsetWidth/Height)を得るため、いったん原点へ置いてから配置します。
   el.style.left = '0px';

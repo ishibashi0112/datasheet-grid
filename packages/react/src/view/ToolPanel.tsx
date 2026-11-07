@@ -20,6 +20,7 @@ import type {
 } from '../hooks/useToolPanelController';
 // ヘッダーを掴んでパネルを移動する共有フックです(FM-4)。
 import { usePanelHeaderDrag } from '../hooks/usePanelHeaderDrag';
+import { usePortalTokens } from '../hooks/usePortalTokens';
 import type { GridResolvedSlot } from '../model/gridTypes';
 
 // 追加(UP-1): SegmentedControl の 1 セグメント分の表示情報です。
@@ -74,6 +75,8 @@ export function ToolPanel({
   });
   // 追加(audit V-14): タブ / タブパネルの id の基底。
   const tabIdBase = useId();
+  // 追加(DevBI の報告): 表で決まったトークン(--ssg-*)をパネルへ写します(body 直下のため継承で届かない)。
+  usePortalTokens(panelRef, activeTab !== null && layout !== null, themeClassName);
 
   // 追加(UP-2 / 既開時フラッシュ): flashTick が増えたら panelRef の枠を一瞬フラッシュします。
   //   既存のヘッダージャンプ(ssg-header-cell--jump-flash)と同じ「JS 直付け + animationend
