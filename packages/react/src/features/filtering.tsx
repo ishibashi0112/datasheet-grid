@@ -63,6 +63,7 @@ const useFilterOrder = <T,>({
   visibleColumns,
   effectiveColumns,
   globalFilterText,
+  globalFilterUrgent,
   globalFilterEnabled,
   columnFilterEnabled,
   columnFilters,
@@ -85,6 +86,8 @@ const useFilterOrder = <T,>({
     baseOrder,
     columns: visibleColumns,
     globalText: globalFilterText,
+    // 追加(dogfood DF-18): applyState で入れた検索は遅らせずに評価します。
+    urgent: globalFilterUrgent,
     // 変更(manual-mode): 手動フィルターでは走らせない(order は baseOrder のまま)。
     enabled: globalFilterEnabled && !manualFiltering,
   });

@@ -200,6 +200,7 @@ const useInertFilterOrder: GridShellFeatures['filtering']['useFilterOrder'] = (a
     globalFilterStatus: 'idle',
     globalFilterProgress: 1,
     relativeDateKey: '',
+    available: false,
   };
 };
 

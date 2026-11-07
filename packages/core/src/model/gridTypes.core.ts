@@ -2034,6 +2034,21 @@ export type GridState = {
   columns?: GridColumnState[];
 };
 
+// 追加(dogfood DU-06): applyState に渡せる形です。渡したスライスだけを変え、渡さない(undefined の)スライスは今のまま
+//   残します(`{ sort }` だけ渡すと列幅とフィルターが既定へ戻っていた)。filters も globalText / columnFilters の片方だけを
+//   渡せます。getState() の値(GridState)はそのまま渡せます(全部のスライスがあるので全部置き換わる)。
+/**
+ * `applyState` に渡す状態。`getState()` の値をそのまま渡せる。渡したスライスだけを変え、省略した(`undefined` の)
+ * スライスは今のまま残す(`filters` も `globalText` / `columnFilters` の片方だけ渡せる)。
+ */
+export type GridStatePatch = {
+  version?: number;
+  columnWidths?: Record<string, number>;
+  filters?: Partial<GridFilterState>;
+  sort?: GridSortState;
+  columns?: GridColumnState[];
+};
+
 // 追加(imperative API #1): ref ハンドル(SpreadsheetGridProps.ref で受け取る命令的 API)です。
 //   設計方針: 状態(列幅/可視/sort/filter 等)は controlled のまま。ここには「prop で表現できない
 //   一発操作」だけを載せます(スクロール / 選択操作 / CSV / 状態の保存・復元)。
@@ -2165,19 +2180,24 @@ export type SpreadsheetGridHandle<T> = {
    * を返す(純粋・副作用なし)。新規オブジェクトなのでそのまま `JSON.stringify` して保存できる。
    */
   getState: () => GridState;
-  // getState のスナップショット(または互換な部分形)を適用します。外部入力は内部で防御的に正規化され、
-  //   幅 reset / フィルター一括 / ソート set の 3 dispatch(1 イベント = 1 再レンダー)で反映します。
+  // getState のスナップショット(または一部のスライスだけ)を適用します。外部入力は内部で防御的に正規化され、
+  //   渡されたスライスだけを 幅 reset / フィルター一括 / ソート set の dispatch(1 イベント = 1 再レンダー)で反映します
+  //   (dogfood DU-06。今の columns に無い列のキーは捨てる = DF-04)。
   //   clientSide / serverSide 双方に効きます(SSRM では filters/sort 変化がクエリへ載り再取得)。
   //   列メタ(columns)は onColumnsChange が指定されているときのみ、現 columns へ key ベースでマージして
   //   onColumnsChange 経由で反映します(未指定時はスキップ=幅/フィルター/ソートのみ。v1 完全互換)。
   //   v1 保存値(columns フィールド無し)も読めます(列メタは触りません)。
   /**
-   * `getState()` の値(または互換な部分形)を適用する。
-   * 外部入力は内部で防御的に正規化され(形の合わない列フィルターは捨てる)、幅 reset / フィルター一括
-   * / ソート set の 3 dispatch(1 イベント = 1 再レンダー)で反映。clientSide / serverSide
-   * 双方に効く(SSRM は `filters`/`sort` 変化がクエリへ載り再取得)。
+   * `getState()` の値を適用する。**渡したスライスだけを変え、省略した(`undefined` の)
+   * スライスは今のまま残す**(`{ sort }` だけなら列幅とフィルターはそのまま。`filters` も
+   * `globalText` / `columnFilters` の片方だけ渡せる。引数の型は `GridStatePatch`)。
+   * 外部入力は内部で防御的に正規化され(形の合わない列フィルターは捨てる)、**今の `columns`
+   * に無い列の幅 / 列フィルター / ソートも捨てる**(開発時に警告。列定義を渡してから呼ぶ)。1
+   * 回の再描画で反映し(フィルターと並べ替えを一度に渡しても、並べ替えだけの画面を挟まない)、直後の
+   * `getState()` は渡した値を返す。clientSide / serverSide 双方に効く(SSRM は `filters`/`sort`
+   * 変化がクエリへ載り再取得)。
    */
-  applyState: (state: GridState) => void;
+  applyState: (state: GridStatePatch) => void;
 
   // ── 行選択(チェックボックス選択。getSelectedRows()=セル範囲由来とは別物)──
   // 現在の行選択記述子を返します(include/exclude)。

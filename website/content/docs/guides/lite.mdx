@@ -75,7 +75,7 @@ const Grid = createSpreadsheetGrid({
 
 いくつかの機能は、無いときに別の動きになります。
 
-- `filtering` が無いと、検索欄と列フィルターは出ません。`applyState` で渡したフィルターは状態には入りますが、行は絞り込まれません。
+- `filtering` が無いと、検索欄と列フィルターは出ません。`applyState` で渡したフィルターは状態には入りますが、行は絞り込まれません(上部 / 下部バーの「Filter: …」にも数えません)。
 - `serverSide` が無いと、`dataSource` を無視して `rows` で動きます。
 - `labelRow` が無いと、ラベル行もデータ行として並びます。
 - `grouping` が無いと、`rowGroup` の列はグループ化せずにそのまま表示します。

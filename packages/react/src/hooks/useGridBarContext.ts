@@ -48,7 +48,12 @@ type UseGridBarContextArgs<T> = {
   globalFilterProgress: number;
   // 追加(選択範囲の集計): useSelectionAggregates の戻り値(未指定は null)。
   selectionAggregates?: GridSelectionAggregates | null;
+  // 追加(dogfood DF-20): フィルターが行に効くか(フィルターの機能が無い構成では false)。false のときは要約の
+  //   「Filter: …」に状態のフィルターを数えません(slotContext の globalFilterText / columnFilterValues は状態のまま)。
+  filtersApplied?: boolean;
 };
+
+const NO_COLUMN_FILTERS: Record<string, never> = {};
 
 // 追加: topBar / bottomBar へ渡す slot context と derived summary をまとめて構築します。
 export const useGridBarContext = <T,>({
@@ -65,6 +70,7 @@ export const useGridBarContext = <T,>({
   globalFilterStatus,
   globalFilterProgress,
   selectionAggregates = null,
+  filtersApplied = true,
 }: UseGridBarContextArgs<T>) => {
   // 変更(11-B3): slotContextBase の依存を uiState 丸ごとから、bar が実際に参照する
   //   5 フィールドへ分解します。
@@ -112,8 +118,16 @@ export const useGridBarContext = <T,>({
   const derivedSummary = useMemo(
     // 変更(DS-3-7): 件数 viewRowCount を明示引数で渡します(filteredRows 配列は使いません)。
     // 変更(label-row ③): 分母 totalRowCount(未指定は rows.length)。
-    () => buildGridDerivedSummary(slotContextBase, viewRowCount, totalRowCount, columnNamer, rowNumberer),
-    [slotContextBase, viewRowCount, totalRowCount, columnNamer, rowNumberer],
+    // 変更(dogfood DF-20): フィルターが効かない構成では、要約をフィルターなしで作ります。
+    () =>
+      buildGridDerivedSummary(
+        filtersApplied ? slotContextBase : { ...slotContextBase, globalFilterText: '', columnFilterValues: NO_COLUMN_FILTERS },
+        viewRowCount,
+        totalRowCount,
+        columnNamer,
+        rowNumberer,
+      ),
+    [slotContextBase, filtersApplied, viewRowCount, totalRowCount, columnNamer, rowNumberer],
   );
 
   const slotContext = useMemo<SpreadsheetGridSlotContext<T>>(

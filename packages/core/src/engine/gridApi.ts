@@ -34,7 +34,14 @@ import {
   rowSelectionToModel,
   selectAllRows,
 } from '../logic/rowSelection';
-import { applyColumnState, buildGridState, extractColumnState, migrateGridState } from '../logic/gridState';
+import {
+  applyColumnState,
+  buildGridState,
+  dropUnknownColumnKeys,
+  extractColumnState,
+  migrateGridStatePatch,
+} from '../logic/gridState';
+import { markUrgentFilters } from '../logic/urgentFilters';
 import { computeHorizontalScrollTarget, computeVerticalScrollTarget } from '../logic/scrollTargets';
 import {
   collectAllGroupKeys,
@@ -48,6 +55,21 @@ import type { ToolPanelTab } from '../controllers/toolPanelController';
 import { createInertExportCommands, type GridCoreFeatures } from './features';
 
 type ReadonlyRef<V> = { readonly current: V };
+
+// 型だけの宣言です(ブラウザに process は無く、利用側のバンドラが process.env.NODE_ENV を文字列へ置き換える)。
+declare const process: { env: { NODE_ENV?: string } };
+
+// 追加(dogfood DF-04): applyState が今の列定義に無い列のキーを捨てたとき、開発時だけ知らせます(列定義を読み込む前に
+//   applyState を呼んだときなどに、フィルターが消えた理由に気づけるように)。
+const warnDroppedStateColumns = (keys: string[]): void => {
+  if (process.env.NODE_ENV === 'production') {
+    return;
+  }
+  console.warn(
+    `[spreadsheet-grid] applyState: 今の列定義(columns)に無い列 ${keys.map((key) => `\`${key}\``).join(', ')} の` +
+      '列幅 / フィルター / 並べ替えを捨てました。列定義を渡してから applyState を呼んでください。',
+  );
+};
 
 export type GridApiArgs<T> = {
   scrollContainerRef: ReadonlyRef<HTMLElement | null>;
@@ -64,6 +86,9 @@ export type GridApiArgs<T> = {
   columns: GridColumn<T>[];
   onColumnsChange: ((nextColumns: GridColumn<T>[]) => void) | undefined;
   uiState: GridUiState;
+  // 追加(dogfood DU-06): store の今の状態(レンダーを待たない)。applyState の「渡さないスライスは今のまま」と、直後の
+  //   getState() が今の値を読むのに使います(続けて呼んだときに 1 つ前のレンダーの値で上書きしないため)。無ければ uiState。
+  getUiState?: () => GridUiState;
   headerHeight: number;
   verticalScaleFactor: number;
   leftPaneTotalWidth: number;
@@ -407,7 +432,9 @@ export const createGridApi = <T,>(features: Pick<GridCoreFeatures, 'export'> = {
         return buildGridState({}, { globalText: '', columnFilters: {} }, [], []);
       }
       // 永続スライス(手動リサイズ幅 / フィルター / ソート)+ 列メタ(可視 / 順序 / ピン)を純粋にスナップショット。
-      return buildGridState(s.uiState.columnWidths, s.uiState.filters, s.uiState.sort, extractColumnState(s.columns));
+      // 変更(dogfood DU-06): store の今の状態を読みます(applyState の直後でも渡した値が返る)。
+      const ui = s.getUiState?.() ?? s.uiState;
+      return buildGridState(ui.columnWidths, ui.filters, ui.sort, extractColumnState(s.columns));
     },
 
     applyState: (state) => {
@@ -416,16 +443,38 @@ export const createGridApi = <T,>(features: Pick<GridCoreFeatures, 'export'> = {
         return;
       }
       // 外部入力(deserialize 結果)を現行スキーマへ防御的に正規化してから反映します。
-      const normalized = migrateGridState(state);
-      // 列メタ(v2): onColumnsChange があり、かつ正規化後に columns があるときだけ反映(手動リサイズ幅の
-      //   column.width 焼き込み込み)。
-      if (s.onColumnsChange && normalized.columns) {
-        s.onColumnsChange(applyColumnState(s.columns, normalized.columns, normalized.columnWidths));
+      // 変更(dogfood DU-06): 渡されたスライスだけを変えます(渡さないスライスは今のまま。これまでは `{ sort }` だけ渡すと
+      //   列幅とフィルターが既定へ戻っていた)。
+      // 変更(dogfood DF-04): 今の列定義に無い列の幅 / フィルター / ソートは捨てます(開発時に警告)。
+      const { patch, dropped } = dropUnknownColumnKeys(
+        migrateGridStatePatch(state),
+        new Set(s.columns.map((column) => column.key)),
+      );
+      if (dropped.length > 0) {
+        warnDroppedStateColumns(dropped);
       }
-      // 幅 reset / フィルター一括 / ソート set の 3 dispatch(同一イベント内で自動バッチ)。
-      s.dispatch(gridActions.resetColumnWidths(normalized.columnWidths));
-      s.dispatch(gridActions.setAllFilters(normalized.filters));
-      s.dispatch(gridActions.setSort(normalized.sort));
+      const ui = s.getUiState?.() ?? s.uiState;
+      // 列メタ(v2): onColumnsChange があり、かつ正規化後に columns があるときだけ反映(手動リサイズ幅の
+      //   column.width 焼き込み込み。幅を渡さないときは今の幅で焼き込み、今の幅を保ちます)。
+      if (s.onColumnsChange && patch.columns) {
+        s.onColumnsChange(applyColumnState(s.columns, patch.columns, patch.columnWidths ?? ui.columnWidths));
+      }
+      // 幅 reset / フィルター一括 / ソート set を、渡されたものだけ dispatch(同一イベント内で自動バッチ)。
+      if (patch.columnWidths) {
+        s.dispatch(gridActions.resetColumnWidths(patch.columnWidths));
+      }
+      if (patch.filters) {
+        const filters = {
+          globalText: patch.filters.globalText ?? ui.filters.globalText,
+          columnFilters: patch.filters.columnFilters ?? ui.filters.columnFilters,
+        };
+        // 追加(dogfood DF-18): このフィルターは遅らせずに評価させます(並べ替えだけの画面を挟まない)。
+        markUrgentFilters(filters);
+        s.dispatch(gridActions.setAllFilters(filters));
+      }
+      if (patch.sort) {
+        s.dispatch(gridActions.setSort(patch.sort));
+      }
     },
 
     // ── 行選択(チェックボックス選択)──

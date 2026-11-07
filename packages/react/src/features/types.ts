@@ -117,6 +117,8 @@ export type FilterOrderFeatureArgs<T> = {
   visibleColumns: GridColumn<T>[];
   effectiveColumns: GridColumn<T>[];
   globalFilterText: string;
+  // 追加(dogfood DF-18): 検索の文字を遅らせずに評価するとき true(applyState で入れたフィルター)。
+  globalFilterUrgent?: boolean;
   globalFilterEnabled: boolean;
   columnFilterEnabled: boolean;
   columnFilters: Record<string, ColumnFilterValue>;
@@ -133,6 +135,9 @@ export type FilterOrderFeatureResult = {
   globalFilterProgress: number;
   // 相対日付プリセットの範囲のキー(行パイプライン / serverSide の queryKey の入力。無ければ '')。
   relativeDateKey: string;
+  // 追加(dogfood DF-20): フィルターが行に効くか(フィルターの機能が無い構成の代役は false。省略は true)。false のときは
+  //   下部 / 上部バーの「Filter: …」に状態のフィルターを数えません(効いていないのに「Filter: 1列」と出ていた)。
+  available?: boolean;
 };
 
 // 列フィルターのポップオーバー(filtering)の controller の接続が受け取るシェルの値と返す値です(返す値は controller の

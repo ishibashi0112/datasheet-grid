@@ -70,6 +70,7 @@ import { useGridTooltip } from './hooks/useGridTooltip';
 import { useResolvedGridTheme } from './hooks/useResolvedGridTheme';
 import { useResolvedGridMotion } from './hooks/useResolvedGridMotion';
 import { MOTION_OFF_CLASS_NAME } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/motion';
+import { isUrgentFilters } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/urgentFilters';
 import {
   resolveSelectionBand,
   resolveSelectionBandSegments,
@@ -944,7 +945,11 @@ export function useGridShell<T extends object>({
   // 注記: text / number フィルターの Apply 押下や「クリア」も同じ経路ですが、
   //   これらは単発操作のため体感差はなく、挙動は等価です。
   const columnFilters = uiState.filters.columnFilters;
-  const deferredColumnFilters = useDeferredValue(columnFilters);
+  // 変更(dogfood DF-18): applyState で入れたフィルターは遅らせずに評価します(フィルターと並べ替えを一度に渡したとき、
+  //   並べ替えだけの画面が 1〜2 フレーム出ていた)。画面からの操作は従来どおり遅らせます(core logic/urgentFilters)。
+  const filtersUrgent = isUrgentFilters(uiState.filters);
+  const laggingColumnFilters = useDeferredValue(columnFilters);
+  const deferredColumnFilters = filtersUrgent ? columnFilters : laggingColumnFilters;
 
   // ── row order pipeline (DS-2) ─────────────────────────
   // 変更(DS-2): オブジェクト配列チェーン(source→global→column→sort の {row,...}[])を
@@ -1003,14 +1008,21 @@ export function useGridShell<T extends object>({
     () => (rowGroupingActive && groupColumns.length > 0 ? [...visibleColumns, ...groupColumns] : visibleColumns),
     [rowGroupingActive, groupColumns, visibleColumns],
   );
-  const { globalFilteredOrder, globalFilterStatus, globalFilterProgress, relativeDateKey } =
-    features.filtering.useFilterOrder({
+  const {
+    globalFilteredOrder,
+    globalFilterStatus,
+    globalFilterProgress,
+    relativeDateKey,
+    available: filteringAvailable = true,
+  } = features.filtering.useFilterOrder({
       rows,
       baseOrder,
       visibleColumns: globalFilterColumns,
       // 変更(1.0 前の最終チェック FC-08): 相対日付プリセットの見張りもグループ元列の列フィルターを含めて見ます。
       effectiveColumns: filterSortColumns,
       globalFilterText,
+      // 追加(dogfood DF-18): applyState で入れた検索の文字も遅らせずに評価します。
+      globalFilterUrgent: filtersUrgent,
       globalFilterEnabled,
       columnFilterEnabled,
       columnFilters,
@@ -3400,6 +3412,8 @@ export function useGridShell<T extends object>({
     globalFilterStatus,
     globalFilterProgress,
     selectionAggregates,
+    // 追加(dogfood DF-20): フィルターの機能が無い構成では、状態のフィルターを「Filter: …」に数えません。
+    filtersApplied: filteringAvailable,
   });
 
   // ── styles ────────────────────────────────────────────
@@ -3747,6 +3761,8 @@ export function useGridShell<T extends object>({
     columns,
     onColumnsChange,
     uiState,
+    // 追加(dogfood DU-06): applyState / getState が store の今の状態を読むため。
+    getUiState: gridStore.getState,
     headerHeight,
     verticalScaleFactor,
     leftPaneTotalWidth,

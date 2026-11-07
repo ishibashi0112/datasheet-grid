@@ -848,6 +848,21 @@ describe('差し込み式: filtering', () => {
     expect(warn.mock.calls.filter(([message]) => String(message).includes('フィルターの状態'))).toHaveLength(1);
   });
 
+  // 追加(dogfood DF-20): 効いていないフィルターを上部 / 下部バーの「Filter: …」に数えない(「Filter: 1列」と出ていた)。
+  it('機能セットに無い構成で applyState に渡したフィルターは、バーの「Filter: …」に数えない(DF-20)', () => {
+    vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const ref = createRef<SpreadsheetGridHandle<Row>>();
+    const { container } = render(<MinimalGrid ref={ref} rows={rows} columns={columns} rowKeyGetter={(r) => r.id} />);
+    expect(container.textContent).toContain('Filter: なし');
+    act(() => {
+      ref.current?.applyState({ ...columnFilterState, filters: { globalText: 'al', columnFilters: columnFilterState.filters.columnFilters } });
+    });
+    expect(container.textContent).toContain('Filter: なし');
+    expect(container.textContent).not.toContain('1列');
+    // 状態には残る(getState で読める。説明どおり)。
+    expect(ref.current?.getState().filters.columnFilters).toEqual(columnFilterState.filters.columnFilters);
+  });
+
   it('フィルターの prop を使わなければ警告しない', () => {
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
     render(<MinimalGrid rows={rows} columns={columns} rowKeyGetter={(r) => r.id} />);
