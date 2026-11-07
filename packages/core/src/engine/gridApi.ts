@@ -26,6 +26,7 @@ import { normalizeCellRange, normalizeRowRange } from '../model/gridSelectors';
 import { computeSinglePaneColumnExtent, type GridPaneLayout } from '../logic/geometry';
 import { logicalToPhysicalScrollTop, physicalToLogicalScrollTop, type RowMetrics } from '../logic/verticalGeometry';
 import { findDetailRowIndex, findViewRowIndexByKey, type DetailIndexCache } from '../logic/detailRow';
+import { resolveDataRowNumber } from '../logic/labelRows';
 import {
   clearRowSelection,
   countSelectedRows,
@@ -129,6 +130,9 @@ export type GridApiArgs<T> = {
         exportText: ((row: T) => string | LabelExportLine) | undefined;
       }
     | undefined;
+  // 追加(段階 2 N-4): 表示しているラベル行の view index(昇順。ラベル行が無ければ undefined)。getRowNumber が
+  //   行番号の列と同じ番号(ラベル行を数えない)を返すのに使います。
+  labelViewIndexes?: ArrayLike<number> | undefined;
   // 追加(合計行 3A): 合計行のエクスポート(includeTotalRow)の値と見出し(totalRow 無効時は undefined)。
   totalRowExport?: { cells: TotalRowCells; label: string } | undefined;
   // 統合ツールパネル(openFilterManager / closeFilterManager の委譲先)。
@@ -423,6 +427,15 @@ export const createGridApi = <T,>(features: Pick<GridCoreFeatures, 'export'> = {
       return findViewRowIndexByKey(s.rowModel, rowKey, rowKeyIndexCache.map);
     },
     getColIndex: (columnKey) => args?.orderedColumns.findIndex((column) => column.key === columnKey) ?? -1,
+    // 追加(段階 2 N-4): 行番号の列と同じ式(GridBodyLayer の rowNumber)。ラベル行のキーと表示に無い行は null。
+    getRowNumber: (rowKey) => {
+      const s = args;
+      const viewIndex = handle.getViewRowIndex(rowKey);
+      if (!s || viewIndex < 0 || s.rowModel.getLabelRow?.(viewIndex) !== undefined) {
+        return null;
+      }
+      return s.labelViewIndexes ? resolveDataRowNumber(s.labelViewIndexes, viewIndex) : viewIndex + 1;
+    },
 
     selectCell: (viewRowIndex, colIndex, cellOptions) => {
       const s = args;

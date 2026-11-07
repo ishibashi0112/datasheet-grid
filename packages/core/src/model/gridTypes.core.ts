@@ -2174,6 +2174,14 @@ export type SpreadsheetGridHandle<T> = {
    * を返す。表示していない列(`visible: false` / グループ化中のグループ元列)は `-1`。
    */
   getColIndex: (columnKey: string) => number;
+  // 追加(段階 2 N-4): 行番号の列と同じ番号(ラベル行を数えない)。利用側でラベル行を数え直していた。
+  /**
+   * 行キーから、行番号の列に出ている番号(1 始まり)を返す。ラベル行(`labelRow`)は数えないので、
+   * ラベル行があると `getViewRowIndex(rowKey) + 1` とは違う。ラベル行のキーと表示に無い行は
+   * `null`。「3 行目に誤りがあります」のように、
+   * 利用者が画面で見る行番号でメッセージを出すときに使う。
+   */
+  getRowNumber: (rowKey: GridRowKey) => number | null;
 
   // ── フォーカス / 編集の開始 ──
   // 追加(dogfood DU-02): モーダルを閉じた後などにキーをグリッドへ戻す / 行を足してすぐ打てるように編集を始める。

@@ -3843,6 +3843,8 @@ export function useGridShell<T extends object>({
     isRowExportable,
     // 追加(label-row ④): ラベル行のエクスポート設定(scope 'raw' の除外 / includeLabelRows の出力値)。
     labelRowExport,
+    // 追加(段階 2 N-4): getRowNumber が行番号の列と同じ番号を返すため(ラベル行を数えない)。
+    labelViewIndexes: labelDisplay?.labelViewIndexes,
     // 追加(合計行 3A): 合計行のエクスポート(includeTotalRow)と、末尾 / 行を見せる位置の計算に使う高さ。
     totalRowExport,
     footerHeight,

@@ -1224,6 +1224,7 @@ const gridRef = useRef<SpreadsheetGridHandle<Row>>(null);
 | `getSelectedRows()` | 選択に交差する行(distinct)を返す。serverSide はロード済み行のみ。 |
 | `getViewRowIndex(rowKey)` | 行キー(`rowKeyGetter` の値)から今の表示位置(`viewRowIndex`)を返す。表示に無い行(フィルターで外れた / 閉じたグループの中 / serverSide で未ロード)は `-1`。表示されているラベル行(`labelRow`)のキーも引ける(グループ行は対象外)。並び替えや絞り込みの中で行を足して選ぶときは、`rows.findIndex` の代わりにこれを使う(`rows` の位置は表示位置と違う)。 |
 | `getColIndex(columnKey)` | 列キーから今の `colIndex`(固定列と、行ドラッグのハンドル列などライブラリが足す列を含む視覚順)を返す。表示していない列(`visible: false` / グループ化中のグループ元列)は `-1`。 |
+| `getRowNumber(rowKey)` | 行キーから、行番号の列に出ている番号(1 始まり)を返す。ラベル行(`labelRow`)は数えないので、ラベル行があると `getViewRowIndex(rowKey) + 1` とは違う。ラベル行のキーと表示に無い行は `null`。「3 行目に誤りがあります」のように、利用者が画面で見る行番号でメッセージを出すときに使う。 |
 
 > 注: `getSelectedRows()` は**セル範囲選択**に交差する行です。下の**チェックボックス行選択**(`enableRowSelection`)とは別レイヤーで、そちらは `getSelectedRowKeys()` / `getSelectedRowData()` を使います。
 

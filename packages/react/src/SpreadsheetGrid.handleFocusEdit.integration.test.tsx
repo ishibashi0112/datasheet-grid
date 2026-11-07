@@ -2,6 +2,7 @@
 //   - focus(): キーを受ける要素へフォーカス(imeDirectInput 有効時は入力受けへ)。モーダルを閉じた後にキーが届かなかった。
 //   - startEditing() / startEditing(viewRowIndex, colIndex): F2 と同じ編集開始 + 単一選択 + エディタへフォーカス。編集できないセルは false。
 //   - getViewRowIndex(rowKey) / getColIndex(columnKey): ソート中に足した行を rows.findIndex で選ぶと別の行になっていた。
+//   - getRowNumber(rowKey)(段階 2 N-4): 行番号の列と同じ番号。ラベル行があると表示位置 + 1 とずれ、利用側で数え直していた。
 // @vitest-environment jsdom
 import { describe, it, expect, beforeAll, afterAll, afterEach } from 'vitest';
 import { render, cleanup, act, fireEvent } from '@testing-library/react';
@@ -285,5 +286,55 @@ describe('getViewRowIndex() / getColIndex()(DU-03)', () => {
       ref.current?.selectCell(ref.current.getViewRowIndex(20), ref.current.getColIndex('qty'));
     });
     expect(ref.current?.getActiveCell()).toEqual({ row: 1, col: 2 });
+  });
+});
+
+describe('getRowNumber()(N-4)', () => {
+  it('行番号の列と同じ番号を返す(並べ替え・絞り込みに追従し、表示に無い行は null)', () => {
+    const { ref } = setup();
+    expect(ref.current?.getRowNumber(30)).toBe(3);
+    act(() => {
+      ref.current?.applyState({ sort: [{ columnKey: 'qty', direction: 'asc' }] });
+    });
+    // 並びは beta(1) / gamma(2) / alpha(3)。
+    expect(ref.current?.getRowNumber(30)).toBe(2);
+    expect(ref.current?.getRowNumber(10)).toBe(3);
+    act(() => {
+      ref.current?.applyState({ filters: { columnFilters: { name: { kind: 'text', value: 'be' } } } });
+    });
+    expect(ref.current?.getRowNumber(20)).toBe(1);
+    expect(ref.current?.getRowNumber(30)).toBeNull();
+    expect(ref.current?.getRowNumber(999)).toBeNull();
+  });
+
+  it('ラベル行を数えない(ラベル行のキーは null)。行番号の列の表示と一致する', () => {
+    type LabeledRow = Row & { label?: string };
+    const labeledRows: LabeledRow[] = [
+      { id: 1, name: '', qty: 0, done: false, label: '第1節' },
+      ...rows,
+      { id: 2, name: '', qty: 0, done: false, label: '第2節' },
+      { id: 40, name: 'delta', qty: 4, done: false },
+    ];
+    const labeledRef = createRef<SpreadsheetGridHandle<LabeledRow>>();
+    const { container } = render(
+      <SpreadsheetGrid<LabeledRow>
+        ref={labeledRef}
+        rows={labeledRows}
+        columns={columns as GridColumn<LabeledRow>[]}
+        rowKeyGetter={(row) => row.id}
+        labelRow={{ isLabelRow: (row) => row.label !== undefined, getLabel: (row) => row.label ?? '' }}
+        height={300}
+      />,
+    );
+    expect(labeledRef.current?.getRowNumber(1)).toBeNull();
+    expect(labeledRef.current?.getRowNumber(2)).toBeNull();
+    expect(labeledRef.current?.getRowNumber(10)).toBe(1);
+    expect(labeledRef.current?.getRowNumber(30)).toBe(3);
+    expect(labeledRef.current?.getRowNumber(40)).toBe(4);
+    // 画面の行番号の列(データ行の行ヘッダー)と同じ並び。
+    const shown = Array.from(container.querySelectorAll('.ssg-row-header-cell'))
+      .map((cell) => cell.textContent?.trim() ?? '')
+      .filter((text) => text !== '');
+    expect(shown).toEqual(['1', '2', '3', '4']);
   });
 });
