@@ -817,6 +817,7 @@ export function useGridShell<T extends object>({
     openColumnMenuFromButton,
     openColumnMenuFromButtonClick,
     openColumnMenuFromContextMenu,
+    openColumnMenuFromKeyboard,
     closeColumnMenu,
   } = features.columnMenu.useColumnMenu<T>({
     visibleColumns,
@@ -2526,6 +2527,27 @@ export function useGridShell<T extends object>({
     [rowMetrics, viewportHeight, headerHeight, rowHeight],
   );
 
+  // 追加(別視点のレビュー): Alt+↓ でアクティブセルの列の列メニューを開きます(列の見出しのセルの下に出す)。見出しが描かれて
+  //   いない(横の仮想化で外れた)列や、⋮ の無い列(自動グループ列などの合成列)では開かず、↓ のままにします。
+  const openColumnMenuForCell = useCallback(
+    (col: number): boolean => {
+      const column = orderedColumns[col];
+      const root = gridRootRef.current;
+      if (!column || !root || isSyntheticColumnKey(column.key)) {
+        return false;
+      }
+      const header = Array.from(root.querySelectorAll<HTMLElement>('.ssg-header-cell[data-ssg-col-key]')).find(
+        (cell) => cell.dataset.ssgColKey === column.key,
+      );
+      if (!header) {
+        return false;
+      }
+      openColumnMenuFromKeyboard(column, header);
+      return true;
+    },
+    [orderedColumns, gridRootRef, openColumnMenuFromKeyboard],
+  );
+
   const { handleKeyDown } = useGridKeyboardInteractions({
     uiState,
     // 変更(DS-3-1): filteredRows 配列 → rowModel シームを渡します(keyboard consumer 移行)。
@@ -2558,6 +2580,7 @@ export function useGridShell<T extends object>({
     // 追加(dogfood DU-04): 展開トグル列のセルでの Enter / Space の開閉配線です。
     onToggleDetailRow: detailRowEnabled ? toggleDetailRowFromKeyboard : undefined,
     resolvePageRow,
+    openColumnMenu: columnMenuEnabled ? openColumnMenuForCell : undefined,
   });
 
   // ── edit controller ───────────────────────────────────

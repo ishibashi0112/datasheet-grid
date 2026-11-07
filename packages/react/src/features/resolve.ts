@@ -83,6 +83,7 @@ const INERT_COLUMN_MENU = {
   openColumnMenuFromButton: () => {},
   openColumnMenuFromButtonClick: () => {},
   openColumnMenuFromContextMenu: () => {},
+  openColumnMenuFromKeyboard: () => {},
   closeColumnMenu: () => {},
 };
 

@@ -12,6 +12,7 @@ import { createValueStore } from '../logic/valueStore';
 import {
   blurForPopover,
   createPopoverWindowBindings,
+  handleMenuKeyNavigation,
   isInsideGridRoot,
   restoreGridFocus,
   type ReadonlyElementRef,
@@ -44,6 +45,8 @@ export type MenuButtonPointerEvent = {
 };
 export type MenuButtonClickEvent = {
   currentTarget: HTMLButtonElement;
+  // 追加(別視点のレビュー): 0 ならキーボード / 支援技術からの click(ポインタの押下を伴わない)。
+  detail: number;
   preventDefault: () => void;
   stopPropagation: () => void;
 };
@@ -62,11 +65,16 @@ export type ColumnMenuController<T> = {
   openFromButton: (column: GridColumn<T>, event: MenuButtonPointerEvent) => void;
   openFromButtonClick: (column: GridColumn<T>, event: MenuButtonClickEvent) => void;
   openFromContextMenu: (column: GridColumn<T>, event: MenuContextEvent) => void;
+  // 追加(別視点のレビュー): キーボード(アクティブセルの Alt+↓)で開きます。anchor は列の見出しのセル(その下に出す)。
+  //   開いた後に先頭の項目へフォーカスを移します。
+  openFromKeyboard: (column: GridColumn<T>, anchor: HTMLElement) => void;
   close: () => void;
   dispose: () => void;
 };
 
 const MENU_WIDTH = 200;
+// 追加(別視点のレビュー): キーボードで移る項目(列メニューの項目は role を持たないのでクラスで探す)。
+const COLUMN_MENU_ITEM = '.ssg-menu-item';
 const VIEWPORT_MARGIN = 8;
 const OFFSET_Y = 6;
 // パネル実測前の見積もり高さ(全項目表示時)。
@@ -76,7 +84,9 @@ export const createColumnMenuController = <T,>(): ColumnMenuController<T> => {
   let args: ColumnMenuControllerArgs<T> | null = null;
   const store = createValueStore<ColumnMenuSnapshot>({ columnKey: null, layout: null });
   const panelRef: { current: HTMLDivElement | null } = { current: null };
-  let anchorButton: HTMLButtonElement | null = null;
+  let anchorButton: HTMLElement | null = null;
+  // 追加(別視点のレビュー): キーボードで開いたとき、開いた後(実高を測る rAF)に先頭の項目へフォーカスを移す印。
+  let focusFirstItem = false;
   let anchorPoint: { x: number; y: number } | null = null;
   let touchPendingAnchor: HTMLButtonElement | null = null;
   let measureFrame: number | null = null;
@@ -183,6 +193,18 @@ export const createColumnMenuController = <T,>(): ColumnMenuController<T> => {
       if (event.key === 'Escape') {
         event.preventDefault();
         close();
+        return;
+      }
+      // 追加(別視点のレビュー): ↓ / ↑ / Home / End で項目を移る(Enter / Space で実行。右クリックメニューと同じ)。
+      //   項目にフォーカスがあるときの Tab はメニューを閉じてグリッドへ戻ります。
+      const panel = panelRef.current;
+      if (!panel || handleMenuKeyNavigation(panel, event, COLUMN_MENU_ITEM)) {
+        return;
+      }
+      const active = document.activeElement;
+      if (event.key === 'Tab' && active instanceof HTMLElement && active.matches(COLUMN_MENU_ITEM) && panel.contains(active)) {
+        event.preventDefault();
+        close();
       }
     },
   });
@@ -197,14 +219,19 @@ export const createColumnMenuController = <T,>(): ColumnMenuController<T> => {
     measureFrame = requestAnimationFrame(() => {
       measureFrame = null;
       updateLayout();
+      if (focusFirstItem) {
+        focusFirstItem = false;
+        panelRef.current?.querySelector<HTMLElement>(COLUMN_MENU_ITEM)?.focus();
+      }
     });
     bindings.attach();
   };
 
-  const openAtButton = (column: GridColumn<T>, button: HTMLButtonElement) => {
+  const openAtButton = (column: GridColumn<T>, button: HTMLElement, fromKeyboard = false) => {
     blurForPopover(args?.gridRootRef.current ?? null);
     anchorButton = button;
     anchorPoint = null;
+    focusFirstItem = fromKeyboard;
     openInternal(column.key);
   };
 
@@ -229,12 +256,15 @@ export const createColumnMenuController = <T,>(): ColumnMenuController<T> => {
   const openFromButtonClick = (column: GridColumn<T>, event: MenuButtonClickEvent) => {
     const pending = touchPendingAnchor;
     touchPendingAnchor = null;
-    if (!args?.enableColumnMenu || pending !== event.currentTarget) {
+    // 変更(別視点のレビュー): ポインタの押下を伴わない click(支援技術の仮想カーソルなど。detail が 0)でも開きます
+    //   (これまではタッチの押下の後の click だけで開き、キーボード / 支援技術からは開けなかった)。
+    const fromKeyboard = pending === null && event.detail === 0;
+    if (!args?.enableColumnMenu || (pending !== event.currentTarget && !fromKeyboard)) {
       return;
     }
     event.preventDefault();
     event.stopPropagation();
-    openAtButton(column, event.currentTarget);
+    openAtButton(column, event.currentTarget, fromKeyboard);
   };
 
   const openFromContextMenu = (column: GridColumn<T>, event: MenuContextEvent) => {
@@ -246,7 +276,14 @@ export const createColumnMenuController = <T,>(): ColumnMenuController<T> => {
     blurForPopover(args.gridRootRef.current);
     anchorButton = null;
     anchorPoint = { x: event.clientX, y: event.clientY };
+    focusFirstItem = false;
     openInternal(column.key);
+  };
+
+  const openFromKeyboard = (column: GridColumn<T>, anchor: HTMLElement) => {
+    if (args?.enableColumnMenu) {
+      openAtButton(column, anchor, true);
+    }
   };
 
   return {
@@ -259,6 +296,7 @@ export const createColumnMenuController = <T,>(): ColumnMenuController<T> => {
     openFromButton,
     openFromButtonClick,
     openFromContextMenu,
+    openFromKeyboard,
     close,
     dispose: () => {
       if (measureFrame !== null) {

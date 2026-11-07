@@ -55,6 +55,8 @@ export type KeyboardControllerArgs<T> = {
   onToggleDetailRow?: (cell: CellCoord) => boolean;
   // 追加(dogfood DU-01): PageUp / PageDown の移動先の行(見えている高さ 1 画面ぶん先の行)。未指定なら 10 行。
   resolvePageRow?: (fromRow: number, direction: 1 | -1) => number;
+  // 追加(別視点のレビュー): Alt+↓ でアクティブセルの列の列メニューを開く。開いたら true(列メニューが無い構成は未指定)。
+  openColumnMenu?: (col: number) => boolean;
 };
 
 // 追加(dogfood DU-01): Home / Ctrl+Home / Ctrl+← で止まる先頭の列は、操作用の合成列(行ドラッグのハンドル列・展開トグル列)を
@@ -313,6 +315,19 @@ export const createKeyboardController = <T,>(): KeyboardController<T> => {
     //   これまでは Ctrl+矢印が 1 つだけ動き、ほかは何もしませんでした(端は表の端。値の切れ目では止まらない)。
     //   先頭の列は操作用の合成列(行ドラッグのハンドル列・展開トグル列)を飛ばし、行はラベル行を飛ばします。
     const ctrlOrMeta = event.ctrlKey || event.metaKey;
+    // 追加(別視点のレビュー): Alt+↓(Mac は Option+↓)でアクティブセルの列の列メニューを開きます(Excel のフィルターの
+    //   ドロップダウンと同じキー)。見出しの ⋮ は Tab の順番に入れない(DF-08)ので、キーボードの入口です。開けなければ ↓ のまま。
+    if (
+      event.key === 'ArrowDown' &&
+      event.altKey &&
+      !ctrlOrMeta &&
+      !event.shiftKey &&
+      uiState.activeCell &&
+      args.openColumnMenu?.(uiState.activeCell.col)
+    ) {
+      event.preventDefault();
+      return;
+    }
     if (ctrlOrMeta && !event.altKey && (event.key === 'ArrowUp' || event.key === 'ArrowDown')) {
       event.preventDefault();
       const toLast = event.key === 'ArrowDown';

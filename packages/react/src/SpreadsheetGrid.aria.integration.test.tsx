@@ -457,6 +457,70 @@ describe('ARIA(audit V-05 / RD-10 / V-14)', () => {
     );
   });
 
+  // 追加(別視点のレビュー): ⋮ は Tab の順番に入れない(DF-08)ので、キーボードではアクティブセルで Alt+↓ を押して、その列の
+  //   列メニューを開く。開くと先頭の項目にフォーカスが移り、↓ / ↑ で項目を移り、Esc で閉じてグリッドへ戻る。
+  it('Alt+↓ でアクティブセルの列の列メニューを開き、↓ / ↑ / Esc で操作できる', async () => {
+    const { ref, shell } = setup({ enableColumnMenu: true });
+    act(() => {
+      ref.current?.setActiveCell({ row: 1, col: 1 });
+    });
+    shell.focus();
+    act(() => {
+      fireEvent.keyDown(shell, { key: 'ArrowDown', altKey: true });
+    });
+    const panel = document.querySelector<HTMLElement>('.ssg-menu-panel');
+    expect(panel?.querySelector('.ssg-menu-title')?.textContent).toBe('Qty');
+    // アクティブセルは動かない
+    expect(ref.current?.getActiveCell()).toEqual({ row: 1, col: 1 });
+    await act(async () => {
+      await new Promise((resolve) => requestAnimationFrame(resolve));
+    });
+    const items = Array.from(panel!.querySelectorAll<HTMLElement>('.ssg-menu-item'));
+    expect(document.activeElement).toBe(items[0]);
+    act(() => {
+      fireEvent.keyDown(document.activeElement!, { key: 'ArrowDown' });
+    });
+    expect(document.activeElement).toBe(items[1]);
+    act(() => {
+      fireEvent.keyDown(document.activeElement!, { key: 'ArrowUp' });
+    });
+    expect(document.activeElement).toBe(items[0]);
+    act(() => {
+      fireEvent.keyDown(document.activeElement!, { key: 'Escape' });
+    });
+    expect(document.querySelector('.ssg-menu-panel')).toBeNull();
+    // フォーカスは次のフレームでグリッドへ戻る
+    await act(async () => {
+      await new Promise((resolve) => requestAnimationFrame(resolve));
+    });
+    expect(document.activeElement).toBe(shell);
+    // 列メニューが無い設定ではメニューを出さない(ふつうの ↓ の移動になる)
+    cleanup();
+    const plain = setup({ enableColumnMenu: false });
+    act(() => {
+      plain.ref.current?.setActiveCell({ row: 1, col: 1 });
+    });
+    act(() => {
+      fireEvent.keyDown(plain.shell, { key: 'ArrowDown', altKey: true });
+    });
+    expect(document.querySelector('.ssg-menu-panel')).toBeNull();
+  });
+
+  // 追加(別視点のレビュー): 支援技術の仮想カーソルなどからの ⋮ の押下(pointerdown の無い click)でも開く。
+  it('⋮ の click(キーボード / 支援技術から)でも列メニューを開き、先頭の項目へフォーカスする', async () => {
+    const { grid } = setup({ enableColumnMenu: true });
+    const button = grid.querySelector<HTMLElement>('[data-ssg-col-key="name"] [data-ssg-tooltip="列メニュー"]');
+    act(() => {
+      fireEvent.click(button!, { detail: 0 });
+    });
+    const panel = document.querySelector<HTMLElement>('.ssg-menu-panel');
+    expect(panel?.querySelector('.ssg-menu-title')?.textContent).toBe('Name');
+    await act(async () => {
+      await new Promise((resolve) => requestAnimationFrame(resolve));
+    });
+    expect(document.activeElement).toBe(panel!.querySelector('.ssg-menu-item'));
+  });
+
   // 追加(dogfood DU-17): 列見出しの ⋮ の読み上げ名に列の名前を入れる(どれも「列メニュー」では区別できなかった)。
   //   ツールチップは「列メニュー」のまま。title が空白だけの列は key を使う。
   it('列メニューのボタンの名前に列の名前が入る(DU-17)', () => {

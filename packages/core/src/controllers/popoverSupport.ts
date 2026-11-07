@@ -38,17 +38,23 @@ export const isInsideGridRoot = (gridRootRef: ReadonlyElementRef, target: Node):
 //   ボタンの Enter / Space(ブラウザの既定)。パネルの外にフォーカスがある間は、そのほかのスクロールするキー(PageUp / PageDown /
 //   Space / ← / →)の既定の動作も止めます(これまでは ↓ で後ろのグリッドがスクロールし、メニューが閉じていた)。
 //   パネルの中の項目以外の要素(custom 項目の入力欄など)にフォーカスがあるときは何もしません。扱ったら true。
-const MENU_ITEM_SELECTOR = '[role="menuitem"]:not(:disabled):not([aria-disabled="true"])';
-export const handleMenuKeyNavigation = (panel: HTMLElement, event: KeyboardEvent): boolean => {
+// 変更(別視点のレビュー): 項目のセレクタを渡せるようにしました(列メニューは role の無い `.ssg-menu-item`)。
+export const handleMenuKeyNavigation = (
+  panel: HTMLElement,
+  event: KeyboardEvent,
+  itemSelector = '[role="menuitem"]',
+): boolean => {
   const active = document.activeElement;
   const focusInside = active instanceof HTMLElement && panel.contains(active);
-  if (focusInside && active.getAttribute('role') !== 'menuitem') {
+  if (focusInside && !active.matches(itemSelector)) {
     return false;
   }
   const key = event.key;
   if (key === 'ArrowDown' || key === 'ArrowUp' || key === 'Home' || key === 'End') {
     event.preventDefault();
-    const items = Array.from(panel.querySelectorAll<HTMLElement>(MENU_ITEM_SELECTOR));
+    const items = Array.from(
+      panel.querySelectorAll<HTMLElement>(`${itemSelector}:not(:disabled):not([aria-disabled="true"])`),
+    );
     if (items.length === 0) {
       return true;
     }
