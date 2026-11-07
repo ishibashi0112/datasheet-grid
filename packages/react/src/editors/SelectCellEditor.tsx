@@ -15,6 +15,7 @@ import type {
 } from '../model/gridTypes';
 import { resolveEnterDirection } from './editorKeyBindings';
 import { CellEditorErrorBubble } from './CellEditorErrorBubble';
+import { usePortalTokens } from '../hooks/usePortalTokens';
 import {
   computeSelectPopoverPlacement,
   createTypeaheadState,
@@ -77,6 +78,8 @@ export function SelectCellEditor({
   const typeaheadRef = useRef(initialState.typeahead);
   const [highlight, setHighlight] = useState(initialState.highlight);
   const [placement, setPlacement] = useState<SelectPopoverPlacement | null>(null);
+  // 追加(DevBI の報告): 表で決まったトークン(--ssg-*)を候補のリストへ写します(body 直下のため継承で届かない)。
+  usePortalTokens(listRef, placement !== null, themeClassName);
   // 追加(validation): reject 列の検証 NG メッセージです(表示中も選択操作は継続できます)。
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 

@@ -136,6 +136,33 @@ const closeAll = async (page) => {
   await page.keyboard.press('Escape');
   await page.mouse.up();
   await waitIdle(page, 200);
+  // 列フィルターのポップオーバー / select の候補 / 行のドラッグのゴーストにも届く。
+  await openColumnMenu(page, 'name');
+  await page.getByText('フィルター…').first().click();
+  await page.waitForSelector('.ssg-filter-popover');
+  await waitIdle(page, 150);
+  check('popup tokens: column filter popover gets it', (await tokenOf(page, '.ssg-filter-popover', '--ssg-panel-bg')) === 'rgb(21, 64, 70)');
+  await closeAll(page);
+  await closeAll(page);
+  await cell(page, 1, 'category').dblclick();
+  await page.waitForSelector('.ssg-select-editor-popover');
+  await waitIdle(page, 150);
+  check('popup tokens: select editor list gets it', (await tokenOf(page, '.ssg-select-editor-popover', '--ssg-panel-bg')) === 'rgb(21, 64, 70)');
+  await closeAll(page);
+  await page.evaluate(() => window.__setProps({ enableRowDrag: true }));
+  await waitIdle(page, 200);
+  const rowHandle = page.locator('.ssg-body-row[data-row-index="1"] .ssg-row-drag-handle').first();
+  const rb = await rowHandle.boundingBox();
+  await page.mouse.move(rb.x + rb.width / 2, rb.y + rb.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(rb.x + rb.width / 2, rb.y + 60, { steps: 6 });
+  await waitIdle(page, 100);
+  check('popup tokens: row drag ghost gets it', (await tokenOf(page, '[data-grid-drag-ghost]', '--ssg-ghost-bg')) === 'rgb(21, 64, 70)');
+  await page.keyboard.press('Escape');
+  await page.mouse.up();
+  await waitIdle(page, 200);
+  await page.evaluate(() => window.__setProps({ enableRowDrag: false }));
+  await waitIdle(page, 150);
 
   // 4) ポップアップの側で変えている指定(.ssg-menu-panel だけ / classNames.popover の style)は残す。
   await addStyle(page, '.ssg-menu-panel { --ssg-panel-bg: rgb(7, 8, 9); }');
