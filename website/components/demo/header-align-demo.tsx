@@ -2,7 +2,7 @@
 
 // 見出しの寄せ(headerAlign)のデモ: 右寄せの数値列は見出しも右、中央の列は見出しも中央(既定 = align に合わせる)。
 //   右寄せの見出しは並びが鏡写しになり、並べ替えの矢印とフィルターの印がラベルの左、ホバーで出る grip と ⋮ も左に出る。
-//   「見出しは左」に切り替えると、全列へ headerAlign: 'left' を書いたときの見た目(0.61.0 までの見た目)になる。
+//   「見出しは左」に切り替えると、全列へ headerAlign: 'left' を書いたときの見た目(0.62.0 までの見た目)になる。
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { SpreadsheetGrid, type GridColumn, type SpreadsheetGridHandle } from '@ishibashi0112/spreadsheet-grid';
 import '@ishibashi0112/spreadsheet-grid/style.css';

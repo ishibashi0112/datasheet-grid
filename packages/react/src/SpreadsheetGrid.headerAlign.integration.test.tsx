@@ -1,5 +1,5 @@
 // 追加(DevBI の報告 2026-11-07): 列見出しの寄せ(GridColumn.headerAlign)の結合テストです。書かなければ列の align と同じ、
-//   書いた列はその値、左は修飾クラスなし(0.61.0 までと同じ DOM)。並びの鏡写しは CSS(styles.css)で、実ブラウザの見た目は
+//   書いた列はその値、左は修飾クラスなし(0.62.0 までと同じ DOM)。並びの鏡写しは CSS(styles.css)で、実ブラウザの見た目は
 //   audit/harness/t-devbi.mjs で確かめます。
 // @vitest-environment jsdom
 import { describe, it, expect, beforeAll, afterAll, afterEach } from 'vitest';

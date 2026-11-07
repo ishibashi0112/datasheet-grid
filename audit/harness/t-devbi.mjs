@@ -1,5 +1,5 @@
 // DevBI(spreadsheet-grid を使うアプリ)からの報告(2026-11-07)の回帰確認。jsdom では幅を測れないため実ブラウザで見る。
-//   修正前の 0.61.0 では FAIL、修正後は PASS になる。
+//   修正前の 0.62.0 までは FAIL、修正後は PASS になる。
 import { open, check, summary, waitIdle, unexpectedPageErrors, header, cell, BROWSER } from './pw.mjs';
 
 // CSS を足す(WebDriver の wd.mjs には page.addStyleTag が無いので、どのブラウザでも同じ方法で)。
@@ -64,7 +64,7 @@ for (const font of ['system-ui, sans-serif; font-size: 11.9px', 'sans-serif; fon
 }
 
 // ---- ポップアップ(body 直下)へ、表で決まったトークンを写す ----
-//   0.61.0 までは、利用側が表のまわりで決めた --ssg-* が列メニュー等に届かず、既定の色で出ていた。
+//   0.62.0 までは、利用側が表のまわりで決めた --ssg-* が列メニュー等に届かず、既定の色で出ていた。
 //   写すのは「ポップアップの側で変えていない変数」だけ。密度の寸法は写さない。
 const tokenOf = (page, selector, name) =>
   page.evaluate(({ selector, name }) => {
@@ -323,7 +323,7 @@ const closeAll = async (page) => {
 }
 
 // ---- 列見出しの寄せ(headerAlign。書かなければ align)----
-//   右寄せは並びを鏡写し(状態をラベルの左、ホバーの操作も左端)。中央は文字だけ中央。左は 0.61.0 までと同じ。
+//   右寄せは並びを鏡写し(状態をラベルの左、ホバーの操作も左端)。中央は文字だけ中央。左は 0.62.0 までと同じ。
 {
   const { page, close, pageErrors } = await open('basic', { query: 'n=50' });
   await page.evaluate(async () => {
