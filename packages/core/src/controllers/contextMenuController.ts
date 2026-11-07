@@ -8,6 +8,7 @@ import type { GridContextMenuItem, GridContextMenuParams } from '../model/gridTy
 import { createValueStore } from '../logic/valueStore';
 import {
   blurForPopover,
+  handleMenuKeyNavigation,
   createPopoverWindowBindings,
   isInsideGridRoot,
   restoreGridFocus,
@@ -113,6 +114,19 @@ export const createContextMenuController = <T,>(): ContextMenuController<T> => {
       if (event.key === 'Escape') {
         event.preventDefault();
         close();
+        return;
+      }
+      // 追加(dogfood DF-17): ↓ / ↑ / Home / End で項目を移る(Enter / Space で実行)。Tab はメニューを閉じてグリッドへ戻る。
+      const panel = panelRef.current;
+      if (!panel || handleMenuKeyNavigation(panel, event)) {
+        return;
+      }
+      if (event.key === 'Tab') {
+        const active = document.activeElement;
+        if (!(active instanceof HTMLElement && panel.contains(active)) || active.getAttribute('role') === 'menuitem') {
+          event.preventDefault();
+          close();
+        }
       }
     },
   });

@@ -1355,8 +1355,9 @@
   .ssg-fill-menu {
     min-width: 168px;
   }
-  /* 開いたときに選ばれている項目へフォーカスを置くため、枠はアクセント色の内側線にします(既定の太い黒枠を出さない)。 */
-  .ssg-fill-menu .ssg-menu-item:focus-visible {
+  /* 開いたときに選ばれている項目へフォーカスを置くため、枠はアクセント色の内側線にします(既定の太い黒枠を出さない)。
+     変更(dogfood DF-17): 右クリックメニューも ↓ / ↑ で項目へフォーカスを置くので、メニュー項目すべてに同じ枠を出します。 */
+  .ssg-menu-item:focus-visible {
     outline: 2px solid var(--ssg-accent);
     outline-offset: -2px;
   }

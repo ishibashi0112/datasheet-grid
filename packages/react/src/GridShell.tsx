@@ -16,6 +16,7 @@ import {
   useState,
   useSyncExternalStore,
   type CSSProperties,
+  type FocusEvent,
   type PointerEvent,
   type MouseEvent as ReactMouseEvent,
   // 追加(UP-1): 統合ツールパネルのタブ別コンテンツテーブルの型に使います。
@@ -251,6 +252,8 @@ const renderDetailToggleCell = (ctx: CellRenderContext<unknown>) => {
   return (
     <button
       type="button"
+      // 変更(dogfood DF-08): Tab の順番に入れません(キーボードではトグル列のセルで Enter / Space。DU-04)。
+      tabIndex={-1}
       className="ssg-detail-toggle"
       aria-expanded={detail.expanded}
       aria-label={detail.expanded ? '詳細を閉じる' : '詳細を開く'}
@@ -2492,6 +2495,23 @@ export function useGridShell<T extends object>({
     [rowModel, detailIsExpandable, toggleDetailRowAt],
   );
 
+  // 追加(dogfood DF-08): スクロールする要素そのものにフォーカスが来たら(余白やスクロールバーのクリックなど)、シェルへ移します。
+  const handleScrollContainerFocus = useCallback((event: FocusEvent<HTMLDivElement>) => {
+    if (event.target === event.currentTarget) {
+      gridRootRef.current?.focus({ preventScroll: true });
+    }
+  }, []);
+
+  // 追加(dogfood DU-01): PageUp / PageDown の移動先です(見えている本体の高さ 1 画面ぶん先の行。展開行の帯 / auto-height の
+  //   行の高さも行メトリクスで数える)。
+  const resolvePageRow = useCallback(
+    (fromRow: number, direction: 1 | -1): number => {
+      const pageHeight = Math.max(viewportHeight - headerHeight, rowHeight);
+      return rowMetrics.rowAtContentY(rowMetrics.rowTop(fromRow) + direction * pageHeight);
+    },
+    [rowMetrics, viewportHeight, headerHeight, rowHeight],
+  );
+
   const { handleKeyDown } = useGridKeyboardInteractions({
     uiState,
     // 変更(DS-3-1): filteredRows 配列 → rowModel シームを渡します(keyboard consumer 移行)。
@@ -2523,6 +2543,7 @@ export function useGridShell<T extends object>({
     onToggleGroup: handleGroupToggle,
     // 追加(dogfood DU-04): 展開トグル列のセルでの Enter / Space の開閉配線です。
     onToggleDetailRow: detailRowEnabled ? toggleDetailRowFromKeyboard : undefined,
+    resolvePageRow,
   });
 
   // ── edit controller ───────────────────────────────────
@@ -3889,6 +3910,11 @@ export function useGridShell<T extends object>({
         {/*   pinned 列がない場合は左右ペインが width:0 で非表示、中央ペインのみ表示。     */}
         <div
           ref={scrollContainerRef}
+          // 追加(dogfood DF-08): スクロールする要素は、中にフォーカスできる要素が無いとブラウザ(Chrome 130 以降など)が Tab で
+          //   止まる要素にします。見出しの ⋮ などを Tab の順番から外したので、ここも外し(tabIndex=-1)、クリック等でここに
+          //   フォーカスが来たときはシェル(キー操作を受ける要素)へ移します。
+          tabIndex={-1}
+          onFocus={handleScrollContainerFocus}
           // 追加(audit V-05): ARIA の表。行数は見出し行 + 表示行(仮想化で描画していない行も数える)、列数は
           //   行番号列 + 視覚順の列。範囲選択できるなら複数選択可、readOnly なら読み取り専用。
           role="grid"

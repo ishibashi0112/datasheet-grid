@@ -172,6 +172,9 @@ function HeaderActionButton({
   return (
     <button
       type="button"
+      // 変更(dogfood DF-08): Tab の順番に入れません。最終列で Tab を押すと、見出しの ⋮ を 1 つずつ渡ってからグリッドの外へ
+      //   出ていました(キー操作はグリッド本体のフォーカスで行い、Tab はグリッドを 1 回で出入りする)。
+      tabIndex={-1}
       data-ssg-tooltip={title}
       aria-label={title}
       onPointerDown={onPointerDown}

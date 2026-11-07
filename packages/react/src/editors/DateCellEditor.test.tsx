@@ -58,6 +58,17 @@ describe('DateCellEditor', () => {
     expect(input.value).toBe('');
   });
 
+  // 追加(dogfood DF-13): 日付の入力欄では PageUp / PageDown / Home / End の既定の動作(グリッドのスクロール)を止める。
+  it('PageUp / PageDown / Home / End の既定の動作を止め、確定もしない', () => {
+    const { onCommit, onCancel, input } = renderDateEditor();
+    for (const key of ['PageUp', 'PageDown', 'Home', 'End']) {
+      // fireEvent は既定の動作が止められると false を返します。
+      expect(fireEvent.keyDown(input, { key })).toBe(false);
+    }
+    expect(onCommit).not.toHaveBeenCalled();
+    expect(onCancel).not.toHaveBeenCalled();
+  });
+
   it('Enter でドラフト(YYYY-MM-DD)を down 方向 commit する', () => {
     const { onCommit, input } = renderDateEditor();
     fireEvent.change(input, { target: { value: '2026-12-31' } });

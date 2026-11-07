@@ -33,6 +33,46 @@ export const restoreGridFocus = (gridRootRef: ReadonlyElementRef): void => {
 export const isInsideGridRoot = (gridRootRef: ReadonlyElementRef, target: Node): boolean =>
   gridRootRef.current?.contains(target) === true;
 
+// 追加(dogfood DF-17): メニュー(role="menu" のパネル)のキー操作です。↓ / ↑ で項目(role="menuitem"。使えない項目は飛ばす)の
+//   間を移り(端で反対側へ回る。項目にフォーカスが無ければ ↓ は先頭、↑ は末尾へ)、Home / End で先頭 / 末尾へ。項目の実行は
+//   ボタンの Enter / Space(ブラウザの既定)。パネルの外にフォーカスがある間は、そのほかのスクロールするキー(PageUp / PageDown /
+//   Space / ← / →)の既定の動作も止めます(これまでは ↓ で後ろのグリッドがスクロールし、メニューが閉じていた)。
+//   パネルの中の項目以外の要素(custom 項目の入力欄など)にフォーカスがあるときは何もしません。扱ったら true。
+const MENU_ITEM_SELECTOR = '[role="menuitem"]:not(:disabled):not([aria-disabled="true"])';
+export const handleMenuKeyNavigation = (panel: HTMLElement, event: KeyboardEvent): boolean => {
+  const active = document.activeElement;
+  const focusInside = active instanceof HTMLElement && panel.contains(active);
+  if (focusInside && active.getAttribute('role') !== 'menuitem') {
+    return false;
+  }
+  const key = event.key;
+  if (key === 'ArrowDown' || key === 'ArrowUp' || key === 'Home' || key === 'End') {
+    event.preventDefault();
+    const items = Array.from(panel.querySelectorAll<HTMLElement>(MENU_ITEM_SELECTOR));
+    if (items.length === 0) {
+      return true;
+    }
+    const current = focusInside ? items.indexOf(active) : -1;
+    let next: number;
+    if (key === 'Home') {
+      next = 0;
+    } else if (key === 'End') {
+      next = items.length - 1;
+    } else if (key === 'ArrowDown') {
+      next = current < 0 ? 0 : (current + 1) % items.length;
+    } else {
+      next = current < 0 ? items.length - 1 : (current - 1 + items.length) % items.length;
+    }
+    items[next]?.focus();
+    return true;
+  }
+  if (!focusInside && (key === 'PageUp' || key === 'PageDown' || key === ' ' || key === 'ArrowLeft' || key === 'ArrowRight')) {
+    event.preventDefault();
+    return true;
+  }
+  return false;
+};
+
 export type PopoverWindowHandlers = {
   onResize?: () => void;
   // scroll は capture 相で受けます(内部スクロールも含めて拾う)。

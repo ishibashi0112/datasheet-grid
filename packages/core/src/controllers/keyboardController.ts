@@ -17,6 +17,7 @@ import { clamp } from '../logic/geometry';
 import { isImeInputTarget, isPrintableKey, shouldIgnoreGridKeydown } from '../logic/domGuards';
 import { isViewCellEditable } from '../utils/permissions';
 import { DETAIL_TOGGLE_COLUMN_KEY } from '../logic/detailRow';
+import { ROW_DRAG_HANDLE_COLUMN_KEY } from '../logic/rowReorder';
 
 export type GridKeyboardEventLike = {
   key: string;
@@ -52,7 +53,15 @@ export type KeyboardControllerArgs<T> = {
   onToggleGroup: (groupKey: string) => void;
   // 追加(dogfood DU-04): 展開トグル列(合成列)のセルでの Enter / Space の開閉です。開閉したら true(展開行が無い構成は未指定)。
   onToggleDetailRow?: (cell: CellCoord) => boolean;
+  // 追加(dogfood DU-01): PageUp / PageDown の移動先の行(見えている高さ 1 画面ぶん先の行)。未指定なら 10 行。
+  resolvePageRow?: (fromRow: number, direction: 1 | -1) => number;
 };
+
+// 追加(dogfood DU-01): Home / Ctrl+Home / Ctrl+← で止まる先頭の列は、操作用の合成列(行ドラッグのハンドル列・展開トグル列)を
+//   飛ばした最初の列です(← ではこれまでどおり合成列へも移れる)。自動グループ列は値を出す列なので止まります。
+const isControlColumnKey = (key: string): boolean =>
+  key === ROW_DRAG_HANDLE_COLUMN_KEY || key === DETAIL_TOGGLE_COLUMN_KEY;
+const DEFAULT_PAGE_ROWS = 10;
 
 export type KeyboardController<T> = {
   update: (args: KeyboardControllerArgs<T>) => void;
@@ -66,36 +75,37 @@ export const createKeyboardController = <T,>(): KeyboardController<T> => {
     args = next;
   };
 
-  // active cell の移動(Shift で範囲拡張)。行 / 列とも端で clamp します。
-  const moveActiveCell = (
-    deltaRow: number,
-    deltaCol: number,
-    extendSelection: boolean,
-  ) => {
+  // 追加(label-row ③): 縦移動ではラベル行(セルを持たない)に止まらず、同じ向きに読み飛ばします。
+  //   端までラベル行しか無ければ fallback に留まります(getLabelRow 未定義 = ラベル行なしでは従来どおり)。
+  const skipLabelRows = (rowModel: RowModel<T>, candidateRow: number, step: 1 | -1, fallback: number): number => {
+    if (!rowModel.getLabelRow) {
+      return candidateRow;
+    }
+    const rowCount = rowModel.getRowCount();
+    let candidate = candidateRow;
+    while (candidate >= 0 && candidate < rowCount && rowModel.getLabelRow(candidate)) {
+      candidate += step;
+    }
+    return candidate >= 0 && candidate < rowCount ? candidate : fallback;
+  };
+
+  // 追加(dogfood DU-01 / DU-16): 端の行(ラベル行を飛ばした最初 / 最後の行)と端の列(先頭は操作用の合成列を飛ばす)。
+  const firstRowIndex = (rowModel: RowModel<T>): number => skipLabelRows(rowModel, 0, 1, 0);
+  const lastRowIndex = (rowModel: RowModel<T>): number => {
+    const last = rowModel.getRowCount() - 1;
+    return skipLabelRows(rowModel, last, -1, last);
+  };
+  const firstColIndex = (visibleColumns: GridColumn<T>[]): number => {
+    const index = visibleColumns.findIndex((column) => !isControlColumnKey(column.key));
+    return index < 0 ? 0 : index;
+  };
+
+  // 移動先のセルへアクティブセルを移します(Shift で範囲拡張。起点は今の範囲の起点か、無ければアクティブセル)。
+  const commitMove = (currentCell: CellCoord, nextCell: CellCoord, extendSelection: boolean) => {
     if (args === null) {
       return;
     }
-    const { uiState, rowModel, visibleColumns, dispatch } = args;
-    const rowCount = rowModel.getRowCount();
-    if (rowCount === 0 || visibleColumns.length === 0) {
-      return;
-    }
-    const currentCell = uiState.activeCell ?? { row: 0, col: 0 };
-    let nextRow = clamp(currentCell.row + deltaRow, 0, rowCount - 1);
-    // 追加(label-row ③): 縦移動ではラベル行(セルを持たない)に止まらず、同じ向きに読み飛ばします。
-    //   端までラベル行しか無ければ現在行に留まります(getLabelRow 未定義 = ラベル行なしでは従来どおり)。
-    if (deltaRow !== 0 && rowModel.getLabelRow) {
-      const step = deltaRow > 0 ? 1 : -1;
-      let candidate = nextRow;
-      while (candidate >= 0 && candidate < rowCount && rowModel.getLabelRow(candidate)) {
-        candidate += step;
-      }
-      nextRow = candidate >= 0 && candidate < rowCount ? candidate : currentCell.row;
-    }
-    const nextCell = {
-      row: nextRow,
-      col: clamp(currentCell.col + deltaCol, 0, visibleColumns.length - 1),
-    };
+    const { uiState, dispatch } = args;
     if (extendSelection) {
       const anchor =
         uiState.selection?.type === 'cell'
@@ -110,6 +120,106 @@ export const createKeyboardController = <T,>(): KeyboardController<T> => {
     dispatch(gridActions.startSelection(nextCell));
     dispatch(gridActions.endSelection());
     dispatch(gridActions.activateCell(nextCell));
+  };
+
+  // 追加(dogfood DU-16): アクティブセルが無いとき(Tab でグリッドに入った直後など)の最初の移動キーは、先頭のセル
+  //   (ラベル行を飛ばした最初の行 × 操作用の合成列を飛ばした最初の列)に止まります。これまでは (0, 0) から 1 つ動いた
+  //   セル(↓ なら A2、→ / Tab なら B1)へ行き、A1 に止まれませんでした。止まったら true。
+  const activateFirstCellIfNone = (): boolean => {
+    if (args === null || args.uiState.activeCell) {
+      return false;
+    }
+    const { rowModel, visibleColumns } = args;
+    if (rowModel.getRowCount() === 0 || visibleColumns.length === 0) {
+      return true;
+    }
+    const first = { row: firstRowIndex(rowModel), col: firstColIndex(visibleColumns) };
+    commitMove(first, first, false);
+    return true;
+  };
+
+  // 動かす側のセル。Shift で範囲を広げるときは範囲の終わり(ドラッグ / Shift+クリックで選んだ範囲でも、その終わりから
+  //   広げる。これまではアクティブセル = 起点から数え直して範囲が縮んでいた)、それ以外はアクティブセルです。
+  //   キー操作だけで広げた範囲はアクティブセルが範囲の終わりなので、これまでと同じです。
+  const movingCell = (extendSelection: boolean): CellCoord => {
+    const uiState = args?.uiState;
+    if (extendSelection && uiState?.selection?.type === 'cell') {
+      return uiState.selection.range.end;
+    }
+    return uiState?.activeCell ?? { row: 0, col: 0 };
+  };
+
+  // active cell の移動(Shift で範囲拡張)。行 / 列とも端で clamp します。
+  const moveActiveCell = (
+    deltaRow: number,
+    deltaCol: number,
+    extendSelection: boolean,
+  ) => {
+    if (args === null) {
+      return;
+    }
+    const { rowModel, visibleColumns } = args;
+    const rowCount = rowModel.getRowCount();
+    if (rowCount === 0 || visibleColumns.length === 0) {
+      return;
+    }
+    if (activateFirstCellIfNone()) {
+      return;
+    }
+    const currentCell = movingCell(extendSelection);
+    let nextRow = clamp(currentCell.row + deltaRow, 0, rowCount - 1);
+    if (deltaRow !== 0) {
+      nextRow = skipLabelRows(rowModel, nextRow, deltaRow > 0 ? 1 : -1, currentCell.row);
+    }
+    const nextCell = {
+      row: nextRow,
+      col: clamp(currentCell.col + deltaCol, 0, visibleColumns.length - 1),
+    };
+    commitMove(currentCell, nextCell, extendSelection);
+  };
+
+  // 追加(dogfood DU-01): 端 / 1 画面ぶんの移動(Excel と同じキー)。row / col は移動先を返す関数で、今のセルを受けます。
+  //   アクティブセルが無いときは先頭のセルから数えます(Ctrl+End などは無くても端へ行く)。
+  const jumpActiveCell = (
+    resolve: (current: CellCoord, rowModel: RowModel<T>, visibleColumns: GridColumn<T>[]) => CellCoord,
+    extendSelection: boolean,
+  ) => {
+    if (args === null) {
+      return;
+    }
+    const { uiState, rowModel, visibleColumns } = args;
+    if (rowModel.getRowCount() === 0 || visibleColumns.length === 0) {
+      return;
+    }
+    const currentCell = uiState.activeCell
+      ? movingCell(extendSelection)
+      : { row: firstRowIndex(rowModel), col: firstColIndex(visibleColumns) };
+    const next = resolve(currentCell, rowModel, visibleColumns);
+    commitMove(
+      currentCell,
+      {
+        row: clamp(next.row, 0, rowModel.getRowCount() - 1),
+        col: clamp(next.col, 0, visibleColumns.length - 1),
+      },
+      extendSelection && uiState.activeCell !== null,
+    );
+  };
+
+  const resolvePageTarget = (current: CellCoord, rowModel: RowModel<T>, direction: 1 | -1): number => {
+    const rowCount = rowModel.getRowCount();
+    const raw = args?.resolvePageRow
+      ? args.resolvePageRow(current.row, direction)
+      : current.row + direction * DEFAULT_PAGE_ROWS;
+    // 少なくとも 1 行は動かします(見えている高さより高い行など)。
+    const moved = direction > 0 ? Math.max(raw, current.row + 1) : Math.min(raw, current.row - 1);
+    const clamped = clamp(moved, 0, rowCount - 1);
+    // ラベル行に当たったら同じ向きへ読み飛ばし、先がラベル行だけなら逆向きに戻って最寄りの行へ(無ければ今の行)。
+    const forward = skipLabelRows(rowModel, clamped, direction, -1);
+    if (forward >= 0) {
+      return forward;
+    }
+    const backward = skipLabelRows(rowModel, clamped, direction > 0 ? -1 : 1, current.row);
+    return backward;
   };
 
   const handleKeyDown = async (event: GridKeyboardEventLike) => {
@@ -192,6 +302,54 @@ export const createKeyboardController = <T,>(): KeyboardController<T> => {
       }
     }
 
+    // 追加(dogfood DU-01): Excel と同じ端 / 1 画面ぶんの移動です(Shift で範囲を広げる)。Ctrl / ⌘ + 矢印 = その向きの端の
+    //   行 / 列、Home / End = 行の先頭 / 末尾の列、Ctrl / ⌘ + Home / End = 先頭 / 末尾のセル、PageUp / PageDown = 1 画面ぶん上 / 下。
+    //   これまでは Ctrl+矢印が 1 つだけ動き、ほかは何もしませんでした(端は表の端。値の切れ目では止まらない)。
+    //   先頭の列は操作用の合成列(行ドラッグのハンドル列・展開トグル列)を飛ばし、行はラベル行を飛ばします。
+    const ctrlOrMeta = event.ctrlKey || event.metaKey;
+    if (ctrlOrMeta && !event.altKey && (event.key === 'ArrowUp' || event.key === 'ArrowDown')) {
+      event.preventDefault();
+      const toLast = event.key === 'ArrowDown';
+      jumpActiveCell(
+        (current, model) => ({ row: toLast ? lastRowIndex(model) : firstRowIndex(model), col: current.col }),
+        event.shiftKey,
+      );
+      return;
+    }
+    if (ctrlOrMeta && !event.altKey && (event.key === 'ArrowLeft' || event.key === 'ArrowRight')) {
+      event.preventDefault();
+      const toLast = event.key === 'ArrowRight';
+      jumpActiveCell(
+        (current, _model, columns) => ({ row: current.row, col: toLast ? columns.length - 1 : firstColIndex(columns) }),
+        event.shiftKey,
+      );
+      return;
+    }
+    if ((event.key === 'Home' || event.key === 'End') && !event.altKey) {
+      event.preventDefault();
+      const toLast = event.key === 'End';
+      jumpActiveCell(
+        (current, model, columns) => ({
+          row: ctrlOrMeta ? (toLast ? lastRowIndex(model) : firstRowIndex(model)) : current.row,
+          col: toLast ? columns.length - 1 : firstColIndex(columns),
+        }),
+        event.shiftKey,
+      );
+      return;
+    }
+    if ((event.key === 'PageDown' || event.key === 'PageUp') && !ctrlOrMeta && !event.altKey) {
+      event.preventDefault();
+      if (activateFirstCellIfNone()) {
+        return;
+      }
+      const direction = event.key === 'PageDown' ? 1 : -1;
+      jumpActiveCell(
+        (current, model) => ({ row: resolvePageTarget(current, model, direction), col: current.col }),
+        event.shiftKey,
+      );
+      return;
+    }
+
     if (event.key === 'ArrowUp') {
       event.preventDefault();
       moveActiveCell(-1, 0, event.shiftKey);
@@ -215,6 +373,12 @@ export const createKeyboardController = <T,>(): KeyboardController<T> => {
     if (event.key === 'Tab') {
       // 列の端(最終列で Tab / 先頭列で Shift+Tab)は既定動作に任せ、フォーカスをグリッド外へ出します
       //   (キーボードトラップ回避。WCAG 2.1.2 / 監査 C-5)。端以外は従来どおりアクティブセル移動。
+      // 変更(dogfood DU-16): アクティブセルが無いときの Tab は先頭のセルに止まります(Shift+Tab はグリッドの外へ)。
+      if (!uiState.activeCell && !event.shiftKey) {
+        event.preventDefault();
+        activateFirstCellIfNone();
+        return;
+      }
       const currentCol = uiState.activeCell?.col ?? 0;
       const atEdge = event.shiftKey
         ? currentCol <= 0
@@ -262,6 +426,11 @@ export const createKeyboardController = <T,>(): KeyboardController<T> => {
       event.preventDefault();
       if (uiState.activeCell) {
         handleCellDoubleClick(uiState.activeCell);
+        return;
+      }
+      // 追加(dogfood DU-16): アクティブセルが無いときの Enter は先頭のセルに止まります(編集は始めない)。
+      if (event.key === 'Enter') {
+        activateFirstCellIfNone();
       }
       return;
     }

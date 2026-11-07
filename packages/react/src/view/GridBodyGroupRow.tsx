@@ -196,6 +196,8 @@ function GridBodyGroupRowInner<T>({
                 />
                 <button
                   type="button"
+                  // 変更(dogfood DF-08): Tab の順番に入れません(キーボードではアクティブセルで Enter / Space)。
+                  tabIndex={-1}
                   className="ssg-group-toggle"
                   aria-expanded={!isCollapsed}
                   aria-label={`${groupRow.label} を${isCollapsed ? '展開' : '折りたたみ'}`}
