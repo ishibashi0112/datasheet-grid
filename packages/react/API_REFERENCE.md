@@ -99,7 +99,7 @@
 | `className` | `string` | — | ルート要素の class。 |
 | `style` | `CSSProperties` | — | ルート要素(`.ssg-root`)のインライン style。`classNames.root` の style とマージされ、こちらが後勝ち。 |
 | `classNames` | `GridClassNames` | — | パーツ別の追加スロット。各値は `GridSlotProps`(`string \| { className?, style? }`)で、StyleX の `stylex.props(...)` の戻り値をそのまま渡せる。全 25 スロット配線済み(一覧と規則は「パーツ別スロット」節)。レンダー毎に新しいオブジェクトを渡してもよい(内容の署名で memo)。基底 class は未レイヤー・特異度 (0,1,0)のため同特異度のクラスは読み込み順で決まる(確実な上書きは連結セレクタか `style.layer.css`)。 |
-| `getRowClassName` | `(row: T, rowIndex: number, ctx: RowStyleContext<T>) => GridSlotProps \| undefined` | — | 行ごとの追加 class(または `{ className, style }`)。行コンテナ + 行ヘッダー「#」セル + 各データセルに付与され、Tailwind / StyleX での行ハイライトに使える。`style` はインラインで付与され、座標 / 寸法はグリッドが後勝ち(返した style は内容比較で memo される)。第 3 引数 `ctx` は `{ row, rowIndex, sourceRowIndex, rowKey, isSelected }`(「補助型」節参照)。既存の 2 引数関数もそのまま動く(後方互換)。グループ行は対象外。 |
+| `getRowClassName` | `(row: T, rowIndex: number, ctx: RowStyleContext<T>) => GridSlotProps \| undefined` | — | 行ごとの追加 class(または `{ className, style }`)。行コンテナ + 行ヘッダー「#」セル + 各データセルに付与され、Tailwind / StyleX での行ハイライトに使える。`style` はインラインで付与され、座標 / 寸法はグリッドが後勝ち(返した style は内容比較で memo される)。第 3 引数 `ctx` は `{ row, rowIndex, sourceRowIndex, rowKey, isSelected }`(「補助型」節参照)。既存の 2 引数関数もそのまま動く(後方互換)。グループ行は対象外。class と style は行と各セルの両方に付くので、`opacity` / `filter` のように重なる指定は style で返さず、class を返して `.ssg-body-row.<class>` で行だけに当てる(style の `opacity: 0.5` は 0.25 になる)。 |
 | `onStateChange` | `(state: GridState) => void` | — | 永続スライス(手動リサイズ幅 / フィルター / ソート)が**実際に変化したとき**に最新 `GridState` を渡して呼ばれる。保存タイミングの signal(例: localStorage 自動保存)。発火規約は「状態の保存 / 復元」節を参照。 |
 | `onFiltersChange` | `(filters: GridFilterState) => void` | — | フィルター状態(`globalText` + `columnFilters`)が**実際に変化したとき**だけ、そのスライスの複製を渡して呼ばれる。`onStateChange` は列幅 / 列メタでも呼ばれるため、記述子から WHERE を組み立てるなどフィルターだけを追いたい用途向け。規約は `onStateChange` と同じ(初回非発火 / 同値非発火 / `applyState` でも発火)。 |
 | `onSortChange` | `(sort: GridSortState) => void` | — | ソート状態が**実際に変化したとき**だけ、その複製を渡して呼ばれる(ORDER BY の組み立てなど)。規約は `onFiltersChange` と同じ。 |
@@ -554,6 +554,7 @@ WAI-ARIA の grid パターンに沿って、表・行・セルに役割と状�
 | `setValue` | `(row: T, value: unknown) => T` | — | 値ライター(新しい行を返す)。 |
 | `renderCell` | `(ctx: CellRenderContext<T>) => ReactNode` | プレーン `<span>` | カスタムセル描画。 |
 | `align` | `'left' \| 'center' \| 'right'` | `'left'` | セル内容の水平寄せ(UI 表示のみ・元の値は不変)。セル表示と編集 input に反映。 |
+| `headerAlign` | `'left' \| 'center' \| 'right'` | `align` と同じ | 列見出しの水平寄せ(書かなければ `align` に合わせる。見出しだけ変えたい列に書く)。`'right'` は並びを鏡写しにする(並べ替えの矢印とフィルターの印をラベルの左、ホバーで出る grip と ⋮ も左)。`'center'` は文字だけ中央で、印と操作は右(印が出ているときは印を除いた幅の中で中央)。`renderHeader` の中身にも効く(器の `text-align`)。列幅の自動調整の見出しの幅は変わらない。 |
 | `valueFormatter` | `(params: CellValueFormatterParams<T>) => string` | — | セル表示値の整形(UI 表示のみ)。`renderCell` 未指定の既定セルが返り値を表示。組み込み `numberFormatter` 等を渡せる。元の値/編集/コピー/ソート/フィルターには影響しない。グループ行の集計値と合計行の値の整形にも使い、そのときは元の行が無いので `row` は `undefined`(型は `T \| undefined`。`row` を読むときは `row?.x` と書く)。 |
 | `cellClassName` | `GridSlotProps \| ((ctx: CellStyleContext<T>) => GridSlotProps \| undefined)` | — | セルへ付与する追加 class(条件付きスタイル)。`GridSlotProps` = `string \| { className?, style? }` で、StyleX の `stylex.props(...)` をそのまま返せる(`style` はセルへインライン付与。座標 / 寸法はグリッドが後勝ち)。関数版は値 / 状態に応じて返せる。`ctx` には view の `rowIndex` に加え source 基準の `sourceRowIndex` / `rowKey` が入る(ソート / フィルター ON でも source 行基準のデータと突き合わせ可能。「補助型」節参照)。基底 `.ssg-body-cell` は未レイヤー・特異度 (0,1,0)。確実な上書きは `.ssg-body-cell.my-class` の連結を推奨。 |
 | `cellNote` | `(ctx: CellStyleContext<T>) => string \| null \| undefined` | — | セルのメモ(FarPoint SPREAD のセルメモ / Excel のメモ相当)。文字列を返したセルの右上に印(10px の三角。色はトークン `--ssg-note-indicator`)を出し、マウスを乗せるとその文字列をツールチップで表示する(`\n` で改行)。`undefined` / `null` / 空文字(空白だけを含む)なら何も出さない。`ctx` は `cellClassName` の関数版と同じ。入力エラー(`validate` の mark)と同じセルでは、エラーの 6px の赤い三角がメモの三角の上に重なって両方見え、ツールチップは「エラー → 改行 → メモ」の順。描画中のセルだけ評価する(`cellClassName` 関数と同じコスト階級)。CSV / TSV / クリップボード / `getExportData` には含めない。詳細は「セルのメモ(`cellNote`)」節。 |
@@ -2020,6 +2021,7 @@ function Grid(props: SpreadsheetGridProps<Row>) {
 | `.ssg-body-cell--row-hovered` | 行ホバー中のセル(`enableRowHover` 有効時)。 |
 | `.ssg-body-cell--autoheight` | auto-height 列のセル。 |
 | `.ssg-body-cell--align-center` / `.ssg-body-cell--align-right` | `column.align` の水平寄せ。 |
+| `.ssg-header-cell--align-center` / `.ssg-header-cell--align-right` | 列見出しの水平寄せ(`column.headerAlign`。書かなければ `column.align`)。右寄せは並びが鏡写し(状態とホバーの操作が左)。 |
 | `.ssg-body-cell--row-drag-handle` | 行ドラッグ(`enableRowDrag`)のハンドル列のセル。 |
 | `.ssg-row-drag-handle` / `.ssg-row-drag-handle--disabled` | 行ドラッグのハンドル / 操作できないとき(ソート / フィルター中)。 |
 | `.ssg-row-drop-indicator` | 行ドラッグの挿入位置の線。 |
@@ -2054,7 +2056,14 @@ function Grid(props: SpreadsheetGridProps<Row>) {
 
 見た目を変える主な手段。`style.css` が `.ssg-root` と各ポータル(ポップオーバー / メニュー / ドラッグのゴースト / ツールチップ)と `GridAskBar` の `.ssg-ask` に `:where`(特異度 0)で定義しているため、利用側の上書きは読み込み順に関係なく既定値・ダークのプリセット(`.ssg-theme-dark`)・`themes/*.css` に勝つ。
 
-- ポータル(ポップオーバー / ツールチップ / ドラッグのゴースト)は `document.body` 直下にあるので、`className` で付けたクラスに書いた上書きは届かない。同じクラスを `classNames` の `popover` / `tooltip` / `dragGhost` にも渡す(または `:root` に書く)。
+`document.body` の直下に出す部品(列メニュー / 列フィルター / 右クリックメニュー / select エディタの候補 / ツールパネル / フィルハンドルのメニューと値のツールチップ / ツールチップ / ドラッグのゴースト)は表の中に無いので、表やその祖先に書いたトークンは継承では届かない。グリッドは部品を出すときに、表の root で決まったトークンの値をその部品の root へインラインで写す。
+
+- `.ssg-root { … }` / `className` のクラス / `.card .ssg-root { … }` のような祖先のセレクタ / 祖先の変数を使った値(`--ssg-panel-bg: var(--card-head)`)も、部品に同じ値で出る。
+- 部品の側で決めた値は写さない(`classNames.popover` / `classNames.tooltip` / `classNames.dragGhost` の style や、`.ssg-menu-panel { … }` / `.ssg-tooltip { … }` のように部品だけに当てた指定がそのまま効く)。ただし部品だけに当てた CSS の値が既定値と同じだと区別できず、表の値が写る(部品を既定の色のままにしたいときは `classNames.popover` などの style で書く。style は既定値と同じ値でも残る)。
+- 密度の寸法(`--ssg-cell-pad-x` / `--ssg-bar-pad-x` / `--ssg-bar-pad-y` / `--ssg-icon-btn-size`)は写さない(部品は `density` の対象外。表に書いた値も写さない)。
+- 写すのは部品を出したとき(メニューやパネルを開いたとき、ツールチップを出すとき、ドラッグを始めたとき)と、`theme` / `motion` が変わったとき。メニューやパネルを開いている間は、`<html>` / `<body>` の属性(ダークモードのクラスなど)、表の root の class / style、OS の配色(`prefers-color-scheme`)が変わったときにも写し直す。それ以外の方法で利用側の CSS を差し替えたときは、次に出すときに合う。
+- 前の版で案内していた回避策(同じクラスを `classNames` の `popover` / `tooltip` / `dragGhost` にも渡す、`:root` に書く)もそのまま動く(部品の値が表と同じになるので写さない)。
+
 - 下の表の名前が公開契約で、消す・改名する・意味を変えるのは破壊的変更。既定値(色・寸法)の調整は minor で行うことがある(CHANGELOG に書く)。
 - 表に無い `--ssg-*`(要素ごとに内部で使う変数や、`themes/*.css` の中継の `--ssg-ds-*`)は内部。
 - `style.css` にトークンを足したらこの表にも足す(`packages/react/src/cssContract.test.ts` が検査する)。

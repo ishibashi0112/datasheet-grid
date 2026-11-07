@@ -44,6 +44,7 @@ import { IME_INPUT_ATTRIBUTE } from '@ishibashi0112/spreadsheet-grid-core/intern
 import { gridActions } from '@ishibashi0112/spreadsheet-grid-core/internal/model/gridActions';
 import { resolveFirstDataCell } from '@ishibashi0112/spreadsheet-grid-core/internal/controllers/keyboardController';
 import { useGridStore, useGridViewState } from './hooks/useGridStore';
+import { PortalTokenSourceContext } from './hooks/usePortalTokens';
 import {
   buildSelectionSnapshot,
 } from '@ishibashi0112/spreadsheet-grid-core/internal/model/gridSelectors';
@@ -3906,7 +3907,8 @@ export function useGridShell<T extends object>({
     'passive',
   );
 
-  return (
+  // 変更(DevBI の報告): ポップアップへトークンを写すとき(hooks/usePortalTokens)の元として、表の要素を渡します。
+  const shellElement = (
     <div
       className={cx(
         'ssg-root',
@@ -4810,5 +4812,8 @@ export function useGridShell<T extends object>({
       {/* 追加(フィルハンドル 1A): 埋めたあとのメニュー / ドラッグ中の値のツールチップ(ポータル)。 */}
       {fill.renderPortals()}
     </div>
+  );
+  return (
+    <PortalTokenSourceContext.Provider value={gridRootRef}>{shellElement}</PortalTokenSourceContext.Provider>
   );
 }

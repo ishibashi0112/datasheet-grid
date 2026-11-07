@@ -74,6 +74,11 @@ const CELL_HORIZONTAL_FRAME = 21;
 //   注記(②-S1): Phase 2 の実 DOM 計測では実体を測るため不要。canvas フォールバックと、ヘッダー
 //   計測(従来どおり canvas)でのみ使用します。
 const TEXT_SAFETY = 4;
+// 追加(DevBI の報告 2026-11-07): 実 DOM の計測ノードの幅に足す 1px です。offsetWidth は整数へ丸めた値なので、
+//   実際の幅より最大 0.5px 小さくなり、その幅に決めた列ではいちばん長い値の末尾が「…」で切れていました
+//   (例: 文字 67.14px に対しセルの中で使える幅 67px)。丸めの不足は 1px 未満なので、1px 足せば必ず収まります。
+//   getBoundingClientRect の小数の幅は祖先の transform: scale() で縮んだ値になるため使いません。
+const DOM_ROUNDING_SAFETY = 1;
 // ヘッダーセルのテキスト以外の固定幅です(現行の hover オーバーレイヘッダーと同期。styles.css):
 //   padding 0 6px(=12) + borderRight 1 + ラベル↔状態スロットの gap 4
 //   + 状態スロット(ソート矢印 + フィルター漏斗 + 内部 gap)~24
@@ -216,7 +221,7 @@ const createMeasuringContainer = (
 
 // 追加(②-S1): 候補 1 件ぶんの計測ノードを作ります。実セル(.ssg-body-cell)の padding / border /
 //   box-sizing / フォント継承を流用しつつ、計測用に inline-block + width:auto + nowrap へ上書きします。
-//   offsetWidth = テキスト + padding + border = 必要列幅(箱まるごと)になります。
+//   offsetWidth = テキスト + padding + border = 必要列幅(箱まるごと。整数へ丸めた値なので読む側で 1px 足します)になります。
 const createMeasuringNode = (text: string): HTMLElement => {
   const node = document.createElement('div');
   node.className = 'ssg-body-cell';
@@ -445,7 +450,8 @@ export function createColumnWidthAccumulator<T>(
           nodesByCol.push(nodes);
         }
         // read 相(ここで初回のみレイアウトが走り、以後の offsetWidth は再計算なし)。
-        totalWidthByCol = totalNodes.map((node) => (node ? node.offsetWidth : 0));
+        //   変更(DevBI の報告): 丸めの不足を吸収する 1px(DOM_ROUNDING_SAFETY)を足します。
+        totalWidthByCol = totalNodes.map((node) => (node ? node.offsetWidth + DOM_ROUNDING_SAFETY : 0));
         cellWidthByCol = nodesByCol.map((nodes) => {
           let max = 0;
           for (let j = 0; j < nodes.length; j += 1) {
@@ -454,7 +460,7 @@ export function createColumnWidthAccumulator<T>(
               max = w;
             }
           }
-          return max;
+          return max > 0 ? max + DOM_ROUNDING_SAFETY : 0;
         });
       }
 
@@ -483,7 +489,7 @@ export function createColumnWidthAccumulator<T>(
               ? maxEstimateWidth[ci] + CELL_HORIZONTAL_FRAME
               : 0;
         } else if (cellWidthByCol) {
-          // Phase 2: 実 DOM の offsetWidth(padding / border / 字間 / 整形を内包。補正定数は加えません)。
+          // Phase 2: 実 DOM の offsetWidth(padding / border / 字間 / 整形を内包)+ 丸めの 1px。
           cellRequired = cellWidthByCol[ci];
         } else {
           // フォールバック(DOM 不可): 表示テキストを canvas 計測 + 補正定数。

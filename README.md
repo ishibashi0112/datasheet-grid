@@ -352,8 +352,10 @@ Sorting, column filters, and the global filter stay enabled and are forwarded to
   }
   ```
 
+  Popovers, menus, the tool panel, tooltips and drag ghosts are portalled to `document.body`, so they do not inherit from the grid. When one opens, the grid copies the token values resolved on its root to it, so the same rule (on `.ssg-root`, your `className`, or an ancestor) colors them too. Values you set on the popup itself (`classNames.popover` / `classNames.tooltip` style, `.ssg-menu-panel { … }`) are kept.
+
 - Try the **[theme builder](https://datasheet-grid.vercel.app/theme-builder)** on the docs site: adjust accent / backgrounds / lines / radius / density / font size on a live grid, pick a preset (default / Mantine-like / HeroUI-like / business gray / Excel-like / dark) and copy the generated CSS variables; the state lives in the URL so it can be shared.
-- Use the `classNames` prop for per-part slots (root / toolbar / statusBar / header & body rows and cells / group & detail rows / popover / menuItem / tooltip / dragGhost / checkbox / cellEditor / emptyState / filterChipBar / errorBar / scrollHint / overlays), `cellClassName` per column, and `getRowClassName` per row. Each accepts a class string or `{ className, style }`; the root also takes a `style` prop. Inline `style` is applied to the part's element while the grid keeps the last word on positioning (`left` / `top` / `width` / `height` / `transform`). Token overrides always apply (tokens are defined at zero specificity). For property overrides, chain with the base class (e.g. `.ssg-body-cell.my-class`) to win regardless of import order — see the Styles section above.
+- Use the `classNames` prop for per-part slots (root / toolbar / statusBar / header & body rows and cells / group & detail rows / popover / menuItem / tooltip / dragGhost / checkbox / cellEditor / emptyState / filterChipBar / errorBar / scrollHint / overlays), `cellClassName` per column, and `getRowClassName` per row. Each accepts a class string or `{ className, style }`; the root also takes a `style` prop. `getRowClassName` puts its class and style on the row, its `#` cell and every cell, so effects that compound (`opacity`, `filter`) belong on the row only: return a class and write `.ssg-body-row.my-class { opacity: 0.5 }` (an inline `opacity: 0.5` would end up at 0.25). Inline `style` is applied to the part's element while the grid keeps the last word on positioning (`left` / `top` / `width` / `height` / `transform`). Token overrides always apply (tokens are defined at zero specificity). For property overrides, chain with the base class (e.g. `.ssg-body-cell.my-class`) to win regardless of import order — see the Styles section above.
 
 ### Dark theme
 
@@ -761,8 +763,10 @@ const ask: GridAsk = async (request, { signal }) => {
   }
   ```
 
+  ポップオーバー / メニュー / ツールパネル / ツールチップ / ドラッグのゴーストは `document.body` 直下に出るので、表からは継承されません。開いたときにグリッドが表の root で決まったトークンの値を写すため、同じ指定(`.ssg-root` / `className` / 祖先のセレクタ)でポップアップの色も揃います。ポップアップの側で決めた値(`classNames.popover` / `classNames.tooltip` の style、`.ssg-menu-panel { … }`)はそのまま残ります。
+
 - ドキュメントサイトの**[テーマビルダー](https://datasheet-grid.vercel.app/theme-builder)**で、アクセント / 背景 / 罫線 / 角丸 / 密度 / 文字サイズを実物のグリッドで動かしながら調整し、プリセット(既定 / Mantine 風 / HeroUI 風 / 業務グレー / Excel 風 / ダーク)から始めて生成された CSS 変数をコピーできます。状態は URL に載るので共有できます。
-- パーツ別の class は `classNames` prop、列単位は `cellClassName`、行単位は `getRowClassName` で付与できます。トークン上書きは常に効きます（特異度 0 で定義）。プロパティ上書きは基底クラスとの連結（例: `.ssg-body-cell.my-class`）で読み込み順に依らず確実になります — 上記「スタイル」参照。
+- パーツ別の class は `classNames` prop、列単位は `cellClassName`、行単位は `getRowClassName` で付与できます。`getRowClassName` のクラスと style は行・「#」セル・各セルのすべてに付くため、`opacity` / `filter` のように重なると強くなる指定は、クラスを返して `.ssg-body-row.my-class { opacity: 0.5 }` のように行だけに当ててください(style で `opacity: 0.5` を返すと 0.25 になります)。トークン上書きは常に効きます（特異度 0 で定義）。プロパティ上書きは基底クラスとの連結（例: `.ssg-body-cell.my-class`）で読み込み順に依らず確実になります — 上記「スタイル」参照。
 
 #### ダークテーマ
 

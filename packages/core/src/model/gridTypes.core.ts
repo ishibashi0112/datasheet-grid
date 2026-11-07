@@ -1298,6 +1298,17 @@ export type GridColumn<T, F extends GridFrameworkTypes = GridFrameworkTypes> = {
    * @defaultValue `'left'`
    */
   align?: 'left' | 'center' | 'right';
+  // 追加(DevBI の報告 2026-11-07): 列見出しの水平寄せ。未指定は align と同じ(右寄せの数値列は見出しも右)。
+  //   見出しだけ変えたい列に書きます。右寄せは並びを鏡写しにします(状態をラベルの左、ホバーの操作も左)。
+  /**
+   * 列見出しの水平寄せ(書かなければ `align` に合わせる。見出しだけ変えたい列に書く)。`'right'`
+   * は並びを鏡写しにする(並べ替えの矢印とフィルターの印をラベルの左、ホバーで出る grip と ⋮ も左)。
+   * `'center'` は文字だけ中央で、印と操作は右(印が出ているときは印を除いた幅の中で中央)。
+   * `renderHeader` の中身にも効く(器の `text-align`)。列幅の自動調整の見出しの幅は変わらない。
+   *
+   * @defaultValue `align` と同じ
+   */
+  headerAlign?: 'left' | 'center' | 'right';
   // 追加(③): セル表示値の整形(UI 表示のみ・元の値/編集/コピー/ソート/フィルターに影響しません)。
   //   renderCell 未指定の既定セルが本関数の返り値を表示します(renderCell 指定時は無視)。
   //   組み込みの numberFormatter 等を渡せます(バレルから公開)。
@@ -3632,7 +3643,9 @@ export type SpreadsheetGridProps<T, F extends GridFrameworkTypes = GridFramework
    * 各データセルに付与され、Tailwind / StyleX での行ハイライトに使える。`style`
    * はインラインで付与され、座標 / 寸法はグリッドが後勝ち(返した style は内容比較で memo される)。
    * 第 3 引数 `ctx` は `{ row, rowIndex, sourceRowIndex, rowKey, isSelected }`(「補助型」節参照)。
-   * 既存の 2 引数関数もそのまま動く(後方互換)。グループ行は対象外。
+   * 既存の 2 引数関数もそのまま動く(後方互換)。グループ行は対象外。class と style
+   * は行と各セルの両方に付くので、`opacity` / `filter` のように重なる指定は style で返さず、class
+   * を返して `.ssg-body-row.<class>` で行だけに当てる(style の `opacity: 0.5` は 0.25 になる)。
    */
   getRowClassName?: (
     row: T,

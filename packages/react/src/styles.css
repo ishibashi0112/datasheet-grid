@@ -21,8 +21,10 @@
      セレクタリストについて(TH-DK-1): popover / menu / filter popover / ドラッグゴーストは
      document.body 直下のポータルで .ssg-root の継承が届かないため、各ポータル root にも
      同じトークンを直接定義します(テーマ切替はこのリストへ修飾子を足すだけで全面に効きます)。
-     追加(ことばで絞り込み): 入口 /ai の GridAskBar(.ssg-ask)もグリッドの外に置くため、同じリストに入れます。 */
-  :where(.ssg-root, .ssg-popover, .ssg-menu-panel, .ssg-filter-popover, .ssg-select-editor-popover, [data-grid-drag-ghost], .ssg-tooltip, .ssg-ask) {
+     追加(ことばで絞り込み): 入口 /ai の GridAskBar(.ssg-ask)もグリッドの外に置くため、同じリストに入れます。
+     追加(DevBI の報告): .ssg-token-probe は、ポップアップへ表のトークンを写すとき(core utils/portalTokens)に既定値を
+     読むための見えない要素です(内部。利用側は書かない)。themes/*.css の並びにも同じく入れます。 */
+  :where(.ssg-root, .ssg-popover, .ssg-menu-panel, .ssg-filter-popover, .ssg-select-editor-popover, [data-grid-drag-ghost], .ssg-tooltip, .ssg-ask, .ssg-token-probe) {
     /* ネイティブ UI(スクロールバー / select 等)の描画をテーマへ揃えます(TH-DK-2)。
        ダーク時は .ssg-theme-dark 側で dark に切替。:where のため利用側上書きが常に勝ちます。 */
     color-scheme: light;
@@ -197,6 +199,15 @@
     --ssg-motion-fast: 0ms;
     --ssg-motion-base: 0ms;
     --ssg-motion-slow: 0ms;
+  }
+
+  /* 追加(DevBI の報告): ポップアップへ表のトークンを写す間だけ付く内部のクラス(core utils/portalTokens)。写す前の
+     既定の色から写した色への transition が一瞬見えないよう、その間はポップアップの中の transition を止めます。 */
+  .ssg-token-sync,
+  .ssg-token-sync *,
+  .ssg-token-sync *::before,
+  .ssg-token-sync *::after {
+    transition: none !important;
   }
 
   /* 密度プリセット(THEME-2)。density prop が root へ付与する修飾子で寸法トークンを一括切替します。
@@ -3392,8 +3403,31 @@
     pointer-events: auto;
     background-color: var(--ssg-header-hover-bg);
   }
+  /* 追加(DevBI の報告 2026-11-07): 見出しの寄せ(column.headerAlign。未指定は align)。右寄せは並びを鏡写しにします。
+     状態(並べ替えの矢印 / フィルターの印)はラベルの左、ホバーの操作(grip / ⋮)も左端に出し、文字の右端がセルの
+     数字とそろい、ホバー中も短い見出しが隠れないようにします。中央は文字だけ中央で、状態と操作は左寄せの列と同じ右です。 */
+  .ssg-header-cell--align-right {
+    flex-direction: row-reverse;
+  }
+  .ssg-header-cell--align-right .ssg-header-label {
+    text-align: right;
+  }
+  .ssg-header-cell--align-center .ssg-header-label {
+    text-align: center;
+  }
+  /* 中央は、印が無いときに空の状態スロットと gap のぶん左へずれないよう、空のスロットを外します。 */
+  .ssg-header-cell--align-center .ssg-header-status:empty {
+    display: none;
+  }
+  .ssg-header-cell--align-right .ssg-header-actions {
+    right: auto;
+    left: 0;
+    flex-direction: row-reverse;
+    padding: 0 14px 0 6px;
+  }
   @media (hover: none) {
-    .ssg-header-actions {
+    .ssg-header-actions,
+    .ssg-header-cell--align-right .ssg-header-actions {
       position: static;
       height: auto;
       padding: 0;

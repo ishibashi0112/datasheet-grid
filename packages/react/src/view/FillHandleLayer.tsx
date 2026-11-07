@@ -6,6 +6,7 @@
 //   メニューとツールチップは document.body へのポータルです(.ssg-root 外のため portalClassName でテーマを渡す)。
 import {
   useEffect,
+  useRef,
   useSyncExternalStore,
   type CSSProperties,
   type KeyboardEvent,
@@ -20,6 +21,7 @@ import type {
 } from '@ishibashi0112/spreadsheet-grid-core/internal/controllers/fillHandleController';
 import type { GridFillKind } from '../model/gridTypes';
 import type { SelectionOverlayRect } from '../SelectionOverlay';
+import { usePortalTokens } from '../hooks/usePortalTokens';
 
 // 描画部品が使うコントローラの面(行の型 T に依らない部分だけ)。
 type FillUiController = Pick<
@@ -176,6 +178,8 @@ export function FillOptionsMenu({
   useEffect(() => {
     panelRef.current?.querySelector<HTMLButtonElement>('[aria-checked="true"]')?.focus({ preventScroll: true });
   }, [panelRef]);
+  // 追加(DevBI の報告): 表で決まったトークン(--ssg-*)をメニューへ写します(body 直下のため継承で届かない)。
+  usePortalTokens(panelRef, true, themeClassName);
   const handleKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
     if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
       event.preventDefault();
@@ -244,11 +248,15 @@ export function FillTooltip({
     controller.getPointerSnapshot,
     controller.getPointerSnapshot,
   );
+  // 追加(DevBI の報告): 表で決まったトークン(--ssg-*)をツールチップへ写します(body 直下のため継承で届かない)。
+  const tooltipRef = useRef<HTMLDivElement | null>(null);
+  usePortalTokens(tooltipRef, pointer !== null, themeClassName);
   if (!pointer) {
     return null;
   }
   return createPortal(
     <div
+      ref={tooltipRef}
       className={cx('ssg-tooltip', 'ssg-tooltip--visible', 'ssg-fill-tooltip', themeClassName)}
       style={{ left: pointer.x + TOOLTIP_OFFSET_X, top: pointer.y + TOOLTIP_OFFSET_Y }}
       aria-hidden="true"

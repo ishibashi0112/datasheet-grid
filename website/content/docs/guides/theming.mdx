@@ -46,17 +46,12 @@ description: ダークテーマ(light / dark / auto)、密度(density)、CSS ト
 <SpreadsheetGrid className="my-grid" ... />
 ```
 
-ポップオーバー(列メニュー / フィルター / コンテキストメニュー / select の候補 / ツールパネル)・ツールチップ・ドラッグのゴーストは `document.body` 直下に描くため、`.my-grid` の中ではありません。クラスで上書きしたトークンをそこにも効かせるには、同じクラスを `classNames` の `popover` / `tooltip` / `dragGhost` にも渡します(ページ全体で同じでよいなら `:root` に書く方法もあります)。
+列メニュー / 列フィルター / 右クリックメニュー / select の候補 / ツールパネル / ツールチップ / ドラッグのゴーストは `document.body` の直下に出るため、表からは継承されません。開いたときにグリッドが表の root で決まったトークンの値をそれらへ写すので、上のように表に書いたトークン(`className` / `.ssg-root { … }` / `.card .ssg-root { … }` のような祖先のセレクタ / 祖先の変数を使った値)はポップアップにも同じ色で出ます。
 
-```tsx
-<SpreadsheetGrid
-  className="my-grid"
-  classNames={{ popover: 'my-grid', tooltip: 'my-grid', dragGhost: 'my-grid' }}
-  ...
-/>
-```
-
-ツールチップは body 直下の 1 つを全グリッドで使い回すため、複数のグリッドが別の `tooltip` を渡すと最後に更新したグリッドの値になります。
+- ポップアップだけ別の値にしたいときは、`classNames.popover` / `classNames.tooltip` の `style` か、`.ssg-menu-panel` / `.ssg-tooltip` のようにポップアップのクラスへ書きます。ポップアップの側で決めた値は写す値より優先されます(CSS で書いた値が既定値と同じだと区別できないので、既定の色のままにしたいときは `style` で書きます)。
+- 密度(`density`)の寸法はポップアップには効きません(これまでどおり)。
+- 開いている間に `<html>` / `<body>` の属性(ダークモードのクラスなど)や OS の配色が変わったときは写し直します。それ以外の方法で利用側の CSS を差し替えたときは、次に開いたときに合います。
+- 前の版で案内していた、同じクラスを `classNames` の `popover` / `tooltip` / `dragGhost` にも渡す書き方もそのまま動きます。
 
 ## テーマビルダー
 
@@ -93,15 +88,23 @@ description: ダークテーマ(light / dark / auto)、密度(density)、CSS ト
   classNames={{
     root: 'my-grid',                                       // 文字列
     bodyCell: { className: 'tabular', style: { fontVariantNumeric: 'tabular-nums' } },
-    popover: { style: { '--ssg-accent': '#7c3aed' } },     // ポータル(body 直下)にもトークンを渡せる
+    popover: { style: { '--ssg-accent': '#7c3aed' } },     // ポップアップ(body 直下)だけ別の値にする
   }}
-  getRowClassName={(row) => (row.archived ? { style: { opacity: 0.5 } } : undefined)}
+  getRowClassName={(row) => (row.archived ? { className: 'is-archived', style: { fontStyle: 'italic' } } : undefined)}
 />
+```
+
+```css
+/* 行を薄くするときは行のクラスにつなぐ(行だけに 1 回効く) */
+.ssg-body-row.is-archived {
+  opacity: 0.5;
+}
 ```
 
 - グリッドが位置決めに使う座標 / 寸法(`left` / `top` / `width` / `height` / `transform` 等)はグリッド側が後勝ちで上書きするため、スロットの `style` でレイアウトは壊せません。
 - グリッドの高さは `style` ではなく `height` prop で指定します(ルートの `style={{ height }}` だけではスクロール領域の高さが決まらず、バーが切れることがあります)。詳しくは [サイズ(高さ)](/docs/guides/sizing) を参照してください。
 - インライン style は状態クラス(選択 / ホバー等の背景)にも勝ちます。状態で切り替えたい装飾は className 側で行ってください。
+- `getRowClassName` のクラスと `style` は、行(`.ssg-body-row`)・「#」セル・各セルのすべてに付きます。`opacity` / `filter` のように重なると強くなる指定を `style` で返したり、`.is-archived { opacity: 0.5 }` のようにクラスだけで書いたりすると、行と各セルで 2 回掛かって 0.25 になります。上の例のように `.ssg-body-row.is-archived` で行だけに当ててください。背景色はセルが持つので `.ssg-body-cell.is-archived` に書きます。
 - `classNames` はレンダー毎に新しいオブジェクトを渡して構いません(内容の署名で memo され、行 / ヘッダーの再レンダーは増えません)。
 - `tooltip` / `dragGhost` は命令的 DOM のため、style の数値に単位は付きません(`'12px'` のように文字列で)。
 

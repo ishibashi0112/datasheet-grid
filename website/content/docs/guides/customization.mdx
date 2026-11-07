@@ -65,6 +65,27 @@ description: セル / ヘッダー / トップ・ボトムバー / エディタ 
 }
 ```
 
+## 見出しの寄せ(headerAlign)
+
+列見出しの文字は、書かなければ列の `align` と同じ向きに寄ります(数値の `align: 'right'` の列は見出しも右、`'center'` は中央)。見出しだけ変えたい列には `headerAlign` を書きます。
+
+<HeaderAlignDemo />
+
+```tsx
+const columns = [
+  { key: 'name', title: '品名', width: 180 },
+  { key: 'amount', title: '金額', width: 130, align: 'right' },                     // 見出しも右
+  { key: 'status', title: '状態', width: 90, align: 'center' },                     // 見出しも中央
+  { key: 'code', title: 'コード', width: 100, align: 'right', headerAlign: 'left' }, // 見出しだけ左
+];
+```
+
+- 右寄せの見出しは並びを鏡写しにします。並べ替えの矢印とフィルターの印はラベルの左、ホバーで出る grip と ⋮ も左端に出るので、文字の右端がセルの数字とそろい、ホバー中も見出しが隠れません。
+- 右寄せの長い見出しが「…」で切れているときは、ホバー中は先頭が操作で隠れます(左寄せの列で末尾が隠れるのと同じ)。見出しの左端を押すと(ホバー中は ⋮ があるので)列メニューが開きます。
+- 中央の見出しは文字だけ中央で、矢印・印・操作は左寄せの列と同じ右に出ます。矢印や印が出ているときは、それを除いた幅の中で中央です。
+- `renderHeader` の中身にも効きます(ラベルの器の `text-align`)。列幅の自動調整が測る見出しの幅は寄せに関係なく同じです。
+- 見た目を CSS で足すときは `.ssg-header-cell--align-right` / `.ssg-header-cell--align-center` が使えます(0.62.0 までは見出しは常に左で、このクラスもありませんでした)。
+
 ## トップバー / ボトムバー(renderTopBar / renderBottomBar)
 
 `renderTopBar` / `renderBottomBar` でバーを丸ごと React で差し替えられます。渡ってくる `SpreadsheetGridSlotContext` に、グローバルフィルターの読み書き(`globalFilterText` / `setGlobalFilterText`)、`rows` / `filteredRows`、選択状態、そして整形済みの派生 summary である **`derivedSummary`** が入っているため、ヘルパーを import せずに実用的なバーが書けます。

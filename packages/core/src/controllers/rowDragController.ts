@@ -27,6 +27,7 @@ import {
   resolveScrollContentBox,
 } from '../logic/autoScrollGeometry';
 import { isInsideDetailCardOf } from '../logic/detailRow';
+import { syncPortalTokens } from '../utils/portalTokens';
 import { applySlotToElement } from '../logic/slotDom';
 import type { GridResolvedSlot } from '../model/gridTypes.unbound';
 
@@ -271,6 +272,8 @@ export const createRowDragController = (): RowDragController => {
     el.appendChild(icon);
     el.appendChild(text);
     document.body.appendChild(el);
+    // 追加(DevBI の報告): 表で決まったトークン(--ssg-*)をゴーストへ写します(body 直下のため継承で届かない)。
+    syncPortalTokens(args?.scrollContainerRef.current, el);
 
     ghostEl = el;
     ghostIconEl = icon;
