@@ -51,6 +51,9 @@ export type ColumnChooserItem = {
   title: string;
   visible: boolean;
   pane: ColumnPane;
+  // 追加(dogfood DF-22): 行グルーピング中のグループ元列(rowGroup)。値は自動グループ列に出ていて列としては
+  //   表示されないため、表示 / 非表示は切り替えられません(これまでは表示中に見え、外しても何も変わらなかった)。
+  grouped?: boolean;
 };
 
 type ColumnChooserPanelProps = {
@@ -452,7 +455,7 @@ export function ColumnChooserPanel({
   ) => {
     // 最後の 1 列ガード: 表示中が 1 列だけのとき、その列はチェックを外せません。
     const isOnlyVisible = item.visible && visibleCount === 1;
-    const disabled = !canToggle || isOnlyVisible;
+    const disabled = !canToggle || isOnlyVisible || item.grouped === true;
     const isDragging = draggingKey === item.key;
     // ドロップインジケータ: ソースペインのこの行の直前に挿入される位置のとき細線を出します。
     // 末尾(dropIndex === セクション件数)はセクション描画後に別途描画します。
@@ -498,6 +501,9 @@ export function ColumnChooserPanel({
         <button
           type="button"
           disabled={disabled}
+          data-ssg-tooltip={
+            item.grouped ? 'グループ化している列です(値は自動グループ列に出ます)' : undefined
+          }
           onClick={() => {
             if (disabled) {
               return;
@@ -507,16 +513,16 @@ export function ColumnChooserPanel({
           className="ssg-chooser-toggle"
         >
           <CheckBox
-            state={item.visible ? 'checked' : 'unchecked'}
+            state={item.visible && !item.grouped ? 'checked' : 'unchecked'}
             disabled={disabled}
           />
           <span
             className={cx(
               'ssg-chooser-label',
-              disabled && !item.visible && 'ssg-chooser-label--muted',
+              disabled && (!item.visible || item.grouped) && 'ssg-chooser-label--muted',
             )}
           >
-            {item.title}
+            {item.grouped ? `${item.title}(グループ化中)` : item.title}
           </span>
         </button>
       </div>

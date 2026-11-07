@@ -900,6 +900,9 @@ export function GridBodyLayer<T>({
               onGroupToggle={onGroupToggle}
               onRowHeaderPointerEnter={onRowHeaderPointerEnter}
               onRowHeaderPointerLeave={onRowHeaderPointerLeave}
+              // 追加(dogfood DF-01): グループ行のセルも押すとアクティブセルになります(Enter / Space の開閉が押した行に効く)。
+              onCellPointerDown={onCellPointerDown}
+              onCellPointerEnter={onCellPointerEnter}
               slots={slots}
             />
           );

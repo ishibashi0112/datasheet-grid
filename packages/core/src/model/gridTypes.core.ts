@@ -898,9 +898,12 @@ export type GridColumnPinned = 'left' | 'right';
 
 // 追加(③): セル表示値の整形関数の契約です(UI 表示のみ)。組み込みは logic/valueFormatters.ts に集約し、
 //   利用側も同じ契約で自作できます(将来パターン追加=ファクタ追加 + バレル公開で拡張)。
+// 変更(dogfood DF-06): row は T | undefined です。グループ行の集計値と合計行の値を整形するときは行が無いので
+//   undefined が渡ります(これまで型は T で、型のとおり row.x を読むとグループ行・合計行でグリッドごと落ちていた)。
+//   AG Grid の ValueFormatterParams.data と同じ扱いです。
 export type CellValueFormatterParams<T, F extends GridFrameworkTypes = GridFrameworkTypes> = {
   value: unknown;
-  row: T;
+  row: T | undefined;
   column: GridColumn<T, F>;
 };
 export type CellValueFormatter<T, F extends GridFrameworkTypes = GridFrameworkTypes> = (params: CellValueFormatterParams<T, F>) => string;
@@ -1299,6 +1302,8 @@ export type GridColumn<T, F extends GridFrameworkTypes = GridFrameworkTypes> = {
   /**
    * セル表示値の整形(UI 表示のみ)。`renderCell` 未指定の既定セルが返り値を表示。組み込み
    * `numberFormatter` 等を渡せる。元の値/編集/コピー/ソート/フィルターには影響しない。
+   * グループ行の集計値と合計行の値の整形にも使い、そのときは元の行が無いので `row` は
+   * `undefined`(型は `T | undefined`。`row` を読むときは `row?.x` と書く)。
    */
   valueFormatter?: CellValueFormatter<T, F>;
   /**

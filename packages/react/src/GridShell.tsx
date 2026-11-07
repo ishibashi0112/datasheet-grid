@@ -982,11 +982,17 @@ export function useGridShell<T extends object>({
 
   // 変更(差し込み式 段階 5): グローバルフィルターの適用(F-async の時間分割)と相対日付プリセットの基準日(監査 L-15)は
   //   フィルターの機能(features/filtering)へ移しました(同じ位置・同じ順番で hook を呼ぶ)。無い構成では恒等 order のまま。
+  // 追加(dogfood DU-05): 行グルーピング中は、グループ元列(表示から外れて自動グループ列に値が出ている列)もグローバル
+  //   フィルターの対象にします(「関東」でグループ化しているのに「関東」で探すと 0 件になっていた)。
+  const globalFilterColumns = useMemo(
+    () => (rowGroupingActive && groupColumns.length > 0 ? [...visibleColumns, ...groupColumns] : visibleColumns),
+    [rowGroupingActive, groupColumns, visibleColumns],
+  );
   const { globalFilteredOrder, globalFilterStatus, globalFilterProgress, relativeDateKey } =
     features.filtering.useFilterOrder({
       rows,
       baseOrder,
-      visibleColumns,
+      visibleColumns: globalFilterColumns,
       // 変更(1.0 前の最終チェック FC-08): 相対日付プリセットの見張りもグループ元列の列フィルターを含めて見ます。
       effectiveColumns: filterSortColumns,
       globalFilterText,
@@ -2911,8 +2917,10 @@ export function useGridShell<T extends object>({
         title: column.title || column.key,
         visible: column.visible !== false,
         pane: getColumnPane(column),
+        // 追加(dogfood DF-22): グルーピング中のグループ元列は表示の切り替えができない印。
+        grouped: rowGroupingActive && column.rowGroup === true ? true : undefined,
       })),
-    [columns],
+    [columns, rowGroupingActive],
   );
 
   // 追加(MS-3-1): 並び替え管理パネルへ渡す「並び替え可能な列」一覧です。

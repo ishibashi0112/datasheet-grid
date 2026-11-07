@@ -147,6 +147,53 @@ describe('pointerInteractionsController', () => {
     controller.dispose();
   });
 
+  it('DU-15: Shift+クリックは今の範囲の起点(無ければアクティブセル)から押したセルまでを選ぶ(アクティブセルは起点のまま)', () => {
+    const controller = createPointerInteractionsController<Row>();
+    const uiState = {
+      ...createInitialGridUiState(),
+      activeCell: { row: 1, col: 0 },
+      selection: { type: 'cell' as const, range: { start: { row: 1, col: 0 }, end: { row: 2, col: 0 } } },
+    };
+    const args = makeArgs({ uiState });
+    controller.update(args);
+    controller.handleCellPointerDown({ row: 4, col: 1 }, pointerEvent({ shiftKey: true }));
+    expect(args.actions).toEqual([
+      { type: 'selection/start', cell: { row: 1, col: 0 } },
+      { type: 'selection/update', cell: { row: 4, col: 1 } },
+    ]);
+    firePointerUp({ pointerId: 1, clientX: 10, clientY: 10 });
+    controller.dispose();
+
+    // 選択が無ければアクティブセルを起点にする。
+    const onlyActive = createPointerInteractionsController<Row>();
+    const activeArgs = makeArgs({ uiState: { ...createInitialGridUiState(), activeCell: { row: 3, col: 1 } } });
+    onlyActive.update(activeArgs);
+    onlyActive.handleCellPointerDown({ row: 0, col: 0 }, pointerEvent({ shiftKey: true }));
+    expect(activeArgs.actions).toEqual([
+      { type: 'selection/start', cell: { row: 3, col: 1 } },
+      { type: 'selection/update', cell: { row: 0, col: 0 } },
+    ]);
+    firePointerUp({ pointerId: 1, clientX: 10, clientY: 10 });
+    onlyActive.dispose();
+
+    // 起点が無い / 範囲選択が無効なら、これまでどおり押したセルだけを選ぶ。
+    const noAnchor = createPointerInteractionsController<Row>();
+    const noAnchorArgs = makeArgs();
+    noAnchor.update(noAnchorArgs);
+    noAnchor.handleCellPointerDown({ row: 2, col: 1 }, pointerEvent({ shiftKey: true }));
+    expect(noAnchorArgs.actions.map((action) => action.type)).toEqual(['cell/activate', 'selection/start']);
+    firePointerUp({ pointerId: 1, clientX: 10, clientY: 10 });
+    noAnchor.dispose();
+
+    const noRange = createPointerInteractionsController<Row>();
+    const noRangeArgs = makeArgs({ uiState, enableRangeSelection: false });
+    noRange.update(noRangeArgs);
+    noRange.handleCellPointerDown({ row: 4, col: 1 }, pointerEvent({ shiftKey: true }));
+    expect(noRangeArgs.actions.map((action) => action.type)).toEqual(['cell/activate']);
+    firePointerUp({ pointerId: 1, clientX: 10, clientY: 10 });
+    noRange.dispose();
+  });
+
   it('タッチはタップを保留し、動かずに pointerup したら確定、同一セルの連続タップはダブルクリック扱い', () => {
     const controller = createPointerInteractionsController<Row>();
     const onDouble = vi.fn();
