@@ -607,6 +607,42 @@ describe('GridAskBar(結合)', () => {
       }
     });
 
+    it('聞いている間に表が変わっても、次の答えを反映したら「変わった」の知らせを残さない', async () => {
+      vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval', 'setTimeout', 'clearTimeout'] });
+      try {
+        const waiting: (() => void)[] = [];
+        let wait = false;
+        const ask = vi.fn(async () => {
+          if (wait) {
+            await new Promise<void>((resolve) => waiting.push(resolve));
+          }
+          return tokyoLowStock;
+        });
+        const { grid, input } = setup(ask);
+        typeAndEnter(input, '東京の在庫が少ないもの');
+        await flush();
+        wait = true;
+        typeAndEnter(input, 'もう一度');
+        await flush();
+        act(() => {
+          grid.current!.applyState({ sort: [{ columnKey: 'id', direction: 'asc' }] });
+        });
+        act(() => {
+          vi.advanceTimersByTime(1000);
+        });
+        await act(async () => {
+          waiting[0]?.();
+          await Promise.resolve();
+        });
+        await flush();
+        expect(ask).toHaveBeenCalledTimes(2);
+        expect(screen.getByRole('button', { name: '元に戻す' })).toBeTruthy();
+        expect(screen.queryByText(/表の条件が変わったので/)).toBeNull();
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
     it('クリックの後にも確かめる。変わっていなければそのまま', async () => {
       vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval', 'setTimeout', 'clearTimeout'] });
       try {

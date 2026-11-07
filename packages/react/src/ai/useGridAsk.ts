@@ -218,6 +218,10 @@ export function useGridAsk<T>(options: UseGridAskOptions<T>): UseGridAskResult {
     }
     let inputTimer: ReturnType<typeof setTimeout> | null = null;
     const check = () => {
+      // 聞いている間は確かめません(答えを反映すると今の反映は置き換わる。知らせが次の反映の後まで残っていた)。
+      if (pendingRef.current !== null) {
+        return;
+      }
       const target = latestRef.current.grid.current;
       if (target === null || isViewUnchanged(target.getState(), appliedSession.applied, columnVisibility)) {
         return;
@@ -299,6 +303,8 @@ export function useGridAsk<T>(options: UseGridAskOptions<T>): UseGridAskResult {
       return false;
     }
     const view = { text, dropped: result.dropped, unsupported: result.unsupported };
+    // 前の反映への「変わった」の知らせは、新しい答えで置き換わるので消します。
+    setNotice(null);
     if (!result.changed) {
       setSession({
         view: { ...view, phase: 'unchanged', items: describeGridAskView(before, latestOptions) },

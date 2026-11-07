@@ -223,11 +223,14 @@ export function ColumnChooserPanel({
 
   // 注記: master / guard の判定は「全列(検索フィルタ前)」を基準にします。
   //       検索はあくまで一覧の絞り込み表示で、全選択の意味は変えません。
+  // 変更(別視点のレビュー): グループ元列(grouped)は列として出ていないので数えません(数えると、表に出ている最後の
+  //   1 列を外せたり、グループ元列の表示の値で全表示の判定が変わったりしていた)。
+  const toggleableCount = useMemo(() => items.filter((item) => item.grouped !== true).length, [items]);
   const visibleCount = useMemo(
-    () => items.filter((item) => item.visible).length,
+    () => items.filter((item) => item.visible && item.grouped !== true).length,
     [items],
   );
-  const allVisible = visibleCount === items.length && items.length > 0;
+  const allVisible = visibleCount === toggleableCount && toggleableCount > 0;
 //   const hasHidden = items.some((item) => !item.visible);
 
   // 全選択の状態: 全表示 = checked、一部非表示 = indeterminate。

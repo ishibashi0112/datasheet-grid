@@ -233,23 +233,25 @@ describe('createColumnFilterDescribeOptions(dogfood DU-07)', () => {
     ).toBe('50,000 〜 120,000 かつ "80,000"');
   });
 
-  it('ラベルが無ければ valueFormatter を値に当て、例外や空の文字列なら値のまま', () => {
-    const labelled: GridColumn<Row> = {
-      key: 'kind',
+  it('ラベルが無ければ値のまま(select / set の文字列のキーに valueFormatter を当てない)', () => {
+    // 真偽値の列のキーは 'true' / 'false' の文字列。valueFormatter に渡すと 'false' が真として「有効」になっていた
+    type Flag = { active: boolean };
+    const active: GridColumn<Flag> = {
+      key: 'active',
       width: 100,
       filterType: 'set',
-      valueFormatter: ({ value }) => (value === 'house' ? '一戸建て' : value === 'boom' ? (null as unknown as string) : ''),
+      valueFormatter: ({ value }) => (value ? '有効' : '無効'),
     };
-    const options = createColumnFilterDescribeOptions(labelled);
-    expect(describeColumnFilterValue({ kind: 'set', mode: 'include', values: ['house', 'land'] }, options)).toBe('"一戸建て", "land"');
-    const throwing: GridColumn<Row> = {
-      key: 'kind',
-      width: 100,
-      filterType: 'set',
-      valueFormatter: ({ row }) => (row as Row).kind,
-    };
-    expect(describeColumnFilterValue({ kind: 'set', mode: 'include', values: ['x'] }, createColumnFilterDescribeOptions(throwing))).toBe(
-      '"x"',
+    const options = createColumnFilterDescribeOptions(active);
+    expect(describeColumnFilterValue({ kind: 'set', mode: 'include', values: ['false'] }, options)).toBe('"false"');
+    expect(describeColumnFilterValue({ kind: 'select', value: 'false' }, options)).toBe('"false" に一致');
+    // numberSet の選択は数として読めるキーだけ、数にして valueFormatter を当てる(読めないキーはそのまま)
+    const rent = createColumnFilterDescribeOptions(rentColumn);
+    expect(
+      describeColumnFilterValue({ kind: 'numberSet', condition: null, set: { mode: 'include', values: ['80000', 'abc'] } }, rent),
+    ).toBe('"80,000", "abc"');
+    expect(describeColumnFilterValue({ kind: 'numberSet', condition: null, set: { mode: 'include', values: [''] } }, rent)).toBe(
+      '(空白)',
     );
   });
 

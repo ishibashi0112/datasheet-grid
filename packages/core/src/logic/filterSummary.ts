@@ -28,8 +28,7 @@ import { normalizeDateFilterPresets, type NormalizedDateFilterPreset } from './d
 export type ColumnFilterDescribeOptions = {
   // dateSet のカスタムプリセット(ラベルの逆引き。未指定 = ビルトインのみ)。
   datePresets?: readonly NormalizedDateFilterPreset[];
-  // select / set の値 → 表示(列の filterOptions / select エディタの選択肢のラベル、無ければ valueFormatter)。
-  //   undefined なら値をそのまま出します。
+  // select / set の値 → 表示(列の filterOptions / select エディタの選択肢のラベル)。undefined なら値をそのまま出します。
   labelOf?: (value: string) => string | undefined;
   // 数値の条件(number / numberSet)の数値 → 表示(列の valueFormatter)。
   formatNumber?: (value: number) => string;
@@ -40,6 +39,15 @@ export type ColumnFilterDescribeOptions = {
 // 変更(dogfood DU-07): ラベルがあればラベルを出します(これまでは「"mansion"」と値が出ていた)。
 const formatSetValue = (value: string, labelOf?: (value: string) => string | undefined): string =>
   value === '' ? '(空白)' : `"${labelOf?.(value) ?? value}"`;
+
+// 追加(別視点のレビュー): numberSet の選択のキー(数を String にしたもの)に数値の書き方を当てます。読めないキーは undefined。
+const formatNumericKey = (key: string, formatNumber: ((value: number) => string) | undefined): string | undefined => {
+  if (!formatNumber || key.trim() === '') {
+    return undefined;
+  }
+  const value = Number(key);
+  return Number.isFinite(value) ? formatNumber(value) : undefined;
+};
 
 // 追加(filter-ext B): set 選択(mode + values)の要約です。kind:'set' と kind:'numberSet' の
 //   set 部分が共有します(include 1〜2 件は列挙 / 3 件以上は件数 / exclude は除外件数)。
@@ -59,9 +67,11 @@ const describeSetSelection = (
 };
 
 // 追加(dogfood DU-07): 列から要約の表し方を作ります。
-//   - ラベル: filterOptions → select エディタの選択肢(配列のとき)の順で探し、無ければ valueFormatter を当てます
-//     (行は無いので row は undefined。例外や空の文字列は値のまま)。
-//   - 数値: valueFormatter があれば当てます(「100000 以下」→「100,000 以下」)。
+//   - ラベル: filterOptions → select エディタの選択肢(配列のとき)の順で探します。無ければ値のまま。
+//     変更(別視点のレビュー): 値(文字列のキー)に valueFormatter は当てません。キーはセルの値を String にしたもので、
+//     真偽値の列の 'false' を渡すと真として「有効」になっていました(列フィルターのポップオーバーの候補も値のまま)。
+//   - 数値: valueFormatter があれば当てます(「100000 以下」→「100,000 以下」。行は無いので row は undefined。
+//     例外や空の文字列は値のまま)。numberSet の選択は、数として読めるキーだけ数にして当てます。
 export const createColumnFilterDescribeOptions = <T,>(column: GridColumn<T>): ColumnFilterDescribeOptions => {
   const labels = new Map<string, string>();
   const editorOptions = column.editor?.type === 'select' && Array.isArray(column.editor.options) ? column.editor.options : [];
@@ -82,7 +92,7 @@ export const createColumnFilterDescribeOptions = <T,>(column: GridColumn<T>): Co
   };
   return {
     datePresets: normalizeDateFilterPresets(column.dateFilterPresets),
-    labelOf: (value) => labels.get(value) ?? format(value),
+    labelOf: (value) => labels.get(value),
     formatNumber: formatter ? (value) => format(value) ?? String(value) : undefined,
   };
 };
@@ -122,10 +132,15 @@ export const describeColumnFilterValue = (
             ? formatParsedTextFilter(value.condition)
             : formatParsedDateFilter(value.condition, datePresets)
         : null;
-      // dateSet の選択は日付の値(ツリーの葉)なので、ラベル / 書き方は当てません。
-      const setText = value.set
-        ? describeSetSelection(value.set.mode, value.set.values, value.kind === 'dateSet' ? undefined : labelOf)
-        : null;
+      // dateSet の選択は日付の値(ツリーの葉)なので、ラベル / 書き方は当てません。numberSet の選択は、ラベルが無ければ
+      //   数として読めるキーに数値の書き方を当てます。
+      const setLabelOf =
+        value.kind === 'dateSet'
+          ? undefined
+          : value.kind === 'numberSet'
+            ? (key: string) => labelOf?.(key) ?? formatNumericKey(key, formatNumber)
+            : labelOf;
+      const setText = value.set ? describeSetSelection(value.set.mode, value.set.values, setLabelOf) : null;
       if (conditionText && setText) {
         return `${conditionText} かつ ${setText}`;
       }
