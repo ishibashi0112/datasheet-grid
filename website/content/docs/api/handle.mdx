@@ -56,7 +56,7 @@ const gridRef = useRef<SpreadsheetGridHandle<Row>>(null);
 | メソッド | 説明 |
 | --- | --- |
 | `focus()` | グリッド(キー操作を受ける要素)へフォーカスを移す(`imeDirectInput` 有効時は入力受けへ)。右クリックメニューから開いたモーダルを閉じた後など、キーがグリッドへ届かなくなったときに呼ぶ。 |
-| `startEditing(viewRowIndex?, colIndex?)` | そのセル(省略時はアクティブセル)の編集を始める(`F2` と同じ。今の値でエディタを開く)。セルを単一選択にして見える位置へスクロールし、フォーカスもエディタへ移す。始めたら `true`。編集できないセル(`readOnly` / `editable: false` / `canEditCell` / checkbox 列 / グループ行 / ラベル行)・範囲外・編集中は `false` で何もしない。 |
+| `startEditing(viewRowIndex, colIndex)` | そのセル(引数なしの `startEditing()` はアクティブセル。片方だけは渡せない)の編集を始める(`F2` と同じ。今の値でエディタを開く)。セルを単一選択にして見える位置へスクロールし、フォーカスもエディタへ移す。始めたら `true`。編集できないセル(`readOnly` / `editable: false` / `canEditCell` / checkbox 列 / グループ行 / ラベル行)・範囲外・編集中は `false` で何もしない。 |
 
 ```tsx
 import { flushSync } from 'react-dom';

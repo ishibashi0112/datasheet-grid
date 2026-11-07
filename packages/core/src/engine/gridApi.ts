@@ -367,9 +367,13 @@ export const createGridApi = <T,>(features: Pick<GridCoreFeatures, 'export'> = {
     focus: () => {
       args?.focusGrid?.();
     },
-    startEditing: (viewRowIndex, colIndex) => {
+    startEditing: (viewRowIndex?: number, colIndex?: number) => {
       const s = args;
       if (!s || !s.startEditCell) {
+        return false;
+      }
+      // 変更(別視点のレビュー): 片方だけ渡されたとき(型を外した呼び出し)は、アクティブセルを編集せずに false です。
+      if ((viewRowIndex === undefined) !== (colIndex === undefined)) {
         return false;
       }
       const ui = s.getUiState?.() ?? s.uiState;

@@ -1,6 +1,6 @@
 // 追加(dogfood DU-02 / DU-03): 実際にアプリを作って確かめたチェック(docs/audits/2026-11-07/)の、命令的 API の追加分です。
 //   - focus(): キーを受ける要素へフォーカス(imeDirectInput 有効時は入力受けへ)。モーダルを閉じた後にキーが届かなかった。
-//   - startEditing(viewRowIndex?, colIndex?): F2 と同じ編集開始 + 単一選択 + エディタへフォーカス。編集できないセルは false。
+//   - startEditing() / startEditing(viewRowIndex, colIndex): F2 と同じ編集開始 + 単一選択 + エディタへフォーカス。編集できないセルは false。
 //   - getViewRowIndex(rowKey) / getColIndex(columnKey): ソート中に足した行を rows.findIndex で選ぶと別の行になっていた。
 // @vitest-environment jsdom
 import { describe, it, expect, beforeAll, afterAll, afterEach } from 'vitest';
@@ -116,6 +116,26 @@ describe('startEditing()(DU-02)', () => {
     });
     expect(result).toBe(true);
     expect(editorInput()?.value).toBe('beta');
+  });
+
+  // 追加(別視点のレビュー): 片方だけ渡したら(型では渡せない)、アクティブセルを編集せずに false。
+  it('引数を片方だけ渡すと false で何もしない', () => {
+    const { ref } = setup();
+    act(() => {
+      ref.current?.setActiveCell({ row: 1, col: 0 });
+    });
+    let result: boolean | undefined;
+    const loose = ref.current?.startEditing as unknown as (row?: number, col?: number) => boolean;
+    act(() => {
+      result = loose(2);
+    });
+    expect(result).toBe(false);
+    expect(editorInput()).toBeNull();
+    act(() => {
+      result = loose(undefined, 1);
+    });
+    expect(result).toBe(false);
+    expect(editorInput()).toBeNull();
   });
 
   it('編集できないセル・checkbox 列・範囲外・編集中は false で何もしない', () => {

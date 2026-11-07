@@ -2183,7 +2183,17 @@ export type SpreadsheetGridHandle<T> = {
    * 編集できないセル(`readOnly` / `editable: false` / `canEditCell` / checkbox 列 / グループ行 /
    * ラベル行)・範囲外・編集中は `false` で何もしない。
    */
-  startEditing: (viewRowIndex?: number, colIndex?: number) => boolean;
+  // 変更(別視点のレビュー): 引数は「なし」か「2 つとも」だけにしました(片方だけ渡すと、黙ってアクティブセルを編集していた)。
+  /**
+   * そのセル(引数なしの `startEditing()` はアクティブセル。片方だけは渡せない)の編集を始める(`F2`
+   * と同じ。今の値でエディタを開く)。セルを単一選択にして見える位置へスクロールし、
+   * フォーカスもエディタへ移す。始めたら `true`。編集できないセル(`readOnly` / `editable: false` /
+   * `canEditCell` / checkbox 列 / グループ行 / ラベル行)・範囲外・編集中は `false` で何もしない。
+   */
+  startEditing: {
+    (): boolean;
+    (viewRowIndex: number, colIndex: number): boolean;
+  };
 
   // ── エクスポート ──
   // CSV 文字列を返します(純粋・副作用なし)。

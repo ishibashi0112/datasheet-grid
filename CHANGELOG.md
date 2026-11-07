@@ -16,7 +16,7 @@
 
 ### 追加
 
-- 命令的 API に `focus()` / `startEditing(viewRowIndex?, colIndex?)` / `getViewRowIndex(rowKey)` / `getColIndex(columnKey)` を足しました。`focus()` はグリッドへフォーカスを戻し(右クリックメニューから開いたモーダルを閉じた後など。`imeDirectInput` 有効時は入力受けへ)、`startEditing` はそのセル(省略時はアクティブセル)の編集を `F2` と同じく始めます(始めたら `true`)。`getViewRowIndex` / `getColIndex` は行キー / 列キーから今の表示の位置を返します(並べ替え中に足した行を `rows.findIndex` で選ぶと別の行になっていました)。
+- 命令的 API に `focus()` / `startEditing(viewRowIndex, colIndex)` / `getViewRowIndex(rowKey)` / `getColIndex(columnKey)` を足しました。`focus()` はグリッドへフォーカスを戻し(右クリックメニューから開いたモーダルを閉じた後など。`imeDirectInput` 有効時は入力受けへ)、`startEditing` はそのセル(引数なしの `startEditing()` はアクティブセル)の編集を `F2` と同じく始めます(始めたら `true`)。`getViewRowIndex` / `getColIndex` は行キー / 列キーから今の表示の位置を返します(並べ替え中に足した行を `rows.findIndex` で選ぶと別の行になっていました)。
 - 列メニューをキーボードで開けるようにしました。アクティブセルで `Alt+↓`(Mac は `Option+↓`)を押すと、その列の列メニューを見出しの下に開き、先頭の項目にフォーカスを移します。メニューの中は `↓` / `↑` / `Home` / `End` で項目を移り、`Enter` / `Space` で実行、`Escape` / `Tab` で閉じてグリッドへ戻ります(マウスで開いたときも同じキーで動きます)。支援技術から `⋮` を押したとき(ポインタの押下を伴わない click)も開くようにしました。列メニューの無い合成列(自動グループ列など)や `enableColumnMenu={false}` では、これまでどおりの `↓` です。
 - `applyState` の引数の型 `GridStatePatch` を足しました(下の「挙動の変化」)。
 - `/ai` から `isGridAskColumnsChanged` / `isSameGridAskView` を出しました(core からは出ていました)。core の関数で反映するときに、隠した列が変わらなければ `columns` を外して `applyState` に渡すために使います(そのまま渡すと、聞いている間に手で隠した列が戻ることがありました。ドキュメントに例を足しました)。
