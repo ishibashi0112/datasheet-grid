@@ -2,7 +2,7 @@
 //   - 返り値は表示文字列。元の値・編集・コピー・ソート・フィルターには一切影響しません。
 //   - 各フォーマッタは CellValueFormatter<T> を返すファクタです。将来パターン(日付/％/通貨等)は
 //     本ファイルへファクタを足し、index.ts でバレル公開すれば拡張できます。
-import type { CellValueFormatter } from '../model/gridTypes.unbound';
+import type { CellValueFormatter, CellValueFormatterParams } from '../model/gridTypes.unbound';
 
 // 追加(③): numberFormatter のオプションです。
 export type NumberFormatterOptions = {
@@ -22,9 +22,16 @@ export type NumberFormatterOptions = {
 //   - 数値化できない値 → 原値の文字列(String(value))をそのまま返します(整形しません)。
 //   - min/maxFractionDigits 未指定時は値が本来持つ小数桁数をそのまま表示します
 //     (Intl 既定の 3 桁丸めで表示精度が変わるのを避けるため)。
-export function numberFormatter<T>(
+// 変更(dogfood DU-28): 型引数なしで呼んだときは、どの行の型の列にも渡せる総称的な関数を返します(これまでは
+//   `const f = numberFormatter()` が CellValueFormatter<unknown> になり、GridColumn<Row> へ渡すと型エラーでした)。
+//   型引数を付けた `numberFormatter<Row>()` はこれまでどおり CellValueFormatter<Row> です。
+export function numberFormatter(
+  options?: NumberFormatterOptions,
+): <T>(params: CellValueFormatterParams<T>) => string;
+export function numberFormatter<T>(options?: NumberFormatterOptions): CellValueFormatter<T>;
+export function numberFormatter(
   options: NumberFormatterOptions = {},
-): CellValueFormatter<T> {
+): (params: { value: unknown }) => string {
   const {
     locale,
     useGrouping = true,

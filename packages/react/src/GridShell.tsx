@@ -2040,6 +2040,7 @@ export function useGridShell<T extends object>({
     engine.activeCellNotifier,
     {
       activeCell: uiState.activeCell,
+      editingCell: uiState.editingCell,
       rowModel,
       orderedColumns,
       onActiveCellChange,

@@ -78,9 +78,15 @@ const formatDateParts = (date: Date): string => {
   return `${year}-${month}-${day}`;
 };
 
+// 追加(dogfood DF-19): 数字だけの文字列(Excel の日付のシリアル値「45678」/ 数量「5」/ 年だけ「2026」)は日付として
+//   読みません。Date.parse に任せると、Chrome では「45678」が 45678-01-01、「5」が 2001-05-01 になっていました
+//   (ブラウザで結果も違う)。数値の値(12345)を日付として読まないのと同じ扱いです。
+const DIGITS_ONLY = /^\s*[+-]?\d+\s*$/;
+
 // 追加(editor: date): セル生値を <input type="date"> の value('YYYY-MM-DD' | '')へ正規化します。
 //   Date インスタンス / 'YYYY-MM-DD' 先頭の文字列(ISO 日時含む)/ Date.parse 可能な文字列を
 //   受け付け、解釈できない値は ''(未入力扱い)を返します。
+//   変更(dogfood DF-19): 数字だけの文字列と、Date.parse で年が 4 桁にならない文字列(「45678/1/2」等)は読めない値です。
 export const toDateInputValue = (value: unknown): string => {
   if (value instanceof Date) {
     return Number.isNaN(value.getTime()) ? '' : formatDateParts(value);
@@ -90,8 +96,12 @@ export const toDateInputValue = (value: unknown): string => {
     if (isoPrefix) {
       return isoPrefix[1];
     }
+    if (DIGITS_ONLY.test(value)) {
+      return '';
+    }
     const parsed = new Date(value);
-    if (!Number.isNaN(parsed.getTime())) {
+    const year = parsed.getFullYear();
+    if (!Number.isNaN(parsed.getTime()) && year >= 1000 && year <= 9999) {
       return formatDateParts(parsed);
     }
   }

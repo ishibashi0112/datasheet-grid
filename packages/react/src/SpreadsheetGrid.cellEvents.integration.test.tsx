@@ -269,4 +269,24 @@ describe('セル操作の通知(G-1)', () => {
     expect(onActiveCellChange).toHaveBeenCalledTimes(2);
     expect(onActiveCellChange).toHaveBeenLastCalledWith(expect.objectContaining({ rowKey: 'c', rowIndex: 0 }));
   });
+  // 追加(dogfood DF-15): 編集中に外から並びが変わると、編集は行キーで付いていきます。その前の途中の位置(同じ位置の
+  //   別の行)は通知せず、付いていった後の位置を 1 回だけ通知します。
+  it('onActiveCellChange: 編集中に並びが変わっても、同じ位置の別の行を通知せず 1 回だけ通知する', () => {
+    const ref = createRef<SpreadsheetGridHandle<Row>>();
+    const onActiveCellChange = vi.fn();
+    const props = { ref, columns, rowKeyGetter, onActiveCellChange };
+    const { rerender, container } = render(<SpreadsheetGrid<Row> {...props} rows={rows} />);
+    act(() => {
+      ref.current?.setActiveCell({ row: 0, col: 0 });
+    });
+    act(() => {
+      expect(ref.current?.startEditing()).toBe(true);
+    });
+    expect(container.querySelector('.ssg-cell-editor-input')).not.toBeNull();
+    onActiveCellChange.mockClear();
+    rerender(<SpreadsheetGrid<Row> {...props} rows={[...rows].reverse()} />);
+    expect(onActiveCellChange.mock.calls.map(([cell]) => (cell ? `${cell.rowKey}@${cell.rowIndex}` : 'null'))).toEqual(['a@2']);
+    expect(ref.current?.getActiveCell()).toEqual({ row: 2, col: 0 });
+    expect(container.querySelector('.ssg-cell-editor-input')).not.toBeNull();
+  });
 });
