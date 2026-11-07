@@ -1,6 +1,6 @@
 // DevBI(spreadsheet-grid を使うアプリ)からの報告(2026-11-07)の回帰確認。jsdom では幅を測れないため実ブラウザで見る。
 //   修正前の 0.61.0 では FAIL、修正後は PASS になる。
-import { open, check, summary, waitIdle, unexpectedPageErrors, header, cell } from './pw.mjs';
+import { open, check, summary, waitIdle, unexpectedPageErrors, header, cell, BROWSER } from './pw.mjs';
 
 // CSS を足す(WebDriver の wd.mjs には page.addStyleTag が無いので、どのブラウザでも同じ方法で)。
 const addStyle = (page, css) =>
@@ -187,7 +187,14 @@ const closeAll = async (page) => {
   await waitIdle(page, 100);
   // 列の固定のサブメニュー(入れ子の .ssg-menu-panel)にも届く。
   await openColumnMenu(page, 'name');
-  await page.locator('.ssg-menu-item:has-text("列の固定")').hover();
+  // (WebDriver の wd.mjs は :has-text を持たないので、位置を読んでマウスを動かす)
+  const pinItem = await page.evaluate(() => {
+    const item = [...document.querySelectorAll('.ssg-menu-item')].find((el) => el.textContent.includes('列の固定'));
+    const rect = item?.getBoundingClientRect();
+    return rect ? { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 } : null;
+  });
+  await page.mouse.move(pinItem.x - 20, pinItem.y);
+  await page.mouse.move(pinItem.x, pinItem.y, { steps: 2 });
   await waitIdle(page, 150);
   const submenu = await page.evaluate(() => {
     const panels = document.querySelectorAll('.ssg-menu-panel .ssg-menu-panel');
@@ -245,7 +252,12 @@ const closeAll = async (page) => {
     }, disableSuppression);
   const resync = await resyncTransitions(false);
   const resyncUnsuppressed = await resyncTransitions(true);
-  check('review: re-copying while open starts no transition (and the check sees them when not suppressed)', resync.length === 0 && resyncUnsuppressed.length > 0, { resync, resyncUnsuppressed: resyncUnsuppressed.length });
+  //   止めないと動くのは Chromium だけ(Firefox / WebKit は値を外して読んだ時点では中の要素を計算し直さない)。
+  check(
+    'review: re-copying while open starts no transition (Chromium: and the check sees them when not suppressed)',
+    resync.length === 0 && (BROWSER !== 'chromium' || resyncUnsuppressed.length > 0),
+    { resync, resyncUnsuppressed: resyncUnsuppressed.length },
+  );
   // 開いたまま CSS だけでダークへ切り替えても、表の値を写し直す(背景だけ前の色で残っていた)。
   check('review: tool panel has the grid value before the switch', (await tokenOf(page, '.ssg-toolpanel', '--ssg-panel-bg')) === 'rgb(230, 240, 250)');
   await page.evaluate(() => document.documentElement.classList.add('devbi-dark'));
