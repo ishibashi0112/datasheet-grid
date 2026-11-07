@@ -261,6 +261,11 @@ const willFollowEditingCell = <T,>(
   ) {
     return false;
   }
+  // 変更(別視点のレビュー): 編集中の行が同じ位置のままなら(よくある場合)、全行を探さずに済ませます(同じセルなので
+  //   通知も無い)。SSRM のブロックの到着や clientSide の外からの更新のたびに、全行を走査していました。
+  if (activeCell.row < rowModel.getRowCount() && Object.is(rowModel.getRowKey(activeCell.row), lastRef.rowKey)) {
+    return false;
+  }
   const rowCount = rowModel.getRowCount();
   for (let row = 0; row < rowCount; row += 1) {
     if (rowModel.getRow(row) !== undefined && Object.is(rowModel.getRowKey(row), lastRef.rowKey)) {

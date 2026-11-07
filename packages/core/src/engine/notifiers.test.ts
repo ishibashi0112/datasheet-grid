@@ -274,6 +274,25 @@ describe('セル操作の通知(G-1)', () => {
       expect(onThird).toHaveBeenLastCalledWith(expect.objectContaining({ rowKey: 'b' }));
     });
 
+    // 追加(別視点のレビュー): 編集中の行が同じ位置のままの新しい rowModel(SSRM のブロックの到着など)では、全行を探さない。
+    it('編集中に rowModel が変わっても、編集中の行が同じ位置なら全行を走査しない', () => {
+      const notifier = createActiveCellNotifier<Row>();
+      const onActiveCellChange = vi.fn();
+      // 10 万行の 9 万行目を編集中。
+      const makeBig = () => {
+        const getRow = vi.fn((i: number) => ({ id: `k${i}`, name: `n${i}` }) as unknown as Row);
+        const getRowKey = vi.fn((i: number) => `k${i}`);
+        const model: RowModel<Row> = { getRowCount: () => 100_000, getRow, getSourceIndex: (i) => i, getRowKey };
+        return { model, getRow, getRowKey };
+      };
+      const editing = { row: 90_000, col: 0 };
+      notifier.update({ activeCell: editing, editingCell: editing, rowModel: makeBig().model, orderedColumns: columns, onActiveCellChange });
+      const next = makeBig();
+      notifier.update({ activeCell: editing, editingCell: editing, rowModel: next.model, orderedColumns: columns, onActiveCellChange });
+      expect(onActiveCellChange).not.toHaveBeenCalled();
+      expect(next.getRow.mock.calls.length + next.getRowKey.mock.calls.length).toBeLessThan(10);
+    });
+
     it('コールバック未指定のあいだも追跡し、後から付いても過去の変化は通知しない', () => {
       const notifier = createActiveCellNotifier<Row>();
       const rowModel = makeModel([0, 1]);
