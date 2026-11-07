@@ -424,9 +424,13 @@ describe('グルーピングの操作(dogfood)', () => {
 
   it('DF-22: ツールパネルの列一覧では、グループ元列を「グループ化中」として切り替えられないようにする', () => {
     const ref = createRef<SpreadsheetGridHandle<Row>>();
-    render(
-      <SpreadsheetGrid ref={ref} columns={groupedColumns} rows={rows} onColumnsChange={() => {}} />,
-    );
+    // 表に出る列が 2 つ(数量・数量(倍))。グループ元列は表に出る列として数えない(別視点のレビュー: 数えると最後の 1 列を
+    //   外せていた)ので、数量は外せる。
+    const columnsWithTwo: GridColumn<Row>[] = [
+      ...groupedColumns,
+      { key: 'double', title: '数量(倍)', width: 100, getValue: (row) => (row ? row.qty * 2 : null) },
+    ];
+    render(<SpreadsheetGrid ref={ref} columns={columnsWithTwo} rows={rows} onColumnsChange={() => {}} />);
     act(() => {
       ref.current?.openFilterManager();
     });
@@ -446,5 +450,24 @@ describe('グルーピングの操作(dogfood)', () => {
       button.textContent?.includes('数量'),
     );
     expect(qtyToggle?.disabled).toBe(false);
+  });
+
+  // 追加(別視点のレビュー): 表に出ている列が 1 つだけなら、グループ元列が表示中でも、その 1 列は外せない(表が空になるため)。
+  it('グループ元列は表に出る列として数えず、最後の 1 列は外せない', () => {
+    const ref = createRef<SpreadsheetGridHandle<Row>>();
+    render(<SpreadsheetGrid ref={ref} columns={groupedColumns} rows={rows} onColumnsChange={() => {}} />);
+    act(() => {
+      ref.current?.openFilterManager();
+    });
+    const columnsTab = Array.from(document.querySelectorAll<HTMLButtonElement>('[role="tab"]')).find((tab) =>
+      tab.textContent?.includes('列'),
+    );
+    act(() => {
+      fireEvent.click(columnsTab!);
+    });
+    const qtyToggle = Array.from(document.querySelectorAll<HTMLButtonElement>('.ssg-chooser-toggle')).find((button) =>
+      button.textContent?.includes('数量'),
+    );
+    expect(qtyToggle?.disabled).toBe(true);
   });
 });
