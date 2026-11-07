@@ -300,6 +300,15 @@ export const createServerSideRowModel = <T,>(
       });
   };
 
+  // 追加(アプリの再確認): 読み込み済みのブロックを出したまま取り直し対象にし、取得中のものは止めて、見えている範囲を取り直します。
+  const refetchLoadedBlocks = (): void => {
+    abortAll();
+    for (const blockIndex of cache.loadedBlockIndexes()) {
+      staleBlocks.add(blockIndex);
+    }
+    runFetch();
+  };
+
   const runFetch = (): void => {
     const { start, end } = latestRange;
     const needed = computeBlockIndexes(start, end, blockSize, rowCount);
@@ -454,6 +463,11 @@ export const createServerSideRowModel = <T,>(
         });
         if (!detached) {
           bumpVersion();
+        } else if (waitingWrites === null || !waitingWrites.has(token)) {
+          // 追加(アプリの再確認): 待つ上限(SERVER_SIDE_WRITE_WAIT_MS)を過ぎてから成功した書き込みです。取り直しは待たずに
+          //   済ませた(または取得中な)ので、取った行はサーバーへ反映する前の古い値のことがあります(古い値に ✓ が付き、
+          //   次の取り直しまでそのままだった)。見えている範囲を取り直します(行は出したまま、届いたら差し替える)。
+          refetchLoadedBlocks();
         }
         notifyWriteState('ok', settledCells);
       })

@@ -228,7 +228,7 @@ renderBottomBar={(ctx) => {
 
 データセルのクリック / ダブルクリック / アクティブセルの変化を受け取る通知口。3 つとも省略可で、指定しなければ従来どおり(グリッドの既定の動作は変わらない)。
 
-- **渡るもの**: `GridCellRef<T> = { row, rowKey, rowIndex, sourceRowIndex, column, columnKey, colIndex, value }`。行は index ではなく**行データ `row` と `rowKey` を主に使う**(`rowIndex` はフィルター / ソート後の表示位置 = `handle.selectCell` と同じ空間、`sourceRowIndex` は元 `rows` の index、`colIndex` は論理列 index)。`value` はセルの生値(`getValue` 指定列はその戻り値。`valueFormatter` 適用前)。クリック / ダブルクリックには `event`(DOM 標準の `MouseEvent`。React の合成イベントではない)が付く。修飾キー(`ctrlKey` / `shiftKey` / `metaKey` / `altKey`)はここから読む。
+- **渡るもの**: `GridCellRef<T> = { row, rowKey, rowIndex, sourceRowIndex, column, columnKey, colIndex, value }`。行は index ではなく**行データ `row` と `rowKey` を主に使う**(`rowIndex` はフィルター / ソート後の表示位置 = `handle.selectCell` と同じ空間、`sourceRowIndex` は元 `rows` の index、`colIndex` は画面の列の並び = `handle.selectCell` と同じ空間で、行ドラッグのハンドル列・展開トグル列・自動グループ列も数える。列は `columnKey` で見分け、位置が要るときは `handle.getColIndex(columnKey)`)。`value` はセルの生値(`getValue` 指定列はその戻り値。`valueFormatter` 適用前)。クリック / ダブルクリックには `event`(DOM 標準の `MouseEvent`。React の合成イベントではない)が付く。修飾キー(`ctrlKey` / `shiftKey` / `metaKey` / `altKey`)はここから読む。
 - **対象**: データ行 × 利用側の列のセルだけ。列ヘッダー / 行番号「#」/ グループ行 / ラベル行 / 展開行の帯 / SSRM の未ロード行(スケルトン)/ 合成列(展開トグル列・行ドラッグハンドル列・自動グループ列)ではクリック / ダブルクリックを通知せず、アクティブセルがこれらへ移ったときの `onActiveCellChange` は `null`。
 - **クリックの判定**: ブラウザの `click` イベントに従う。左ボタンのみで、押したセルと離したセルが違う(範囲選択のドラッグ)ときは呼ばれない。セル内に置いた自前の要素のクリックもそのセルのクリックとして届くため、セルの通知に含めたくない要素は自分で `event.stopPropagation()` する。
 - **順番**: マウスで別のセルをクリックすると `onActiveCellChange`(pointerdown でアクティブセルが移った分)→ `onCellClick` の順。ダブルクリックはブラウザの仕様どおり `onCellClick` × 2 → `onCellDoubleClick` の順。
@@ -286,7 +286,7 @@ renderBottomBar={(ctx) => {
 
 | フィールド | 型 | 説明 |
 | --- | --- | --- |
-| `target` | `GridContextMenuTarget<T>` | 右クリック対象。`{ type:'cell', rowIndex, colIndex, rowKey, row, column, value }` か `{ type:'rowHeader', rowIndex, rowKey, row }`(行NO ガター)。`rowIndex` はビュー行 index、`colIndex` は論理列 index(視覚順 左→中央→右 = `handle.selectCell` と同一空間)。 |
+| `target` | `GridContextMenuTarget<T>` | 右クリック対象。`{ type:'cell', rowIndex, colIndex, rowKey, row, column, value }` か `{ type:'rowHeader', rowIndex, rowKey, row }`(行NO ガター)。`rowIndex` はビュー行 index、`colIndex` は画面の列の並び(視覚順 左→中央→右 = `handle.selectCell` と同一空間。行ドラッグのハンドル列・展開トグル列・自動グループ列も数える。列は `column` / `column.key` で見分ける)。 |
 | `clientX` / `clientY` | `number` | 右クリックのビューポート座標(メニュー配置に使用済み。分岐の判断材料にも)。 |
 | `selection` | `GridSelection` | 現在のセル範囲選択。チェックボックス行選択は `handle.getRowSelection()` で別途取得。 |
 | `activeCell` | `CellCoord \| null` | 現在のアクティブセル。 |
@@ -1477,7 +1477,7 @@ const buffer = await writeXlsx({
 | メソッド | 説明 |
 | --- | --- |
 | `getState()` | 永続化対象(手動リサイズ幅 / フィルター / ソート)のスナップショット `GridState` を返す(純粋・副作用なし)。新規オブジェクトなのでそのまま `JSON.stringify` して保存できる。 |
-| `applyState(state)` | `getState()` の値を適用する。**渡したスライスだけを変え、省略した(`undefined` の)スライスは今のまま残す**(`{ sort }` だけなら列幅とフィルターはそのまま。`filters` も `globalText` / `columnFilters` の片方だけ渡せる。引数の型は `GridStatePatch`)。外部入力は内部で防御的に正規化され(形の合わない列フィルターは捨てる)、**今の `columns` に無い列の幅 / 列フィルター / ソートも捨てる**(開発時に警告。列定義を渡してから呼ぶ。自動グループ列などグリッドが足す列の幅は残す)。1 回の再描画で反映し(フィルターと並べ替えを一度に渡しても、並べ替えだけの画面を挟まない)、直後の `getState()` は渡した値を返す。clientSide / serverSide 双方に効く(SSRM は `filters`/`sort` 変化がクエリへ載り再取得)。 |
+| `applyState(state)` | `getState()` の値を適用する。**渡したスライスだけを変え、省略した(`undefined` の)スライスは今のまま残す**(`{ sort }` だけなら列幅とフィルターはそのまま。`filters` も `globalText` / `columnFilters` の片方だけ渡せる。引数の型は `GridStatePatch`)。外部入力は内部で防御的に正規化され(形の合わない列フィルターは捨てる)、**今の `columns` に無い列の幅 / 列フィルター / ソートも捨てる**(開発時に警告。列定義を渡してから呼ぶ。自動グループ列などグリッドが足す列の幅は残す。捨てても今の状態と変わらなければ `onStateChange` は呼ばないので、列を消した後の古い保存状態は `applyState` の後の `getState()` の値で保存し直す)。1 回の再描画で反映し(フィルターと並べ替えを一度に渡しても、並べ替えだけの画面を挟まない)、直後の `getState()` は渡した値を返す。clientSide / serverSide 双方に効く(SSRM は `filters`/`sort` 変化がクエリへ載り再取得)。 |
 
 `GridState`: `{ version, columnWidths, filters, sort, columns? }`。`applyState` の引数の `GridStatePatch` は、その各フィールドを省略できる形(`filters` は `{ globalText?, columnFilters? }`)で、`getState()` の値はそのまま渡せる(全部のフィールドがあるので全部置き換わる)。`version` はマイグレーション用(現行 `2`)。`columns` は **列メタ(可視 / 順序 / ピン)のスナップショット**(`GridColumnState[]` = `{ key, visible?, pinned? }`。配列順 = 列順)で、`getState()` は常に出力し、`applyState()` は **`onColumnsChange` が指定されているときだけ** `columns` prop へ反映する(列順 / ピン / 可視も復元される点に注意。v1 形式 = `columns` 無しの保存値は列メタを触らない後方互換)。復元した `columns` 配列は固定列ごと(左固定 → 中央 → 右固定)の順に並べ直される(画面上の列順は同じ。列のドラッグ並べ替えと同じ規則で、2 回目以降の `applyState` では順序は変わらない)。`flex` / 列定義そのものは含めない。`activeCell` / `selection` などの一時 UI も含めない。`columnWidths` は**手動リサイズ / autoSize / `applyState` で幅が決まった列だけ**を持つ(それ以外の列は `width` / `flex` で描画され、エントリを持たない)。`columns` を同じ内容の別参照で渡し直しても消えず、列が削除されたとき・その列の `flex` / `pinned` 指定が変わったとき・`width` がエントリと異なる値に指定し直されたとき・列のリセット時にだけ捨てられる。そのため `applyState(getState())` は冪等で、保存値に既定幅が焼き込まれることもない(後からコードで `width` を変えれば、手動リサイズしていない列には反映される)。`custom` フィルターの `value`(`unknown`)は深いコピーをしないため、シリアライズ可能性は consumer 責務。`applyState` は壊れた / 部分的な入力にも耐える(非数値の幅・`kind` 無し / 未知 `kind` / 配列であるべき `values` が欠けた列フィルター・不正な `direction` は捨てる)。
 
@@ -1601,14 +1601,14 @@ const dataSource: ServerSideDataSource<Row> = {
 ```
 
 - **楽観更新**: 編集はまず画面へ即時反映され(楽観値)、`updateRows` の resolve で確定する。確定までの間にブロックの再取得や LRU 退避が起きても楽観値の表示は消えない(確定前の編集はキャッシュとは別レイヤーで保持)。
-- **失敗時のロールバック**: `updateRows` が reject する(Promise を返す前に同期で throw したときも同じ)と、該当セルは**編集前の値へ自動で戻り**、グリッド下部に保存失敗バー(「変更の保存に失敗しました(N 行)。値を元に戻しました」+ 閉じる)が表示される。値は復元済みのため再試行ボタンは無い(リトライ導線が必要なら `onServerSideWriteError` の `params.updates` から自前で再送する)。
+- **失敗時のロールバック**: `updateRows` が reject する(Promise を返す前に同期で throw したときも同じ)と、該当セルは**編集前の値へ自動で戻り**、グリッド下部に保存失敗バー(「変更の保存に失敗しました(N 行)。値を元に戻しました」+ 閉じる)が表示される(閉じるか、次の取り直し = `refreshServerSide()` / フィルター / ソートの変更で消える)。値は復元済みのため再試行ボタンは無い(リトライ導線が必要なら `onServerSideWriteError` の `params.updates` から自前で再送する)。
 - **`onServerSideWriteError(error, { updates })`**: バーとは独立の外部通知(トースト / ログ / リトライ導線用)。`updates` は失敗して元に戻した行更新で、`changes` は元に戻したセルだけ。同じセルを新しい書き込みが変えていた(上書き済みの)変更は戻すものが無いので入らず、全部が上書き済みならバーも通知も出ない(古い値で新しい値を上書きする再送を防ぐため)。同じ理由で、`row` は今の表示の行(同じ行の新しい編集の値を含む)に元に戻した変更を当てた行になる(`previousRow` はその書き込みの前の行のまま)。
 - **同一行への連続編集**: 前の書き込みが確定する前に同じ行を再編集してよい(新しい編集が表示を支配し、古い書き込みの遅延決着が新しい値を巻き戻すことはない)。確定はその書き込みで変えたセルにだけ効き、同じセルを新しい書き込みが先に確定させていれば古い書き込みはそのセルを書かない。古い書き込みが失敗したときは、その書き込みで変えたセルだけを戻す(保存中の新しい書き込みの値は残る)。失敗時のロールバック先は「最後にサーバー確定した値」(同じセルを変えた古い書き込みがまだ保存中なら、その書き込みの値)。
 - **バリデーションとの関係**: `validate` / `validationMode` は clientSide と同一規則で機能する(`reject` 列は確定拒否・ペースト/クリアのセル単位スキップ、`mark` 列は不正値も書き戻した上でマーク表示)。
 - **コピーの範囲**: `Ctrl/Cmd+C` は読み込み済みの行だけを写す(未ロード行は空行にもせず飛ばす)。`Ctrl/Cmd+A` で全体を選んでも、写るのは読み込み済みの行だけ(全件が要るときはエクスポートと同じくサーバーから取る)。
 - **ペースト / Delete クリアの範囲**: 未ロード行(スケルトン)はスキップされる。ペーストの**行/列自動拡張は行わない**(`createRow` / `createOverflowColumn` は serverSide では不発。行追加は「サーバへ反映 → `refreshServerSide()`」運用)。
 - **undo/redo**: serverSide では無効のまま(適用先の全件 rows が無いため。取り消しはサーバ側の履歴で扱う)。
-- **`refreshServerSide()` / クエリ変更との関係**: 保存中(in-flight)の書き込みがあるときにリフレッシュ・フィルター/ソート変更をすると、楽観値は外し(行はスケルトン)、**保存の決着を待ってから**サーバー正本を取り直す(待つのは最大 3 秒。過ぎたら待たずに取り直し、その後に決着した保存は印と失敗の知らせだけを出す。セルの値は次の取り直しまで取り直した値のまま)。保存は捨てないので、「行を足して `refreshServerSide()`」のような使い方でも直前の編集が古い値で表示されない。待っている間に決着した保存も保存状態の印と、失敗なら保存失敗バー / `onServerSideWriteError` で知らせる(取り直した行の位置は変わりうるので、決着の `rows` はキャッシュへ書かない)。unmount したときだけは決着を知らせない。
+- **`refreshServerSide()` / クエリ変更との関係**: 保存中(in-flight)の書き込みがあるときにリフレッシュ・フィルター/ソート変更をすると、楽観値は外し(行はスケルトン)、**保存の決着を待ってから**サーバー正本を取り直す(待つのは最大 3 秒。過ぎたら待たずに取り直し、その後に保存が成功したら、取り直した行がサーバーへ反映する前の古い値のことがあるので、行は出したまま見えている範囲をもう一度取り直す。その後に失敗したら知らせだけを出す)。保存は捨てないので、「行を足して `refreshServerSide()`」のような使い方でも直前の編集が古い値で表示されない。待っている間に決着した保存の失敗も保存失敗バー / `onServerSideWriteError` で知らせる(待っている間の行はスケルトンなので、セルの ✓ / ✕ の印は出ない。取り直した行の位置は変わりうるので、決着の `rows` はキャッシュへ書かない)。unmount したときだけは決着を知らせない。
 - **識別子**: `rowKey` は `rowKeyGetter` 由来(既定は view index のため、**書き戻しを使う場合は安定キーを返す `rowKeyGetter` の指定を推奨**)。`rowIndex` は view 空間(現在のフィルター/ソート適用後)の行位置で、`previousRow` にはサーバーが行を特定するための編集前スナップショットが入る。
 
 ### clientSide ↔ serverSide の切替(remount 契約)

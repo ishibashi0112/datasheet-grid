@@ -167,6 +167,18 @@ const countDataColumns = <T,>(columns: ReadonlyArray<GridColumn<T>>) => {
   return count;
 };
 
+// 追加(アプリの再確認): 範囲(画面の並びの index。両端を含む)の中のデータ列の数(合成列を数えない)。
+const countDataColumnsInRange = <T,>(columns: ReadonlyArray<GridColumn<T>>, startCol: number, endCol: number) => {
+  let count = 0;
+  for (let col = startCol; col <= endCol; col += 1) {
+    const column = columns[col];
+    if (!column || !isSyntheticColumnKey(column.key)) {
+      count += 1;
+    }
+  }
+  return count;
+};
+
 export const formatGridColumnSummary = <T,>(
   context: Pick<SpreadsheetGridSlotContext<T>, 'columns' | 'visibleColumns'>,
 ) => `Columns: ${countDataColumns(context.visibleColumns)} / ${context.columns.length}`;
@@ -206,7 +218,8 @@ export const getGridSelectionStats = <T,>(
       selection.range.end.col,
     );
     const selectedRowCount = rowNumberer.countRows(startRow, endRow);
-    const selectedColumnCount = endCol - startCol + 1;
+    // 変更(アプリの再確認): 範囲の中の合成列は数えません(展開トグル列などがあると Ctrl+A で列数とセル数が多く出ていた)。
+    const selectedColumnCount = countDataColumnsInRange(context.visibleColumns, startCol, endCol);
     return {
       selectedCellCount: selectedRowCount * selectedColumnCount,
       selectedRowCount,
@@ -229,7 +242,8 @@ export const getGridSelectionStats = <T,>(
 
   const startCol = Math.min(selection.startCol, selection.endCol);
   const endCol = Math.max(selection.startCol, selection.endCol);
-  const selectedColumnCount = endCol - startCol + 1;
+  // 変更(アプリの再確認): 合成列は数えません。
+  const selectedColumnCount = countDataColumnsInRange(context.visibleColumns, startCol, endCol);
   const selectedRowCount = filteredRowCount;
   return {
     selectedCellCount: selectedRowCount * selectedColumnCount,

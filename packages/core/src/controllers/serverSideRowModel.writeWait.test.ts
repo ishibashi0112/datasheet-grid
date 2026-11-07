@@ -187,11 +187,70 @@ describe('DF-07: 保存中に取り直すと、保存の決着を待ってから
     await flush();
     expect(getRowsCalls.length).toBe(before + 1);
     expect(model.getSnapshot().rowModel.getRow(3)).toEqual({ id: 3, a: 'a0', b: 'b0' });
-    // 遅れて成功しても、取り直した行(位置が変わりうる)へは書かない。印は ok
+    // 変更(アプリの再確認): 遅れて成功したら、取り直した行(サーバーへ反映する前の古い値)を出したまま見えている範囲を
+    //   取り直し、届いたら新しい値にする(これまでは古い値に ✓ が付き、次の取り直しまで古い値のままだった)。印は ok
     pending[0].resolve();
     await flush();
-    expect(model.getSnapshot().rowModel.getRow(3)).toEqual({ id: 3, a: 'a0', b: 'b0' });
+    expect(getRowsCalls.length).toBe(before + 2);
+    expect(model.getSnapshot().rowModel.getRow(3)).toEqual({ id: 3, a: 'a1', b: 'b0' });
     expect(states.map((s) => s.state)).toEqual(['pending', 'ok']);
+    model.dispose();
+  });
+
+  it('上限の時間を過ぎてから失敗した書き込みは取り直さない(取り直した行はもうサーバーの値)', async () => {
+    const { model, pending, getRowsCalls, writeErrors } = await setup();
+    model.applyCellEdits([{ viewIndex: 3, column: colA, value: 'a1' }]);
+    const before = getRowsCalls.length;
+    model.refresh();
+    await flush();
+    vi.advanceTimersByTime(SERVER_SIDE_WRITE_WAIT_MS);
+    await flush();
+    expect(getRowsCalls.length).toBe(before + 1);
+    pending[0].reject(new Error('ng'));
+    await flush();
+    vi.advanceTimersByTime(500);
+    await flush();
+    expect(getRowsCalls.length).toBe(before + 1);
+    expect(model.getSnapshot().rowModel.getRow(3)).toEqual({ id: 3, a: 'a0', b: 'b0' });
+    expect(writeErrors).toHaveLength(1);
+    model.dispose();
+  });
+
+  it('上限の時間を過ぎて取得中に遅れて成功したら、取得中の古い結果を捨てて取り直す', async () => {
+    const { model, pending, getRowsCalls, baseArgs } = await setup();
+    // 取り直しの getRows を手で返す(書き込みが決着する前に読んだ古い値を、決着の後に返す)
+    const slow: { resolve: () => void; rows: { id: number; a: string; b: string }[] }[] = [];
+    const original = baseArgs.dataSource.getRows;
+    const dataSource = {
+      ...baseArgs.dataSource,
+      getRows: (params: Parameters<typeof original>[0]) =>
+        original(params).then(
+          (result) =>
+            new Promise<typeof result>((resolve) => {
+              slow.push({ resolve: () => resolve(result), rows: result.rows as never });
+            }),
+        ),
+    };
+    model.update({ ...baseArgs, dataSource });
+    model.applyCellEdits([{ viewIndex: 3, column: colA, value: 'a1' }]);
+    const before = getRowsCalls.length;
+    model.refresh();
+    await flush();
+    vi.advanceTimersByTime(SERVER_SIDE_WRITE_WAIT_MS);
+    await flush();
+    expect(getRowsCalls.length).toBe(before + 1);
+    expect(slow).toHaveLength(1);
+    // 書き込みが成功(サーバーは a1)→ 取り直す
+    pending[0].resolve();
+    await flush();
+    expect(getRowsCalls.length).toBe(before + 2);
+    // 古い取得(a0)が後から届いても捨てる
+    slow[0].resolve();
+    await flush();
+    expect(model.getSnapshot().rowModel.getRow(3)).toBeUndefined();
+    slow[1].resolve();
+    await flush();
+    expect(model.getSnapshot().rowModel.getRow(3)).toEqual({ id: 3, a: 'a1', b: 'b0' });
     model.dispose();
   });
 

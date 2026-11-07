@@ -1601,7 +1601,9 @@ export type GridContextMenuParams<T, F extends GridFrameworkTypes = GridFramewor
   /**
    * 右クリック対象。`{ type:'cell', rowIndex, colIndex, rowKey, row, column, value }` か
    * `{ type:'rowHeader', rowIndex, rowKey, row }`(行NO ガター)。`rowIndex` はビュー行 index、
-   * `colIndex` は論理列 index(視覚順 左→中央→右 = `handle.selectCell` と同一空間)。
+   * `colIndex` は画面の列の並び(視覚順 左→中央→右 = `handle.selectCell` と同一空間。
+   * 行ドラッグのハンドル列・展開トグル列・自動グループ列も数える。列は `column` / `column.key`
+   * で見分ける)。
    */
   target: GridContextMenuTarget<T, F>;
   /**
@@ -2224,10 +2226,11 @@ export type SpreadsheetGridHandle<T> = {
    * `globalText` / `columnFilters` の片方だけ渡せる。引数の型は `GridStatePatch`)。
    * 外部入力は内部で防御的に正規化され(形の合わない列フィルターは捨てる)、**今の `columns`
    * に無い列の幅 / 列フィルター / ソートも捨てる**(開発時に警告。列定義を渡してから呼ぶ。
-   * 自動グループ列などグリッドが足す列の幅は残す)。1
-   * 回の再描画で反映し(フィルターと並べ替えを一度に渡しても、並べ替えだけの画面を挟まない)、直後の
-   * `getState()` は渡した値を返す。clientSide / serverSide 双方に効く(SSRM は `filters`/`sort`
-   * 変化がクエリへ載り再取得)。
+   * 自動グループ列などグリッドが足す列の幅は残す。捨てても今の状態と変わらなければ `onStateChange`
+   * は呼ばないので、列を消した後の古い保存状態は `applyState` の後の `getState()`
+   * の値で保存し直す)。1 回の再描画で反映し(フィルターと並べ替えを一度に渡しても、
+   * 並べ替えだけの画面を挟まない)、直後の `getState()` は渡した値を返す。clientSide / serverSide
+   * 双方に効く(SSRM は `filters`/`sort` 変化がクエリへ載り再取得)。
    */
   applyState: (state: GridStatePatch) => void;
 

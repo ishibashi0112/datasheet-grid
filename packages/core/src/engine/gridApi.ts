@@ -61,13 +61,16 @@ declare const process: { env: { NODE_ENV?: string } };
 
 // 追加(dogfood DF-04): applyState が今の列定義に無い列のキーを捨てたとき、開発時だけ知らせます(列定義を読み込む前に
 //   applyState を呼んだときなどに、フィルターが消えた理由に気づけるように)。
+// 変更(アプリの再確認): 列を消した後の古い保存状態でも出るので(捨てても今の状態と同じなら onStateChange は来ず、保存に
+//   残ったまま毎回出る)、保存し直す案内も書きます。
 const warnDroppedStateColumns = (keys: string[]): void => {
   if (process.env.NODE_ENV === 'production') {
     return;
   }
   console.warn(
     `[spreadsheet-grid] applyState: 今の列定義(columns)に無い列 ${keys.map((key) => `\`${key}\``).join(', ')} の` +
-      '列幅 / フィルター / 並べ替えを捨てました。列定義を渡してから applyState を呼んでください。',
+      '列幅 / フィルター / 並べ替えを捨てました。列定義を読み込む前なら、列定義を渡してから applyState を呼んでください。' +
+      '列を消した後の古い保存状態なら、applyState の後の getState() の値を保存し直すと出なくなります。',
   );
 };
 

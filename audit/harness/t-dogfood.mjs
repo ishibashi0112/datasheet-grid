@@ -225,7 +225,13 @@ for (const key of ['category', 'date', 'name']) {
   await page.keyboard.press('Control+A');
   await page.keyboard.type('saved-before-refresh');
   await page.keyboard.press('Enter');
-  await waitIdle(page, 50);
+  // 保存が始まった(保存中の印が付いた)のを待ってから取り直す(決まった時間だと、CPU が混んでいるときに確定より先に
+  //   取り直してしまい、待つ場面にならなかった)。
+  await page.waitForFunction(
+    () => document.querySelector('.ssg-body-row[data-row-index="3"] .ssg-body-cell[data-ssg-col-key="name"]')?.getAttribute('data-ssg-save') === 'pending',
+    null,
+    { timeout: 2000 },
+  ).catch(() => {});
   await page.evaluate(() => window.__grid.refreshServerSide());
   await waitIdle(page, 300);
   const during = await page.evaluate(() => ({
@@ -258,6 +264,29 @@ for (const key of ['category', 'date', 'name']) {
   check('DF-14 the pending mark comes back on a cell that scrolled out and back', before === 'pending' && gone === 0 && after === 'pending', { before, gone, after });
   await waitIdle(page, 3200);
   check('DF-14 after the save the mark is no longer pending', (await markOf()) !== 'pending', await markOf());
+  // アプリの再確認: 待つ上限(3 秒)を過ぎてから成功した保存は、見えている範囲を取り直して新しい値にする
+  //   (これまでは取り直した古い値に ✓ が付き、次の取り直しまで古い値のままだった)
+  await page.evaluate(() => { window.__ssrm.updateLatency = 4500; });
+  await cell(page, 5, 'name').dblclick();
+  await page.keyboard.press('Control+A');
+  await page.keyboard.type('late-save');
+  await page.keyboard.press('Enter');
+  await page.waitForFunction(
+    () => document.querySelector('.ssg-body-row[data-row-index="5"] .ssg-body-cell[data-ssg-col-key="name"]')?.getAttribute('data-ssg-save') === 'pending',
+    null,
+    { timeout: 2000 },
+  ).catch(() => {});
+  await page.evaluate(() => { window.__ssrm.calls.length = 0; window.__grid.refreshServerSide(); });
+  await waitIdle(page, 3600);
+  const lateBefore = { text: await ssrmCellText(5, 'name'), calls: await page.evaluate(() => window.__ssrm.calls.length) };
+  await page.waitForFunction(() => window.__ssrm.calls.length >= 2, null, { timeout: 4000 }).catch(() => {});
+  await waitIdle(page, 300);
+  const lateAfter = { text: await ssrmCellText(5, 'name'), calls: await page.evaluate(() => window.__ssrm.calls.length) };
+  check(
+    'SSRM a save that settles after the 3 s cap refetches and shows the saved value',
+    lateBefore.calls === 1 && lateBefore.text !== 'late-save' && lateAfter.calls >= 2 && lateAfter.text === 'late-save',
+    { lateBefore, lateAfter },
+  );
   await page.evaluate(() => { window.__ssrm.updateLatency = 10; });
   check('DF-07 / DF-14 no page errors', unexpectedPageErrors(pageErrors).length === 0, pageErrors);
   await close();
