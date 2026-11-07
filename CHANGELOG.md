@@ -12,6 +12,8 @@
 
 ## 未リリース
 
+DevBI(このライブラリを使うアプリ)からの報告の対応です。初期 JS(gzip)が約 1KB 増えます(ほぼ全部がポップアップへ色のトークンを写す処理): 全部入り 約 119.8KB → 120.9KB、`/lite` 機能なし 約 64.6KB → 65.4KB、`/lite` + `standardFeatures` 約 83.7KB → 84.7KB。
+
 ### 追加
 
 - 列見出しの水平寄せ `GridColumn.headerAlign`(`'left' | 'center' | 'right'`。書かなければ列の `align` と同じ)。右寄せの見出しは並びが鏡写しになり、並べ替えの矢印とフィルターの印がラベルの左、ホバーで出る grip と ⋮ も左に出ます。中央は文字だけ中央です。CSS のクラス `.ssg-header-cell--align-right` / `.ssg-header-cell--align-center` も公開しました。
