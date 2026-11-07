@@ -24,13 +24,13 @@ type Pending = { params: ServerSideUpdateRowsParams<Row>; resolve: () => void; r
 type WriteErrorCall = { error: unknown; updates: ServerSideUpdateRowsParams<Row>['updates'] };
 
 // 書き込みが成功したら(resolve したら)サーバーの行へ反映する擬似サーバーです。
-const setup = async () => {
-  const serverRows: Row[] = Array.from({ length: 10 }, (_, i) => ({ id: i, a: 'a0', b: 'b0' }));
+const setup = async ({ total = 10, blockSize = 100 }: { total?: number; blockSize?: number } = {}) => {
+  const serverRows: Row[] = Array.from({ length: total }, (_, i) => ({ id: i, a: 'a0', b: 'b0' }));
   const pending: Pending[] = [];
   const getRowsCalls: { startIndex: number; endIndex: number }[] = [];
   const dataSource: ServerSideDataSource<Row> = {
-    initialRowCount: 10,
-    blockSize: 100,
+    initialRowCount: total,
+    blockSize,
     getRows: async ({ startIndex, endIndex }) => {
       getRowsCalls.push({ startIndex, endIndex });
       return {
@@ -133,6 +133,44 @@ describe('DF-07: 保存中に取り直すと、保存の決着を待ってから
     expect(getRowsCalls.length).toBe(before + 1);
     expect(getRowsCalls[before]?.startIndex).toBe(0);
     expect(model.getSnapshot().rowModel.getRow(3)).toEqual({ id: 3, a: 'a1', b: 'b0' });
+    model.dispose();
+  });
+
+  it('クエリ変化の待ち明けも、見えている範囲のブロックを取る(block 0 だけにしない)', async () => {
+    const { model, pending, getRowsCalls, baseArgs } = await setup({ total: 300 });
+    // 下へスクロールして、見えている範囲を block 1 にする
+    model.requestRange(150, 160);
+    vi.runAllTimers();
+    await flush();
+    expect(model.getSnapshot().rowModel.getRow(150)).toBeDefined();
+    model.applyCellEdits([{ viewIndex: 150, column: colA, value: 'a1' }]);
+    const before = getRowsCalls.length;
+    model.update({ ...baseArgs, queryKey: 'q2' });
+    // 待っている間のスクロールの要求(可視窓は同じ)も取らない
+    model.requestRange(150, 160);
+    vi.advanceTimersByTime(500);
+    await flush();
+    expect(getRowsCalls.length).toBe(before);
+    pending[0].resolve();
+    await flush();
+    vi.advanceTimersByTime(500);
+    await flush();
+    const fetched = getRowsCalls.slice(before).map((call) => call.startIndex);
+    expect(fetched).toContain(100);
+    expect(fetched).toContain(0);
+    expect(model.getSnapshot().rowModel.getRow(150)).toEqual({ id: 150, a: 'a1', b: 'b0' });
+    model.dispose();
+  });
+
+  it('保存中でなければ、クエリ変化はこれまでどおりすぐ block 0 だけを取る', async () => {
+    const { model, getRowsCalls, baseArgs } = await setup({ total: 300 });
+    model.requestRange(150, 160);
+    vi.runAllTimers();
+    await flush();
+    const before = getRowsCalls.length;
+    model.update({ ...baseArgs, queryKey: 'q2' });
+    await flush();
+    expect(getRowsCalls.slice(before).map((call) => call.startIndex)).toEqual([0]);
     model.dispose();
   });
 
@@ -280,6 +318,25 @@ describe('DF-09: 上書き済みの変更の保存が失敗しても知らせな
     expect(writeErrors).toHaveLength(1);
     expect(writeErrors[0].updates).toHaveLength(1);
     expect(writeErrors[0].updates[0].changes.map((c) => c.columnKey)).toEqual(['b']);
+    // 再送しても新しい値を古い値で上書きしないよう、row の上書き済みの列は今の値(a2)
+    expect(writeErrors[0].updates[0].row).toEqual({ id: 3, a: 'a2', b: 'b1' });
+    model.dispose();
+  });
+
+  it('同じ行の別の列を新しい書き込みが変えていれば、知らせる row にはその新しい値が入る', async () => {
+    const { model, pending, writeErrors } = await setup();
+    model.applyCellEdits([{ viewIndex: 3, column: colB, value: 'b1' }]);
+    model.applyCellEdits([{ viewIndex: 3, column: colA, value: 'a2' }]);
+    pending[1].resolve();
+    await flush();
+    pending[0].reject(new Error('ng'));
+    await flush();
+    expect(model.getSnapshot().rowModel.getRow(3)).toEqual({ id: 3, a: 'a2', b: 'b0' });
+    expect(writeErrors).toHaveLength(1);
+    expect(writeErrors[0].updates[0].changes.map((c) => c.columnKey)).toEqual(['b']);
+    expect(writeErrors[0].updates[0].row).toEqual({ id: 3, a: 'a2', b: 'b1' });
+    // 編集前のスナップショットはこの書き込みの前の行のまま
+    expect(writeErrors[0].updates[0].previousRow).toEqual({ id: 3, a: 'a0', b: 'b0' });
     model.dispose();
   });
 

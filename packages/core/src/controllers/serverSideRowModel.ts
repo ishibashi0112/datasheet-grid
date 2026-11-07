@@ -30,6 +30,7 @@ import {
   type ServerSidePendingChange,
 } from '../logic/serverSideEdits';
 import { createValueStore } from '../logic/valueStore';
+import { setCellValue } from '../utils/permissions';
 
 const DEFAULT_BLOCK_SIZE = 100;
 const DEFAULT_MAX_CACHED_BLOCKS = 64;
@@ -474,12 +475,26 @@ export const createServerSideRowModel = <T,>(
         // 変更(dogfood DF-09): 同じセルを新しい書き込みが変えていた(上書き済みの)変更は、元に戻すものが無いので知らせません。
         //   これまでは値は新しいままなのに「値を元に戻しました」のバーが出て、onServerSideWriteError に古い値が渡っていました
         //   (書いてあるとおりに再送すると新しい値を古い値で上書きする)。知らせるのは、元に戻した変更だけです。
+        //   変更(別視点のレビュー): 知らせる row は「今の表示の行 + 元に戻した変更」にします。この書き込みの row のままだと、
+        //   上書き済みの列や同じ行の新しい書き込みで変えた列に古い値が残り、row を再送すると新しい値を巻き戻していました。
+        //   取り直した後(detached)は行の位置が変わっているので、この書き込みの row のままにします。
         const rolledBack = updates.flatMap((update, index) => {
           const columnKeys = settledCells[index]?.columnKeys ?? [];
           if (columnKeys.length === 0) {
             return [];
           }
-          return [{ ...update, changes: update.changes.filter((change) => columnKeys.includes(change.columnKey)) }];
+          const changes = update.changes.filter((change) => columnKeys.includes(change.columnKey));
+          const current = detached ? undefined : getDisplayRow(update.rowIndex);
+          if (current === undefined || args.rowKeyGetter(current, update.rowIndex) !== update.rowKey) {
+            return [{ ...update, changes }];
+          }
+          let row: T = current;
+          for (const change of changesByRow.get(update.rowIndex) ?? []) {
+            if (columnKeys.includes(change.column.key)) {
+              row = setCellValue(row, change.column, change.value);
+            }
+          }
+          return [{ ...update, row, changes }];
         });
         if (rolledBack.length > 0) {
           writeError = { failedRowCount: rolledBack.length };
@@ -517,8 +532,17 @@ export const createServerSideRowModel = <T,>(
         fetchBlock(0);
       }
     } else {
-      // 変更(dogfood DF-07): 保存中の書き込みがあれば、決着してから取り直します。
-      fetchAfterWrites(() => fetchBlock(0));
+      // 変更(dogfood DF-07): 保存中の書き込みがあれば、決着してから取り直します。待っている間のスクロールの要求は取らずに
+      //   捨てているので、待った後は見えている範囲も取ります(block 0 だけだと、待っている間にスクロールした位置がスケルトンの
+      //   まま残っていた)。runFetch は範囲外の取得中のブロックを止めるので、block 0 はその後に足します。待たないときは
+      //   これまでどおり block 0 だけ(見えている範囲はこの後のスクロールの戻しで決まる)。
+      const waits = waitingWrites !== null || inFlightWrites.size > 0;
+      fetchAfterWrites(() => {
+        if (waits && latestRange.end > latestRange.start) {
+          runFetch();
+        }
+        fetchBlock(0);
+      });
     }
   };
 

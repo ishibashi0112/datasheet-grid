@@ -2722,7 +2722,8 @@ export type SpreadsheetGridProps<T, F extends GridFrameworkTypes = GridFramework
    * serverSide の `dataSource.updateRows` が reject したときの通知。
    * グリッド側は楽観更新をロールバック済みで、`params.updates` に失敗して元に戻した行更新(`rowKey`
    * / `changes` / `previousRow`)が入る(利用側トースト / リトライ導線用。`changes`
-   * は元に戻したセルだけで、後から同じセルを変えた編集で上書き済みの変更は入らない)。
+   * は元に戻したセルだけで、後から同じセルを変えた編集で上書き済みの変更は入らない。`row`
+   * は今の表示の行に元に戻した変更を当てた行で、同じ行の新しい編集の値を含む)。
    * グリッド内蔵の保存失敗バーとは独立に呼ばれる。インライン関数可(latest-ref 経由で読む)。
    * 詳細は「セル編集の書き戻し」節。
    */
