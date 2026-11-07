@@ -482,3 +482,45 @@ describe('展開行の操作(dogfood)', () => {
     expect(container.querySelector('.ssg-cell-editor, [data-ssg-editor]')).not.toBeNull();
   });
 });
+
+
+// 追加(段階 2 DF-25): 展開中の行を rows から消したら、そのキーを外して onExpandedDetailRowKeysChange で知らせます。
+//   これまでは getExpandedDetailRowKeys() にキーが残り、通知も来ませんでした(同じキーの行を足し直すと開いたまま出た)。
+describe('展開中の行を rows から消す(DF-25)', () => {
+  it('消した行のキーを外して通知する。残っている行と、まだ読み込んでいない行のキーは残す', () => {
+    const ref = createRef<SpreadsheetGridHandle<Row>>();
+    const onChange = vi.fn();
+    const view = (nextRows: Row[]) => (
+      <SpreadsheetGrid
+        ref={ref}
+        columns={columns}
+        rows={nextRows}
+        rowKeyGetter={rowKeyGetter}
+        detailRow={detailRow}
+        onExpandedDetailRowKeysChange={onChange}
+      />
+    );
+    const { rerender } = render(view(rows));
+    act(() => {
+      ref.current?.setDetailRowExpanded('a', true);
+      ref.current?.setDetailRowExpanded('c', true);
+      // まだ rows に無い行(後から読み込む行)のキー。
+      ref.current?.setDetailRowExpanded('z', true);
+    });
+    expect(onChange).toHaveBeenLastCalledWith(['a', 'c', 'z']);
+    onChange.mockClear();
+
+    // 編集(同じ位置の行の差し替え)では外さない。
+    rerender(view([rows[0], rows[1], { ...rows[2], qty: 31 }]));
+    expect(onChange).not.toHaveBeenCalled();
+
+    // c を消す。
+    rerender(view([rows[0], rows[1]]));
+    expect(ref.current?.getExpandedDetailRowKeys()).toEqual(['a', 'z']);
+    expect(onChange).toHaveBeenLastCalledWith(['a', 'z']);
+
+    // 同じキーの行を足し直しても、開いたままにはならない。
+    rerender(view(rows));
+    expect(ref.current?.getExpandedDetailRowKeys()).toEqual(['a', 'z']);
+  });
+});

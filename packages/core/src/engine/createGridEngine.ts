@@ -9,7 +9,12 @@
 //   - dispose はエンジンが持つ全コントローラの後始末(タイマー / リスナー / observer)をまとめて行います。
 import { createGridStore, type GridStore } from '../model/gridStore';
 import { createInitialGridUiState } from '../model/gridReducer';
-import { createDetailIndexCacheHolder, type DetailIndexCacheHolder } from '../logic/detailRow';
+import {
+  createDetailIndexCacheHolder,
+  createDetailKeysPruner,
+  type DetailIndexCacheHolder,
+  type DetailKeysPruner,
+} from '../logic/detailRow';
 import type { AutoHeightMeasurer } from '../controllers/autoHeightMeasurer';
 import { createScrollSyncController, type ScrollSyncController } from '../controllers/scrollSyncController';
 import { createRowEnterController, type RowEnterController } from '../controllers/rowEnterController';
@@ -124,6 +129,8 @@ export type GridEngine<T> = {
   imeInput: ImeInputController;
   // 展開行の rowKey → view index キャッシュ(SSRM の query 変化で reset)。
   detailIndexCache: DetailIndexCacheHolder;
+  // 追加(段階 2 DF-25): 展開中の行が rows から消えたら、そのキーを外す(clientSide)。
+  detailKeysPruner: DetailKeysPruner<T>;
   dispose: () => void;
 };
 
@@ -196,6 +203,7 @@ export const createGridEngine = <T,>(init: GridEngineInit<T>): GridEngine<T> => 
     autoSizeOnData,
     imeInput,
     detailIndexCache: createDetailIndexCacheHolder(),
+    detailKeysPruner: createDetailKeysPruner<T>(),
     dispose: () => {
       autoHeightMeasurer.dispose();
       scrollSync.dispose();

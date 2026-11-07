@@ -3,6 +3,7 @@ import { describe, it, expect } from 'vitest';
 import type { RowModel } from '../model/gridTypes.unbound';
 import {
   createDetailIndexCache,
+  createDetailKeysPruner,
   findDetailRowIndex,
   findViewRowIndexByKey,
   resolveDetailRowExtras,
@@ -239,5 +240,79 @@ describe('findViewRowIndexByKey', () => {
     };
     expect(findViewRowIndexByKey(model, 1, new Map())).toBe(3);
     expect(findViewRowIndexByKey(model, 2, new Map())).toBe(-1);
+  });
+});
+
+// 追加(段階 2 DF-25): 展開中の行が rows から消えたら、そのキーを外します。
+describe('createDetailKeysPruner', () => {
+  const keyOf = (row: Row) => row.id;
+  const run = () => {
+    const pruner = createDetailKeysPruner<Row>();
+    const calls: string[][] = [];
+    let keys: ReadonlySet<string> = new Set();
+    const update = (rows: Row[], enabled = true) =>
+      pruner.update({
+        enabled,
+        rows,
+        expandedKeys: keys,
+        keyOf,
+        setExpandedKeys: (next) => {
+          keys = next as ReadonlySet<string>;
+          calls.push(Array.from(next as ReadonlySet<string>));
+        },
+      });
+    return { update, calls, setKeys: (next: string[]) => (keys = new Set(next)), getKeys: () => Array.from(keys) };
+  };
+  const a = { id: 'a' };
+  const b = { id: 'b' };
+  const c = { id: 'c' };
+
+  it('前の rows にあって今の rows に無いキーだけを外す(展開した直後の削除も)', () => {
+    const t = run();
+    t.update([a, b, c]);
+    t.setKeys(['b', 'c']);
+    t.update([a, b, c]);
+    expect(t.calls).toEqual([]);
+    t.update([a, c]);
+    expect(t.calls).toEqual([['c']]);
+    expect(t.getKeys()).toEqual(['c']);
+  });
+
+  it('位置が変わっても(並べ替え / 上の行の削除)残っている行のキーは外さない', () => {
+    const t = run();
+    t.update([a, b, c]);
+    t.setKeys(['c']);
+    t.update([c, b, a]);
+    t.update([b, c]);
+    expect(t.calls).toEqual([]);
+    t.update([{ id: 'c' }]);
+    expect(t.calls).toEqual([]);
+  });
+
+  it('rows を読み込む前に戻したキー(一度も rows に無かったキー)は外さない', () => {
+    const t = run();
+    t.update([]);
+    t.setKeys(['b']);
+    t.update([]);
+    t.update([a]);
+    expect(t.calls).toEqual([]);
+    t.update([a, b]);
+    t.update([a]);
+    expect(t.calls).toEqual([[]]);
+  });
+
+  it('無効(展開行なし / serverSide)のあいだは何もしない', () => {
+    const t = run();
+    t.setKeys(['a']);
+    t.update([a], false);
+    t.update([], false);
+    expect(t.calls).toEqual([]);
+  });
+
+  it('最初の rows では外さない(マウント時に通知しない)', () => {
+    const t = run();
+    t.setKeys(['z']);
+    t.update([a]);
+    expect(t.calls).toEqual([]);
   });
 });

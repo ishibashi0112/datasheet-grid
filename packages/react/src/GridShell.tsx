@@ -684,6 +684,15 @@ export function useGridShell<T extends object>({
   //   セル側のトグルは「そのセルの view index」でキャッシュを seed してから dispatch します
   //   (serverSide でも全行走査なしで帯の位置が決まる)。
   const detailRowEnabled = detailRow != null;
+  // 追加(段階 2 DF-25): 展開中の行が rows から消えたら、そのキーを外します(通知は上の detailKeysNotifier)。
+  //   serverSide は rows がすべての行ではないので見ません。
+  useControllerLifecycle(engine.detailKeysPruner, {
+    enabled: detailRowEnabled && !isServerSide,
+    rows,
+    expandedKeys: uiState.expandedDetailRowKeys,
+    keyOf: resolvedRowKeyGetter,
+    setExpandedKeys: (keys: ReadonlySet<GridRowKey>) => dispatch(gridActions.setExpandedDetailRowKeys(keys)),
+  });
   // 変更(本体分解 E-6c): useRef → 差し替え可能なホルダー(logic/detailRow.createDetailIndexCacheHolder)。
   const detailIndexCacheHolder = engine.detailIndexCache;
   const toggleDetailRowAt = useCallback(
