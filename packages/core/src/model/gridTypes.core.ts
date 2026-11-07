@@ -3537,7 +3537,9 @@ export type SpreadsheetGridProps<T, F extends GridFrameworkTypes = GridFramework
    * 各データセルに付与され、Tailwind / StyleX での行ハイライトに使える。`style`
    * はインラインで付与され、座標 / 寸法はグリッドが後勝ち(返した style は内容比較で memo される)。
    * 第 3 引数 `ctx` は `{ row, rowIndex, sourceRowIndex, rowKey, isSelected }`(「補助型」節参照)。
-   * 既存の 2 引数関数もそのまま動く(後方互換)。グループ行は対象外。
+   * 既存の 2 引数関数もそのまま動く(後方互換)。グループ行は対象外。class と style
+   * は行と各セルの両方に付くので、`opacity` / `filter` のように重なる指定は style で返さず、class
+   * を返して `.ssg-body-row.<class>` で行だけに当てる(style の `opacity: 0.5` は 0.25 になる)。
    */
   getRowClassName?: (
     row: T,

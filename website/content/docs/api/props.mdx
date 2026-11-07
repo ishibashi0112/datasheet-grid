@@ -91,7 +91,7 @@ description: SpreadsheetGridProps<T> の全 prop と既定値
 | `className` | `string` | — | ルート要素の class。 |
 | `style` | `CSSProperties` | — | ルート要素(`.ssg-root`)のインライン style。`classNames.root` の style とマージされ、こちらが後勝ち。 |
 | `classNames` | `GridClassNames` | — | パーツ別の追加スロット。各値は `GridSlotProps`(`string \| { className?, style? }`)で、StyleX の `stylex.props(...)` の戻り値をそのまま渡せる。全 25 スロット配線済み(一覧と規則は「パーツ別スロット」節)。レンダー毎に新しいオブジェクトを渡してもよい(内容の署名で memo)。基底 class は未レイヤー・特異度 (0,1,0)のため同特異度のクラスは読み込み順で決まる(確実な上書きは連結セレクタか `style.layer.css`)。 |
-| `getRowClassName` | `(row: T, rowIndex: number, ctx: RowStyleContext<T>) => GridSlotProps \| undefined` | — | 行ごとの追加 class(または `{ className, style }`)。行コンテナ + 行ヘッダー「#」セル + 各データセルに付与され、Tailwind / StyleX での行ハイライトに使える。`style` はインラインで付与され、座標 / 寸法はグリッドが後勝ち(返した style は内容比較で memo される)。第 3 引数 `ctx` は `{ row, rowIndex, sourceRowIndex, rowKey, isSelected }`(「補助型」節参照)。既存の 2 引数関数もそのまま動く(後方互換)。グループ行は対象外。 |
+| `getRowClassName` | `(row: T, rowIndex: number, ctx: RowStyleContext<T>) => GridSlotProps \| undefined` | — | 行ごとの追加 class(または `{ className, style }`)。行コンテナ + 行ヘッダー「#」セル + 各データセルに付与され、Tailwind / StyleX での行ハイライトに使える。`style` はインラインで付与され、座標 / 寸法はグリッドが後勝ち(返した style は内容比較で memo される)。第 3 引数 `ctx` は `{ row, rowIndex, sourceRowIndex, rowKey, isSelected }`(「補助型」節参照)。既存の 2 引数関数もそのまま動く(後方互換)。グループ行は対象外。class と style は行と各セルの両方に付くので、`opacity` / `filter` のように重なる指定は style で返さず、class を返して `.ssg-body-row.<class>` で行だけに当てる(style の `opacity: 0.5` は 0.25 になる)。 |
 | `onStateChange` | `(state: GridState) => void` | — | 永続スライス(手動リサイズ幅 / フィルター / ソート)が**実際に変化したとき**に最新 `GridState` を渡して呼ばれる。保存タイミングの signal(例: localStorage 自動保存)。発火規約は「状態の保存 / 復元」節を参照。 |
 | `onFiltersChange` | `(filters: GridFilterState) => void` | — | フィルター状態(`globalText` + `columnFilters`)が**実際に変化したとき**だけ、そのスライスの複製を渡して呼ばれる。`onStateChange` は列幅 / 列メタでも呼ばれるため、記述子から WHERE を組み立てるなどフィルターだけを追いたい用途向け。規約は `onStateChange` と同じ(初回非発火 / 同値非発火 / `applyState` でも発火)。 |
 | `onSortChange` | `(sort: GridSortState) => void` | — | ソート状態が**実際に変化したとき**だけ、その複製を渡して呼ばれる(ORDER BY の組み立てなど)。規約は `onFiltersChange` と同じ。 |
@@ -848,6 +848,12 @@ function Grid(props: SpreadsheetGridProps<Row>) {
 ## CSS トークン(`--ssg-*`)(公開契約)
 
 見た目を変える主な手段。`style.css` が `.ssg-root` と各ポータル(ポップオーバー / メニュー / ドラッグのゴースト / ツールチップ)と `GridAskBar` の `.ssg-ask` に `:where`(特異度 0)で定義しているため、利用側の上書きは読み込み順に関係なく既定値・ダークのプリセット(`.ssg-theme-dark`)・`themes/*.css` に勝つ。
+
+`document.body` の直下に出す部品(列メニュー / 列フィルター / 右クリックメニュー / select エディタの候補 / ツールパネル / フィルハンドルのメニューと値のツールチップ / ツールチップ / ドラッグのゴースト)は表の中に無いので、表やその祖先に書いたトークンは継承では届かない。グリッドは部品を出すときに、表の root で決まったトークンの値をその部品の root へインラインで写す。
+
+- `.ssg-root { … }` / `className` のクラス / `.card .ssg-root { … }` のような祖先のセレクタ / 祖先の変数を使った値(`--ssg-panel-bg: var(--card-head)`)も、部品に同じ値で出る。
+- 部品の側で決めた値は写さない(`classNames.popover` / `classNames.tooltip` / `classNames.dragGhost` の style や、`.ssg-menu-panel { … }` / `.ssg-tooltip { … }` のように部品だけに当てた指定がそのまま効く)。`density` の寸法も部品には写さない(部品は密度の対象外)。
+- 写すのは部品を出したとき(メニューやパネルを開いたとき、ツールチップを出すとき、ドラッグを始めたとき)と、`theme` / `motion` が変わったとき。開いたまま利用側の CSS を差し替えたときは、次に出すときに合う。
 
 - 下の表の名前が公開契約で、消す・改名する・意味を変えるのは破壊的変更。既定値(色・寸法)の調整は minor で行うことがある(CHANGELOG に書く)。
 - 表に無い `--ssg-*`(要素ごとに内部で使う変数や、`themes/*.css` の中継の `--ssg-ds-*`)は内部。

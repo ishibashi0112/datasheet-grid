@@ -168,4 +168,30 @@ const closeAll = async (page) => {
   await close();
 }
 
+// ---- getRowClassName: 行だけに効かせる書き方(ドキュメントの例)----
+//   class と style は行・「#」セル・各セルに付くので、素のクラスの opacity は 2 回掛かり、`.ssg-body-row.<class>` なら 1 回。
+{
+  const { page, close, pageErrors } = await open('basic', { query: 'n=50' });
+  await addStyle(page, '.ssg-body-row.dim-row { opacity: 0.5; } .dim-any { opacity: 0.5; }');
+  const effective = (cls) =>
+    page.evaluate(async (cls) => {
+      window.__setProps({ getRowClassName: (_row, rowIndex) => (rowIndex === 1 ? cls : undefined) });
+      await new Promise((r) => setTimeout(r, 150));
+      const product = (el) => {
+        let value = 1;
+        for (let node = el; node && node instanceof Element; node = node.parentElement) value *= Number(getComputedStyle(node).opacity);
+        return +value.toFixed(3);
+      };
+      const rows = [...document.querySelectorAll('.ssg-body-row[data-row-index="1"]')];
+      const cells = rows.flatMap((row) => [...row.querySelectorAll('.ssg-body-cell, .ssg-row-header-cell')]);
+      return { rows: rows.length, cells: cells.length, values: [...new Set(cells.map(product))] };
+    }, cls);
+  const rowOnly = await effective('dim-row');
+  check('getRowClassName: `.ssg-body-row.<class>` dims the # cell and every cell once (0.5)', rowOnly.cells > 3 && rowOnly.values.length === 1 && rowOnly.values[0] === 0.5, rowOnly);
+  const plain = await effective('dim-any');
+  check('getRowClassName: a bare class compounds (0.25), as the docs warn', plain.values.length === 1 && plain.values[0] === 0.25, plain);
+  check('getRowClassName: no unexpected page errors', unexpectedPageErrors(pageErrors).length === 0, pageErrors);
+  await close();
+}
+
 summary();

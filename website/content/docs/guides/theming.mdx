@@ -46,6 +46,12 @@ description: ダークテーマ(light / dark / auto)、密度(density)、CSS ト
 <SpreadsheetGrid className="my-grid" ... />
 ```
 
+列メニュー / 列フィルター / 右クリックメニュー / select の候補 / ツールパネル / ツールチップ / ドラッグのゴーストは `document.body` の直下に出るため、表からは継承されません。開いたときにグリッドが表の root で決まったトークンの値をそれらへ写すので、上のように表に書いたトークン(`className` / `.ssg-root { … }` / `.card .ssg-root { … }` のような祖先のセレクタ / 祖先の変数を使った値)はポップアップにも同じ色で出ます。
+
+- ポップアップだけ別の値にしたいときは、`classNames.popover` / `classNames.tooltip` の `style` か、`.ssg-menu-panel` / `.ssg-tooltip` のようにポップアップのクラスへ書きます。ポップアップの側で決めた値は写す値より優先されます。
+- 密度(`density`)の寸法はポップアップには効きません(これまでどおり)。
+- 開いたまま利用側の CSS を差し替えたときは、次に開いたときに合います。
+
 ## テーマビルダー
 
 [テーマビルダー](/theme-builder)で、アクセント / ヘッダー背景 / セル背景 / 文字色 / 罫線 / 外枠 / 角丸 / 密度 / 文字サイズを実物のグリッドで動かしながら調整できます。派生色(hover / 選択 / 読み取り専用 / パネル)は自動で埋まり、生成された CSS 変数をコピーして貼るだけです。プリセット(既定 / Mantine 風 / HeroUI 風 / 業務グレー / Excel 風 / ダーク)から始められ、状態は URL に載るのでチームで共有できます。
@@ -81,15 +87,23 @@ description: ダークテーマ(light / dark / auto)、密度(density)、CSS ト
   classNames={{
     root: 'my-grid',                                       // 文字列
     bodyCell: { className: 'tabular', style: { fontVariantNumeric: 'tabular-nums' } },
-    popover: { style: { '--ssg-accent': '#7c3aed' } },     // ポータル(body 直下)にもトークンを渡せる
+    popover: { style: { '--ssg-accent': '#7c3aed' } },     // ポップアップ(body 直下)だけ別の値にする
   }}
-  getRowClassName={(row) => (row.archived ? { style: { opacity: 0.5 } } : undefined)}
+  getRowClassName={(row) => (row.archived ? { className: 'is-archived', style: { fontStyle: 'italic' } } : undefined)}
 />
+```
+
+```css
+/* 行を薄くするときは行のクラスにつなぐ(行だけに 1 回効く) */
+.ssg-body-row.is-archived {
+  opacity: 0.5;
+}
 ```
 
 - グリッドが位置決めに使う座標 / 寸法(`left` / `top` / `width` / `height` / `transform` 等)はグリッド側が後勝ちで上書きするため、スロットの `style` でレイアウトは壊せません。
 - グリッドの高さは `style` ではなく `height` prop で指定します(ルートの `style={{ height }}` だけではスクロール領域の高さが決まらず、バーが切れることがあります)。詳しくは [サイズ(高さ)](/docs/guides/sizing) を参照してください。
 - インライン style は状態クラス(選択 / ホバー等の背景)にも勝ちます。状態で切り替えたい装飾は className 側で行ってください。
+- `getRowClassName` のクラスと `style` は、行(`.ssg-body-row`)・「#」セル・各セルのすべてに付きます。`opacity` / `filter` のように重なると強くなる指定を `style` で返したり、`.is-archived { opacity: 0.5 }` のようにクラスだけで書いたりすると、行と各セルで 2 回掛かって 0.25 になります。上の例のように `.ssg-body-row.is-archived` で行だけに当ててください。背景色はセルが持つので `.ssg-body-cell.is-archived` に書きます。
 - `classNames` はレンダー毎に新しいオブジェクトを渡して構いません(内容の署名で memo され、行 / ヘッダーの再レンダーは増えません)。
 - `tooltip` / `dragGhost` は命令的 DOM のため、style の数値に単位は付きません(`'12px'` のように文字列で)。
 

@@ -59,6 +59,7 @@ export function Inventory() {
 - **高さは `height` prop。** `'100%'` は上下のバーを含む全体の高さで、親に確定した高さが要ります。数値はスクロール領域だけの高さです。`height` も `maxHeight` も指定しないと、スクロール領域は 480px が上限です。ルートの `style.height` では決めません。
 - **命令的 API。** `ref` を渡すと `SpreadsheetGridHandle<T>` が入ります(利用側で `forwardRef` は要りません。React 18.3 / 19 のどちらでも同じ)。
 - **Next.js App Router。** グリッドは `'use client'` のファイルから描画します。
+- **行のクラスは行と各セルの両方に付く。** `getRowClassName` の class と style は行・「#」セル・各セルに付きます。行を薄くするなら class を返して `.ssg-body-row.<class> { opacity: 0.5 }` と書きます(style や素のクラスで `opacity` を書くと 2 回掛かります)。
 
 ## 4. 入口の選び方
 
