@@ -263,4 +263,39 @@ for (const key of ['category', 'date', 'name']) {
   await close();
 }
 
+// ---- DD-25: custom エディタの中身はクリックを受ける(枠の pointer-events: none を継承して下のセルに当たっていた) ----
+{
+  const { page, close } = await open('basic');
+  await cell(page, 1, 'custom').dblclick();
+  await waitIdle(page, 200);
+  const hit = async () =>
+    page.evaluate(() => {
+      const el = document.querySelector('[data-testid="custom-editor"]');
+      if (!el) return null;
+      const b = el.getBoundingClientRect();
+      return document.elementFromPoint(b.x + b.width / 2, b.y + b.height / 2) === el;
+    });
+  check('DD-25 the custom editor receives clicks', (await hit()) === true, await hit());
+  const editor = page.locator('[data-testid="custom-editor"]');
+  await editor.fill('');
+  await page.keyboard.type('ab');
+  await editor.click();
+  await page.keyboard.press('Home');
+  await page.keyboard.type('X');
+  await page.keyboard.press('Enter');
+  await waitIdle(page, 200);
+  const value = await page.evaluate(() => window.__rows()[1].custom);
+  check('DD-25 clicking inside the custom editor keeps editing (caret moves, value commits)', value === 'Xab', value);
+  // 組み込みのエディタの吹き出しは今までどおりクリックを受けない(入力欄はそのまま受ける)。
+  await cell(page, 2, 'name').dblclick();
+  await waitIdle(page, 150);
+  const builtIn = await page.evaluate(() => {
+    const input = document.querySelector('.ssg-cell-editor-input');
+    return input ? getComputedStyle(input).pointerEvents : null;
+  });
+  check('DD-25 the built-in editor input still receives clicks', builtIn === 'auto', builtIn);
+  await page.keyboard.press('Escape');
+  await close();
+}
+
 summary();

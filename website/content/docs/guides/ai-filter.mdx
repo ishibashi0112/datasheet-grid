@@ -206,7 +206,7 @@ AI が入れられる条件は、**その列のフィルター画面で手で入
 
 色はグリッドと同じトークン(`--ssg-*`)で決まり、`themes/*.css` もバーに効きます。バーはグリッドの外にあるので、トークンを上書きしているときは `.ssg-root, .ssg-ask { --ssg-accent: … }` のように `.ssg-ask` も並べてください。ダークにするときはグリッドと同じ `theme` を渡します。
 
-自分の見た目で作るときは `useGridAsk` が状態とふるまい(`status` / `session` / `submit` / `cancel` / `undo` / `remove`)だけを返します。頼みの組み立て(`createGridAskRequest`)と答えの検査(`readGridAskAnswer`)は React に依存しない関数で、`@ishibashi0112/spreadsheet-grid-core` からも使えます。それらで反映するときは、隠した列が変わらなければ `columns` を外して `applyState` に渡してください(`isGridAskColumnsChanged`。そのまま渡すと、聞いている間に手で隠した列が戻ることがあります)。詳しくは [API リファレンス](/docs/api/ai) を見てください。
+自分の見た目で作るときは `useGridAsk` が状態とふるまい(`status` / `session` / `submit` / `cancel` / `undo` / `remove`)だけを返します。二重の送信は `submit` が防ぎますが、IME の変換を確定する Enter で送らない・聞いている間の `Esc` で止める・失敗したときに送った文で送り直す・答えを読めたら入力欄を空にする、はバーと同じにするなら自分で書きます([API リファレンス](/docs/api/ai)に書き方)。頼みの組み立て(`createGridAskRequest`)と答えの検査(`readGridAskAnswer`)は React に依存しない関数で、`@ishibashi0112/spreadsheet-grid-core` からも使えます。それらで反映するときは、隠した列が変わらなければ `columns` を外して `applyState` に渡してください(`isGridAskColumnsChanged`。そのまま渡すと、聞いている間に手で隠した列が戻ることがあります)。詳しくは [API リファレンス](/docs/api/ai) を見てください。
 
 ## AI のモデルの選び方
 

@@ -1394,6 +1394,12 @@
     pointer-events: none;
     z-index: 5;
   }
+  /* 追加(dogfood DD-25): custom エディタの中身はクリックを受けます(枠の pointer-events: none を継承して、中身の
+     ボタンや入力欄を押しても下のセルに当たっていた)。:where で特異度 0 なので、組み込みのエディタ(入力欄 = auto /
+     エラーの吹き出し = none)や利用側のクラスの指定がそのまま勝ちます。 */
+  :where(.ssg-cell-editor) > * {
+    pointer-events: auto;
+  }
   .ssg-cell-editor-input {
     width: 100%;
     height: 100%;

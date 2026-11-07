@@ -17,8 +17,8 @@ description: SpreadsheetGridProps<T> の全 prop と既定値
 | `onColumnsChange` | `(nextColumns: GridColumn<T>[]) => void` | — | 列が変化したとき呼ばれる。列メニューの固定切替はこれが指定されている場合のみ反映。列の並べ替え(ヘッダーのドラッグ / 列パネル)と `applyState` で渡る `nextColumns` は、配列順が固定列ごと(左固定 → 中央 → 右固定)に並べ直される(画面上の列順は変わらない。例: 右固定列の後ろに宣言した列があると、右固定列が配列の末尾へ移る)。列メニューの固定切替は配列順を変えず `pinned` だけを更新する。 |
 | `rowKeyGetter` | `(row: T, index: number) => GridRowKey` | index ベース | 安定した行キーを返す。 |
 | `isRowExportable` | `(row: T, ctx: { viewRowIndex: number; rowKey: GridRowKey }) => boolean` | 全行 true | コピー(`Ctrl/Cmd+C` の TSV)/ `exportCsv` / `getExportData` の対象行フィルタ。`false` の行は出力から**行ごと**除く(行単位のみ。全体選択かの判定と貼り付けには影響しない)。`ctx.viewRowIndex` はフィルター / ソート適用後のビュー行 index(scope `'raw'` のみ rows 配列のソース index)、`ctx.rowKey` は `rowKeyGetter` の値。用途: プレースホルダ行など表示上の詰め物を出力から除く。 |
-| `createRow` | `() => T` | — | 行追加時に使う新規行ファクトリ。 |
-| `createOverflowColumn` | `(columnIndex: number) => GridColumn<T>` | — | 列追加時に使う列ファクトリ。 |
+| `createRow` | `() => T` | — | 貼り付けが表の末尾より下へはみ出したとき、足りない行を作る新規行ファクトリ(はみ出した行数だけ呼ぶ)。グリッドが行を足すのはこのときだけで、無ければはみ出した分は捨てる。ボタンなどで行を足すときは、利用側が `rows` に行を足す(グリッドは `createRow` を呼ばない。serverSide では使わない)。 |
+| `createOverflowColumn` | `(columnIndex: number) => GridColumn<T>` | — | 貼り付けが右端の列よりはみ出したとき、足りない列を作る列ファクトリ(`onColumnsChange` と一緒に使う)。 |
 | `rowHeight` | `number` | density 依存(standard: `36`) | uniform 行の行高(px)。未指定時は density プリセット(compact: `28` / comfortable: `44`)から解決。明示指定が常に優先。 |
 | `autoHeight` | `boolean` | `false` | auto-height 行(可変行高)を有効化する**大本のスイッチ**。これに加えて**少なくとも1列に `column.autoHeight: true`** が必要(その列が折り返して行高を駆動)。両方 true かつ**行数 ≤ 50,000**のとき有効(超過時は uniform `rowHeight` へフォールバック)。詳細は「auto-height 行」節。 |
 | `estimateRowHeight` | `number` | `rowHeight` | 未測定行の推定行高(px)。 |
@@ -553,7 +553,7 @@ const [rows, setRows] = useState(initialRows);
 />
 ```
 
-- **操作**: ハンドルを押して上下へドラッグすると、挿入位置に水平のガイド線が出ます。ドロップで確定し、影響行が新しい位置へスライドします(`prefers-reduced-motion` では即時)。グリッドの枠外で離す / `Escape` でキャンセルします。上下端に近づくと自動スクロールします(仮想化された画面外の行へも運べます)。
+- **操作**: ハンドルを押して上下へドラッグすると、挿入位置に水平のガイド線が出ます。ドロップで確定し、影響行が新しい位置へスライドします(`prefers-reduced-motion` では即時)。`Escape` / ドラッグ中にウィンドウからフォーカスが外れるとキャンセルします。グリッドの枠外で離したときは、既定の `'ghost'` はキャンセル、`rowDragMotion: 'live'` は直前に見えていた位置へ確定します。上下端に近づくと自動スクロールします(仮想化された画面外の行へも運べます)。
 - **ゴースト**: ドラッグ中はポインタ追従のピルに、先頭の(合成列でない)表示列の表示値(`valueFormatter` 適用後)を出します。空なら「行 N」。
 - **データ契約**: 確定時は「1 要素を移動した新配列」(未変更行は参照共有)を `onRowsChange` に渡し、その直後に `onRowMove` を呼びます。掴んだ行の直上 / 直下(動かない位置)で離した場合はどちらも呼ばれません。履歴ラッパ経由のため `Ctrl/Cmd+Z` / `undo()` で戻せます。
 - **有効条件**: clientSide(`rows` + `onRowsChange`)専用です。`dataSource`(serverSide)/ 行グルーピング中 / `onRowsChange` 未指定ではハンドル列を挿入しません。`readOnly` は関係しません(並び替えはセル編集ではないため)。読み取り専用時に並べ替えも止めたい場合は `enableRowDrag={!readOnly}` を渡します。
@@ -861,6 +861,7 @@ function Grid(props: SpreadsheetGridProps<Row>) {
 
 見た目を変える主な手段。`style.css` が `.ssg-root` と各ポータル(ポップオーバー / メニュー / ドラッグのゴースト / ツールチップ)と `GridAskBar` の `.ssg-ask` に `:where`(特異度 0)で定義しているため、利用側の上書きは読み込み順に関係なく既定値・ダークのプリセット(`.ssg-theme-dark`)・`themes/*.css` に勝つ。
 
+- ポータル(ポップオーバー / ツールチップ / ドラッグのゴースト)は `document.body` 直下にあるので、`className` で付けたクラスに書いた上書きは届かない。同じクラスを `classNames` の `popover` / `tooltip` / `dragGhost` にも渡す(または `:root` に書く)。
 - 下の表の名前が公開契約で、消す・改名する・意味を変えるのは破壊的変更。既定値(色・寸法)の調整は minor で行うことがある(CHANGELOG に書く)。
 - 表に無い `--ssg-*`(要素ごとに内部で使う変数や、`themes/*.css` の中継の `--ssg-ds-*`)は内部。
 - `style.css` にトークンを足したらこの表にも足す(`packages/react/src/cssContract.test.ts` が検査する)。

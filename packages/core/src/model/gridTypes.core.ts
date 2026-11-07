@@ -1228,7 +1228,9 @@ export type GridColumn<T, F extends GridFrameworkTypes = GridFrameworkTypes> = {
    */
   aggFunc?: GridAggFuncName | GridAggFunc<T, F>;
   /**
-   * 値アクセサ。
+   * 値アクセサ。`setValue` の無い列へ書き込むと値は `row[key]` へ入り、表示(`getValue`)
+   * は変わらない。計算列は `editable: false` にするか `setValue` を渡す(開発時は、
+   * 行に無いプロパティを足した列ごとに 1 回 console.warn)。
    *
    * @defaultValue `row[key]`
    */
@@ -2766,9 +2768,18 @@ export type SpreadsheetGridProps<T, F extends GridFrameworkTypes = GridFramework
     row: T,
     ctx: { viewRowIndex: number; rowKey: GridRowKey },
   ) => boolean;
-  /** 行追加時に使う新規行ファクトリ。 */
+  /**
+   * 貼り付けが表の末尾より下へはみ出したとき、
+   * 足りない行を作る新規行ファクトリ(はみ出した行数だけ呼ぶ)。
+   * グリッドが行を足すのはこのときだけで、無ければはみ出した分は捨てる。
+   * ボタンなどで行を足すときは、利用側が `rows` に行を足す(グリッドは `createRow` を呼ばない。
+   * serverSide では使わない)。
+   */
   createRow?: () => T;
-  /** 列追加時に使う列ファクトリ。 */
+  /**
+   * 貼り付けが右端の列よりはみ出したとき、足りない列を作る列ファクトリ(`onColumnsChange`
+   * と一緒に使う)。
+   */
   createOverflowColumn?: (columnIndex: number) => GridColumn<T, F>;
   // 変更(THEME-2): 未指定時の既定は density プリセットから解決します(standard: 36 /
   //   compact: 28 / comfortable: 44)。明示指定はプリセットより常に優先されます。

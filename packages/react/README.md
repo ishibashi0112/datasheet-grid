@@ -14,8 +14,9 @@ Peer dependencies: `react` / `react-dom` `^18.3.0 || ^19.0.0` (React 18 is suppo
 
 ```ts
 import '@ishibashi0112/spreadsheet-grid/style.css'
-// or, if you use CSS cascade layers (e.g. Tailwind v4): '@ishibashi0112/spreadsheet-grid/style.layer.css'
 ```
+
+`style.css` also works as is with Tailwind CSS v4. The cascade-layer variant `style.layer.css` (everything inside `@layer ssg-base`) is only for when you want the grid inside your layer order, and then you must declare that order in your CSS before Tailwind — `@layer theme, base, ssg-base, components, utilities;` — otherwise `ssg-base` becomes the weakest layer and Tailwind's preflight breaks the borders, buttons and popovers ([details](https://datasheet-grid.vercel.app/docs/installation)). The same goes for StyleX with `useLayers`.
 
 Using Astryx, Mantine, HeroUI v3 or shadcn/ui? Also import its theme after `style.css` (`themes/astryx.css` / `themes/mantine.css` / `themes/heroui.css` / `themes/shadcn.css`) so the grid follows your design system's colors and light / dark ([guide](https://datasheet-grid.vercel.app/docs/guides/design-systems)).
 
@@ -116,6 +117,8 @@ MIT
 React 18.3 / 19 向けの仮想化スプレッドシート / データグリッドです(約 100 万行・列固定・Excel ライクな編集 / 選択 / クリップボード・フィルター / ソート・クライアントサイド / サーバーサイド行モデル)。
 
 **[ドキュメントとライブデモ](https://datasheet-grid.vercel.app)** · [プレイグラウンド](https://datasheet-grid.vercel.app/playground) · [StackBlitz で試す](https://stackblitz.com/fork/github/ishibashi0112/datasheet-grid/tree/main/examples/basic?file=src/App.tsx&terminal=dev) · [GitHub](https://github.com/ishibashi0112/datasheet-grid) · [変更履歴](https://github.com/ishibashi0112/datasheet-grid/blob/main/CHANGELOG.md)
+
+CSS は `import '@ishibashi0112/spreadsheet-grid/style.css'` を 1 回読み込みます。Tailwind CSS v4 でも `style.css` でそのまま動きます。カスケードレイヤー版の `style.layer.css`(全体が `@layer ssg-base`)は、グリッドを自分のレイヤー順に入れたいときだけ使い、そのときは CSS で Tailwind より前に `@layer theme, base, ssg-base, components, utilities;` とレイヤー順を宣言してください(宣言しないと `ssg-base` が一番弱いレイヤーになり、Tailwind の Preflight に罫線・ボタン・ポップオーバーが崩されます。[詳しく](https://datasheet-grid.vercel.app/docs/installation))。StyleX の `useLayers` を使うときも同じです。
 
 Astryx / Mantine / HeroUI v3 / shadcn/ui の中で使うときは、`style.css` の後にそれぞれのテーマ(`themes/astryx.css` / `themes/mantine.css` / `themes/heroui.css` / `themes/shadcn.css`)を読み込むと、配色がデザインシステムのテーマとライト / ダークに揃います([ガイド](https://datasheet-grid.vercel.app/docs/guides/design-systems))。
 

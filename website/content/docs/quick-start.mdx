@@ -66,4 +66,18 @@ import { SpreadsheetGrid } from '@ishibashi0112/spreadsheet-grid'
 import '@ishibashi0112/spreadsheet-grid/style.css'
 ```
 
-サーバーレンダリング(SSR / SSG)にも対応しています。`theme="auto"` の場合、サーバーでは light として描画され、ハイドレーション後にクライアントの配色設定へ追従します。
+関数(`valueFormatter` / `renderCell` / `validate` / `getValue` など)を含む列定義は、`'use client'` のファイルに置きます。サーバーコンポーネントで作ってグリッドへ渡すと、関数はクライアントへ渡せないためページがエラー(500)になります。行のデータ(関数を含まない値)はサーバーで作って props で渡せます。
+
+```tsx
+// app/projects/columns.tsx
+'use client'
+
+import type { GridColumn } from '@ishibashi0112/spreadsheet-grid'
+import type { Project } from './types'
+
+export const columns: GridColumn<Project>[] = [
+  { key: 'budget', title: '予算', valueFormatter: ({ value }) => `${Number(value).toLocaleString()} 円` },
+]
+```
+
+サーバーレンダリング(SSR / SSG)でもエラーや警告なく描けますが、サーバーで描く HTML は表の骨組みです: 行番号と固定した列(`pinned`)のセルだけで、固定していない列(横の仮想化の対象)はハイドレーションの後に描きます(固定列の無い表は、ハイドレーションまで行番号だけの表です)。JavaScript が動かない環境では表の中身は出ません。`theme="auto"` の場合、サーバーでは light として描画され、ハイドレーション後にクライアントの配色設定へ追従します。

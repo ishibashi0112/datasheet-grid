@@ -132,6 +132,14 @@ export async function POST(req: Request) {
 | `session` | 最後の頼みの結果 `{ phase: 'applied' \| 'unchanged' \| 'undone' \| 'changed', text, items, dropped, unsupported }`(`items` はチップ `{ id, label, text }[]`。`'changed'` は反映したあと表が手で変わったとき。チップは古いので外す・元に戻すはできず、`notice` に知らせが入る) |
 | `submit(text)` / `cancel()` / `undo()` / `remove(id)` / `dismiss()` | 聞いて反映する / 止める / 元に戻す / チップを外す / 結果を閉じる。`submit` は答えを読めたら(反映した / 変える条件が無かった)`true`、失敗・止めた・聞かなかったときは `false` で終わる(送った後に入力欄を空にするかの判断に) |
 
+自分の UI を作るときは、`GridAskBar` がしている次のことを自分で書く:
+
+- **二重の送信**: 聞いている間の `submit` は何もせず `false` を返すので、二重には送られない。「聞く」と「止める」を同じボタンにするときは、ダブルクリックの 2 回目(`event.detail > 1`)を無視する(止めた直後に同じ文を送り直さないため)。
+- **IME**: 変換を確定する Enter で送らない(`event.nativeEvent.isComposing` か `event.keyCode === 229` の Enter は `preventDefault()`。Safari は確定の keydown が `isComposing: false` / `keyCode: 229` で届く)。
+- **Esc**: 聞いている間の `Esc` で `cancel()` する(バーは、フォーカスがバーの中にあるか、どこにも無いときだけ止める。変換中の `Esc` は除く)。
+- **もう一度**: 失敗したとき(`error`)に送り直すなら、送った文を自分で持っておいて `submit` する(`error` は失敗の文だけで、送った文は持たない)。
+- **入力欄**: 答えを読めたら(`submit` が `true`)入力欄を空にする。失敗したときは残す(直して送れるように)。
+
 頼みの組み立てと答えの検査は React に依存しない core の関数(`@ishibashi0112/spreadsheet-grid-core` の入口と、`/ai` から再エクスポート)。サーバー側で頼みを組み立て直したり、ほかのフレームワークで使える。
 
 | 関数 | 説明 |

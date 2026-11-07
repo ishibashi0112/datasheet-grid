@@ -21,6 +21,7 @@
 - `/ai` から `isGridAskColumnsChanged` / `isSameGridAskView` を出しました(core からは出ていました)。core の関数で反映するときに、隠した列が変わらなければ `columns` を外して `applyState` に渡すために使います(そのまま渡すと、聞いている間に手で隠した列が戻ることがありました。ドキュメントに例を足しました)。
 - `useGridAsk` の `submit` が、答えを読めたら `true`、失敗・止めた・聞かなかったときは `false` で終わるようにしました(これまでは値なし)。`session.phase` に `'changed'`(反映したあと表が手で変わった)を足しました。
 - `GridAskBar` / `useGridAsk` の `columnHints` に列に無いキー(打ち間違い)があると、開発時に console へ警告するようにしました(`false` で隠したつもりの列が AI に送られていました)。
+- `getValue` だけで `setValue` の無い列(計算列)へ書き込み、行に無いプロパティ `row[key]` が足されるときに、開発時に列ごとに 1 回 console へ警告するようにしました(表示は `getValue` のままで変わらないため。編集させないなら `editable: false`、書き戻すなら `setValue`)。
 
 ### 挙動の変化
 
@@ -61,6 +62,7 @@
 - 編集中に外からの更新で行の並びが変わったとき、`onActiveCellChange` が「同じ位置に来た別の行 → 編集中の行」と 2 回呼ばれていたのを直しました。付いていった後の編集中の行だけを 1 回通知します。
 - `const f = numberFormatter()` のように型引数なしで作ったフォーマッタを `GridColumn<Row>` の `valueFormatter` に渡すと型エラーになっていたのを直しました(行の型の違う列でも使い回せます。`numberFormatter<Row>()` はこれまでどおりです)。
 - SSRM の書き戻しで、保存中のセルをスクロールで画面の外へ出して戻すと、保存中の印(`showSaveStatus`)が消えていたのを直しました。
+- custom エディタ(`editor: { type: 'custom' }`)の中身がクリックを受けず、ボタンや入力欄を押しても下のセルに当たっていたのを直しました(枠の `pointer-events: none` を中身が継承していた。中身の要素へ特異度 0 で `pointer-events: auto` を当てるので、利用側のクラスの指定はそのまま勝ちます)。
 
 ## 0.61.0 — 2026-11-06
 

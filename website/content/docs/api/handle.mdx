@@ -5,7 +5,7 @@ description: SpreadsheetGridHandle<T> のメソッド一覧
 
 ## 命令的 API(ref ハンドル / `SpreadsheetGridHandle<T>`)
 
-状態(列幅・可視・sort・filter 等)は controlled のまま、**prop では表現しづらい一発操作**だけを ref ハンドルで提供する。`ref` prop で受け取る(利用側で `forwardRef` は不要。React 19 は ref-as-prop のまま、React 18.3 ではグリッドが内部で `forwardRef` に包むので、どちらも同じ書き方)。
+状態(列幅・可視・sort・filter 等)は controlled のまま、**prop では表現しづらい一発操作**だけを ref ハンドルで提供する。`ref` prop で受け取る(利用側で `forwardRef` は不要。React 19 は ref-as-prop のまま、React 18.3 ではグリッドが内部で `forwardRef` に包むので、どちらも同じ書き方)。ただし、グリッドを自分の関数コンポーネントで包んで(`function Grid(props) { return <SpreadsheetGrid {...props} /> }`)その包んだ側へ `ref` を渡すときは、React 18 では包む側を `forwardRef` にする(React 18 では `ref` が props として届かない。`SpreadsheetGridProps` に `ref` があるので型は通る)。
 
 ```tsx
 import { useRef } from 'react';

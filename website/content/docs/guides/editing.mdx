@@ -3,7 +3,9 @@ title: セル編集とバリデーション
 description: エディタ種別(text / number / select / date / checkbox / custom)と validate(mark / reject)
 ---
 
-`column.editable: true` で列の編集を許可し、`column.editor` でエディタ種別を指定します(未指定 = `text`)。値の検証は `column.validate` で行い、`validationMode` で NG 時の動作(`'mark'` = 入るが表示で警告 / `'reject'` = 書き込み拒否)を選べます。
+列は既定で編集できます(`editable` を省略 = 編集可。止めるときは列の `editable: false` か `readOnly: true`、グリッド全体は `readOnly`、セル単位は `canEditCell`)。`column.editor` でエディタ種別を指定します(未指定 = `text`)。値の検証は `column.validate` で行い、`validationMode` で NG 時の動作(`'mark'` = 入るが表示で警告 / `'reject'` = 書き込み拒否)を選べます。
+
+`getValue` だけで `setValue` の無い列(計算列)も既定では編集でき、確定した値は行の `row[key]` に足されるだけで表示(`getValue`)は変わりません。計算列は `editable: false` にするか、`setValue` で元の項目へ書き戻してください(開発時は、行に無いプロパティを足した列ごとに 1 回 console.warn で知らせます)。
 
 ## デモ
 
@@ -36,7 +38,7 @@ const columns: GridColumn<Row>[] = [
 
 `number` / `date` / `checkbox` には既定の「文字列 → 値」パーサが付き、**貼り付け / Delete クリア / エディタ確定で共通**に効きます(例: number 列を Delete でクリアすると `null` になる)。number 列は全角の数字・符号・小数点と 3 桁区切りも数値として読みます(`１，２３４` や Excel の `1,234` を貼り付けると `1234`)。セルを選んで `-5` や `.5` のようにマイナス / 小数点から打ち始めても、そのまま数値(`-5` / `0.5`)になります。明示の `parseClipboardValue` は常に優先されます。
 
-独自 UI で編集したい場合は `{ type: 'custom', render: (ctx) => <MyEditor ... /> }` を使います。`ctx.commit(value)` / `ctx.cancel()` で確定・キャンセルします。編集が終わった後(確定 / 取消 / 別のセルの編集が始まった後)に呼んだ前の編集の `ctx.commit` / `ctx.cancel` は何もしません(`ctx.commit` は `{ status: 'noop' }` を返します)。
+独自 UI で編集したい場合は `{ type: 'custom', render: (ctx) => <MyEditor ... /> }` を使います。返した要素は編集中のセルと同じ大きさの透明な枠の中に描くので、根の要素に `width: 100%` / `height: 100%` と背景色を付けてください([列の API の注意点](/docs/api/column))。`ctx.commit(value)` / `ctx.cancel()` で確定・キャンセルします。編集が終わった後(確定 / 取消 / 別のセルの編集が始まった後)に呼んだ前の編集の `ctx.commit` / `ctx.cancel` は何もしません(`ctx.commit` は `{ status: 'noop' }` を返します)。
 
 ## Enter 確定後の移動先(`editorEnterMove`)
 

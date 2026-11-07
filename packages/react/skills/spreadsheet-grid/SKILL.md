@@ -51,7 +51,7 @@ export function Inventory() {
 
 ## 3. 間違えやすいこと
 
-- **CSS を読み込む。** `import '@ishibashi0112/spreadsheet-grid/style.css'`。カスケードレイヤーを使う構成(Tailwind v4 など)では `style.layer.css`。無いとスタイルが当たらず、スクロールもしません。
+- **CSS を読み込む。** `import '@ishibashi0112/spreadsheet-grid/style.css'`。無いとスタイルが当たらず、スクロールもしません。Tailwind v4 でも `style.css` のままで動きます。レイヤー版の `style.layer.css`(全体が `@layer ssg-base`)を使うときは、CSS で Tailwind より前に `@layer theme, base, ssg-base, components, utilities;` とレイヤー順を宣言します(宣言しないと `ssg-base` が一番弱いレイヤーになり、Preflight に罫線・ボタン・ポップオーバーが崩されます)。
 - **状態は controlled。** 編集結果は `onRowsChange` が新しい配列で返します。その配列をそのまま `rows` へ戻します(`map` などで作り直すと undo の履歴が消えます)。
 - **行キー。** `rowKeyGetter` で安定したキーを返します(既定は行 index)。
 - **列の `width` は型の上で必須。** 伸縮させる列は `flex` も足します。列は既定で編集できます。止めるときは列の `editable: false` か `readOnly`、セルごとなら `canEditCell`、全体ならグリッドの `readOnly`。

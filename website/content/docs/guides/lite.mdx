@@ -56,12 +56,56 @@ const Grid = createSpreadsheetGrid({
 });
 ```
 
+機能の組み合わせを変数にして export するとき(社内の共通部品のパッケージなどで `declaration: true` のとき)は、型 `GridFeatures` を注釈してください。注釈しないと推論された型が公開していない内部の型を指し、型の宣言(d.ts)を出すときに TS2742 になります。
+
+```tsx
+import type { GridFeatures } from '@ishibashi0112/spreadsheet-grid/lite';
+
+export const companyFeatures: GridFeatures = { ...standardFeatures, find: findFeature };
+```
+
 - `standardFeatures` は、列フィルター / グローバルフィルター(`filtering`)、列メニュー(`columnMenu`)、ツールパネル(`toolPanel`)、列幅の自動調整(`columnAutosize`)、エクスポート(`export`)です。
-- 列メニューが無いと、画面からソートする入口がありません(ソートは `applyState` 等の API からになります)。ソートを画面で使うなら `columnMenu` を入れてください。
+- 列見出しからソートする入口は列メニューです。列メニューが無いときに画面からソートできるのは、ツールパネル(`toolPanel`)の「並び替え」タブだけです(どちらも無いと `applyState` 等の API からになります)。
 - 列フィルターを画面から掛ける入口は列メニューの「フィルター…」です。`filtering` だけでは検索欄しか使えないので、列フィルターも使うなら `columnMenu` も入れてください。
 - ツールパネル(`toolPanel`)は列メニューの項目や適用中フィルターのチップから開きます。`columnMenu` か `filtering` と一緒に入れてください(どちらも無いと開く入口が無いので何もしません)。
 - 列メニューの「幅の自動調整」は `columnAutosize` を入れたときだけ出ます。
 - 全部入りで既定オンの機能(列フィルター・列メニュー・列のドラッグ・選択範囲の集計・コピー範囲の点線など)は、`/lite` では入れたときだけ既定オンになります。
+
+## 全部入りから移るとき
+
+全部入りでは prop を書かずに使える機能があり、`/lite` では入れないと消えます。prop を渡していないので開発時の警告も出ません。全部入りと同じ既定の動きにするには、次の表の機能をすべて入れます。
+
+| 全部入りで prop を書かずに使える機能 | キー | `standardFeatures` |
+| --- | --- | --- |
+| 列フィルター / グローバルフィルター | `filtering` | 入っている |
+| 列メニュー | `columnMenu` | 入っている |
+| ツールパネル(列メニューの項目から開く) | `toolPanel` | 入っている |
+| 列の境界のダブルクリックでの幅の自動調整 | `columnAutosize` | 入っている |
+| 列見出しのドラッグでの並べ替え(`onColumnsChange` を渡したとき) | `columnReorder` | 入っていない |
+| 選択範囲の集計(下部バー) | `selectionAggregates` | 入っていない |
+| コピー範囲の点線(`Ctrl/Cmd+C` のあと) | `motionExtras` | 入っていない |
+
+```tsx
+import {
+  createSpreadsheetGrid,
+  standardFeatures,
+  columnReorderFeature,
+  selectionAggregatesFeature,
+  motionExtrasFeature,
+  type GridFeatures,
+} from '@ishibashi0112/spreadsheet-grid/lite';
+
+// 全部入りと同じ既定の動き(ここから使わない機能を外す)
+const features: GridFeatures = {
+  ...standardFeatures,
+  columnReorder: columnReorderFeature,
+  selectionAggregates: selectionAggregatesFeature,
+  motionExtras: motionExtrasFeature,
+};
+const Grid = createSpreadsheetGrid({ features });
+```
+
+ほかの機能(検索・フィルハンドル・行ドラッグ・SSRM など)は prop を渡したときだけ動くので、渡している prop があれば開発時の警告が足す機能を名指しします。
 
 ## 入れていない機能を使おうとしたとき
 
