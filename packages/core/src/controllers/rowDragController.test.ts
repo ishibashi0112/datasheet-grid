@@ -309,6 +309,44 @@ describe('rowDragController', () => {
     }
   });
 
+  // 追加(アプリの再確認): live 方式で展開中の行(行 10px + 帯 30px)を下へ引くと、空く隙間が掴んだ行 + 帯と重なるよう、
+  //   帯の高さぶん下の位置でスロットを決める(ポインタの位置で決めると隙間が帯の高さぶん上にずれ、間の行が帯の裏に
+  //   隠れていた)。上へ引くとき・ゴースト方式はポインタの位置のまま。
+  it("motion='live': 展開中の行を下へ引くと、帯の高さぶん下の位置でスロットを決める", () => {
+    // 行 1 だけ帯 30px。行の上端: 0, 10, 50, 60, 70, 80, ...(全高 130)。
+    const detail = (index: number) => (index === 1 ? 30 : 0);
+    const top = (index: number) => index * 10 + (index > 1 ? 30 : 0);
+    const rowMetrics = {
+      rowCount: 10,
+      rowTop: top,
+      rowsHeight: (start: number, end: number) => top(end + 1) - top(start),
+      totalBodyHeight: top(10),
+      rowAtContentY: (y: number) => {
+        for (let i = 9; i >= 0; i -= 1) if (y >= top(i)) return i;
+        return 0;
+      },
+      cellHeight: () => 10,
+      detailHeight: detail,
+    };
+    for (const motion of ['live', 'ghost'] as const) {
+      const controller = createRowDragController();
+      const { args, commitRowMove } = makeArgs();
+      controller.update({ ...args, motion, rowMetrics });
+      // 行 1 を y=15 で掴み、y=57(行 2 の下半分)へ。live は帯の下端の位置 y=87(行 5 の下半分)→ 行 5 の後ろ = 5。
+      controller.onRowDragHandlePointerDown(1, handleEvent({ clientY: 15 }));
+      dispatchPointer('pointermove', 1, 20, 57);
+      dispatchPointer('pointerup', 1, 20, 57);
+      expect(commitRowMove).toHaveBeenLastCalledWith(1, motion === 'live' ? 5 : 2);
+      // 上へ引くときはポインタの位置のまま(y=3 → 先頭)。
+      controller.onRowDragHandlePointerDown(1, handleEvent({ clientY: 15 }));
+      dispatchPointer('pointermove', 1, 20, 3);
+      dispatchPointer('pointerup', 1, 20, 3);
+      expect(commitRowMove).toHaveBeenLastCalledWith(1, 0);
+      controller.dispose();
+      document.body.innerHTML = '';
+    }
+  });
+
   // 追加(見直し): 合計行(footerHeight)の上で離しても、合計行の裏に隠れた位置へは落とさない。
   it('footerHeight があると、合計行の上のポインタは本体の見えている最後の位置として扱う', () => {
     const controller = createRowDragController();

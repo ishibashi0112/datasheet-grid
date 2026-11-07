@@ -425,7 +425,18 @@ export const createRowDragController = (): RowDragController => {
     const physicalY = centerEl.scrollTop + hitClientY - centerRect.top - headerHeight;
     const d = containerEl.scrollTop * (1 - verticalScaleFactor);
     const logicalY = physicalY - d;
-    const slot = resolveRowDropSlot(logicalY, rowMetrics);
+    let slot = resolveRowDropSlot(logicalY, rowMetrics);
+    // 追加(アプリの再確認): live 方式で展開中の行(行 + 帯)を下へ引くときは、帯の高さぶん下の位置でスロットを決めます。
+    //   ポインタは掴んだ行の上の方にあるので、ポインタの位置で決めると、空く隙間が掴んだ行 + 帯より帯の高さぶん上に
+    //   ずれ、間の行が帯の裏に隠れていました(上へ引くとき・帯の無い行・ゴースト方式は従来どおり)。
+    const from = draggingIndex;
+    const detailExtra = from !== null && isLive() ? rowMetrics.detailHeight(from) : 0;
+    if (from !== null && detailExtra > 0) {
+      const downSlot = resolveRowDropSlot(logicalY + detailExtra, rowMetrics);
+      if (downSlot > from + 1) {
+        slot = downSlot;
+      }
+    }
     const slotTop = resolveRowDropSlotTop(slot, rowMetrics);
     return { slot, top: headerHeight + slotTop - windowBaseOffsetPx };
   };

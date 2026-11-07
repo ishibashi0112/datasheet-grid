@@ -3141,6 +3141,16 @@ export function useGridShell<T extends object>({
     },
     [isServerSide, rows, resolvedRowKeyGetter, commitRowMove],
   );
+  // 追加(アプリの再確認): ドラッグで離したときは、行のホバーを外します。ドラッグ中はポインタを掴んだハンドルが受けるので
+  //   ホバーは掴んだ行の位置(view index)のまま残り、離した後はそこへ来た別の行に印が付いていました(次にポインタが
+  //   別のセルへ入ると付き直す)。命令的 API の moveRow はポインタと関係ないので外しません。
+  const commitRowMoveFromDrag = useCallback(
+    (fromIndex: number, toIndex: number) => {
+      commitRowMove(fromIndex, toIndex);
+      applyHoveredRowChange(null);
+    },
+    [commitRowMove, applyHoveredRowChange],
+  );
   // 変更(差し込み式 段階 2): ゴーストのラベル / controller の接続 / settle の layout effect と、ハンドル列のセル・
   //   ガイド線の描画は機能セットの hook(features/rowDrag.tsx)へ移し、この位置で呼びます(hook の順番は従来どおり)。
   //   機能セットに無い構成では enableRowDrag が false 扱い(createSpreadsheetGrid)で、ハンドル列もガイド線も出ません。
@@ -3154,7 +3164,7 @@ export function useGridShell<T extends object>({
       windowBaseOffsetPx: overlayBaseOffset,
       scrollContainerRef,
       bodyScrollRef,
-      commitRowMove,
+      commitRowMove: commitRowMoveFromDrag,
       hasRowKeys: rowKeyGetter !== undefined,
       ghostSlot: slots.dragGhost,
       // 追加(motion-8 / M-11): 'live' では掴んだ行が追従し周りの行が退避する(motion='off' では ghost へフォールバック)。
