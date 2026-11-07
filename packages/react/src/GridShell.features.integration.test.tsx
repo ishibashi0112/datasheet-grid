@@ -285,7 +285,7 @@ describe('差し込み式: scrollHint', () => {
 
 describe('差し込み式: columnAutosize', () => {
   const openColumnMenu = (container: HTMLElement) => {
-    const menuButton = container.querySelector<HTMLElement>('[aria-label="列メニュー"]');
+    const menuButton = container.querySelector<HTMLElement>('[data-ssg-tooltip="列メニュー"]');
     if (!menuButton) throw new Error('列メニューのボタンがありません');
     act(() => {
       fireEvent.pointerDown(menuButton, { button: 0 });
@@ -316,7 +316,7 @@ describe('差し込み式: columnAutosize', () => {
 
 describe('差し込み式: columnMenu', () => {
   const headerCell = (container: HTMLElement) => container.querySelector('.ssg-header-cell[data-ssg-col-key="name"]') as HTMLElement;
-  const menuButton = (container: HTMLElement) => container.querySelector<HTMLElement>('[aria-label="列メニュー"]');
+  const menuButton = (container: HTMLElement) => container.querySelector<HTMLElement>('[data-ssg-tooltip="列メニュー"]');
 
   it('機能セットに無ければ ⋮ ボタンを出さず、ヘッダーの右クリックはブラウザ標準のメニューのまま、明示した enableColumnMenu だけ開発時に 1 回警告する', () => {
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
@@ -354,7 +354,7 @@ describe('差し込み式: columnMenu', () => {
 describe('差し込み式: toolPanel', () => {
   const filterColumns: GridColumn<Row>[] = [{ key: 'name', title: '名前', width: 160, filterType: 'text' }];
   const openColumnMenu = (container: HTMLElement) => {
-    const menuButton = container.querySelector<HTMLElement>('[aria-label="列メニュー"]');
+    const menuButton = container.querySelector<HTMLElement>('[data-ssg-tooltip="列メニュー"]');
     if (!menuButton) throw new Error('列メニューのボタンがありません');
     act(() => {
       fireEvent.pointerDown(menuButton, { button: 0 });
@@ -451,7 +451,7 @@ describe('差し込み式: toolPanel', () => {
       <ToolPanelFilteringGrid rows={rows} columns={filterColumns} rowKeyGetter={(r) => r.id} enableColumnMenu onColumnsChange={() => {}} />,
     );
     // 列メニューの機能は無いので ⋮ ボタンは出ない。
-    expect(view.container.querySelector('[aria-label="列メニュー"]')).toBeNull();
+    expect(view.container.querySelector('[data-ssg-tooltip="列メニュー"]')).toBeNull();
     const chip = view.container.querySelector<HTMLElement>('[aria-label="フィルター管理パネルを開閉"]');
     expect(chip).not.toBeNull();
     act(() => {
@@ -787,7 +787,7 @@ describe('差し込み式: filtering', () => {
     Array.from(container.querySelectorAll('.ssg-body-cell[data-ssg-col-key="name"]')).map((cell) => cell.textContent);
   const searchBox = (container: HTMLElement) => container.querySelector<HTMLInputElement>('input.ssg-bar-input');
   const openColumnMenu = (container: HTMLElement) => {
-    const menuButton = container.querySelector<HTMLElement>('[aria-label="列メニュー"]');
+    const menuButton = container.querySelector<HTMLElement>('[data-ssg-tooltip="列メニュー"]');
     if (!menuButton) throw new Error('列メニューのボタンがありません');
     act(() => {
       fireEvent.pointerDown(menuButton, { button: 0 });

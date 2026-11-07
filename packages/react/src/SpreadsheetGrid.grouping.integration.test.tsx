@@ -363,7 +363,7 @@ describe('グルーピング中のグループ元列のソート / フィルタ�
       ref.current?.applyState({ ...ref.current.getState(), sort: [{ columnKey: 'qty', direction: 'asc' }] });
     });
     const menuButton = container.querySelector<HTMLElement>(
-      '.ssg-header-row [data-ssg-col-key="qty"] [aria-label="列メニュー"]',
+      '.ssg-header-row [data-ssg-col-key="qty"] [data-ssg-tooltip="列メニュー"]',
     );
     expect(menuButton).not.toBeNull();
     act(() => {

@@ -456,4 +456,19 @@ describe('ARIA(audit V-05 / RD-10 / V-14)', () => {
       true,
     );
   });
+
+  // 追加(dogfood DU-17): 列見出しの ⋮ の読み上げ名に列の名前を入れる(どれも「列メニュー」では区別できなかった)。
+  //   ツールチップは「列メニュー」のまま。title が空白だけの列は key を使う。
+  it('列メニューのボタンの名前に列の名前が入る(DU-17)', () => {
+    const { grid } = setup({
+      columns: [...columns, { key: 'memo', title: ' ', width: 80 }],
+      enableColumnMenu: true,
+    });
+    const buttons = Array.from(grid.querySelectorAll<HTMLElement>('[data-ssg-tooltip="列メニュー"]'));
+    expect(buttons.map((button) => button.getAttribute('aria-label'))).toEqual([
+      'Name の列メニュー',
+      'Qty の列メニュー',
+      'memo の列メニュー',
+    ]);
+  });
 });

@@ -151,6 +151,7 @@ type GridHeaderRowProps<T> = {
 function HeaderActionButton({
   isActive,
   title,
+  ariaLabel,
   className,
   style,
   onPointerDown,
@@ -159,6 +160,9 @@ function HeaderActionButton({
 }: {
   isActive: boolean;
   title: string;
+  // 追加(dogfood DU-17): 読み上げの名前(省略時は title)。見出しが並ぶと「列メニュー」だけではどの列のボタンか分からないため、
+  //   列の名前を入れて渡します(ツールチップは title のまま)。
+  ariaLabel?: string;
   className?: string;
   // 追加(slot-props): classNames.iconButton の style。
   style?: CSSProperties;
@@ -176,7 +180,7 @@ function HeaderActionButton({
       //   出ていました(キー操作はグリッド本体のフォーカスで行い、Tab はグリッドを 1 回で出入りする)。
       tabIndex={-1}
       data-ssg-tooltip={title}
-      aria-label={title}
+      aria-label={ariaLabel ?? title}
       onPointerDown={onPointerDown}
       onClick={onClick}
       className={cx(
@@ -504,6 +508,7 @@ function GridHeaderRowInner<T>({
               {showColumnMenuButton && (
                 <HeaderActionButton
                   title="列メニュー"
+                  ariaLabel={`${column.title?.trim() || column.key} の列メニュー`}
                   isActive={isMenuOpenForColumn}
                   className={slots?.iconButton?.className}
                   style={slots?.iconButton?.style}

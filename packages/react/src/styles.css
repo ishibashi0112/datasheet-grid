@@ -2641,12 +2641,8 @@
     margin-bottom: 6px;
   }
 
-  /* 種別ヒント / メタ情報行。--ellipsis は省略表示を足す。 */
-  .ssg-filter-hint {
-    font-size: 10.5px;
-    color: var(--ssg-panel-text-muted);
-    margin-bottom: 6px;
-  }
+  /* メタ情報行。--ellipsis は省略表示を足す。
+     変更(dogfood DF-21): 種別ヒント(.ssg-filter-hint。「フィルター種別: number」のような内部名)は出さなくなったので消しました。 */
   .ssg-filter-meta {
     font-size: 10.5px;
     color: var(--ssg-panel-text-muted);

@@ -75,7 +75,7 @@ describe('/lite の入口', () => {
     expect(
       Array.from(container.querySelectorAll('.ssg-body-cell[data-ssg-col-key="name"]')).map((cell) => cell.textContent),
     ).toEqual(['beta']);
-    const menuButton = container.querySelector<HTMLElement>('[aria-label="列メニュー"]');
+    const menuButton = container.querySelector<HTMLElement>('[data-ssg-tooltip="列メニュー"]');
     expect(menuButton).not.toBeNull();
     act(() => {
       fireEvent.pointerDown(menuButton as HTMLElement, { button: 0 });
@@ -90,7 +90,7 @@ describe('/lite の入口', () => {
       <BareGrid rows={rows} columns={plainColumns} rowKeyGetter={(r) => r.id} onRowsChange={() => {}} fillHandle />,
     );
     expect(container.querySelector('input.ssg-bar-input')).toBeNull();
-    expect(container.querySelector('[aria-label="列メニュー"]')).toBeNull();
+    expect(container.querySelector('[data-ssg-tooltip="列メニュー"]')).toBeNull();
     const messages = warn.mock.calls.map(([message]) => String(message));
     expect(messages.filter((message) => message.includes('`fillHandle: fillHandleFeature`'))).toHaveLength(1);
   });
