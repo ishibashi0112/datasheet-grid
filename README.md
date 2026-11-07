@@ -279,7 +279,7 @@ The preset drives the default `rowHeight` / `headerHeight` (compact: 28/32, stan
 
 ## Smaller bundles (`/lite`, 0.54.0+)
 
-`SpreadsheetGrid` includes every feature (about 112KB gzip of initial JS). `@ishibashi0112/spreadsheet-grid/lite` builds a grid with only the features you pass, and leaves the rest out of your bundle:
+`SpreadsheetGrid` includes every feature (about 119KB gzip of initial JS). `@ishibashi0112/spreadsheet-grid/lite` builds a grid with only the features you pass, and leaves the rest out of your bundle:
 
 ```tsx
 import { createSpreadsheetGrid, standardFeatures, serverSideFeature } from '@ishibashi0112/spreadsheet-grid/lite';
@@ -291,9 +291,9 @@ const Grid = createSpreadsheetGrid({ features: { ...standardFeatures, serverSide
 
 | Setup | Initial JS (gzip) |
 | --- | --- |
-| `SpreadsheetGrid` (everything) | ~112KB |
-| `/lite`, no features | ~60KB |
-| `/lite` + `standardFeatures` (filters, column menu, tool panel, column autosize, export) | ~78KB |
+| `SpreadsheetGrid` (everything) | ~119KB |
+| `/lite`, no features | ~64KB |
+| `/lite` + `standardFeatures` (filters, column menu, tool panel, column autosize, export) | ~83KB |
 
 Props, the `ref` handle and types are the same as `SpreadsheetGrid`. Props of features you did not pass do nothing, and in development a `console.warn` names the feature to add. See the [`/lite` section of the API reference](packages/react/API_REFERENCE.md#機能を選んで組み込むlite-サブパス) for the 20 features and their sizes.
 
@@ -686,7 +686,7 @@ flex column の残り（ページヘッダーの下など）を埋める:
 
 ### バンドルを小さくする(`/lite`、0.54.0 から)
 
-`SpreadsheetGrid` は全機能入りです(初期読み込みの JS が約 112KB gzip)。`@ishibashi0112/spreadsheet-grid/lite` では、渡した機能だけを入れたグリッドを作れます。渡さなかった機能はバンドルに入りません:
+`SpreadsheetGrid` は全機能入りです(初期読み込みの JS が約 119KB gzip)。`@ishibashi0112/spreadsheet-grid/lite` では、渡した機能だけを入れたグリッドを作れます。渡さなかった機能はバンドルに入りません:
 
 ```tsx
 import { createSpreadsheetGrid, standardFeatures, serverSideFeature } from '@ishibashi0112/spreadsheet-grid/lite';
@@ -698,9 +698,9 @@ const Grid = createSpreadsheetGrid({ features: { ...standardFeatures, serverSide
 
 | 構成 | 初期 JS(gzip) |
 | --- | --- |
-| `SpreadsheetGrid`(全部入り) | 約 112KB |
-| `/lite` 機能なし | 約 60KB |
-| `/lite` + `standardFeatures`(フィルター・列メニュー・ツールパネル・列幅の自動調整・エクスポート) | 約 78KB |
+| `SpreadsheetGrid`(全部入り) | 約 119KB |
+| `/lite` 機能なし | 約 64KB |
+| `/lite` + `standardFeatures`(フィルター・列メニュー・ツールパネル・列幅の自動調整・エクスポート) | 約 83KB |
 
 props・`ref` ハンドル・型は `SpreadsheetGrid` と同じです。渡していない機能の prop は何もせず、開発時は足すべき機能を `console.warn` で知らせます。20 の機能とサイズは [API リファレンスの `/lite` の節](packages/react/API_REFERENCE.md#機能を選んで組み込むlite-サブパス)にあります。
 
