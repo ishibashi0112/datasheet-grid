@@ -3,7 +3,7 @@ title: バンドルを小さくする(/lite)
 description: createSpreadsheetGrid で使う機能だけを組み込み、初期読み込みの JS を約半分にする
 ---
 
-`SpreadsheetGrid` は全機能入りで、初期読み込みの JS は約 119KB(gzip)です。`@ishibashi0112/spreadsheet-grid/lite` の `createSpreadsheetGrid` を使うと、渡した機能だけを入れたグリッドを作れます。渡さなかった機能のコードはバンドルに入りません。
+`SpreadsheetGrid` は全機能入りで、初期読み込みの JS は約 120KB(gzip)です。`@ishibashi0112/spreadsheet-grid/lite` の `createSpreadsheetGrid` を使うと、渡した機能だけを入れたグリッドを作れます。渡さなかった機能のコードはバンドルに入りません。
 
 `/lite` は 0.54.0 で追加しました。
 
@@ -31,10 +31,10 @@ export function OrdersTable() {
 
 | 構成 | 初期 JS(gzip) |
 | --- | --- |
-| 全部入り(`SpreadsheetGrid`) | 約 119KB |
+| 全部入り(`SpreadsheetGrid`) | 約 120KB |
 | `/lite` 機能なし | 約 64KB |
-| `/lite` + `standardFeatures` | 約 83KB |
-| `/lite` + `standardFeatures` + `serverSideFeature` | 約 87KB |
+| `/lite` + `standardFeatures` | 約 84KB |
+| `/lite` + `standardFeatures` + `serverSideFeature` | 約 88KB |
 
 esbuild で minify し、React を外部化して計測した値です(`@tanstack/virtual-core` を含む)。バンドラーによって数 KB 前後します(0.61.0 の全部入りの実測で、Vite 8(Rolldown)は esbuild より約 1.5KB 小さく、Vite 7(Rollup)はほぼ同じ。Next.js 16 では webpack が Turbopack より約 4KB 大きくなりました)。機能ごとの増え方は [API リファレンス](/docs/api/lite)の表にあります。
 

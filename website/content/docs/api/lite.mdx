@@ -35,13 +35,13 @@ export const OrdersTable = () => <Grid columns={columns} dataSource={dataSource}
 
 | キー | 部品 | 中身(関係する prop) | 目安(gzip) |
 | --- | --- | --- | --- |
-| `filtering` | `filteringFeature` | グローバル / 列フィルター、フィルターのポップオーバー(遅延読み込み)、チップバー、非同期の候補(`enableGlobalFilter` / `enableColumnFilter` / `columns[].filterType` / `getFilterOptions` / `showFilterChipBar` / `onFiltersChange` / `manualFiltering` ほか) | +12.1KB(+ 遅延 6.1KB) |
-| `fillHandle` | `fillHandleFeature` | フィルハンドル(`fillHandle`) | +8.6KB |
+| `filtering` | `filteringFeature` | グローバル / 列フィルター、フィルターのポップオーバー(遅延読み込み)、チップバー、非同期の候補(`enableGlobalFilter` / `enableColumnFilter` / `columns[].filterType` / `getFilterOptions` / `showFilterChipBar` / `onFiltersChange` / `manualFiltering` ほか) | +12.2KB(+ 遅延 6.1KB) |
+| `fillHandle` | `fillHandleFeature` | フィルハンドル(`fillHandle`) | +8.7KB |
 | `columnReorder` | `columnReorderFeature` | 列ヘッダーのドラッグ並べ替え(`onColumnsChange` 指定時 / `columnDragMotion`) | +5.8KB |
-| `rowDrag` | `rowDragFeature` | 行のドラッグ並べ替え(`enableRowDrag` / `isRowDraggable` / `onRowMove` / `rowDragMotion`。ハンドルの `moveRow()` は本体にあるので無くても使える) | +4.4KB |
-| `serverSide` | `serverSideFeature` | サーバーサイド行モデル(SSRM)の読み取りと書き戻し、保存状態の表示(`dataSource` / `serverSideRefreshToken` / `showSaveStatus` ほか) | +4.4KB |
-| `columnMenu` | `columnMenuFeature` | 列メニュー(ソート・固定。幅の自動調整は `columnAutosize`、フィルターの入口は `filtering`、パネルの入口は `toolPanel` があるとき。`enableColumnMenu`) | +2.3KB |
-| `columnAutosize` | `columnAutosizeFeature` | 列幅の自動調整(境界のダブルクリック・列メニューの項目・`autoSizeColumns`) | +2.1KB |
+| `rowDrag` | `rowDragFeature` | 行のドラッグ並べ替え(`enableRowDrag` / `isRowDraggable` / `onRowMove` / `rowDragMotion`。ハンドルの `moveRow()` は本体にあるので無くても使える) | +4.5KB |
+| `serverSide` | `serverSideFeature` | サーバーサイド行モデル(SSRM)の読み取りと書き戻し、保存状態の表示(`dataSource` / `serverSideRefreshToken` / `showSaveStatus` ほか) | +4.5KB |
+| `columnMenu` | `columnMenuFeature` | 列メニュー(ソート・固定。幅の自動調整は `columnAutosize`、フィルターの入口は `filtering`、パネルの入口は `toolPanel` があるとき。`enableColumnMenu`) | +2.7KB |
+| `columnAutosize` | `columnAutosizeFeature` | 列幅の自動調整(境界のダブルクリック・列メニューの項目・`autoSizeColumns`) | +2.2KB |
 | `find` | `findFeature` | セル内検索(`find` / `onFindChange`) | +2.0KB |
 | `scrollHint` | `scrollHintFeature` | スクロール位置インジケーター(`scrollHint`) | +2.0KB |
 | `export` | `exportFeature` | CSV / TSV / `getExportData`(ハンドルの `exportCsv` / `downloadCsv` / `getExportData`) | +1.9KB |
@@ -51,7 +51,7 @@ export const OrdersTable = () => <Grid columns={columns} dataSource={dataSource}
 | `grouping` | `groupingFeature` | 行グルーピングと集計(`columns[].rowGroup` / `aggFunc`) | +1.8KB |
 | `totalRow` | `totalRowFeature` | 合計行(`totalRow`) | +1.7KB |
 | `toolPanel` | `toolPanelFeature` | ツールパネル(フィルター管理 / 列の表示 / 並び替え。部品は遅延読み込み) | +1.6KB(+ 遅延 5.4KB) |
-| `conditionalFormat` | `conditionalFormatFeature` | 条件付き書式とチップ(`columns[].conditionalFormat`) | +1.4KB |
+| `conditionalFormat` | `conditionalFormatFeature` | 条件付き書式とチップ(`columns[].conditionalFormat`) | +1.3KB |
 | `imeDirectInput` | `imeDirectInputFeature` | IME オンのままの直接入力(`imeDirectInput`) | +1.2KB |
 | `motionExtras` | `motionExtrasFeature` | 変更のハイライト、コピー範囲の点線、十字ホバー(`highlightChanges` / `showCopyRange` / `hoverHighlight`) | +1.2KB |
 | `autoHeight` | `autoHeightFeature` | 行の高さの実測(`autoHeight` / `columns[].autoHeight`) | +0.9KB |
@@ -60,10 +60,10 @@ export const OrdersTable = () => <Grid columns={columns} dataSource={dataSource}
 
 | 構成 | 初期 JS(gzip) |
 | --- | --- |
-| 全部入り(`SpreadsheetGrid`) | 約 119KB |
+| 全部入り(`SpreadsheetGrid`) | 約 120KB |
 | `/lite` 機能なし | 約 64KB |
-| `/lite` + `standardFeatures` | 約 83KB |
-| `/lite` + `standardFeatures` + `serverSideFeature` | 約 87KB |
+| `/lite` + `standardFeatures` | 約 84KB |
+| `/lite` + `standardFeatures` + `serverSideFeature` | 約 88KB |
 
 - 各機能の目安は「機能なし」に 1 つだけ足したときの増え方で、組み合わせると共通部分のぶん合計より少し小さくなる。バンドラーによって数 KB 前後する(0.61.0 の全部入りの実測で、Vite 8(Rolldown)は esbuild より約 1.5KB 小さく、Vite 7(Rollup)はほぼ同じ。Next.js 16 では webpack が Turbopack より約 4KB 大きい)。
 - 使わない機能がバンドルから落ちることは、Vite 8・webpack 5・Next.js 16(既定の Turbopack)・esbuild で確かめている(バンドラーが `package.json` の `sideEffects` と `/* @__PURE__ */` を解釈する必要がある)。
