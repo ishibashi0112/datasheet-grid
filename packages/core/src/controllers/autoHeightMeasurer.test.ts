@@ -35,6 +35,7 @@ const makeContainer = (heights: number[]) => {
   const container = document.createElement('div');
   let scrollTop = 0;
   Object.defineProperty(container, 'scrollTop', {
+    configurable: true,
     get: () => scrollTop,
     set: (value: number) => {
       scrollTop = value;
@@ -157,6 +158,50 @@ describe('createAutoHeightMeasurer', () => {
     measurer.dispose();
     runFrame();
     expect(measurer.getSnapshot()).toEqual({ version: 1, nonce: 1 });
+  });
+
+  // 追加(段階 2 DF-24): 短い表の下の方を見ているときに幅を狭めて行が伸びると、合わせたい位置がまだ古い全高の
+  //   スクロールの上限を超えていて、ブラウザが scrollTop を上限で止めていました(見ていた行がずれ、アクティブセルが画面外へ)。
+  //   止められたら、新しい全高で描き直した次の測定(ペイント前)で合わせ直します。
+  it('合わせたい位置が古いスクロールの上限で止められたら、描き直した後に合わせ直す', () => {
+    const measurer = createAutoHeightMeasurer<Row>();
+    const store = buildRowHeightStore(rows.length, 20, rowModel.getRowKey, measurer.measuredHeights);
+    const rowMetrics = createAutoHeightRowMetrics(store);
+    const container = makeContainer([50, 50, 50]);
+    // スクロールの上限 = 全高 - 見える高さ。全高は描き直しで変わる(初めは 3 行 × 20 = 60、見える高さ 30)。
+    let scrollHeight = 60;
+    let scrollTop = 0;
+    Object.defineProperty(container, 'scrollTop', {
+      get: () => scrollTop,
+      set: (value: number) => {
+        scrollTop = Math.max(0, Math.min(value, scrollHeight - 30));
+      },
+    });
+    // 行 1 の途中(25 = 行 1 top 20 + 5)を見ている。
+    container.scrollTop = 25;
+    const args: AutoHeightMeasureArgs<Row> = {
+      scrollContainerRef: { current: container },
+      autoHeightActive: true,
+      rowHeightStore: store,
+      rowMetrics,
+      rowModel,
+      virtualRows: [],
+      viewportHeight: 30,
+      version: 0,
+      nonce: 0,
+    };
+    measurer.update(args);
+    // 行 1 の top は 20 → 50 なので 55 へ合わせたいが、古い上限 30 で止められる。
+    expect(container.scrollTop).toBe(30);
+    // 新しい全高(150)で描き直した後の測定で合わせ直す(高さは収束しているので version は進まない)。
+    scrollHeight = 150;
+    measurer.update({ ...args, version: measurer.getSnapshot().version });
+    expect(container.scrollTop).toBe(55);
+    // 合わせ直しは 1 回だけ(その後に利用者がスクロールした位置は動かさない)。
+    container.scrollTop = 10;
+    measurer.update({ ...args, version: measurer.getSnapshot().version, nonce: 1 });
+    expect(container.scrollTop).toBe(10);
+    measurer.dispose();
   });
 
   it('無効化すると observer を破棄し、dispose でも破棄する', () => {

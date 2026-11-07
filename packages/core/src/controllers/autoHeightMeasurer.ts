@@ -64,6 +64,10 @@ export const createAutoHeightMeasurer = <T,>(): AutoHeightMeasurer<T> => {
   //   進めると、同じフレームの測り直しで行の高さとスクロール領域が変わり、ブラウザが「ResizeObserver loop completed
   //   with undelivered notifications」を window の error に出すためです(列幅の変更などで起きた)。
   let nonceFrameId: number | null = null;
+  // 追加(段階 2 DF-24): アンカー補正で合わせたい scrollTop が、まだ古い全高のスクロールの上限を超えていて止められた
+  //   ときの目標です。新しい全高で描き直した後の測定(次の update。ペイント前)で 1 回だけ合わせ直します。短い表の下の方を
+  //   見ているときに幅を狭めて行が伸びると、見ていた行がずれてアクティブセルが画面外へ出ていました。
+  let pendingScrollTop: number | null = null;
 
   const disconnect = () => {
     observer?.disconnect();
@@ -92,10 +96,15 @@ export const createAutoHeightMeasurer = <T,>(): AutoHeightMeasurer<T> => {
     // 無効時(toggle OFF 等)は永続 observer を破棄して終了します。
     if (!autoHeightActive || !rowHeightStore) {
       disconnect();
+      pendingScrollTop = null;
       return;
     }
     if (!el) {
       return;
+    }
+    if (pendingScrollTop !== null) {
+      el.scrollTop = pendingScrollTop;
+      pendingScrollTop = null;
     }
     const cells = el.querySelectorAll<HTMLElement>('[data-autoheight-cell]');
 
@@ -149,7 +158,10 @@ export const createAutoHeightMeasurer = <T,>(): AutoHeightMeasurer<T> => {
         //   装飾は base の prefix を参照で読むため、ここで再構築後の値が返ります。
         const anchorTopAfter = rowMetrics.rowTop(anchorRow);
         // ペイント前(layout フレーム内)に同期適用してジャンプを消します。
-        el.scrollTop = anchorTopAfter + offset;
+        const targetScrollTop = anchorTopAfter + offset;
+        el.scrollTop = targetScrollTop;
+        // 古い全高の上限で止められたら(1px より大きくずれたら)、描き直した後に合わせ直します(DF-24)。
+        pendingScrollTop = Math.abs(el.scrollTop - targetScrollTop) > 1 ? targetScrollTop : null;
         // 測定収束のための version bump(ペイント前にジオメトリを更新)。
         bumpVersion();
       }
@@ -197,6 +209,7 @@ export const createAutoHeightMeasurer = <T,>(): AutoHeightMeasurer<T> => {
     dispose: () => {
       disconnect();
       last = null;
+      pendingScrollTop = null;
     },
   };
 };
