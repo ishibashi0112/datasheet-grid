@@ -8,6 +8,8 @@
 //     浮き要素で、スクロールで消える)。cleared: 印だけ外す。
 //   - 印の付与は rAF へ遅らせます(楽観更新の再レンダーが同じイベント内で走るため、その後に付ける)。
 //   - インジケーター(スピナー / バッジ)はセルの末尾に追加する実要素です(React のセル内容には触らない)。
+//   - 追加(dogfood DF-14): 保存中のセルを覚えておき、保存中の間はスクロール等で描き直されたセル(仮想化で外れて戻った
+//     行 / 列)にも保存中の印を付け直します(これまでは印が消え、保存中なのに普通のセルに見えていた)。
 import type { GridRowKey } from '../model/gridTypes.unbound';
 import { isInsideDetailCardOf } from '../logic/detailRow';
 
@@ -51,6 +53,11 @@ export const createSaveStatusController = (): SaveStatusController => {
   let chip: HTMLElement | null = null;
   let chipTimer: ReturnType<typeof setTimeout> | null = null;
   let chipScrollTarget: HTMLElement | null = null;
+  // 追加(dogfood DF-14): 保存中のセル(rowKey の文字列 → 列キー)。印を付け直すために使います。
+  const pendingCells = new Map<string, Set<string>>();
+  let observer: MutationObserver | null = null;
+  let observedContainer: HTMLElement | null = null;
+  let reapplyFrame: number | null = null;
 
   const later = (ms: number, fn: () => void) => {
     const timer = setTimeout(() => {
@@ -140,6 +147,102 @@ export const createSaveStatusController = (): SaveStatusController => {
     timers.add(chipTimer);
   };
 
+  // 追加(dogfood DF-14): 保存中のセルの記録と、描き直されたセルへの付け直し。
+  const stopObserving = () => {
+    observer?.disconnect();
+    observer = null;
+    observedContainer = null;
+    if (reapplyFrame !== null) {
+      if (typeof cancelAnimationFrame === 'function') {
+        cancelAnimationFrame(reapplyFrame);
+      }
+      frames.delete(reapplyFrame);
+      reapplyFrame = null;
+    }
+  };
+
+  const reapplyPending = () => {
+    const container = args?.scrollContainerRef.current;
+    if (!container || pendingCells.size === 0) {
+      return;
+    }
+    container.querySelectorAll<HTMLElement>('.ssg-body-row[data-row-key]').forEach((row) => {
+      const columnKeys = pendingCells.get(row.getAttribute('data-row-key') ?? '');
+      if (!columnKeys) {
+        return;
+      }
+      row.querySelectorAll<HTMLElement>('.ssg-body-cell[data-ssg-col-key]').forEach((cell) => {
+        if (
+          columnKeys.has(cell.getAttribute('data-ssg-col-key') ?? '') &&
+          cell.getAttribute(SAVE_STATE_ATTRIBUTE) !== 'pending' &&
+          !isInsideDetailCardOf(container, cell)
+        ) {
+          cell.setAttribute(SAVE_STATE_ATTRIBUTE, 'pending');
+          setIndicator(cell, 'pending');
+        }
+      });
+    });
+  };
+
+  const scheduleReapply = () => {
+    if (reapplyFrame !== null) {
+      return;
+    }
+    if (typeof requestAnimationFrame !== 'function') {
+      reapplyPending();
+      return;
+    }
+    const frameId = requestAnimationFrame(() => {
+      frames.delete(frameId);
+      if (reapplyFrame === frameId) {
+        reapplyFrame = null;
+      }
+      reapplyPending();
+    });
+    reapplyFrame = frameId;
+    frames.add(frameId);
+  };
+
+  const syncObserver = () => {
+    const container = args?.scrollContainerRef.current ?? null;
+    if (pendingCells.size === 0 || !container || typeof MutationObserver !== 'function') {
+      stopObserving();
+      return;
+    }
+    if (observer && observedContainer === container) {
+      return;
+    }
+    stopObserving();
+    observer = new MutationObserver(scheduleReapply);
+    observer.observe(container, { childList: true, subtree: true });
+    observedContainer = container;
+  };
+
+  const trackPending = (event: SaveStatusEvent) => {
+    for (const cell of event.cells) {
+      const rowKey = String(cell.rowKey);
+      if (event.state === 'pending') {
+        const columnKeys = pendingCells.get(rowKey) ?? new Set<string>();
+        for (const columnKey of cell.columnKeys) {
+          columnKeys.add(columnKey);
+        }
+        pendingCells.set(rowKey, columnKeys);
+        continue;
+      }
+      const columnKeys = pendingCells.get(rowKey);
+      if (!columnKeys) {
+        continue;
+      }
+      for (const columnKey of cell.columnKeys) {
+        columnKeys.delete(columnKey);
+      }
+      if (columnKeys.size === 0) {
+        pendingCells.delete(rowKey);
+      }
+    }
+    syncObserver();
+  };
+
   const apply = (event: SaveStatusEvent) => {
     const cells = cellsOf(event);
     for (const cell of cells) {
@@ -171,11 +274,16 @@ export const createSaveStatusController = (): SaveStatusController => {
   return {
     update: (next) => {
       args = next;
+      if (!next.enabled) {
+        pendingCells.clear();
+      }
+      syncObserver();
     },
     handle: (event) => {
       if (!args?.enabled) {
         return;
       }
+      trackPending(event);
       if (typeof requestAnimationFrame !== 'function') {
         apply(event);
         return;
@@ -197,6 +305,9 @@ export const createSaveStatusController = (): SaveStatusController => {
         }
       }
       frames.clear();
+      reapplyFrame = null;
+      pendingCells.clear();
+      stopObserving();
       removeChip();
       const container = args?.scrollContainerRef.current;
       container?.querySelectorAll<HTMLElement>(`[${SAVE_STATE_ATTRIBUTE}]`).forEach((cell) => {

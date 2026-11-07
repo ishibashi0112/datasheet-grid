@@ -29,6 +29,12 @@ export type GridViewState = {
   //   描画元で、編集開始(edit/start)と Esc(selection/clear)で消えます(dispatch 内で解除)。ビュー形状が変わった
   //   (ソート / フィルター / グループ開閉 / 行数 / 列)ときは描画側が view の参照比較で無視します。
   copiedRange: GridCopiedRange | null;
+  // 追加(作り直しの確認 N-1): セルの編集を始めるときのエディタの初期値です(旧 GridShell の useState)。
+  //   編集中のセル(edit/start)と同じ store に置き、同じ描画で読まれるようにします。React の state のままだと、
+  //   イベントの外(タイマー / await の後 / startTransition の中)から startEditing() を呼んだとき、store の更新
+  //   (同期で描く)が先に描かれ、エディタが 1 つ前の初期値で開いていました(React 18 ではイベントの外で常に起きた)。
+  //   省略可にしているのは、利用側が自分で組んだ GridViewState を createGridStore に渡していても型が壊れないため。
+  editorInitialValue?: string;
 };
 
 // 追加(motion-4 / M-3): コピー範囲。view はコピー時点のビュー形状を参照で控えたもの(描画側が現在値と比較)。
@@ -52,6 +58,7 @@ export const createInitialGridViewState = (): GridViewState => ({
   hoveredColumnIndex: null,
   isCornerHovered: false,
   copiedRange: null,
+  editorInitialValue: '',
 });
 
 // 値または「前の値から次の値を作る関数」(React の SetStateAction と同形。React 非依存)。

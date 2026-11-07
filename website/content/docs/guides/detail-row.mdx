@@ -9,7 +9,7 @@ description: detailRow で行の直下に任意の React UI(サブグリッド /
 
 <DetailRowDemo />
 
-- 先頭のトグル列(▸)で開閉します。明細のない「キャンセル」行は `isExpandable` で展開不可にしています。
+- 先頭のトグル列(▸)で開閉します。▸ を押してもアクティブセルは動きません。キーボードでは、アクティブセルをトグル列へ移して `Enter` / `Space` で開閉できます。明細のない「キャンセル」行は `isExpandable` で展開不可にしています。
 - カードの中身はネストした `SpreadsheetGrid` とメモ入力です。カード内の矢印キー / クリック / 右クリックは外側のグリッドに伝わりません。
 - 「SO-2404 を開く」「すべて閉じる」は命令的ハンドルの `setDetailRowExpanded()` / `collapseAllDetailRows()`、「展開中」の表示は `onExpandedDetailRowKeysChange` です。
 - 列ヘッダーでソートしたり、状態列でフィルターしても、展開状態は**行キー**に追従します。

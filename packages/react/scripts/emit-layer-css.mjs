@@ -3,9 +3,12 @@
 // style.layer.css(THEME-1):
 // 目的: Tailwind v4 などカスケードレイヤーを運用する利用側向けに、全スタイルを
 //   `@layer ssg-base` へ入れたバリアントを提供します(Mantine の styles.css /
-//   styles.layer.css と同じ二本立て)。実体は 1 行の @import layer() で、
-//   利用側のバンドラ(vite / postcss-import 等)が同ディレクトリの dist/style.css を
-//   レイヤーへ取り込みます(CSS の複製を持たないため中身の乖離が起きません)。
+//   styles.layer.css と同じ二本立て)。
+// 変更(作り直しの確認 AI-N2): 中身を 1 行の `@import url("./style.css") layer(ssg-base);` から、ビルドした
+//   dist/style.css の全体を `@layer ssg-base { … }` で包んだものに変えました(Mantine と同じ形)。CSS の中で
+//   `@import '…/style.layer.css'` と書くと、Tailwind v4(@tailwindcss/vite)が取り込んだ先の途中に 1 行の @import が
+//   残り(「@import must precede all other statements」で捨てられる)、相対の ./style.css も利用側のフォルダから
+//   探されて、グリッドの CSS が丸ごと消えていたためです。中身はビルドのたびに style.css から作るので乖離しません。
 // 実行: build:lib の最終ステップ(vite build → tsc → 本スクリプト)。cwd はパッケージ直下(packages/react)。
 import { copyFileSync, existsSync, mkdirSync, readFileSync, readdirSync, statSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
@@ -15,10 +18,15 @@ if (!existsSync('dist/style.css')) {
   process.exit(1);
 }
 
-writeFileSync(
-  'dist/style.layer.css',
-  '@import url("./style.css") layer(ssg-base);\n',
-);
+{
+  const baseCss = readFileSync('dist/style.css', 'utf8');
+  // @layer のブロックの中には @import / @charset を置けないため、含んでいたら止めます(今の style.css には無い)。
+  if (/@(import|charset)\b/.test(baseCss)) {
+    console.error('emit-layer-css: dist/style.css に @import / @charset があります(@layer のブロックで包めません)');
+    process.exit(1);
+  }
+  writeFileSync('dist/style.layer.css', `@layer ssg-base {\n${baseCss.trimEnd()}\n}\n`);
+}
 console.log('emit-layer-css: dist/style.layer.css を生成しました');
 
 // 追加(デザインシステムのテーマ): デザインシステムのテーマ変数をグリッドのトークンへつなぐ CSS(src/themes/*.css)を

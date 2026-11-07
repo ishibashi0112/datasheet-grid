@@ -9,10 +9,12 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi, beforeAll, afterEach } from 'vitest';
 import { render, cleanup, act, screen, fireEvent } from '@testing-library/react';
-import { createRef, useState } from 'react';
+import { Profiler, createRef, useState } from 'react';
 import type { Ref } from 'react';
 
 import { SpreadsheetGrid } from './SpreadsheetGrid';
+import { numberFormatter } from './index';
+import { installJsdomLayoutStubs } from './testing';
 import { GRID_STATE_VERSION } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/gridState';
 import type {
   GridColumn,
@@ -878,5 +880,192 @@ describe('コーナーヘッダー pointerdown のフォーカス(結合・propo
     } finally {
       focusSpy.mockRestore();
     }
+  });
+});
+
+// 追加(dogfood DU-06 / DF-04 / DF-18): 実際にアプリを作って確かめたチェック(docs/audits/2026-11-07/)の applyState の所見です。
+describe('applyState(dogfood)', () => {
+  it('DU-06: 渡したスライスだけを変える({ sort } だけなら列幅とフィルターは今のまま)', () => {
+    const ref = createRef<SpreadsheetGridHandle<Row>>();
+    render(<SpreadsheetGrid ref={ref} columns={columns} rows={rows} />);
+    act(() => {
+      ref.current?.applyState(appliedState);
+    });
+    act(() => {
+      ref.current?.applyState({ sort: [{ columnKey: 'name', direction: 'asc' }] });
+    });
+    const state = ref.current!.getState();
+    expect(state.columnWidths).toEqual(appliedState.columnWidths);
+    expect(state.filters).toEqual(appliedState.filters);
+    expect(state.sort).toEqual([{ columnKey: 'name', direction: 'asc' }]);
+    // filters は片方だけ変えられる。
+    act(() => {
+      ref.current?.applyState({ filters: { globalText: '' } });
+    });
+    expect(ref.current!.getState().filters).toEqual({ globalText: '', columnFilters: appliedState.filters.columnFilters });
+    // 空のオブジェクトは何も変えない。
+    const before = ref.current!.getState();
+    act(() => {
+      ref.current?.applyState({});
+    });
+    expect(ref.current!.getState()).toEqual(before);
+  });
+
+  it('DU-06: 同じ処理の中で続けて呼んでも前の applyState を消さず、直後の getState() に出る', () => {
+    const ref = createRef<SpreadsheetGridHandle<Row>>();
+    render(<SpreadsheetGrid ref={ref} columns={columns} rows={rows} />);
+    let readBack: GridState | undefined;
+    act(() => {
+      ref.current?.applyState({ filters: { globalText: 'a' } });
+      ref.current?.applyState({ filters: { columnFilters: { name: { kind: 'text', value: 'm' } } } });
+      readBack = ref.current?.getState();
+    });
+    const expected = { globalText: 'a', columnFilters: { name: { kind: 'text', value: 'm' } } };
+    expect(readBack?.filters).toEqual(expected);
+    expect(ref.current!.getState().filters).toEqual(expected);
+  });
+
+  it('DF-04: 今の列定義に無い列の幅 / フィルター / ソートは捨て、開発時に警告する', () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    try {
+      const ref = createRef<SpreadsheetGridHandle<Row>>();
+      render(<SpreadsheetGrid ref={ref} columns={columns} rows={rows} />);
+      const viewIds = () => ref.current!.getExportData({ scope: 'view' }).rows.map((r) => r[0]?.value);
+      act(() => {
+        ref.current?.applyState({
+          version: GRID_STATE_VERSION,
+          columnWidths: { id: 90, removed: 40 },
+          filters: { globalText: '', columnFilters: { removed: { kind: 'text', value: 'x' }, name: { kind: 'text', value: 'a' } } },
+          sort: [
+            { columnKey: 'removed', direction: 'asc' },
+            { columnKey: 'qty', direction: 'desc' },
+          ],
+        });
+      });
+      const state = ref.current!.getState();
+      expect(state.columnWidths).toEqual({ id: 90 });
+      expect(state.filters.columnFilters).toEqual({ name: { kind: 'text', value: 'a' } });
+      expect(state.sort).toEqual([{ columnKey: 'qty', direction: 'desc' }]);
+      // 無い列のフィルターで 0 件にならない。
+      expect(viewIds()).toEqual([3, 2, 1]);
+      expect(warn).toHaveBeenCalledTimes(1);
+      expect(String(warn.mock.calls[0]?.[0])).toContain('`removed`');
+    } finally {
+      warn.mockRestore();
+    }
+  });
+
+  // 追加(別視点のレビュー): columns(列メタ)も、同じ処理の中の直後の getState() で渡した値を返す。
+  it('DU-06: columns を渡した直後の getState() も渡した並びと表示を返す', () => {
+    const ref = createRef<SpreadsheetGridHandle<Row>>();
+    function Host() {
+      const [cols, setCols] = useState(columns);
+      return <SpreadsheetGrid ref={ref} columns={cols} onColumnsChange={setCols} rows={rows} />;
+    }
+    render(<Host />);
+    const next = [{ key: 'qty' }, { key: 'id', visible: false }, { key: 'name' }];
+    let readBack: GridState | undefined;
+    act(() => {
+      ref.current?.applyState({ columns: next });
+      readBack = ref.current?.getState();
+    });
+    expect(readBack?.columns).toEqual([{ key: 'qty' }, { key: 'id', visible: false }, { key: 'name' }]);
+    expect(ref.current!.getState().columns).toEqual(readBack?.columns);
+  });
+
+  // 追加(別視点のレビュー): 自動グループ列(ライブラリが足す列)の幅は手で変えられ、getState() に入るので捨てない。
+  it('DF-04: 自動グループ列の幅は捨てず、警告もしない(applyState(getState()) が冪等)', () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    try {
+      const ref = createRef<SpreadsheetGridHandle<Row>>();
+      const grouped: GridColumn<Row>[] = columns.map((column) =>
+        column.key === 'name' ? { ...column, rowGroup: true } : column,
+      );
+      render(<SpreadsheetGrid ref={ref} columns={grouped} rows={rows} />);
+      act(() => {
+        ref.current?.applyState({ columnWidths: { __ssg_group__: 340 } });
+      });
+      expect(ref.current!.getState().columnWidths).toEqual({ __ssg_group__: 340 });
+      act(() => {
+        ref.current?.applyState(ref.current!.getState());
+      });
+      expect(ref.current!.getState().columnWidths).toEqual({ __ssg_group__: 340 });
+      expect(warn).not.toHaveBeenCalled();
+    } finally {
+      warn.mockRestore();
+    }
+  });
+
+  it('DF-18: フィルターと並べ替えを一度に渡したとき、並べ替えだけの画面を挟まない', () => {
+    const restore = installJsdomLayoutStubs();
+    try {
+      const ref = createRef<SpreadsheetGridHandle<Row>>();
+      const many: Row[] = Array.from({ length: 6 }, (_, i) => ({ id: i + 1, name: `n${i + 1}`, qty: i }));
+      const commits: string[][] = [];
+      const names = () =>
+        Array.from(document.querySelectorAll('.ssg-center-pane .ssg-body-cell[data-ssg-col-key="name"]')).map(
+          (cell) => cell.textContent ?? '',
+        );
+      render(
+        <Profiler id="grid" onRender={() => commits.push(names())}>
+          <SpreadsheetGrid ref={ref} columns={columns} rows={many} rowKeyGetter={(r) => r.id} height={400} />
+        </Profiler>,
+      );
+      expect(names()).toEqual(['n1', 'n2', 'n3', 'n4', 'n5', 'n6']);
+      commits.length = 0;
+      act(() => {
+        ref.current?.applyState({
+          filters: { globalText: '', columnFilters: { name: { kind: 'text', value: 'n2' } } },
+          sort: [{ columnKey: 'qty', direction: 'desc' }],
+        });
+      });
+      expect(names()).toEqual(['n2']);
+      // どの描画でも「並べ替えただけ(n6, n5, …)」の画面を出さない。
+      expect(commits.filter((names) => names.length > 1)).toEqual([]);
+    } finally {
+      restore();
+    }
+  });
+});
+// 追加(dogfood DU-07): チップバーとフィルターの管理は、select / set の値をラベルで、数値の条件を列の valueFormatter で出す。
+describe('フィルターの要約の表示(dogfood DU-07)', () => {
+  it('チップバーは select のラベルと書式を当てた数値を出す', () => {
+    type Home = { id: number; kind: string; rent: number };
+    const homes: Home[] = [
+      { id: 1, kind: 'mansion', rent: 80000 },
+      { id: 2, kind: 'house', rent: 120000 },
+    ];
+    const homeColumns: GridColumn<Home>[] = [
+      {
+        key: 'kind',
+        title: '種別',
+        width: 100,
+        filterType: 'select',
+        filterOptions: [
+          { value: 'mansion', label: 'マンション' },
+          { value: 'house', label: '一戸建て' },
+        ],
+      },
+      { key: 'rent', title: '家賃', width: 100, filterType: 'number', valueFormatter: numberFormatter() },
+    ];
+    const ref = createRef<SpreadsheetGridHandle<Home>>();
+    const { container } = render(
+      <SpreadsheetGrid<Home> ref={ref} rows={homes} columns={homeColumns} rowKeyGetter={(row) => row.id} showFilterChipBar />,
+    );
+    act(() => {
+      ref.current?.applyState({
+        filters: {
+          globalText: '',
+          columnFilters: {
+            kind: { kind: 'select', value: 'mansion' },
+            rent: { kind: 'number', raw: '<= 100000', parsed: { mode: 'comparison', operator: '<=', value: 100000 } },
+          },
+        },
+      });
+    });
+    const text = container.querySelector('.ssg-filter-chip-bar')?.textContent ?? '';
+    expect(text).toContain('"マンション" に一致');
+    expect(text).toContain('100,000 以下');
+    expect(text).not.toContain('mansion');
   });
 });

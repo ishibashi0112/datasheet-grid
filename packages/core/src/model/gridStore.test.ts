@@ -58,6 +58,8 @@ describe('view スライス(非依存化 ④-2)', () => {
     const initial = store.getViewState();
     expect(initial).toEqual({
       copiedRange: null,
+      // 追加(作り直しの確認 N-1): 編集を始めるときのエディタの初期値。
+      editorInitialValue: '',
       scrollTop: 0,
       viewportWidth: 0,
       viewportHeight: 0,

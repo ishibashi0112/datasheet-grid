@@ -128,6 +128,40 @@ export const findDetailRowIndex = <T>(
   return -1;
 };
 
+// 追加(dogfood DU-03): 行キーから今の表示位置(view index)を引きます(命令的 API の getViewRowIndex)。キャッシュ →
+//   走査の順で、見つからなければ -1(フィルターで外れた / 閉じたグループの中 / SSRM で未ロード)。findDetailRowIndex と
+//   違い、SSRM でも走査します。ただし行が取れない位置(未ロード行 / グループ行)は見ません(SSRM の未ロード行は
+//   行キーの代わりに view index を返すため、数値の行キーが別の位置に当たらないように)。キャッシュは呼び出し側が
+//   行モデルごとに持ちます(展開行のキャッシュとは分ける)。
+export const findViewRowIndexByKey = <T>(
+  rowModel: RowModel<T>,
+  rowKey: GridRowKey,
+  cache: Map<GridRowKey, number>,
+): number => {
+  const rowCount = rowModel.getRowCount();
+  // 変更(作り直しの確認 N-2): ラベル行(getRow は undefined、getLabelRow が記述子)も、表示されている行として
+  //   キーで引けるようにしました(グループ行と SSRM の未ロード行は従来どおり対象外)。
+  const hasRowAt = (index: number): boolean =>
+    rowModel.getRow(index) != null || rowModel.getLabelRow?.(index) !== undefined;
+  const cached = cache.get(rowKey);
+  if (
+    cached !== undefined &&
+    cached >= 0 &&
+    cached < rowCount &&
+    hasRowAt(cached) &&
+    rowModel.getRowKey(cached) === rowKey
+  ) {
+    return cached;
+  }
+  for (let index = 0; index < rowCount; index += 1) {
+    if (hasRowAt(index) && rowModel.getRowKey(index) === rowKey) {
+      cache.set(rowKey, index);
+      return index;
+    }
+  }
+  return -1;
+};
+
 // 展開中キー集合を「view index 昇順の追加高リスト」へ解決します(createDetailRowMetrics の入力)。
 //   行が取れない(グループ行 / 未ロード / OOB)・isExpandable が false のキーは除外します。
 export const resolveDetailRowExtras = <T>({

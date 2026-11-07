@@ -172,6 +172,20 @@ export function FilterDateField({
       if (event.key === 'Enter' || event.key === ' ') {
         event.preventDefault();
         action();
+        return;
+      }
+      // 追加(dogfood DF-05): ボタンにフォーカスがあるときの Escape も入力欄と同じく、カレンダーが開いていれば
+      //   カレンダーだけ閉じて入力欄へフォーカスを戻し(押したボタンが消えてフォーカスを失わないように)、
+      //   閉じていればポップオーバーを閉じます。
+      if (event.key === 'Escape') {
+        event.preventDefault();
+        if (panelOpen) {
+          closePanel();
+          // ref はここ(描画中に作るハンドラ)から読まず、押したボタンから入力欄を探します。
+          event.currentTarget.closest('.ssg-dp-root')?.querySelector<HTMLInputElement>('.ssg-dp-input')?.focus();
+          return;
+        }
+        onRequestClose();
       }
     },
   });

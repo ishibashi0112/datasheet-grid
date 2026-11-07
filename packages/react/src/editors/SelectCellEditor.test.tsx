@@ -97,6 +97,22 @@ describe('SelectCellEditor', () => {
     expect(onCommit).toHaveBeenCalledWith('berry', 'down');
   });
 
+  // 追加(dogfood DF-13): Home / End / PageUp / PageDown は候補の移動にして、ブラウザの既定の動作(グリッドのスクロール)を止める。
+  it('Home / End は先頭 / 末尾の候補、PageUp / PageDown は端で止まり、どれも既定の動作を止める', () => {
+    const { onCommit, input } = renderSelectEditor();
+    // fireEvent は既定の動作が止められると false を返します。
+    const press = (key: string) => !fireEvent.keyDown(input, { key });
+    expect(press('End')).toBe(true);
+    expect(input.value).toBe('Berry');
+    expect(press('Home')).toBe(true);
+    expect(input.value).toBe('Apple');
+    expect(press('PageDown')).toBe(true);
+    expect(input.value).toBe('Berry');
+    expect(press('PageUp')).toBe(true);
+    expect(input.value).toBe('Apple');
+    expect(onCommit).not.toHaveBeenCalled();
+  });
+
   it('Escape / blur は cancel する(select にドラフト概念はない)', () => {
     const { onCommit, onCancel, input } = renderSelectEditor();
     fireEvent.keyDown(input, { key: 'Escape' });

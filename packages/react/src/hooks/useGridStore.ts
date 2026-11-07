@@ -25,9 +25,10 @@ export function useGridStore(
 // 追加(非依存化 ④-2): view スライス(ビューポート計測 / ホバー)の購読と、フィールド別の setter です。
 //   setter は旧 useState の setter と同じ呼び出し形(値 or 関数)で、参照は store に対して安定です
 //   (useMemo)。旧コードの `const [scrollTop, setScrollTop] = useState(0)` 等の置き換え先。
+//   変更(作り直しの確認 N-1): 省略可のフィールド(editorInitialValue)も setter は必ずあり、undefined は渡しません。
 export type GridViewStateSetters = {
-  [K in keyof GridViewState as `set${Capitalize<K>}`]: (
-    next: Updater<GridViewState[K]>,
+  [K in keyof GridViewState as `set${Capitalize<K>}`]-?: (
+    next: Updater<Exclude<GridViewState[K], undefined>>,
   ) => void;
 };
 
@@ -56,6 +57,12 @@ export function useGridViewState(
       setIsCornerHovered: field('isCornerHovered'),
       // 追加(motion-4 / M-3): コピー範囲(動く点線)。
       setCopiedRange: field('copiedRange'),
+      // 追加(作り直しの確認 N-1): 編集を始めるときのエディタの初期値。
+      setEditorInitialValue: (next: Updater<string>) => {
+        store.setViewState((prev) => ({
+          editorInitialValue: resolveUpdater(next, prev.editorInitialValue ?? ''),
+        }));
+      },
     };
   }, [store]);
   return [view, setters];

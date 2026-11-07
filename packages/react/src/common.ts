@@ -169,6 +169,8 @@ export type {
   GridExportData,
   // 追加(state #1): 列状態のシリアライズ型(getState / applyState の入出力)。
   GridState,
+  // 追加(dogfood DU-06): applyState の入力(渡したスライスだけを変える)。
+  GridStatePatch,
   // 追加(state v2): 列メタ(可視 / 順序 / ピン)のシリアライズ単位(GridState.columns 要素)。
   GridColumnState,
   // 追加(THEME-2): 密度プリセットの型。

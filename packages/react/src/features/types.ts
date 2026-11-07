@@ -117,6 +117,8 @@ export type FilterOrderFeatureArgs<T> = {
   visibleColumns: GridColumn<T>[];
   effectiveColumns: GridColumn<T>[];
   globalFilterText: string;
+  // 追加(dogfood DF-18): 検索の文字を遅らせずに評価するとき true(applyState で入れたフィルター)。
+  globalFilterUrgent?: boolean;
   globalFilterEnabled: boolean;
   columnFilterEnabled: boolean;
   columnFilters: Record<string, ColumnFilterValue>;
@@ -133,6 +135,9 @@ export type FilterOrderFeatureResult = {
   globalFilterProgress: number;
   // 相対日付プリセットの範囲のキー(行パイプライン / serverSide の queryKey の入力。無ければ '')。
   relativeDateKey: string;
+  // 追加(dogfood DF-20): フィルターが行に効くか(フィルターの機能が無い構成の代役は false。省略は true)。false のときは
+  //   下部 / 上部バーの「Filter: …」に状態のフィルターを数えません(効いていないのに「Filter: 1列」と出ていた)。
+  available?: boolean;
 };
 
 // 列フィルターのポップオーバー(filtering)の controller の接続が受け取るシェルの値と返す値です(返す値は controller の
@@ -144,6 +149,8 @@ export type FilterPopoverFeatureArgs<T> = {
   gridRootRef: RefObject<HTMLDivElement | null>;
   isServerSide: boolean;
   rows: T[];
+  // 追加(別視点のレビュー): ラベル行の判定('auto' 列の種別の推定でラベル行の値を数えないため。ラベル行が無ければ未指定)。
+  isLabelRow?: (row: T, sourceIndex: number) => boolean;
 };
 export type FilterPopoverFeatureResult<T> = ReturnType<typeof useFilterPopoverController<T>>;
 // ポップオーバーの中身(候補の収集・派生値・コマンド群・描画)の hook が受け取るシェルの値です。

@@ -13,6 +13,9 @@
   </head>
   <body>
     <div id="root"></div>
+    <!-- グリッドの後ろのフォーカスできる要素(実際のアプリと同じく、最終列の Tab でグリッドの外へ出た先)。無いと Firefox は
+         ブラウザの UI へ、WebKit は文書の先頭(上部バーのボタン)へフォーカスを移し、以降のテストの前提が崩れる。 -->
+    <button id="after-grid" type="button" style="font-size: 10px">after grid</button>
     <script type="module" src="/main.tsx"></script>
   </body>
 </html>

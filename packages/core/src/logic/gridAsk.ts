@@ -11,7 +11,7 @@ import type {
 } from '../model/gridTypes.unbound';
 import { normalizeDateFilterPresets, type NormalizedDateFilterPreset } from './dateFilterPresets';
 import { parseNumberText } from './editorValues';
-import { describeColumnFilterValue } from './filterSummary';
+import { createColumnFilterDescribeOptions, describeColumnFilterValue } from './filterSummary';
 import { formatDateKey, toDateKey } from './filtering';
 import { cloneColumnFilterValue, isSameColumnFilterValue, isSameFilterState, isSameSortState } from './gridState';
 import { formatParsedNumberFilter } from './numberFilterCondition';
@@ -1255,8 +1255,12 @@ export const describeGridAskView = <T,>(state: GridState, options: GridAskOption
   const items: GridAskItem[] = [];
   for (const [key, value] of Object.entries(state.filters.columnFilters)) {
     const column = byKey.get(key);
-    const presets = column ? normalizeDateFilterPresets(column.dateFilterPresets) : undefined;
-    items.push({ id: `f:${key}`, label: titleOf(key), text: describeColumnFilterValue(value, presets) });
+    // 変更(dogfood DU-07): select / set の値はラベルで、数値の条件は列の valueFormatter で出します。
+    items.push({
+      id: `f:${key}`,
+      label: titleOf(key),
+      text: describeColumnFilterValue(value, column ? createColumnFilterDescribeOptions(column) : undefined),
+    });
   }
   for (const entry of state.sort) {
     items.push({

@@ -27,6 +27,9 @@ import { cx } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/cx';
 import type { GridResolvedSlot } from '../model/gridTypes';
 import { isImeComposingKeyEvent } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/domGuards';
 
+// 追加(dogfood DF-13): PageUp / PageDown で動かす候補の数です。
+const SELECT_PAGE_STEP = 8;
+
 type SelectCellEditorProps = {
   options: GridSelectEditorOption[];
   // 編集開始時のセル生値です(初期ハイライトの解決に使用)。
@@ -161,6 +164,24 @@ export function SelectCellEditor({
       const delta = event.key === 'ArrowDown' ? 1 : -1;
       setHighlight((current) => moveHighlight(current, delta, options.length));
       setErrorMessage(null);
+      return;
+    }
+
+    // 追加(dogfood DF-13): Home / End は先頭 / 末尾の候補、PageUp / PageDown は SELECT_PAGE_STEP 件ずつ(端で止まる)。
+    //   これまではブラウザの既定の動作でグリッドがスクロールし、エディタが画面の外へ出ていました。
+    if (event.key === 'Home' || event.key === 'End' || event.key === 'PageUp' || event.key === 'PageDown') {
+      event.preventDefault();
+      const key = event.key;
+      if (options.length > 0) {
+        setHighlight((current) => {
+          if (key === 'Home') return 0;
+          if (key === 'End') return options.length - 1;
+          const base = current < 0 ? 0 : current;
+          const step = key === 'PageDown' ? SELECT_PAGE_STEP : -SELECT_PAGE_STEP;
+          return Math.min(Math.max(base + step, 0), options.length - 1);
+        });
+        setErrorMessage(null);
+      }
       return;
     }
 

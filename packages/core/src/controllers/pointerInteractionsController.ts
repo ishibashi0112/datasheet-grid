@@ -485,6 +485,18 @@ export const createPointerInteractionsController = <T,>(): PointerInteractionsCo
     if (!beginPointerDown(event, { kind: 'cell', cell }) || args === null) {
       return;
     }
+    // 追加(dogfood DU-15): Shift+クリックは、今の範囲の起点(無ければアクティブセル)から押したセルまでを選びます
+    //   (起点からそのセルまでドラッグしたのと同じ。そのまま動かせば範囲が広がる。Shift+矢印と同じ起点)。
+    //   これまでは Shift を見ず、押したセルだけの選択になっていました。
+    if (event.shiftKey && args.enableRangeSelection) {
+      const { selection, activeCell } = args.uiState;
+      const anchor = selection?.type === 'cell' ? selection.range.start : activeCell;
+      if (anchor) {
+        args.dispatch(gridActions.startSelection(anchor));
+        args.dispatch(gridActions.updateSelection(cell));
+        return;
+      }
+    }
     args.dispatch(gridActions.activateCell(cell));
     if (args.enableRangeSelection) {
       args.dispatch(gridActions.startSelection(cell));

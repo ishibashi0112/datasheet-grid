@@ -14,8 +14,9 @@ Peer dependencies: `react` / `react-dom` `^18.3.0 || ^19.0.0` (React 18 is suppo
 
 ```ts
 import '@ishibashi0112/spreadsheet-grid/style.css'
-// or, if you use CSS cascade layers (e.g. Tailwind v4): '@ishibashi0112/spreadsheet-grid/style.layer.css'
 ```
+
+`style.css` also works as is with Tailwind CSS v4. The cascade-layer variant `style.layer.css` (everything inside `@layer ssg-base`) is only for when you want the grid inside your layer order, and then you must declare that order in your CSS before Tailwind — `@layer theme, base, ssg-base, components, utilities;` — otherwise `ssg-base` becomes the weakest layer and Tailwind's preflight breaks the borders, buttons and popovers ([details](https://datasheet-grid.vercel.app/docs/installation)). The declaration must load before `style.layer.css`: import `style.layer.css` from that CSS file (`@import`), or, from JS, after it. The same goes for StyleX with `useLayers`.
 
 Using Astryx, Mantine, HeroUI v3 or shadcn/ui? Also import its theme after `style.css` (`themes/astryx.css` / `themes/mantine.css` / `themes/heroui.css` / `themes/shadcn.css`) so the grid follows your design system's colors and light / dark ([guide](https://datasheet-grid.vercel.app/docs/guides/design-systems)).
 
@@ -49,7 +50,7 @@ More runnable examples (server-side row model, Astryx) are in [`examples/`](http
 
 ## Smaller bundles: `/lite` (0.54.0+)
 
-`SpreadsheetGrid` includes every feature (about 112KB gzip of initial JS). The `/lite` entry builds a grid with only the features you pass; the rest is left out of your bundle (about 60KB with no features, about 78KB with the `standardFeatures` preset).
+`SpreadsheetGrid` includes every feature (about 120KB gzip of initial JS). The `/lite` entry builds a grid with only the features you pass; the rest is left out of your bundle (about 65KB with no features, about 84KB with the `standardFeatures` preset).
 
 ```tsx
 import { createSpreadsheetGrid, standardFeatures, serverSideFeature } from '@ishibashi0112/spreadsheet-grid/lite'
@@ -98,6 +99,7 @@ This library is new, so AI coding assistants rarely know its API and tend to gue
 - **`rows` or `dataSource`.** `rows` is the client-side row model; `dataSource` switches to the server-side row model. They are mutually exclusive.
 - **Height.** Use the `height` prop, not `style.height` on the root. A value containing `%` (`'100%'`) sizes the **whole grid including its bars** and needs a parent with a definite height; a number sizes the **scroll area only**. Without `height`, the scroll area is capped at `480px` (`maxHeight`).
 - **Imperative API.** Pass `ref` to get a `SpreadsheetGridHandle<T>` (no `forwardRef` needed on your side; works the same on React 18.3 and 19).
+- **Positions are view positions.** `viewRowIndex` / `colIndex` (in `selectCell` and the like) are positions after sorting and filtering, and `colIndex` also counts the columns the grid adds (row drag handle, detail toggle, auto group column). Look them up with `getViewRowIndex(rowKey)` / `getColIndex(columnKey)` instead of `rows.findIndex`.
 - **Next.js App Router.** Render the grid from a Client Component (a file with `'use client'`); the package does not add the directive.
 
 ## Versioning
@@ -116,6 +118,8 @@ React 18.3 / 19 向けの仮想化スプレッドシート / データグリッ�
 
 **[ドキュメントとライブデモ](https://datasheet-grid.vercel.app)** · [プレイグラウンド](https://datasheet-grid.vercel.app/playground) · [StackBlitz で試す](https://stackblitz.com/fork/github/ishibashi0112/datasheet-grid/tree/main/examples/basic?file=src/App.tsx&terminal=dev) · [GitHub](https://github.com/ishibashi0112/datasheet-grid) · [変更履歴](https://github.com/ishibashi0112/datasheet-grid/blob/main/CHANGELOG.md)
 
+CSS は `import '@ishibashi0112/spreadsheet-grid/style.css'` を 1 回読み込みます。Tailwind CSS v4 でも `style.css` でそのまま動きます。カスケードレイヤー版の `style.layer.css`(全体が `@layer ssg-base`)は、グリッドを自分のレイヤー順に入れたいときだけ使い、そのときは CSS で Tailwind より前に `@layer theme, base, ssg-base, components, utilities;` とレイヤー順を宣言してください(宣言しないと `ssg-base` が一番弱いレイヤーになり、Tailwind の Preflight に罫線・ボタン・ポップオーバーが崩されます。[詳しく](https://datasheet-grid.vercel.app/docs/installation))。宣言は `style.layer.css` より先に読まれる必要があるので、`style.layer.css` は宣言した CSS の中で `@import` するか、JS ならその CSS の後に `import` します。StyleX の `useLayers` を使うときも同じです。
+
 Astryx / Mantine / HeroUI v3 / shadcn/ui の中で使うときは、`style.css` の後にそれぞれのテーマ(`themes/astryx.css` / `themes/mantine.css` / `themes/heroui.css` / `themes/shadcn.css`)を読み込むと、配色がデザインシステムのテーマとライト / ダークに揃います([ガイド](https://datasheet-grid.vercel.app/docs/guides/design-systems))。
 
 ブラウザで動かせるサンプル(編集できる在庫表 / サーバーサイド行モデル / Astryx)は [`examples/`](https://github.com/ishibashi0112/datasheet-grid/tree/main/examples) にあり、どれも StackBlitz で開けます。
@@ -124,7 +128,7 @@ Astryx / Mantine / HeroUI v3 / shadcn/ui の中で使うときは、`style.css` 
 
 ### バンドルを小さくする: `/lite`(0.54.0 から)
 
-`SpreadsheetGrid` は全機能入りです(初期読み込みの JS が約 112KB gzip)。`/lite` の入口では、渡した機能だけを入れたグリッドを作れます。渡さなかった機能はバンドルに入りません(機能なしで約 60KB、プリセット `standardFeatures` で約 78KB)。
+`SpreadsheetGrid` は全機能入りです(初期読み込みの JS が約 120KB gzip)。`/lite` の入口では、渡した機能だけを入れたグリッドを作れます。渡さなかった機能はバンドルに入りません(機能なしで約 65KB、プリセット `standardFeatures` で約 84KB)。
 
 ```tsx
 import { createSpreadsheetGrid, standardFeatures, serverSideFeature } from '@ishibashi0112/spreadsheet-grid/lite'
@@ -173,6 +177,7 @@ npm パッケージに同梱されているため、オフライン(`node_module
 - **`rows` か `dataSource`。** `rows` はクライアントサイド行モデル、`dataSource` を渡すとサーバーサイド行モデルです。両者は排他です。
 - **高さ。** ルートの `style.height` ではなく `height` prop で指定します。`%` を含む値(`'100%'`)は**バーを含むグリッド全体**の高さで、親要素に確定高さが必要です。数値は**スクロール領域だけ**の高さです。`height` 未指定時のスクロール領域は `480px`(`maxHeight`)が上限です。
 - **命令的 API。** `ref` を渡すと `SpreadsheetGridHandle<T>` を受け取れます(利用側で `forwardRef` は不要。React 18.3 / 19 のどちらでも同じ)。
+- **位置は表示の位置。** `selectCell` などの `viewRowIndex` / `colIndex` は並べ替え・絞り込みの後の表示の位置で、`colIndex` は行ドラッグのハンドル列・展開トグル列・自動グループ列(ライブラリが足す列)も数えます。`rows.findIndex` ではなく `getViewRowIndex(rowKey)` / `getColIndex(columnKey)` で引いてください。
 - **Next.js App Router。** クライアントコンポーネント(`'use client'` のファイル)から描画してください。パッケージ側はディレクティブを付けていません。
 
 ### バージョンの方針

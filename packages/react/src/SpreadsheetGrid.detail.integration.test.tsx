@@ -378,3 +378,105 @@ describe('展開行(結合)', () => {
     expect(centerBands(container)).toHaveLength(0);
   });
 });
+
+// 追加(dogfood DF-16 / DU-04): 実際にアプリを作って見つかった展開行の操作の所見の回帰テストです。
+describe('展開行の操作(dogfood)', () => {
+  it('DF-16: ▸ を押してもアクティブセルは動かず onActiveCellChange も呼ばれない(開閉だけ)。フォーカスはグリッドへ', () => {
+    const ref = createRef<SpreadsheetGridHandle<Row>>();
+    const onActiveCellChange = vi.fn();
+    const { container } = render(
+      <SpreadsheetGrid
+        ref={ref}
+        columns={columns}
+        rows={rows}
+        rowKeyGetter={rowKeyGetter}
+        detailRow={detailRow}
+        onActiveCellChange={onActiveCellChange}
+      />,
+    );
+    act(() => {
+      ref.current?.setActiveCell({ row: 2, col: 2 });
+    });
+    onActiveCellChange.mockClear();
+    const toggle = toggleAt(container, 0);
+    expect(toggle).not.toBeNull();
+    act(() => {
+      fireEvent.pointerDown(toggle!, { button: 0, pointerId: 1, pointerType: 'mouse' });
+      fireEvent.pointerUp(window, { button: 0, pointerId: 1, pointerType: 'mouse' });
+      fireEvent.click(toggle!);
+    });
+    expect(ref.current?.getExpandedDetailRowKeys()).toEqual(['a']);
+    expect(ref.current?.getActiveCell()).toEqual({ row: 2, col: 2 });
+    expect(onActiveCellChange).not.toHaveBeenCalled();
+    expect(document.activeElement).toBe(getShell(container));
+  });
+
+  // 追加(別視点のレビュー): ▸ の pointerdown は window まで届く(開いている右クリックメニューやポップオーバーは、外側の
+  //   pointerdown を window で見て閉じるため。伝播を止めると開いたまま残っていた)。アクティブセルは動かさないまま。
+  it('DF-16: ▸ の pointerdown は window へ届く(開いているメニューが閉じる)', () => {
+    const ref = createRef<SpreadsheetGridHandle<Row>>();
+    const { container } = render(
+      <SpreadsheetGrid ref={ref} columns={columns} rows={rows} rowKeyGetter={rowKeyGetter} detailRow={detailRow} />,
+    );
+    act(() => {
+      ref.current?.setActiveCell({ row: 2, col: 2 });
+    });
+    const seen = vi.fn();
+    window.addEventListener('pointerdown', seen);
+    try {
+      const toggle = toggleAt(container, 0);
+      act(() => {
+        fireEvent.pointerDown(toggle!, { button: 0, pointerId: 1, pointerType: 'mouse' });
+        fireEvent.pointerUp(window, { button: 0, pointerId: 1, pointerType: 'mouse' });
+        fireEvent.click(toggle!);
+      });
+      expect(seen).toHaveBeenCalledTimes(1);
+      expect(ref.current?.getExpandedDetailRowKeys()).toEqual(['a']);
+      expect(ref.current?.getActiveCell()).toEqual({ row: 2, col: 2 });
+      // タッチで押しても、アクティブセルは動かない
+      act(() => {
+        fireEvent.pointerDown(toggle!, { button: 0, pointerId: 2, pointerType: 'touch', clientX: 5, clientY: 5 });
+        fireEvent.pointerUp(window, { button: 0, pointerId: 2, pointerType: 'touch', clientX: 5, clientY: 5 });
+      });
+      expect(ref.current?.getActiveCell()).toEqual({ row: 2, col: 2 });
+    } finally {
+      window.removeEventListener('pointerdown', seen);
+    }
+  });
+
+  it('DU-04: 展開トグル列のセルで Enter / Space を押すと開閉する(開閉できない行では何もしない)', () => {
+    const ref = createRef<SpreadsheetGridHandle<Row>>();
+    const onRowsChange = vi.fn();
+    const { container } = render(
+      <SpreadsheetGrid
+        ref={ref}
+        columns={columns}
+        rows={rows}
+        rowKeyGetter={rowKeyGetter}
+        detailRow={detailRow}
+        onRowsChange={onRowsChange}
+      />,
+    );
+    const shell = getShell(container);
+    act(() => {
+      ref.current?.setActiveCell({ row: 0, col: 0 });
+    });
+    fireEvent.keyDown(shell, { key: 'Enter' });
+    expect(ref.current?.getExpandedDetailRowKeys()).toEqual(['a']);
+    fireEvent.keyDown(shell, { key: ' ' });
+    expect(ref.current?.getExpandedDetailRowKeys()).toEqual([]);
+    // 行 b は isExpandable が false。
+    act(() => {
+      ref.current?.setActiveCell({ row: 1, col: 0 });
+    });
+    fireEvent.keyDown(shell, { key: 'Enter' });
+    expect(ref.current?.getExpandedDetailRowKeys()).toEqual([]);
+    // データ列の Enter はこれまでどおり編集の開始(開閉しない)。
+    act(() => {
+      ref.current?.setActiveCell({ row: 0, col: 2 });
+    });
+    fireEvent.keyDown(shell, { key: 'Enter' });
+    expect(ref.current?.getExpandedDetailRowKeys()).toEqual([]);
+    expect(container.querySelector('.ssg-cell-editor, [data-ssg-editor]')).not.toBeNull();
+  });
+});

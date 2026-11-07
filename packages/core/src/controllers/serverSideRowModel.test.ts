@@ -234,7 +234,8 @@ describe('serverSideRowModel', () => {
   });
 
   // 追加(motion-7 / M-9): 書き戻しのセル単位の状態通知(pending → ok / failed、refresh で cleared)。
-  it('applyCellEdits は onWriteStateChange に pending → ok / failed を rowKey × 変更列で通知し、refresh 後の決着は cleared', async () => {
+  // 変更(dogfood DF-07): refresh の後に決着した書き込みも ok / failed を知らせます(取り直しは決着を待つ)。cleared は unmount のときだけ。
+  it('applyCellEdits は onWriteStateChange に pending → ok / failed を rowKey × 変更列で通知し、refresh 後の決着も知らせ、dispose 後は cleared', async () => {
     const flush = async () => {
       await Promise.resolve();
       await Promise.resolve();
@@ -290,8 +291,13 @@ describe('serverSideRowModel', () => {
     failController.refresh();
     vi.runAllTimers();
     await flush();
+    expect(events.map((e) => e.state)).toEqual(['pending', 'failed']);
+
+    events.length = 0;
+    failController.applyCellEdits([{ viewIndex: 2, column, value: 7 }]);
+    failController.dispose();
+    await flush();
     expect(events.map((e) => e.state)).toEqual(['pending', 'cleared']);
     okController.dispose();
-    failController.dispose();
   });
 });

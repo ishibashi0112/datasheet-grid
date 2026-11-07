@@ -30,7 +30,7 @@ const csv = gridRef.current?.exportCsv({ delimiter: '\t' }); // TSV も可
 | `'selection'` | セル範囲選択中の行 |
 | `'rendered'` | 仮想化で現在描画中の行のみ(スクロール依存) |
 
-列は**表示中の列を表示順**で出力し、`valueFormatter` 適用前の生値ではなく表示値ベースの整形が使われます(`formatClipboardValue` があればそれが優先)。
+列は**表示中の列を表示順**で出力します。値は `valueFormatter` を通さない**生の値**(`String(value ?? '')`。`1234.5` は `1,234.5` ではなく `1234.5`)で、コピー(`Ctrl/Cmd+C`)と同じ規則です。`formatClipboardValue` があればそれを使うので、画面と同じ書き方で出したい列は `formatClipboardValue` に `valueFormatter` と同じ整形を書きます。
 
 ### 行の除外(isRowExportable)
 

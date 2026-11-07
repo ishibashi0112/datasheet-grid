@@ -1366,8 +1366,9 @@
   .ssg-fill-menu {
     min-width: 168px;
   }
-  /* 開いたときに選ばれている項目へフォーカスを置くため、枠はアクセント色の内側線にします(既定の太い黒枠を出さない)。 */
-  .ssg-fill-menu .ssg-menu-item:focus-visible {
+  /* 開いたときに選ばれている項目へフォーカスを置くため、枠はアクセント色の内側線にします(既定の太い黒枠を出さない)。
+     変更(dogfood DF-17): 右クリックメニューも ↓ / ↑ で項目へフォーカスを置くので、メニュー項目すべてに同じ枠を出します。 */
+  .ssg-menu-item:focus-visible {
     outline: 2px solid var(--ssg-accent);
     outline-offset: -2px;
   }
@@ -1403,6 +1404,12 @@
   .ssg-cell-editor {
     pointer-events: none;
     z-index: 5;
+  }
+  /* 追加(dogfood DD-25): custom エディタの中身はクリックを受けます(枠の pointer-events: none を継承して、中身の
+     ボタンや入力欄を押しても下のセルに当たっていた)。:where で特異度 0 なので、組み込みのエディタ(入力欄 = auto /
+     エラーの吹き出し = none)や利用側のクラスの指定がそのまま勝ちます。 */
+  :where(.ssg-cell-editor) > * {
+    pointer-events: auto;
   }
   .ssg-cell-editor-input {
     width: 100%;
@@ -2651,12 +2658,8 @@
     margin-bottom: 6px;
   }
 
-  /* 種別ヒント / メタ情報行。--ellipsis は省略表示を足す。 */
-  .ssg-filter-hint {
-    font-size: 10.5px;
-    color: var(--ssg-panel-text-muted);
-    margin-bottom: 6px;
-  }
+  /* メタ情報行。--ellipsis は省略表示を足す。
+     変更(dogfood DF-21): 種別ヒント(.ssg-filter-hint。「フィルター種別: number」のような内部名)は出さなくなったので消しました。 */
   .ssg-filter-meta {
     font-size: 10.5px;
     color: var(--ssg-panel-text-muted);

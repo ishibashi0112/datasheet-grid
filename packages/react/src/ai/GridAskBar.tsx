@@ -103,12 +103,20 @@ export function GridAskBar<T>({
     focusAfterRef.current = { chip, at: performance.now() };
   };
 
+  // 変更(dogfood DU-19): 答えを読めたら入力欄を空にします(送った後に続けて打つと前の文につながって送られ、最後の
+  //   チップの × で入力欄へ戻った後の Enter で前の文を送り直していた)。聞いている間に書き換えていれば残します。
+  //   失敗したときは残します(直して送れるように。「もう一度」は送った文を送り直す)。
   const send = (value: string) => {
     if (asking || value.trim() === '') {
       return;
     }
-    setSentText(value.trim());
-    void ask.submit(value);
+    const sent = value.trim();
+    setSentText(sent);
+    void ask.submit(value).then((answered) => {
+      if (answered) {
+        setText((current) => (current.trim() === sent ? '' : current));
+      }
+    });
   };
 
   // 変換を確定する Enter では送りません(Safari は確定の keydown が isComposing=false / keyCode 229 で届く)。
@@ -309,7 +317,7 @@ export function GridAskBar<T>({
                 </button>
               </div>
             )}
-            {session.phase !== 'undone' && session.dropped.length > 0 && (
+            {session.phase !== 'undone' && session.phase !== 'changed' && session.dropped.length > 0 && (
               <div className="ssg-ask-note ssg-ask-note--warn">
                 <span className="ssg-ask-note-title">使えなかった部分</span>
                 <ul className="ssg-ask-dropped">
@@ -319,7 +327,7 @@ export function GridAskBar<T>({
                 </ul>
               </div>
             )}
-            {session.phase !== 'undone' && session.unsupported !== null && (
+            {session.phase !== 'undone' && session.phase !== 'changed' && session.unsupported !== null && (
               <div className="ssg-ask-note">
                 <span>AI から: {session.unsupported}</span>
               </div>
@@ -329,6 +337,19 @@ export function GridAskBar<T>({
         {ask.notice !== null && (
           <div className="ssg-ask-note ssg-ask-note--warn">
             <span>{ask.notice}</span>
+            {/* 追加(dogfood DU-08): 表が手で変わって反映した条件のチップを下げたときは、ここで閉じる。 */}
+            {session?.phase === 'changed' && (
+              <button
+                type="button"
+                className="ssg-ask-link"
+                onClick={() => {
+                  keepFocus();
+                  ask.dismiss();
+                }}
+              >
+                閉じる
+              </button>
+            )}
           </div>
         )}
       </div>

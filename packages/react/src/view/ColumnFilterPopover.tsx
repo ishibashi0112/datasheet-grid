@@ -436,6 +436,14 @@ function SetFilterBody({
   );
 }
 
+// 追加(dogfood DF-05): ポップオーバーの中のボタンのキーはグリッド側へ流しません(ルートでも止めます)。Escape だけは
+//   ルートへ通し、ルートがポップオーバーを閉じます(ボタンにフォーカスがあると Escape で閉じなかったため)。
+const stopButtonKeyPropagation = (event: KeyboardEvent<HTMLElement>) => {
+  if (event.key !== 'Escape') {
+    event.stopPropagation();
+  }
+};
+
 // ── number 条件エディタ(filter-ext A/B 共有) ──────────
 // 追加(filter-ext B): 演算子セレクト + 値入力(0〜2 個)です。kind:'number' の popover と
 //   numberSet の条件セクションが共有します。Enter / Escape の意味づけ(適用 or 閉じる)は
@@ -767,7 +775,7 @@ function DateConditionEditor({
                 });
               }}
               onKeyDown={(event) => {
-                event.stopPropagation();
+                stopButtonKeyPropagation(event);
                 // 追加(audit V-02): pointerdown 専用だったためキーボード(Enter / Space)で押せなかった。
                 if (event.key === 'Enter' || event.key === ' ') {
                   event.preventDefault();
@@ -927,7 +935,7 @@ function DateSetFilterBody({
               toggleExpanded(row.key);
             }}
             onKeyDown={(event) => {
-              event.stopPropagation();
+              stopButtonKeyPropagation(event);
               // 追加(audit V-02): キーボード(Enter / Space)でも開閉できるようにする。
               if (event.key === 'Enter' || event.key === ' ') {
                 event.preventDefault();
@@ -1136,7 +1144,7 @@ function OptionsPendingBody({
             onRetry();
           }}
           onKeyDown={(event) => {
-            event.stopPropagation();
+            stopButtonKeyPropagation(event);
             if (event.key === 'Enter' || event.key === ' ') {
               event.preventDefault();
               onRetry();
@@ -1179,7 +1187,7 @@ function ComboFilterLayout({
             onConditionClear();
           }}
           onKeyDown={(event) => {
-            event.stopPropagation();
+            stopButtonKeyPropagation(event);
             // 追加(audit V-02): キーボード(Enter / Space)でも押せるようにする。
             if (event.key === 'Enter' || event.key === ' ') {
               event.preventDefault();
@@ -1207,7 +1215,7 @@ function ComboFilterLayout({
             onSelectionClear();
           }}
           onKeyDown={(event) => {
-            event.stopPropagation();
+            stopButtonKeyPropagation(event);
             // 追加(audit V-02): キーボード(Enter / Space)でも押せるようにする。
             if (event.key === 'Enter' || event.key === ' ') {
               event.preventDefault();
@@ -1300,6 +1308,13 @@ export function ColumnFilterPopover({
     //   なお grid root 側の onKeyDown は popup 開放中 undefined にゲート済みのため、
     //   capture で先回りする必要はもともとありません。
     event.stopPropagation();
+    // 追加(dogfood DF-05): パネルのどこにフォーカスがあっても Escape で閉じます(これまでは入力欄だけが Escape を扱い、
+    //   一覧のチェックボックスやボタンにフォーカスがあると閉じませんでした)。中の部品が先に扱った Escape(日付の
+    //   カレンダーを閉じる等。preventDefault 済み)と、IME の変換中の Escape は除きます。
+    if (event.key === 'Escape' && !event.defaultPrevented && !isImeComposingKeyEvent(event.nativeEvent)) {
+      event.preventDefault();
+      onRequestClose();
+    }
   };
 
   const handlePointerDown = (event: PointerEvent<HTMLDivElement>) => {
@@ -1515,7 +1530,6 @@ export function ColumnFilterPopover({
         //   (範囲 = 2 / 空白・空白でない = 0 / 他 = 1)。適用は従来どおりフッター / Enter です。
         // 変更(filter-ext B): エディタ本体は NumberConditionEditor へ抽出しました(numberSet と共有)。
         <>
-          <div className="ssg-filter-hint">フィルター種別: number</div>
           <NumberConditionEditor
             draft={numberDraft}
             valueInputRef={textInputRef}
@@ -1525,7 +1539,6 @@ export function ColumnFilterPopover({
         </>
       ) : filterType === 'select' ? (
         <>
-          <div className="ssg-filter-hint">フィルター種別: select</div>
           <select
             ref={selectRef}
             value={draftValue}
@@ -1561,7 +1574,6 @@ export function ColumnFilterPopover({
         // 変更(filter-ext A): number が専用分岐(演算子セレクト)へ独立したため、
         //   ここは text / date / custom の部分一致テキスト入力だけになりました。
         <>
-          <div className="ssg-filter-hint">フィルター種別: {filterType}</div>
           <input
             ref={textInputRef}
             type="text"
@@ -1616,7 +1628,7 @@ export function ColumnFilterPopover({
               }}
               onKeyDown={(event) => {
                 // 追加: popover 内 button の key 操作を grid 側へ流しません。
-                event.stopPropagation();
+                stopButtonKeyPropagation(event);
                 // 追加(audit V-02): キーボード(Enter / Space)でも押せるようにする。
                 if (event.key === 'Enter' || event.key === ' ') {
                   event.preventDefault();
@@ -1635,7 +1647,7 @@ export function ColumnFilterPopover({
                 onRequestClose();
               }}
               onKeyDown={(event) => {
-                event.stopPropagation();
+                stopButtonKeyPropagation(event);
                 // 追加(audit V-02): キーボード(Enter / Space)でも押せるようにする。
                 if (event.key === 'Enter' || event.key === ' ') {
                   event.preventDefault();
@@ -1658,7 +1670,7 @@ export function ColumnFilterPopover({
               }}
               onKeyDown={(event) => {
                 // 追加: popover 内 button の key 操作を grid 側へ流しません。
-                event.stopPropagation();
+                stopButtonKeyPropagation(event);
                 // 追加(audit V-02): キーボード(Enter / Space)でも押せるようにする。
                 if (event.key === 'Enter' || event.key === ' ') {
                   event.preventDefault();
@@ -1678,7 +1690,7 @@ export function ColumnFilterPopover({
               }}
               onKeyDown={(event) => {
                 // 追加: popover 内 button の key 操作を grid 側へ流しません。
-                event.stopPropagation();
+                stopButtonKeyPropagation(event);
                 // 追加(audit V-02): キーボード(Enter / Space)でも押せるようにする。
                 if (event.key === 'Enter' || event.key === ' ') {
                   event.preventDefault();

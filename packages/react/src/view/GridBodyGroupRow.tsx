@@ -2,7 +2,7 @@
 //   が持ち、GridBodyLayer は GroupRow として受け取る。機能を外した構成に持ち込まないため)。中身は移設前と同じです。
 import { memo } from 'react';
 import type { CSSProperties, PointerEvent } from 'react';
-import type { GridColumn, GridGroupRow as GridGroupRowDescriptor, GridResolvedSlots } from '../model/gridTypes';
+import type { CellCoord, GridColumn, GridGroupRow as GridGroupRowDescriptor, GridResolvedSlots } from '../model/gridTypes';
 import { GROUP_AUTO_COLUMN_KEY } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/grouping';
 import type { PaneColumnEntry } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/geometry';
 import { cx } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/cx';
@@ -14,8 +14,9 @@ import type { GridPaneKind } from './GridHeaderRow';
 //   - 自動グループ列(GROUP_AUTO_COLUMN_KEY): インデント + 開閉シェブロン + ラベル + 件数。
 //   - aggFunc 列: 集計値の文字列表示(C1 = グループ行内表示。undefined は空セル)。
 //   - その他の列: 空セル。
-//   セル選択には参加しません(pointer down / enter は配線しない)。開閉はシェブロン click と
-//   行ダブルクリックの 2 経路です。props はプリミティブ + ツリー世代で安定な参照
+//   変更(dogfood DF-01): セルを押すとアクティブセルになり、ドラッグで範囲選択も始まります(葉の行のセルと同じ)。
+//   これまでは押してもアクティブセルが変わらず、続けて押した Enter / Space が直前の葉のセルの編集になっていました。
+//   開閉はシェブロン click・行ダブルクリック・アクティブセルでの Enter / Space の 3 経路です。props はプリミティブ + ツリー世代で安定な参照
 //   (groupRow / renderEntries)のみで、memo が縦スクロール・選択操作で機能します。
 // ──────────────────────────────────────────────────────────
 type GridBodyGroupRowProps<T> = {
@@ -39,14 +40,16 @@ type GridBodyGroupRowProps<T> = {
     event: PointerEvent<HTMLDivElement>,
   ) => void;
   onRowHeaderPointerLeave: (rowIndex: number) => void;
+  // 追加(dogfood DF-01): 葉の行のセルと同じ pointer down / enter(アクティブセル・範囲選択)。
+  onCellPointerDown?: (cell: CellCoord, event: PointerEvent<HTMLDivElement>) => void;
+  onCellPointerEnter?: (cell: CellCoord, event: PointerEvent<HTMLDivElement>) => void;
   // 変更(slot-props): classNames 由来の解決済みスロット表(参照は親で署名 memo 済み)。
   slots?: GridResolvedSlots;
 };
 
 // 集計値の表示文字列です。undefined / null は空セル。列に valueFormatter があれば集計値にも
 //   適用し、leaf セルと表示を揃えます(グループ行に leaf 行は無いため row は undefined。
-//   型上は T のままの実行時 undefined = DS-3-9 と同じ明文化で、row を読む formatter を使う列では
-//   aggFunc 側で整形済み文字列を返してください)。formatter 無しは String()(カスタム aggFunc は
+//   変更(dogfood DF-06): 型も T | undefined になりました)。formatter 無しは String()(カスタム aggFunc は
 //   整形済み文字列を返せます)。
 const formatAggregateValue = <T,>(
   column: GridColumn<T>,
@@ -58,7 +61,7 @@ const formatAggregateValue = <T,>(
   if (column.valueFormatter) {
     return column.valueFormatter({
       value,
-      row: undefined as unknown as T,
+      row: undefined,
       column,
     });
   }
@@ -84,6 +87,8 @@ function GridBodyGroupRowInner<T>({
   onGroupToggle,
   onRowHeaderPointerEnter,
   onRowHeaderPointerLeave,
+  onCellPointerDown,
+  onCellPointerEnter,
   slots,
 }: GridBodyGroupRowProps<T>) {
   return (
@@ -153,6 +158,16 @@ function GridBodyGroupRowInner<T>({
             role="gridcell"
             aria-colindex={entry.logicalIndex + 2}
             data-ssg-col-key={column.key}
+            onPointerDown={
+              onCellPointerDown
+                ? (event) => onCellPointerDown({ row: rowIndex, col: entry.logicalIndex }, event)
+                : undefined
+            }
+            onPointerEnter={
+              onCellPointerEnter
+                ? (event) => onCellPointerEnter({ row: rowIndex, col: entry.logicalIndex }, event)
+                : undefined
+            }
             className={cx(
               'ssg-body-cell',
               'ssg-group-cell',
@@ -181,6 +196,8 @@ function GridBodyGroupRowInner<T>({
                 />
                 <button
                   type="button"
+                  // 変更(dogfood DF-08): Tab の順番に入れません(キーボードではアクティブセルで Enter / Space)。
+                  tabIndex={-1}
                   className="ssg-group-toggle"
                   aria-expanded={!isCollapsed}
                   aria-label={`${groupRow.label} を${isCollapsed ? '展開' : '折りたたみ'}`}

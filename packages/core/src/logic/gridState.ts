@@ -12,6 +12,7 @@ import type {
 // 追加(state v2): 列メタ適用時、pinned/order を AG Grid 互換の視覚順(left→center→right)へ
 //   正規化するために再利用します。grid 本体の reorder 経路と同じ関数で、適用結果の pane 連結を
 //   一致させます(視覚順 = 論理 index 空間の不変条件を applyState でも守るため)。
+import { isSyntheticColumnKey } from './detailRow';
 import { reorderColumnsByPane } from './geometry';
 
 // 追加(state #1): 列状態のシリアライズ(getState / applyState)の純ロジックです。ハンドル
@@ -311,6 +312,108 @@ export const migrateGridState = (input: unknown): GridState => {
     sort,
     columns,
   };
+};
+
+// 追加(dogfood DU-06): applyState の入力を、渡されたスライスだけを持つ形へ正規化します(渡さないスライスは今のまま
+//   残すため)。値の正規化は migrateGridState と同じで、ここでは「どのスライスが渡されたか」だけを足します。
+//   - 渡された = そのキーの値が undefined でない(null なども「渡された」= 既定へ戻す。従来どおり)。
+//   - filters がオブジェクトなら globalText / columnFilters を別々に見ます(片方だけ変えられる)。オブジェクトでない
+//     (null 等)ときは両方を既定へ戻します(従来どおり)。
+//   - columns は migrateGridState のまま(配列のときだけ。v1 互換)。
+export type NormalizedGridStatePatch = {
+  columnWidths?: Record<string, number>;
+  filters?: { globalText?: string; columnFilters?: Record<string, ColumnFilterValue> };
+  sort?: GridSortState;
+  columns?: GridColumnState[];
+};
+
+export const migrateGridStatePatch = (input: unknown): NormalizedGridStatePatch => {
+  const full = migrateGridState(input);
+  const source =
+    input && typeof input === 'object'
+      ? (input as Record<string, unknown>)
+      : {};
+  const patch: NormalizedGridStatePatch = {};
+  if (source.columnWidths !== undefined) {
+    patch.columnWidths = full.columnWidths;
+  }
+  if (source.filters !== undefined) {
+    const rawFilters = source.filters;
+    if (rawFilters && typeof rawFilters === 'object') {
+      const filters = rawFilters as Record<string, unknown>;
+      const next: NonNullable<NormalizedGridStatePatch['filters']> = {};
+      if (filters.globalText !== undefined) {
+        next.globalText = full.filters.globalText;
+      }
+      if (filters.columnFilters !== undefined) {
+        next.columnFilters = full.filters.columnFilters;
+      }
+      if (next.globalText !== undefined || next.columnFilters !== undefined) {
+        patch.filters = next;
+      }
+    } else {
+      patch.filters = { ...full.filters };
+    }
+  }
+  if (source.sort !== undefined) {
+    patch.sort = full.sort;
+  }
+  if (full.columns !== undefined) {
+    patch.columns = full.columns;
+  }
+  return patch;
+};
+
+// 追加(dogfood DF-04): 今の列定義(columns prop)に無い列キーの幅 / 列フィルター / ソートを捨てます。古い保存状態を
+//   戻したとき、無い列のフィルターが残って 0 件になり、チップにもフィルターの管理にも出ないので画面から外せなかった
+//   ため。捨てた列キー(重複なし・見つけた順)も返します(開発時の警告用)。columns(列メタ)は applyColumnState が
+//   無い列を捨てるのでここでは触りません。
+// 変更(別視点のレビュー): ライブラリが足す列(自動グループ列など)の幅は捨てません(自動グループ列は手で幅を変えられ、
+//   getState() の columnWidths に入るため。捨てると applyState(getState()) で幅が戻り、見当違いの警告も出ていた)。
+export const dropUnknownColumnKeys = (
+  patch: NormalizedGridStatePatch,
+  knownKeys: ReadonlySet<string>,
+): { patch: NormalizedGridStatePatch; dropped: string[] } => {
+  const dropped: string[] = [];
+  const drop = (key: string) => {
+    if (!dropped.includes(key)) {
+      dropped.push(key);
+    }
+  };
+  const next: NormalizedGridStatePatch = { ...patch };
+  if (patch.columnWidths) {
+    const widths: Record<string, number> = {};
+    for (const key of Object.keys(patch.columnWidths)) {
+      if (knownKeys.has(key) || isSyntheticColumnKey(key)) {
+        widths[key] = patch.columnWidths[key] as number;
+      } else {
+        drop(key);
+      }
+    }
+    next.columnWidths = widths;
+  }
+  if (patch.filters?.columnFilters) {
+    const columnFilters: Record<string, ColumnFilterValue> = {};
+    for (const key of Object.keys(patch.filters.columnFilters)) {
+      const value = patch.filters.columnFilters[key];
+      if (knownKeys.has(key) && value) {
+        columnFilters[key] = value;
+      } else {
+        drop(key);
+      }
+    }
+    next.filters = { ...patch.filters, columnFilters };
+  }
+  if (patch.sort) {
+    next.sort = patch.sort.filter((entry) => {
+      if (knownKeys.has(entry.columnKey)) {
+        return true;
+      }
+      drop(entry.columnKey);
+      return false;
+    });
+  }
+  return { patch: next, dropped };
 };
 
 // 追加(state v2): 保存列メタ(GridColumnState[])を現在の columns 定義へ key ベースでマージし、

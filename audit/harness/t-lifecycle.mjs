@@ -71,7 +71,8 @@ const diffListeners = (a, b) => Object.fromEntries(Object.entries(b).filter(([k,
   const leaked = diffListeners(base, after);
   check('unmount: window/document listeners return to baseline after 3 mount cycles', Object.keys(leaked).length === 0, leaked);
   check('unmount: no pending rAF', rafAfter <= rafBase, { rafBase, rafAfter });
-  const leftovers = await page.evaluate(() => [...document.body.querySelectorAll(':scope > *')].filter((e) => e.id !== 'root').map((e) => e.className || e.tagName));
+  // 変更(作り直しの確認): ページに置いた「グリッドの後ろのボタン」(#after-grid。Tab で外へ出る確認用)は数えない。
+  const leftovers = await page.evaluate(() => [...document.body.querySelectorAll(':scope > *')].filter((e) => e.id !== 'root' && e.id !== 'after-grid').map((e) => e.className || e.tagName));
   check('unmount: no leftover portal/tooltip nodes in body', leftovers.every((c) => c === 'SCRIPT'), leftovers);
   const errs = await errorsOf(page);
   check('unmount: no console errors', errs.length === 0 && pageErrors.length === 0, [...errs, ...pageErrors].slice(0, 5));

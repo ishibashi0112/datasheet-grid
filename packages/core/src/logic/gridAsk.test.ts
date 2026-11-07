@@ -850,9 +850,10 @@ describe('見え方の比較とチップ', () => {
     { sort: [{ columnKey: 'price', direction: 'desc' }], globalText: 'ペン', hidden: ['memo'] },
   );
 
+  // 変更(dogfood DU-07): set の値は filterOptions のラベルで出す(これまでは '"tokyo"')。
   it('チップはフィルター → 並び → 検索 → 隠した列', () => {
     expect(describeGridAskView(state, options)).toEqual([
-      { id: 'f:warehouse', label: '倉庫', text: '"tokyo"' },
+      { id: 'f:warehouse', label: '倉庫', text: '"東京"' },
       { id: 'f:arrived', label: '入荷日', text: '今月' },
       { id: 's:price', label: '並び', text: '単価 降順' },
       { id: 'q', label: '検索', text: '「ペン」' },

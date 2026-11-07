@@ -43,6 +43,7 @@ export const useColumnMenuController = <T,>(args: UseColumnMenuControllerArgs<T>
     openColumnMenuFromButton: controller.openFromButton,
     openColumnMenuFromButtonClick: controller.openFromButtonClick,
     openColumnMenuFromContextMenu: controller.openFromContextMenu,
+    openColumnMenuFromKeyboard: controller.openFromKeyboard,
     closeColumnMenu: controller.close,
   };
 };

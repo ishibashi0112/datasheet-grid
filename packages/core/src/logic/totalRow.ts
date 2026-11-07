@@ -218,7 +218,7 @@ export const formatTotalRowCellText = <T>(column: GridColumn<T>, cell: TotalRowC
   }
   if (column.valueFormatter) {
     // グループ行と同じく、合計行に元の行はないため row は undefined です。
-    return column.valueFormatter({ value, row: undefined as unknown as T, column });
+    return column.valueFormatter({ value, row: undefined, column });
   }
   if (typeof value === 'number') {
     return formatTotalRowNumber(value);

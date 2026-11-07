@@ -65,7 +65,7 @@ const dataSource: ServerSideDataSource<Row> = {
 
 `query` は `{ globalText?, columnFilters?, sort? }` です。`columnFilters` は `kind` 付きの記述子(`text` / `number` / `date` / `select` / `set` / `custom`)がそのまま届くので、サーバ側で WHERE 句に変換します。実装例は[このデモのソース](https://github.com/ishibashi0112/datasheet-grid/blob/main/website/lib/ssrm-data.ts)を参照してください。
 
-- set / select フィルターの**候補はクライアントが供給**します(全行を持たないため自動収集できません)。低カーディナリティ列は `filterOptions` を静的指定、サーバから取りたい列はグリッド prop `getFilterOptions`(popover を開くたびに非同期で候補を返す。[ソートとフィルター](/docs/guides/filter-sort) を参照)、高カーディナリティ列は `text` / `number` フィルターを使います。
+- set / select フィルターの**候補はクライアントが供給**します(全行を持たないため自動収集できません)。低カーディナリティ列は `filterOptions` を静的指定、サーバから取りたい列はグリッド prop `getFilterOptions`(popover を開くたびに非同期で候補を返す。[ソートとフィルター](/docs/guides/filter-sort) を参照)、高カーディナリティ列は `text` / `number` フィルターを使います。候補に `''` が無いと「(空白)」の項目が出ず、選んだ値だけを送る形(`filterOptions` のある列で値を外したときなど)では空白の行も消えるので、空白の行がある列は候補に `{ value: '', label: '(空白)' }` を入れます。
 - ソート / フィルターを塞ぎたい場合は `enableSorting` / `enableColumnFilter` / `enableGlobalFilter` を `false` にします。
 
 ## 書き戻し(updateRows)と楽観更新
@@ -79,7 +79,8 @@ const dataSource: ServerSideDataSource<Row> = {
 
 - **`refreshServerSide()`**(命令的ハンドル)— クエリを変えずにスクロール位置を保ったままサーバ最新を取り直します。外部での追加・削除・編集の反映に使います(宣言的に扱うなら `serverSideRefreshToken` prop)。
 - **取得失敗** — 失敗ブロックはスケルトンのまま残り、組み込みエラーバー(再試行 / 閉じる)が出ます。`onServerSideLoadError` で外部通知(トースト等)も受けられます。
-- **保存失敗** — 自動ロールバック + 保存失敗バー。`onServerSideWriteError` の `params.updates` から自前のリトライ導線も作れます。
+- **保存失敗** — 自動ロールバック + 保存失敗バー。`onServerSideWriteError` の `params.updates` から自前のリトライ導線も作れます(元に戻したセルだけが入ります。後から同じセルを変えた編集で上書き済みの変更は入りません)。
+- **保存中のリフレッシュ** — 保存中にリフレッシュやフィルター / ソートの変更をすると、保存の決着を待ってから(最大 3 秒)取り直します。直前の編集が古い値で表示されることはありません(3 秒を過ぎて成功した保存は、行を出したまま見えている範囲をもう一度取り直して、新しい値にします)。
 
 ## 制約
 

@@ -24,6 +24,19 @@ Astryx の画面は、Vite のプロジェクトとして [StackBlitz で開け�
 
 どのテーマも `style.css` の後に読み込みます(前に読み込むと効きません)。ツールチップなど一部の色はグリッドの `theme` のプリセットのままなので、ライト / ダークは `theme` にも渡します。
 
+下の例の `function Grid(props)` のように自分のコンポーネントで包んで `ref` を渡すときは、React 18 では包む側を `forwardRef` にしてください(React 19 では `ref` が props として届きますが、React 18 では届かず、`SpreadsheetGridProps` に `ref` があるので型も通ってしまいます)。
+
+```tsx
+import { forwardRef } from 'react';
+import type { SpreadsheetGridHandle, SpreadsheetGridProps } from '@ishibashi0112/spreadsheet-grid';
+
+// React 18 / 19 のどちらでも ref が届く書き方
+const Grid = forwardRef<SpreadsheetGridHandle<Row>, SpreadsheetGridProps<Row>>(function Grid(props, ref) {
+  const scheme = useComputedColorScheme('light'); // デザインシステムのライト / ダーク(下の例を参照)
+  return <SpreadsheetGrid {...props} ref={ref} theme={scheme} />;
+});
+```
+
 ### Astryx
 
 ```tsx
@@ -90,15 +103,25 @@ function Grid(props: SpreadsheetGridProps<Row>) {
 import '@ishibashi0112/spreadsheet-grid/style.css';
 import '@ishibashi0112/spreadsheet-grid/themes/heroui.css';
 
+import { useSyncExternalStore } from 'react';
 import { useTheme } from 'next-themes';
 
-function Grid(props: SpreadsheetGridProps<Row>) {
+// next-themes の resolvedTheme はサーバーの描画では決まらず、ブラウザの最初の描画ではもう 'dark' のことがあります。
+// そのまま theme に渡すとハイドレーションで食い違い、グリッドが明るいまま戻らなくなります(ポップオーバーだけダーク)。
+// ハイドレーションが済むまでは 'light' を渡します。
+const noSubscribe = () => () => {};
+function useGridTheme(): 'light' | 'dark' {
   const { resolvedTheme } = useTheme(); // <html> の dark クラスを付け替えているもの
-  return <SpreadsheetGrid {...props} theme={resolvedTheme === 'dark' ? 'dark' : 'light'} />;
+  const hydrated = useSyncExternalStore(noSubscribe, () => true, () => false);
+  return hydrated && resolvedTheme === 'dark' ? 'dark' : 'light';
+}
+
+function Grid(props: SpreadsheetGridProps<Row>) {
+  return <SpreadsheetGrid {...props} theme={useGridTheme()} />;
 }
 ```
 
-HeroUI v3 の配色の変数(`--surface` / `--accent` ほか)を使います。HeroUI v2(`--heroui-*` に HSL の成分を入れる形)は対象外です。
+HeroUI v3 の配色の変数(`--surface` / `--accent` ほか)を使います。HeroUI v2(`--heroui-*` に HSL の成分を入れる形)は対象外です。HeroUI v3 の部品(`@heroui/react`)は React 19 が要ります。React 18 のアプリでは、配色の CSS(`@heroui/styles`)とこのテーマだけを使えます(部品をセルに置くのは React 19 から)。
 
 ### shadcn/ui
 

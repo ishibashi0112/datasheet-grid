@@ -25,7 +25,7 @@ description: ダークテーマ(light / dark / auto)、密度(density)、CSS ト
 <SpreadsheetGrid density="compact" ... />  // 'standard'(既定) | 'compact' | 'comfortable'
 ```
 
-行高(40 / 32 / 48px)・セル padding・アイコン寸法・文字の相対サイズが一括で切り替わります。`rowHeight` / `headerHeight` の明示指定はプリセットより優先されます。
+行の高さ(standard / compact / comfortable の順に 36 / 28 / 44px。見出しの行は 40 / 32 / 48px)・セル padding・アイコン寸法・文字の相対サイズが一括で切り替わります。`rowHeight` / `headerHeight` の明示指定はプリセットより優先されます。
 
 ## CSS トークンによるカスタマイズ
 
@@ -37,7 +37,7 @@ description: ダークテーマ(light / dark / auto)、密度(density)、CSS ト
   --ssg-header-bg: #f8fafc;       /* ヘッダー背景 */
   --ssg-invalid: #dc2626;         /* バリデーション NG の色 */
   --ssg-note-indicator: #f59e0b;  /* セルのメモ(cellNote)の印 */
-  --ssg-cf-bar: rgba(52, 97, 201, 0.26); /* 条件付き書式のデータバー(--ssg-cf-seq-* / --ssg-cf-div-* / --ssg-cf-good 等も) */
+  --ssg-cf-bar: rgba(124, 58, 237, 0.26); /* 条件付き書式のデータバー。既定は固定の青でアクセントに追従しない(--ssg-cf-seq-* / --ssg-cf-div-* / --ssg-cf-good 等も) */
   --ssg-tooltip-bg: #1e293b;      /* ツールチップ背景 */
 }
 ```
@@ -51,6 +51,7 @@ description: ダークテーマ(light / dark / auto)、密度(density)、CSS ト
 - ポップアップだけ別の値にしたいときは、`classNames.popover` / `classNames.tooltip` の `style` か、`.ssg-menu-panel` / `.ssg-tooltip` のようにポップアップのクラスへ書きます。ポップアップの側で決めた値は写す値より優先されます(CSS で書いた値が既定値と同じだと区別できないので、既定の色のままにしたいときは `style` で書きます)。
 - 密度(`density`)の寸法はポップアップには効きません(これまでどおり)。
 - 開いている間に `<html>` / `<body>` の属性(ダークモードのクラスなど)や OS の配色が変わったときは写し直します。それ以外の方法で利用側の CSS を差し替えたときは、次に開いたときに合います。
+- 前の版で案内していた、同じクラスを `classNames` の `popover` / `tooltip` / `dragGhost` にも渡す書き方もそのまま動きます。
 
 ## テーマビルダー
 

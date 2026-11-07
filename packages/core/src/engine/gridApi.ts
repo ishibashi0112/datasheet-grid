@@ -25,7 +25,7 @@ import { gridActions, type GridUiAction } from '../model/gridActions';
 import { normalizeCellRange, normalizeRowRange } from '../model/gridSelectors';
 import { computeSinglePaneColumnExtent, type GridPaneLayout } from '../logic/geometry';
 import { logicalToPhysicalScrollTop, physicalToLogicalScrollTop, type RowMetrics } from '../logic/verticalGeometry';
-import { findDetailRowIndex, type DetailIndexCache } from '../logic/detailRow';
+import { findDetailRowIndex, findViewRowIndexByKey, type DetailIndexCache } from '../logic/detailRow';
 import {
   clearRowSelection,
   countSelectedRows,
@@ -34,7 +34,14 @@ import {
   rowSelectionToModel,
   selectAllRows,
 } from '../logic/rowSelection';
-import { applyColumnState, buildGridState, extractColumnState, migrateGridState } from '../logic/gridState';
+import {
+  applyColumnState,
+  buildGridState,
+  dropUnknownColumnKeys,
+  extractColumnState,
+  migrateGridStatePatch,
+} from '../logic/gridState';
+import { markUrgentFilters } from '../logic/urgentFilters';
 import { computeHorizontalScrollTarget, computeVerticalScrollTarget } from '../logic/scrollTargets';
 import {
   collectAllGroupKeys,
@@ -48,6 +55,24 @@ import type { ToolPanelTab } from '../controllers/toolPanelController';
 import { createInertExportCommands, type GridCoreFeatures } from './features';
 
 type ReadonlyRef<V> = { readonly current: V };
+
+// 型だけの宣言です(ブラウザに process は無く、利用側のバンドラが process.env.NODE_ENV を文字列へ置き換える)。
+declare const process: { env: { NODE_ENV?: string } };
+
+// 追加(dogfood DF-04): applyState が今の列定義に無い列のキーを捨てたとき、開発時だけ知らせます(列定義を読み込む前に
+//   applyState を呼んだときなどに、フィルターが消えた理由に気づけるように)。
+// 変更(アプリの再確認): 列を消した後の古い保存状態でも出るので(捨てても今の状態と同じなら onStateChange は来ず、保存に
+//   残ったまま毎回出る)、保存し直す案内も書きます。
+const warnDroppedStateColumns = (keys: string[]): void => {
+  if (process.env.NODE_ENV === 'production') {
+    return;
+  }
+  console.warn(
+    `[spreadsheet-grid] applyState: 今の列定義(columns)に無い列 ${keys.map((key) => `\`${key}\``).join(', ')} の` +
+      '列幅 / フィルター / 並べ替えを捨てました。列定義を読み込む前なら、列定義を渡してから applyState を呼んでください。' +
+      '列を消した後の古い保存状態なら、applyState の後の getState() の値を保存し直すと出なくなります。',
+  );
+};
 
 export type GridApiArgs<T> = {
   scrollContainerRef: ReadonlyRef<HTMLElement | null>;
@@ -64,6 +89,13 @@ export type GridApiArgs<T> = {
   columns: GridColumn<T>[];
   onColumnsChange: ((nextColumns: GridColumn<T>[]) => void) | undefined;
   uiState: GridUiState;
+  // 追加(dogfood DU-02): focus() / startEditing() の委譲先(グリッドのキーを受ける要素へフォーカス / セルの編集を始めて
+  //   始めたら true。編集できないセルは false)。
+  focusGrid?: () => void;
+  startEditCell?: (cell: CellCoord) => boolean;
+  // 追加(dogfood DU-06): store の今の状態(レンダーを待たない)。applyState の「渡さないスライスは今のまま」と、直後の
+  //   getState() が今の値を読むのに使います(続けて呼んだときに 1 つ前のレンダーの値で上書きしないため)。無ければ uiState。
+  getUiState?: () => GridUiState;
   headerHeight: number;
   verticalScaleFactor: number;
   leftPaneTotalWidth: number;
@@ -143,6 +175,11 @@ const BOTTOM_PIN_MS = 1000;
 //   (engine/exportCommands)。無ければ代役(空を返す)。
 export const createGridApi = <T,>(features: Pick<GridCoreFeatures, 'export'> = {}): GridApi<T> => {
   let args: GridApiArgs<T> | null = null;
+  // 追加(別視点のレビュー): applyState で onColumnsChange に渡した列(次のレンダーで columns に入るまでの間、getState() と
+  //   続けて呼んだ applyState はこちらを今の列として読む)。update(次のレンダー)で外します。
+  let pendingColumns: { base: GridColumn<T>[]; next: GridColumn<T>[] } | null = null;
+  const currentColumns = (s: GridApiArgs<T>): GridColumn<T>[] =>
+    pendingColumns !== null && pendingColumns.base === s.columns ? pendingColumns.next : s.columns;
   const exportCommands = (features.export?.createExportCommands ?? createInertExportCommands)<T>(() => args);
   // 追加(監査 M-05): 行高を実測するモードでは、scrollToBottom() で末尾へ飛んだ直後に新しく描画された行が
   //   計測されて総高が伸び、1 回では末尾に届きませんでした。呼び出し直後の BOTTOM_PIN_MS の間だけ「末尾固定」を
@@ -247,6 +284,12 @@ export const createGridApi = <T,>(features: Pick<GridCoreFeatures, 'export'> = {
     };
   };
 
+  // 追加(作り直しの確認 N-3): store の今の UI 状態(無ければ描画のときの値)。
+  const currentUi = (s: GridApiArgs<T>): GridUiState => s.getUiState?.() ?? s.uiState;
+
+  // 追加(dogfood DU-03): getViewRowIndex の行キー → view index のキャッシュ(行モデルごと)。
+  let rowKeyIndexCache: { model: RowModel<T> | null; map: Map<GridRowKey, number> } = { model: null, map: new Map() };
+
   const handle: SpreadsheetGridHandle<T> = {
     scrollToRow: (viewRowIndex, scrollOptions) => {
       const align = scrollOptions?.align ?? 'auto';
@@ -302,8 +345,10 @@ export const createGridApi = <T,>(features: Pick<GridCoreFeatures, 'export'> = {
       return { startIndex: s.windowFirstRow, endIndex: s.windowLastRow + 1 };
     },
 
+    // 変更(作り直しの確認 N-3): 読み取りは store の今の値から(selectCell / setActiveCell / applyState の直後に
+    //   読むと、次の描画まで 1 つ前の値を返していた)。下の選択・行選択・展開行の読み取りも同じです。
     getActiveCell: () => {
-      const cell = args?.uiState.activeCell;
+      const cell = args ? currentUi(args).activeCell : null;
       return cell ? { row: cell.row, col: cell.col } : null;
     },
 
@@ -321,7 +366,63 @@ export const createGridApi = <T,>(features: Pick<GridCoreFeatures, 'export'> = {
       }
     },
 
-    getSelection: () => args?.uiState.selection ?? null,
+    getSelection: () => (args ? currentUi(args).selection : null),
+
+    // ── フォーカス / 編集の開始(dogfood DU-02)──
+    focus: () => {
+      args?.focusGrid?.();
+    },
+    startEditing: (viewRowIndex?: number, colIndex?: number) => {
+      const s = args;
+      if (!s || !s.startEditCell) {
+        return false;
+      }
+      // 変更(別視点のレビュー): 片方だけ渡されたとき(型を外した呼び出し)は、アクティブセルを編集せずに false です。
+      if ((viewRowIndex === undefined) !== (colIndex === undefined)) {
+        return false;
+      }
+      const ui = currentUi(s);
+      // 編集中は始めません(今の編集を確定も取消もせずに別のセルへ移らないため)。
+      if (ui.editingCell !== null) {
+        return false;
+      }
+      const target =
+        viewRowIndex === undefined || colIndex === undefined ? ui.activeCell : { row: viewRowIndex, col: colIndex };
+      if (
+        !target ||
+        !Number.isInteger(target.row) ||
+        !Number.isInteger(target.col) ||
+        target.row < 0 ||
+        target.row >= s.viewRowCount ||
+        target.col < 0 ||
+        target.col >= s.orderedColumns.length
+      ) {
+        return false;
+      }
+      if (!s.startEditCell(target)) {
+        return false;
+      }
+      // 始めたら、そのセルを単一選択にして見える位置へ(selectCell と同じ)、フォーカスもグリッドへ(エディタが受け取る)。
+      s.dispatch(gridActions.startSelection(target));
+      s.dispatch(gridActions.endSelection());
+      scrollToCellInternal(target.row, target.col, 'auto');
+      s.focusGrid?.();
+      return true;
+    },
+
+    // ── 行キー / 列キーから位置(dogfood DU-03)──
+    getViewRowIndex: (rowKey) => {
+      const s = args;
+      if (!s) {
+        return -1;
+      }
+      // 行モデルが変わったら(並び / 絞り込み / データの変化)キャッシュを捨てます。
+      if (rowKeyIndexCache.model !== s.rowModel) {
+        rowKeyIndexCache = { model: s.rowModel, map: new Map() };
+      }
+      return findViewRowIndexByKey(s.rowModel, rowKey, rowKeyIndexCache.map);
+    },
+    getColIndex: (columnKey) => args?.orderedColumns.findIndex((column) => column.key === columnKey) ?? -1,
 
     selectCell: (viewRowIndex, colIndex, cellOptions) => {
       const s = args;
@@ -362,7 +463,7 @@ export const createGridApi = <T,>(features: Pick<GridCoreFeatures, 'export'> = {
       if (!s) {
         return [];
       }
-      const sel = s.uiState.selection;
+      const sel = currentUi(s).selection;
       if (!sel) {
         return [];
       }
@@ -407,7 +508,9 @@ export const createGridApi = <T,>(features: Pick<GridCoreFeatures, 'export'> = {
         return buildGridState({}, { globalText: '', columnFilters: {} }, [], []);
       }
       // 永続スライス(手動リサイズ幅 / フィルター / ソート)+ 列メタ(可視 / 順序 / ピン)を純粋にスナップショット。
-      return buildGridState(s.uiState.columnWidths, s.uiState.filters, s.uiState.sort, extractColumnState(s.columns));
+      // 変更(dogfood DU-06): store の今の状態を読みます(applyState の直後でも渡した値が返る)。
+      const ui = currentUi(s);
+      return buildGridState(ui.columnWidths, ui.filters, ui.sort, extractColumnState(currentColumns(s)));
     },
 
     applyState: (state) => {
@@ -416,22 +519,46 @@ export const createGridApi = <T,>(features: Pick<GridCoreFeatures, 'export'> = {
         return;
       }
       // 外部入力(deserialize 結果)を現行スキーマへ防御的に正規化してから反映します。
-      const normalized = migrateGridState(state);
-      // 列メタ(v2): onColumnsChange があり、かつ正規化後に columns があるときだけ反映(手動リサイズ幅の
-      //   column.width 焼き込み込み)。
-      if (s.onColumnsChange && normalized.columns) {
-        s.onColumnsChange(applyColumnState(s.columns, normalized.columns, normalized.columnWidths));
+      // 変更(dogfood DU-06): 渡されたスライスだけを変えます(渡さないスライスは今のまま。これまでは `{ sort }` だけ渡すと
+      //   列幅とフィルターが既定へ戻っていた)。
+      // 変更(dogfood DF-04): 今の列定義に無い列の幅 / フィルター / ソートは捨てます(開発時に警告)。
+      const { patch, dropped } = dropUnknownColumnKeys(
+        migrateGridStatePatch(state),
+        new Set(s.columns.map((column) => column.key)),
+      );
+      if (dropped.length > 0) {
+        warnDroppedStateColumns(dropped);
       }
-      // 幅 reset / フィルター一括 / ソート set の 3 dispatch(同一イベント内で自動バッチ)。
-      s.dispatch(gridActions.resetColumnWidths(normalized.columnWidths));
-      s.dispatch(gridActions.setAllFilters(normalized.filters));
-      s.dispatch(gridActions.setSort(normalized.sort));
+      const ui = currentUi(s);
+      // 列メタ(v2): onColumnsChange があり、かつ正規化後に columns があるときだけ反映(手動リサイズ幅の
+      //   column.width 焼き込み込み。幅を渡さないときは今の幅で焼き込み、今の幅を保ちます)。
+      if (s.onColumnsChange && patch.columns) {
+        const nextColumns = applyColumnState(currentColumns(s), patch.columns, patch.columnWidths ?? ui.columnWidths);
+        pendingColumns = { base: s.columns, next: nextColumns };
+        s.onColumnsChange(nextColumns);
+      }
+      // 幅 reset / フィルター一括 / ソート set を、渡されたものだけ dispatch(同一イベント内で自動バッチ)。
+      if (patch.columnWidths) {
+        s.dispatch(gridActions.resetColumnWidths(patch.columnWidths));
+      }
+      if (patch.filters) {
+        const filters = {
+          globalText: patch.filters.globalText ?? ui.filters.globalText,
+          columnFilters: patch.filters.columnFilters ?? ui.filters.columnFilters,
+        };
+        // 追加(dogfood DF-18): このフィルターは遅らせずに評価させます(並べ替えだけの画面を挟まない)。
+        markUrgentFilters(filters);
+        s.dispatch(gridActions.setAllFilters(filters));
+      }
+      if (patch.sort) {
+        s.dispatch(gridActions.setSort(patch.sort));
+      }
     },
 
     // ── 行選択(チェックボックス選択)──
     getRowSelection: () => {
       const s = args;
-      return s ? rowSelectionToModel(s.uiState.rowSelection) : { type: 'include', rowKeys: [] };
+      return s ? rowSelectionToModel(currentUi(s).rowSelection) : { type: 'include', rowKeys: [] };
     },
     setRowSelection: (model) => {
       args?.commitRowSelection(rowSelectionFromModel(model));
@@ -441,7 +568,7 @@ export const createGridApi = <T,>(features: Pick<GridCoreFeatures, 'export'> = {
       if (!s) {
         return [];
       }
-      const sel = s.uiState.rowSelection;
+      const sel = currentUi(s).rowSelection;
       // include はキーをそのまま返します(exclude のみ全行を走査)。
       if (sel.mode === 'include') {
         return Array.from(sel.keys);
@@ -465,7 +592,7 @@ export const createGridApi = <T,>(features: Pick<GridCoreFeatures, 'export'> = {
       if (!s) {
         return [];
       }
-      const sel = s.uiState.rowSelection;
+      const sel = currentUi(s).rowSelection;
       const result: T[] = [];
       const count = s.rowModel.getRowCount();
       for (let i = 0; i < count; i += 1) {
@@ -482,11 +609,11 @@ export const createGridApi = <T,>(features: Pick<GridCoreFeatures, 'export'> = {
     },
     getSelectedRowCount: () => {
       const s = args;
-      return s ? countSelectedRows(s.uiState.rowSelection, s.leafRowCount) : 0;
+      return s ? countSelectedRows(currentUi(s).rowSelection, s.leafRowCount) : 0;
     },
     isRowSelected: (rowKey) => {
       const s = args;
-      return s ? resolveIsRowSelected(s.uiState.rowSelection, rowKey) : false;
+      return s ? resolveIsRowSelected(currentUi(s).rowSelection, rowKey) : false;
     },
     selectAllRows: () => {
       args?.commitRowSelection(selectAllRows());
@@ -551,7 +678,7 @@ export const createGridApi = <T,>(features: Pick<GridCoreFeatures, 'export'> = {
     },
     getExpandedDetailRowKeys: () => {
       const s = args;
-      return s && s.detailRowEnabled ? Array.from(s.uiState.expandedDetailRowKeys) : [];
+      return s && s.detailRowEnabled ? Array.from(currentUi(s).expandedDetailRowKeys) : [];
     },
     collapseAllDetailRows: () => {
       const s = args;
@@ -576,7 +703,8 @@ export const createGridApi = <T,>(features: Pick<GridCoreFeatures, 'export'> = {
         console.warn('[SpreadsheetGrid] getInvalidCells は serverSide モードでは利用できません(空配列を返します)。');
         return [];
       }
-      return scanInvalidCells(s.rows, s.columns, s.resolvedRowKeyGetter);
+      // 変更(dogfood DF-03): ラベル行は検査しません。
+      return scanInvalidCells(s.rows, s.columns, s.resolvedRowKeyGetter, s.labelRowExport?.isLabelRow);
     },
 
     // ── serverSide(SSRM)──
@@ -643,6 +771,7 @@ export const createGridApi = <T,>(features: Pick<GridCoreFeatures, 'export'> = {
     update: (next) => {
       const previousHeight = args?.physicalBodyHeight;
       args = next;
+      pendingColumns = null;
       // 追加(監査 M-05): 末尾固定中に総高が変わったら末尾へ合わせ直します。
       if (bottomPin === null || previousHeight === next.physicalBodyHeight) {
         return;

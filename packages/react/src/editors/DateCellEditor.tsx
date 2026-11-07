@@ -62,6 +62,8 @@ export function DateCellEditor({
           onCancel,
           onRejected: setErrorMessage,
           enterMove,
+          // 追加(dogfood DF-13): 日付の入力欄では Home / End でもグリッドがスクロールしていたため止めます。
+          blockHomeEnd: true,
         })}
         onBlur={() => {
           const result = onCommit(draftValue);

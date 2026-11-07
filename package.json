@@ -25,7 +25,7 @@
     "size:check": "node scripts/measure-size.mjs --check",
     "examples:check": "node scripts/check-examples.mjs",
     "audit:dev": "vp dev --config audit/harness/vite.config.ts audit/harness",
-    "audit:test": "node audit/harness/t-basic.mjs && node audit/harness/t-ssrm.mjs && node audit/harness/t-lifecycle.mjs && node audit/harness/t-features.mjs && node audit/harness/t-verify.mjs && node audit/harness/t-aggregates.mjs && node audit/harness/t-total.mjs && node audit/harness/t-fill.mjs && node audit/harness/t-big.mjs && node audit/harness/t-leftovers.mjs && node audit/harness/t-lazy.mjs && node audit/harness/t-priority.mjs && node audit/harness/t-final.mjs && node audit/harness/t-devbi.mjs"
+    "audit:test": "node audit/harness/t-basic.mjs && node audit/harness/t-ssrm.mjs && node audit/harness/t-lifecycle.mjs && node audit/harness/t-features.mjs && node audit/harness/t-verify.mjs && node audit/harness/t-aggregates.mjs && node audit/harness/t-total.mjs && node audit/harness/t-fill.mjs && node audit/harness/t-big.mjs && node audit/harness/t-leftovers.mjs && node audit/harness/t-lazy.mjs && node audit/harness/t-priority.mjs && node audit/harness/t-final.mjs && node audit/harness/t-dogfood.mjs && node audit/harness/t-devbi.mjs"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",

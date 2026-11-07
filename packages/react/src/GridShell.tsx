@@ -16,6 +16,7 @@ import {
   useState,
   useSyncExternalStore,
   type CSSProperties,
+  type FocusEvent,
   type PointerEvent,
   type MouseEvent as ReactMouseEvent,
   // 追加(UP-1): 統合ツールパネルのタブ別コンテンツテーブルの型に使います。
@@ -70,6 +71,7 @@ import { useGridTooltip } from './hooks/useGridTooltip';
 import { useResolvedGridTheme } from './hooks/useResolvedGridTheme';
 import { useResolvedGridMotion } from './hooks/useResolvedGridMotion';
 import { MOTION_OFF_CLASS_NAME } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/motion';
+import { isUrgentFilters } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/urgentFilters';
 import {
   resolveSelectionBand,
   resolveSelectionBandSegments,
@@ -214,6 +216,8 @@ import type { GridShellFeatures } from './features/types';
 //   ライン / rowModel など既存 memo を不要に揺らさないよう module スコープで 1 つだけ持ちます。
 //   never[] は任意の T[] に代入可能で、destructure 既定値として rows の型を T[] に保ちます。
 const EMPTY_ROWS: never[] = [];
+// 追加(作り直しの確認 lite-1): フィルターの機能が無い構成で見出しへ渡す、空の列フィルター(参照を保つ)。
+const NO_HEADER_COLUMN_FILTERS: Record<string, never> = {};
 
 // 追加(stage ②): serverSide query 構築/debounce 用の安定既定値・定数です。
 //   clientSide では query を空に保ち(フックは inert)、参照同一で memo/effect を不要に揺らしません。
@@ -252,10 +256,25 @@ const renderDetailToggleCell = (ctx: CellRenderContext<unknown>) => {
   return (
     <button
       type="button"
+      // 変更(dogfood DF-08): Tab の順番に入れません(キーボードではトグル列のセルで Enter / Space。DU-04)。
+      tabIndex={-1}
       className="ssg-detail-toggle"
       aria-expanded={detail.expanded}
       aria-label={detail.expanded ? '詳細を閉じる' : '詳細を開く'}
       onClick={detail.toggle}
+      // 変更(dogfood DF-16): ▸ / ▾ は開閉だけにして、アクティブセルと選択を動かしません(セルの pointerdown は
+      //   GridBodyLayer がこのボタンから始まったものを無視する)。これまではトグル列(合成列)がアクティブセルになり、
+      //   onActiveCellChange に null が来ていました(アクティブセルに連動させた詳細パネルが、展開しただけで空になる)。
+      //   続けてキー操作できるよう、フォーカスはボタンではなくグリッドへ置きます(セルを押したときと同じ)。
+      //   変更(別視点のレビュー): 伝播は止めません(止めると window まで届かず、開いている右クリックメニューや
+      //   ポップオーバーが外側の pointerdown で閉じなかった)。
+      onPointerDown={(event) => {
+        if (event.button !== 0) {
+          return;
+        }
+        event.preventDefault();
+        event.currentTarget.closest<HTMLElement>('.ssg-shell')?.focus({ preventScroll: true });
+      }}
       onDoubleClick={(event) => event.stopPropagation()}
     >
       {detail.expanded ? '▾' : '▸'}
@@ -497,7 +516,9 @@ export function useGridShell<T extends object>({
   //   本 state が更新されるのは編集開始時のみで、同一イベント内の
   //   dispatch(startEdit) と React が自動バッチするため、編集開始時の
   //   親レンダー回数は従来どおり 1 回です。
-  const [editorInitialValue, setEditorInitialValue] = useState('');
+  //   変更(作り直しの確認 N-1): 初期値は store の view スライス(editorInitialValue)へ移しました(下の
+  //   useGridViewState)。React の state だと、イベントの外から startEditing() を呼んだときに編集中のセル
+  //   (store)だけが先に描かれ、エディタが 1 つ前の初期値で開いていたためです。
 
 
   // ── columns ───────────────────────────────────────────
@@ -608,6 +629,8 @@ export function useGridShell<T extends object>({
       isCornerHovered,
       // 追加(motion-4 / M-3): コピー範囲(動く点線)。
       copiedRange,
+      // 追加(作り直しの確認 N-1): 編集を始めるときのエディタの初期値(旧 useState)。
+      editorInitialValue = '',
     },
     {
       // 注記: viewportWidth / viewportHeight は scroll / resize effect が gridStore.setViewState で
@@ -616,6 +639,7 @@ export function useGridShell<T extends object>({
       setHoveredRowIndex,
       setHoveredColumnIndex,
       setIsCornerHovered,
+      setEditorInitialValue,
     },
   ] = useGridViewState(gridStore);
 
@@ -773,6 +797,7 @@ export function useGridShell<T extends object>({
     gridRootRef,
     isServerSide,
     rows,
+    isLabelRow: labelRowEnabled ? labelIsLabelRow : undefined,
   });
   const {
     filterPopoverRef,
@@ -801,6 +826,7 @@ export function useGridShell<T extends object>({
     openColumnMenuFromButton,
     openColumnMenuFromButtonClick,
     openColumnMenuFromContextMenu,
+    openColumnMenuFromKeyboard,
     closeColumnMenu,
   } = features.columnMenu.useColumnMenu<T>({
     visibleColumns,
@@ -930,7 +956,11 @@ export function useGridShell<T extends object>({
   // 注記: text / number フィルターの Apply 押下や「クリア」も同じ経路ですが、
   //   これらは単発操作のため体感差はなく、挙動は等価です。
   const columnFilters = uiState.filters.columnFilters;
-  const deferredColumnFilters = useDeferredValue(columnFilters);
+  // 変更(dogfood DF-18): applyState で入れたフィルターは遅らせずに評価します(フィルターと並べ替えを一度に渡したとき、
+  //   並べ替えだけの画面が 1〜2 フレーム出ていた)。画面からの操作は従来どおり遅らせます(core logic/urgentFilters)。
+  const filtersUrgent = isUrgentFilters(uiState.filters);
+  const laggingColumnFilters = useDeferredValue(columnFilters);
+  const deferredColumnFilters = filtersUrgent ? columnFilters : laggingColumnFilters;
 
   // ── row order pipeline (DS-2) ─────────────────────────
   // 変更(DS-2): オブジェクト配列チェーン(source→global→column→sort の {row,...}[])を
@@ -956,6 +986,24 @@ export function useGridShell<T extends object>({
     () => rowPipeline.resolveLabelRowLayout(rows, isServerSide ? undefined : labelIsLabelRow),
     [rowPipeline, rows, isServerSide, labelIsLabelRow],
   );
+  // 追加(dogfood DF-12): 列フィルターの候補(set / textSet の rows からの自動収集)はデータ行だけから集めます
+  //   (ラベル行の値や、ラベル行の空の値による「(空白)」が候補に混ざっていた)。ラベル行が無ければ rows のまま。
+  const filterCandidateRows = useMemo(() => {
+    if (!labelLayout) {
+      return rows;
+    }
+    const labels = labelLayout.labelIndexes;
+    const dataRows: T[] = [];
+    let next = 0;
+    for (let index = 0; index < rows.length; index += 1) {
+      if (next < labels.length && labels[next] === index) {
+        next += 1;
+        continue;
+      }
+      dataRows.push(rows[index]);
+    }
+    return dataRows;
+  }, [rows, labelLayout]);
   // 変更(label-row ②): ラベル行があるときはラベル行を除いた恒等 order(データ行のみ)。無ければ従来どおり
   //   長さのみ依存の恒等 order。
   const baseOrder = useMemo(
@@ -965,14 +1013,27 @@ export function useGridShell<T extends object>({
 
   // 変更(差し込み式 段階 5): グローバルフィルターの適用(F-async の時間分割)と相対日付プリセットの基準日(監査 L-15)は
   //   フィルターの機能(features/filtering)へ移しました(同じ位置・同じ順番で hook を呼ぶ)。無い構成では恒等 order のまま。
-  const { globalFilteredOrder, globalFilterStatus, globalFilterProgress, relativeDateKey } =
-    features.filtering.useFilterOrder({
+  // 追加(dogfood DU-05): 行グルーピング中は、グループ元列(表示から外れて自動グループ列に値が出ている列)もグローバル
+  //   フィルターの対象にします(「関東」でグループ化しているのに「関東」で探すと 0 件になっていた)。
+  const globalFilterColumns = useMemo(
+    () => (rowGroupingActive && groupColumns.length > 0 ? [...visibleColumns, ...groupColumns] : visibleColumns),
+    [rowGroupingActive, groupColumns, visibleColumns],
+  );
+  const {
+    globalFilteredOrder,
+    globalFilterStatus,
+    globalFilterProgress,
+    relativeDateKey,
+    available: filteringAvailable = true,
+  } = features.filtering.useFilterOrder({
       rows,
       baseOrder,
-      visibleColumns,
+      visibleColumns: globalFilterColumns,
       // 変更(1.0 前の最終チェック FC-08): 相対日付プリセットの見張りもグループ元列の列フィルターを含めて見ます。
       effectiveColumns: filterSortColumns,
       globalFilterText,
+      // 追加(dogfood DF-18): applyState で入れた検索の文字も遅らせずに評価します。
+      globalFilterUrgent: filtersUrgent,
       globalFilterEnabled,
       columnFilterEnabled,
       columnFilters,
@@ -1990,6 +2051,7 @@ export function useGridShell<T extends object>({
     engine.activeCellNotifier,
     {
       activeCell: uiState.activeCell,
+      editingCell: uiState.editingCell,
       rowModel,
       orderedColumns,
       onActiveCellChange,
@@ -2329,7 +2391,7 @@ export function useGridShell<T extends object>({
       setEditorInitialValue(String(currentValue ?? ''));
       dispatch(gridActions.startEdit(cell));
     },
-    [canEditCell, dispatch, rowModel, readOnly, orderedColumns],
+    [canEditCell, dispatch, rowModel, readOnly, orderedColumns, setEditorInitialValue],
   );
 
   // 追加(editor: checkbox): checkbox セルの直接トグルです(クリック / Space 共通の集約点)。
@@ -2438,6 +2500,63 @@ export function useGridShell<T extends object>({
     gridRootRef.current?.focus({ preventScroll: true });
   }, [engine]);
 
+  // 追加(dogfood DU-04): 展開トグル列のセルで Enter / Space を押したときの開閉です(▸ を押したのと同じ)。読み込み済みで
+  //   開閉できる行(detailRow.isExpandable)だけを開閉し、開閉したら true を返します(キーの既定の動作を止める)。
+  const toggleDetailRowFromKeyboard = useCallback(
+    (cell: CellCoord): boolean => {
+      const row = rowModel.getRow(cell.row);
+      if (row === undefined) {
+        return false;
+      }
+      const rowKey = rowModel.getRowKey(cell.row) ?? cell.row;
+      const sourceRowIndex = rowModel.getSourceIndex(cell.row) ?? cell.row;
+      if (detailIsExpandable && !detailIsExpandable(row, { rowKey, sourceRowIndex })) {
+        return false;
+      }
+      toggleDetailRowAt(rowKey, cell.row);
+      return true;
+    },
+    [rowModel, detailIsExpandable, toggleDetailRowAt],
+  );
+
+  // 追加(dogfood DF-08): スクロールする要素そのものにフォーカスが来たら(余白やスクロールバーのクリックなど)、シェルへ移します。
+  const handleScrollContainerFocus = useCallback((event: FocusEvent<HTMLDivElement>) => {
+    if (event.target === event.currentTarget) {
+      gridRootRef.current?.focus({ preventScroll: true });
+    }
+  }, []);
+
+  // 追加(dogfood DU-01): PageUp / PageDown の移動先です(見えている本体の高さ 1 画面ぶん先の行。展開行の帯 / auto-height の
+  //   行の高さも行メトリクスで数える)。
+  const resolvePageRow = useCallback(
+    (fromRow: number, direction: 1 | -1): number => {
+      const pageHeight = Math.max(viewportHeight - headerHeight, rowHeight);
+      return rowMetrics.rowAtContentY(rowMetrics.rowTop(fromRow) + direction * pageHeight);
+    },
+    [rowMetrics, viewportHeight, headerHeight, rowHeight],
+  );
+
+  // 追加(別視点のレビュー): Alt+↓ でアクティブセルの列の列メニューを開きます(列の見出しのセルの下に出す)。見出しが描かれて
+  //   いない(横の仮想化で外れた)列や、⋮ の無い列(自動グループ列などの合成列)では開かず、↓ のままにします。
+  const openColumnMenuForCell = useCallback(
+    (col: number): boolean => {
+      const column = orderedColumns[col];
+      const root = gridRootRef.current;
+      if (!column || !root || isSyntheticColumnKey(column.key)) {
+        return false;
+      }
+      const header = Array.from(root.querySelectorAll<HTMLElement>('.ssg-header-cell[data-ssg-col-key]')).find(
+        (cell) => cell.dataset.ssgColKey === column.key,
+      );
+      if (!header) {
+        return false;
+      }
+      openColumnMenuFromKeyboard(column, header);
+      return true;
+    },
+    [orderedColumns, gridRootRef, openColumnMenuFromKeyboard],
+  );
+
   const { handleKeyDown } = useGridKeyboardInteractions({
     uiState,
     // 変更(DS-3-1): filteredRows 配列 → rowModel シームを渡します(keyboard consumer 移行)。
@@ -2467,6 +2586,10 @@ export function useGridShell<T extends object>({
     onToggleCheckboxCell: toggleCheckboxCell,
     // 追加(grouping ④): グループ行の Enter / Space 開閉トグル配線です。
     onToggleGroup: handleGroupToggle,
+    // 追加(dogfood DU-04): 展開トグル列のセルでの Enter / Space の開閉配線です。
+    onToggleDetailRow: detailRowEnabled ? toggleDetailRowFromKeyboard : undefined,
+    resolvePageRow,
+    openColumnMenu: columnMenuEnabled ? openColumnMenuForCell : undefined,
   });
 
   // ── edit controller ───────────────────────────────────
@@ -2553,13 +2676,14 @@ export function useGridShell<T extends object>({
         }
       : null;
 
-  const handleCellDoubleClickWithController = useCallback(
-    (cell: CellCoord, event: MouseEvent) => {
-      // 追加(G-1): 既定の動作(編集開始)の前に onCellDoubleClick を呼びます(読み取り専用セルでも呼ぶため
-      //   isCellEditable の判定より前)。params.preventDefault() されたら既定の動作を行いません。
-      if (engine.cellEventNotifier.notifyCellDoubleClick(cell, event)) {
-        return;
-      }
+  // 追加(dogfood DU-02): 命令的 API の focus()。キー操作を受ける要素(シェル)へフォーカスを移します。
+  const focusGridRoot = useCallback(() => {
+    gridRootRef.current?.focus({ preventScroll: true });
+  }, []);
+  // 変更(dogfood DU-02): ダブルクリックの編集開始を、命令的 API の startEditing() と共用するため切り出しました
+  //   (編集を始めたら true)。判定と初期値は従来どおりです。
+  const tryStartEditCell = useCallback(
+    (cell: CellCoord): boolean => {
       // 変更(DS-3-5): filteredRows[cell.row] → rowModel.getRow 経由(double-click consumer 移行)。
       //   getRow(i)=rows[order[i]] で旧 filteredRows[i] と参照同一。OOB は getRow が undefined を
       //   返し、下の `if (!row …) return` ガードで吸収するため挙動等価です。
@@ -2567,7 +2691,7 @@ export function useGridShell<T extends object>({
       // 変更(10-E): cell.col は論理 index 空間（orderedColumns）です。
       const column = orderedColumns[cell.col];
       if (!row || !column) {
-        return;
+        return false;
       }
       if (
         !isViewCellEditable(
@@ -2579,17 +2703,29 @@ export function useGridShell<T extends object>({
           column,
         )
       ) {
-        return;
+        return false;
       }
       // 追加(editor: checkbox): checkbox 列は直接トグル方式のため編集セッションを開きません
       //   (トグルはクリック / Space。ダブルクリックは click 2 回として扱われます)。
       if (column.editor?.type === 'checkbox') {
-        return;
+        return false;
       }
       const currentValue = getCellValue(row, column);
       startEditWithValue(cell, String(currentValue ?? ''));
+      return true;
     },
-    [canEditCell, engine, rowModel, readOnly, startEditWithValue, orderedColumns],
+    [canEditCell, rowModel, readOnly, startEditWithValue, orderedColumns],
+  );
+  const handleCellDoubleClickWithController = useCallback(
+    (cell: CellCoord, event: MouseEvent) => {
+      // 追加(G-1): 既定の動作(編集開始)の前に onCellDoubleClick を呼びます(読み取り専用セルでも呼ぶため
+      //   isCellEditable の判定より前)。params.preventDefault() されたら既定の動作を行いません。
+      if (engine.cellEventNotifier.notifyCellDoubleClick(cell, event)) {
+        return;
+      }
+      tryStartEditCell(cell);
+    },
+    [engine, tryStartEditCell],
   );
   // 追加(touch): pointer フック(タッチのダブルタップ / native dblclick ラッパ)から読む latest-ref を
   //   同期します(render 中の ref 代入を増やさないため useEffect 同期 = RS-AS 方式)。
@@ -2894,8 +3030,10 @@ export function useGridShell<T extends object>({
         title: column.title || column.key,
         visible: column.visible !== false,
         pane: getColumnPane(column),
+        // 追加(dogfood DF-22): グルーピング中のグループ元列は表示の切り替えができない印。
+        grouped: rowGroupingActive && column.rowGroup === true ? true : undefined,
       })),
-    [columns],
+    [columns, rowGroupingActive],
   );
 
   // 追加(MS-3-1): 並び替え管理パネルへ渡す「並び替え可能な列」一覧です。
@@ -3012,6 +3150,16 @@ export function useGridShell<T extends object>({
     },
     [isServerSide, rows, resolvedRowKeyGetter, commitRowMove],
   );
+  // 追加(アプリの再確認): ドラッグで離したときは、行のホバーを外します。ドラッグ中はポインタを掴んだハンドルが受けるので
+  //   ホバーは掴んだ行の位置(view index)のまま残り、離した後はそこへ来た別の行に印が付いていました(次にポインタが
+  //   別のセルへ入ると付き直す)。命令的 API の moveRow はポインタと関係ないので外しません。
+  const commitRowMoveFromDrag = useCallback(
+    (fromIndex: number, toIndex: number) => {
+      commitRowMove(fromIndex, toIndex);
+      applyHoveredRowChange(null);
+    },
+    [commitRowMove, applyHoveredRowChange],
+  );
   // 変更(差し込み式 段階 2): ゴーストのラベル / controller の接続 / settle の layout effect と、ハンドル列のセル・
   //   ガイド線の描画は機能セットの hook(features/rowDrag.tsx)へ移し、この位置で呼びます(hook の順番は従来どおり)。
   //   機能セットに無い構成では enableRowDrag が false 扱い(createSpreadsheetGrid)で、ハンドル列もガイド線も出ません。
@@ -3025,7 +3173,7 @@ export function useGridShell<T extends object>({
       windowBaseOffsetPx: overlayBaseOffset,
       scrollContainerRef,
       bodyScrollRef,
-      commitRowMove,
+      commitRowMove: commitRowMoveFromDrag,
       hasRowKeys: rowKeyGetter !== undefined,
       ghostSlot: slots.dragGhost,
       // 追加(motion-8 / M-11): 'live' では掴んだ行が追従し周りの行が退避する(motion='off' では ghost へフォールバック)。
@@ -3070,7 +3218,8 @@ export function useGridShell<T extends object>({
   const renderedFilterPopover = features.filtering.useFilterPopoverContent<T>({
     filterPopover,
     views: filterPopoverViews,
-    rows,
+    // 変更(dogfood DF-12): 候補はデータ行だけから集めます。
+    rows: filterCandidateRows,
     columnFilters: uiState.filters.columnFilters,
     globalFilterText,
     getFilterOptions,
@@ -3312,13 +3461,20 @@ export function useGridShell<T extends object>({
     visibleColumns,
     // 追加(audit V-12): A1 ラベルの列名から合成列を除くための画面の並び。
     orderedColumns,
+    // 追加(dogfood DF-10): 番地と行数をラベル行を飛ばして数えます(行ヘッダーの番号と揃える)。
+    labelViewIndexes: labelDisplay?.labelViewIndexes,
     uiState,
     setGlobalFilterText,
     // 追加(F-async): グローバルフィルタの適用状態/進捗を slotContext へ渡します(ローディング表示用)。
     globalFilterStatus,
     globalFilterProgress,
     selectionAggregates,
+    // 追加(dogfood DF-20): フィルターの機能が無い構成では、状態のフィルターを「Filter: …」に数えません。
+    filtersApplied: filteringAvailable,
   });
+  // 追加(作り直しの確認 lite-1): 同じく、見出しの「フィルター適用中」の印(漏斗とアクセント色)も出しません
+  //   (applyState で渡したフィルターは状態に残るが、行には効いていない)。
+  const headerColumnFilterValues = filteringAvailable ? uiState.filters.columnFilters : NO_HEADER_COLUMN_FILTERS;
 
   // ── styles ────────────────────────────────────────────
   // 変更(UI CSS移行): 外枠 frame(境界/角丸/影/クリップ)は styles.css の .ssg-root へ、
@@ -3665,6 +3821,11 @@ export function useGridShell<T extends object>({
     columns,
     onColumnsChange,
     uiState,
+    // 追加(dogfood DU-06): applyState / getState が store の今の状態を読むため。
+    getUiState: gridStore.getState,
+    // 追加(dogfood DU-02): focus() / startEditing() の委譲先(ルートへの focus は imeDirectInput 有効時は入力受けへ回る)。
+    focusGrid: focusGridRoot,
+    startEditCell: tryStartEditCell,
     headerHeight,
     verticalScaleFactor,
     leftPaneTotalWidth,
@@ -3829,6 +3990,11 @@ export function useGridShell<T extends object>({
         {/*   pinned 列がない場合は左右ペインが width:0 で非表示、中央ペインのみ表示。     */}
         <div
           ref={scrollContainerRef}
+          // 追加(dogfood DF-08): スクロールする要素は、中にフォーカスできる要素が無いとブラウザ(Chrome 130 以降など)が Tab で
+          //   止まる要素にします。見出しの ⋮ などを Tab の順番から外したので、ここも外し(tabIndex=-1)、クリック等でここに
+          //   フォーカスが来たときはシェル(キー操作を受ける要素)へ移します。
+          tabIndex={-1}
+          onFocus={handleScrollContainerFocus}
           // 追加(audit V-05): ARIA の表。行数は見出し行 + 表示行(仮想化で描画していない行も数える)、列数は
           //   行番号列 + 視覚順の列。範囲選択できるなら複数選択可、readOnly なら読み取り専用。
           role="grid"
@@ -3900,7 +4066,7 @@ export function useGridShell<T extends object>({
                   renderEntries={leftRenderEntries}
                   hoveredColumnIndex={hoveredColumnIndex}
                   selectionSnapshot={selectionSnapshot}
-                  columnFilterValues={uiState.filters.columnFilters}
+                  columnFilterValues={headerColumnFilterValues}
                   sortState={uiState.sort}
                   onCornerPointerDown={handleCornerHeaderPointerDown}
                   onCornerPointerEnter={handleCornerPointerEnterStable}
@@ -4121,7 +4287,7 @@ export function useGridShell<T extends object>({
                 renderEntries={centerRenderEntries}
                 hoveredColumnIndex={hoveredColumnIndex}
                 selectionSnapshot={selectionSnapshot}
-                columnFilterValues={uiState.filters.columnFilters}
+                columnFilterValues={headerColumnFilterValues}
                 sortState={uiState.sort}
                 onCornerPointerDown={handleCornerHeaderPointerDown}
                 onCornerPointerEnter={handleCornerPointerEnterStable}
@@ -4343,7 +4509,7 @@ export function useGridShell<T extends object>({
                   renderEntries={rightRenderEntries}
                   hoveredColumnIndex={hoveredColumnIndex}
                   selectionSnapshot={selectionSnapshot}
-                  columnFilterValues={uiState.filters.columnFilters}
+                  columnFilterValues={headerColumnFilterValues}
                   sortState={uiState.sort}
                   onCornerPointerDown={handleCornerHeaderPointerDown}
                   onCornerPointerEnter={handleCornerPointerEnterStable}
