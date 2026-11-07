@@ -50,6 +50,25 @@ const columns: GridColumn<Row>[] = [
 
 移動先は「確定を反映した再レンダー後」の行数でクランプされるため、`onRowsChange` で末尾に空行を追加する入力グリッド(貼り付け + 直接入力の定石パターン)では、最終行の `Enter` 確定でそのまま増えた行へ進めます。
 
+## コードから編集を始める / フォーカスを戻す
+
+「行を追加」ボタンで足した行をすぐ編集させるときは、命令的 API の `startEditing(viewRowIndex, colIndex)` を使います(`F2` と同じ。セルを選んで見える位置へスクロールし、エディタにフォーカスが移ります)。位置は表示の位置なので、並べ替えや絞り込みの中では `rows.findIndex` ではなく行キーから `getViewRowIndex(rowKey)` で、列は `getColIndex(columnKey)` で引きます。
+
+```tsx
+import { flushSync } from 'react-dom';
+
+const addRow = () => {
+  const row = { id: crypto.randomUUID(), name: '' };
+  flushSync(() => setRows((prev) => [...prev, row])); // グリッドが新しい行を知ってから引く
+  const grid = gridRef.current;
+  const viewRowIndex = grid?.getViewRowIndex(row.id) ?? -1;
+  const colIndex = grid?.getColIndex('name') ?? -1;
+  if (viewRowIndex >= 0 && colIndex >= 0) grid?.startEditing(viewRowIndex, colIndex);
+};
+```
+
+右クリックメニューから開いたモーダルを閉じた後など、キーがグリッドへ届かなくなったときは `focus()` でグリッドへフォーカスを戻せます(`imeDirectInput` 有効時は入力受けへ)。詳しくは [命令的 API](/docs/api/handle#フォーカス--編集の開始) を参照してください。
+
 ## バリデーション
 
 ```tsx

@@ -14,6 +14,11 @@
 
 実際にアプリを作って確かめたチェック(`docs/audits/2026-11-07/`)で見つかったものの修正です。
 
+### 追加
+
+- 命令的 API に `focus()` / `startEditing(viewRowIndex?, colIndex?)` / `getViewRowIndex(rowKey)` / `getColIndex(columnKey)` を足しました。`focus()` はグリッドへフォーカスを戻し(右クリックメニューから開いたモーダルを閉じた後など。`imeDirectInput` 有効時は入力受けへ)、`startEditing` はそのセル(省略時はアクティブセル)の編集を `F2` と同じく始めます(始めたら `true`)。`getViewRowIndex` / `getColIndex` は行キー / 列キーから今の表示の位置を返します(並べ替え中に足した行を `rows.findIndex` で選ぶと別の行になっていました)。
+- `applyState` の引数の型 `GridStatePatch` を足しました(下の「挙動の変化」)。
+
 ### 挙動の変化
 
 - 下部バーの番地(Active / Selection)と件数(Cells / Rows)、`slotContext.derivedSummary.selectionStats` で、ラベル行を数えないようにしました。行ヘッダーの番号と同じ番号になります(これまでは行番号 1 の行が「B2」と出ていました)。上部バーと下部バーの「Columns: 表示中 / 全体」と行選択の列数も、行ドラッグのハンドル列・展開トグル列・自動グループ列を数えないようにしました(6 列の表で「7 / 6」と出ていました)。

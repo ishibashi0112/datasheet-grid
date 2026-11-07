@@ -25,7 +25,7 @@ import { gridActions, type GridUiAction } from '../model/gridActions';
 import { normalizeCellRange, normalizeRowRange } from '../model/gridSelectors';
 import { computeSinglePaneColumnExtent, type GridPaneLayout } from '../logic/geometry';
 import { logicalToPhysicalScrollTop, physicalToLogicalScrollTop, type RowMetrics } from '../logic/verticalGeometry';
-import { findDetailRowIndex, type DetailIndexCache } from '../logic/detailRow';
+import { findDetailRowIndex, findViewRowIndexByKey, type DetailIndexCache } from '../logic/detailRow';
 import {
   clearRowSelection,
   countSelectedRows,
@@ -86,6 +86,10 @@ export type GridApiArgs<T> = {
   columns: GridColumn<T>[];
   onColumnsChange: ((nextColumns: GridColumn<T>[]) => void) | undefined;
   uiState: GridUiState;
+  // 追加(dogfood DU-02): focus() / startEditing() の委譲先(グリッドのキーを受ける要素へフォーカス / セルの編集を始めて
+  //   始めたら true。編集できないセルは false)。
+  focusGrid?: () => void;
+  startEditCell?: (cell: CellCoord) => boolean;
   // 追加(dogfood DU-06): store の今の状態(レンダーを待たない)。applyState の「渡さないスライスは今のまま」と、直後の
   //   getState() が今の値を読むのに使います(続けて呼んだときに 1 つ前のレンダーの値で上書きしないため)。無ければ uiState。
   getUiState?: () => GridUiState;
@@ -272,6 +276,9 @@ export const createGridApi = <T,>(features: Pick<GridCoreFeatures, 'export'> = {
     };
   };
 
+  // 追加(dogfood DU-03): getViewRowIndex の行キー → view index のキャッシュ(行モデルごと)。
+  let rowKeyIndexCache: { model: RowModel<T> | null; map: Map<GridRowKey, number> } = { model: null, map: new Map() };
+
   const handle: SpreadsheetGridHandle<T> = {
     scrollToRow: (viewRowIndex, scrollOptions) => {
       const align = scrollOptions?.align ?? 'auto';
@@ -347,6 +354,58 @@ export const createGridApi = <T,>(features: Pick<GridCoreFeatures, 'export'> = {
     },
 
     getSelection: () => args?.uiState.selection ?? null,
+
+    // ── フォーカス / 編集の開始(dogfood DU-02)──
+    focus: () => {
+      args?.focusGrid?.();
+    },
+    startEditing: (viewRowIndex, colIndex) => {
+      const s = args;
+      if (!s || !s.startEditCell) {
+        return false;
+      }
+      const ui = s.getUiState?.() ?? s.uiState;
+      // 編集中は始めません(今の編集を確定も取消もせずに別のセルへ移らないため)。
+      if (ui.editingCell !== null) {
+        return false;
+      }
+      const target =
+        viewRowIndex === undefined || colIndex === undefined ? ui.activeCell : { row: viewRowIndex, col: colIndex };
+      if (
+        !target ||
+        !Number.isInteger(target.row) ||
+        !Number.isInteger(target.col) ||
+        target.row < 0 ||
+        target.row >= s.viewRowCount ||
+        target.col < 0 ||
+        target.col >= s.orderedColumns.length
+      ) {
+        return false;
+      }
+      if (!s.startEditCell(target)) {
+        return false;
+      }
+      // 始めたら、そのセルを単一選択にして見える位置へ(selectCell と同じ)、フォーカスもグリッドへ(エディタが受け取る)。
+      s.dispatch(gridActions.startSelection(target));
+      s.dispatch(gridActions.endSelection());
+      scrollToCellInternal(target.row, target.col, 'auto');
+      s.focusGrid?.();
+      return true;
+    },
+
+    // ── 行キー / 列キーから位置(dogfood DU-03)──
+    getViewRowIndex: (rowKey) => {
+      const s = args;
+      if (!s) {
+        return -1;
+      }
+      // 行モデルが変わったら(並び / 絞り込み / データの変化)キャッシュを捨てます。
+      if (rowKeyIndexCache.model !== s.rowModel) {
+        rowKeyIndexCache = { model: s.rowModel, map: new Map() };
+      }
+      return findViewRowIndexByKey(s.rowModel, rowKey, rowKeyIndexCache.map);
+    },
+    getColIndex: (columnKey) => args?.orderedColumns.findIndex((column) => column.key === columnKey) ?? -1,
 
     selectCell: (viewRowIndex, colIndex, cellOptions) => {
       const s = args;

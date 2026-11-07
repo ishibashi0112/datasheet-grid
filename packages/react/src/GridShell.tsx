@@ -2642,13 +2642,14 @@ export function useGridShell<T extends object>({
         }
       : null;
 
-  const handleCellDoubleClickWithController = useCallback(
-    (cell: CellCoord, event: MouseEvent) => {
-      // 追加(G-1): 既定の動作(編集開始)の前に onCellDoubleClick を呼びます(読み取り専用セルでも呼ぶため
-      //   isCellEditable の判定より前)。params.preventDefault() されたら既定の動作を行いません。
-      if (engine.cellEventNotifier.notifyCellDoubleClick(cell, event)) {
-        return;
-      }
+  // 追加(dogfood DU-02): 命令的 API の focus()。キー操作を受ける要素(シェル)へフォーカスを移します。
+  const focusGridRoot = useCallback(() => {
+    gridRootRef.current?.focus({ preventScroll: true });
+  }, []);
+  // 変更(dogfood DU-02): ダブルクリックの編集開始を、命令的 API の startEditing() と共用するため切り出しました
+  //   (編集を始めたら true)。判定と初期値は従来どおりです。
+  const tryStartEditCell = useCallback(
+    (cell: CellCoord): boolean => {
       // 変更(DS-3-5): filteredRows[cell.row] → rowModel.getRow 経由(double-click consumer 移行)。
       //   getRow(i)=rows[order[i]] で旧 filteredRows[i] と参照同一。OOB は getRow が undefined を
       //   返し、下の `if (!row …) return` ガードで吸収するため挙動等価です。
@@ -2656,7 +2657,7 @@ export function useGridShell<T extends object>({
       // 変更(10-E): cell.col は論理 index 空間（orderedColumns）です。
       const column = orderedColumns[cell.col];
       if (!row || !column) {
-        return;
+        return false;
       }
       if (
         !isViewCellEditable(
@@ -2668,17 +2669,29 @@ export function useGridShell<T extends object>({
           column,
         )
       ) {
-        return;
+        return false;
       }
       // 追加(editor: checkbox): checkbox 列は直接トグル方式のため編集セッションを開きません
       //   (トグルはクリック / Space。ダブルクリックは click 2 回として扱われます)。
       if (column.editor?.type === 'checkbox') {
-        return;
+        return false;
       }
       const currentValue = getCellValue(row, column);
       startEditWithValue(cell, String(currentValue ?? ''));
+      return true;
     },
-    [canEditCell, engine, rowModel, readOnly, startEditWithValue, orderedColumns],
+    [canEditCell, rowModel, readOnly, startEditWithValue, orderedColumns],
+  );
+  const handleCellDoubleClickWithController = useCallback(
+    (cell: CellCoord, event: MouseEvent) => {
+      // 追加(G-1): 既定の動作(編集開始)の前に onCellDoubleClick を呼びます(読み取り専用セルでも呼ぶため
+      //   isCellEditable の判定より前)。params.preventDefault() されたら既定の動作を行いません。
+      if (engine.cellEventNotifier.notifyCellDoubleClick(cell, event)) {
+        return;
+      }
+      tryStartEditCell(cell);
+    },
+    [engine, tryStartEditCell],
   );
   // 追加(touch): pointer フック(タッチのダブルタップ / native dblclick ラッパ)から読む latest-ref を
   //   同期します(render 中の ref 代入を増やさないため useEffect 同期 = RS-AS 方式)。
@@ -3763,6 +3776,9 @@ export function useGridShell<T extends object>({
     uiState,
     // 追加(dogfood DU-06): applyState / getState が store の今の状態を読むため。
     getUiState: gridStore.getState,
+    // 追加(dogfood DU-02): focus() / startEditing() の委譲先(ルートへの focus は imeDirectInput 有効時は入力受けへ回る)。
+    focusGrid: focusGridRoot,
+    startEditCell: tryStartEditCell,
     headerHeight,
     verticalScaleFactor,
     leftPaneTotalWidth,

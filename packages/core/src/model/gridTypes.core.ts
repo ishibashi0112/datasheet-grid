@@ -2151,6 +2151,35 @@ export type SpreadsheetGridHandle<T> = {
   // 選択に交差する行(distinct)を返します。SSRM はロード済み行のみ。
   /** 選択に交差する行(distinct)を返す。serverSide はロード済み行のみ。 */
   getSelectedRows: () => T[];
+  // 追加(dogfood DU-03): 行キー / 列キーから今の位置を引きます(ソート中に足した行を選ぶとき、rows.findIndex は
+  //   表示位置ではないため別の行を選んでいた)。
+  /**
+   * 行キー(`rowKeyGetter` の値)から今の表示位置(`viewRowIndex`)を返す。
+   * 表示に無い行(フィルターで外れた / 閉じたグループの中 / serverSide で未ロード)は `-1`。
+   * 並び替えや絞り込みの中で行を足して選ぶときは、`rows.findIndex` の代わりにこれを使う(`rows`
+   * の位置は表示位置と違う)。
+   */
+  getViewRowIndex: (rowKey: GridRowKey) => number;
+  /**
+   * 列キーから今の `colIndex`(固定列と、行ドラッグのハンドル列などライブラリが足す列を含む視覚順)
+   * を返す。表示していない列(`visible: false` / グループ化中のグループ元列)は `-1`。
+   */
+  getColIndex: (columnKey: string) => number;
+
+  // ── フォーカス / 編集の開始 ──
+  // 追加(dogfood DU-02): モーダルを閉じた後などにキーをグリッドへ戻す / 行を足してすぐ打てるように編集を始める。
+  /**
+   * グリッド(キー操作を受ける要素)へフォーカスを移す(`imeDirectInput` 有効時は入力受けへ)。
+   * 右クリックメニューから開いたモーダルを閉じた後など、キーがグリッドへ届かなくなったときに呼ぶ。
+   */
+  focus: () => void;
+  /**
+   * そのセル(省略時はアクティブセル)の編集を始める(`F2` と同じ。今の値でエディタを開く)。
+   * セルを単一選択にして見える位置へスクロールし、フォーカスもエディタへ移す。始めたら `true`。
+   * 編集できないセル(`readOnly` / `editable: false` / `canEditCell` / checkbox 列 / グループ行 /
+   * ラベル行)・範囲外・編集中は `false` で何もしない。
+   */
+  startEditing: (viewRowIndex?: number, colIndex?: number) => boolean;
 
   // ── エクスポート ──
   // CSV 文字列を返します(純粋・副作用なし)。

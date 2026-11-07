@@ -2,10 +2,13 @@
 
 // セル編集とバリデーションのデモ: エディタ種別(text / number / select / date / checkbox)と
 // validate(mark / reject)の組み合わせを 1 グリッドで体験できる。
-import { useState } from 'react';
+// 「行を追加して編集」ボタンは命令的 API の startEditing / getViewRowIndex / getColIndex(足した行をすぐ編集)。
+import { useRef, useState } from 'react';
+import { flushSync } from 'react-dom';
 import {
   SpreadsheetGrid,
   type GridColumn,
+  type SpreadsheetGridHandle,
 } from '@ishibashi0112/spreadsheet-grid';
 import '@ishibashi0112/spreadsheet-grid/style.css';
 
@@ -80,15 +83,44 @@ const initialRows: Row[] = [
 
 export function EditingDemo() {
   const [rows, setRows] = useState<Row[]>(initialRows);
+  const gridRef = useRef<SpreadsheetGridHandle<Row>>(null);
+  const nextId = useRef(initialRows.length + 1);
+
+  // 足した行の「品名」をすぐ編集する。位置は表示の位置なので、行キーと列キーから引く。
+  const addRow = () => {
+    const row: Row = { id: nextId.current++, name: '', qty: null, category: '通常', dueDate: null, active: true, note: '' };
+    flushSync(() => setRows((prev) => [...prev, row]));
+    const grid = gridRef.current;
+    const viewRowIndex = grid?.getViewRowIndex(row.id) ?? -1;
+    const colIndex = grid?.getColIndex('name') ?? -1;
+    if (viewRowIndex >= 0 && colIndex >= 0) {
+      grid?.startEditing(viewRowIndex, colIndex);
+    }
+  };
 
   return (
-    <SpreadsheetGrid
-      rows={rows}
-      columns={columns}
-      onRowsChange={setRows}
-      rowKeyGetter={(row) => row.id}
-      height={260}
-      theme="auto"
-    />
+    <div className="flex flex-col gap-2">
+      <div className="flex flex-wrap items-center gap-2 text-sm">
+        <button type="button" className="rounded-md border px-2 py-1 hover:bg-fd-accent" onClick={addRow}>
+          行を追加して編集
+        </button>
+        <button
+          type="button"
+          className="rounded-md border px-2 py-1 hover:bg-fd-accent"
+          onClick={() => gridRef.current?.focus()}
+        >
+          グリッドへフォーカス
+        </button>
+      </div>
+      <SpreadsheetGrid
+        ref={gridRef}
+        rows={rows}
+        columns={columns}
+        onRowsChange={setRows}
+        rowKeyGetter={(row) => row.id}
+        height={260}
+        theme="auto"
+      />
+    </div>
   );
 }

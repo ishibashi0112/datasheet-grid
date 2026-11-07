@@ -98,6 +98,7 @@ This library is new, so AI coding assistants rarely know its API and tend to gue
 - **`rows` or `dataSource`.** `rows` is the client-side row model; `dataSource` switches to the server-side row model. They are mutually exclusive.
 - **Height.** Use the `height` prop, not `style.height` on the root. A value containing `%` (`'100%'`) sizes the **whole grid including its bars** and needs a parent with a definite height; a number sizes the **scroll area only**. Without `height`, the scroll area is capped at `480px` (`maxHeight`).
 - **Imperative API.** Pass `ref` to get a `SpreadsheetGridHandle<T>` (no `forwardRef` needed on your side; works the same on React 18.3 and 19).
+- **Positions are view positions.** `viewRowIndex` / `colIndex` (in `selectCell` and the like) are positions after sorting and filtering, and `colIndex` also counts the columns the grid adds (row drag handle, detail toggle, auto group column). Look them up with `getViewRowIndex(rowKey)` / `getColIndex(columnKey)` instead of `rows.findIndex`.
 - **Next.js App Router.** Render the grid from a Client Component (a file with `'use client'`); the package does not add the directive.
 
 ## Versioning
@@ -173,6 +174,7 @@ npm パッケージに同梱されているため、オフライン(`node_module
 - **`rows` か `dataSource`。** `rows` はクライアントサイド行モデル、`dataSource` を渡すとサーバーサイド行モデルです。両者は排他です。
 - **高さ。** ルートの `style.height` ではなく `height` prop で指定します。`%` を含む値(`'100%'`)は**バーを含むグリッド全体**の高さで、親要素に確定高さが必要です。数値は**スクロール領域だけ**の高さです。`height` 未指定時のスクロール領域は `480px`(`maxHeight`)が上限です。
 - **命令的 API。** `ref` を渡すと `SpreadsheetGridHandle<T>` を受け取れます(利用側で `forwardRef` は不要。React 18.3 / 19 のどちらでも同じ)。
+- **位置は表示の位置。** `selectCell` などの `viewRowIndex` / `colIndex` は並べ替え・絞り込みの後の表示の位置で、`colIndex` は行ドラッグのハンドル列・展開トグル列・自動グループ列(ライブラリが足す列)も数えます。`rows.findIndex` ではなく `getViewRowIndex(rowKey)` / `getColIndex(columnKey)` で引いてください。
 - **Next.js App Router。** クライアントコンポーネント(`'use client'` のファイル)から描画してください。パッケージ側はディレクティブを付けていません。
 
 ### バージョンの方針

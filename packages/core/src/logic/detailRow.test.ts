@@ -4,6 +4,7 @@ import type { RowModel } from '../model/gridTypes.unbound';
 import {
   createDetailIndexCache,
   findDetailRowIndex,
+  findViewRowIndexByKey,
   resolveDetailRowExtras,
   seedDetailIndexCache,
   splitRowBandByDetail,
@@ -213,5 +214,30 @@ describe('splitRowBandByDetail', () => {
     expect(splitRowBandByDetail(5, 5, metrics, extras)).toEqual([
       { top: 5 * rowHeight, height: rowHeight },
     ]);
+  });
+});
+
+// 追加(dogfood DU-03): 命令的 API の getViewRowIndex の本体です。
+describe('findViewRowIndexByKey', () => {
+  it('走査して見つけた位置を覚え、並びが変わったら覚えた位置を確かめ直す', () => {
+    const rows: Row[] = [{ id: 'a' }, { id: 'b' }, { id: 'c' }];
+    const cache = new Map<string | number, number>();
+    expect(findViewRowIndexByKey(makeModel(rows, [2, 0, 1]), 'b', cache)).toBe(2);
+    expect(cache.get('b')).toBe(2);
+    expect(findViewRowIndexByKey(makeModel(rows, [1, 2, 0]), 'b', cache)).toBe(0);
+    expect(findViewRowIndexByKey(makeModel(rows, [0, 2]), 'b', cache)).toBe(-1);
+  });
+
+  it('行が取れない位置(SSRM の未ロード行 = 行キーの代わりに位置を返す)には当てない', () => {
+    // SSRM の未ロード行は getRowKey が view index を返す。数値の行キー 1 が未ロードの位置 1 に当たってはいけない。
+    const loaded = new Map<number, { id: number }>([[3, { id: 1 }]]);
+    const model: RowModel<{ id: number }> = {
+      getRowCount: () => 5,
+      getRow: (i) => loaded.get(i) as { id: number },
+      getSourceIndex: (i) => i,
+      getRowKey: (i) => loaded.get(i)?.id ?? i,
+    };
+    expect(findViewRowIndexByKey(model, 1, new Map())).toBe(3);
+    expect(findViewRowIndexByKey(model, 2, new Map())).toBe(-1);
   });
 });

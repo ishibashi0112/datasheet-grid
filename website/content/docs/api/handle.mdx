@@ -20,7 +20,7 @@ const gridRef = useRef<SpreadsheetGridHandle<Row>>(null);
 // const csv = gridRef.current?.exportCsv({ scope: 'selection' });
 ```
 
-`viewRowIndex` / `colIndex` は**ビュー座標**(フィルター/ソート適用後の表示 index。`colIndex` は固定列を含む視覚順 = 左→中央→右)。範囲外 index は内部でクランプ/無視する。表示行数が減った(rows 差し替え / フィルター / グループの折りたたみ等)ときも、はみ出したアクティブセル / 選択範囲は範囲内へ詰められる(アクティブセルは最終行へ寄せ、範囲ははみ出した部分を切り詰める。0 行になったらセル / 行の選択とアクティブセルは解除)。このため `getActiveCell()` / `getSelection()` が存在しない行を返すことはない。
+`viewRowIndex` / `colIndex` は**ビュー座標**(フィルター/ソート適用後の表示 index。`colIndex` は固定列を含む視覚順 = 左→中央→右)。`viewRowIndex` はラベル行・グループ行も 1 行に数え、`colIndex` は行ドラッグのハンドル列・展開トグル列・自動グループ列(ライブラリが足す列)も数える。行キー / 列キーからは `getViewRowIndex(rowKey)` / `getColIndex(columnKey)` で引ける。アクティブセルは表示位置に付く(上の行を消すと、同じ位置に来た別の行を指す。Excel と同じ)。範囲外 index は内部でクランプ/無視する。表示行数が減った(rows 差し替え / フィルター / グループの折りたたみ等)ときも、はみ出したアクティブセル / 選択範囲は範囲内へ詰められる(アクティブセルは最終行へ寄せ、範囲ははみ出した部分を切り詰める。0 行になったらセル / 行の選択とアクティブセルは解除)。このため `getActiveCell()` / `getSelection()` が存在しない行を返すことはない。
 
 ### スクロール
 
@@ -46,8 +46,31 @@ const gridRef = useRef<SpreadsheetGridHandle<Row>>(null);
 | `selectRange(range, { scrollIntoView? })` | セル範囲選択(ドラッグ相当)。アンカーは `range.start`。 |
 | `clearSelection()` | 選択解除。 |
 | `getSelectedRows()` | 選択に交差する行(distinct)を返す。serverSide はロード済み行のみ。 |
+| `getViewRowIndex(rowKey)` | 行キー(`rowKeyGetter` の値)から今の表示位置(`viewRowIndex`)を返す。表示に無い行(フィルターで外れた / 閉じたグループの中 / serverSide で未ロード)は `-1`。並び替えや絞り込みの中で行を足して選ぶときは、`rows.findIndex` の代わりにこれを使う(`rows` の位置は表示位置と違う)。 |
+| `getColIndex(columnKey)` | 列キーから今の `colIndex`(固定列と、行ドラッグのハンドル列などライブラリが足す列を含む視覚順)を返す。表示していない列(`visible: false` / グループ化中のグループ元列)は `-1`。 |
 
 > 注: `getSelectedRows()` は**セル範囲選択**に交差する行です。下の**チェックボックス行選択**(`enableRowSelection`)とは別レイヤーで、そちらは `getSelectedRowKeys()` / `getSelectedRowData()` を使います。
+
+### フォーカス / 編集の開始
+
+| メソッド | 説明 |
+| --- | --- |
+| `focus()` | グリッド(キー操作を受ける要素)へフォーカスを移す(`imeDirectInput` 有効時は入力受けへ)。右クリックメニューから開いたモーダルを閉じた後など、キーがグリッドへ届かなくなったときに呼ぶ。 |
+| `startEditing(viewRowIndex?, colIndex?)` | そのセル(省略時はアクティブセル)の編集を始める(`F2` と同じ。今の値でエディタを開く)。セルを単一選択にして見える位置へスクロールし、フォーカスもエディタへ移す。始めたら `true`。編集できないセル(`readOnly` / `editable: false` / `canEditCell` / checkbox 列 / グループ行 / ラベル行)・範囲外・編集中は `false` で何もしない。 |
+
+```tsx
+import { flushSync } from 'react-dom';
+
+// 行を足して、その行の「名前」をすぐ編集する(並び替え中でも、足した行の表示位置を行キーで引く)。
+const addRow = () => {
+  const row = { id: crypto.randomUUID(), name: '' };
+  flushSync(() => setRows((prev) => [...prev, row]));
+  const grid = gridRef.current;
+  const viewRowIndex = grid?.getViewRowIndex(row.id) ?? -1;
+  const colIndex = grid?.getColIndex('name') ?? -1;
+  if (viewRowIndex >= 0 && colIndex >= 0) grid?.startEditing(viewRowIndex, colIndex);
+};
+```
 
 ### 行選択(チェックボックス選択)
 

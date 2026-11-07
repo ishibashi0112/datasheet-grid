@@ -58,6 +58,7 @@ export function Inventory() {
 - **`rows` か `dataSource`。** `rows` はクライアントサイド、`dataSource` を渡すとサーバーサイド行モデルです。両方は渡しません。
 - **高さは `height` prop。** `'100%'` は上下のバーを含む全体の高さで、親に確定した高さが要ります。数値はスクロール領域だけの高さです。`height` も `maxHeight` も指定しないと、スクロール領域は 480px が上限です。ルートの `style.height` では決めません。
 - **命令的 API。** `ref` を渡すと `SpreadsheetGridHandle<T>` が入ります(利用側で `forwardRef` は要りません。React 18.3 / 19 のどちらでも同じ)。
+- **位置は表示の位置。** `selectCell` などの `viewRowIndex` / `colIndex` は並べ替え・絞り込みの後の表示の位置で、`colIndex` はライブラリが足す列(行ドラッグのハンドル列など)も数えます。`rows.findIndex` ではなく `getViewRowIndex(rowKey)` / `getColIndex(columnKey)` で引きます。行を足してすぐ編集するときは `startEditing(viewRowIndex, colIndex)`、モーダルを閉じた後にキーを戻すときは `focus()`。
 - **Next.js App Router。** グリッドは `'use client'` のファイルから描画します。
 
 ## 4. 入口の選び方
