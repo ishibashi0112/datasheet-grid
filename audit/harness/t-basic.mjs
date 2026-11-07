@@ -80,6 +80,9 @@ const v = await page.evaluate(() => document.querySelector('.ssg-cell-editor-inp
 check('typed key becomes initial value', v === 'x', v);
 await page.keyboard.press('Escape');
 check('Escape cancels & keeps old value', !(await editorOpen()) && (await cellText(page, 1, 'name')) === 'item-000002', await cellText(page, 1, 'name'));
+// 変更(作り直しの確認): Esc の後、フォーカスがグリッドへ戻るのは次のフレーム(エディタが消えた直後は body)。待たずに
+//   F2 を押すと F2 が届かず、続く End(1.0 の前に足した「行の最後の列へ」)で列が動いて落ちていた(ハーネスの競合)。
+await waitIdle(page, 50);
 // F2 → 編集 → Tab 確定 → 右へ
 await page.keyboard.press('F2');
 await page.keyboard.press('End');
@@ -99,6 +102,8 @@ await page.evaluate(() => window.__setProps({ editorEnterMove: 'right' }));
 await waitIdle(page, 100);
 await cell(page, 2, 'name').dblclick();
 await page.keyboard.press('Enter');
+// 変更(作り直しの確認): 確定の後の移動は次のフレーム(scheduleAfterEdit)。待たずに読むと移動の前の値だった(ハーネスの競合)。
+await waitIdle(page, 50);
 a = await active();
 check("editorEnterMove 'right' moves right on Enter", a && a.row === 2 && a.col === 2, a);
 await page.evaluate(() => window.__setProps({ editorEnterMove: 'down' }));

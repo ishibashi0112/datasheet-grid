@@ -310,6 +310,9 @@ import { open, check, skip, SUPPORTS, pending, summary, errorsOf, renderedRowInd
     const inp = document.createElement('input');
     inp.id = 'outside-input';
     inp.placeholder = 'outside';
+    // 変更(作り直しの確認): ページの下にボタン(#after-grid)を足したので、WebKit の窓では本文の末尾に置いた入力欄が
+    //   開いた列メニューの下に隠れて押せなかった。画面の右下に固定する(確かめたいのはフォーカスの扱いだけ)。
+    inp.style.cssText = 'position: fixed; right: 8px; bottom: 8px; z-index: 2000';
     document.body.appendChild(inp);
   });
   await header(page, 'name').hover();

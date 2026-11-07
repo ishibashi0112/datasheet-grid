@@ -184,9 +184,14 @@ for (const key of ['category', 'date', 'name']) {
     const row = document.querySelector('.ssg-center-pane .ssg-body-row[data-row-index="1"]').getBoundingClientRect();
     const band = document.querySelector('.ssg-center-pane .ssg-detail-band[data-detail-row-index="1"]').getBoundingClientRect();
     const others = [2, 3, 4, 5].map((i) => document.querySelector(`.ssg-center-pane .ssg-body-row[data-row-index="${i}"]`).getBoundingClientRect());
+    // 変更(C-N3): 離したときに入る位置 = 掴んだ行より上に見えている(退避した後の)行の数。下へ引くときは帯の下端で
+    //   落とす位置を決めるので、帯が退避した行を隠さない位置に入る(離した後の位置をこれと比べる)。
+    const rest = [...document.querySelectorAll('.ssg-center-pane .ssg-body-row[data-row-index]')].filter((el) => el.getAttribute('data-row-index') !== '1');
+    const above = rest.filter((el) => el.getBoundingClientRect().top < row.top).length;
     return {
       gap: Math.round(band.top - row.bottom),
       covered: others.filter((r) => r.top < band.bottom - 1 && r.bottom > band.top + 1).length,
+      above,
     };
   });
   check('DF-02 live drag: the band follows the dragged row', Math.abs(mid.gap) <= 1, mid);
@@ -194,7 +199,7 @@ for (const key of ['category', 'date', 'name']) {
   await page.mouse.up();
   await waitIdle(page, 800);
   const after = await page.evaluate(() => {
-    const ids = window.__rows().slice(0, 6).map((r) => r.id);
+    const ids = window.__rows().slice(0, 12).map((r) => r.id);
     const idx = ids.indexOf(window.__draggedId);
     const row = document.querySelector(`.ssg-center-pane .ssg-body-row[data-row-index="${idx}"]`)?.getBoundingClientRect();
     const band = document.querySelector(`.ssg-center-pane .ssg-detail-band[data-detail-row-index="${idx}"]`);
@@ -202,6 +207,7 @@ for (const key of ['category', 'date', 'name']) {
     return { ids, dragged: window.__draggedId, gap: row && bandBox ? Math.round(bandBox.top - row.bottom) : null, transform: band?.style.transform ?? null };
   });
   check('DF-02 live drag: after drop the band sits under the moved row and has no leftover transform', after.ids.indexOf(after.dragged) > 1 && after.gap === 0 && !after.transform, after);
+  check('DF-02 / C-N3 live drag: the row lands where the opened gap was shown during the drag', after.ids.indexOf(after.dragged) === mid.above, { landed: after.ids.indexOf(after.dragged), shownAt: mid.above });
   check('DF-02 no page errors', unexpectedPageErrors(pageErrors).length === 0, pageErrors);
   await close();
 }
