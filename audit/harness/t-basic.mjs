@@ -1,5 +1,5 @@
 // basic: 編集 / キーボード / 選択 / クリップボード / undo-redo / ソート / フィルター UI / 列操作 / 行選択 / コンテキストメニュー / 状態往復 / エクスポート。
-import { OUT, open, check, pending, summary, errorsOf, renderedRowIndexes, cellText, cell, header, scrollTo, focusGrid, waitIdle, events, clearEvents, pasteText, copyText, state, rows, waitForViewRows } from './pw.mjs';
+import { OUT, open, check, pending, summary, errorsOf, renderedRowIndexes, cellText, cell, header, scrollTo, focusGrid, waitIdle, events, clearEvents, pasteText, copyText, state, rows, waitForViewRows, unexpectedPageErrors } from './pw.mjs';
 
 const { page, pageErrors, close } = await open('basic', { query: 'n=300' });
 const active = () => page.evaluate(() => window.__grid.getActiveCell());
@@ -566,7 +566,13 @@ await page.evaluate(() => window.__grid.applyState({ version: 1, columnWidths: {
 await waitIdle(page, 200);
 const st3 = await state(page);
 const errs3 = await errorsOf(page);
-check('applyState tolerates garbage (no throw/console error)', errs3.length === 0 && pageErrors.length === 0, { st3, errs3 });
+// 変更(dogfood DF-04): 今の列定義に無い列(nope)を捨てたことを開発時に警告する(意図した警告)。それ以外は出さない。
+const DROPPED_COLUMN_WARNING = 'applyState: 今の列定義(columns)に無い列 `nope`';
+check(
+  'applyState tolerates garbage (no throw/console error; only the dropped-column warning)',
+  errs3.length === 1 && errs3[0].includes(DROPPED_COLUMN_WARNING) && unexpectedPageErrors(pageErrors, [DROPPED_COLUMN_WARNING]).length === 0,
+  { st3, errs3 },
+);
 await page.evaluate(() => window.__grid.applyState({ version: 1, columnWidths: {}, filters: { globalText: '', columnFilters: {} }, sort: [] }));
 await waitIdle(page, 200);
 // フィルター解除の反映(遅延レンダー)を待つ(固定時間だけだと遅いマシンで解除前の行を書き出す)。
@@ -617,7 +623,7 @@ const scrollEv = (await events(page, 'onScroll')).map((e) => e.payload.source);
 check('onScroll via API tagged source=api', scrollEv.includes('api'), scrollEv);
 
 const errs = await errorsOf(page);
-check('basic: no console errors', errs.length === 0 && pageErrors.length === 0, [...errs, ...pageErrors].slice(0, 8));
+check('basic: no console errors', errs.length === 0 && unexpectedPageErrors(pageErrors, [DROPPED_COLUMN_WARNING]).length === 0, [...errs, ...pageErrors].slice(0, 8));
 await page.screenshot({ path: OUT + 'shot-basic-end.png' });
 summary();
 await close();
