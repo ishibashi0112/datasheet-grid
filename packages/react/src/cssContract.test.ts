@@ -85,7 +85,7 @@ const tables = contractTables(reference);
 
 // style.css のトークン定義(既定値のブロック)。ダークのプリセットや密度の修飾子は同じ名前を上書きするだけです。
 const tokenBlockSelector =
-  ':where(.ssg-root, .ssg-popover, .ssg-menu-panel, .ssg-filter-popover, .ssg-select-editor-popover, [data-grid-drag-ghost], .ssg-tooltip, .ssg-ask) {';
+  ':where(.ssg-root, .ssg-popover, .ssg-menu-panel, .ssg-filter-popover, .ssg-select-editor-popover, [data-grid-drag-ghost], .ssg-tooltip, .ssg-ask, .ssg-token-probe) {';
 const cssWithoutComments = stylesCss.replace(/\/\*[\s\S]*?\*\//g, '');
 const tokenBlockStart = cssWithoutComments.indexOf(tokenBlockSelector);
 const tokenBlock = cssWithoutComments.slice(tokenBlockStart, cssWithoutComments.indexOf('}', tokenBlockStart));

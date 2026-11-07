@@ -15,6 +15,7 @@ import type {
   GridResolvedSlots,
 } from '../model/gridTypes';
 import type { CellContextMenuLayout } from '../hooks/useCellContextMenuController';
+import { usePortalTokens } from '../hooks/usePortalTokens';
 
 type CellContextMenuPopoverProps = {
   isOpen: boolean;
@@ -38,6 +39,8 @@ export function CellContextMenuPopover({
   popoverRef,
   onRequestClose,
 }: CellContextMenuPopoverProps) {
+  // 追加(DevBI の報告): 表で決まったトークン(--ssg-*)をメニューへ写します(body 直下のため継承で届かない)。
+  usePortalTokens(popoverRef, isOpen && layout !== null, themeClassName);
   if (!isOpen || !layout) {
     return null;
   }

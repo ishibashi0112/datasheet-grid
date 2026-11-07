@@ -21,8 +21,10 @@
      セレクタリストについて(TH-DK-1): popover / menu / filter popover / ドラッグゴーストは
      document.body 直下のポータルで .ssg-root の継承が届かないため、各ポータル root にも
      同じトークンを直接定義します(テーマ切替はこのリストへ修飾子を足すだけで全面に効きます)。
-     追加(ことばで絞り込み): 入口 /ai の GridAskBar(.ssg-ask)もグリッドの外に置くため、同じリストに入れます。 */
-  :where(.ssg-root, .ssg-popover, .ssg-menu-panel, .ssg-filter-popover, .ssg-select-editor-popover, [data-grid-drag-ghost], .ssg-tooltip, .ssg-ask) {
+     追加(ことばで絞り込み): 入口 /ai の GridAskBar(.ssg-ask)もグリッドの外に置くため、同じリストに入れます。
+     追加(DevBI の報告): .ssg-token-probe は、ポップアップへ表のトークンを写すとき(core utils/portalTokens)に既定値を
+     読むための見えない要素です(内部。利用側は書かない)。themes/*.css の並びにも同じく入れます。 */
+  :where(.ssg-root, .ssg-popover, .ssg-menu-panel, .ssg-filter-popover, .ssg-select-editor-popover, [data-grid-drag-ghost], .ssg-tooltip, .ssg-ask, .ssg-token-probe) {
     /* ネイティブ UI(スクロールバー / select 等)の描画をテーマへ揃えます(TH-DK-2)。
        ダーク時は .ssg-theme-dark 側で dark に切替。:where のため利用側上書きが常に勝ちます。 */
     color-scheme: light;

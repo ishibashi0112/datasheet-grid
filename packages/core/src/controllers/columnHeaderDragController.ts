@@ -39,6 +39,7 @@ import {
 } from '../logic/autoScrollGeometry';
 import { isInsideDetailCardOf, isSyntheticColumnKey } from '../logic/detailRow';
 import { applySlotToElement } from '../logic/slotDom';
+import { syncPortalTokens } from '../utils/portalTokens';
 
 type ApplyColumnOrderAndPin = (
   orderedKeys: string[],
@@ -464,6 +465,8 @@ export const createColumnHeaderDragController = <T,>(): ColumnHeaderDragControll
     el.appendChild(icon);
     el.appendChild(text);
     document.body.appendChild(el);
+    // 追加(DevBI の報告): 表で決まったトークン(--ssg-*)をゴーストへ写します(body 直下のため継承で届かない)。
+    syncPortalTokens(args?.scrollContainerRef.current, el);
 
     ghostEl = el;
     ghostIconEl = icon;

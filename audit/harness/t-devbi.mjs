@@ -1,6 +1,14 @@
 // DevBI(spreadsheet-grid を使うアプリ)からの報告(2026-11-07)の回帰確認。jsdom では幅を測れないため実ブラウザで見る。
 //   修正前の 0.61.0 では FAIL、修正後は PASS になる。
-import { open, check, summary, waitIdle, unexpectedPageErrors } from './pw.mjs';
+import { open, check, summary, waitIdle, unexpectedPageErrors, header, cell } from './pw.mjs';
+
+// CSS を足す(WebDriver の wd.mjs には page.addStyleTag が無いので、どのブラウザでも同じ方法で)。
+const addStyle = (page, css) =>
+  page.evaluate((css) => {
+    const style = document.createElement('style');
+    style.textContent = css;
+    document.head.appendChild(style);
+  }, css);
 
 // ---- 列幅の自動調整のあと、どのセルも「…」で切れない ----
 //   offsetWidth は整数へ丸めた値で、実際の幅より最大 0.5px 小さい。その幅に決めた列では、いちばん長い値の末尾が切れていた
@@ -9,7 +17,7 @@ import { open, check, summary, waitIdle, unexpectedPageErrors } from './pw.mjs';
 for (const font of ['system-ui, sans-serif; font-size: 11.9px', 'sans-serif; font-size: 12.5px', 'serif; font-size: 13.3px']) {
   for (const density of ['compact', 'standard']) {
     const { page, close, pageErrors } = await open('basic', { query: 'n=300' });
-    await page.addStyleTag({ content: `.ssg-root { font-family: ${font}; }` });
+    await addStyle(page, `.ssg-root { font-family: ${font}; }`);
     await page.evaluate((density) => window.__setProps({ density, readOnly: true, autoSizeColumns: 'onDataChange' }), density);
     await waitIdle(page, 200);
     const res = await page.evaluate(async () => {
@@ -53,6 +61,111 @@ for (const font of ['system-ui, sans-serif; font-size: 11.9px', 'sans-serif; fon
     check(`autosize (${font.split(';')[0]} / ${density}): no unexpected page errors`, unexpectedPageErrors(pageErrors).length === 0, pageErrors);
     await close();
   }
+}
+
+// ---- ポップアップ(body 直下)へ、表で決まったトークンを写す ----
+//   0.61.0 までは、利用側が表のまわりで決めた --ssg-* が列メニュー等に届かず、既定の色で出ていた。
+//   写すのは「ポップアップの側で変えていない変数」だけ。密度の寸法は写さない。
+const tokenOf = (page, selector, name) =>
+  page.evaluate(({ selector, name }) => {
+    const el = document.querySelector(selector);
+    return el ? getComputedStyle(el).getPropertyValue(name).trim() : null;
+  }, { selector, name });
+const openColumnMenu = async (page, key) => {
+  await header(page, key).hover();
+  await header(page, key).locator('.ssg-icon-btn').click();
+  await page.waitForSelector('.ssg-menu-panel');
+  await waitIdle(page, 100);
+};
+const closeAll = async (page) => {
+  await page.keyboard.press('Escape');
+  await waitIdle(page, 150);
+};
+{
+  const { page, close, pageErrors } = await open('basic', { query: 'n=50' });
+  // 何も決めていなければ何も写さない(インラインの --ssg-* が無い)。
+  await openColumnMenu(page, 'name');
+  const inlineDefault = await page.evaluate(() => document.querySelector('.ssg-menu-panel').getAttribute('style') ?? '');
+  check('popup tokens: nothing is copied when the consumer sets no tokens', !inlineDefault.includes('--ssg-'), inlineDefault);
+  await closeAll(page);
+
+  // 1) README の書き方: どの表にも当たる `.ssg-root { … }`。
+  await addStyle(page, '.ssg-root { --ssg-panel-bg: rgb(10, 20, 30); --ssg-accent: rgb(0, 128, 0); }');
+  await openColumnMenu(page, 'name');
+  check('popup tokens: global .ssg-root rule reaches the column menu', (await tokenOf(page, '.ssg-menu-panel', '--ssg-panel-bg')) === 'rgb(10, 20, 30)');
+  check(
+    'popup tokens: column menu background uses it',
+    (await page.evaluate(() => getComputedStyle(document.querySelector('.ssg-menu-panel')).backgroundColor)) === 'rgb(10, 20, 30)',
+  );
+  await closeAll(page);
+
+  // 2) DevBI の書き方: 祖先の要素のクラスと、祖先の変数。
+  await page.evaluate(() => {
+    const parent = document.querySelector('.ssg-root').parentElement;
+    parent.classList.add('devbi-card');
+    parent.style.setProperty('--card-head', 'rgb(21, 64, 70)');
+  });
+  await addStyle(page, '.devbi-card .ssg-root { --ssg-panel-bg: var(--card-head); --ssg-tooltip-bg: var(--card-head); --ssg-ghost-bg: var(--card-head); }');
+  await openColumnMenu(page, 'name');
+  check('popup tokens: ancestor-scoped rule with an ancestor variable reaches the column menu', (await tokenOf(page, '.ssg-menu-panel', '--ssg-panel-bg')) === 'rgb(21, 64, 70)');
+  await closeAll(page);
+
+  // 3) 右クリックメニュー / ツールパネル / ツールチップ / 列のドラッグのゴーストにも届く。
+  await cell(page, 2, 'name').click({ button: 'right' });
+  await waitIdle(page, 150);
+  check('popup tokens: context menu gets it', (await tokenOf(page, '.ssg-menu-panel', '--ssg-panel-bg')) === 'rgb(21, 64, 70)');
+  await closeAll(page);
+  await page.evaluate(() => window.__grid.openFilterManager());
+  await page.waitForSelector('.ssg-toolpanel');
+  await waitIdle(page, 150);
+  check('popup tokens: tool panel gets it', (await tokenOf(page, '.ssg-toolpanel', '--ssg-panel-bg')) === 'rgb(21, 64, 70)');
+  await closeAll(page);
+  await header(page, 'name').locator('.ssg-header-label').hover();
+  await page.waitForSelector('.ssg-tooltip.ssg-tooltip--visible', { timeout: 3000 }).catch(() => {});
+  check('popup tokens: tooltip gets it', (await tokenOf(page, '.ssg-tooltip', '--ssg-tooltip-bg')) === 'rgb(21, 64, 70)');
+  await page.evaluate(() => window.__setProps({ columnDragMotion: 'ghost' }));
+  await waitIdle(page, 150);
+  const grip = header(page, 'name').locator('.ssg-header-grip');
+  await header(page, 'name').hover();
+  const gb = await grip.boundingBox();
+  await page.mouse.move(gb.x + gb.width / 2, gb.y + gb.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(gb.x + 60, gb.y + 5, { steps: 6 });
+  await waitIdle(page, 100);
+  check('popup tokens: column drag ghost gets it', (await tokenOf(page, '[data-grid-drag-ghost]', '--ssg-ghost-bg')) === 'rgb(21, 64, 70)');
+  await page.keyboard.press('Escape');
+  await page.mouse.up();
+  await waitIdle(page, 200);
+
+  // 4) ポップアップの側で変えている指定(.ssg-menu-panel だけ / classNames.popover の style)は残す。
+  await addStyle(page, '.ssg-menu-panel { --ssg-panel-bg: rgb(7, 8, 9); }');
+  await openColumnMenu(page, 'name');
+  check('popup tokens: a rule written only for the menu is kept', (await tokenOf(page, '.ssg-menu-panel', '--ssg-panel-bg')) === 'rgb(7, 8, 9)');
+  check('popup tokens: other tokens still follow the grid', (await tokenOf(page, '.ssg-menu-panel', '--ssg-accent')) === 'rgb(0, 128, 0)');
+  await closeAll(page);
+  await page.evaluate(() => window.__setProps({ classNames: { popover: { style: { '--ssg-accent': 'rgb(1, 2, 3)' } } } }));
+  await waitIdle(page, 100);
+  await openColumnMenu(page, 'name');
+  check('popup tokens: classNames.popover style is kept', (await tokenOf(page, '.ssg-menu-panel', '--ssg-accent')) === 'rgb(1, 2, 3)');
+  await closeAll(page);
+  await page.evaluate(() => window.__setProps({ classNames: undefined }));
+
+  // 5) 密度の寸法は写さない(ポップアップは密度の対象外)。テーマを変えると開いたままでも写し直す。
+  await page.evaluate(() => window.__setProps({ density: 'compact' }));
+  await waitIdle(page, 150);
+  await openColumnMenu(page, 'name');
+  const iconSize = await tokenOf(page, '.ssg-menu-panel', '--ssg-icon-btn-size');
+  check('popup tokens: density sizes are not copied to the menu', iconSize === '20px', { iconSize });
+  await page.evaluate(() => window.__setProps({ theme: 'dark' }));
+  await waitIdle(page, 200);
+  const dark = await page.evaluate(() => {
+    const el = document.querySelector('.ssg-menu-panel');
+    return el ? { dark: el.classList.contains('ssg-theme-dark'), accent: getComputedStyle(el).getPropertyValue('--ssg-accent').trim(), bg: getComputedStyle(el).getPropertyValue('--ssg-panel-bg').trim() } : null;
+  });
+  check('popup tokens: theme switch while open keeps the consumer values', dark?.dark === true && dark.accent === 'rgb(0, 128, 0)' && dark.bg === 'rgb(7, 8, 9)', dark);
+  await closeAll(page);
+  check('popup tokens: no unexpected page errors', unexpectedPageErrors(pageErrors).length === 0, pageErrors);
+  await close();
 }
 
 summary();

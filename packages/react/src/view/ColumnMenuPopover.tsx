@@ -24,6 +24,7 @@ import type {
 import type { GridColumnPinned, GridSortDirection } from '../model/gridTypes';
 import type { ColumnMenuLayout } from '../hooks/useColumnMenuController';
 import type { GridResolvedSlots } from '../model/gridTypes';
+import { usePortalTokens } from '../hooks/usePortalTokens';
 
 type ColumnMenuPinnedItem = {
   // 注記: undefined = 固定なし(中央スクロール領域)です。
@@ -156,6 +157,8 @@ export function ColumnMenuPopover({
     // eslint-disable-next-line react-hooks/set-state-in-effect -- prop(columnKey / isOpen)変更時のサブメニュー状態リセットです。render 中調整パターンへの書き換えは可能ですが、動作実績を優先して現状維持しています(React Compiler 導入時に再検討)。
     setOpenSubmenuKey(null);
   }, [columnKey, isOpen]);
+  // 追加(DevBI の報告): 表で決まったトークン(--ssg-*)をメニューへ写します(body 直下のため継承で届かない)。
+  usePortalTokens(popoverRef, isOpen && layout !== null, themeClassName);
 
   if (!isOpen || !layout) {
     return null;
