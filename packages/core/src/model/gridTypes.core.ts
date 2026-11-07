@@ -2718,8 +2718,9 @@ export type SpreadsheetGridProps<T, F extends GridFrameworkTypes = GridFramework
   //   (latest-ref 経由で読むため)。clientSide では発火しません。
   /**
    * serverSide の `dataSource.updateRows` が reject したときの通知。
-   * グリッド側は楽観更新をロールバック済みで、`params.updates` に失敗した行更新(`rowKey` /
-   * `changes` / `previousRow`)が入る(利用側トースト / リトライ導線用)。
+   * グリッド側は楽観更新をロールバック済みで、`params.updates` に失敗して元に戻した行更新(`rowKey`
+   * / `changes` / `previousRow`)が入る(利用側トースト / リトライ導線用。`changes`
+   * は元に戻したセルだけで、後から同じセルを変えた編集で上書き済みの変更は入らない)。
    * グリッド内蔵の保存失敗バーとは独立に呼ばれる。インライン関数可(latest-ref 経由で読む)。
    * 詳細は「セル編集の書き戻し」節。
    */
@@ -2905,7 +2906,8 @@ export type SpreadsheetGridProps<T, F extends GridFrameworkTypes = GridFramework
    * 保存中は斜線 + 小さなスピナー(`[data-ssg-save="pending"]`)、成功は ✓ バッジを 1.3 秒(`"ok"`)、
    * 失敗は揺れ + 赤いフラッシュ + ✕ バッジ(`"failed"`)とセル下の「保存に失敗しました」チップ(4 秒 /
    * スクロールで消える)。既存の保存失敗バー(`onServerSideWriteError`)とは独立に出る。
-   * 描画中のセルだけが対象。clientSide では何も出ない。
+   * 描画中のセルだけが対象(保存中の印は、スクロールで外れて戻ったセルにも付き直す)。clientSide
+   * では何も出ない。
    *
    * @defaultValue `true`
    */

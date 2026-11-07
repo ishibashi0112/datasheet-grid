@@ -61,7 +61,7 @@ export type ServerSidePendingEdits<T> = {
     result: ServerSideWriteResult<T>,
     confirmedBase: T | undefined,
   ) => ServerSideWriteSettlement<T>;
-  // 全 pending を破棄します(クエリ変化 / refresh / unmount)。
+  // 全 pending を破棄します(unmount。取り直し(クエリ変化 / refresh)では捨てずに新しく作り直す = dogfood DF-07)。
   clear: () => void;
   // pending 行数です(テスト・デバッグ用)。
   pendingCount: () => number;

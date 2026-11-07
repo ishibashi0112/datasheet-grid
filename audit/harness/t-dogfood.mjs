@@ -206,4 +206,61 @@ for (const key of ['category', 'date', 'name']) {
   await close();
 }
 
+// ---- DF-07 / DF-14: SSRM の書き戻しで、保存中に取り直すと保存を待つ・スクロールで戻ったセルにも保存中の印 ----
+{
+  const { page, pageErrors, close } = await open('ssrm');
+  const ssrmCellText = (rowIndex, colKey) =>
+    cell(page, rowIndex, colKey).evaluate((el) => {
+      const clone = el.cloneNode(true);
+      clone.querySelectorAll('.ssg-save-indicator, .ssg-save-failed-chip').forEach((node) => node.remove());
+      return clone.textContent?.trim();
+    });
+  await page.waitForFunction(() => {
+    const el = document.querySelector('.ssg-center-pane .ssg-body-row[data-row-index="0"]');
+    return el && !el.querySelector('.ssg-skeleton-bar') && (el.textContent ?? '').trim() !== '';
+  });
+  // DF-07: 保存中(800ms)に refreshServerSide() → 決着の後に取り直すので、直前の編集が古い値に戻らない
+  await page.evaluate(() => { window.__ssrm.updateLatency = 800; window.__ssrm.calls.length = 0; });
+  await cell(page, 3, 'name').dblclick();
+  await page.keyboard.press('Control+A');
+  await page.keyboard.type('saved-before-refresh');
+  await page.keyboard.press('Enter');
+  await waitIdle(page, 50);
+  await page.evaluate(() => window.__grid.refreshServerSide());
+  await waitIdle(page, 300);
+  const during = await page.evaluate(() => ({
+    calls: window.__ssrm.calls.length,
+    skeleton: document.querySelector('.ssg-center-pane .ssg-body-row[data-row-index="3"]')?.hasAttribute('data-skeleton-row') ?? null,
+  }));
+  check('DF-07 while a save is in flight, refresh waits (no fetch, skeleton)', during.calls === 0 && during.skeleton === true, during);
+  await page.waitForFunction(() => {
+    const el = document.querySelector('.ssg-center-pane .ssg-body-row[data-row-index="3"]');
+    return el && !el.hasAttribute('data-skeleton-row');
+  }, null, { timeout: 5000 });
+  await waitIdle(page, 200);
+  check('DF-07 after the save settles, the refreshed row shows the saved value', (await ssrmCellText(3, 'name')) === 'saved-before-refresh', await ssrmCellText(3, 'name'));
+
+  // DF-14: 保存中(3 秒)にスクロールで外して戻すと、保存中の印が付き直す
+  await page.evaluate(() => { window.__ssrm.updateLatency = 3000; });
+  await cell(page, 4, 'name').dblclick();
+  await page.keyboard.press('Control+A');
+  await page.keyboard.type('pending-across-scroll');
+  await page.keyboard.press('Enter');
+  await waitIdle(page, 150);
+  const markOf = () => cell(page, 4, 'name').evaluate((el) => el.getAttribute('data-ssg-save')).catch(() => 'missing');
+  const before = await markOf();
+  await page.evaluate(() => { document.querySelector('.ssg-scroll-container').scrollTop = 3000; });
+  await waitIdle(page, 300);
+  const gone = await page.locator('.ssg-center-pane .ssg-body-row[data-row-index="4"]').count();
+  await page.evaluate(() => { document.querySelector('.ssg-scroll-container').scrollTop = 0; });
+  await waitIdle(page, 300);
+  const after = await markOf();
+  check('DF-14 the pending mark comes back on a cell that scrolled out and back', before === 'pending' && gone === 0 && after === 'pending', { before, gone, after });
+  await waitIdle(page, 3200);
+  check('DF-14 after the save the mark is no longer pending', (await markOf()) !== 'pending', await markOf());
+  await page.evaluate(() => { window.__ssrm.updateLatency = 10; });
+  check('DF-07 / DF-14 no page errors', unexpectedPageErrors(pageErrors).length === 0, pageErrors);
+  await close();
+}
+
 summary();
