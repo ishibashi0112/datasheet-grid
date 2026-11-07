@@ -815,6 +815,7 @@ function Grid(props: SpreadsheetGridProps<Row>) {
 | `.ssg-body-cell--row-hovered` | 行ホバー中のセル(`enableRowHover` 有効時)。 |
 | `.ssg-body-cell--autoheight` | auto-height 列のセル。 |
 | `.ssg-body-cell--align-center` / `.ssg-body-cell--align-right` | `column.align` の水平寄せ。 |
+| `.ssg-header-cell--align-center` / `.ssg-header-cell--align-right` | 列見出しの水平寄せ(`column.headerAlign`。書かなければ `column.align`)。右寄せは並びが鏡写し(状態とホバーの操作が左)。 |
 | `.ssg-body-cell--row-drag-handle` | 行ドラッグ(`enableRowDrag`)のハンドル列のセル。 |
 | `.ssg-row-drag-handle` / `.ssg-row-drag-handle--disabled` | 行ドラッグのハンドル / 操作できないとき(ソート / フィルター中)。 |
 | `.ssg-row-drop-indicator` | 行ドラッグの挿入位置の線。 |

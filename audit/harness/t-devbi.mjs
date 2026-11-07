@@ -194,4 +194,81 @@ const closeAll = async (page) => {
   await close();
 }
 
+// ---- 列見出しの寄せ(headerAlign。書かなければ align)----
+//   右寄せは並びを鏡写し(状態をラベルの左、ホバーの操作も左端)。中央は文字だけ中央。左は 0.61.0 までと同じ。
+{
+  const { page, close, pageErrors } = await open('basic', { query: 'n=50' });
+  await page.evaluate(async () => {
+    window.__setColumns([
+      { key: 'id', title: 'ID', width: 70 },
+      { key: 'name', title: '品名', width: 160 },
+      { key: 'qty', title: '数量', width: 110, align: 'right', getValue: (row) => row.id * 3 },
+      { key: 'mid', title: '状態', width: 110, align: 'center', getValue: (row) => (row.id % 2 ? '確定' : '保留') },
+      { key: 'code', title: 'コード', width: 110, align: 'right', headerAlign: 'left', getValue: (row) => `A-${row.id}` },
+    ]);
+    window.__setProps({ onColumnsChange: () => {} });
+    await new Promise((r) => setTimeout(r, 100));
+    const grid = window.__grid;
+    grid.applyState({ ...grid.getState(), sort: [{ columnKey: 'qty', direction: 'desc' }, { columnKey: 'mid', direction: 'asc' }] });
+    await new Promise((r) => setTimeout(r, 200));
+  });
+  const measure = (key) =>
+    page.evaluate((key) => {
+      const cell = document.querySelector(`.ssg-header-cell[data-ssg-col-key="${key}"]`);
+      if (!cell) return null;
+      const label = cell.querySelector('.ssg-header-label');
+      const status = cell.querySelector('.ssg-header-status');
+      const actions = cell.querySelector('.ssg-header-actions');
+      const resize = cell.querySelector('.ssg-header-resize');
+      const range = document.createRange();
+      range.selectNodeContents(label);
+      const text = range.getBoundingClientRect();
+      const c = cell.getBoundingClientRect();
+      const cs = getComputedStyle(cell);
+      const contentLeft = c.left + parseFloat(cs.borderLeftWidth) + parseFloat(cs.paddingLeft);
+      const contentRight = c.right - parseFloat(cs.borderRightWidth) - parseFloat(cs.paddingRight);
+      const s = status.getBoundingClientRect();
+      const a = actions.getBoundingClientRect();
+      return {
+        textLeft: +(text.left - contentLeft).toFixed(2),
+        textRight: +(contentRight - text.right).toFixed(2),
+        textCenter: +((text.left + text.right) / 2 - (contentLeft + contentRight) / 2).toFixed(2),
+        textCenterInLabel: +((text.left + text.right) / 2 - (label.getBoundingClientRect().left + label.getBoundingClientRect().right) / 2).toFixed(2),
+        statusLeftOfText: s.width > 0 ? s.right <= text.left + 0.5 : null,
+        statusRightOfText: s.width > 0 ? s.left >= text.right - 0.5 : null,
+        // ホバーの無い環境((hover: none)。タッチ端末 / geckodriver の Firefox)では操作は通常の並びの中(余白の内側の端)。
+        hoverNone: matchMedia('(hover: none)').matches,
+        actionsAtLeft: matchMedia('(hover: none)').matches ? Math.abs(a.left - contentLeft) < 1.5 : Math.abs(a.left - c.left) < 1.5,
+        actionsAtRight: matchMedia('(hover: none)').matches ? Math.abs(a.right - contentRight) < 1.5 : Math.abs(a.right - c.right) < 1.5,
+        actionsOpacity: Number(getComputedStyle(actions).opacity),
+        actionsPadding: `${getComputedStyle(actions).paddingLeft} ${getComputedStyle(actions).paddingRight}`,
+        resizeAtRight: resize ? Math.abs(resize.getBoundingClientRect().right - (c.right + 3)) < 1.5 : null,
+      };
+    }, key);
+  const left = await measure('name');
+  check('headerAlign: a column without align keeps the label on the left and actions on the right', left && Math.abs(left.textLeft) < 1 && left.actionsAtRight, left);
+  const right = await measure('qty');
+  check('headerAlign: align right -> the label text ends at the right edge of the cell content', right && Math.abs(right.textRight) < 1, right);
+  check('headerAlign: align right -> the sort arrow sits to the left of the label', right?.statusLeftOfText === true, right);
+  check('headerAlign: align right -> the resize handle stays on the right edge', right?.resizeAtRight === true, right);
+  if (right?.hoverNone) {
+    check('headerAlign: no hover (touch) -> the mirrored actions sit in the flow without the overlay padding', right.actionsPadding === '0px 0px', right);
+  }
+  const center = await measure('mid');
+  check('headerAlign: align center -> the label text is centered (status stays on the right)', center && Math.abs(center.textCenterInLabel) < 1 && center.statusRightOfText === true && center.actionsAtRight, center);
+  const override = await measure('code');
+  check('headerAlign: headerAlign "left" on a right-aligned column keeps the header on the left', override && Math.abs(override.textLeft) < 1 && override.actionsAtRight, override);
+  // ホバーで出る操作: 右寄せの列は左端、左寄せの列は右端。
+  await page.locator('.ssg-header-cell[data-ssg-col-key="qty"] .ssg-header-label').hover();
+  await waitIdle(page, 250);
+  const hovered = await measure('qty');
+  check('headerAlign: align right -> hover actions appear on the left edge', hovered?.actionsAtLeft === true && hovered.actionsOpacity === 1, hovered);
+  await page.locator('.ssg-header-cell[data-ssg-col-key="name"] .ssg-header-label').hover();
+  await waitIdle(page, 250);
+  const hoveredLeft = await measure('name');
+  check('headerAlign: a left column still shows hover actions on the right edge', hoveredLeft?.actionsAtRight === true && hoveredLeft.actionsOpacity === 1, hoveredLeft);
+  check('headerAlign: no unexpected page errors', unexpectedPageErrors(pageErrors).length === 0, pageErrors);
+  await close();
+}
+
 summary();

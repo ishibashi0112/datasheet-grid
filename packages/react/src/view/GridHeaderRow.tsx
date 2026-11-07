@@ -344,6 +344,8 @@ function GridHeaderRowInner<T>({
           column.key === DETAIL_TOGGLE_COLUMN_KEY ||
           column.key === ROW_DRAG_HANDLE_COLUMN_KEY;
         const showColumnMenuButton = enableColumnMenu && !isAutoGroupColumn;
+        // 追加(DevBI の報告 2026-11-07): 見出しの寄せ。未指定は列の align と同じです(右寄せは CSS で並びを鏡写し)。
+        const headerAlign = column.headerAlign ?? column.align;
 
         return (
           <div
@@ -384,6 +386,8 @@ function GridHeaderRowInner<T>({
               (isWholeGridSelected || isColumnSelected) &&
                 'ssg-header-cell--selected',
               hoveredColumnIndex === colIndex && 'ssg-header-cell--hovered',
+              headerAlign === 'center' && 'ssg-header-cell--align-center',
+              headerAlign === 'right' && 'ssg-header-cell--align-right',
               slots?.headerCell?.className,
             )}
             style={{

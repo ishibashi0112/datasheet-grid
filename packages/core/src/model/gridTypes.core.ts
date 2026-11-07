@@ -1293,6 +1293,17 @@ export type GridColumn<T, F extends GridFrameworkTypes = GridFrameworkTypes> = {
    * @defaultValue `'left'`
    */
   align?: 'left' | 'center' | 'right';
+  // 追加(DevBI の報告 2026-11-07): 列見出しの水平寄せ。未指定は align と同じ(右寄せの数値列は見出しも右)。
+  //   見出しだけ変えたい列に書きます。右寄せは並びを鏡写しにします(状態をラベルの左、ホバーの操作も左)。
+  /**
+   * 列見出しの水平寄せ(書かなければ `align` に合わせる。見出しだけ変えたい列に書く)。`'right'`
+   * は並びを鏡写しにする(並べ替えの矢印とフィルターの印をラベルの左、ホバーで出る grip と ⋮ も左)。
+   * `'center'` は文字だけ中央で、印と操作は右。`renderHeader` の中身にも効く(器の `text-align`)。
+   * 列幅の自動調整の見出しの幅は変わらない。
+   *
+   * @defaultValue `align` と同じ
+   */
+  headerAlign?: 'left' | 'center' | 'right';
   // 追加(③): セル表示値の整形(UI 表示のみ・元の値/編集/コピー/ソート/フィルターに影響しません)。
   //   renderCell 未指定の既定セルが本関数の返り値を表示します(renderCell 指定時は無視)。
   //   組み込みの numberFormatter 等を渡せます(バレルから公開)。

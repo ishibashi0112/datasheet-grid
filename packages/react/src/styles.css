@@ -3391,8 +3391,27 @@
     pointer-events: auto;
     background-color: var(--ssg-header-hover-bg);
   }
+  /* 追加(DevBI の報告 2026-11-07): 見出しの寄せ(column.headerAlign。未指定は align)。右寄せは並びを鏡写しにします。
+     状態(並べ替えの矢印 / フィルターの印)はラベルの左、ホバーの操作(grip / ⋮)も左端に出し、文字の右端がセルの
+     数字とそろい、ホバー中も短い見出しが隠れないようにします。中央は文字だけ中央で、状態と操作は左寄せの列と同じ右です。 */
+  .ssg-header-cell--align-right {
+    flex-direction: row-reverse;
+  }
+  .ssg-header-cell--align-right .ssg-header-label {
+    text-align: right;
+  }
+  .ssg-header-cell--align-center .ssg-header-label {
+    text-align: center;
+  }
+  .ssg-header-cell--align-right .ssg-header-actions {
+    right: auto;
+    left: 0;
+    flex-direction: row-reverse;
+    padding: 0 14px 0 6px;
+  }
   @media (hover: none) {
-    .ssg-header-actions {
+    .ssg-header-actions,
+    .ssg-header-cell--align-right .ssg-header-actions {
       position: static;
       height: auto;
       padding: 0;
