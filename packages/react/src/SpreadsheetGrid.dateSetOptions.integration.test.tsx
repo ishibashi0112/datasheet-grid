@@ -25,6 +25,10 @@ beforeAll(() => {
     configurable: true,
     get: () => 1600,
   });
+  // @tanstack/virtual-core 3.19 から、列の仮想化は見える幅を clientWidth で読みます(3.17 までは offsetWidth)。
+  Object.defineProperty(HTMLElement.prototype, 'clientWidth', { configurable: true, get: () => 1600 });
+  // 候補の一覧(縦の仮想化)も clientHeight で見える高さを読みます。
+  Object.defineProperty(HTMLElement.prototype, 'clientHeight', { configurable: true, get: () => 900 });
   Object.defineProperty(HTMLElement.prototype, 'offsetHeight', {
     configurable: true,
     get: () => 900,

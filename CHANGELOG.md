@@ -10,6 +10,12 @@
 
 詳しい使い方は[ドキュメントサイト](https://datasheet-grid.vercel.app)と [API リファレンス](./packages/react/API_REFERENCE.md)を参照してください。
 
+## 未リリース
+
+### 変更
+
+- React 版の依存の `@tanstack/virtual-core`(列の仮想化)の範囲を `^3.17.0` から `^3.19.11` にしました。これまでの範囲でも、新しく入れると 3.19 が入っていました。3.19 は前の版より約 3.2KB(gzip)大きく、ドキュメントの大きさの数字はこれまで 3.17 で測っていたので、3.19 で測り直しました。3.19 から、列の仮想化は見える幅をスクロール要素の `clientWidth` で読みます(3.17 までは `offsetWidth`)。jsdom のテストで寸法を自分で差し替えている場合は `clientWidth` / `clientHeight` も差し替えてください(`installJsdomLayoutStubs` はもともと差し替えています)。
+
 ## 0.62.0 — 2026-11-07
 
 実際にアプリを作って確かめたチェック(`docs/audits/2026-11-07/`)で見つかったものの修正です。直した分だけ初期 JS(gzip)が増えます: 全部入り 約 115.2KB → 119.8KB、`/lite` 機能なし 約 61.9KB → 64.6KB、`/lite` + `standardFeatures` 約 80.4KB → 83.7KB。

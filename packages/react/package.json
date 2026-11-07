@@ -111,7 +111,7 @@
   },
   "dependencies": {
     "@ishibashi0112/spreadsheet-grid-core": "workspace:*",
-    "@tanstack/virtual-core": "^3.17.0"
+    "@tanstack/virtual-core": "^3.19.11"
   },
   "devDependencies": {
     "@types/react": "^19.3.0",
