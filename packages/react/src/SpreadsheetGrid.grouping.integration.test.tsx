@@ -214,6 +214,35 @@ describe('行グルーピングの列面(結合)', () => {
     ).toBe('¥1,234,568');
   });
 
+  // 追加(段階 2 DU-23): グループ行の集計を合計行と同じ書式にしました(これまでは「4115.333333」「6220」と素の値)。
+  it('DU-23: グループ行の集計は合計行と同じ書式(桁区切り・小数 4 桁まで・平均 / 最小 / 最大 / 個数の見出し)', () => {
+    type Sale = { region: string; amount: number; price: number; orders: number; low: number; custom: number };
+    const saleColumns: GridColumn<Sale>[] = [
+      { key: 'region', title: '地域', width: 100, rowGroup: true },
+      { key: 'amount', title: '金額', width: 120, aggFunc: 'sum' },
+      { key: 'price', title: '単価', width: 120, aggFunc: 'avg' },
+      { key: 'orders', title: '注文', width: 120, aggFunc: 'count' },
+      { key: 'low', title: '最安', width: 120, aggFunc: 'min' },
+      { key: 'custom', title: '独自', width: 120, aggFunc: ({ values }) => values.length * 1000.5 },
+    ];
+    const sales: Sale[] = [
+      { region: '関東', amount: 1234500, price: 4120, orders: 1, low: 3, custom: 0 },
+      { region: '関東', amount: 1000, price: 4120, orders: 1, low: 7, custom: 0 },
+      { region: '関東', amount: 5, price: 4106, orders: 1, low: 5, custom: 0 },
+    ];
+    const { container } = render(<SpreadsheetGrid columns={saleColumns} rows={sales} />);
+    const group = centerGroupRows(container)[0] as HTMLElement;
+    const cell = (key: string) => group.querySelector(`[data-ssg-col-key="${key}"]`);
+    expect(cell('amount')?.textContent).toBe('1,235,505');
+    expect(cell('amount')?.querySelector('.ssg-group-caption')).toBeNull();
+    expect(cell('price')?.querySelector('.ssg-group-caption')?.textContent).toBe('平均');
+    expect(cell('price')?.textContent).toBe('平均4,115.3333');
+    expect(cell('orders')?.textContent).toBe('個数3');
+    expect(cell('low')?.textContent).toBe('最小3');
+    // カスタムの集計も数値なら同じ書式(見出しは付けない)。
+    expect(cell('custom')?.textContent).toBe('3,001.5');
+  });
+
   it('エクスポートは自動グループ列を除外し leaf 行のみを出力する', () => {
     const ref = createRef<SpreadsheetGridHandle<Row>>();
     render(<SpreadsheetGrid ref={ref} columns={groupedColumns} rows={rows} />);

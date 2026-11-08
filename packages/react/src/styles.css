@@ -657,7 +657,9 @@
     overflow: hidden;
     text-overflow: ellipsis;
   }
-  .ssg-total-caption {
+  /* 変更(段階 2 DU-23): グループ行の集計の種類(.ssg-group-caption)も同じ見た目です。 */
+  .ssg-total-caption,
+  .ssg-group-caption {
     margin-right: 6px;
     font-size: 0.85em;
     font-weight: 500;
