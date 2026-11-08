@@ -6,8 +6,10 @@ import { fullGridFeatures } from './features/full';
 import type { SpreadsheetGridProps } from './model/gridTypes';
 import { withRefProp } from './withRefProp';
 
-function SpreadsheetGridBase<T extends object>(props: SpreadsheetGridProps<T>) {
-  return useGridShell(props, fullGridFeatures);
+// 変更(段階 2 DU-27): L は labelRow のラベル行の型です(isLabelRow の型ガードから推論)。シェルは L を区別しません
+//   (getLabel などはラベル行にだけ呼ぶので、T として扱って構いません)。
+function SpreadsheetGridBase<T extends object, L extends T = T>(props: SpreadsheetGridProps<T, L>) {
+  return useGridShell(props as SpreadsheetGridProps<T>, fullGridFeatures);
 }
 
 // 追加(api-docs): 公開コンポーネントの JSDoc です(d.ts に残り、エディタ / AI が最初に読む説明になります)。

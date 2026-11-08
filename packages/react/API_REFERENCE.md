@@ -111,7 +111,7 @@
 | `scrollHint` | `boolean \| ScrollHintOptions<T>` | —(無効) | **スクロール位置インジケーター**。スクロール中にスクロールバー脇へ行番号バブル(「行 N / 総行数」+ 任意の列値)と行目盛りルーラーを表示し、スクロールバー帯のホバーで「行 N へ」のジャンプ先プレビューを出す。`true` は全既定(`{ bubble: true, ruler: true, scrollbar: true, trigger: 'scroll', minRows: 0 }`)と同義。`minRows` で「表示行数がしきい値以上のときだけ有効」のデータ量ゲートも掛けられる。表示は総行数とスクロール位置のみで駆動されるため **clientSide / SSRM の全構成で動作**。オーバーレイは `pointer-events: none` で既存操作へ一切干渉しない。詳細は「スクロール位置インジケーター」節を参照。 |
 | `detailRow` | `DetailRowOptions<T>` | —(無効) | **展開行(Master/Detail)**。マスター行の直下に、行順(view index)を変えずに全幅の帯を差し込み、その中(カード)へ `render` の返す任意の React 要素(自前のサブグリッド / フォーム / 集計パネル等)を描画する。指定時のみ有効で、未指定なら既存の描画・状態・イベント経路は一切変わらない。`{ render, height?, isExpandable?, showToggleColumn?, className? }`。clientSide / serverSide の両方で使える(serverSide の制約は節内)。詳細は「展開行(Master/Detail)」節を参照。 |
 | `onExpandedDetailRowKeysChange` | `(keys: GridRowKey[]) => void` | — | 展開中の展開行のマスター行キー集合が**変化したとき**に呼ばれる(開閉の永続化・外部同期用)。初回マウントでは発火しない。インライン関数可(latest-ref 経由)。 |
-| `labelRow` | `LabelRowOptions<T>` | —(無効) | **ラベル行(見出し / 区切り行)**。`rows` の中で `isLabelRow(row)` が true の行を「行数に数えない見出し」として、3 ペインを跨ぐ全幅の帯で描画する(中身は `render` で任意の React 要素に差し替え可。横スクロールしても左端に留まる)。編集 / 選択 / コピー / エクスポートの既定対象外で、行番号も消費しない。ソート / フィルターは既定でラベル行から次のラベル行までの区間(セクション)に閉じる(`sortMode`)。`sticky: true` で現在セクションのラベルを列ヘッダー直下に固定。`{ isLabelRow, getLabel, render?, height?, className?, sticky?, sortMode?, keepEmptySections?, exportText? }`。行グルーピング(`rowGroup`)とは別機能で併用不可。詳細は「ラベル行(見出し / 区切り行)」節。 |
+| `labelRow` | `LabelRowOptions<T, L>` | —(無効) | **ラベル行(見出し / 区切り行)**。`rows` の中で `isLabelRow(row)` が true の行を「行数に数えない見出し」として、3 ペインを跨ぐ全幅の帯で描画する(中身は `render` で任意の React 要素に差し替え可。横スクロールしても左端に留まる)。編集 / 選択 / コピー / エクスポートの既定対象外で、行番号も消費しない。ソート / フィルターは既定でラベル行から次のラベル行までの区間(セクション)に閉じる(`sortMode`)。`sticky: true` で現在セクションのラベルを列ヘッダー直下に固定。`{ isLabelRow, getLabel, render?, height?, className?, sticky?, sortMode?, keepEmptySections?, exportText? }`。行グルーピング(`rowGroup`)とは別機能で併用不可。詳細は「ラベル行(見出し / 区切り行)」節。 |
 | `totalRow` | `boolean \| TotalRowOptions<T>` | —(無効) | **合計行**。表の下端に合計行を固定表示する(縦スクロールしても動かず、横スクロールと左右の固定列には付いていく)。列ごとの集計は `GridColumn.aggFunc`(行グルーピングと共通)で決め、フィルター後のデータ行で計算し直す(ラベル行は数えず、グルーピング中は折りたたんだ行も数える)。合計以外の組み込み集計は値の前に種類(平均 / 最小 / 最大 / 個数)を出す。表示専用(選択 / 編集 / 貼り付け / コピーの対象外)。`true` で既定値、オブジェクトで `{ label?, values?, renderCell?, height?, className? }`。serverSide は計算せず `values` の値だけを出す。エクスポートは `includeTotalRow: true` のときだけ末尾に含める。詳細は「合計行」節。 |
 | `fillHandle` | `boolean \| FillHandleOptions<T>` | —(無効) | **フィルハンドル**。選択範囲(無ければアクティブセル)の右下に小さな四角を出し、引いた先のセルを**連続データ**(1, 2, 3 … / 日付 / 曜日・月の名前 / `P-001` のような末尾の数)か**セルのコピー**で埋める(Excel のオートフィル)。ドラッグ中は埋める範囲を点線で、いちばん遠いセルへ入る値をポインタの近くに出し、`Ctrl`(Mac は `⌘`)で埋め方を入れ替え、`Escape` でやめる。離したあとは右下のボタンで「連続データ / セルのコピー」を選び直せる(元に戻す 1 回で埋める前へ)。ハンドルのダブルクリックで隣の列に値が続くところまで下へ埋める。書き込みは貼り付けと同じ規則(編集できないセル・`validate` の reject は飛ばす / undo の対象)。`readOnly` や書き込み先が無い(`onRowsChange` も `dataSource.updateRows` も無い)ときは出さない。`true` で既定、オブジェクトで `{ getFillValue? }`。詳細は「フィルハンドル」節。 |
 | `enableRowDrag` | `boolean` | `false` | **行ドラッグ並び替え**。先頭にドラッグハンドル列(幅 28px・タイトル無しの合成列。左固定列があれば左固定側)を挿入し、ハンドル(⋮⋮)を掴んで行を上下へ動かせる。確定時は `onRowsChange` へ移動後の**新配列**を渡し(履歴ラッパ経由 = undo/redo 対象)、続けて `onRowMove` を呼ぶ。clientSide(`rows` + `onRowsChange`)専用で、`dataSource`(serverSide)/ 行グルーピング中 / `onRowsChange` 未指定ではハンドル列を出さない。ソート / フィルター適用中はハンドルを淡色 + 理由ツールチップにして操作を無効化する(列は残る)。詳細は「行ドラッグ並び替え」節。 |
@@ -1126,20 +1126,21 @@ type Row = { id: string; kind?: 'label'; code: string; name: string; qty: number
 />
 ```
 
-`LabelRowOptions<T>`:
+`LabelRowOptions<T, L>`(`L` はラベル行の型。`isLabelRow` を型ガードで書くと推論され、書かなければ `T`):
 
 | Name | Type | Default | Description |
 | --- | --- | --- | --- |
-| `isLabelRow` | `(row: T, sourceIndex: number) => boolean` | (required) | ラベル行の識別。`rows` / 本関数が変わったときに全行を 1 パス評価するため純粋・軽量であること。 |
-| `getLabel` | `(row: T) => string` | (required) | 表示文字列。既定描画(`render` 未指定時)/ エクスポート / `aria-label` に使う。 |
-| `render` | `(ctx: LabelRowRenderContext<T>) => ReactNode` | — | 中身の React 描画(装飾)。`ctx = { row, rowKey, rowIndex, sourceRowIndex, label, sectionRowCount }`(`sectionRowCount` はフィルター後のセクション内データ行数。serverSide では `undefined`)。 |
-| `height` | `number \| ((row: T) => number)` | `rowHeight` | ラベル行の高さ(px)。行ごとに変えるときは関数。 |
-| `className` | `GridSlotProps \| ((row: T) => GridSlotProps \| undefined)` | — | 行要素へ追加する class(または `{ className, style }`)。`classNames.labelRow` に加えて付与。 |
+| `isLabelRow` | `(row: T, sourceIndex: number) => boolean`(型ガード `row is L` も可) | (required) | ラベル行の識別。`rows` / 本関数が変わったときに全行を 1 パス評価するため純粋・軽量であること。型ガード(`(row): row is Section => …`)で書くと、`getLabel` / `render` / `height` / `className` / `exportText` の `row` がその型になる(下記)。 |
+| `getLabel` | `(row: L) => string` | (required) | 表示文字列。既定描画(`render` 未指定時)/ エクスポート / `aria-label` に使う。 |
+| `render` | `(ctx: LabelRowRenderContext<L>) => ReactNode` | — | 中身の React 描画(装飾)。`ctx = { row, rowKey, rowIndex, sourceRowIndex, label, sectionRowCount }`(`sectionRowCount` はフィルター後のセクション内データ行数。serverSide では `undefined`)。 |
+| `height` | `number \| ((row: L) => number)` | `rowHeight` | ラベル行の高さ(px)。行ごとに変えるときは関数。 |
+| `className` | `GridSlotProps \| ((row: L) => GridSlotProps \| undefined)` | — | 行要素へ追加する class(または `{ className, style }`)。`classNames.labelRow` に加えて付与。 |
 | `sticky` | `boolean` | `false` | 縦スクロール中、現在セクションのラベル行を列ヘッダー直下に固定する。次のラベル行が到達すると押し上げられて交代する(clientSide のみ)。 |
 | `sortMode` | `'section' \| 'follow' \| 'hide'` | `'section'` | ソート / フィルター適用時の扱い(下記)。 |
 | `keepEmptySections` | `boolean` | `false` | フィルターで中身が 0 件になったセクションのラベル行を残す。 |
-| `exportText` | `(row: T) => string \| Array<string \| number \| null \| undefined>` | `getLabel` を先頭列へ | エクスポート(`includeLabelRows: true`)時の出力値。文字列は先頭列(他列は空)、配列は列順にそのまま。 |
+| `exportText` | `(row: L) => string \| Array<string \| number \| null \| undefined>` | `getLabel` を先頭列へ | エクスポート(`includeLabelRows: true`)時の出力値。文字列は先頭列(他列は空)、配列は列順にそのまま。 |
 
+- **行の型を分ける(TypeScript)**: データ行とラベル行を別の型にして `rows` を union(`type Row = Sale | Month`)にするときは、`isLabelRow` を型ガード(`(row): row is Month => row.kind === 'label'`)で書くと、`getLabel` / `render` / `height` / `className` / `exportText` の `row` が `Month` になります(中でもう一度絞らなくてよい)。TypeScript 5.5 以上なら `(row) => row.kind === 'label'` も型ガードと推論されます。型引数を書くときは `<SpreadsheetGrid<Row, Month>>`(1 つだけなら `L` は `T`)、変数に置くときは `LabelRowOptions<Row, Month>` です。
 - **セクション**: ラベル行から次のラベル行の直前までを 1 区間とみなします。最初のラベル行より前の行は「ラベル無しの区間」です。
 - **ソート / フィルター(`sortMode`)**: `'section'`(既定)= 並べ替えは各セクションの中だけで行い、ラベル行の位置は動かない。フィルターで 0 件になったセクションはラベルごと消える(`keepEmptySections` で残せる)。`'follow'` = 全体を並べ替え、ラベル行は「元のセクションの先頭に来るデータ行」の直前に付いて移動する(元から中身の無いセクションのラベルは、続くセクションのラベルの直前に並ぶ。消えるのはフィルターで 0 件になったときだけで、`keepEmptySections` で残せる)。`'hide'` = ソート / フィルター中はラベル行を出さない。ソートもフィルターも無いときは 3 モードとも `rows` の並びそのものです。
 - **表示**: 帯は 3 ペインとも描き、中身(`getLabel` の文字列 / `render` の要素)は中央ペインに `position: sticky` で置かれ、横スクロールしてもビューポート左端(左固定ペインの右隣)に留まります(展開行カードと同じ機構)。行ヘッダー「#」は空欄で、データ行の行番号はラベル行を飛ばした通し番号になります。既定表示は左のアクセント線 + 太字(トークン `--ssg-label-row-bg` / `--ssg-label-row-text` / `--ssg-label-row-accent`)。

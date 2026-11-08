@@ -631,16 +631,21 @@ export type LabelRowRenderContext<T> = {
  * 各フィールドの説明は React 版パッケージ `@ishibashi0112/spreadsheet-grid` に同梱の `API_REFERENCE.md`
  * の「ラベル行(見出し / 区切り行)」節と同じ内容です。
  */
-export type LabelRowOptions<T, F extends GridFrameworkTypes = GridFrameworkTypes> = {
+// 変更(段階 2 DU-27): L はラベル行の型です。isLabelRow を型ガード(`(row): row is Section => …`。TypeScript 5.5 以上は
+//   `(row) => row.kind === 'label'` も型ガードと推論される)で書くと L が推論され、getLabel / render / height / className /
+//   exportText の row がその型になります(どれもラベル行にだけ呼ぶ)。型ガードでなければ L = T(従来どおり)。
+export type LabelRowOptions<T, F extends GridFrameworkTypes = GridFrameworkTypes, L extends T = T> = {
   // ラベル行の識別です(必須)。true を返した行をラベル行として扱います。sourceIndex は元 rows の index。
   //   rows / 本関数の参照が変わったときに全行を 1 パス評価するため、純粋・軽量であること。
   /**
    * ラベル行の識別。`rows` / 本関数が変わったときに全行を 1 パス評価するため純粋・軽量であること。
+   * 型ガード(`(row): row is Section => …`)で書くと、`getLabel` / `render` / `height` / `className`
+   * / `exportText` の `row` がその型になる(下記)。
    */
-  isLabelRow: (row: T, sourceIndex: number) => boolean;
+  isLabelRow: ((row: T, sourceIndex: number) => row is L) | ((row: T, sourceIndex: number) => boolean);
   // 表示文字列です(必須)。既定描画(render 未指定時)/ エクスポート / aria-label に使います。
   /** 表示文字列。既定描画(`render` 未指定時)/ エクスポート / `aria-label` に使う。 */
-  getLabel: (row: T) => string;
+  getLabel: (row: L) => string;
   // ラベル行の中身を任意の描画ノードで差し替えます(装飾)。未指定なら getLabel の文字列を既定スタイルで
   //   表示します。中身は中央ペインに描画され、横スクロールしてもビューポート左端(左固定ペインの右隣)に
   //   留まります(展開行カードと同じ機構)。
@@ -649,17 +654,17 @@ export type LabelRowOptions<T, F extends GridFrameworkTypes = GridFrameworkTypes
    * `ctx = { row, rowKey, rowIndex, sourceRowIndex, label, sectionRowCount }`(`sectionRowCount`
    * はフィルター後のセクション内データ行数。serverSide では `undefined`)。
    */
-  render?: (ctx: LabelRowRenderContext<T>) => F['node'];
+  render?: (ctx: LabelRowRenderContext<L>) => F['node'];
   // ラベル行の高さ(px)。未指定は rowHeight(データ行と同じ)。行ごとに変えるときは関数を渡します。
   /**
    * ラベル行の高さ(px)。行ごとに変えるときは関数。
    *
    * @defaultValue `rowHeight`
    */
-  height?: number | ((row: T) => number);
+  height?: number | ((row: L) => number);
   // ラベル行の行要素へ追加する className(または { className, style })。classNames.labelRow に加えて付与。
   /** 行要素へ追加する class(または `{ className, style }`)。`classNames.labelRow` に加えて付与。 */
-  className?: GridSlotProps<F> | ((row: T) => GridSlotProps<F> | undefined);
+  className?: GridSlotProps<F> | ((row: L) => GridSlotProps<F> | undefined);
   // 縦スクロール中、現在のセクションのラベル行を列ヘッダー直下に固定表示します(既定 false)。
   //   次のラベル行が到達すると押し上げられて交代します。
   /**
@@ -691,7 +696,7 @@ export type LabelRowOptions<T, F extends GridFrameworkTypes = GridFrameworkTypes
    *
    * @defaultValue `getLabel` を先頭列へ
    */
-  exportText?: (row: T) => string | ReadonlyArray<string | number | null | undefined>;
+  exportText?: (row: L) => string | ReadonlyArray<string | number | null | undefined>;
 };
 
 // 追加(合計行 3A): 合計行(totalRow)のセルの種別です。組み込み集計名、'custom'(aggFunc が関数)、
@@ -2669,7 +2674,8 @@ export type ScrollHintOptions<T = unknown, F extends GridFrameworkTypes = GridFr
  * の「SpreadsheetGrid props」表と同じ内容です。
  * 説明中の「〜節」「下記」は同ファイル内の節を指します。
  */
-export type SpreadsheetGridProps<T, F extends GridFrameworkTypes = GridFrameworkTypes> = {
+// 変更(段階 2 DU-27): L は labelRow のラベル行の型です(LabelRowOptions。isLabelRow の型ガードから推論。既定は T)。
+export type SpreadsheetGridProps<T, F extends GridFrameworkTypes = GridFrameworkTypes, L extends T = T> = {
   // 追加(imperative API #1): React 19 の ref-as-prop。命令的ハンドル(SpreadsheetGridHandle)を受け取ります。
   //   forwardRef は使いません(React 19 で deprecated 予定のため。React 18 のときだけ React 版の withRefProp が包む = 2026-10-28)。状態は controlled のまま、prop で
   //   表現できない一発操作(スクロール/選択操作/CSV)だけをハンドルで提供します。
@@ -3707,7 +3713,7 @@ export type SpreadsheetGridProps<T, F extends GridFrameworkTypes = GridFramework
    *
    * @defaultValue —(無効)
    */
-  labelRow?: LabelRowOptions<T, F>;
+  labelRow?: LabelRowOptions<T, F, L>;
   // ── 追加(合計行 3A): 表の下端に固定する合計行 ──
   //   指定時のみ有効な opt-in 機能です。詳細は TotalRowOptions を参照。
   /**

@@ -67,6 +67,24 @@ labelRow={{
 
 既定表示(`render` 未指定)は左のアクセント線 + 太字で、色はトークン `--ssg-label-row-bg` / `--ssg-label-row-text` / `--ssg-label-row-accent` で調整できます。パーツ別スロットは `classNames.labelRow`(行要素)と `classNames.labelRowContent`(中身の器)です。
 
+### データ行とラベル行を別の型にする(TypeScript)
+
+ラベル行だけが持つ項目があるときは、行の型を union にして `isLabelRow` を型ガードで書くと、`getLabel` / `render` / `height` / `className` / `exportText` の `row` がラベル行の型になります。
+
+```tsx
+type Sale = { kind: 'sale'; id: number; customer: string; amount: number };
+type Month = { kind: 'label'; id: string; label: string };
+type Row = Sale | Month;
+
+labelRow={{
+  isLabelRow: (row): row is Month => row.kind === 'label',
+  getLabel: (row) => row.label,            // row は Month
+  render: ({ row }) => <strong>{row.label}</strong>,
+}}
+```
+
+TypeScript 5.5 以上なら、`(row) => row.kind === 'label'` と書くだけでも型ガードと推論されます。型引数を書くときは `<SpreadsheetGrid<Row, Month>>`(1 つだけなら今までどおり `row` は `Row`)、設定を変数に置くときは `LabelRowOptions<Row, Month>` です。
+
 ## セクションとソート / フィルター
 
 ラベル行から次のラベル行の直前までを 1 つの**セクション**とみなします(最初のラベル行より前の行は「ラベル無しの区間」)。ソートやフィルターをかけたときの扱いは `sortMode` で選べます。

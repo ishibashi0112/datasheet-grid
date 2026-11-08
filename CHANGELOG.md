@@ -21,10 +21,12 @@ DevBI(このライブラリを使うアプリ)からの報告の対応です。�
 - ハンドル `applyRows(nextRows)`: 外からの変更(行の削除ボタンなど)を「元に戻す」の履歴に積んでから `onRowsChange` へ渡します。`rows` を外から差し替えると履歴が消えるので、これまでは外の変更を元に戻せませんでした。
 - ハンドル `getRowNumber(rowKey)`: 行番号の列に出ている番号(1 始まり)を返します。ラベル行は数えないので、ラベル行があると `getViewRowIndex(rowKey) + 1` とは違います。ラベル行のキーと表示に無い行は `null` です。
 - 開発時の警告: `/lite` の `createSpreadsheetGrid` をコンポーネントの中で呼び、描くたびにグリッドが作り直されている(選択・スクロール位置・編集中の値が毎回消える)ときに、`console.warn` で 1 回知らせます。本番のビルドには入りません。
+- `labelRow` の `isLabelRow` を型ガード(`(row): row is Month => row.kind === 'label'`)で書くと、`getLabel` / `render` / `height` / `className` / `exportText` の `row` がラベル行の型になります(行の型を `Sale | Month` のような union にしたとき、中でもう一度絞らなくてよい)。型 `SpreadsheetGridProps` と `LabelRowOptions` に、省略できる 2 つ目の型引数(ラベル行の型。既定は行の型)を足しました。
 
 ### 変更
 
 - React 版の依存の `@tanstack/virtual-core`(列の仮想化)の範囲を `^3.17.0` から `^3.19.11` にしました。これまでの範囲でも、新しく入れると 3.19 が入っていました。3.19 は前の版より約 3.2KB(gzip)大きく、ドキュメントの大きさの数字はこれまで 3.17 で測っていたので、3.19 で測り直しました。3.19 から、列の仮想化は見える幅をスクロール要素の `clientWidth` で読みます(3.17 までは `offsetWidth`)。jsdom のテストで寸法を自分で差し替えている場合は `clientWidth` / `clientHeight` も差し替えてください(`installJsdomLayoutStubs` はもともと差し替えています)。
+- (型)行の型が union のとき、TypeScript 5.5 以上では `isLabelRow: (row) => row.kind === 'label'` も型ガードと推論されるので、`getLabel` などの `row` がラベル行の型に絞られます。`getLabel` の中でラベル行でない型を前提にした比較(`row.kind === 'sale'` など)を書いていると、型エラー(比較が常に偽)になります。その分岐は消してください(実行時の動きは変わりません)。
 
 ### 挙動の変化
 

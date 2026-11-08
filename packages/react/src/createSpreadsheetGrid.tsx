@@ -58,7 +58,9 @@ export function createSpreadsheetGrid({ features }: CreateSpreadsheetGridOptions
   const hasOverrides = Object.keys(overrides).length > 0;
   // 追加(段階 2 DU-26): コンポーネントの中で呼ばれて描くたびに作り直されていたら、開発時に警告します(本番は null)。
   const trace = traceGridFactory();
-  function SpreadsheetGrid<T extends object>(props: SpreadsheetGridProps<T>) {
+  // L は labelRow のラベル行の型です(段階 2 DU-27。全部入りの SpreadsheetGrid と同じ)。
+  function SpreadsheetGrid<T extends object, L extends T = T>(labelTypedProps: SpreadsheetGridProps<T, L>) {
+    const props = labelTypedProps as SpreadsheetGridProps<T>;
     useUnregisteredFeatureWarnings(props, features);
     useRecreatedGridWarning(trace, props.rows);
     return useGridShell(hasOverrides ? { ...props, ...(overrides as Partial<SpreadsheetGridProps<T>>) } : props, shellFeatures);
