@@ -220,6 +220,8 @@ import type { GridShellFeatures } from './features/types';
 const EMPTY_ROWS: never[] = [];
 // 追加(作り直しの確認 lite-1): フィルターの機能が無い構成で見出しへ渡す、空の列フィルター(参照を保つ)。
 const NO_HEADER_COLUMN_FILTERS: Record<string, never> = {};
+// 追加(段階 2 DU-11): グルーピングしていないときのグループ元の列(参照を保つ)。
+const EMPTY_GROUP_COLUMNS: never[] = [];
 
 // 追加(stage ②): serverSide query 構築/debounce 用の安定既定値・定数です。
 //   clientSide では query を空に保ち(フックは inert)、参照同一で memo/effect を不要に揺らしません。
@@ -808,6 +810,8 @@ export function useGridShell<T extends object>({
   // ── filter popover ────────────────────────────────────
   // 変更(差し込み式 段階 5): 列フィルターのポップオーバーの controller の接続('auto' 列の種別の推定とキャッシュ込み)は
   //   フィルターの機能(features/filtering)へ移しました(元の位置で呼ぶ)。無い構成では代役(閉じたまま)。
+  // 追加(段階 2 DU-11): 行グルーピング中のグループ元の列(表示から外れているが絞り込める)。グルーピングしていなければ空。
+  const activeGroupColumns = rowGroupingActive ? groupColumns : EMPTY_GROUP_COLUMNS;
   const filterPopover = features.filtering.useFilterPopover<T>({
     visibleColumns,
     columnFilters: uiState.filters.columnFilters,
@@ -816,6 +820,7 @@ export function useGridShell<T extends object>({
     isServerSide,
     rows,
     isLabelRow: labelRowEnabled ? labelIsLabelRow : undefined,
+    groupColumns: activeGroupColumns,
   });
   const {
     filterPopoverRef,
@@ -3092,6 +3097,7 @@ export function useGridShell<T extends object>({
       centerLeadingWidth,
       rightPaneTotalWidth,
       openColumnFilterPopover,
+      groupColumns: activeGroupColumns,
     });
 
   // 追加(FM-3): 既定トップバーの Filters chip クリックでパネルをトグルします。

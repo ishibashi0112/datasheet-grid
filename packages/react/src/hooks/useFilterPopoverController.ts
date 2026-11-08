@@ -18,6 +18,8 @@ type UseFilterPopoverControllerArgs<T> = {
   enableColumnFilter: boolean;
   gridRootRef: RefObject<HTMLDivElement | null>;
   resolveColumnFilterType?: (column: GridColumn<T>) => ColumnFilterUiType;
+  // 追加(段階 2 DU-11): ポップオーバーを出す見出しの列 key(グループ元の列は自動グループ列の見出しの下)。
+  resolveAnchorColumnKey?: (columnKey: string) => string;
 };
 
 export const useFilterPopoverController = <T,>(args: UseFilterPopoverControllerArgs<T>) => {

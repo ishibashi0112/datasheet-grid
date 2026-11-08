@@ -38,6 +38,7 @@ import { normalizeDateFilterPresets } from '@ishibashi0112/spreadsheet-grid-core
 import { inferColumnFilterType } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/inferFilterType';
 import { getCellValue } from '@ishibashi0112/spreadsheet-grid-core/internal/utils/permissions';
 import { computeSinglePaneColumnExtent } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/geometry';
+import { GROUP_AUTO_COLUMN_KEY } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/grouping';
 import { computeHorizontalScrollTarget } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/scrollTargets';
 import { isInsideDetailCardOf } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/detailRow';
 import { useController, useControllerLifecycle } from '../hooks/useController';
@@ -136,6 +137,7 @@ const useFilterPopover = <T,>({
   isServerSide,
   rows,
   isLabelRow,
+  groupColumns,
 }: FilterPopoverFeatureArgs<T>): FilterPopoverFeatureResult<T> => {
   // 追加(filter-ext E): filterType: 'auto' の解決結果キャッシュです(列キー → 実効種別)。
   //   合意仕様「初回オープン時に推定して以後固定」を担保します。行の追加 / 編集で推定が
@@ -180,12 +182,24 @@ const useFilterPopover = <T,>({
     [columnFilters, isServerSide, rows, isLabelRow],
   );
 
+  // 追加(段階 2 DU-11): 行グルーピング中はグループ元の列も開けます(表示から外れているので、自動グループ列の見出しの下に出す)。
+  const popoverColumns = useMemo(
+    () => (groupColumns && groupColumns.length > 0 ? [...visibleColumns, ...groupColumns] : visibleColumns),
+    [visibleColumns, groupColumns],
+  );
+  const resolveAnchorColumnKey = useCallback(
+    (columnKey: string) =>
+      groupColumns?.some((column) => column.key === columnKey) === true ? GROUP_AUTO_COLUMN_KEY : columnKey,
+    [groupColumns],
+  );
+
   return useFilterPopoverController({
-    visibleColumns,
+    visibleColumns: popoverColumns,
     columnFilterValues: columnFilters,
     enableColumnFilter: columnFilterEnabled,
     gridRootRef,
     resolveColumnFilterType: resolveAutoColumnFilterType,
+    resolveAnchorColumnKey,
   });
 };
 
@@ -442,14 +456,17 @@ const useFilterManagement = <T,>({
   centerLeadingWidth,
   rightPaneTotalWidth,
   openColumnFilterPopover,
+  groupColumns,
 }: FilterManagementFeatureArgs<T>): FilterManagementFeatureResult => {
+  // 追加(段階 2 DU-11): 行グルーピング中のグループ元の列の key(無ければ空)。
+  const groupColumnKeys = useMemo(() => new Set((groupColumns ?? []).map((column) => column.key)), [groupColumns]);
   // 追加(FM-1): パネルへ渡す「適用中フィルター」一覧です。可視列(視覚順)→ 非表示列
   //   (columns 定義順)の順で、isActiveColumnFilterValue な値だけを載せます。非表示列も
   //   出すのは「見えない列に絞り込みが残っている」という発見性の穴を塞ぐのが本機能の主目的
   //   のためです(非表示列はジャンプ先が無いため ✎ 不可・× のみ可 = isHidden で view が判別)。
   const filterManagerEntries = useMemo<FilterManagementEntry[]>(() => {
     const entries: FilterManagementEntry[] = [];
-    const pushEntry = (column: GridColumn<T>, isHidden: boolean) => {
+    const pushEntry = (column: GridColumn<T>, isHidden: boolean, isGrouped = false) => {
       const value = columnFilters[column.key];
       if (!value || !isActiveColumnFilterValue(value)) {
         return;
@@ -463,6 +480,7 @@ const useFilterManagement = <T,>({
         //   (チップバーとフィルターの管理が共有)。
         summaryText: describeColumnFilterValue(value, createColumnFilterDescribeOptions(column)),
         isHidden,
+        isGrouped,
       });
     };
     const shownKeys = new Set<string>();
@@ -472,22 +490,26 @@ const useFilterManagement = <T,>({
     }
     // 変更(1.0 前の最終チェック FC-08 の見直し): 表示から外れている列は visible: false の列だけでなく、グルーピング中の
     //   グループ元列も含めます(グループ元列のフィルターは効くので、出さないと外す手段が無い)。
+    // 変更(段階 2 DU-11): グループ元の列は「(グループ化中)」として ✎ で開けます(自動グループ列の見出しの下)。
     for (const column of columns) {
       if (!shownKeys.has(column.key)) {
-        pushEntry(column, true);
+        const isGrouped = groupColumnKeys.has(column.key);
+        pushEntry(column, !isGrouped, isGrouped);
       }
     }
     return entries;
-  }, [columnFilters, columns, orderedColumns]);
+  }, [columnFilters, columns, orderedColumns, groupColumnKeys]);
 
   // 追加(FM-1): 「フィルターを追加」の候補列です(可視・filterType あり・未適用)。
   //   非表示列は除外します(追加 = ✎ と同じ「ジャンプ + popover」で、非表示列は開けないため)。
   //   filterType 条件は列メニューの「フィルター…」項目(canFilter)と同じ規約です。
+  // 変更(段階 2 DU-11): 行グルーピング中はグループ元の列も候補に入れます(「地域(グループ化中)」。選ぶと自動グループ列の
+  //   見出しの下に開く)。これまでは画面から足す入口が無く、applyState でしか掛けられなかった。
   const filterManagerAddableColumns = useMemo<
     FilterManagementAddableColumn[]
   >(
     () =>
-      visibleColumns
+      [...visibleColumns, ...(groupColumns ?? [])]
         .filter(
           (column) =>
             Boolean(column.filterType) &&
@@ -495,9 +517,11 @@ const useFilterManagement = <T,>({
         )
         .map((column) => ({
           key: column.key,
-          title: column.title || column.key,
+          title: groupColumnKeys.has(column.key)
+            ? `${column.title || column.key}(グループ化中)`
+            : column.title || column.key,
         })),
-    [columnFilters, visibleColumns],
+    [columnFilters, visibleColumns, groupColumns, groupColumnKeys],
   );
 
   // 追加(FM-1): 対象列まで横スクロールしてからフィルター popover を開きます(パネルの
@@ -513,13 +537,16 @@ const useFilterManagement = <T,>({
   const jumpToColumnFilter = useCallback(
     (columnKey: string) => {
       const el = scrollContainerRef.current;
+      // 追加(段階 2 DU-11): グループ元の列は表示から外れているので、自動グループ列へスクロールしてその見出しの下に開きます。
+      const groupColumn = groupColumns?.find((candidate) => candidate.key === columnKey);
+      const anchorKey = groupColumn ? GROUP_AUTO_COLUMN_KEY : columnKey;
       const colIndex = orderedColumns.findIndex(
-        (column) => column.key === columnKey,
+        (column) => column.key === anchorKey,
       );
       if (colIndex < 0) {
         return;
       }
-      const column = orderedColumns[colIndex];
+      const column = groupColumn ?? orderedColumns[colIndex];
       if (el) {
         const single = computeSinglePaneColumnExtent(paneLayout, colIndex);
         if (single && single.pane === 'center') {
@@ -548,7 +575,7 @@ const useFilterManagement = <T,>({
         return (
           Array.from(cells).find(
             (cell) =>
-              cell.dataset.ssgColKey === columnKey &&
+              cell.dataset.ssgColKey === anchorKey &&
               // 追加(detail ④): 展開行カード内にネストしたグリッドの同名列は対象外です。
               !isInsideDetailCardOf(root, cell),
           ) ?? null
@@ -598,6 +625,7 @@ const useFilterManagement = <T,>({
       scrollContainerRef,
       openColumnFilterPopover,
       orderedColumns,
+      groupColumns,
       paneLayout,
       leftPaneTotalWidth,
       centerLeadingWidth,

@@ -25,6 +25,9 @@ export type FilterManagementEntry = {
   summaryText: string;
   // 非表示列(visible=false)のフィルターです。✎(ジャンプ編集)を無効化します。
   isHidden: boolean;
+  // 追加(段階 2 DU-11): 行グルーピング中のグループ元の列のフィルターです(「(グループ化中)」と出し、✎ は自動グループ列の
+  //   見出しの下に開く)。
+  isGrouped?: boolean;
 };
 
 // 追加(FM-1): 「フィルターを追加」<select> の候補です(可視・filterType あり・未適用)。
@@ -159,6 +162,11 @@ export function FilterManagementPanel({
                       (非表示列)
                     </span>
                   )}
+                  {entry.isGrouped && (
+                    <span className="ssg-filter-manage-hidden-note">
+                      (グループ化中)
+                    </span>
+                  )}
                 </span>
                 <span
                   className="ssg-filter-manage-summary"
@@ -175,7 +183,9 @@ export function FilterManagementPanel({
                   data-ssg-tooltip={
                     entry.isHidden
                       ? '非表示列のためジャンプ編集できません(× でクリアは可能)'
-                      : 'この列へジャンプして編集'
+                      : entry.isGrouped === true
+                        ? 'グループの列の見出しの下で編集'
+                        : 'この列へジャンプして編集'
                   }
                   aria-label={`${entry.title} のフィルターを編集`}
                   onClick={() => {

@@ -1,7 +1,8 @@
 'use client';
 
 // 行グルーピング + 集計のデモ: 地域 > 担当 の 2 階層グルーピングと sum 集計、開閉の命令的 API、
-// グルーピング中の CSV(グループ元の列が先頭に入る / includeGroupRows で小計の行)。
+// グルーピング中の CSV(グループ元の列が先頭に入る / includeGroupRows で小計の行)、
+// グループ元の列の絞り込み(上部バーの「絞り込み」→「+ フィルターを追加…」の「地域(グループ化中)」)。
 import { useRef, useState } from 'react';
 import {
   SpreadsheetGrid,
@@ -21,8 +22,8 @@ type Row = {
 };
 
 const columns: GridColumn<Row>[] = [
-  { key: 'region', title: '地域', width: 100, rowGroup: true },
-  { key: 'rep', title: '担当', width: 100, rowGroup: true },
+  { key: 'region', title: '地域', width: 100, rowGroup: true, filterType: 'set' },
+  { key: 'rep', title: '担当', width: 100, rowGroup: true, filterType: 'set' },
   { key: 'product', title: '商品', width: 170 },
   { key: 'qty', title: '数量', width: 100, align: 'right', aggFunc: 'sum' },
   {

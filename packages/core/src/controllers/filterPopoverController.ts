@@ -76,6 +76,9 @@ export type FilterPopoverControllerArgs<T> = {
   enableColumnFilter: boolean;
   gridRootRef: ReadonlyElementRef;
   resolveColumnFilterType?: (column: GridColumn<T>) => ColumnFilterUiType;
+  // 追加(段階 2 DU-11): ポップオーバーを出す見出しの列 key(既定は開く列そのもの)。行グルーピング中のグループ元の列は
+  //   表示から外れているので、自動グループ列の見出しの下に出します。
+  resolveAnchorColumnKey?: (columnKey: string) => string;
 };
 
 export type FilterPopoverController<T> = {
@@ -154,11 +157,12 @@ export const createFilterPopoverController = <T,>(): FilterPopoverController<T> 
     args === null ? null : resolveOpenedFilterColumn(args.visibleColumns, store.getSnapshot().state);
 
   // アンカー: root 内のヘッダーセル(展開行カード内のネストしたグリッドのセルは除外)。
-  const resolveAnchor = (columnKey: string): HTMLElement | null => {
+  const resolveAnchor = (openedColumnKey: string): HTMLElement | null => {
     const rootEl = args?.gridRootRef.current ?? null;
     if (!rootEl) {
       return null;
     }
+    const columnKey = args?.resolveAnchorColumnKey?.(openedColumnKey) ?? openedColumnKey;
     const headerCells = rootEl.querySelectorAll<HTMLElement>('[data-ssg-col-key]');
     return (
       Array.from(headerCells).find(

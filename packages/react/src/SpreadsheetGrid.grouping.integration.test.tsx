@@ -402,8 +402,9 @@ describe('グルーピング中のグループ元列のソート / フィルタ�
     expect(groupLabels(ref)).toEqual(['b-関東']);
   });
 
-  // 追加(FC-08 の見直し): グループ元列のフィルターはチップバー / 管理パネルに非表示列として出る(外す手段を残す)。
-  it('グループ元列の列フィルターはチップバーに非表示列として出て、× で外せる', () => {
+  // 追加(FC-08 の見直し): グループ元列のフィルターはチップバー / 管理パネルに出る(外す手段を残す)。
+  // 変更(段階 2 DU-11): 非表示列ではなく「(グループ化中)」と出し、ラベルから編集できる。
+  it('グループ元列の列フィルターはチップバーに「グループ化中」として出て、× で外せる', () => {
     const ref = createRef<SpreadsheetGridHandle<SalesRow>>();
     render(<SpreadsheetGrid ref={ref} columns={salesColumns} rows={salesRows} showFilterChipBar />);
     act(() => {
@@ -413,10 +414,49 @@ describe('グルーピング中のグループ元列のソート / フィルタ�
       });
     });
     expect(groupLabels(ref)).toEqual(['b-関東']);
-    expect(screen.getByText('地域(非表示列)')).toBeTruthy();
+    expect(screen.getByText('地域(グループ化中)')).toBeTruthy();
+    expect(screen.getByLabelText<HTMLButtonElement>('地域 のフィルターを編集').disabled).toBe(false);
     fireEvent.click(screen.getByLabelText('地域 のフィルターをクリア'));
     expect(ref.current?.getState().filters.columnFilters).toEqual({});
     expect(groupLabels(ref)).toEqual(['b-関東', 'a-関西', 'c-北海道']);
+  });
+
+  // 追加(段階 2 DU-11): グループ元列の列フィルターを画面から足せる(これまでは applyState でしか掛けられなかった)。
+  it('DU-11: フィルターの管理の「フィルターを追加」にグループ元列が入り、選ぶと自動グループ列の見出しの下に開く', async () => {
+    const ref = createRef<SpreadsheetGridHandle<SalesRow>>();
+    const { container } = render(<SpreadsheetGrid ref={ref} columns={salesColumns} rows={salesRows} />);
+    act(() => {
+      ref.current?.openFilterManager();
+    });
+    const addSelect = screen.getByLabelText<HTMLSelectElement>('フィルターを追加する列を選択');
+    const option = Array.from(addSelect.options).find((candidate) => candidate.value === 'region');
+    expect(option?.textContent).toBe('地域(グループ化中)');
+    act(() => {
+      fireEvent.change(addSelect, { target: { value: 'region' } });
+    });
+    await act(async () => {
+      await new Promise((resolve) => requestAnimationFrame(() => resolve(undefined)));
+    });
+    // 地域の select フィルターのポップオーバーが開く(候補に地域の値)。
+    const popover = document.querySelector<HTMLElement>('.ssg-filter-popover');
+    expect(popover).not.toBeNull();
+    expect(popover?.textContent).toContain('b-関東');
+    expect(popover?.textContent).toContain('c-北海道');
+    // 位置の基準は自動グループ列の見出し(グループ元の列は見出しに無い)。
+    expect(headerCell(container, GROUP_AUTO_COLUMN_KEY)).not.toBeNull();
+    expect(headerCell(container, 'region')).toBeNull();
+  });
+
+  it('DU-11: グルーピングしていないときは「(グループ化中)」と出ない', () => {
+    const ref = createRef<SpreadsheetGridHandle<SalesRow>>();
+    const plainColumns = salesColumns.map((column) => ({ ...column, rowGroup: false }));
+    render(<SpreadsheetGrid ref={ref} columns={plainColumns} rows={salesRows} />);
+    act(() => {
+      ref.current?.openFilterManager();
+    });
+    const addSelect = screen.getByLabelText<HTMLSelectElement>('フィルターを追加する列を選択');
+    const option = Array.from(addSelect.options).find((candidate) => candidate.value === 'region');
+    expect(option?.textContent).toBe('地域');
   });
 
   it('並び替えの管理パネルの列の候補にグループ元列が入り、自動グループ列は入らない', () => {
