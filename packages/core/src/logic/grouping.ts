@@ -4,9 +4,11 @@ import type {
   GridColumn,
   GridGroupRow,
   GridRowKey,
+  GridSortState,
 } from '../model/gridTypes.unbound';
 import type { RowOrder } from './filtering';
 import { getCellValue } from '../utils/permissions';
+import { compareSortValues } from './sorting';
 import {
   accumulateBuiltinAgg,
   createBuiltinAggAccumulator,
@@ -31,6 +33,8 @@ import {
 //   規約:
 //     - グループの並び順は「入力 order 上の初出順」です。グループ列でソートすれば
 //       グループもその順に並びます(ソートとの合成を別途定義しない)。
+//       変更(段階 2 DU-24): 集計のある列(aggFunc)の並べ替えがあれば、同じ親の下のグループをその集計値の順に
+//       並べます(sortGroupSiblings。金額の降順で、合計の大きいグループが上)。
 //     - 同値 leaf が order 上で不連続でも 1 グループへ集約します(bucket ベース)。
 //     - bucket は「型タグ + String(値)」の文字列です(encodeGroupBucket)。数値 1 と
 //       文字列 '1' は別グループ、NaN 同士は同一グループ。オブジェクト値は文字列表現で
@@ -121,6 +125,8 @@ export const buildGroupTree = <T,>(
   order: RowOrder,
   groupColumns: GridColumn<T>[],
   aggColumns: GridColumn<T>[],
+  // 追加(段階 2 DU-24): 今の並べ替え(手動ソート中は空)。集計のある列の条件があれば、グループをその集計値の順に並べます。
+  sort?: GridSortState,
 ): GroupTree<T> => {
   const levelCount = groupColumns.length;
   const aggCount = aggColumns.length;
@@ -242,8 +248,57 @@ export const buildGroupTree = <T,>(
   for (const root of roots) {
     finalizeNode(root);
   }
+  if (sort !== undefined && sort.length > 0 && aggCount > 0) {
+    sortGroupSiblings(roots, 0, sort, groupColumns, aggColumns);
+  }
 
   return { roots, groupCount };
+};
+
+// 追加(段階 2 DU-24): 同じ親の下のグループ(階層 level)を集計値の順に並べ替えます(子の階層へも再帰)。
+//   並べ替えの条件を先頭から見て、
+//     - この階層のグループ元の列 → そこで止める(初出順 = その列で並べた順のまま)、
+//     - 集計のある列(aggFunc)→ その集計値で比べる(空値は昇順でも降順でも末尾。行のソートと同じ)、
+//     - 上の階層のグループ元の列(兄弟の間で同じ値)/ 下の階層のグループ元の列 / 集計の無い列 → 飛ばす、
+//   とします。どの条件でも決まらない兄弟は初出順のまま(安定ソート)です。
+const sortGroupSiblings = <T,>(
+  siblings: GroupTreeNode<T>[],
+  level: number,
+  sort: GridSortState,
+  groupColumns: GridColumn<T>[],
+  aggColumns: GridColumn<T>[],
+): void => {
+  if (siblings.length === 0) {
+    return;
+  }
+  const comparators: { key: string; multiplier: number }[] = [];
+  for (const entry of sort) {
+    if (groupColumns[level]?.key === entry.columnKey) {
+      break;
+    }
+    if (groupColumns.some((column) => column.key === entry.columnKey)) {
+      continue;
+    }
+    if (aggColumns.some((column) => column.key === entry.columnKey)) {
+      comparators.push({ key: entry.columnKey, multiplier: entry.direction === 'asc' ? 1 : -1 });
+    }
+  }
+  if (comparators.length > 0 && siblings.length > 1) {
+    siblings.sort((left, right) => {
+      for (const { key, multiplier } of comparators) {
+        const result = compareSortValues(left.groupRow.aggregates[key], right.groupRow.aggregates[key], multiplier);
+        if (result !== 0) {
+          return result;
+        }
+      }
+      return 0;
+    });
+  }
+  if (level + 1 < groupColumns.length) {
+    for (const node of siblings) {
+      sortGroupSiblings(node.children, level + 1, sort, groupColumns, aggColumns);
+    }
+  }
 };
 
 // 開閉状態を適用して表示リストへ展開します。collapsed なグループは「グループ行自身は表示・

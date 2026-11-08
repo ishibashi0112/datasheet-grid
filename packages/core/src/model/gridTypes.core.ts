@@ -1234,7 +1234,9 @@ export type GridColumn<T, F extends GridFrameworkTypes = GridFrameworkTypes> = {
   /**
    * `true` でこの列を行グルーピングの対象にする(複数指定時は `columns` 配列の出現順が階層順)。
    * 有効時はグループ元列が表示から外れ、先頭に自動グループ列(ツリー表示)が注入される。**clientSide
-   * 限定**(serverSide では無視 + 開発時警告)。詳細は「行グルーピング + 集計」節。
+   * 限定**(serverSide では無視 + 開発時警告)。列のどれかに `rowGroup` を書いている(`false` を含む)
+   * 表では、列メニューに「この列でグループ化」/「グループ化を外す」が出る(`onColumnsChange`
+   * が要る。集計のある列には出ない)。詳細は「行グルーピング + 集計」節。
    */
   rowGroup?: boolean;
   // 追加(grouping ①): グルーピング時のこの列の集計です。組み込み(GridAggFuncName)または

@@ -99,6 +99,9 @@ export type ClientSideRowModelInputs<T> = {
   aggColumns: GridColumn<T>[];
   collapsedGroupKeys: ReadonlySet<string>;
   rowKeyGetter: (row: T, index: number) => GridRowKey;
+  // 追加(段階 2 DU-24): 今の並べ替えと手動ソートか(集計のある列の並べ替えでグループを集計値の順に並べる。手動ソート中は並べない)。
+  sort?: GridSortState;
+  manualSorting?: boolean;
 };
 
 export type ClientSideRowModelResolution<T> = {
@@ -216,8 +219,17 @@ export const createRowPipelineResolver = <T,>(features: RowPipelineFeatures) => 
 
   // グループツリー(集計込み)。開閉状態に依存しないため、開閉操作では再計算されません。
   const memoGroupTree = createMemo(
-    (rowGroupingActive: boolean, rows: T[], order: RowOrder, groupColumns: GridColumn<T>[], aggColumns: GridColumn<T>[]) =>
-      rowGroupingActive && groupingFeature ? groupingFeature.buildGroupTree(rows, order, groupColumns, aggColumns) : null,
+    (
+      rowGroupingActive: boolean,
+      rows: T[],
+      order: RowOrder,
+      groupColumns: GridColumn<T>[],
+      aggColumns: GridColumn<T>[],
+      sort: GridSortState,
+    ) =>
+      rowGroupingActive && groupingFeature
+        ? groupingFeature.buildGroupTree(rows, order, groupColumns, aggColumns, sort)
+        : null,
   );
   const memoGroupedDisplay = createMemo((groupTree: GroupTree<T> | null, collapsedGroupKeys: ReadonlySet<string>) =>
     groupTree && groupingFeature ? groupingFeature.flattenGroupTree(groupTree, collapsedGroupKeys) : null,
@@ -357,7 +369,8 @@ export const createRowPipelineResolver = <T,>(features: RowPipelineFeatures) => 
         sortActive = false,
         getLabel,
       } = inputs;
-      const groupTree = memoGroupTree(rowGroupingActive, rows, order, groupColumns, aggColumns);
+      const groupSort = inputs.manualSorting ? EMPTY_SORT : (inputs.sort ?? EMPTY_SORT);
+      const groupTree = memoGroupTree(rowGroupingActive, rows, order, groupColumns, aggColumns, groupSort);
       const groupedDisplay = memoGroupedDisplay(groupTree, collapsedGroupKeys);
       // ラベル行はグルーピングと併用しません(rowGroup 有効時はラベル行の stage をバイパス)。
       const labelDisplay = memoLabelDisplay(

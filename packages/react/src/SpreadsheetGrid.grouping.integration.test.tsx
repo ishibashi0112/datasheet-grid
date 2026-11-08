@@ -6,7 +6,7 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi, beforeAll, afterEach } from 'vitest';
 import { render, cleanup, act, fireEvent, screen } from '@testing-library/react';
-import { createRef } from 'react';
+import { createRef, useState } from 'react';
 
 import { SpreadsheetGrid } from './SpreadsheetGrid';
 import { GROUP_AUTO_COLUMN_KEY } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/grouping';
@@ -485,6 +485,178 @@ describe('グルーピング中のグループ元列のソート / フィルタ�
     expect(optionKeys).toContain('region');
     expect(optionKeys).toContain('qty');
     expect(optionKeys).not.toContain(GROUP_AUTO_COLUMN_KEY);
+  });
+});
+
+// 追加(段階 2 DU-24): 列メニューからのグループ化と、集計のある列の並べ替えでグループを集計値の順に並べること。
+describe('列メニューからのグループ化 / 集計値の順(DU-24)', () => {
+  type SalesRow = { id: number; region: string; rep: string; qty: number };
+  const salesRows: SalesRow[] = [
+    { id: 1, region: '関東', rep: '佐藤', qty: 10 },
+    { id: 2, region: '関西', rep: '田中', qty: 50 },
+    { id: 3, region: '関東', rep: '鈴木', qty: 30 },
+    { id: 4, region: '九州', rep: '伊藤', qty: 20 },
+  ];
+  const baseColumns: GridColumn<SalesRow>[] = [
+    { key: 'region', title: '地域', width: 100, rowGroup: false },
+    { key: 'rep', title: '担当', width: 100 },
+    { key: 'qty', title: '数量', width: 100, aggFunc: 'sum' },
+  ];
+  const Controlled = ({
+    initialColumns,
+    gridRef,
+    onColumns,
+  }: {
+    initialColumns: GridColumn<SalesRow>[];
+    gridRef?: { current: SpreadsheetGridHandle<SalesRow> | null };
+    onColumns?: (columns: GridColumn<SalesRow>[]) => void;
+  }) => {
+    const [columns, setColumns] = useState(initialColumns);
+    return (
+      <SpreadsheetGrid
+        ref={gridRef}
+        columns={columns}
+        rows={salesRows}
+        rowKeyGetter={(row) => row.id}
+        onColumnsChange={(next) => {
+          onColumns?.(next);
+          setColumns(next);
+        }}
+      />
+    );
+  };
+  const openMenu = (container: HTMLElement, key: string) => {
+    const button = container.querySelector<HTMLElement>(
+      `.ssg-header-row [data-ssg-col-key="${key}"] [data-ssg-tooltip="列メニュー"]`,
+    );
+    expect(button).not.toBeNull();
+    act(() => {
+      fireEvent.pointerDown(button as HTMLElement, { button: 0 });
+    });
+  };
+  const menuItem = (label: string) =>
+    Array.from(document.querySelectorAll<HTMLButtonElement>('.ssg-menu-item')).find(
+      (item) => item.querySelector('.ssg-menu-label')?.textContent === label,
+    );
+
+  it('「この列でグループ化」で rowGroup が付き、「グループ化を外す」ですべて外れる', () => {
+    const ref = createRef<SpreadsheetGridHandle<SalesRow>>();
+    const received: GridColumn<SalesRow>[][] = [];
+    const { container } = render(
+      <Controlled initialColumns={baseColumns} gridRef={ref} onColumns={(next) => received.push(next)} />,
+    );
+    openMenu(container, 'region');
+    expect(menuItem('グループ化を外す')).toBeUndefined();
+    act(() => {
+      fireEvent.click(menuItem('この列でグループ化') as HTMLButtonElement);
+    });
+    expect(received.at(-1)?.map((column) => [column.key, column.rowGroup])).toEqual([
+      ['region', true],
+      ['rep', undefined],
+      ['qty', undefined],
+    ]);
+    expect(headerCell(container, GROUP_AUTO_COLUMN_KEY)).not.toBeNull();
+    expect(headerCell(container, 'region')).toBeNull();
+    expect(ref.current?.getGroupRows().map((group) => group.label)).toEqual(['関東', '関西', '九州']);
+
+    openMenu(container, 'rep');
+    act(() => {
+      fireEvent.click(menuItem('グループ化を外す') as HTMLButtonElement);
+    });
+    expect(received.at(-1)?.map((column) => [column.key, column.rowGroup])).toEqual([
+      ['region', false],
+      ['rep', undefined],
+      ['qty', undefined],
+    ]);
+    expect(headerCell(container, GROUP_AUTO_COLUMN_KEY)).toBeNull();
+    expect(headerCell(container, 'region')).not.toBeNull();
+  });
+
+  it('前にある列でグループ化すると階層の一番下に足す(columns の中で最後のグループ元の列の後ろへ移す)', () => {
+    const ref = createRef<SpreadsheetGridHandle<SalesRow>>();
+    const received: GridColumn<SalesRow>[][] = [];
+    const { container } = render(
+      <Controlled
+        initialColumns={[
+          { key: 'rep', title: '担当', width: 100 },
+          { key: 'region', title: '地域', width: 100, rowGroup: true },
+          { key: 'qty', title: '数量', width: 100, aggFunc: 'sum' },
+        ]}
+        gridRef={ref}
+        onColumns={(next) => received.push(next)}
+      />,
+    );
+    openMenu(container, 'rep');
+    act(() => {
+      fireEvent.click(menuItem('この列でグループ化') as HTMLButtonElement);
+    });
+    expect(received.at(-1)?.map((column) => column.key)).toEqual(['region', 'rep', 'qty']);
+    const levels = ref.current?.getGroupRows().map((group) => `${group.level}:${group.label}`);
+    expect(levels?.slice(0, 3)).toEqual(['0:関東', '1:佐藤', '1:鈴木']);
+  });
+
+  it('集計のある列には出さない / rowGroup を書いていない表と onColumnsChange の無い表には出さない', () => {
+    const { container, unmount } = render(<Controlled initialColumns={baseColumns} />);
+    openMenu(container, 'qty');
+    expect(menuItem('この列でグループ化')).toBeUndefined();
+    expect(menuItem('昇順で並び替え')).toBeDefined();
+    unmount();
+
+    const plain: GridColumn<SalesRow>[] = baseColumns.map((column) => {
+      const copy = { ...column };
+      delete copy.rowGroup;
+      return copy;
+    });
+    const second = render(<Controlled initialColumns={plain} />);
+    openMenu(second.container, 'region');
+    expect(menuItem('この列でグループ化')).toBeUndefined();
+    second.unmount();
+
+    const third = render(<SpreadsheetGrid columns={baseColumns} rows={salesRows} />);
+    openMenu(third.container, 'region');
+    expect(menuItem('この列でグループ化')).toBeUndefined();
+  });
+
+  it('集計のある列で並べ替えると、グループもその集計値の順に並ぶ', () => {
+    const ref = createRef<SpreadsheetGridHandle<SalesRow>>();
+    const grouped = baseColumns.map((column) => (column.key === 'region' ? { ...column, rowGroup: true } : column));
+    render(<SpreadsheetGrid ref={ref} columns={grouped} rows={salesRows} />);
+    const labels = () => ref.current?.getGroupRows().map((group) => group.label);
+    expect(labels()).toEqual(['関東', '関西', '九州']);
+    act(() => {
+      ref.current?.applyState({ sort: [{ columnKey: 'qty', direction: 'desc' }] });
+    });
+    // 合計: 関西 50 / 関東 40 / 九州 20。
+    expect(labels()).toEqual(['関西', '関東', '九州']);
+    act(() => {
+      ref.current?.applyState({ sort: [{ columnKey: 'qty', direction: 'asc' }] });
+    });
+    expect(labels()).toEqual(['九州', '関東', '関西']);
+    // グループ元の列の並べ替えが先なら、その列の順(今までどおり。後ろの集計の条件では並べ替えない)。
+    act(() => {
+      ref.current?.applyState({ sort: [{ columnKey: 'region', direction: 'desc' }] });
+    });
+    const byRegion = labels();
+    act(() => {
+      ref.current?.applyState({
+        sort: [
+          { columnKey: 'region', direction: 'desc' },
+          { columnKey: 'qty', direction: 'desc' },
+        ],
+      });
+    });
+    expect(labels()).toEqual(byRegion);
+    expect(byRegion).not.toEqual(['関西', '関東', '九州']);
+  });
+
+  it('manualSorting では集計値の順に並べない(行も並べないため)', () => {
+    const ref = createRef<SpreadsheetGridHandle<SalesRow>>();
+    const grouped = baseColumns.map((column) => (column.key === 'region' ? { ...column, rowGroup: true } : column));
+    render(<SpreadsheetGrid ref={ref} columns={grouped} rows={salesRows} manualSorting />);
+    act(() => {
+      ref.current?.applyState({ sort: [{ columnKey: 'qty', direction: 'desc' }] });
+    });
+    expect(ref.current?.getGroupRows().map((group) => group.label)).toEqual(['関東', '関西', '九州']);
   });
 });
 

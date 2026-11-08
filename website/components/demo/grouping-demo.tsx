@@ -2,7 +2,8 @@
 
 // 行グルーピング + 集計のデモ: 地域 > 担当 の 2 階層グルーピングと sum 集計、開閉の命令的 API、
 // グルーピング中の CSV(グループ元の列が先頭に入る / includeGroupRows で小計の行)、
-// グループ元の列の絞り込み(上部バーの「絞り込み」→「+ フィルターを追加…」の「地域(グループ化中)」)。
+// グループ元の列の絞り込み(上部バーの「絞り込み」→「+ フィルターを追加…」の「地域(グループ化中)」)、
+// 列メニューの「この列でグループ化」/「グループ化を外す」(列定義を onColumnsChange で受け取る)、集計のある列の並べ替えでグループも集計値の順。
 import { useRef, useState } from 'react';
 import {
   SpreadsheetGrid,
@@ -21,7 +22,7 @@ type Row = {
   amount: number;
 };
 
-const columns: GridColumn<Row>[] = [
+const initialColumns: GridColumn<Row>[] = [
   { key: 'region', title: '地域', width: 100, rowGroup: true, filterType: 'set' },
   { key: 'rep', title: '担当', width: 100, rowGroup: true, filterType: 'set' },
   { key: 'product', title: '商品', width: 170 },
@@ -50,6 +51,7 @@ const initialRows: Row[] = [
 
 export function GroupingDemo() {
   const [rows, setRows] = useState<Row[]>(initialRows);
+  const [columns, setColumns] = useState<GridColumn<Row>[]>(initialColumns);
   const gridRef = useRef<SpreadsheetGridHandle<Row>>(null);
   // CSV の中身を表の下に見せる(null は閉じている)。
   const [csv, setCsv] = useState<string | null>(null);
@@ -89,6 +91,7 @@ export function GroupingDemo() {
       <SpreadsheetGrid
         rows={rows}
         columns={columns}
+        onColumnsChange={setColumns}
         onRowsChange={setRows}
         rowKeyGetter={(row) => row.id}
         height={380}

@@ -111,6 +111,9 @@ type ColumnMenuPopoverProps = {
   //             columns は controlled props のため、onColumnsChange 未指定時は無効化します。
   canResetColumns: boolean;
   onResetColumns: () => void;
+  // 追加(段階 2 DU-24): 「この列でグループ化」/「グループ化を外す」(グループ化の入口を出す条件はシェルが決め、出さないときは渡さない)。
+  onGroupByColumn?: () => void;
+  onUngroup?: () => void;
   onRequestClose: () => void;
 };
 
@@ -138,6 +141,8 @@ export function ColumnMenuPopover({
   onOpenColumnChooser,
   canResetColumns,
   onResetColumns,
+  onGroupByColumn,
+  onUngroup,
   onRequestClose,
 }: ColumnMenuPopoverProps) {
   // 変更(13-B1): isPinSubmenuOpen: boolean → openSubmenuKey: string | null へ一般化します
@@ -390,6 +395,41 @@ export function ColumnMenuPopover({
           フィルターを管理…のいずれかが出ているとき」へ広げます(位置は不変)。 */}
       {/* 変更(差し込み式 段階 3): フィルターを管理…を出さない構成(ツールパネルの機能なし)では、その分を数えません。 */}
       {(canSort || (canManageFilters && onOpenFilterManager !== undefined)) && <div className="ssg-menu-separator" />}
+
+      {/* ── ルート項目: この列でグループ化 / グループ化を外す(段階 2 DU-24) ── */}
+      {onGroupByColumn && (
+        <button
+          type="button"
+          onPointerEnter={() => {
+            setOpenSubmenuKey(null);
+          }}
+          onClick={() => {
+            onGroupByColumn();
+          }}
+          className={cx('ssg-menu-item', slots?.menuItem?.className)}
+          style={slots?.menuItem?.style}
+        >
+          <span className="ssg-menu-icon" />
+          <span className="ssg-menu-label">この列でグループ化</span>
+        </button>
+      )}
+      {onUngroup && (
+        <button
+          type="button"
+          onPointerEnter={() => {
+            setOpenSubmenuKey(null);
+          }}
+          onClick={() => {
+            onUngroup();
+          }}
+          className={cx('ssg-menu-item', slots?.menuItem?.className)}
+          style={slots?.menuItem?.style}
+        >
+          <span className="ssg-menu-icon" />
+          <span className="ssg-menu-label">グループ化を外す</span>
+        </button>
+      )}
+      {(onGroupByColumn || onUngroup) && <div className="ssg-menu-separator" />}
 
       {/* ── ルート項目: 列の固定 ›(サブメニュー親) ── */}
       {/* 追加(13-A2): サブメニューはこの行(position: relative)基準で絶対配置します。

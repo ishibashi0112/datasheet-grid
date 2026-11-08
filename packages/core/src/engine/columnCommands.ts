@@ -61,6 +61,9 @@ export type ColumnCommands<T> = {
   handleColumnMenuOpenFilterManager: () => void;
   handleColumnMenuResetColumns: () => void;
   handleColumnMenuSortChange: (columnKey: string, direction: SortDirection) => void;
+  // 追加(段階 2 DU-24): 「この列でグループ化」(階層の一番下に足す)/「グループ化を外す」(すべての階層)。
+  handleColumnMenuGroupBy: (columnKey: string) => void;
+  handleColumnMenuUngroup: () => void;
   // フィルター管理パネル(クリア系)
   handleFilterManagerClearFilter: (columnKey: string) => void;
   handleFilterManagerClearAll: () => void;
@@ -146,6 +149,55 @@ export const createColumnCommands = <T,>(): ColumnCommands<T> => {
       return resolvedWidth === column.width ? column : { ...column, width: resolvedWidth };
     });
     onColumnsChange(nextColumns);
+    discardSelectionState(dispatch);
+  };
+
+  // 追加(段階 2 DU-24): 列メニューの「この列でグループ化」。階層は columns の並び順なので、今のグループ元の列より前に
+  //   ある列は最後のグループ元の列の直後へ移して、階層の一番下に足します(グループ元の列は表示から外れるので、見た目の
+  //   並びが変わるのはグループ化を外した後だけ)。幅の書き戻しと選択の破棄は固定の変更と同じ。
+  const handleColumnMenuGroupBy: ColumnCommands<T>['handleColumnMenuGroupBy'] = (columnKey) => {
+    const { closeColumnMenu, onColumnsChange, columns, columnWidths, dispatch } = requireArgs();
+    closeColumnMenu();
+    const targetIndex = columns.findIndex((column) => column.key === columnKey);
+    if (!onColumnsChange || targetIndex < 0 || columns[targetIndex].rowGroup === true) {
+      return;
+    }
+    let lastGroupIndex = -1;
+    columns.forEach((column, index) => {
+      if (column.rowGroup === true) {
+        lastGroupIndex = index;
+      }
+    });
+    const nextColumns = columns.map((column) => {
+      const resolvedWidth = columnWidths[column.key] ?? column.width;
+      if (column.key === columnKey) {
+        return { ...column, width: resolvedWidth, rowGroup: true };
+      }
+      return resolvedWidth === column.width ? column : { ...column, width: resolvedWidth };
+    });
+    if (lastGroupIndex > targetIndex) {
+      const [target] = nextColumns.splice(targetIndex, 1);
+      nextColumns.splice(lastGroupIndex, 0, target);
+    }
+    onColumnsChange(nextColumns);
+    discardSelectionState(dispatch);
+  };
+  // 追加(段階 2 DU-24): 列メニューの「グループ化を外す」。すべてのグループ元の列の rowGroup を false にします(列は元の位置に戻る)。
+  const handleColumnMenuUngroup: ColumnCommands<T>['handleColumnMenuUngroup'] = () => {
+    const { closeColumnMenu, onColumnsChange, columns, columnWidths, dispatch } = requireArgs();
+    closeColumnMenu();
+    if (!onColumnsChange || !columns.some((column) => column.rowGroup === true)) {
+      return;
+    }
+    onColumnsChange(
+      columns.map((column) => {
+        const resolvedWidth = columnWidths[column.key] ?? column.width;
+        if (column.rowGroup === true) {
+          return { ...column, width: resolvedWidth, rowGroup: false };
+        }
+        return resolvedWidth === column.width ? column : { ...column, width: resolvedWidth };
+      }),
+    );
     discardSelectionState(dispatch);
   };
 
@@ -467,6 +519,8 @@ export const createColumnCommands = <T,>(): ColumnCommands<T> => {
     handleColumnMenuOpenFilterManager,
     handleColumnMenuResetColumns,
     handleColumnMenuSortChange,
+    handleColumnMenuGroupBy,
+    handleColumnMenuUngroup,
     handleFilterManagerClearFilter,
     handleFilterManagerClearAll,
     handleFilterManagerClearGlobal,

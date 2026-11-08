@@ -1158,6 +1158,8 @@ export function useGridShell<T extends object>({
         aggColumns,
         collapsedGroupKeys: uiState.collapsedGroupKeys,
         rowKeyGetter: resolvedRowKeyGetter,
+        sort: uiState.sort,
+        manualSorting,
       }),
     [
       rowPipeline,
@@ -1173,6 +1175,8 @@ export function useGridShell<T extends object>({
       aggColumns,
       uiState.collapsedGroupKeys,
       resolvedRowKeyGetter,
+      uiState.sort,
+      manualSorting,
     ],
   );
 
@@ -3023,6 +3027,8 @@ export function useGridShell<T extends object>({
     handleColumnMenuOpenFilterManager,
     handleColumnMenuResetColumns,
     handleColumnMenuSortChange,
+    handleColumnMenuGroupBy,
+    handleColumnMenuUngroup,
     handleFilterManagerClearFilter,
     handleFilterManagerClearAll,
     handleFilterManagerClearGlobal,
@@ -3625,6 +3631,15 @@ export function useGridShell<T extends object>({
   //           固定ペインの影が重なるよう position: relative + zIndex: 1（固定ペインより背面）。
 
   // ── column menu popover(13-A) ────────────────────────
+  // 追加(段階 2 DU-24): 列メニューのグループ化の入口。列のどれかに rowGroup を書いている(false を含む = グループ化を使う表)
+  //   ときだけ出します(グルーピングを使わない表のメニューは変えない)。列定義は controlled なので onColumnsChange が要り、
+  //   グルーピングの機能・clientSide・ラベル行なしが条件です。集計のある列(aggFunc)はグループ化の対象に出しません。
+  const columnMenuGroupingAvailable =
+    features.grouping !== undefined &&
+    !isServerSide &&
+    !labelRowEnabled &&
+    onColumnsChange !== undefined &&
+    columns.some((column) => column.rowGroup !== undefined);
   // 追加(13-A): 列メニュー popover の描画です(portal で body 直下へ出します)。
   const renderedColumnMenuPopover = openedMenuColumn ? (
     <features.columnMenu.ColumnMenuPopover
@@ -3657,6 +3672,12 @@ export function useGridShell<T extends object>({
       onOpenColumnChooser={toolPanelAvailable ? handleColumnMenuOpenChooser : undefined}
       canResetColumns={Boolean(onColumnsChange)}
       onResetColumns={handleColumnMenuResetColumns}
+      onGroupByColumn={
+        columnMenuGroupingAvailable && openedMenuColumn.aggFunc == null && openedMenuColumn.rowGroup !== true
+          ? () => handleColumnMenuGroupBy(openedMenuColumn.key)
+          : undefined
+      }
+      onUngroup={columnMenuGroupingAvailable && rowGroupingActive ? handleColumnMenuUngroup : undefined}
       onRequestClose={closeColumnMenu}
     />
   ) : null;
