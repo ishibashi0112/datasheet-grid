@@ -103,7 +103,7 @@
 | `classNames` | `GridClassNames` | — | パーツ別の追加スロット。各値は `GridSlotProps`(`string \| { className?, style? }`)で、StyleX の `stylex.props(...)` の戻り値をそのまま渡せる。全 25 スロット配線済み(一覧と規則は「パーツ別スロット」節)。レンダー毎に新しいオブジェクトを渡してもよい(内容の署名で memo)。基底 class は未レイヤー・特異度 (0,1,0)のため同特異度のクラスは読み込み順で決まる(確実な上書きは連結セレクタか `style.layer.css`)。 |
 | `getRowClassName` | `(row: T, rowIndex: number, ctx: RowStyleContext<T>) => GridSlotProps \| undefined` | — | 行ごとの追加 class(または `{ className, style }`)。行コンテナ + 行ヘッダー「#」セル + 各データセルに付与され、Tailwind / StyleX での行ハイライトに使える。`style` はインラインで付与され、座標 / 寸法はグリッドが後勝ち(返した style は内容比較で memo される)。第 3 引数 `ctx` は `{ row, rowIndex, sourceRowIndex, rowKey, isSelected }`(「補助型」節参照)。既存の 2 引数関数もそのまま動く(後方互換)。グループ行は対象外。class と style は行と各セルの両方に付くので、`opacity` / `filter` のように重なる指定は style で返さず、class を返して `.ssg-body-row.<class>` で行だけに当てる(style の `opacity: 0.5` は 0.25 になる)。 |
 | `onStateChange` | `(state: GridState) => void` | — | 永続スライス(手動リサイズ幅 / フィルター / ソート)が**実際に変化したとき**に最新 `GridState` を渡して呼ばれる。保存タイミングの signal(例: localStorage 自動保存)。発火規約は「状態の保存 / 復元」節を参照。 |
-| `initialState` | `Omit<GridStatePatch, 'columns'>` | — | 状態(列幅 / フィルター / ソート)の初期値。**最初の 1 回(マウント時)だけ**使い、後から変えても今の状態は変わらない(変えるときは `applyState`)。最初の描画・サーバーの描画(SSR)・serverSide の最初の `getRows` から効き(clientSide で 5 万行を超える表のグローバルフィルター `filters.globalText` だけは、時間を分けて評価するので最初の描画の少し後に効く)、`getState()` もその値を返す。マウント時は `onStateChange` / `onFiltersChange` / `onSortChange` を呼ばない。`getState()` の値をそのまま渡せる(列メタの `columns` は使わない。列の並び / 表示 / 固定は `columns` prop で決める。`columns` prop と違うときだけ開発時に警告)。今の `columns` に無い列の幅 / フィルター / ソートは捨てる(開発時に警告)。URL のクエリや保存した状態から戻すときに使う。 |
+| `initialState` | `Omit<GridStatePatch, 'columns'>` | — | 状態(列幅 / フィルター / ソート)の初期値。**最初の 1 回(マウント時)だけ**使い、後から変えても今の状態は変わらない(変えるときは `applyState`)。最初の描画・サーバーの描画(SSR)・serverSide の最初の `getRows` から効き(clientSide で 5 万行を超える表のグローバルフィルター `filters.globalText` だけは、時間を分けて評価するので最初の描画の少し後に効く)、`getState()` もその値を返す。マウント時は `onStateChange` / `onFiltersChange` / `onSortChange` を呼ばない。`getState()` の値をそのまま渡せる(列メタの `columns` は使わない。列の並び / 表示 / 固定は `columns` prop で決める。保存した値から戻すときは `restoreColumnsFromState(columns, saved)` で作った配列を渡す。`columns` prop と違うときだけ開発時に警告)。今の `columns` に無い列の幅 / フィルター / ソートは捨てる(開発時に警告)。URL のクエリや保存した状態から戻すときに使う。 |
 | `onFiltersChange` | `(filters: GridFilterState) => void` | — | フィルター状態(`globalText` + `columnFilters`)が**実際に変化したとき**だけ、そのスライスの複製を渡して呼ばれる。`onStateChange` は列幅 / 列メタでも呼ばれるため、記述子から WHERE を組み立てるなどフィルターだけを追いたい用途向け。規約は `onStateChange` と同じ(初回非発火 / 同値非発火 / `applyState` でも発火)。 |
 | `onSortChange` | `(sort: GridSortState) => void` | — | ソート状態が**実際に変化したとき**だけ、その複製を渡して呼ばれる(ORDER BY の組み立てなど)。規約は `onFiltersChange` と同じ。 |
 | `onScroll` | `(params: GridScrollEventParams) => void` | — | スクロール位置の変化通知(rAF で 1 フレーム 1 回に間引き・縦横どちらの変化でも発火)。`params` は `{ top, left, source }`(px)。`source: 'api'` は `setScrollPosition` / `scrollTo*` 系由来、`'user'` はそれ以外。2 グリッドの双方向スクロール同期は `source === 'user'` のときだけ相手へ反映することでループを止められる。インライン関数可(latest-ref 経由)。 |
@@ -1372,7 +1372,7 @@ const addRow = () => {
 | `redo()` | undo で取り消した編集をやり直す(`Ctrl/Cmd+Shift+Z` / `Ctrl/Cmd+Y` 相当)。undo 後に新しい編集が入った時点で redo 系譜は破棄される。 |
 | `canUndo()` / `canRedo()` | undo / redo 可能かを返す(無効条件下では常に `false`)。 |
 | `clearUndoHistory()` | 編集履歴を破棄する(rows は変更しない)。rows の外部差し替えはグリッド側でも自動検知して破棄するため、通常は呼ばなくてよい。 |
-| `applyRows(nextRows)` | 外からの変更(行の削除ボタン / 一括更新など)を「元に戻す」の履歴に積んでから `onRowsChange` へ渡す(`Ctrl/Cmd+Z` / `undo()` で戻せる)。`rows` を外から直接差し替えると履歴は消えるので、元に戻せるようにしたい変更はこれで渡す。履歴が無効(`enableUndoRedo={false}` / `readOnly`)なら積まずに `onRowsChange` へ渡す。`onRowsChange` が無いとき・serverSide では何もしない(開発時に警告)。 |
+| `applyRows(nextRows)` | 外からの変更(行の削除ボタン / 一括更新など)を「元に戻す」の履歴に積んでから `onRowsChange` へ渡す(`Ctrl/Cmd+Z` / `undo()` で戻せる)。`rows` を外から直接差し替えると履歴は消えるので、元に戻せるようにしたい変更はこれで渡す。履歴が無効(`enableUndoRedo={false}` / `readOnly`)なら積まずに `onRowsChange` へ渡す。`onRowsChange` が無いとき・serverSide では何もしない(開発時に警告)。渡すのは次の行の配列で、関数(`setRows((prev) => …)` の形)は受けない(今の `rows` から次の配列を作って渡す)。 |
 
 **挙動メモ**:
 
@@ -1549,7 +1549,7 @@ const buffer = await writeXlsx({
 | `getState()` | 永続化対象(手動リサイズ幅 / フィルター / ソート)のスナップショット `GridState` を返す(純粋・副作用なし)。新規オブジェクトなのでそのまま `JSON.stringify` して保存できる。 |
 | `applyState(state)` | `getState()` の値を適用する。**渡したスライスだけを変え、省略した(`undefined` の)スライスは今のまま残す**(`{ sort }` だけなら列幅とフィルターはそのまま。`filters` も `globalText` / `columnFilters` の片方だけ渡せる。引数の型は `GridStatePatch`)。外部入力は内部で防御的に正規化され(形の合わない列フィルターは捨てる)、**今の `columns` に無い列の幅 / 列フィルター / ソートも捨てる**(開発時に警告。列定義を渡してから呼ぶ。自動グループ列などグリッドが足す列の幅は残す。捨てても今の状態と変わらなければ `onStateChange` は呼ばないので、列を消した後の古い保存状態は `applyState` の後の `getState()` の値で保存し直す)。1 回の再描画で反映し(フィルターと並べ替えを一度に渡しても、並べ替えだけの画面を挟まない)、直後の `getState()` は渡した値を返す。clientSide / serverSide 双方に効く(SSRM は `filters`/`sort` 変化がクエリへ載り再取得)。 |
 
-マウントの時点で戻す状態が分かっているときは、`applyState` の代わりに prop の `initialState` に渡す(最初の描画・サーバーの描画・serverSide の最初の `getRows` から効く。`columns` は使わない)。
+マウントの時点で戻す状態が分かっているときは、`applyState` の代わりに prop の `initialState` に渡す(最初の描画・サーバーの描画・serverSide の最初の `getRows` から効く。`columns` は使わない)。列の並び / 表示 / 固定(`columns`)も戻すときは、`restoreColumnsFromState(columns, saved)` で保存した列メタを列定義へ当てた配列を作り、`columns` prop に渡す(下の例。`applyState` と同じ規則で、保存に無い列は末尾、今の列に無い保存の列は捨てる。幅は `initialState` の `columnWidths` で戻すので列定義へは焼き込まない。保存した `columns` が無い / 読めないときは渡した配列をそのまま返す)。今の列に無い列の幅 / フィルター / ソートは捨てるが、マウント時は `onStateChange` を呼ばないので保存した値には残り、開くたびに開発時の警告が出る。消すときは、マウントの後に `getState()` の値で保存し直す。
 
 `GridState`: `{ version, columnWidths, filters, sort, columns? }`。`applyState` の引数の `GridStatePatch` は、その各フィールドを省略できる形(`filters` は `{ globalText?, columnFilters? }`)で、`getState()` の値はそのまま渡せる(全部のフィールドがあるので全部置き換わる)。`version` はマイグレーション用(現行 `2`)。`columns` は **列メタ(可視 / 順序 / ピン)のスナップショット**(`GridColumnState[]` = `{ key, visible?, pinned? }`。配列順 = 列順)で、`getState()` は常に出力し、`applyState()` は **`onColumnsChange` が指定されているときだけ** `columns` prop へ反映する(列順 / ピン / 可視も復元される点に注意。v1 形式 = `columns` 無しの保存値は列メタを触らない後方互換)。復元した `columns` 配列は固定列ごと(左固定 → 中央 → 右固定)の順に並べ直される(画面上の列順は同じ。列のドラッグ並べ替えと同じ規則で、2 回目以降の `applyState` では順序は変わらない)。`flex` / 列定義そのものは含めない。`activeCell` / `selection` などの一時 UI も含めない。`columnWidths` は**手動リサイズ / autoSize / `applyState` で幅が決まった列だけ**を持つ(それ以外の列は `width` / `flex` で描画され、エントリを持たない)。`columns` を同じ内容の別参照で渡し直しても消えず、列が削除されたとき・その列の `flex` / `pinned` 指定が変わったとき・`width` がエントリと異なる値に指定し直されたとき・列のリセット時にだけ捨てられる。そのため `applyState(getState())` は冪等で、保存値に既定幅が焼き込まれることもない(後からコードで `width` を変えれば、手動リサイズしていない列には反映される)。`custom` フィルターの `value`(`unknown`)は深いコピーをしないため、シリアライズ可能性は consumer 責務。`applyState` は壊れた / 部分的な入力にも耐える(非数値の幅・`kind` 無し / 未知 `kind` / 配列であるべき `values` が欠けた列フィルター・不正な `direction` は捨てる)。
 
@@ -1579,13 +1579,16 @@ if (saved) gridRef.current?.applyState(JSON.parse(saved));
 // 自動保存(変化時)+ マウント時の復元。initialState は最初の 1 回だけ使う(最初の描画から効き、
 // 後から applyState で戻すときのような「戻す前の画面」が出ない。serverSide なら最初の getRows から効く)。
 // localStorage はブラウザにしか無いので、クライアントだけで描く画面向け(サーバーの描画では下の URL の例のように渡す)。
+// 列の並び / 表示 / 固定も戻すときは restoreColumnsFromState で列定義へ当てる(initialState は列メタを使わない)。
 const [initialState] = useState(() => {
   const saved = localStorage.getItem('grid-state');
   return saved ? JSON.parse(saved) : undefined;
 });
+const [columns, setColumns] = useState(() => restoreColumnsFromState(defaultColumns, initialState));
 
 <SpreadsheetGrid
   columns={columns}
+  onColumnsChange={setColumns}
   rows={rows}
   initialState={initialState}
   onStateChange={(state) =>
@@ -1719,7 +1722,7 @@ export const OrdersTable = () => <Grid columns={columns} dataSource={dataSource}
 | `standardFeatures` | よく使う組み合わせ(プリセット): `filtering` / `columnMenu` / `toolPanel` / `columnAutosize` / `export`。ほかの機能は `{ ...standardFeatures, find: findFeature }` のように広げて足す。 |
 | `xxxFeature`(20 個) | 機能の部品。名前は「キー + `Feature`」(下の表)。中身は内部の部品なので、そのまま `features` に渡す(自分で作ったり書き換えたりしない)。 |
 | 型 `GridFeatures` / `CreateSpreadsheetGridOptions` | `features` の型と、`createSpreadsheetGrid` の引数の型。機能の組み合わせを変数にして export するときは `GridFeatures` を注釈する(`export const companyFeatures: GridFeatures = { ...standardFeatures, find: findFeature }`。注釈しないと推論された型が内部の型を指し、`declaration: true` で TS2742 になる)。 |
-| `numberFormatter` / `preloadGridPopups` と公開型すべて | 全部入りの入口と同じ名前・使い方。`preloadGridPopups` は同じ入口のグリッドの部品を読み込むので、`/lite` のグリッドには `/lite` から import したものを使う。 |
+| `numberFormatter` / `preloadGridPopups` / `restoreColumnsFromState` と公開型すべて | 全部入りの入口と同じ名前・使い方。`preloadGridPopups` は同じ入口のグリッドの部品を読み込むので、`/lite` のグリッドには `/lite` から import したものを使う。 |
 
 - **props・ref ハンドル・型は全部入りと共通**。差し込んでいない機能の prop を渡したり、その機能のメソッドを呼んだりしても何もしない(落ちない)。開発ビルドでだけ、prop ごとに 1 回 `console.warn` で「`features` に `fillHandle: fillHandleFeature` を入れてください」のように足すべき機能を知らせる(本番ビルドでは出さない)。prop を持たない機能のメソッド(`exportCsv` / `downloadCsv` / `getExportData` と、`toolPanel` か `filtering` が無いときの `openFilterManager`)は、呼ばれた時点で同じように知らせる。ほかの機能のメソッド(`openFind` など)は全部入りでもその機能の prop が無いと動かないので、prop の警告で知らせる。列定義を機能違いのグリッドで共有するときは、`filtering` の無い方に `enableColumnFilter={false}` を書けば列の `filterType` の警告は出ない。
 - **全部入りで既定オンの機能は、差し込んだときだけ既定オン**: 列フィルター / グローバルフィルター(`filtering`)、列メニュー(`columnMenu`)、列のドラッグ並べ替え(`columnReorder`。`onColumnsChange` 指定時)、列境界のダブルクリックでの幅の自動調整(`columnAutosize`)、選択範囲の集計(`selectionAggregates`)、コピー範囲の点線(`motionExtras`)。これらは prop を書かずに効くので、入れなくても開発時の警告は出ない。全部入りと同じ既定の動きにするなら `{ ...standardFeatures, columnReorder: columnReorderFeature, selectionAggregates: selectionAggregatesFeature, motionExtras: motionExtrasFeature }`(`standardFeatures` に入っていないのは後ろの 3 つ)。

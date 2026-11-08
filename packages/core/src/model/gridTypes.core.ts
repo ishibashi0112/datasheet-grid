@@ -2428,7 +2428,8 @@ export type SpreadsheetGridHandle<T> = {
    * へ渡す(`Ctrl/Cmd+Z` / `undo()` で戻せる)。`rows` を外から直接差し替えると履歴は消えるので、
    * 元に戻せるようにしたい変更はこれで渡す。履歴が無効(`enableUndoRedo={false}` / `readOnly`)
    * なら積まずに `onRowsChange` へ渡す。`onRowsChange` が無いとき・serverSide
-   * では何もしない(開発時に警告)。
+   * では何もしない(開発時に警告)。渡すのは次の行の配列で、関数(`setRows((prev) => …)` の形)
+   * は受けない(今の `rows` から次の配列を作って渡す)。
    */
   applyRows: (nextRows: T[]) => void;
 
@@ -2793,9 +2794,9 @@ export type SpreadsheetGridProps<T, F extends GridFrameworkTypes = GridFramework
    * `filters.globalText` だけは、時間を分けて評価するので最初の描画の少し後に効く)、`getState()`
    * もその値を返す。マウント時は `onStateChange` / `onFiltersChange` / `onSortChange` を呼ばない。
    * `getState()` の値をそのまま渡せる(列メタの `columns` は使わない。列の並び / 表示 / 固定は
-   * `columns` prop で決める。`columns` prop と違うときだけ開発時に警告)。今の `columns`
-   * に無い列の幅 / フィルター / ソートは捨てる(開発時に警告)。URL
-   * のクエリや保存した状態から戻すときに使う。
+   * `columns` prop で決める。保存した値から戻すときは `restoreColumnsFromState(columns, saved)`
+   * で作った配列を渡す。`columns` prop と違うときだけ開発時に警告)。今の `columns` に無い列の幅 /
+   * フィルター / ソートは捨てる(開発時に警告)。URL のクエリや保存した状態から戻すときに使う。
    */
   initialState?: Omit<GridStatePatch, 'columns'>;
   // 追加(change-callbacks): フィルター / ソートの状態が**実際に変化したとき**だけ、そのスライスの複製を渡して

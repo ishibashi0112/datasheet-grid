@@ -7,6 +7,7 @@ import { render, cleanup, act } from '@testing-library/react';
 import { createRef, StrictMode } from 'react';
 
 import { SpreadsheetGrid } from './SpreadsheetGrid';
+import { restoreColumnsFromState } from './common';
 import { installJsdomLayoutStubs } from './testing';
 import type {
   GridColumn,
@@ -113,6 +114,44 @@ describe('initialState(DU-12)', () => {
     expect(warn.mock.calls.some(([message]) => String(message).includes('initialState') && String(message).includes('gone'))).toBe(
       true,
     );
+  });
+
+  // 追加(段階 2 の確かめ直し): getState() を保存して initialState へ渡しても、列の並び / 表示 / 固定は戻らず(columns prop で
+  //   決めるため)、保存した columns を列定義へ当てる方法が無かった(アプリが関数を自作していた)。
+  it('restoreColumnsFromState: 保存した状態の列の並び / 表示 / 固定を列定義へ当てる(initialState と一緒に渡すと警告しない)', () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const saved: GridState = {
+      version: 2,
+      columnWidths: { qty: 140 },
+      filters: { globalText: '', columnFilters: {} },
+      sort: [],
+      columns: [{ key: 'gone' }, { key: 'qty', pinned: 'left' }, { key: 'name', visible: false }],
+    };
+    const restored = restoreColumnsFromState(columns, saved);
+    expect(restored.map((column) => [column.key, column.pinned, column.visible])).toEqual([
+      ['qty', 'left', undefined],
+      ['name', undefined, false],
+    ]);
+    // 列定義のほかの項目(title / width / filterType)はそのまま。保存の幅は列定義へ焼き込まない(initialState の columnWidths で戻す)。
+    expect(restored[0]).toMatchObject({ title: '数量', width: 100, filterType: 'number' });
+    // 保存した columns が無い / 読めない値なら、渡した列定義をそのまま返す。
+    expect(restoreColumnsFromState(columns, undefined)).toBe(columns);
+    expect(restoreColumnsFromState(columns, { sort: [] })).toBe(columns);
+    expect(restoreColumnsFromState(columns, 'broken')).toBe(columns);
+
+    const ref = createRef<SpreadsheetGridHandle<Row>>();
+    render(
+      <SpreadsheetGrid<Row>
+        ref={ref}
+        rows={rows}
+        columns={restored}
+        rowKeyGetter={(row) => row.id}
+        height={300}
+        initialState={saved}
+      />,
+    );
+    expect(ref.current?.getState().columnWidths).toEqual({ qty: 140 });
+    expect(warn.mock.calls.some(([message]) => String(message).includes('initialState の columns'))).toBe(false);
   });
 
   // 追加(段階 2 の確かめ直し N2-4): StrictMode(Next.js の開発時の既定)では状態の初期化が 2 回呼ばれ、同じ警告が 2 回ずつ出ていた。

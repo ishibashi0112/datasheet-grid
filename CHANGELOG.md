@@ -17,7 +17,8 @@
 ### 追加
 
 - 列見出しの水平寄せ `GridColumn.headerAlign`(`'left' | 'center' | 'right'`。書かなければ列の `align` と同じ)。右寄せの見出しは並びが鏡写しになり、並べ替えの矢印とフィルターの印がラベルの左、ホバーで出る grip と ⋮ も左に出ます。中央は文字だけ中央です。CSS のクラス `.ssg-header-cell--align-right` / `.ssg-header-cell--align-center` も公開しました。
-- 状態の初期値 `initialState`(列幅 / フィルター / ソート。`getState()` の値をそのまま渡せる)。最初の 1 回(マウント時)だけ使い、最初の描画・サーバーの描画・serverSide の最初の `getRows` から効きます。これまでは最初の描画の後に `applyState` を呼ぶしかなく、serverSide はまず条件なしで取りに行き、Next.js などでは URL から戻した絞り込みがサーバーの描画に載りませんでした。マウント時は `onStateChange` などを呼びません。列の並び / 表示 / 固定(`columns`)は使いません。
+- 状態の初期値 `initialState`(列幅 / フィルター / ソート。`getState()` の値をそのまま渡せる)。最初の 1 回(マウント時)だけ使い、最初の描画・サーバーの描画・serverSide の最初の `getRows` から効きます。これまでは最初の描画の後に `applyState` を呼ぶしかなく、serverSide はまず条件なしで取りに行き、Next.js などでは URL から戻した絞り込みがサーバーの描画に載りませんでした。マウント時は `onStateChange` などを呼びません。列の並び / 表示 / 固定(`columns`)は使いません(保存した値から戻すときは、下の `restoreColumnsFromState` で作った列定義を `columns` に渡します)。
+- 関数 `restoreColumnsFromState(columns, saved)`: 保存した状態(`getState()` の値)の列の並び / 表示 / 固定を列定義へ当てた新しい配列を返します(`applyState` と同じ規則)。`initialState` は列メタを使わないので、これまでは保存した列の並びを最初の描画から戻す方法が無く、同じ関数を自作する必要がありました。
 - ハンドル `applyRows(nextRows)`: 外からの変更(行の削除ボタンなど)を「元に戻す」の履歴に積んでから `onRowsChange` へ渡します。`rows` を外から差し替えると履歴が消えるので、これまでは外の変更を元に戻せませんでした。
 - ハンドル `getRowNumber(rowKey)`: 行番号の列に出ている番号(1 始まり)を返します。ラベル行は数えないので、ラベル行があると `getViewRowIndex(rowKey) + 1` とは違います。ラベル行のキーと表示に無い行は `null` です。
 - 文言の prop `localeText`(型 `GridLocaleText`)。今は上部 / 下部バーの文言で、変えたいキーだけを渡します(`{ rowCount: 'Rows: {shown} / {total}' }`)。英語にする例とキーの一覧は API リファレンスの「バーの文言」にあります。`derivedSummary` に、下部バーの列数の文字 `selectedColumnsText` を足しました。

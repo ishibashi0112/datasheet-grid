@@ -4,6 +4,8 @@
 //   読み込みます。
 // 値フォーマッタ(UI 表示のみ)の組み込みファクタ。利用側も CellValueFormatter で自作可。
 export { numberFormatter } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/valueFormatters';
+// 追加(段階 2 の確かめ直し): 保存した状態(getState() の値)の列の並び / 表示 / 固定を列定義へ当てます(initialState と一緒に使う)。
+export { restoreColumnsFromState } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/gridState';
 // 追加(lazy-popups): 列フィルターポップオーバー / ツールパネルの部品(別チャンク)を先に読み込みます
 //   (通常は不要。テストで開いた直後に同期で確かめるとき / 画面遷移前の先読み用)。
 export { preloadGridPopups } from './view/lazyPopups';

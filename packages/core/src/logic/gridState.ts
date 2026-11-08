@@ -481,6 +481,25 @@ export const applyColumnState = <T,>(
   // 3) pane 連結正規化(grid の reorder と同じ視覚順)。
   return reorderColumnsByPane(ordered);
 };
+
+// 追加(段階 2 の確かめ直し): 保存した状態(getState() の値)の列メタ(並び / 表示 / 固定)を列定義へ当てた新しい配列を返す
+//   公開の関数です。initialState は列メタを使わない(列は columns prop で決める)ので、マウントの前にこれで columns を作ります
+//   (これまでは方法が無く、アプリが同じ関数を自作していた)。applyState と同じ規則(保存に無い列は末尾、今の列に無い保存の
+//   列は捨てる、固定列ごとに並べ直す)で、幅は列定義へ焼き込みません(initialState の columnWidths で戻す)。保存した columns が
+//   無い / 読めないときは渡した配列をそのまま返します。
+export const restoreColumnsFromState = <C extends { key: string; visible?: boolean; pinned?: GridColumn<unknown>['pinned'] }>(
+  columns: C[],
+  state: unknown,
+): C[] => {
+  if (state === null || typeof state !== 'object') {
+    return columns;
+  }
+  const saved = migrateGridStatePatch(state).columns;
+  if (!saved) {
+    return columns;
+  }
+  return applyColumnState(columns as unknown as GridColumn<unknown>[], saved, {}) as unknown as C[];
+};
 // 追加(filter-ext C): ParsedTextFilter(テキスト条件)の構造等価です。
 const isSameParsedTextFilter = (
   a: ParsedTextFilter | null,
