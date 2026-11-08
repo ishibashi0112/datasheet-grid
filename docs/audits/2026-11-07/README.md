@@ -246,3 +246,22 @@
 | S2-B8 | 複数行のエディタで PageUp / PageDown を止めているので、中でスクロールする長い文を 1 画面ずつ動けない | 低 | 直さない。中がスクロールするときだけ入力欄に任せる形(`4dda769`)を試したが、実ブラウザ(Chromium)で入力欄の中と一緒にグリッドもスクロールし(入力欄が画面に収まっていても)、エディタの上の方が見出しの下へ隠れたため戻した(`41d80aa`)。中の移動はホイールか矢印キー / `Ctrl+Home` / `Ctrl+End` とドキュメントに書き、止めていることをテストとハーネスで固定 |
 
 問題が見つからなかった範囲(レビューの報告から): DU-24 の集計値の順の並べ替え、DU-22 の座標(行番号の列の固定と操作)、DU-23、DU-18、G1、DU-11、DF-23(A)/ `applyRows`(readOnly / 履歴が無効なとき / serverSide)、`getRowNumber`(ラベル行・グループ行)、lite-2(全選択の後の貼り付けの起点と範囲)、DU-25、DU-27、DF-24、DF-25(StrictMode)、DU-14 のキーの組み合わせ(ドキュメントどおり、IME の変換中も守られる、テキストエリアはグリッドのキー操作・貼り付けの対象外)、DU-32 の測り方、`theme="class"`(ポップアップ・ゴースト・ツールチップ・`GridAskBar`、SSR の不一致なし)(B)。
+
+## 10. 段階 2 の修正後の確認
+
+段階 2 の最後のコミット(見直しの修正の後)で回した。
+
+- ゲート: tsc(build / test)0、eslint 0 problems、vitest 2,348 tests / 241 files、build:lib、size:check、examples:check(3 つ)、website の `next build`。どれも緑。
+- 大きさ(esbuild の gzip、初期 JS): 全部入り 128.94KB / `/lite` 72.01KB / `standardFeatures` 92.46KB / `/ai` 12.42KB。0.62.0 から全部入りが +9.1KB(`@tanstack/virtual-core` 3.19 +3.2・DevBI の対応 +1.0・段階 2 の 22 件 +4.4・見直しの修正 +0.5)。1.0 の上限は今の値 + 2KB(全部入り 131.0 / `/lite` 74.0 / `standardFeatures` 94.5 / `/ai` 14.4KB。英語対応の見込みを含む。2026-11-08 ユーザー判断)で、英語対応の後に実測 + 0.5KB へ詰める。
+- Next.js 16.4.5 での大きさ(pack した tarball を作り直した Next.js のアプリへ入れ、グリッドのページ − 空のページ): 全部入り Turbopack 125.0 / webpack 128.8KB、`standardFeatures` Turbopack 90.2 / webpack 90.9KB。全部入りのページもあるアプリの `/lite` のページは Turbopack 97.2KB(うちページのコード 2.0)/ webpack 99.8KB で、文書の「約 85KB → 約 92KB」を「約 90KB → 約 97KB」に直した。
+- 実ブラウザのハーネス(`audit/harness/` の 16 本。段階 2 の確認 `t-stage2.mjs` を足した):
+
+| ブラウザ | 結果 | 落ちたもの |
+| --- | --- | --- |
+| Chromium 153 | 734 / 734 | なし |
+| Firefox 159 | 678 / 678 | なし |
+| WebKitGTK 2.52.6 | 674 / 677 | 既知の BR-3(t-priority の C5)と BR-4 ×2(t-fill)。どちらも 2026-11-03 のユーザーの判断で様子見 |
+
+- `t-stage2.mjs` は 3 つのブラウザとも 29 / 29。複数行のエディタで PageDown を押してもグリッドと入力欄が動かないこと(S2-B8 を戻した形)、展開行のカードがあるときの Tab の順(C-N2)、行番号の列の固定と行ヘッダーを押したときの行選択(DU-22)を含む。
+- React 18 のアプリ(作り直しの確認の react18-app。React 18.3.1 + StrictMode + Vite 7 + HeroUI + Tailwind v4)に pack した版を入れ直した: `tsc -b` + `vite build` は通り、利用側のテスト(Vitest + jsdom + RTL)は 6 本中 1 本が下部バーの文言(「Rows: 30 / 30」「Active: B…」)で落ちた。CHANGELOG の「挙動の変化」(DU-18)の案内どおり「行 30 / 30」「セル B…」に直すと 6 本とも通り、console の error / warn も出ない。開発サーバーで e2e(ラベル行をまたぐ範囲とコピー、モーダルの後のフォーカス、フィルターの Esc、set の候補、ラベル行の sticky)を流し、文言の違い(DU-18)と、行番号の列の固定で行が左のペインにも描かれること(DU-22)のほかは前と同じ結果。console の error は 0。
+- 回している途中で落ちたものは、ハーネス側の古い期待だけだった(ライブラリは変えていない)。t-features の行グルーピングの開閉のボタンは、DU-22 で行が左固定のペインにも描かれるようになったため、中央のペインのボタンに絞った。
