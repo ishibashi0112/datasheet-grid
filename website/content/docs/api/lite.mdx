@@ -62,7 +62,7 @@ export const OrdersTable = () => <Grid columns={columns} dataSource={dataSource}
 | --- | --- |
 | 全部入り(`SpreadsheetGrid`) | 約 130KB |
 | `/lite` 機能なし | 約 73KB |
-| `/lite` + `standardFeatures` | 約 93KB |
+| `/lite` + `standardFeatures` | 約 94KB |
 | `/lite` + `standardFeatures` + `serverSideFeature` | 約 98KB |
 
 - 各機能の目安は「機能なし」に 1 つだけ足したときの増え方で、組み合わせると共通部分のぶん合計より少し小さくなる。バンドラーによって数 KB 前後する(0.61.0 の全部入りの実測で、Vite 8(Rolldown)は esbuild より約 1.5KB 小さく、Vite 7(Rollup)はほぼ同じ。Next.js 16 では webpack が Turbopack より約 4KB 大きい)。
