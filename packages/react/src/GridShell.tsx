@@ -17,6 +17,7 @@ import {
   useSyncExternalStore,
   type CSSProperties,
   type FocusEvent,
+  type KeyboardEvent as ReactKeyboardEvent,
   type PointerEvent,
   type MouseEvent as ReactMouseEvent,
   // 追加(UP-1): 統合ツールパネルのタブ別コンテンツテーブルの型に使います。
@@ -39,10 +40,16 @@ import { createGridEngine } from '@ishibashi0112/spreadsheet-grid-core/internal/
 import { useControllerLifecycle } from './hooks/useController';
 // 追加(G-2): IME オンのままの直接入力(imeDirectInput)の入力受けの属性名です。
 // 変更(差し込み式 段階 2): 入力してよいセルの判定 / 編集の初期値の決定は機能セット(features.imeDirectInput)から。
-import { IME_INPUT_ATTRIBUTE } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/domGuards';
+import { IME_INPUT_ATTRIBUTE, isImeComposingKeyEvent } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/domGuards';
 
 import { gridActions } from '@ishibashi0112/spreadsheet-grid-core/internal/model/gridActions';
 import { resolveFirstDataCell } from '@ishibashi0112/spreadsheet-grid-core/internal/controllers/keyboardController';
+// 追加(段階 2 C-N2): 展開行のカードと Tab の順番(最終列 → その行のカード → 表の外。Shift+Tab は逆順)。
+import {
+  findDetailCard,
+  focusDetailCardEdge,
+  isTabEdgeOfCard,
+} from '@ishibashi0112/spreadsheet-grid-core/internal/controllers/detailTabOrder';
 import { useGridStore, useGridViewState } from './hooks/useGridStore';
 import { PortalTokenSourceContext } from './hooks/usePortalTokens';
 import {
@@ -508,6 +515,10 @@ export function useGridShell<T extends object>({
   //           集約し、固定列は position: sticky で横方向だけ留めることで、全ペインが同一
   //           ネイティブスクロールで動き、ズレが原理的に発生しなくなります。
   const scrollContainerRef = useRef<HTMLDivElement | null>(null);
+  // 追加(段階 2 C-N2): 表の直後の目印(展開行があるときだけ描く)。表の外へ出す Tab の既定動作の起点にし、表の後ろから
+  //   Shift+Tab で戻ってきたときはアクティブセルの行のカード(無ければシェル)へ移します。
+  const tableExitRef = useRef<HTMLSpanElement | null>(null);
+  const tableExitFocusingRef = useRef(false);
 
   // 追加(10-B): 左固定ペインの要素 ref です（clientX のペイン判定に使います）。
   const leftPaneScrollRef = useRef<HTMLDivElement | null>(null);
@@ -2549,6 +2560,98 @@ export function useGridShell<T extends object>({
     [rowModel, detailIsExpandable, toggleDetailRowAt],
   );
 
+  // 追加(段階 2 C-N2): 展開行のカードと Tab の順番です。最終列の Tab は、その行のカードが開いていればカードの最初の要素へ、
+  //   カードの最後の要素の Tab は表の外へ(別の行のカードを通らない)。Shift+Tab は逆順(カードの最初の要素 → その行の
+  //   最終列のセル、表の後ろから戻るとアクティブセルの行のカードの最後の要素)。これまではブラウザの既定(DOM の順)で、
+  //   画面の上の方にある別の行の開いたカードへ入っていました。カードが 1 枚も描かれていなければ従来どおり既定の動きです。
+  const hasDetailCards = detailRowEnabled && detailEntries.length > 0;
+  const moveFocusPastTable = useCallback(() => {
+    const exit = tableExitRef.current;
+    if (!exit) {
+      return;
+    }
+    // 既定動作(Tab)は今のフォーカスの位置から進むので、表の直後の目印へ移しておくと表の外(または検索バー / エラーバー)へ出ます。
+    tableExitFocusingRef.current = true;
+    try {
+      exit.focus({ preventScroll: true });
+    } finally {
+      tableExitFocusingRef.current = false;
+    }
+  }, []);
+  const handleTabPastLastColumn = useCallback(
+    (viewRowIndex: number): boolean => {
+      const scroll = scrollContainerRef.current;
+      if (!hasDetailCards || !scroll) {
+        return false;
+      }
+      const card = findDetailCard(scroll, viewRowIndex);
+      if (card && focusDetailCardEdge(card, 'first')) {
+        return true;
+      }
+      moveFocusPastTable();
+      return false;
+    },
+    [hasDetailCards, moveFocusPastTable],
+  );
+  const handleDetailCardKeyDown = useCallback(
+    (event: ReactKeyboardEvent<HTMLDivElement>, viewRowIndex: number) => {
+      if (
+        event.key !== 'Tab' ||
+        event.defaultPrevented ||
+        event.altKey ||
+        event.ctrlKey ||
+        event.metaKey ||
+        isImeComposingKeyEvent(event.nativeEvent)
+      ) {
+        return;
+      }
+      const target = event.target;
+      if (!(target instanceof Element) || !isTabEdgeOfCard(event.currentTarget, target, event.shiftKey ? 'backward' : 'forward')) {
+        return;
+      }
+      if (!event.shiftKey) {
+        moveFocusPastTable();
+        return;
+      }
+      // Shift+Tab: カードの最初の要素から、その行の最終列のセルへ戻ります。
+      const lastCol = orderedColumns.length - 1;
+      if (lastCol < 0) {
+        return;
+      }
+      event.preventDefault();
+      const cell = { row: viewRowIndex, col: lastCol };
+      dispatch(gridActions.startSelection(cell));
+      dispatch(gridActions.endSelection());
+      dispatch(gridActions.activateCell(cell));
+      gridRootRef.current?.focus({ preventScroll: true });
+      scrollRestoredCellIntoView(cell);
+    },
+    [moveFocusPastTable, orderedColumns.length, dispatch, scrollRestoredCellIntoView],
+  );
+  const handleTableExitFocus = useCallback(
+    (event: FocusEvent<HTMLSpanElement>) => {
+      if (tableExitFocusingRef.current) {
+        return;
+      }
+      // 後ろ(表の外 / 検索バーなど)から Shift+Tab で来たら、アクティブセルの行のカードの最後の要素へ。前(表の中)から来たときと
+      //   カードが無いときはシェルへ(見えない目印にフォーカスを残さない)。
+      const related = event.relatedTarget;
+      const cameBackward =
+        !(related instanceof Node) ||
+        (event.currentTarget.compareDocumentPosition(related) & Node.DOCUMENT_POSITION_FOLLOWING) !== 0;
+      const active = uiState.activeCell;
+      const scroll = scrollContainerRef.current;
+      if (cameBackward && active && scroll) {
+        const card = findDetailCard(scroll, active.row);
+        if (card && focusDetailCardEdge(card, 'last')) {
+          return;
+        }
+      }
+      gridRootRef.current?.focus({ preventScroll: true });
+    },
+    [uiState.activeCell],
+  );
+
   // 追加(dogfood DF-08): スクロールする要素そのものにフォーカスが来たら(余白やスクロールバーのクリックなど)、シェルへ移します。
   const handleScrollContainerFocus = useCallback((event: FocusEvent<HTMLDivElement>) => {
     if (event.target === event.currentTarget) {
@@ -2620,6 +2723,8 @@ export function useGridShell<T extends object>({
     onToggleDetailRow: detailRowEnabled ? toggleDetailRowFromKeyboard : undefined,
     resolvePageRow,
     openColumnMenu: columnMenuEnabled ? openColumnMenuForCell : undefined,
+    // 追加(段階 2 C-N2): 最終列の Tab をその行の展開行のカードへ。
+    onTabPastLastColumn: detailRowEnabled ? handleTabPastLastColumn : undefined,
   });
 
   // ── edit controller ───────────────────────────────────
@@ -4507,6 +4612,7 @@ export function useGridShell<T extends object>({
                 <GridDetailLayer
                   slots={slots}
                   entries={detailEntries}
+                  onCardKeyDown={handleDetailCardKeyDown}
                   mode="center"
                   paneWidth={centerContentWidth}
                   cardStickyLeft={detailCardStickyLeft}
@@ -4767,6 +4873,16 @@ export function useGridShell<T extends object>({
           )}
         </div>
         {/* ── /共有スクロールコンテナ ── */}
+        {/* 追加(段階 2 C-N2): 表の直後の目印(展開行があるときだけ)。Tab の順番に入れるのはカードが描かれているときだけです。 */}
+        {detailRowEnabled ? (
+          <span
+            ref={tableExitRef}
+            className="ssg-tab-exit"
+            tabIndex={hasDetailCards ? 0 : -1}
+            aria-hidden="true"
+            onFocus={handleTableExitFocus}
+          />
+        ) : null}
 
         {/* 追加(scrollHint): スクロール位置インジケーター(行番号バブル)です。autosize /
             filter overlay と同じくシェルへの絶対配置・pointer-events: none の装飾オーバーレイ。

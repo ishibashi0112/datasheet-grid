@@ -524,3 +524,131 @@ describe('展開中の行を rows から消す(DF-25)', () => {
     expect(ref.current?.getExpandedDetailRowKeys()).toEqual(['a', 'z']);
   });
 });
+
+// 追加(段階 2 C-N2): 最終列の Tab は、その行のカードが開いていればカードの中へ、カードの最後でグリッドの外へ。Shift+Tab は逆順。
+//   これまではブラウザの既定(DOM の順)で、画面の上の方にある別の行のカードへ入っていました。jsdom はフォーカスの既定の
+//   移動をしないので、既定動作を止めたか(fireEvent の戻り値が false)と、既定動作の前にフォーカスをどこへ移したかを見ます
+//   (実際の移動は監査ハーネスで Chromium / Firefox / WebKit を確認)。
+describe('展開行のカードと Tab(C-N2)', () => {
+  // 列の並び: 0 = 展開トグル列, 1 = ID, 2 = 名称, 3 = 数量(最終列)。カードの中は「閉じる」ボタン → 入力欄。
+  const LAST_COL = 3;
+  const cardOf = (container: HTMLElement, rowIndex: number) =>
+    container.querySelector<HTMLElement>(`.ssg-detail-band[data-detail-row-index="${rowIndex}"] .ssg-detail-card`);
+  const renderGrid = (expanded: string[]) => {
+    const ref = createRef<SpreadsheetGridHandle<Row>>();
+    const view = render(
+      <div>
+        <SpreadsheetGrid ref={ref} columns={columns} rows={rows} rowKeyGetter={rowKeyGetter} detailRow={detailRow} />
+        <button type="button">表の後ろ</button>
+      </div>,
+    );
+    act(() => {
+      for (const key of expanded) ref.current?.setDetailRowExpanded(key, true);
+    });
+    return { ref, container: view.container, shell: getShell(view.container) };
+  };
+
+  it('最終列の Tab は、その行のカードが開いていればカードの最初の要素へ(既定動作を止める)', () => {
+    const { ref, container, shell } = renderGrid(['a', 'c']);
+    act(() => {
+      ref.current?.setActiveCell({ row: 2, col: LAST_COL });
+    });
+    shell.focus();
+    expect(fireEvent.keyDown(shell, { key: 'Tab' })).toBe(false);
+    expect(document.activeElement).toBe(cardOf(container, 2)?.querySelector('button'));
+  });
+
+  it('その行のカードが無ければ、別の行のカードを飛ばして表の直後の目印へ移し、既定動作で外へ出す', () => {
+    const { ref, container, shell } = renderGrid(['a']);
+    act(() => {
+      ref.current?.setActiveCell({ row: 2, col: LAST_COL });
+    });
+    shell.focus();
+    expect(fireEvent.keyDown(shell, { key: 'Tab' })).toBe(true);
+    expect(document.activeElement).toBe(container.querySelector('.ssg-tab-exit'));
+    // 最終列でなければこれまでどおり右のセルへ(既定動作を止める)。
+    act(() => {
+      ref.current?.setActiveCell({ row: 2, col: 1 });
+    });
+    shell.focus();
+    expect(fireEvent.keyDown(shell, { key: 'Tab' })).toBe(false);
+    expect(ref.current?.getActiveCell()).toEqual({ row: 2, col: 2 });
+    expect(document.activeElement).toBe(shell);
+  });
+
+  it('カードの最後の要素の Tab は表の外へ、最初の要素の Shift+Tab はその行の最終列のセルへ。途中の要素は既定のまま', () => {
+    const { ref, container, shell } = renderGrid(['a', 'c']);
+    act(() => {
+      ref.current?.setActiveCell({ row: 0, col: 1 });
+    });
+    const card = cardOf(container, 2);
+    const button = card?.querySelector<HTMLButtonElement>('button');
+    const input = card?.querySelector<HTMLInputElement>('input');
+    expect(button && input).toBeTruthy();
+    // 途中(ボタンの次に入力欄がある)は既定動作のまま。
+    button!.focus();
+    expect(fireEvent.keyDown(button!, { key: 'Tab' })).toBe(true);
+    expect(document.activeElement).toBe(button);
+    // 最後の要素: 表の直後の目印へ移して既定動作で外へ。
+    input!.focus();
+    expect(fireEvent.keyDown(input!, { key: 'Tab' })).toBe(true);
+    expect(document.activeElement).toBe(container.querySelector('.ssg-tab-exit'));
+    // 最初の要素の Shift+Tab: その行(2)の最終列のセルへ戻り、フォーカスはシェル。
+    button!.focus();
+    expect(fireEvent.keyDown(button!, { key: 'Tab', shiftKey: true })).toBe(false);
+    expect(ref.current?.getActiveCell()).toEqual({ row: 2, col: LAST_COL });
+    expect(document.activeElement).toBe(shell);
+    // 最後の要素の Shift+Tab は既定のまま(ボタンへ)。
+    input!.focus();
+    expect(fireEvent.keyDown(input!, { key: 'Tab', shiftKey: true })).toBe(true);
+  });
+
+  it('表の後ろから Shift+Tab で目印に来たら、アクティブセルの行のカードの最後の要素へ。カードが無い行・表の中から来たときはシェルへ', () => {
+    const { ref, container, shell } = renderGrid(['a', 'c']);
+    const exit = container.querySelector<HTMLElement>('.ssg-tab-exit');
+    const after = Array.from(container.querySelectorAll('button')).find((b) => b.textContent === '表の後ろ');
+    expect(exit?.tabIndex).toBe(0);
+    act(() => {
+      ref.current?.setActiveCell({ row: 2, col: 1 });
+    });
+    after!.focus();
+    act(() => {
+      exit!.focus();
+    });
+    expect(document.activeElement).toBe(cardOf(container, 2)?.querySelector('input'));
+    // カードが無い行(b)なら、シェルへ。
+    act(() => {
+      ref.current?.setActiveCell({ row: 1, col: 1 });
+    });
+    after!.focus();
+    act(() => {
+      exit!.focus();
+    });
+    expect(document.activeElement).toBe(shell);
+    // 表の中(シェル)から来たときもシェルへ(見えない目印にフォーカスを残さない)。
+    act(() => {
+      ref.current?.setActiveCell({ row: 2, col: 1 });
+    });
+    shell.focus();
+    act(() => {
+      exit!.focus();
+    });
+    expect(document.activeElement).toBe(shell);
+  });
+
+  it('カードが 1 枚も無いときは目印を Tab の順番に入れず、最終列の Tab は従来どおり既定動作(フォーカスを動かさない)', () => {
+    const { ref, container, shell } = renderGrid([]);
+    expect(container.querySelector<HTMLElement>('.ssg-tab-exit')?.tabIndex).toBe(-1);
+    act(() => {
+      ref.current?.setActiveCell({ row: 2, col: LAST_COL });
+    });
+    shell.focus();
+    expect(fireEvent.keyDown(shell, { key: 'Tab' })).toBe(true);
+    expect(document.activeElement).toBe(shell);
+  });
+
+  it('detailRow が無ければ目印を描かない', () => {
+    const { container } = render(<SpreadsheetGrid columns={columns} rows={rows} rowKeyGetter={rowKeyGetter} />);
+    expect(container.querySelector('.ssg-tab-exit')).toBeNull();
+  });
+});

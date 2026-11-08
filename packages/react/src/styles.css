@@ -1464,6 +1464,18 @@
   /* 追加(G-2): IME オンのままの直接入力(imeDirectInput)の入力受け。待機中は透明で操作を受けず(フォーカスだけ持つ)、
      IME の変換中はアクティブセルの上にエディタ(.ssg-cell-editor-input)と同じ見た目で変換中の文字を表示する。
      位置 / 寸法 / 寄せはコントローラがインラインで指定(シェル = position: relative 基準)。 */
+  /* 追加(段階 2 C-N2): 表の直後の目印(展開行があるとき)。Tab で表の外へ出るときの起点と、後ろから Shift+Tab で戻るときの
+     入口です(フォーカスはすぐカード / シェルへ移す)。見えない 1px の要素で、ポインタも受けません。 */
+  .ssg-tab-exit {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    opacity: 0;
+    pointer-events: none;
+  }
   .ssg-ime-input {
     position: absolute;
     top: 0;

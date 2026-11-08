@@ -217,6 +217,30 @@ describe('imeInputController', () => {
     controller.dispose();
   });
 
+  // 追加(段階 2 C-N2): グリッドが既定動作の前にフォーカスを別の場所(展開行があるときの表の直後の目印)へ移していれば、
+  //   ルートへ戻さない(戻すと既定の Tab がルートから進み、開いているカードへ入ってしまう)。
+  it('既定動作に任せた Tab でも、グリッドがもうフォーカスを移していればルートへ戻さない', () => {
+    const { root, input, args } = setup();
+    const exit = document.createElement('span');
+    exit.tabIndex = -1;
+    root.appendChild(exit);
+    const controller = createImeInputController();
+    controller.attach(input);
+    controller.update(args());
+    root.focus();
+    expect(document.activeElement).toBe(input);
+    input.addEventListener(
+      'keydown',
+      () => {
+        exit.focus();
+      },
+      { once: true },
+    );
+    input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Tab', bubbles: true, cancelable: true }));
+    expect(document.activeElement).toBe(exit);
+    controller.dispose();
+  });
+
   it('dispose 後の update でリスナーを付け直せる(StrictMode の二重マウント)', async () => {
     const { root, input, startEdit, args } = setup();
     const controller = createImeInputController();

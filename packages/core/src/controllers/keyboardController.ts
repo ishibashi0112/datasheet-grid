@@ -57,6 +57,9 @@ export type KeyboardControllerArgs<T> = {
   resolvePageRow?: (fromRow: number, direction: 1 | -1) => number;
   // 追加(別視点のレビュー): Alt+↓ でアクティブセルの列の列メニューを開く。開いたら true(列メニューが無い構成は未指定)。
   openColumnMenu?: (col: number) => boolean;
+  // 追加(段階 2 C-N2): 最終列の Tab。その行の展開行のカードへフォーカスを移したら true(既定動作を止める)。false のときは
+  //   既定動作で表の外へ出る(カードが開いていれば、既定動作の前にフォーカスを表の直後の目印へ移しておく)。展開行が無い構成は未指定。
+  onTabPastLastColumn?: (viewRowIndex: number) => boolean;
 };
 
 // 追加(dogfood DU-01): Home / Ctrl+Home / Ctrl+← で止まる先頭の列は、操作用の合成列(行ドラッグのハンドル列・展開トグル列)を
@@ -418,6 +421,10 @@ export const createKeyboardController = <T,>(): KeyboardController<T> => {
         ? currentCol <= 0
         : currentCol >= args.visibleColumns.length - 1;
       if (atEdge) {
+        // 変更(段階 2 C-N2): 最終列の Tab は、その行のカードが開いていればカードの中へ(無ければ別の行のカードを飛ばして外へ)。
+        if (!event.shiftKey && uiState.activeCell && args.onTabPastLastColumn?.(uiState.activeCell.row)) {
+          event.preventDefault();
+        }
         return;
       }
       event.preventDefault();

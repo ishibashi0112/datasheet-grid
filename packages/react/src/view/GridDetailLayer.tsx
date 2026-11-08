@@ -1,4 +1,4 @@
-import { memo, type CSSProperties, type ReactNode, type SyntheticEvent } from 'react';
+import { memo, type CSSProperties, type KeyboardEvent, type ReactNode, type SyntheticEvent } from 'react';
 import type { VerticalRow } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/verticalGeometry';
 import { cx } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/cx';
 import { mergeStyles } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/slotProps';
@@ -41,6 +41,9 @@ type GridDetailLayerProps = {
   cardSlot?: GridResolvedSlot;
   slots?: GridResolvedSlots;
   renderCard: (entry: GridDetailLayerEntry) => ReactNode;
+  // 追加(段階 2 C-N2): カードの中の keydown(グリッド本体へは伝えない)。カードの端の Tab / Shift+Tab の行き先を決めます
+  //   (最後の要素の Tab は表の外へ、最初の要素の Shift+Tab はその行の最終列のセルへ)。
+  onCardKeyDown?: (event: KeyboardEvent<HTMLDivElement>, viewRowIndex: number) => void;
 };
 
 // イベント境界: グリッド本体(shell)の onKeyDown / onPaste / onContextMenu / onDragStart や
@@ -58,6 +61,7 @@ function GridDetailLayerInner({
   cardSlot,
   slots,
   renderCard,
+  onCardKeyDown,
 }: GridDetailLayerProps) {
   if (entries.length === 0) {
     return null;
@@ -103,7 +107,10 @@ function GridDetailLayerInner({
                   )}
                   style={mergeStyles(slots?.detailCard?.style, cardSlot?.style)}
                   data-ssg-detail=""
-                  onKeyDown={stopPropagation}
+                  onKeyDown={(event) => {
+                    onCardKeyDown?.(event, virtualRow.index);
+                    event.stopPropagation();
+                  }}
                   onKeyUp={stopPropagation}
                   onPaste={stopPropagation}
                   onCopy={stopPropagation}
