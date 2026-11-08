@@ -3777,7 +3777,15 @@ export function useGridShell<T extends object>({
       canResetColumns={Boolean(onColumnsChange)}
       onResetColumns={handleColumnMenuResetColumns}
       onGroupByColumn={
-        columnMenuGroupingAvailable && openedMenuColumn.aggFunc == null && openedMenuColumn.rowGroup !== true
+        // 修正(段階 2 の見直し): 表に出ている最後のデータ列は出さない(自動グループ列だけが残ると列メニューが無くなり、
+        //   「グループ化を外す」へ戻れなかった。列の表示 / 非表示の「最後の 1 列は外せない」と同じ)。
+        columnMenuGroupingAvailable &&
+        openedMenuColumn.aggFunc == null &&
+        openedMenuColumn.rowGroup !== true &&
+        visibleColumns.some(
+          (column) =>
+            column.key !== openedMenuColumn.key && column.rowGroup !== true && !isSyntheticColumnKey(column.key),
+        )
           ? () => handleColumnMenuGroupBy(openedMenuColumn.key)
           : undefined
       }

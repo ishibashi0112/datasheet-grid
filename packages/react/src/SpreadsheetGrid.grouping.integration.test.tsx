@@ -694,6 +694,39 @@ describe('列メニューからのグループ化 / 集計値の順(DU-24)', () 
     expect(menuItem('この列でグループ化')).toBeUndefined();
   });
 
+  // 修正(段階 2 の見直し): 表に出ている最後のデータ列はグループ化に出さない(自動グループ列だけが残ると、列メニューが
+  //   無くなり「グループ化を外す」へ戻れなかった。列の表示 / 非表示の「最後の 1 列は外せない」と同じ)。
+  it('表に出ている最後のデータ列(集計の列を含む)には「この列でグループ化」を出さない', () => {
+    const { container } = render(
+      <Controlled
+        initialColumns={[
+          { key: 'region', title: '地域', width: 100, rowGroup: true },
+          { key: 'rep', title: '担当', width: 100 },
+          { key: 'qty', title: '数量', width: 100, visible: false },
+        ]}
+      />,
+    );
+    // 表に出ているデータ列は rep だけ(region はグループ元、qty は非表示)。
+    openMenu(container, 'rep');
+    expect(menuItem('昇順で並び替え')).toBeDefined();
+    expect(menuItem('この列でグループ化')).toBeUndefined();
+    expect(menuItem('グループ化を外す')).toBeDefined();
+    cleanup();
+
+    // 集計の列が残るなら出す(集計の列のメニューから外せる)。
+    const second = render(
+      <Controlled
+        initialColumns={[
+          { key: 'region', title: '地域', width: 100, rowGroup: true },
+          { key: 'rep', title: '担当', width: 100 },
+          { key: 'qty', title: '数量', width: 100, aggFunc: 'sum' },
+        ]}
+      />,
+    );
+    openMenu(second.container, 'rep');
+    expect(menuItem('この列でグループ化')).toBeDefined();
+  });
+
   it('集計のある列で並べ替えると、グループもその集計値の順に並ぶ', () => {
     const ref = createRef<SpreadsheetGridHandle<SalesRow>>();
     const grouped = baseColumns.map((column) => (column.key === 'region' ? { ...column, rowGroup: true } : column));
