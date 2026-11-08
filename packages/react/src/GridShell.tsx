@@ -738,8 +738,23 @@ export function useGridShell<T extends object>({
       dispatch(gridActions.startSelection(cell));
       dispatch(gridActions.endSelection());
       gridRootRef.current?.focus({ preventScroll: true });
+      // 追加(段階 2 の確かめ直し C-N7): 戻したセルを見える範囲へ(背の高いカードを読み進めると、行は見出しの裏に隠れている)。
+      //   カードが消えた後の配置で測るため、次のフレームで。見えていれば動かさない。
+      requestAnimationFrame(() => {
+        engine.gridApi.scrollToCellInternal(cell.row, cell.col, 'auto');
+      });
     },
-    [dispatch, gridStore, orderedColumns],
+    [dispatch, engine, gridStore, orderedColumns],
+  );
+  // 追加(段階 2 の確かめ直し C-N6): ハンドルで閉じる(setDetailRowExpanded(key, false) / collapseAllDetailRows())ときも同じく
+  //   戻します(これまではフォーカスが body へ落ちていた)。
+  const returnFocusFromDetailCards = useCallback(
+    (viewIndexes: readonly number[]) => {
+      for (const viewIndex of viewIndexes) {
+        returnFocusFromDetailCard(viewIndex);
+      }
+    },
+    [returnFocusFromDetailCard],
   );
   const toggleDetailRowAt = useCallback(
     (rowKey: GridRowKey, viewIndex: number) => {
@@ -4072,6 +4087,7 @@ export function useGridShell<T extends object>({
     getUiState: gridStore.getState,
     // 追加(dogfood DU-02): focus() / startEditing() の委譲先(ルートへの focus は imeDirectInput 有効時は入力受けへ回る)。
     focusGrid: focusGridRoot,
+    beforeDetailRowsCollapse: returnFocusFromDetailCards,
     startEditCell: tryStartEditCell,
     headerHeight,
     verticalScaleFactor,

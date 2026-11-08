@@ -743,6 +743,45 @@ describe('展開行のカードと Tab(C-N2)', () => {
     expect(ref.current?.getActiveCell()).toEqual({ row: 2, col: LAST_COL });
   });
 
+  // 追加(段階 2 の 3 回目の確かめ直し C-N6 / C-N7): ハンドルの setDetailRowExpanded(key, false) / collapseAllDetailRows() で
+  //   閉じたときは、今もフォーカスが body へ落ちていた。戻したセルが見える範囲の外(背の高いカードを読み進めて行が見出しの裏)
+  //   でも表がスクロールせず、枠が見えなかった。どの閉じ方でも同じく戻し、次のフレームでそのセルを見える範囲へ。
+  it('ハンドルで閉じてもカードの中のフォーカスをその行のセルへ戻し、次のフレームでそのセルを見える範囲へ', async () => {
+    const manyRows: Row[] = [...rows, ...Array.from({ length: 60 }, (_, i) => ({ id: `r${i}`, name: `row${i}`, qty: 1 }))];
+    for (const close of [
+      (handle: SpreadsheetGridHandle<Row>) => handle.setDetailRowExpanded('c', false),
+      (handle: SpreadsheetGridHandle<Row>) => handle.collapseAllDetailRows(),
+    ]) {
+      const ref = createRef<SpreadsheetGridHandle<Row>>();
+      const { container } = render(
+        <SpreadsheetGrid ref={ref} columns={columns} rows={manyRows} rowKeyGetter={rowKeyGetter} detailRow={detailRow} />,
+      );
+      act(() => {
+        ref.current?.setDetailRowExpanded('c', true);
+        ref.current?.setActiveCell({ row: 2, col: 2 });
+      });
+      // カードを読み進めて、行 2 が見える範囲の上(見出しの裏)へ出た状態(jsdom の scrollTop は書いても 0 のままなので読む値を
+      //   固定する)。スクロールは scrollTo で見る。
+      const scroller = container.querySelector<HTMLElement>('.ssg-scroll-container')!;
+      Object.defineProperty(scroller, 'scrollTop', { configurable: true, get: () => 200, set: () => {} });
+      const scrollTo = vi.fn();
+      scroller.scrollTo = scrollTo as unknown as HTMLElement['scrollTo'];
+      cardOf(container, 2)?.querySelector<HTMLInputElement>('input')!.focus();
+      act(() => {
+        close(ref.current!);
+      });
+      expect(cardOf(container, 2)).toBeNull();
+      expect(ref.current?.getActiveCell()).toEqual({ row: 2, col: 2 });
+      expect(document.activeElement).toBe(getShell(container));
+      await act(async () => {
+        await new Promise((resolve) => requestAnimationFrame(() => resolve(null)));
+      });
+      const tops = scrollTo.mock.calls.map(([options]) => (options as ScrollToOptions).top ?? 200);
+      expect(tops.some((top) => top < 200)).toBe(true);
+      cleanup();
+    }
+  });
+
   it('detailRow が無ければ目印を描かない', () => {
     const { container } = render(<SpreadsheetGrid columns={columns} rows={rows} rowKeyGetter={rowKeyGetter} />);
     expect(container.querySelector('.ssg-tab-exit')).toBeNull();

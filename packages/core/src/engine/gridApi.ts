@@ -94,6 +94,9 @@ export type GridApiArgs<T> = {
   //   始めたら true。編集できないセルは false)。
   focusGrid?: () => void;
   startEditCell?: (cell: CellCoord) => boolean;
+  // 追加(段階 2 の確かめ直し C-N6): setDetailRowExpanded(key, false) / collapseAllDetailRows() で閉じる直前に、閉じる行の
+  //   view index を渡します(カードの中にフォーカスがあれば、その行のセルへ戻すのに使う。カードの DOM がまだあるうちに呼ぶ)。
+  beforeDetailRowsCollapse?: (viewRowIndexes: readonly number[]) => void;
   // 追加(dogfood DU-06): store の今の状態(レンダーを待たない)。applyState の「渡さないスライスは今のまま」と、直後の
   //   getState() が今の値を読むのに使います(続けて呼んだときに 1 つ前のレンダーの値で上書きしないため)。無ければ uiState。
   getUiState?: () => GridUiState;
@@ -742,6 +745,12 @@ export const createGridApi = <T,>(features: Pick<GridCoreFeatures, 'export' | 'g
           }
         }
       }
+      if (!expanded && s.beforeDetailRowsCollapse && currentUi(s).expandedDetailRowKeys.has(rowKey)) {
+        const index = findDetailRowIndex(s.rowModel, rowKey, s.detailIndexCacheRef.current, !s.isServerSide);
+        if (index >= 0) {
+          s.beforeDetailRowsCollapse([index]);
+        }
+      }
       s.dispatch(gridActions.setDetailRowExpanded(rowKey, expanded));
     },
     getExpandedDetailRowKeys: () => {
@@ -752,6 +761,14 @@ export const createGridApi = <T,>(features: Pick<GridCoreFeatures, 'export' | 'g
       const s = args;
       if (!s || !s.detailRowEnabled) {
         return;
+      }
+      if (s.beforeDetailRowsCollapse) {
+        const indexes = Array.from(currentUi(s).expandedDetailRowKeys, (rowKey) =>
+          findDetailRowIndex(s.rowModel, rowKey, s.detailIndexCacheRef.current, !s.isServerSide),
+        ).filter((index) => index >= 0);
+        if (indexes.length > 0) {
+          s.beforeDetailRowsCollapse(indexes);
+        }
       }
       s.dispatch(gridActions.setExpandedDetailRowKeys(new Set()));
     },
