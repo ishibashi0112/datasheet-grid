@@ -143,6 +143,13 @@ export type GridEngine<T> = {
 // 型だけの宣言です(ブラウザに process は無く、利用側のバンドラが process.env.NODE_ENV を文字列へ置き換える)。
 declare const process: { env: { NODE_ENV?: string } };
 
+// 追加(段階 2 の確かめ直し N3-3): 列を表示の順(左の固定 → 固定なし → 右の固定。各ペインの中は配列の順)に並べます。
+const toDisplayOrder = <C extends { pinned?: 'left' | 'right' }>(list: readonly C[]): C[] => [
+  ...list.filter((column) => column.pinned === 'left'),
+  ...list.filter((column) => column.pinned !== 'left' && column.pinned !== 'right'),
+  ...list.filter((column) => column.pinned === 'right'),
+];
+
 // 追加(段階 2 DU-12): initialState から初期の UI 状態を作ります。applyState と同じ正規化(壊れた入力を捨てる + 今の列に
 //   無い列の幅 / フィルター / ソートを捨てる)を通し、reducer の同じ action で畳み込みます。列メタ(columns)は使いません。
 // 修正(段階 2 の見直し): initialState の columns(getState() の値をそのまま渡すと入っている)が columns prop と同じ並び / 表示 /
@@ -153,8 +160,11 @@ const isSameColumnLayout = (
 ): boolean => {
   const byKey = new Map(columns.map((column) => [column.key, column]));
   const savedKeys = new Set(saved.map((entry) => entry.key));
-  const savedShared = saved.filter((entry) => byKey.has(entry.key));
-  const currentShared = columns.filter((column) => savedKeys.has(column.key));
+  // 変更(段階 2 の確かめ直し N3-3): 並びは表示の順(左の固定 → 固定なし → 右の固定)で比べます。途中の列を固定した状態は、保存した
+  //   columns では元の並びのまま固定の印だけが付き、restoreColumnsFromState は固定した列を先に並べるので、配列の順のまま
+  //   比べると見た目が同じでも警告していました。
+  const savedShared = toDisplayOrder(saved.filter((entry) => byKey.has(entry.key)));
+  const currentShared = toDisplayOrder(columns.filter((column) => savedKeys.has(column.key)));
   return (
     savedShared.length === currentShared.length &&
     savedShared.every((entry, index) => {

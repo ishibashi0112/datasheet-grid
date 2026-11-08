@@ -154,6 +154,26 @@ describe('initialState(DU-12)', () => {
     expect(warn.mock.calls.some(([message]) => String(message).includes('initialState の columns'))).toBe(false);
   });
 
+  // 追加(段階 2 の 3 回目の確かめ直し N3-3): 列メニューで途中の列を固定すると、保存した columns は元の並びのまま固定の印だけが
+  //   付き、restoreColumnsFromState は固定した列を先に並べる。並びの違いだけで「columns が違う」と警告していた(見た目は同じ)。
+  it('途中の列を固定した状態を restoreColumnsFromState で戻しても警告しない(並びは表示の順で比べる)', () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const threeColumns: GridColumn<Row>[] = [{ key: 'id', title: 'ID', width: 60 }, ...columns];
+    const saved: GridState = {
+      version: 2,
+      columnWidths: {},
+      filters: { globalText: '', columnFilters: {} },
+      sort: [],
+      columns: [{ key: 'id', pinned: 'left' }, { key: 'name' }, { key: 'qty', pinned: 'left' }],
+    };
+    const restored = restoreColumnsFromState(threeColumns, saved);
+    expect(restored.map((column) => column.key)).toEqual(['id', 'qty', 'name']);
+    render(
+      <SpreadsheetGrid<Row> rows={rows} columns={restored} rowKeyGetter={(row) => row.id} height={300} initialState={saved} />,
+    );
+    expect(warn.mock.calls.some(([message]) => String(message).includes('initialState の columns'))).toBe(false);
+  });
+
   // 追加(段階 2 の確かめ直し N2-4): StrictMode(Next.js の開発時の既定)では状態の初期化が 2 回呼ばれ、同じ警告が 2 回ずつ出ていた。
   it('StrictMode でも、同じ initialState への開発時の警告は 1 回だけ', () => {
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});

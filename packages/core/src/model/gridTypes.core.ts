@@ -2796,8 +2796,9 @@ export type SpreadsheetGridProps<T, F extends GridFrameworkTypes = GridFramework
    * もその値を返す。マウント時は `onStateChange` / `onFiltersChange` / `onSortChange` を呼ばない。
    * `getState()` の値をそのまま渡せる(列メタの `columns` は使わない。列の並び / 表示 / 固定は
    * `columns` prop で決める。保存した値から戻すときは `restoreColumnsFromState(columns, saved)`
-   * で作った配列を渡す。`columns` prop と違うときだけ開発時に警告)。今の `columns` に無い列の幅 /
-   * フィルター / ソートは捨てる(開発時に警告)。URL のクエリや保存した状態から戻すときに使う。
+   * で作った配列を渡す。並び / 表示 / 固定が `columns` prop と見た目で違うときだけ開発時に警告)。
+   * 今の `columns` に無い列の幅 / フィルター / ソートは捨てる(開発時に警告)。URL
+   * のクエリや保存した状態から戻すときに使う。
    */
   initialState?: Omit<GridStatePatch, 'columns'>;
   // 追加(change-callbacks): フィルター / ソートの状態が**実際に変化したとき**だけ、そのスライスの複製を渡して
