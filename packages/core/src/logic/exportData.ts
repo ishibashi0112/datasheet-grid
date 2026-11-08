@@ -1,4 +1,5 @@
 import type { GridColumn, GridExportData } from '../model/gridTypes.unbound';
+import type { GroupSubtotalLine } from './groupExport';
 import { getCellValue } from '../utils/permissions';
 import { labelExportCellText, totalExportCellText, type LabelExportLine } from './exportCsv';
 
@@ -27,7 +28,7 @@ export type BuildGridExportDataParams<T> = {
   // 追加(合計行 3A): 末尾に出す合計行の値(serializeRowsToCsv と同じ契約)。指定時は rowKinds も返します。
   totalLine?: ReadonlyArray<unknown>;
   // 追加(段階 2 DU-10): グループの小計の行(serializeRowsToCsv と同じ契約)。指定時は rowKinds も返します。
-  getGroupLine?: (rowIndex: number) => ReadonlyArray<unknown> | undefined;
+  getGroupLine?: (rowIndex: number) => GroupSubtotalLine | undefined;
 };
 
 // 行レンジ × 列集合から、列メタ(key / title)と 2 次元セル(value / text)を生成します。
@@ -62,10 +63,7 @@ export const buildGridExportData = <T,>({
       const groupLine = getGroupLine?.(rowIndex);
       if (groupLine) {
         rows.push(
-          columns.map((_, index) => {
-            const value = groupLine[index];
-            return { value: value ?? null, text: totalExportCellText(value) };
-          }),
+          columns.map((_, index) => ({ value: groupLine.values[index] ?? null, text: groupLine.texts[index] ?? '' })),
         );
         rowKinds?.push('group');
         continue;

@@ -2,8 +2,11 @@
 //   includeGroupRows: true のとき、全展開した表示順のグループ行を「小計の行」として出します。グループ元の列は
 //   祖先のグループの値、自分の段は「<ラベル> 小計」、それより下の段は空。集計のある列(aggFunc)はそのグループの
 //   集計値(生値。合計行と同じ)、ほかの列は空です。
+//   修正(段階 2 の見直し): グループ元の列の文字はデータ行と同じ規則(列の formatClipboardValue があればそれ)で
+//   整えます(これまでは生の値で、同じ列のデータ行と書き方が違っていた)。formatClipboardValue の row にはそのグループの
+//   最初の行を渡します(グループ元の列の値はグループの中で同じ)。空白のグループは「(空白)」のままです。
 import type { GridColumn, GridGroupRow } from '../model/gridTypes.unbound';
-import { groupIndexOfOrderValue, isGroupOrderValue } from './grouping';
+import { GROUP_EMPTY_LABEL, groupIndexOfOrderValue, isGroupOrderValue } from './grouping';
 
 // 小計の行の自分の段の文字(「関東 小計」)。
 export const GROUP_SUBTOTAL_SUFFIX = ' 小計';
@@ -17,24 +20,45 @@ type GroupSubtotalLineParams<T> = {
   columns: readonly GridColumn<T>[];
   // グループ元の列の key(階層の順)。
   groupColumnKeys: readonly string[];
+  // order の値(source index)→ 行。グループ元の列を formatClipboardValue で整えるときの row に使います。
+  getSourceRow?: (sourceIndex: number) => T | undefined;
 };
 
-// 表示順の index → 小計の行の値(列順)。グループ行でなければ undefined。行は使うときに組み立てます。
+// 小計の行の 1 行。values は生の値(getExportData の value)、texts は文字(CSV / getExportData の text)です。
+export type GroupSubtotalLine = { values: unknown[]; texts: string[] };
+
+const cellText = (value: unknown): string => (value == null ? '' : String(value));
+
+// 表示順の index → 小計の行(列順)。グループ行でなければ undefined。行は使うときに組み立てます。
 export const createGroupSubtotalLineGetter = <T,>({
   order,
   groups,
   columns,
   groupColumnKeys,
-}: GroupSubtotalLineParams<T>): ((index: number) => unknown[] | undefined) => {
-  // 各グループの祖先の値(段の順)。groups は DFS 順なので、段ごとの直近の値を持てば祖先が分かります。
-  const ancestorValues: unknown[][] = [];
-  const path: unknown[] = [];
+  getSourceRow,
+}: GroupSubtotalLineParams<T>): ((index: number) => GroupSubtotalLine | undefined) => {
+  // 各グループの祖先(段の順)。groups は DFS 順なので、段ごとの直近のグループを持てば祖先が分かります。
+  const ancestorGroups: GridGroupRow[][] = [];
+  const path: GridGroupRow[] = [];
   for (const group of groups) {
     path.length = group.level;
-    ancestorValues.push(path.slice());
-    path.push(group.value);
+    ancestorGroups.push(path.slice());
+    path.push(group);
   }
   const levelOfColumn = new Map(groupColumnKeys.map((key, level) => [key, level]));
+  // グループの最初の行(全展開した表示順で、グループ行の後の最初のデータ行)。
+  const firstRowAfter = (index: number): T | undefined => {
+    for (let position = index + 1; position < order.length; position += 1) {
+      const value = order[position];
+      if (value !== undefined && !isGroupOrderValue(value)) {
+        return getSourceRow?.(value);
+      }
+    }
+    return undefined;
+  };
+  // グループ元の列の値の文字(データ行と同じ規則。列に formatClipboardValue があればそれ、無ければ String(value ?? ''))。
+  const valueText = (value: unknown, column: GridColumn<T>, row: T | undefined): string =>
+    column.formatClipboardValue && row !== undefined ? column.formatClipboardValue(value, row) : cellText(value);
   return (index) => {
     const value = order[index];
     if (value === undefined || !isGroupOrderValue(value)) {
@@ -45,16 +69,43 @@ export const createGroupSubtotalLineGetter = <T,>({
     if (!group) {
       return undefined;
     }
-    const ancestors = ancestorValues[groupIndex] ?? [];
-    return columns.map((column) => {
+    const ancestors = ancestorGroups[groupIndex] ?? [];
+    let row: T | undefined;
+    let rowResolved = false;
+    const representativeRow = (): T | undefined => {
+      if (!rowResolved) {
+        row = firstRowAfter(index);
+        rowResolved = true;
+      }
+      return row;
+    };
+    const values: unknown[] = [];
+    const texts: string[] = [];
+    for (const column of columns) {
       const level = levelOfColumn.get(column.key);
       if (level !== undefined) {
         if (level < group.level) {
-          return ancestors[level];
+          const ancestorValue = ancestors[level]?.value;
+          values.push(ancestorValue);
+          texts.push(valueText(ancestorValue, column, representativeRow()));
+        } else if (level === group.level) {
+          // 空白のグループは「(空白) 小計」(画面のグループ行と同じ)。
+          const label = group.value === null ? GROUP_EMPTY_LABEL : valueText(group.value, column, representativeRow());
+          const text = `${label}${GROUP_SUBTOTAL_SUFFIX}`;
+          values.push(text);
+          texts.push(text);
+        } else {
+          values.push(undefined);
+          texts.push('');
         }
-        return level === group.level ? `${group.label}${GROUP_SUBTOTAL_SUFFIX}` : undefined;
+        continue;
       }
-      return Object.prototype.hasOwnProperty.call(group.aggregates, column.key) ? group.aggregates[column.key] : undefined;
-    });
+      const aggregate = Object.prototype.hasOwnProperty.call(group.aggregates, column.key)
+        ? group.aggregates[column.key]
+        : undefined;
+      values.push(aggregate);
+      texts.push(cellText(aggregate));
+    }
+    return { values, texts };
   };
 };

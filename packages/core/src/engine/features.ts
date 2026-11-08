@@ -55,8 +55,12 @@ export type GridCoreFeatures = {
     createChangeHighlightController: <T>() => ChangeHighlightController<T>;
   };
   // エクスポート(命令的 API の exportCsv / downloadCsv / getExportData)。
+  //   第 2 引数は機能セットの行グルーピング(小計の行を出力する行だけで組み直すときに使う。無ければ組み直さない)。
   export?: {
-    createExportCommands: <T>(getArgs: () => GridApiArgs<T> | null) => ExportCommands<T>;
+    createExportCommands: <T>(
+      getArgs: () => GridApiArgs<T> | null,
+      grouping?: GroupingFeature,
+    ) => ExportCommands<T>;
   };
   // 行の高さの実測(autoHeight): 描画済みセルの実測 + ResizeObserver のコントローラと、実測高さの行高ストア
   //   (縦レイアウトが prefix-sum の行メトリクスを作る)。

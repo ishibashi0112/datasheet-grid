@@ -1,4 +1,5 @@
 import type { GridColumn } from '../model/gridTypes.unbound';
+import type { GroupSubtotalLine } from './groupExport';
 import { getCellValue } from '../utils/permissions';
 
 // 追加(imperative API #1): CSV エクスポートの純ロジックです。ハンドル(SpreadsheetGridHandle の
@@ -65,7 +66,7 @@ export type SerializeRowsToCsvParams<T> = {
   totalLine?: ReadonlyArray<unknown>;
   // 追加(段階 2 DU-10): グループの小計の行です(includeGroupRows のとき呼び出し側が渡す)。getRow が undefined を
   //   返した index に対して getLabelLine より先に呼ばれ、値の列(エクスポート列順)を返せばその行を出力します。
-  getGroupLine?: (rowIndex: number) => ReadonlyArray<unknown> | undefined;
+  getGroupLine?: (rowIndex: number) => GroupSubtotalLine | undefined;
 };
 
 // 追加(label-row ④): ラベル行 1 行ぶんの出力値です(列順)。
@@ -114,7 +115,7 @@ export const serializeRowsToCsv = <T,>({
     if (!row) {
       const groupLine = getGroupLine?.(rowIndex);
       if (groupLine) {
-        lines.push(columns.map((_, index) => cellField(totalExportCellText(groupLine[index]))).join(delimiter));
+        lines.push(columns.map((_, index) => cellField(groupLine.texts[index] ?? '')).join(delimiter));
         continue;
       }
       const line = getLabelLine?.(rowIndex);

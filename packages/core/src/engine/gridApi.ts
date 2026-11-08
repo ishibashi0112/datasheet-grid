@@ -179,14 +179,17 @@ const BOTTOM_PIN_MS = 1000;
 
 // 変更(差し込み式 段階 2): エクスポート(exportCsv / downloadCsv / getExportData)は機能セットの export から
 //   (engine/exportCommands)。無ければ代役(空を返す)。
-export const createGridApi = <T,>(features: Pick<GridCoreFeatures, 'export'> = {}): GridApi<T> => {
+export const createGridApi = <T,>(features: Pick<GridCoreFeatures, 'export' | 'grouping'> = {}): GridApi<T> => {
   let args: GridApiArgs<T> | null = null;
   // 追加(別視点のレビュー): applyState で onColumnsChange に渡した列(次のレンダーで columns に入るまでの間、getState() と
   //   続けて呼んだ applyState はこちらを今の列として読む)。update(次のレンダー)で外します。
   let pendingColumns: { base: GridColumn<T>[]; next: GridColumn<T>[] } | null = null;
   const currentColumns = (s: GridApiArgs<T>): GridColumn<T>[] =>
     pendingColumns !== null && pendingColumns.base === s.columns ? pendingColumns.next : s.columns;
-  const exportCommands = (features.export?.createExportCommands ?? createInertExportCommands)<T>(() => args);
+  const exportCommands = (features.export?.createExportCommands ?? createInertExportCommands)<T>(
+    () => args,
+    features.grouping,
+  );
   // 追加(監査 M-05): 行高を実測するモードでは、scrollToBottom() で末尾へ飛んだ直後に新しく描画された行が
   //   計測されて総高が伸び、1 回では末尾に届きませんでした。呼び出し直後の BOTTOM_PIN_MS の間だけ「末尾固定」を
   //   覚えておき、update で総高が変わったら末尾へ合わせ直します。ユーザーが上へスクロールしたら(scrollTop が

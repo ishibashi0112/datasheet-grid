@@ -292,6 +292,83 @@ describe('行グルーピングの列面(結合)', () => {
     expect(ref.current?.exportCsv({ scope: 'raw', includeGroupRows: true }).split('\r\n')).toHaveLength(4);
   });
 
+  // 修正(段階 2 の見直し): 出力しない行(isRowExportable が false)は小計に数えず、行が残らないグループの小計の行も出さない。
+  it('includeGroupRows + isRowExportable: 小計は出力する行だけで数え、行が残らないグループは出さない', () => {
+    const ref = createRef<SpreadsheetGridHandle<Row>>();
+    const data3: Row[] = [
+      { region: '関東', rep: '佐藤', qty: 10 },
+      { region: '関西', rep: '田中', qty: 20 },
+      { region: '関東', rep: '鈴木', qty: 5 },
+    ];
+    const isRowExportable = vi.fn<(row: Row, ctx: { viewRowIndex: number }) => boolean>(
+      (row) => row.region === '関東' && row.rep === '佐藤',
+    );
+    render(
+      <SpreadsheetGrid
+        ref={ref}
+        columns={[
+          { key: 'region', title: '地域', width: 100, rowGroup: true },
+          { key: 'rep', title: '担当', width: 100 },
+          { key: 'qty', title: '数量', width: 80, aggFunc: 'sum' },
+        ]}
+        rows={data3}
+        isRowExportable={isRowExportable}
+      />,
+    );
+    expect(ref.current?.exportCsv({ includeGroupRows: true }).split('\r\n')).toEqual([
+      '地域,担当,数量',
+      '関東 小計,,10',
+      '関東,佐藤,10',
+    ]);
+    // isRowExportable は各行 1 回だけ、全展開時のビュー行 index で呼ぶ(これまでと同じ)。
+    expect(isRowExportable).toHaveBeenCalledTimes(3);
+    expect(isRowExportable.mock.calls.map(([row, ctx]) => [row.rep, ctx.viewRowIndex])).toEqual([
+      ['佐藤', 1],
+      ['鈴木', 2],
+      ['田中', 4],
+    ]);
+    const data = ref.current?.getExportData({ includeGroupRows: true });
+    expect(data?.rowKinds).toEqual(['group', 'data']);
+    expect(data?.rows[0]?.map((cell) => cell.value)).toEqual(['関東 小計', null, 10]);
+    // 小計の行を出さないときはこれまでどおり(出力しない行を除くだけ)。
+    expect(ref.current?.exportCsv().split('\r\n')).toEqual(['地域,担当,数量', '関東,佐藤,10']);
+  });
+
+  // 修正(段階 2 の見直し): 小計の行のグループ元の列もデータ行と同じ規則(formatClipboardValue)で書く。
+  it('includeGroupRows: グループ元の列の文字はデータ行と同じ formatClipboardValue で整える', () => {
+    type Sale = { month: number; kind: string; qty: number };
+    const ref = createRef<SpreadsheetGridHandle<Sale>>();
+    render(
+      <SpreadsheetGrid<Sale>
+        ref={ref}
+        columns={[
+          { key: 'month', title: '月', width: 80, rowGroup: true, formatClipboardValue: (value) => `${String(value)}月` },
+          { key: 'kind', title: '区分', width: 80, rowGroup: true, formatClipboardValue: (value) => `[${String(value)}]` },
+          { key: 'qty', title: '数量', width: 80, aggFunc: 'sum' },
+        ]}
+        rows={[
+          { month: 4, kind: 'A', qty: 1 },
+          { month: 4, kind: 'B', qty: 2 },
+        ]}
+      />,
+    );
+    expect(ref.current?.exportCsv({ includeGroupRows: true }).split('\r\n')).toEqual([
+      '月,区分,数量',
+      '4月 小計,,3',
+      '4月,[A] 小計,1',
+      '4月,[A],1',
+      '4月,[B] 小計,2',
+      '4月,[B],2',
+    ]);
+    const data = ref.current?.getExportData({ includeGroupRows: true });
+    // value は生の値(グループ元の列の祖先の値)、text は整えた文字。
+    expect(data?.rows[1]?.map((cell) => [cell.value, cell.text])).toEqual([
+      [4, '4月'],
+      ['[A] 小計', '[A] 小計'],
+      [1, '1'],
+    ]);
+  });
+
   it('エクスポート(view)は折りたたみに関係なく全 leaf 行を出力する', () => {
     const ref = createRef<SpreadsheetGridHandle<Row>>();
     const isRowExportable = vi.fn(() => true);
