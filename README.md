@@ -295,7 +295,7 @@ const Grid = createSpreadsheetGrid({ features: { ...standardFeatures, serverSide
 | --- | --- |
 | `SpreadsheetGrid` (everything) | ~129KB |
 | `/lite`, no features | ~72KB |
-| `/lite` + `standardFeatures` (filters, column menu, tool panel, column autosize, export) | ~92KB |
+| `/lite` + `standardFeatures` (filters, column menu, tool panel, column autosize, export) | ~93KB |
 
 Props, the `ref` handle and types are the same as `SpreadsheetGrid`. Props of features you did not pass do nothing, and in development a `console.warn` names the feature to add. See the [`/lite` section of the API reference](packages/react/API_REFERENCE.md#機能を選んで組み込むlite-サブパス) for the 20 features and their sizes.
 
@@ -706,7 +706,7 @@ const Grid = createSpreadsheetGrid({ features: { ...standardFeatures, serverSide
 | --- | --- |
 | `SpreadsheetGrid`(全部入り) | 約 129KB |
 | `/lite` 機能なし | 約 72KB |
-| `/lite` + `standardFeatures`(フィルター・列メニュー・ツールパネル・列幅の自動調整・エクスポート) | 約 92KB |
+| `/lite` + `standardFeatures`(フィルター・列メニュー・ツールパネル・列幅の自動調整・エクスポート) | 約 93KB |
 
 props・`ref` ハンドル・型は `SpreadsheetGrid` と同じです。渡していない機能の prop は何もせず、開発時は足すべき機能を `console.warn` で知らせます。20 の機能とサイズは [API リファレンスの `/lite` の節](packages/react/API_REFERENCE.md#機能を選んで組み込むlite-サブパス)にあります。
 
