@@ -8,6 +8,7 @@
 // 追加(段階 2 DU-14): multiline のときは複数行の入力欄(textarea)で開きます。中身に合わせて下へ伸び(下限はセルの高さ、
 //   上限は表の見える範囲の下端まで。超える分は入力欄の中でスクロール)、Enter の動きは enterKey で決めます。
 import { useEffect, useRef, useState } from 'react';
+import type { CSSProperties } from 'react';
 import type {
   EditorCommitDirection,
   EditorCommitResult,
@@ -33,15 +34,21 @@ type TextCellEditorProps = {
   multiline?: boolean;
   enterKey?: GridTextEditorEnterKey;
   cellHeight?: number;
+  // 追加(段階 2 の確かめ直し N2-2): 列の wordBreak / lineBreak(複数行の入力欄でもセルと同じ位置で折り返す)。
+  wordBreak?: string;
+  lineBreak?: string;
 };
 
-// 追加(段階 2 DU-14): 複数行の入力欄の 1 行の高さ(styles.css の .ssg-cell-editor-input--multiline と同じ)。
-const MULTILINE_LINE_HEIGHT = 20;
+// 追加(段階 2 DU-14): 複数行の入力欄の 1 行の高さが読めないとき(line-height: normal など)の値です。
+// 変更(段階 2 の確かめ直し N2-2): 行の間隔はセルと同じくページから受け継ぐ(styles.css の line-height: inherit)ので、
+//   余白の計算には実際の値を読みます(これまでは 20px 固定で、行の間隔 24px のページでは開くと行が詰まって見えた)。
+const FALLBACK_LINE_HEIGHT = 20;
 
 // 追加(段階 2 DU-14): 複数行の入力欄の高さを中身に合わせます。下限はセルの高さ、上限は表の見える範囲の下端まで
 //   (超える分は入力欄の中でスクロール)。上下の余白は 1 行の値が基準の行の高さ(36px)の真ん中に来る量(最大 6px。背の高いセルでも 1 行目は上の近く)。
 const fitMultilineEditor = (textarea: HTMLTextAreaElement, cellHeight: number) => {
-  const padding = Math.max(0, Math.min(6, Math.floor((cellHeight - 4 - MULTILINE_LINE_HEIGHT) / 2)));
+  const lineHeight = Number.parseFloat(getComputedStyle(textarea).lineHeight) || FALLBACK_LINE_HEIGHT;
+  const padding = Math.max(0, Math.min(6, Math.floor((cellHeight - 4 - lineHeight) / 2)));
   textarea.style.paddingTop = `${padding}px`;
   textarea.style.paddingBottom = `${padding}px`;
   textarea.style.height = `${cellHeight}px`;
@@ -65,6 +72,8 @@ export function TextCellEditor({
   multiline = false,
   enterKey = 'commit',
   cellHeight = 0,
+  wordBreak,
+  lineBreak,
 }: TextCellEditorProps) {
   const inputRef = useRef<HTMLInputElement | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
@@ -118,6 +127,17 @@ export function TextCellEditor({
       setDraftValue(`${textarea.value.slice(0, start)}\n${textarea.value.slice(end)}`);
       setErrorMessage(null);
     };
+    // 'auto-phrase' など csstype に無い値も通すため、緩い型で入れます(セルの wrapStyle と同じ)。
+    const textareaStyle: Record<string, string> = {};
+    if (align) {
+      textareaStyle.textAlign = align;
+    }
+    if (wordBreak !== undefined) {
+      textareaStyle.wordBreak = wordBreak;
+    }
+    if (lineBreak !== undefined) {
+      textareaStyle.lineBreak = lineBreak;
+    }
     return (
       <div className="ssg-cell-editor-multiline">
         <textarea
@@ -146,7 +166,7 @@ export function TextCellEditor({
             'ssg-cell-editor-input--multiline',
             errorMessage !== null && 'ssg-cell-editor-input--invalid',
           )}
-          style={align ? { textAlign: align } : undefined}
+          style={textareaStyle as CSSProperties}
         />
         {errorMessage !== null ? <CellEditorErrorBubble message={errorMessage} /> : null}
       </div>

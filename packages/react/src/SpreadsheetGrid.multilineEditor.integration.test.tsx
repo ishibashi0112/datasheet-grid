@@ -3,13 +3,14 @@
 //   - enterKey 'commit'(既定。Excel と同じ): Enter / Shift+Enter で確定、Alt+Enter と Ctrl / ⌘+Enter で改行。
 //   - enterKey 'newline': Enter で改行、Ctrl / ⌘+Enter で確定。どちらも Tab は確定して右へ、Escape は取り消し。
 // @vitest-environment jsdom
-import { describe, it, expect, beforeAll, afterAll, afterEach } from 'vitest';
+import { describe, it, expect, beforeAll, afterAll, afterEach, vi } from 'vitest';
 import { render, cleanup, act, fireEvent } from '@testing-library/react';
 import { createRef, useEffect, useState } from 'react';
 import type { Ref } from 'react';
 import { SpreadsheetGrid } from './SpreadsheetGrid';
 import { installJsdomLayoutStubs } from './testing';
 import type { GridColumn, GridTextEditorEnterKey, SpreadsheetGridHandle } from './model/gridTypes';
+import stylesCss from './styles.css?raw';
 
 let restore: () => void;
 beforeAll(() => {
@@ -191,6 +192,40 @@ describe('複数行のエディタ(DU-14)', () => {
     expect(fireEvent.keyDown(input, { key: 'PageUp' })).toBe(false);
     expect(textarea(container)).not.toBeNull();
     expect(changeCount).toBe(0);
+  });
+
+  // 追加(段階 2 の確かめ直し N2-2): 開くと文の折り返しの位置と行の間隔がセルと変わっていた(入力欄は行の間隔 20px 固定・
+  //   word-break は既定のまま、セルはページの行の間隔と列の wordBreak / lineBreak)。
+  it('列の wordBreak / lineBreak を入力欄にも使い、行の間隔はセルと同じくページから受け継ぐ', () => {
+    const columns = makeColumns().map((column) =>
+      column.key === 'memo' ? { ...column, autoHeight: true, wordBreak: 'keep-all' as const, lineBreak: 'strict' as const } : column,
+    );
+    const { container } = open(columns);
+    const editor = textarea(container)!;
+    expect(editor.style.wordBreak).toBe('keep-all');
+    expect((editor.style as unknown as Record<string, string>).lineBreak).toBe('strict');
+    const rule = /\.ssg-cell-editor-input--multiline \{[^}]*\}/.exec(stylesCss)?.[0] ?? '';
+    expect(rule).toMatch(/line-height: inherit;/);
+  });
+
+  it('上下の余白は、受け継いだ行の間隔で 1 行目を基準の行の高さの真ん中に置く量', () => {
+    const original = window.getComputedStyle.bind(window);
+    const spy = vi.spyOn(window, 'getComputedStyle').mockImplementation((element, pseudo) => {
+      const style = original(element, pseudo);
+      if (element instanceof HTMLTextAreaElement) {
+        return new Proxy(style, {
+          get: (target, key) => (key === 'lineHeight' ? '24px' : Reflect.get(target, key)),
+        });
+      }
+      return style;
+    });
+    try {
+      const { container } = open(makeColumns());
+      // 行の高さ 36px: (36 - 枠 4 - 24) / 2 = 4px(行の間隔 20px のときは 6px)。
+      expect(textarea(container)?.style.paddingTop).toBe('4px');
+    } finally {
+      spy.mockRestore();
+    }
   });
 
   it('multiline を付けない text 列は今までどおり 1 行の入力欄', () => {

@@ -1451,12 +1451,14 @@
     left: 0;
     width: 100%;
   }
+  /* 変更(段階 2 の確かめ直し N2-2): 行の間隔はセルと同じくページから受け継ぎます(これまでは 20px 固定で、行の間隔が
+     24px のページでは開くと行が詰まり、折り返しの位置も変わって見えた)。列の wordBreak / lineBreak はエディタが書きます。 */
   .ssg-cell-editor-input--multiline {
     display: block;
     resize: none;
     overflow-y: auto;
     font-family: inherit;
-    line-height: 20px;
+    line-height: inherit;
     white-space: pre-wrap;
     overflow-wrap: break-word;
   }

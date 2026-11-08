@@ -268,6 +268,9 @@ export function CellEditorLayer<T>({
         multiline={editor?.type === 'text' && editor.multiline === true}
         enterKey={editor?.type === 'text' ? editor.enterKey : undefined}
         cellHeight={rect.height}
+        // 追加(段階 2 の確かめ直し N2-2): 複数行の入力欄もセルと同じ位置で折り返します。
+        wordBreak={editorSession?.column.wordBreak}
+        lineBreak={editorSession?.column.lineBreak}
       />
     );
   }
