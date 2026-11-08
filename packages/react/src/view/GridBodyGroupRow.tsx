@@ -6,7 +6,11 @@ import type { CellCoord, GridColumn, GridGroupRow as GridGroupRowDescriptor, Gri
 import { GROUP_AUTO_COLUMN_KEY } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/grouping';
 import type { PaneColumnEntry } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/geometry';
 import { cx } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/cx';
-import { formatTotalRowCellText, resolveTotalRowCaption } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/totalRow';
+import {
+  formatTotalRowCellText,
+  formatTotalRowNumber,
+  resolveTotalRowCaption,
+} from '@ishibashi0112/spreadsheet-grid-core/internal/logic/totalRow';
 import type { GridPaneKind } from './GridHeaderRow';
 
 // ──────────────────────────────────────────────────────────
@@ -198,17 +202,29 @@ function GridBodyGroupRowInner<T>({
                   {isCollapsed ? '▸' : '▾'}
                 </button>
                 <span className="ssg-group-label">{groupRow.label}</span>
+                {/* 変更(段階 2 の確かめ直し): 件数も桁区切り(同じ行の集計「個数 6,220」と同じ書き方)。 */}
                 <span className="ssg-group-count">
-                  ({groupRow.leafCount}件)
+                  ({formatTotalRowNumber(groupRow.leafCount)}件)
                 </span>
               </>
             ) : aggregate ? (
-              <>
+              // 変更(段階 2 の確かめ直し): 合計行と同じく、列幅に収まらないときは末尾を「…」にし、ツールチップで全文を出します
+              //   (これまでは右寄せの値の左が「…」なしで切れ、¥689,661,632 が 9,661,632 のように別の数に読めていた)。
+              <span
+                className="ssg-group-value"
+                data-ssg-tooltip-overflow={
+                  aggregate.text !== ''
+                    ? aggregate.caption !== undefined
+                      ? `${aggregate.caption} ${aggregate.text}`
+                      : aggregate.text
+                    : undefined
+                }
+              >
                 {aggregate.caption !== undefined && aggregate.text !== '' && (
                   <span className="ssg-group-caption">{aggregate.caption}</span>
                 )}
                 {aggregate.text}
-              </>
+              </span>
             ) : null}
           </div>
         );

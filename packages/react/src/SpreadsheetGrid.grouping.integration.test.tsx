@@ -243,6 +243,25 @@ describe('行グルーピングの列面(結合)', () => {
     expect(cell('custom')?.textContent).toBe('3,001.5');
   });
 
+  // 追加(段階 2 の確かめ直し): 列幅が足りないとき、右寄せの集計値は左が「…」なしで切れ、別の数に読めていた(合計行は末尾が
+  //   「…」+ ツールチップ)。グループ行の件数も桁区切りが無く、同じ行の集計(個数 6,220)と書き方が違っていた。
+  it('グループ行の集計値は合計行と同じく末尾で「…」にし、切れたらツールチップで全文。件数は桁区切り', () => {
+    type Sale = { region: string; amount: number; price: number };
+    const saleColumns: GridColumn<Sale>[] = [
+      { key: 'region', title: '地域', width: 100, rowGroup: true },
+      { key: 'amount', title: '金額', width: 60, align: 'right', aggFunc: 'sum' },
+      { key: 'price', title: '単価', width: 60, align: 'right', aggFunc: 'avg' },
+    ];
+    const sales: Sale[] = Array.from({ length: 1234 }, (_, index) => ({ region: '関東', amount: 560000 + index, price: 100 }));
+    const { container } = render(<SpreadsheetGrid columns={saleColumns} rows={sales} />);
+    const group = centerGroupRows(container)[0] as HTMLElement;
+    const value = (key: string) => group.querySelector<HTMLElement>(`[data-ssg-col-key="${key}"] .ssg-group-value`);
+    expect(value('amount')?.textContent).toBe('691,800,761');
+    expect(value('amount')?.dataset.ssgTooltipOverflow).toBe('691,800,761');
+    expect(value('price')?.dataset.ssgTooltipOverflow).toBe('平均 100');
+    expect(container.querySelector('.ssg-group-count')?.textContent).toBe('(1,234件)');
+  });
+
   // 変更(段階 2 DU-10): 表示から外れているグループ元の列(地域・担当)を先頭に入れます(これまでは「数量」だけの表で、
   //   どの行がどのグループか分からなかった)。自動グループ列(合成列)は今までどおり出しません。
   it('エクスポートは自動グループ列を除き、グループ元の列を先頭に入れて leaf 行を出力する', () => {

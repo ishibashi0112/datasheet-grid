@@ -57,6 +57,6 @@ gridRef.current?.exportCsv({ includeGroupRows: true });
 // 関東,個人,鈴木,200
 ```
 
-`getExportData({ includeGroupRows: true })` では `rowKinds` の `'group'` で小計の行を見分けられます(Excel 側で太字にするなど)。集計値は生値(数値のまま)です。`isRowExportable` で出力から除いた行は小計にも数えず、行が 1 つも残らないグループは小計の行も出しません。
+`getExportData({ includeGroupRows: true })` では `rowKinds` の `'group'` で小計の行を見分けられます(Excel 側で太字にするなど)。集計値は生値(数値のまま)です。`isRowExportable` で出力から除いた行は小計にも数えず、行が 1 つも残らないグループは小計の行も出しません。合計行(`includeTotalRow`)は画面の合計行と同じ値なので、除いた行も数えます(小計の和と合わないことがあります)。
 
 開閉の命令的 API(`setGroupCollapsed` / `getGroupRows` など)は [API リファレンス](/docs/api/handle#行グルーピング) を参照してください。
