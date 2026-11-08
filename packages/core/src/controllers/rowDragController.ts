@@ -226,6 +226,10 @@ export const createRowDragController = (): RowDragController => {
     if (args?.scrollContainerRef.current?.closest('.ssg-theme-dark') != null) {
       el.classList.add('ssg-theme-dark');
     }
+    // 追加(段階 2 DU-13): theme="class" の表のゴーストも同じ修飾子(ダークかどうかは CSS が祖先の .dark で決める)。
+    if (args?.scrollContainerRef.current?.closest('.ssg-theme-class') != null) {
+      el.classList.add('ssg-theme-class');
+    }
     // 追加(motion-0): モーション停止の修飾子もテーマと同じく祖先から引き継ぎます。
     if (args?.scrollContainerRef.current?.closest('.ssg-motion-off') != null) {
       el.classList.add('ssg-motion-off');

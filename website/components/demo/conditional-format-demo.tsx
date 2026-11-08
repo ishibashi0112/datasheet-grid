@@ -78,7 +78,7 @@ export function ConditionalFormatDemo() {
         columns={columns}
         rowKeyGetter={(row) => row.id}
         height={400}
-        theme="auto"
+        theme="class"
       />
       <div className="flex flex-wrap items-center gap-2 text-sm">
         <button

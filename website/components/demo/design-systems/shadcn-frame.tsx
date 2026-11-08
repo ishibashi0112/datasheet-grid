@@ -2,13 +2,13 @@
 
 // shadcn/ui の画面: shadcn/ui の配色の変数(shadcn-frame.css)の上にグリッドを置き、themes/shadcn.css で配色を揃える。
 // ボタンとバッジは shadcn/ui の Button / Badge と同じクラスを書いたもの(shadcn/ui は部品をコピーして使う形のため)。
-// ライト / ダークは <html> の dark クラスで決まるので、グリッドの theme にも同じものを渡す。
+// ライト / ダークは <html> の dark クラスで決まるので、グリッドは theme="class" で同じクラスに付いてくる(サーバーの描画から正しい色)。
 import { useState, type ButtonHTMLAttributes, type ReactNode } from 'react';
 import { SpreadsheetGrid } from '@ishibashi0112/spreadsheet-grid';
 import './shadcn-frame.css';
 import '@ishibashi0112/spreadsheet-grid/style.css';
 import '@ishibashi0112/spreadsheet-grid/themes/shadcn.css';
-import { buildColumns, gridProps, initialRows, nextRow, useSiteDark, type Row, type Status } from './shared';
+import { buildColumns, gridProps, initialRows, nextRow, type Row, type Status } from './shared';
 
 const buttonBase =
   'inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-md text-sm font-medium transition-all outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50';
@@ -43,7 +43,6 @@ function ShadcnBadge({ variant = 'default', children }: { variant?: keyof typeof
 const STATUS_VARIANT: Record<Status, keyof typeof badgeVariant> = { 有効: 'secondary', 保留: 'outline', 停止: 'destructive' };
 
 export function ShadcnFrame() {
-  const siteDark = useSiteDark();
   const [rows, setRows] = useState<Row[]>(initialRows);
   const [lastOpened, setLastOpened] = useState<string | null>(null);
 
@@ -55,9 +54,6 @@ export function ShadcnFrame() {
       </ShadcnButton>
     ),
   });
-
-  // サイトのライト / ダークが分かるまで(ハイドレーションまで)描かない。
-  if (siteDark === null) return null;
 
   return (
     <div className="flex min-h-screen flex-col gap-3 bg-background p-3 text-foreground">
@@ -74,7 +70,7 @@ export function ShadcnFrame() {
         rows={rows}
         columns={columns}
         onRowsChange={setRows}
-        theme={siteDark ? 'dark' : 'light'}
+        theme="class"
       />
     </div>
   );

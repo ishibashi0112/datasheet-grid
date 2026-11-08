@@ -104,7 +104,7 @@ export function FilterSortDemo() {
       onRowsChange={setRows}
       rowKeyGetter={(row) => row.id}
       height={320}
-      theme="auto"
+      theme="class"
       showFilterChipBar
     />
   );

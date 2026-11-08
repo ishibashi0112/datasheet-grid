@@ -79,7 +79,7 @@ export function HeaderAlignDemo() {
         onColumnsChange={(next) => setColumns(next.map((column) => ({ ...column, headerAlign: undefined })))}
         rowKeyGetter={(row) => row.id}
         height={300}
-        theme="auto"
+        theme="class"
         density="compact"
       />
     </div>

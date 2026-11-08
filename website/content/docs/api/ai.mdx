@@ -90,7 +90,7 @@ export async function POST(req: Request) {
 | `onError` | `(error: unknown) => void` | `ask` が失敗(throw / reject)したときに呼ぶ。止めたときは呼ばない。 |
 | `placeholder` / `label` | `string` | 入力欄のプレースホルダーと、読み上げ用のラベル(既定「ことばで絞り込み」)。 |
 | `className` | `string` | バーの root(`.ssg-ask`)に足すクラス。 |
-| `theme` | `'light' \| 'dark' \| 'auto'` | 配色。既定 `'light'`。グリッドの `theme` と同じ値を渡す。 |
+| `theme` | `'light' \| 'dark' \| 'auto' \| 'class'` | 配色。既定 `'light'`。グリッドの `theme` と同じ値を渡す。 |
 
 ### AI が変えられるもの
 

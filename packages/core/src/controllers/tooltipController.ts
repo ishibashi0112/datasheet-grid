@@ -148,6 +148,8 @@ function showTooltipFor(target: Element) {
     'ssg-theme-dark',
     target.closest('.ssg-theme-dark') !== null,
   );
+  // 追加(段階 2 DU-13): theme="class" の表のツールチップも同じ修飾子(ダークかどうかは CSS が祖先の .dark で決める)。
+  el.classList.toggle('ssg-theme-class', target.closest('.ssg-theme-class') !== null);
   // 追加(motion-0): モーション停止もテーマと同じく祖先(.ssg-motion-off)から解決します。
   el.classList.toggle(
     'ssg-motion-off',

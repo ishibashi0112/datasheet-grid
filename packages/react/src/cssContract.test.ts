@@ -185,3 +185,13 @@ describe('CSS の公開範囲(API_REFERENCE.md の公開契約の表)', () => {
     expect([...web.tokens].sort()).toEqual([...tables.tokens].sort());
   });
 });
+
+// 追加(段階 2 DU-13): theme="class" のダークは、ダークのプリセットと同じブロックを「祖先の .dark / [data-theme="dark"] の中の
+//   .ssg-theme-class」にも当てる(特異度 0 のまま)。
+describe('theme="class" のダーク', () => {
+  it('ダークのプリセットのセレクタに祖先の .dark / [data-theme="dark"] の中の .ssg-theme-class が入っている', () => {
+    expect(stylesCss).toContain(
+      ":where(.ssg-theme-dark, .dark .ssg-theme-class, [data-theme='dark'] .ssg-theme-class) {\n    color-scheme: dark;",
+    );
+  });
+});

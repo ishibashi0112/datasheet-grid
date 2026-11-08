@@ -79,7 +79,7 @@ export function CustomEditorDemo() {
       onRowsChange={setRows}
       rowKeyGetter={(row) => row.id}
       height={230}
-      theme="auto"
+      theme="class"
     />
   );
 }

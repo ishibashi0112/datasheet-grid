@@ -284,7 +284,7 @@ export function LiteDemo() {
         onColumnsChange={setColumnOrder}
         rowKeyGetter={(row) => row.id}
         height={420}
-        theme="auto"
+        theme="class"
         enableGlobalFilter
         find
         fillHandle

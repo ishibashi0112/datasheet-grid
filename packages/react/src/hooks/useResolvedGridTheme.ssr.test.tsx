@@ -7,9 +7,10 @@ import { renderToString } from 'react-dom/server';
 import { useResolvedGridTheme } from './useResolvedGridTheme';
 import type { GridTheme } from '../model/gridTypes';
 
+// 変更(段階 2 DU-13): フックは修飾子クラス('ssg-theme-dark' / 'ssg-theme-class' / ライトはなし)を返す。
 function Probe({ theme }: { theme: GridTheme }) {
   const resolved = useResolvedGridTheme(theme);
-  return <span>{resolved}</span>;
+  return <span>{resolved ?? 'light'}</span>;
 }
 
 describe('useResolvedGridTheme(SSR)', () => {
@@ -18,7 +19,11 @@ describe('useResolvedGridTheme(SSR)', () => {
   });
 
   it('dark は server render でも dark を返す', () => {
-    expect(renderToString(<Probe theme="dark" />)).toContain('dark');
+    expect(renderToString(<Probe theme="dark" />)).toContain('ssg-theme-dark');
+  });
+
+  it('class は server render でも ssg-theme-class を返す(サーバーの描画から CSS でダークにできる)', () => {
+    expect(renderToString(<Probe theme="class" />)).toContain('ssg-theme-class');
   });
 
   it('light は server render でも light を返す', () => {

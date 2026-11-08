@@ -412,6 +412,28 @@ describe('TH-DK-2: theme(カラーテーマ)', () => {
     ).toBe(true);
   });
 
+  // 追加(段階 2 DU-13): theme="class" は root と各ポータルに ssg-theme-class(ダークかどうかは CSS が祖先の .dark で決める)。
+  it("theme='class' で root と列メニューに ssg-theme-class が付き、ssg-theme-dark は付かない", () => {
+    const restore = installJsdomLayoutStubs();
+    try {
+      const { container } = render(<SpreadsheetGrid columns={columns} rows={rows} theme="class" />);
+      const root = container.querySelector('.ssg-root');
+      expect(root?.classList.contains('ssg-theme-class')).toBe(true);
+      expect(root?.classList.contains('ssg-theme-dark')).toBe(false);
+      const menuButton = container.querySelector<HTMLElement>('[data-ssg-tooltip="列メニュー"]');
+      expect(menuButton).not.toBeNull();
+      act(() => {
+        fireEvent.pointerDown(menuButton as HTMLElement, { button: 0 });
+      });
+      const menu = document.querySelector('.ssg-menu-panel');
+      expect(menu?.classList.contains('ssg-theme-class')).toBe(true);
+      expect(menu?.classList.contains('ssg-theme-dark')).toBe(false);
+    } finally {
+      cleanup();
+      restore();
+    }
+  });
+
   it("theme='auto' は matchMedia 非対応環境(jsdom 素)では light 扱い", () => {
     const { container } = render(
       <SpreadsheetGrid columns={columns} rows={rows} theme="auto" />,

@@ -92,7 +92,7 @@ export function FindDemo() {
         columns={columns}
         rowKeyGetter={(row) => row.id}
         height={380}
-        theme="auto"
+        theme="class"
         find
         onFindChange={setStatus}
       />

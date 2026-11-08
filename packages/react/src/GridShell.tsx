@@ -1971,9 +1971,8 @@ export function useGridShell<T extends object>({
   //   ダーク時は root と全ポータル root へ .ssg-theme-dark を付与し、ダークプリセット
   //   (styles.css のトークン一括上書き)を効かせます。ゴースト / ツールチップは各自が
   //   DOM(root への closest / scrollContainer の祖先)から解決するため props 伝播は不要です。
-  const resolvedTheme = useResolvedGridTheme(theme);
-  const themeClassName =
-    resolvedTheme === 'dark' ? 'ssg-theme-dark' : undefined;
+  // 変更(段階 2 DU-13): theme="class" は修飾子 ssg-theme-class(ダークかどうかは CSS が祖先の .dark / data-theme で決める)。
+  const themeClassName = useResolvedGridTheme(theme);
   // ポータル root へまとめて付ける修飾子(テーマ + モーション)。各ポータルの prop 名は従来どおり
   //   themeClassName ですが、中身は「root と同じ修飾子クラス群」です。
   const portalClassName = cx(themeClassName, motionClassName) || undefined;

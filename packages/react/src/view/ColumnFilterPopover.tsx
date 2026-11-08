@@ -118,7 +118,7 @@ export type ColumnFilterPopoverOption = {
 
 type ColumnFilterPopoverProps = {
   isOpen: boolean;
-  // 追加(TH-DK-2): ダークテーマ修飾子クラス('ssg-theme-dark' | undefined)。ポータルは
+  // 追加(TH-DK-2): ダークテーマ修飾子クラス('ssg-theme-dark' | 'ssg-theme-class' | undefined)。ポータルは
   //   .ssg-root 外のため、root と同じ修飾子を自身の root 要素へ直接付与します。
   themeClassName?: string;
   // 追加(slot-props): classNames.popover の解決済みスロット(パネル root へ)。

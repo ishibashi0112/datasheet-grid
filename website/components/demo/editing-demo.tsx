@@ -127,7 +127,7 @@ export function EditingDemo() {
         onRowsChange={setRows}
         rowKeyGetter={(row) => row.id}
         height={280}
-        theme="auto"
+        theme="class"
         autoHeight
       />
     </div>

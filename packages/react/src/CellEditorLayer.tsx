@@ -68,7 +68,7 @@ type CellEditorLayerProps<T> = {
   editor?: GridColumnEditor<T>;
   // 追加(editor: select): 編集中セルのセッション情報(編集中のみ非 null)。
   editorSession?: CellEditorSession<T> | null;
-  // 追加(editor: select): ポータル系エディタへ渡すテーマ修飾子('ssg-theme-dark' | undefined)。
+  // 追加(editor: select): ポータル系エディタへ渡すテーマ修飾子('ssg-theme-dark' | 'ssg-theme-class' | undefined)。
   themeClassName?: string;
   // 追加(slot-props): classNames 由来の解決済みスロット表(cellEditor = 枠 / popover = select 候補)。
   slots?: GridResolvedSlots;

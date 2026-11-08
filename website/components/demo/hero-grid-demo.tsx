@@ -97,7 +97,7 @@ export function HeroGridDemo() {
         onRowsChange={setRows}
         rowKeyGetter={(row) => row.id}
         height={420}
-        theme="auto"
+        theme="class"
       />
       <p className="text-xs text-fd-muted-foreground text-right">
         100,000 行 · ダブルクリック / ダブルタップで編集 · ヘッダーメニューからフィルター / ソート

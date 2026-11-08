@@ -56,7 +56,7 @@ export function CustomBarsDemo() {
       onRowsChange={setRows}
       rowKeyGetter={(row) => row.id}
       height={300}
-      theme="auto"
+      theme="class"
       ref={gridRef}
       renderTopBar={(ctx) => (
         <div className="flex flex-wrap items-center gap-3 border-b border-fd-border px-3 py-2 text-sm">

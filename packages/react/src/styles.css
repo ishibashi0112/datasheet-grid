@@ -252,7 +252,9 @@
      寸法トークン(radius / padding / icon-btn-size)はテーマ対象外です。
      注記: --ssg-checkbox-checked-bg / --ssg-checkbox-hover-border / --ssg-panel-accent-text は
      既定が var() 参照(accent / accent-strong)のため、上書き不要で自動追従します。 */
-  :where(.ssg-theme-dark) {
+  /* 変更(段階 2 DU-13): theme="class" のグリッド(修飾子 .ssg-theme-class)は、祖先(<html> など)の class="dark" か
+     data-theme="dark" でダークになります(CSS だけなのでサーバーの描画から正しい色)。 */
+  :where(.ssg-theme-dark, .dark .ssg-theme-class, [data-theme='dark'] .ssg-theme-class) {
     color-scheme: dark;
     /* 色トークン */
     --ssg-accent: #4dabf7;

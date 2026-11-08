@@ -2563,7 +2563,9 @@ export type GridDensity = 'compact' | 'standard' | 'comfortable';
 //   (prefers-color-scheme)へ追従します。Mantine / HeroUI 等のクラスベース dark 運用では、
 //   利用側のカラースキーム(useMantineColorScheme 等)の解決値を 'light' | 'dark' で
 //   渡す使い方が本命です。
-export type GridTheme = 'light' | 'dark' | 'auto';
+// 変更(段階 2 DU-13): 'class' = ページの祖先の class="dark" / data-theme="dark" を CSS だけで見てダークにする
+//   (Tailwind / next-themes / shadcn の <html class="dark">。サーバーの描画から正しい色)。
+export type GridTheme = 'light' | 'dark' | 'auto' | 'class';
 // 追加(F-3): 条件付き書式ヘルパー(GridColumn.conditionalFormat)の型です。既定セルの描画に、値の「量」(データバー)/
 //   「量 or 基準からの向き」(カラースケール)/ 「状態」(チップ)を重ねます。min / max は省略時にビュー行から自動集計。
 //   表示だけで、CSV / TSV / クリップボード / getExportData / ソート / フィルターには影響しません。
@@ -2993,9 +2995,12 @@ export type SpreadsheetGridProps<T, F extends GridFrameworkTypes = GridFramework
   /**
    * カラーテーマ。`'dark'` でダークプリセット(`.ssg-theme-dark` のトークン一括上書き。Mantine dark
    * 系パレット)をグリッド本体・全ポータル(popover / menu / panel)
-   * ・ドラッグゴースト・ツールチップへ適用。`'auto'` は `prefers-color-scheme` へ追従(Mantine /
-   * HeroUI 等クラスベース dark 運用では、利用側カラースキームの解決値を `'light' | 'dark'`
-   * で渡す使い方を推奨)。個別の色調整はトークン(`--ssg-*`)の上書きで可能。
+   * ・ドラッグゴースト・ツールチップへ適用。`'auto'` は `prefers-color-scheme` へ追従。`'class'`
+   * は祖先の `class="dark"` か `data-theme="dark"` を CSS で見てダークにする(Tailwind / next-themes
+   * / shadcn/ui / HeroUI のようなクラスによるダーク向け。サーバーの描画から正しい色になる。
+   * ポップアップ類は `document.body` の直下に出るので、`dark` のクラス / 属性は `<html>` か
+   * `<body>` に付ける)。Mantine のようにほかの方法でダークを決めるものは、利用側の解決値を
+   * `'light' | 'dark'` で渡す。個別の色調整はトークン(`--ssg-*`)の上書きで可能。
    *
    * @defaultValue `'light'`
    */

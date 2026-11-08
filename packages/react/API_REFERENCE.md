@@ -33,7 +33,7 @@
 | `estimateRowHeight` | `number` | `rowHeight` | 未測定行の推定行高(px)。 |
 | `headerHeight` | `number` | density 依存(standard: `40`) | ヘッダー行の高さ(px)。未指定時は density プリセット(compact: `32` / comfortable: `48`)から解決。明示指定が常に優先。 |
 | `density` | `'compact' \| 'standard' \| 'comfortable'` | `'standard'` | 密度プリセット。rowHeight / headerHeight の既定値と寸法トークン(セル横 padding / バー padding / アイコンボタン寸法 / セル文字の相対拡縮)を一括切替。`'standard'` は従来と同値。個別調整はトークン(`--ssg-cell-pad-x` 等)の上書きで可能。popover / menu 等のポータルは対象外。 |
-| `theme` | `'light' \| 'dark' \| 'auto'` | `'light'` | カラーテーマ。`'dark'` でダークプリセット(`.ssg-theme-dark` のトークン一括上書き。Mantine dark 系パレット)をグリッド本体・全ポータル(popover / menu / panel)・ドラッグゴースト・ツールチップへ適用。`'auto'` は `prefers-color-scheme` へ追従(Mantine / HeroUI 等クラスベース dark 運用では、利用側カラースキームの解決値を `'light' \| 'dark'` で渡す使い方を推奨)。個別の色調整はトークン(`--ssg-*`)の上書きで可能。 |
+| `theme` | `'light' \| 'dark' \| 'auto' \| 'class'` | `'light'` | カラーテーマ。`'dark'` でダークプリセット(`.ssg-theme-dark` のトークン一括上書き。Mantine dark 系パレット)をグリッド本体・全ポータル(popover / menu / panel)・ドラッグゴースト・ツールチップへ適用。`'auto'` は `prefers-color-scheme` へ追従。`'class'` は祖先の `class="dark"` か `data-theme="dark"` を CSS で見てダークにする(Tailwind / next-themes / shadcn/ui / HeroUI のようなクラスによるダーク向け。サーバーの描画から正しい色になる。ポップアップ類は `document.body` の直下に出るので、`dark` のクラス / 属性は `<html>` か `<body>` に付ける)。Mantine のようにほかの方法でダークを決めるものは、利用側の解決値を `'light' \| 'dark'` で渡す。個別の色調整はトークン(`--ssg-*`)の上書きで可能。 |
 | `motion` | `'auto' \| 'on' \| 'off'` | `'auto'` | モーション(アニメーション / トランジション)の有効化。`'auto'` は OS / ブラウザの「視差効果を減らす」(`prefers-reduced-motion: reduce`)が有効なら `'off'`、それ以外は `'on'` として扱う。`'off'` では root と全ポータル(popover / menu / panel)・ドラッグゴースト・ツールチップへ `.ssg-motion-off` が付き、継続時間トークン(`--ssg-motion-fast` / `--ssg-motion-base` / `--ssg-motion-slow`)が 0 になって動きが止まる(表示結果は同じ)。`'on'` は OS 設定に関わらず動かす。速さの調整はトークンの上書き。詳細は「モーション」節。 |
 | `animateRows` | `boolean` | `true` | 行の並び替えアニメ。ソート / フィルター / グループ開閉 / `rows` の差し替えで、描画中の行が新しい位置へ滑り(`--ssg-motion-base`)、スクロールなしで現れた行は上から順にフェードインする。スクロール中の仮想化による出入りは対象外。auto-height 行と serverSide(SSRM)では自動で無効。`motion` の実効値が `'off'` なら動かない。詳細は「モーション」節。 |
 | `showCopyRange` | `boolean` | `true` | `Ctrl/Cmd+C` のあと、コピー元の範囲に Excel と同じ「動く点線」を残す(`.ssg-copy-range-overlay`。`motion` が `'off'` なら静的な点線)。`Esc` と編集開始で消え、ソート / フィルター / グループ開閉 / 行数 / 列の変化で描画しなくなる(貼り付けでは残る)。`false` で点線を出さない(コピー自体は従来どおり)。 |
@@ -1867,7 +1867,7 @@ export async function POST(req: Request) {
 | `onError` | `(error: unknown) => void` | `ask` が失敗(throw / reject)したときに呼ぶ。止めたときは呼ばない。 |
 | `placeholder` / `label` | `string` | 入力欄のプレースホルダーと、読み上げ用のラベル(既定「ことばで絞り込み」)。 |
 | `className` | `string` | バーの root(`.ssg-ask`)に足すクラス。 |
-| `theme` | `'light' \| 'dark' \| 'auto'` | 配色。既定 `'light'`。グリッドの `theme` と同じ値を渡す。 |
+| `theme` | `'light' \| 'dark' \| 'auto' \| 'class'` | 配色。既定 `'light'`。グリッドの `theme` と同じ値を渡す。 |
 
 ### AI が変えられるもの
 
@@ -2035,7 +2035,7 @@ const s = stylex.create({
 | --- | --- | --- | --- |
 | `themes/astryx.css` | Astryx(`@astryxdesign/core` 0.7) | `<Theme>` があるページのすべてのグリッド(最上位の `<Theme>` が `<html>` へ同期する `data-astryx-theme` で判定。ポータルにも当たる) | `useTheme().mode`(必須。Astryx の色は `light-dark()` で、ビルドによってはグリッドの `color-scheme` の側で明暗が選ばれる) |
 | `themes/mantine.css` | Mantine(`@mantine/core` 9.7) | `MantineProvider` があるページのすべてのグリッド(`MantineProvider` が `<html>` に付ける `data-mantine-color-scheme` で判定) | `useComputedColorScheme('light')` |
-| `themes/heroui.css` | HeroUI v3(`@heroui/react` 3.2) | 読み込んだページのすべてのグリッド | `<html>` の `dark` クラスに合わせた `'light'` / `'dark'` |
+| `themes/heroui.css` | HeroUI v3(`@heroui/react` 3.2) | 読み込んだページのすべてのグリッド | `'class'`(`<html>` の `dark` クラスに付いてくる) |
 | `themes/shadcn.css` | shadcn/ui(`shadcn` 4.22。Tailwind CSS v4 向けの配色の変数) | 読み込んだページのすべてのグリッド | 同上 |
 
 ```tsx
@@ -2075,6 +2075,7 @@ function Grid(props: SpreadsheetGridProps<Row>) {
 | `.ssg-root--fill-height` | `height` に `%` を含む値を渡したときのルート(flex column)。 |
 | `.ssg-root--filling` | フィルハンドル(`fillHandle`)のドラッグ中のルート(カーソルを十字に固定)。 |
 | `.ssg-theme-dark` | `theme="dark"`(または `'auto'` のダーク解決)時に root と各ポータル(popover / menu / panel / ツールチップ)へ。 |
+| `.ssg-theme-class` | `theme="class"` のとき root と各ポータル(popover / menu / panel / ツールチップ / ドラッグのゴースト)と `GridAskBar` へ。祖先に `.dark` か `[data-theme="dark"]` があるとダークのプリセットになる(`:where` で定義)。 |
 | `.ssg-motion-off` | `motion` が `'off'`(または `'auto'` + 視差効果を減らす)のとき、root と各ポータル・ドラッグのゴースト・ツールチップへ。モーションのトークンが 0 になる(`:where` で定義)。 |
 | `.ssg-shell` | フォーカスを受ける要素(`role="group"`)。 |
 | `.ssg-scroll-container` | 表本体のスクロール要素(`role="grid"`)。 |

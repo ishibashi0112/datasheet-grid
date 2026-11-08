@@ -172,7 +172,7 @@ export function SSRMDemo() {
         columns={columns}
         rowKeyGetter={(row) => row.id}
         height={380}
-        theme="auto"
+        theme="class"
         ref={gridRef}
         showSaveStatus={showSaveStatus}
         onServerSideLoadError={(_error, params) =>

@@ -151,7 +151,7 @@ function OrderDetailCard({
         columns={lineColumns}
         rowKeyGetter={(line) => line.id}
         height={130}
-        theme="auto"
+        theme="class"
         density="compact"
         showTopBar={false}
         showBottomBar={false}
@@ -201,7 +201,7 @@ export function DetailRowDemo() {
         columns={columns}
         rowKeyGetter={(row) => row.id}
         height={420}
-        theme="auto"
+        theme="class"
         readOnly
         detailRow={{
           height: 230,

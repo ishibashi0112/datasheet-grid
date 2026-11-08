@@ -124,7 +124,7 @@ export function LargeDataDemo() {
         onRowsChange={setRows}
         rowKeyGetter={(row) => row.id}
         height={380}
-        theme="auto"
+        theme="class"
         ref={gridRef}
       />
     </div>

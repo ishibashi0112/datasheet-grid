@@ -92,7 +92,7 @@ export function CellEventsDemo() {
         columns={columns}
         rowKeyGetter={(row) => row.code}
         height={260}
-        theme="auto"
+        theme="class"
         showTopBar={false}
         onCellClick={handleCellClick}
         onCellDoubleClick={handleCellDoubleClick}

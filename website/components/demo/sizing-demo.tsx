@@ -77,7 +77,7 @@ export function SizingDemo() {
           height="100%"
           showTopBar={showBars}
           showBottomBar={showBars}
-          theme="auto"
+          theme="class"
         />
       </div>
     </div>

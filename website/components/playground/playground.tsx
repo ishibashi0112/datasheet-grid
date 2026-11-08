@@ -246,7 +246,8 @@ type Settings = {
 };
 
 const DEFAULTS: Settings = {
-  theme: 'auto',
+  // 変更(段階 2 DU-13): サイトのライト / ダーク(<html class="dark">)に付いてくる 'class' を既定に。
+  theme: 'class',
   density: 'standard',
   motion: 'auto',
   animateRows: true,
@@ -739,6 +740,7 @@ export function Playground() {
               value={settings.theme}
               onChange={(e) => set('theme', e.target.value as GridTheme)}
             >
+              <option value="class">class</option>
               <option value="auto">auto</option>
               <option value="light">light</option>
               <option value="dark">dark</option>

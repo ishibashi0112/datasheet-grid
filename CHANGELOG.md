@@ -28,6 +28,7 @@ DevBI(このライブラリを使うアプリ)からの報告の対応です。�
 - 行グルーピング中に、グループ元の列(表示から外れて自動グループ列に値が出る列)の列フィルターを画面から掛けられるようにしました。フィルターの管理パネルの「+ フィルターを追加…」に「地域(グループ化中)」のように出て、選ぶと自動グループ列の見出しの下にその列のフィルターが開きます。これまでは `applyState` でしか掛けられませんでした。
 - 列メニュー(⋮)の「この列でグループ化」(階層の一番下に足す)と、グルーピング中の「グループ化を外す」(すべての階層)。列のどれかに `rowGroup` を書いている(`false` を含む)表だけに出し、`onColumnsChange` に `rowGroup` を変えた列定義を渡します(`onColumnsChange` の無い表と、集計のある列には出ません)。グループ化を使わない表のメニューは変わりません。
 - 縦の揃え `verticalAlign`(`'top' | 'center'`。グリッドの prop と `GridColumn.verticalAlign`。列が優先、型 `GridVerticalAlign`)。`autoHeight` で伸びた行で、セルの中身を上にそろえるか真ん中にするかを決めます。書かなければ今までどおり `autoHeight` の列は上、ほかの列は真ん中です。CSS のクラス `.ssg-body-cell--valign-top`(上にそろえたセル)も公開しました。
+- `theme="class"`: 祖先の `class="dark"` か `data-theme="dark"` を CSS で見てダークにします(Tailwind / next-themes / shadcn/ui / HeroUI のように `<html class="dark">` でダークを切り替えるページ向け)。サーバーの描画から正しい色になり、ダークのページで白い表が一瞬出ません(これまでは `theme` に渡す値がハイドレーションまで決まらず、遅い端末で約 0.6 秒白い表が出ていました)。root と各ポップアップに公開契約のクラス `.ssg-theme-class` が付きます。ポップアップは `document.body` の直下に出るので、クラスは `<html>` か `<body>` に付けます。`GridAskBar` の `theme` も同じです。
 
 ### 変更
 

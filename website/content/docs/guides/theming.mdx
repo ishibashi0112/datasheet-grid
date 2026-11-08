@@ -1,6 +1,6 @@
 ---
 title: テーマとスタイリング
-description: ダークテーマ(light / dark / auto)、密度(density)、CSS トークンによるカスタマイズ
+description: ダークテーマ(light / dark / auto / class)、密度(density)、CSS トークンによるカスタマイズ
 ---
 
 見た目のカスタマイズは 3 段階あります: ① `theme` / `density` prop によるプリセット切替、② CSS カスタムプロパティ(`--ssg-*`)によるトークン上書き、③ `className` / `classNames` / `cellClassName` などのクラスフックです。③ はすべて `string | { className, style }` を受けるため、StyleX の `stylex.props()` の戻り値をそのまま渡せます(後述)。
@@ -12,11 +12,14 @@ description: ダークテーマ(light / dark / auto)、密度(density)、CSS ト
 ## テーマ(ダークモード)
 
 ```tsx
-<SpreadsheetGrid theme="auto" ... />  // 'light'(既定) | 'dark' | 'auto'
+<SpreadsheetGrid theme="class" ... />  // 'light'(既定) | 'dark' | 'auto' | 'class'
 ```
 
 - `'auto'` は OS / ブラウザの `prefers-color-scheme` に追従します。SSR ではいったん light で描画され、ハイドレーション後に追従します。
-- Tailwind / Mantine / HeroUI などの**クラスベース dark 運用**では、ページの実テーマと `prefers-color-scheme` が一致しないことがあります。その場合は利用側カラースキームフックの解決値を `'light' | 'dark'` で渡してください。
+- `'class'` は祖先の `class="dark"` か `data-theme="dark"` を CSS で見てダークにします。Tailwind CSS / next-themes / shadcn/ui / HeroUI のように `<html class="dark">` でダークを切り替えるページ向けで、**サーバーの描画から正しい色**になります(ダークのページで白い表が一瞬出ません)。切り替えも CSS だけで付いてきます。
+  - メニューやツールチップなどのポップアップは `document.body` の直下に出るので、`dark` のクラス(または `data-theme="dark"`)は `<html>` か `<body>` に付けてください(next-themes の既定どおり)。
+  - `GridAskBar` にも同じ `theme="class"` を渡します。
+- Mantine(`data-mantine-color-scheme`)のように、クラスや `data-theme` 以外でダークを決めるものは、利用側のカラースキームのフックの解決値を `'light' | 'dark'` で渡してください(デザインシステムの配色に揃えるときは [デザインシステムのテーマ](/docs/guides/design-systems) も)。
 - テーマはグリッド本体だけでなく、ポップオーバー / メニュー / パネル / ツールチップ / ドラッグゴーストにも一括適用されます。
 
 ## 密度(density)

@@ -68,7 +68,7 @@ export function ExportDemo() {
         onRowsChange={setRows}
         rowKeyGetter={(row) => row.id}
         height={280}
-        theme="auto"
+        theme="class"
         ref={gridRef}
       />
     </div>
