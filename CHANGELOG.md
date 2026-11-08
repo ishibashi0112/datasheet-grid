@@ -10,7 +10,7 @@
 
 詳しい使い方は[ドキュメントサイト](https://datasheet-grid.vercel.app)と [API リファレンス](./packages/react/API_REFERENCE.md)を参照してください。
 
-## 未リリース
+## 0.63.0 — 2026-11-08
 
 実際にアプリを作って確かめたチェック(`docs/audits/2026-11-07/`)の残り(段階 2 の 22 件)と、DevBI(このライブラリを使うアプリ)からの報告の対応です。初期 JS(gzip)が約 10KB 増えます: 全部入り 約 119.8KB → 130.1KB、`/lite` 機能なし 約 64.6KB → 73.1KB、`/lite` + `standardFeatures` 約 83.7KB → 93.5KB(`/ai` は約 12.4KB のまま)。うち約 3.2KB は依存の `@tanstack/virtual-core` 3.19 のぶんで(「変更」を参照)、これまでの依存の範囲でも新しく入れると入っていたものです。
 
