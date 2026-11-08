@@ -3,7 +3,7 @@
 //   メニュー)・ツールチップ・セル内検索・下部バーの番地と集計・グループの行・開発時の警告(2 行)を見る。
 //   ハーネスのデータ(列の見出し・値・利用側の検査のメッセージ・右クリックメニューの項目)は日本語なので、それを除いた
 //   グリッドの文言に日本語が残っていないことを確かめる。
-import { open, check, summary, waitIdle, unexpectedPageErrors, cell } from './pw.mjs';
+import { open, check, skip, summary, waitIdle, unexpectedPageErrors, cell } from './pw.mjs';
 
 // ハーネスが渡す日本語(グリッドの文言ではない)。長いものから消す。
 const DATA_TEXTS = [
@@ -143,6 +143,24 @@ const clickMenuItem = async (page, label) => {
     check(`i18n: tool panel tab ${i} has no Japanese`, panelJp.length === 0, panelJp);
   }
   check('i18n: tool panel has 3 English tabs', tabNames.length === 3, tabNames);
+  // 並び替えのタブ: 方向のボタンは短い文字(↑ Asc / ↓ Desc)、名前は長い方。英語の長いボタンで列の選択が細くなり列名が切れていた。
+  await page.locator('.ssg-toolpanel-seg button', { hasText: 'Sort' }).first().click();
+  await waitIdle(page, 200);
+  const sortRow = await page.evaluate(() => {
+    const select = document.querySelector('.ssg-sort-select');
+    const buttons = [...document.querySelectorAll('.ssg-sort-dir-btn')].slice(0, 2);
+    return {
+      selectWidth: select ? Math.round(select.getBoundingClientRect().width) : 0,
+      texts: buttons.map((b) => b.textContent),
+      labels: buttons.map((b) => b.getAttribute('aria-label')),
+    };
+  });
+  check(
+    'i18n: sort tab direction buttons show ↑ Asc / ↓ Desc and are named Ascending / Descending',
+    sortRow.texts[0] === '↑ Asc' && sortRow.texts[1] === '↓ Desc' && sortRow.labels[0] === 'Ascending' && sortRow.labels[1] === 'Descending',
+    sortRow,
+  );
+  check('i18n: sort tab column select keeps its width in English (>= 120px)', sortRow.selectWidth >= 120, sortRow);
   await page.evaluate(() => window.__grid.closeFilterManager());
   await waitIdle(page, 200);
 
@@ -234,7 +252,62 @@ const clickMenuItem = async (page, label) => {
   check('L-N1: the row drag handle column cell is "Cell Move 5"', dragBar.includes('Cell Move 5'), dragBar);
   const handleJp = await japaneseUi(page);
   check('i18n: row drag handles have no Japanese', handleJp.length === 0, handleJp);
+  // 合成列だけをまたぐ範囲は両端を名前で。合成列 + データ列 1 つの 1 行は「1 cell」で、集計を出さない。
+  await page.evaluate(() => window.__setProps({ detailRow: { render: ({ row }) => String(row.id) } }));
+  await waitIdle(page, 200);
+  await page.evaluate(() => window.__grid.selectRange({ start: { row: 7, col: 0 }, end: { row: 7, col: 1 } }));
+  await waitIdle(page, 200);
+  const synthBar = await bottomBar(page);
+  check('i18n: a range over the row drag and detail columns is "Range Move 8:Details 8"', synthBar.includes('Range Move 8:Details 8'), synthBar);
+  await page.evaluate(() => window.__grid.selectRange({ start: { row: 7, col: 0 }, end: { row: 7, col: 2 } }));
+  await waitIdle(page, 300);
+  const oneCell = await page.evaluate(() => ({
+    bar: document.querySelector('.ssg-bar--bottom')?.textContent ?? '',
+    aggregates: document.querySelectorAll('.ssg-bar-aggregates').length,
+  }));
+  check(
+    'selection aggregates: helper columns + one data cell show "1 cell" and no aggregates',
+    oneCell.bar.includes('Range A8') && oneCell.bar.includes('1 cell') && oneCell.aggregates === 0,
+    oneCell,
+  );
   check('i18n: no unexpected page errors (row drag)', unexpectedPageErrors(pageErrors).length === 0, pageErrors);
+  await close();
+}
+
+// ---- 狭い画面: セル内検索のバーと「列の固定」の小メニューが画面の中に収まる ----
+//   WebDriver の Firefox / WebKitGTK は窓を約 500px より狭くできない(WD_VIEWPORT)ので見送る。
+let narrow = null;
+try {
+  narrow = await open('basic', { query: 'n=30&lang=en', viewport: { width: 320, height: 700 } });
+} catch (e) {
+  if (e.code !== 'WD_VIEWPORT') throw e;
+  skip('narrow: the find bar and the "Pin column" submenu stay inside the screen (320px)', 'このブラウザでは窓をこの幅にできない');
+}
+if (narrow) {
+  const { page, close, pageErrors } = narrow;
+  await page.evaluate(() => window.__setProps({ find: true }));
+  await page.evaluate(() => window.__grid.openFind('item'));
+  await page.waitForSelector('.ssg-find-bar');
+  await waitIdle(page, 300);
+  const findRect = await page.evaluate(() => {
+    const r = document.querySelector('.ssg-find-bar').getBoundingClientRect();
+    return { left: Math.round(r.left), right: Math.round(r.right), vw: window.innerWidth };
+  });
+  check('narrow: the find bar stays inside the screen (320px)', findRect.left >= 0 && findRect.right <= findRect.vw, findRect);
+  await page.evaluate(() => window.__grid.closeFind());
+  await waitIdle(page, 150);
+  await openColumnMenu(page, 'name');
+  // ポインタを乗せて開く(押すと、乗せて開いたものを閉じる切り替えになる)。
+  await page.locator('.ssg-menu-panel .ssg-menu-item', { hasText: 'Pin column' }).first().hover();
+  await waitIdle(page, 250);
+  const sub = await page.evaluate(() => {
+    const panels = [...document.querySelectorAll('.ssg-menu-panel')];
+    const r = panels[panels.length - 1].getBoundingClientRect();
+    return { count: panels.length, left: Math.round(r.left), right: Math.round(r.right), vw: window.innerWidth };
+  });
+  check('narrow: the "Pin column" submenu stays inside the screen (320px)', sub.count === 2 && sub.left >= 0 && sub.right <= sub.vw, sub);
+  await closeAll(page);
+  check('i18n: no unexpected page errors (narrow)', unexpectedPageErrors(pageErrors).length === 0, pageErrors);
   await close();
 }
 

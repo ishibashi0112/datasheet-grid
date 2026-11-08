@@ -295,6 +295,11 @@ export const createGridApi = <T,>(features: Pick<GridCoreFeatures, 'export' | 'g
 
   // 追加(audit B-05): 選択 / アクティブセル API の入力をビュー座標内へクランプします(行は viewRowCount、
   //   列は orderedColumns.length 基準。0 行 / 0 列なら 0)。
+  // 追加(英語対応の確かめ直し): セルが 1 つも無い(0 行 / 0 列)か。0 行のときに selectRange / selectCell / setActiveCell を
+  //   呼ぶと、クランプで無い 1 行目が選ばれ(バーに「F1」「1 セル」)、getSelection() が存在しない行を返していた。
+  const hasNoCells = (s: { viewRowCount: number; orderedColumns: readonly unknown[] }) =>
+    s.viewRowCount <= 0 || s.orderedColumns.length === 0;
+
   const clampCellCoord = (cell: CellCoord): CellCoord => {
     const s = args;
     if (!s) {
@@ -397,6 +402,10 @@ export const createGridApi = <T,>(features: Pick<GridCoreFeatures, 'export' | 'g
       if (!s) {
         return;
       }
+      // セルが無いときは無視します(クリアの null はそのまま)。
+      if (cell && hasNoCells(s)) {
+        return;
+      }
       // 変更(audit B-05): 範囲外 index はビュー座標内へクランプする(API_REFERENCE「範囲外 index は内部で
       //   クランプ / 無視する」との整合。旧実装は reducer へそのまま入り getActiveCell が範囲外を返していた)。
       const inView = cell ? clampCellCoord(cell) : null;
@@ -477,7 +486,7 @@ export const createGridApi = <T,>(features: Pick<GridCoreFeatures, 'export' | 'g
 
     selectCell: (viewRowIndex, colIndex, cellOptions) => {
       const s = args;
-      if (!s) {
+      if (!s || hasNoCells(s)) {
         return;
       }
       const inView = clampCellCoord({ row: viewRowIndex, col: colIndex });
@@ -493,7 +502,7 @@ export const createGridApi = <T,>(features: Pick<GridCoreFeatures, 'export' | 'g
 
     selectRange: (range, rangeOptions) => {
       const s = args;
-      if (!s) {
+      if (!s || hasNoCells(s)) {
         return;
       }
       let start = clampCellCoord(range.start);

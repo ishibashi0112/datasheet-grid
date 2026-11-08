@@ -185,6 +185,14 @@ export function ColumnMenuPopover({
   const submenuOpensLeft =
     layout.left + layout.width + SUBMENU_GAP + SUBMENU_WIDTH >
     window.innerWidth - VIEWPORT_MARGIN;
+  // 追加(英語対応の確かめ直し): 左へ開いても画面の左端からはみ出す(スマートフォンの幅など)ときは、画面の中に収まる位置で
+  //   ルートメニューに重ねます(これまでは左へはみ出し、「左に固定」などの ✓ が見えなかった)。基準の行の左端は
+  //   ルートメニューの左端 + パネルの padding(8) + border(1)。
+  const submenuOverlapLeft =
+    submenuOpensLeft && layout.left - SUBMENU_GAP - SUBMENU_WIDTH < VIEWPORT_MARGIN
+      ? Math.max(VIEWPORT_MARGIN, Math.min(window.innerWidth - VIEWPORT_MARGIN - SUBMENU_WIDTH, layout.left - SUBMENU_GAP - SUBMENU_WIDTH)) -
+        (layout.left + 9)
+      : undefined;
 
   const wrapperStyle: CSSProperties = {
     position: 'fixed',
@@ -204,9 +212,11 @@ export function ColumnMenuPopover({
   const submenuStyle: CSSProperties = {
     position: 'absolute',
     top: -9,
-    ...(submenuOpensLeft
-      ? { right: `calc(100% + ${SUBMENU_GAP}px)` }
-      : { left: `calc(100% + ${SUBMENU_GAP}px)` }),
+    ...(submenuOverlapLeft !== undefined
+      ? { left: submenuOverlapLeft }
+      : submenuOpensLeft
+        ? { right: `calc(100% + ${SUBMENU_GAP}px)` }
+        : { left: `calc(100% + ${SUBMENU_GAP}px)` }),
     width: SUBMENU_WIDTH,
     zIndex: 1,
   };

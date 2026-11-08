@@ -11,7 +11,7 @@ const FILTER_LOCALE_TEXT_EN = {
   blank: '(Blank)',
   filterNone: 'No filter',
   filterCustom: 'Custom filter',
-  filterExcluded: 'Excluding {count}',
+  filterExcluded: ({ count }) => (count === 1 ? 'Excluding 1 value' : `Excluding ${count} values`),
   filterSelected: '{count} selected',
   filterMatches: 'Is "{value}"',
   filterBoth: '{condition} and {set}',
@@ -34,11 +34,8 @@ const FILTER_LOCALE_TEXT_EN = {
   datePresetLast30Days: 'Last 30 days',
 } satisfies Pick<GridLocaleText, FilterLocaleTextKey>;
 
-/**
- * グリッドの英語の文言です。`localeText={localeTextEn}` で渡します。
- */
-export const localeTextEn: GridLocaleText = {
-  ...FILTER_LOCALE_TEXT_EN,
+// グリッドの文言のうち、条件の要約(FILTER_LOCALE_TEXT_EN)以外。
+const GRID_LOCALE_TEXT_EN = {
   rowCount: 'Rows {shown} of {total}',
   columnCount: 'Columns {shown} of {total}',
   filterSummary: 'Filter: {value}',
@@ -146,15 +143,18 @@ export const localeTextEn: GridLocaleText = {
   sortPanelDisabled: 'Sorting is turned off',
   sortPanelNeedsTwo: 'Add a second level to reorder',
   sortPanelAscending: 'Ascending',
+  sortPanelAscendingShort: 'Asc',
   sortPanelDescending: 'Descending',
+  sortPanelDescendingShort: 'Desc',
   sortPanelRemove: 'Remove this level',
   sortPanelAllUsed: 'All columns are already used',
   sortPanelAddHint: 'Add a sort level',
   sortPanelAdd: '+ Add level',
   sortPanelClearHint: 'Remove all sorting',
   sortPanelReadOnly: 'Sorting is turned off, so it can\'t be changed',
-  filterHiddenColumn: '(hidden)',
-  filterGroupedColumn: '(grouped)',
+  // 見出しのすぐ後ろにつなぐので先頭に空白(日本語は全角の括弧なので空白なし)。
+  filterHiddenColumn: ' (hidden)',
+  filterGroupedColumn: ' (grouped)',
   filterJumpUnavailable: 'This column is hidden, so its filter can\'t be opened here. You can still clear it with ×.',
   filterEditUnderGroup: 'Opens under the group column header',
   filterJump: 'Go to this column to edit',
@@ -162,7 +162,7 @@ export const localeTextEn: GridLocaleText = {
   filterClear: 'Clear this column\'s filter',
   filterClearFor: 'Clear the filter on {column}',
   filterCurrentNone: '(none)',
-  filterCurrentExcluded: 'Excluding {count}',
+  filterCurrentExcluded: ({ count }) => (count === 1 ? 'Excluding 1 value' : `Excluding ${count} values`),
   filterCurrentSelected: '{count} selected',
   operatorEquals: 'Equals',
   operatorNotEquals: 'Does not equal',
@@ -259,13 +259,10 @@ export const localeTextEn: GridLocaleText = {
   totalMax: 'Max',
   totalCount: 'Count',
   exportSubtotal: '{label} subtotal',
-};
+} satisfies Omit<GridLocaleText, FilterLocaleTextKey>;
 
-/**
- * AI バー(`GridAskBar` / `useGridAsk`)の英語の文言です。`localeText={gridAskLocaleTextEn}` で渡します。
- */
-export const gridAskLocaleTextEn: GridAskLocaleText = {
-  ...FILTER_LOCALE_TEXT_EN,
+// AI バーの文言のうち、条件の要約以外。
+const GRID_ASK_LOCALE_TEXT_EN = {
   placeholder: 'Filter or sort in plain words (e.g. this month, largest amount first)',
   label: 'Filter in plain words',
   submit: 'Ask',
@@ -285,7 +282,7 @@ export const gridAskLocaleTextEn: GridAskLocaleText = {
   fromAi: 'From the AI: {text}',
   askFailed: 'Couldn\'t reach the AI. Try again.',
   noGrid: 'The grid wasn\'t found. Try again once it\'s on the page.',
-  changedNotice: 'The grid has changed since, so this can\'t be changed here. Use the grid\'s filters and sorting.',
+  changedNotice: 'The grid\'s conditions have changed, so they can\'t be changed from here. Use the grid\'s filters and sorting.',
   itemSort: 'Sort',
   itemSortEntry: '{column} {direction}',
   ascending: 'ascending',
@@ -356,4 +353,19 @@ export const gridAskLocaleTextEn: GridAskLocaleText = {
     notIn: 'none of',
     clear: 'clear',
   },
-};
+} satisfies Omit<GridAskLocaleText, FilterLocaleTextKey>;
+
+// 条件の要約と合わせます。モジュール直下のスプレッドは、束ねる道具(esbuild など)が副作用があるかもしれないと見て残すため、
+//   グリッドの表だけを読み込んでも AI バーの表まで入っていました(その逆も)。`/* @__PURE__ */` を付けた呼び出しにして、
+//   使っていない方を消せるようにします。
+const withFilterTexts = <T extends object>(texts: T): T & typeof FILTER_LOCALE_TEXT_EN => ({ ...FILTER_LOCALE_TEXT_EN, ...texts });
+
+/**
+ * グリッドの英語の文言です。`localeText={localeTextEn}` で渡します。
+ */
+export const localeTextEn: GridLocaleText = /* @__PURE__ */ withFilterTexts(GRID_LOCALE_TEXT_EN);
+
+/**
+ * AI バー(`GridAskBar` / `useGridAsk`)の英語の文言です。`localeText={gridAskLocaleTextEn}` で渡します。
+ */
+export const gridAskLocaleTextEn: GridAskLocaleText = /* @__PURE__ */ withFilterTexts(GRID_ASK_LOCALE_TEXT_EN);

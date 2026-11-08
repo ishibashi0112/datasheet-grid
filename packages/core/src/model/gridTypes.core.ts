@@ -1753,10 +1753,14 @@ export type GridLocaleText = {
   sortPanelDisabled: string;
   /** 並び替えのレベルが 1 つのときのつまみのツールチップ。既定 `レベルが 2 件以上のとき並べ替えできます`、英語 `Add a second level to reorder`。 */
   sortPanelNeedsTwo: string;
-  /** 並び替えのタブの昇順のボタン(前に ↑ が付く)。既定 `昇順`、英語 `Ascending`。 */
+  /** 並び替えのタブの昇順のボタンのツールチップと読み上げの名前。既定 `昇順`、英語 `Ascending`。 */
   sortPanelAscending: string;
-  /** 並び替えのタブの降順のボタン(前に ↓ が付く)。既定 `降順`、英語 `Descending`。 */
+  /** 並び替えのタブの昇順のボタンに見せる文字(前に ↑ が付く。列の選択の幅を取りすぎないよう短く)。既定 `昇順`、英語 `Asc`。 */
+  sortPanelAscendingShort: string;
+  /** 並び替えのタブの降順のボタンのツールチップと読み上げの名前。既定 `降順`、英語 `Descending`。 */
   sortPanelDescending: string;
+  /** 並び替えのタブの降順のボタンに見せる文字(前に ↓ が付く)。既定 `降順`、英語 `Desc`。 */
+  sortPanelDescendingShort: string;
   /** 並び替えのレベルの ×。既定 `このレベルを削除`、英語 `Remove this level`。 */
   sortPanelRemove: string;
   /** 足せる列が無いときのツールチップ。既定 `すべての列が並び替えに使われています`、英語 `All columns are already used`。 */
@@ -1770,9 +1774,9 @@ export type GridLocaleText = {
   /** 並び替えが無効のときの列の選択のツールチップ。既定 `並び替えが無効のため編集できません`、英語 `Sorting is turned off, so it can't be changed`。 */
   sortPanelReadOnly: string;
   // ── フィルターのチップと要約 ──
-  /** 隠した列のフィルターの印。既定 `(非表示列)`、英語 `(hidden)`。 */
+  /** 隠した列のフィルターの印。既定 `(非表示列)`、英語 ` (hidden)`(見出しのすぐ後ろにつなぐので先頭に空白)。 */
   filterHiddenColumn: string;
-  /** グループ化している列のフィルターの印。既定 `(グループ化中)`、英語 `(grouped)`。 */
+  /** グループ化している列のフィルターの印。既定 `(グループ化中)`、英語 ` (grouped)`(先頭に空白)。 */
   filterGroupedColumn: string;
   /** 隠した列のフィルターのツールチップ。既定 `非表示列のためジャンプ編集できません(× でクリアは可能)`、英語 `This column is hidden, so its filter can't be opened here. You can still clear it with ×.`。 */
   filterJumpUnavailable: string;
@@ -1790,7 +1794,7 @@ export type GridLocaleText = {
   filterNone: string;
   /** `custom` のフィルターの要約(値が文字でないとき)。既定 `カスタム条件`、英語 `Custom filter`。 */
   filterCustom: string;
-  /** 値の選択の要約(除外)。既定 `{count} 件を除外`、英語 `Excluding {count}`。 */
+  /** 値の選択の要約(除外)。既定 `{count} 件を除外`、英語は数で変わる(関数)。 */
   filterExcluded: GridLocaleTextTemplate<{ count: number }>;
   /** 値の選択の要約(3 件以上)。既定 `{count} 件を選択`、英語 `{count} selected`。 */
   filterSelected: GridLocaleTextTemplate<{ count: number }>;
@@ -1800,7 +1804,7 @@ export type GridLocaleText = {
   filterBoth: GridLocaleTextTemplate<{ condition: string; set: string }>;
   /** 列フィルターの「現在値」が無いとき。既定 `（なし）`、英語 `(none)`。 */
   filterCurrentNone: string;
-  /** 列フィルターの「現在値」(値の選択・除外)。既定 `{count}件を除外中`、英語 `Excluding {count}`。 */
+  /** 列フィルターの「現在値」(値の選択・除外)。既定 `{count}件を除外中`、英語は数で変わる(関数)。 */
   filterCurrentExcluded: GridLocaleTextTemplate<{ count: number }>;
   /** 列フィルターの「現在値」(値の選択)。既定 `{count}件を選択中`、英語 `{count} selected`。 */
   filterCurrentSelected: GridLocaleTextTemplate<{ count: number }>;
@@ -2011,7 +2015,7 @@ export type GridLocaleText = {
   enterMax: GridLocaleTextTemplate<{ max: number }>;
   /** number エディタの検査(`min` と `max`)。既定 `{min}〜{max} で入力してください`、英語 `Enter a number from {min} to {max}`。 */
   enterRange: GridLocaleTextTemplate<{ min: number; max: number }>;
-  /** serverSide の保存に失敗したセルの印のツールチップ。既定 `保存に失敗しました。値を戻しました`、英語 `Couldn't save. The value was restored.`。 */
+  /** serverSide の保存に失敗したセルの下に出るチップ(`showSaveStatus`)。既定 `保存に失敗しました。値を戻しました`、英語 `Couldn't save. The value was restored.`。 */
   saveFailedCell: string;
   /** serverSide の読み込みに失敗したときのバー。既定 `行の取得に失敗しました({count} ブロック)`、英語は数で変わる(関数)。 */
   loadFailed: GridLocaleTextTemplate<{ count: number }>;
@@ -3555,8 +3559,9 @@ export type SpreadsheetGridProps<T, F extends GridFrameworkTypes = GridFramework
   /**
    * serverSide の書き戻し(`dataSource.updateRows`)で、確定したセルに保存状態の印を出す。
    * 保存中は斜線 + 小さなスピナー(`[data-ssg-save="pending"]`)、成功は ✓ バッジを 1.3 秒(`"ok"`)、
-   * 失敗は揺れ + 赤いフラッシュ + ✕ バッジ(`"failed"`)とセル下の「保存に失敗しました」チップ(4 秒 /
-   * スクロールで消える)。既存の保存失敗バー(`onServerSideWriteError`)とは独立に出る。
+   * 失敗は揺れ + 赤いフラッシュ + ✕ バッジ(`"failed"`)とセル下のチップ(文言は `localeText` の
+   * `saveFailedCell`。既定「保存に失敗しました。値を戻しました」。4 秒 / スクロールで消える)。
+   * 既存の保存失敗バー(`onServerSideWriteError`)とは独立に出る。
    * 描画中のセルだけが対象(保存中の印は、スクロールで外れて戻ったセルにも付き直す)。clientSide
    * では何も出ない。
    *

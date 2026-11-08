@@ -65,6 +65,9 @@ describe('resolveSelectionAggregateTarget', () => {
     const withToggle: GridColumn<Row>[] = [{ key: DETAIL_TOGGLE_COLUMN_KEY, width: 28 }, ...columns];
     expect(resolveSelectionAggregateTarget(cellRange(0, 0, 1, 1), 5, withToggle)?.columns).toEqual([columns[0]]);
     expect(resolveSelectionAggregateTarget(cellRange(0, 0, 1, 0), 5, withToggle)).toBeNull();
+    // 合成列 + データ列 1 つの 1 行はデータのセルが 1 つなので集計しない(下部バーの「1 セル」と揃える)。
+    expect(resolveSelectionAggregateTarget(cellRange(0, 0, 0, 1), 5, withToggle)).toBeNull();
+    expect(resolveSelectionAggregateTarget(cellRange(0, 0, 1, 1), 5, withToggle)?.columns).toEqual([columns[0]]);
   });
 });
 

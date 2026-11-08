@@ -39,7 +39,7 @@
 | `showCopyRange` | `boolean` | `true` | `Ctrl/Cmd+C` のあと、コピー元の範囲に Excel と同じ「動く点線」を残す(`.ssg-copy-range-overlay`。`motion` が `'off'` なら静的な点線)。`Esc` と編集開始で消え、ソート / フィルター / グループ開閉 / 行数 / 列の変化で描画しなくなる(貼り付けでは残る)。`false` で点線を出さない(コピー自体は従来どおり)。 |
 | `hoverHighlight` | `'row' \| 'cross'` | `'row'` | ホバーの強調範囲。`'row'` はポインタの行だけ(従来)。`'cross'` はその行に加えて、ポインタの列(列ヘッダー + 同じ列の他セルに薄い帯 `.ssg-col-hover-overlay`)と行番号も染めるクロスヘア表示。色はトークン `--ssg-col-hover-bg`(帯)/ `--ssg-select-bg`(ヘッダー・行番号)。横に長い表で「この値はどの列か」を視線移動なしで答えるため。 |
 | `highlightChanges` | `boolean` | `false` | `rows` が変わったとき、値が変わったセルを一瞬アクセント色で光らせ(`.ssg-body-cell--changed`、`--ssg-motion-slow`)、数値の既定セルは旧値から新値へカウントアップする(`--ssg-motion-base`。表示は `valueFormatter` で整形)。セル編集 / 貼り付け / クリア / undo・redo / 外部からの `rows` 差し替えのすべてが対象。clientSide 専用(SSRM では無効)。描画中のセルだけが対象で、変わったセルが 200 を超えるとフラッシュのみ、2,000 を超える・行の挿入 / 削除 / 並べ替えを伴う・参照の変わった行が 5,000 を超える(データの読み直し)ときは何もしない。 |
-| `showSaveStatus` | `boolean` | `true` | serverSide の書き戻し(`dataSource.updateRows`)で、確定したセルに保存状態の印を出す。保存中は斜線 + 小さなスピナー(`[data-ssg-save="pending"]`)、成功は ✓ バッジを 1.3 秒(`"ok"`)、失敗は揺れ + 赤いフラッシュ + ✕ バッジ(`"failed"`)とセル下の「保存に失敗しました」チップ(4 秒 / スクロールで消える)。既存の保存失敗バー(`onServerSideWriteError`)とは独立に出る。描画中のセルだけが対象(保存中の印は、スクロールで外れて戻ったセルにも付き直す)。clientSide では何も出ない。 |
+| `showSaveStatus` | `boolean` | `true` | serverSide の書き戻し(`dataSource.updateRows`)で、確定したセルに保存状態の印を出す。保存中は斜線 + 小さなスピナー(`[data-ssg-save="pending"]`)、成功は ✓ バッジを 1.3 秒(`"ok"`)、失敗は揺れ + 赤いフラッシュ + ✕ バッジ(`"failed"`)とセル下のチップ(文言は `localeText` の `saveFailedCell`。既定「保存に失敗しました。値を戻しました」。4 秒 / スクロールで消える)。既存の保存失敗バー(`onServerSideWriteError`)とは独立に出る。描画中のセルだけが対象(保存中の印は、スクロールで外れて戻ったセルにも付き直す)。clientSide では何も出ない。 |
 | `rowDragMotion` | `'ghost' \| 'live'` | `'ghost'` | 行ドラッグ並べ替え(`enableRowDrag`)の表示方式。`'ghost'` は従来(ゴースト + ガイド線、ドロップ後に新しい位置へスライド)。`'live'` は掴んだ行がポインタに追従し、通る先の行がその場で上下へ退避する(ドロップ先が「隙間」として見える。枠外で離しても直前の位置へ確定、`Esc` で元へ戻る。ウィンドウからフォーカスが外れたときも元へ戻る)。`motion` が `'off'` のときは `'ghost'` と同じ。 |
 | `columnDragMotion` | `'ghost' \| 'live'` | `'ghost'` | 列ヘッダーのドラッグ並べ替え(`onColumnsChange` 指定時)の表示方式。`'ghost'` は従来(ゴースト + 縦線、ドロップ後に新しい位置へスライド)。`'live'` は同じペイン内では掴んだ列(ヘッダー + 描画中のセル)がポインタに追従し、通る先の列がその場で左右へ退避する(ドロップ先が「隙間」として見える。枠外で離しても直前の位置へ確定、`Esc` で元へ戻る。ウィンドウからフォーカスが外れたときも元へ戻る)。固定列のペインをまたいで移す(固定の変更)ときは、掴んだ列の複製(浮かぶ列)がポインタに付いてきて元のペインは列が抜けた分だけ詰まり、移動先は縦線で示す(浮かぶ列の見出しに、固定ペインへはピン / 中央へは移動の矢印のアイコン。浮かぶ列は表の枠の内側に収まり、離すと新しい位置へ滑り込む)。`motion` が `'off'` のときは `'ghost'` と同じ。 |
 | `find` | `boolean \| FindOptions` | `false` | **セル内検索**。`true` でグリッド右上の検索バー(`.ssg-find-bar`)と `Ctrl/Cmd+F`(グリッドにフォーカスがあるときだけ横取り)が有効になる。表示文字列(`valueFormatter` 適用後)への部分一致で、ヒットをすべて `<mark class="ssg-find-mark">` で強調し、`Enter` / `↓` で次、`Shift+Enter` / `↑` で前へ(アクティブセルとスクロールが追従)、`Esc` で閉じる。行は消さない(絞り込みのフィルターとは別)。`FindOptions` = `{ shortcut?: boolean(既定 true。false でブラウザ標準の検索に譲る), caseSensitive?: boolean(既定 false) }`。走査は時間分割(1 チャンク 10ms)で入力を止めない。SSRM はロード済み範囲だけが対象。ヒットは 10,000 件で打ち切り(件数に `+`)。詳細は「セル内検索」節。 |
@@ -166,10 +166,12 @@ import { localeTextEn } from '@ishibashi0112/spreadsheet-grid/locales/en';
 
 - 値は文字列か関数です(型 `GridLocaleTextTemplate`)。文字列は `{name}` の所が値に置き換わり、関数は値を受け取って文字列を返します(数で言い方が変わる言語のため。例 ``filterColumns: ({ count }) => (count === 1 ? '1 column' : `${count} columns`)``)。関数を入れた表は、コンポーネントの外で作るか `useMemo` で包んでください(関数は参照で比べるので、描くたびに新しい関数を作ると、そのたびに文言を使う部分がすべて描き直されます)。
 - 曜日(`calendarWeekdays`)と月(`calendarMonths`)は配列(日曜から 7 つ / 1 月から 12)です。
+- Next.js(App Router)では、`localeTextEn` は関数を含むので、サーバーコンポーネントから props で渡せません(開くと 500、静的なページはビルドが止まる。型の検査は通る)。グリッドを描く `'use client'` のファイルの中で import して渡してください。サーバーからは言語(`'en'` などの文字)だけを渡します。
 - 文言を渡す prop(`noRowsText` / `noMatchingRowsText` / `globalFilterPlaceholder` / `totalRow.label` / `GridAskBar` の `placeholder` / `label`)を渡したときは、そちらが優先です。
 - 英語でも、日付の書き方(`yyyy/mm/dd`)・数の書き方・件数の数字(区切りを入れない `行 1000000 / 1000000`)は変わりません。列の `valueFormatter` など利用側が渡す文字も変わりません。
 - `localeText={{ … }}` をその場で書いても、中身(文字列・配列・関数の参照)が同じ間は作り直しません。
 - `localeText` を途中で変えると(言語の切り替えなど)、グリッドの文言はすぐに変わります。ただし、出ている間に変えた serverSide の保存の失敗の吹き出し(数秒で消える)は前の文言のままです。
+- 展開行(`detailRow`)のカードの中などに別のグリッドを置くときは、そのグリッドにも `localeText` を渡します(外のグリッドの文言は引き継ぎません)。
 - 開発時の console の警告は、言語によらず日本語の行と英語の行の 2 行です(本番では出ません)。
 - AI バー(`GridAskBar` / `useGridAsk`)の文言は、`GridAskBar` の `localeText` で別に渡します(「ことばで絞り込み」の「AI バーの文言(`localeText`)」)。
 
@@ -306,8 +308,10 @@ import { localeTextEn } from '@ishibashi0112/spreadsheet-grid/locales/en';
 | `sortPanelDrag` | `ドラッグして優先順位を変更` | `Drag to change the priority` | 並び替えのタブのつまみのツールチップ。 |
 | `sortPanelDisabled` | `並び替えが無効です` | `Sorting is turned off` | 並び替えが無効のときのツールチップ。 |
 | `sortPanelNeedsTwo` | `レベルが 2 件以上のとき並べ替えできます` | `Add a second level to reorder` | 並び替えのレベルが 1 つのときのつまみのツールチップ。 |
-| `sortPanelAscending` | `昇順` | `Ascending` | 並び替えのタブの昇順のボタン(前に ↑ が付く)。 |
-| `sortPanelDescending` | `降順` | `Descending` | 並び替えのタブの降順のボタン(前に ↓ が付く)。 |
+| `sortPanelAscending` | `昇順` | `Ascending` | 並び替えのタブの昇順のボタンのツールチップと読み上げの名前。 |
+| `sortPanelAscendingShort` | `昇順` | `Asc` | 並び替えのタブの昇順のボタンに見せる文字(前に ↑ が付く。列の選択の幅を取りすぎないよう短く)。 |
+| `sortPanelDescending` | `降順` | `Descending` | 並び替えのタブの降順のボタンのツールチップと読み上げの名前。 |
+| `sortPanelDescendingShort` | `降順` | `Desc` | 並び替えのタブの降順のボタンに見せる文字(前に ↓ が付く)。 |
 | `sortPanelRemove` | `このレベルを削除` | `Remove this level` | 並び替えのレベルの ×。 |
 | `sortPanelAllUsed` | `すべての列が並び替えに使われています` | `All columns are already used` | 足せる列が無いときのツールチップ。 |
 | `sortPanelAddHint` | `並び替えの基準を追加します` | `Add a sort level` | 「基準を追加」のツールチップ。 |
@@ -319,8 +323,8 @@ import { localeTextEn } from '@ishibashi0112/spreadsheet-grid/locales/en';
 
 | キー | 既定(日本語) | 英語(`localeTextEn`) | 説明 |
 | --- | --- | --- | --- |
-| `filterHiddenColumn` | `(非表示列)` | `(hidden)` | 隠した列のフィルターの印。 |
-| `filterGroupedColumn` | `(グループ化中)` | `(grouped)` | グループ化している列のフィルターの印。 |
+| `filterHiddenColumn` | `(非表示列)` | ` (hidden)` | 隠した列のフィルターの印(見出しのすぐ後ろにつなぐので、英語は先頭に空白)。 |
+| `filterGroupedColumn` | `(グループ化中)` | ` (grouped)` | グループ化している列のフィルターの印(英語は先頭に空白)。 |
 | `filterJumpUnavailable` | `非表示列のためジャンプ編集できません(× でクリアは可能)` | `This column is hidden, so its filter can't be opened here. You can still clear it with ×.` | 隠した列のフィルターのツールチップ。 |
 | `filterEditUnderGroup` | `グループの列の見出しの下で編集` | `Opens under the group column header` | グループ化している列のフィルターのツールチップ。 |
 | `filterJump` | `この列へジャンプして編集` | `Go to this column to edit` | フィルターのチップのツールチップ。 |
@@ -329,12 +333,12 @@ import { localeTextEn } from '@ishibashi0112/spreadsheet-grid/locales/en';
 | `filterClearFor` | `{column} のフィルターをクリア` | `Clear the filter on {column}` | フィルターのチップの × の読み上げの名前。 |
 | `filterNone` | `フィルターなし` | `No filter` | 条件の無いフィルターの要約。 |
 | `filterCustom` | `カスタム条件` | `Custom filter` | `custom` のフィルターの要約(値が文字でないとき)。 |
-| `filterExcluded` | `{count} 件を除外` | `Excluding {count}` | 値の選択の要約(除外)。 |
+| `filterExcluded` | `{count} 件を除外` | (数で変わる) | 値の選択の要約(除外)。 |
 | `filterSelected` | `{count} 件を選択` | `{count} selected` | 値の選択の要約(3 件以上)。 |
 | `filterMatches` | `"{value}" に一致` | `Is "{value}"` | `select` のフィルターの要約。 |
 | `filterBoth` | `{condition} かつ {set}` | `{condition} and {set}` | 条件と値の選択の両方があるときの要約。 |
 | `filterCurrentNone` | `（なし）` | `(none)` | 列フィルターの「現在値」が無いとき。 |
-| `filterCurrentExcluded` | `{count}件を除外中` | `Excluding {count}` | 列フィルターの「現在値」(値の選択・除外)。 |
+| `filterCurrentExcluded` | `{count}件を除外中` | (数で変わる) | 列フィルターの「現在値」(値の選択・除外)。 |
 | `filterCurrentSelected` | `{count}件を選択中` | `{count} selected` | 列フィルターの「現在値」(値の選択)。 |
 
 **条件(要約と列フィルター)**
@@ -462,7 +466,7 @@ import { localeTextEn } from '@ishibashi0112/spreadsheet-grid/locales/en';
 | `enterMin` | `{min} 以上で入力してください` | `Enter {min} or more` | number エディタの検査(`min` だけ)。 |
 | `enterMax` | `{max} 以下で入力してください` | `Enter {max} or less` | number エディタの検査(`max` だけ)。 |
 | `enterRange` | `{min}〜{max} で入力してください` | `Enter a number from {min} to {max}` | number エディタの検査(`min` と `max`)。 |
-| `saveFailedCell` | `保存に失敗しました。値を戻しました` | `Couldn't save. The value was restored.` | serverSide の保存に失敗したセルの印のツールチップ。 |
+| `saveFailedCell` | `保存に失敗しました。値を戻しました` | `Couldn't save. The value was restored.` | serverSide の保存に失敗したセルの下に出るチップ(`showSaveStatus`)。 |
 | `loadFailed` | `行の取得に失敗しました({count} ブロック)` | (数で変わる) | serverSide の読み込みに失敗したときのバー。 |
 | `dismissLoadError` | `エラー通知を閉じる` | `Dismiss the error` | 同上の × の読み上げの名前。 |
 | `saveFailed` | `変更の保存に失敗しました({count} 行)。値を元に戻しました` | (数で変わる) | serverSide の保存に失敗したときのバー。 |
@@ -1535,7 +1539,7 @@ const gridRef = useRef<SpreadsheetGridHandle<Row>>(null);
 // const csv = gridRef.current?.exportCsv({ scope: 'selection' });
 ```
 
-`viewRowIndex` / `colIndex` は**ビュー座標**(フィルター/ソート適用後の表示 index。`colIndex` は固定列を含む視覚順 = 左→中央→右)。`viewRowIndex` はラベル行・グループ行も 1 行に数え、`colIndex` は行ドラッグのハンドル列・展開トグル列・自動グループ列(ライブラリが足す列)も数える。行キー / 列キーからは `getViewRowIndex(rowKey)` / `getColIndex(columnKey)` で引ける。アクティブセルは表示位置に付く(上の行を消すと、同じ位置に来た別の行を指す。Excel と同じ)。範囲外 index は内部でクランプ/無視する。表示行数が減った(rows 差し替え / フィルター / グループの折りたたみ等)ときも、はみ出したアクティブセル / 選択範囲は範囲内へ詰められる(アクティブセルは最終行へ寄せ、範囲ははみ出した部分を切り詰める。0 行になったらセル / 行の選択とアクティブセルは解除)。このため `getActiveCell()` / `getSelection()` が存在しない行を返すことはない。
+`viewRowIndex` / `colIndex` は**ビュー座標**(フィルター/ソート適用後の表示 index。`colIndex` は固定列を含む視覚順 = 左→中央→右)。`viewRowIndex` はラベル行・グループ行も 1 行に数え、`colIndex` は行ドラッグのハンドル列・展開トグル列・自動グループ列(ライブラリが足す列)も数える。行キー / 列キーからは `getViewRowIndex(rowKey)` / `getColIndex(columnKey)` で引ける。アクティブセルは表示位置に付く(上の行を消すと、同じ位置に来た別の行を指す。Excel と同じ)。範囲外 index は内部でクランプ/無視する。表示行数が減った(rows 差し替え / フィルター / グループの折りたたみ等)ときも、はみ出したアクティブセル / 選択範囲は範囲内へ詰められる(アクティブセルは最終行へ寄せ、範囲ははみ出した部分を切り詰める。0 行になったらセル / 行の選択とアクティブセルは解除)。行が 0 件のときの `selectCell` / `selectRange` / `setActiveCell` は何もしない。このため `getActiveCell()` / `getSelection()` が存在しない行を返すことはない。
 
 ### スクロール
 
@@ -2176,7 +2180,7 @@ export async function POST(req: Request) {
 
 ### AI バーの文言(`localeText`)
 
-`GridAskBar` / `useGridAsk` の `localeText` で、バーの文言(入力欄・ボタン・知らせ・反映した条件のチップ・「使えなかった部分」の理由)を変えられます。既定は日本語です。英語はグリッドと同じ入口 `@ishibashi0112/spreadsheet-grid/locales/en` の `gridAskLocaleTextEn` です。条件の要約(`conditionContains` など)はグリッドの `localeText` と同じキーです。AI に送る指示(`system` / `prompt`)は言語によらず英語です(利用者の文はそのまま送るので、どの言語で聞いてもよい)。 `localeText` を途中で変えたときは、出ている知らせ・エラー・反映した条件のチップは、次に頼んだときから新しい文言になります。
+`GridAskBar` / `useGridAsk` の `localeText` で、バーの文言(入力欄・ボタン・知らせ・反映した条件のチップ・「使えなかった部分」の理由)を変えられます。既定は日本語です。英語はグリッドと同じ入口 `@ishibashi0112/spreadsheet-grid/locales/en` の `gridAskLocaleTextEn` です。条件の要約(`conditionContains` など)はグリッドの `localeText` と同じキーです。AI に送る指示(`system` / `prompt` の決まった文)は言語によらず英語です(利用者の文はそのまま送るので、どの言語で聞いてもよい)。列の見出し・候補の値・日付の期間のプリセットの名前は画面と同じ文字を送ります(組み込みのプリセットは `localeText` の `datePresetToday` などなので、英語なら `Today`)。 `localeText` を途中で変えたときは、出ている知らせ・エラー・反映した条件のチップは、次に頼んだときから新しい文言になります。
 
 ```tsx
 import { GridAskBar } from '@ishibashi0112/spreadsheet-grid/ai';
@@ -2212,7 +2216,7 @@ core の関数(`createGridAskRequest` / `readGridAskAnswer` / `describeGridAskVi
 | `fromAi` | `AI から: {text}` | `From the AI: {text}` | AI が「できなかった」と書いてきた文。 |
 | `askFailed` | `AI に聞けませんでした。もう一度試してください。` | `Couldn't reach the AI. Try again.` | `ask` が失敗したとき(`error`)。 |
 | `noGrid` | `表が見つかりませんでした。表が出てから、もう一度試してください。` | `The grid wasn't found. Try again once it's on the page.` | `grid` の ref が空のとき(`error`)。 |
-| `changedNotice` | `表の条件が変わったので、ここからは変えられません。表のフィルターや並びで直してください。` | `The grid has changed since, so this can't be changed here. Use the grid's filters and sorting.` | 反映したあと表を手で変えたとき(`notice`)。 |
+| `changedNotice` | `表の条件が変わったので、ここからは変えられません。表のフィルターや並びで直してください。` | `The grid's conditions have changed, so they can't be changed from here. Use the grid's filters and sorting.` | 反映したあと表を手で変えたとき(`notice`)。 |
 
 **反映した条件のチップ**
 

@@ -72,7 +72,7 @@ export type GridAskLocaleText = Pick<GridLocaleText, FilterLocaleTextKey> & {
   askFailed: string;
   /** `grid` の ref が空のとき(`error`)。既定 `表が見つかりませんでした。表が出てから、もう一度試してください。`、英語 `The grid wasn't found. Try again once it's on the page.`。 */
   noGrid: string;
-  /** 反映したあと表を手で変えたとき(`notice`)。既定 `表の条件が変わったので、ここからは変えられません。表のフィルターや並びで直してください。`、英語 `The grid has changed since, so this can't be changed here. Use the grid's filters and sorting.`。 */
+  /** 反映したあと表を手で変えたとき(`notice`)。既定 `表の条件が変わったので、ここからは変えられません。表のフィルターや並びで直してください。`、英語 `The grid's conditions have changed, so they can't be changed from here. Use the grid's filters and sorting.`。 */
   changedNotice: string;
   // ── 反映した条件のチップ ──
   /** 並びのチップの名前。既定 `並び`、英語 `Sort`。 */

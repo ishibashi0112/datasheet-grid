@@ -101,6 +101,19 @@ const formatSingleCell = (
   return name === undefined ? `${toColumnName(columnIndex)}${rowNumber}` : `${name} ${rowNumber}`;
 };
 
+// startCol〜endCol がすべて名前で出す列(合成列)か。
+const isNamedColumnRange = (toColumnName: GridColumnNamer, startCol: number, endCol: number) => {
+  if (!toColumnName.cellNameOf) {
+    return false;
+  }
+  for (let col = startCol; col <= endCol; col += 1) {
+    if (toColumnName.cellNameOf(col) === undefined) {
+      return false;
+    }
+  }
+  return true;
+};
+
 // 追加(dogfood DF-10): 行の番号(行ヘッダーの番号と同じ = ラベル行を飛ばした通し番号)と、範囲の中のデータ行の数。
 //   numberOf は範囲の始まり / アクティブセル向け(ラベル行なら次のデータ行の番号)、lastNumberOf は範囲の終わり向け
 //   (ラベル行なら前のデータ行の番号)。ラベル行が無ければ view index + 1 と行数そのもの(従来どおり)。
@@ -183,6 +196,13 @@ export const formatGridSelectionLabel = (
     const name = startCol === endCol ? toColumnName.cellNameOf?.(startCol) : undefined;
     if (name !== undefined) {
       return `${name} ${rowNumberer.numberOf(startRow)}:${rowNumberer.lastNumberOf(endRow)}`;
+    }
+    // 追加(英語対応の確かめ直し): 名前で出す列だけをまたぐ範囲(行ドラッグのハンドル列 → 展開トグル列)は両端を名前で
+    //   (「移動 8:詳細 8」)。これまでは両端とも次のデータ列の文字になり、データのセルが無いのに「A8」と出ていた。
+    if (isNamedColumnRange(toColumnName, startCol, endCol)) {
+      const startName = toColumnName.cellNameOf?.(startCol) ?? '';
+      const endName = toColumnName.cellNameOf?.(endCol) ?? '';
+      return `${startName} ${rowNumberer.numberOf(startRow)}:${endName} ${rowNumberer.lastNumberOf(endRow)}`;
     }
     const start = `${toColumnName(startCol)}${rowNumberer.numberOf(startRow)}`;
     const end = `${toColumnName(endCol)}${rowNumberer.lastNumberOf(endRow)}`;

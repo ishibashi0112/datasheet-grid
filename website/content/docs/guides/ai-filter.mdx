@@ -204,7 +204,7 @@ AI が入れられる条件は、**その列のフィルター画面で手で入
 
 ## 見た目と自前の UI
 
-バーの文言は既定で日本語です。英語にするときは、グリッドと同じ入口 `@ishibashi0112/spreadsheet-grid/locales/en` の `gridAskLocaleTextEn` を `localeText` に渡します(グリッドには `localeTextEn`。[英語と文言](/docs/guides/localization))。AI に送る指示は言語によらず同じで、利用者はどの言語で書いても構いません。
+バーの文言は既定で日本語です。英語にするときは、グリッドと同じ入口 `@ishibashi0112/spreadsheet-grid/locales/en` の `gridAskLocaleTextEn` を `localeText` に渡します(グリッドには `localeTextEn`。[英語と文言](/docs/guides/localization))。AI に送る指示は言語によらず同じで(日付の期間のプリセットの名前だけは画面の言語)、利用者はどの言語で書いても構いません。
 
 ```tsx
 import { gridAskLocaleTextEn, localeTextEn } from '@ishibashi0112/spreadsheet-grid/locales/en';

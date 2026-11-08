@@ -289,31 +289,34 @@ export function SortManagementPanel({
                   ))}
                 </select>
 
-                {/* 方向セグメント(昇順 / 降順) */}
+                {/* 方向セグメント(昇順 / 降順)。見せる文字は短い方(英語 Asc / Desc。長いと列の選択が細くなり列名が切れる)、
+                    ツールチップと読み上げの名前は長い方。 */}
                 <div className="ssg-sort-dir-group">
                   <button
                     type="button"
                     disabled={!canSort}
                     onClick={() => onChangeDirection(index, 'asc')}
+                    aria-label={texts.sortPanelAscending}
                     data-ssg-tooltip={texts.sortPanelAscending}
                     className={cx(
                       'ssg-sort-dir-btn',
                       entry.direction === 'asc' && 'ssg-sort-dir-btn--active',
                     )}
                   >
-                    ↑ {texts.sortPanelAscending}
+                    ↑ {texts.sortPanelAscendingShort}
                   </button>
                   <button
                     type="button"
                     disabled={!canSort}
                     onClick={() => onChangeDirection(index, 'desc')}
+                    aria-label={texts.sortPanelDescending}
                     data-ssg-tooltip={texts.sortPanelDescending}
                     className={cx(
                       'ssg-sort-dir-btn',
                       entry.direction === 'desc' && 'ssg-sort-dir-btn--active',
                     )}
                   >
-                    ↓ {texts.sortPanelDescending}
+                    ↓ {texts.sortPanelDescendingShort}
                   </button>
                 </div>
 

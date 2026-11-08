@@ -206,6 +206,19 @@ describe('createGridApi', () => {
     expect(actions[0]).toMatchObject({ type: 'cell/activate', cell: null });
   });
 
+  // 追加(英語対応の確かめ直し): 0 行のときは無い 1 行目を選ばない(getSelection() が存在しない行を返さない)。
+  it('0 行のときの selectCell / selectRange / setActiveCell は何もしない(クリアの null はそのまま)', () => {
+    const api = createGridApi<Row>(withExport);
+    const { args, actions } = makeArgs();
+    api.update({ ...args, viewRowCount: 0 });
+    api.handle.selectCell(0, 0);
+    api.handle.selectRange({ start: { row: 2, col: 1 }, end: { row: 3, col: 1 } });
+    api.handle.setActiveCell({ row: 0, col: 0 });
+    expect(actions).toEqual([]);
+    api.handle.setActiveCell(null);
+    expect(actions[0]).toMatchObject({ type: 'cell/activate', cell: null });
+  });
+
   it('exportCsv は scope に応じて行 / 列を解決し、selection 無しの scope=selection は空文字', () => {
     const api = createGridApi<Row>(withExport);
     const { args } = makeArgs();

@@ -31,6 +31,24 @@ import { localeTextEn } from '@ishibashi0112/spreadsheet-grid/locales/en';
 <SpreadsheetGrid localeText={{ ...localeTextEn, rowCount: 'Showing {shown} of {total}' }} … />
 ```
 
+### Next.js(App Router)
+
+`localeTextEn` は関数(数で変わる言い方)を含むので、サーバーコンポーネントから props で渡せません(開くと 500 になり、静的なページはビルドが止まります。型の検査は通るので書いた時点では気づけません)。グリッドを描く `'use client'` のファイルの中で import し、サーバーからは言語だけを渡します。
+
+```tsx
+// app/orders/orders-grid.tsx
+'use client';
+import { SpreadsheetGrid } from '@ishibashi0112/spreadsheet-grid';
+import { localeTextEn } from '@ishibashi0112/spreadsheet-grid/locales/en';
+
+export function OrdersGrid({ lang, rows }: { lang: 'ja' | 'en'; rows: Order[] }) {
+  return <SpreadsheetGrid rows={rows} columns={columns} localeText={lang === 'en' ? localeTextEn : undefined} />;
+}
+
+// app/orders/page.tsx(サーバーコンポーネント)
+<OrdersGrid lang="en" rows={rows} />
+```
+
 ## 文言の書き方
 
 - 文字列は `{name}` の所が値に置き換わります(`rowCount` の `{shown}` / `{total}` など。使える名前はキーの一覧の説明に書いてあります)。
@@ -46,6 +64,7 @@ const localeText = {
 
 - 曜日(`calendarWeekdays`。日曜から 7 つ)と月(`calendarMonths`。1 月から 12)は配列です。
 - `localeText={{ … }}` をその場で書いても、中身(文字列・配列・関数の参照)が同じ間は作り直しません。
+- 展開行のカードの中などに別のグリッドを置くときは、そのグリッドにも `localeText` を渡します(外のグリッドの文言は引き継ぎません)。
 
 ## 変わるものと変わらないもの
 

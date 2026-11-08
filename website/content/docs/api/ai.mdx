@@ -124,7 +124,7 @@ export async function POST(req: Request) {
 
 ### AI バーの文言(`localeText`)
 
-`GridAskBar` / `useGridAsk` の `localeText` で、バーの文言(入力欄・ボタン・知らせ・反映した条件のチップ・「使えなかった部分」の理由)を変えられます。既定は日本語です。英語はグリッドと同じ入口 `@ishibashi0112/spreadsheet-grid/locales/en` の `gridAskLocaleTextEn` です。条件の要約(`conditionContains` など)はグリッドの `localeText` と同じキーです。AI に送る指示(`system` / `prompt`)は言語によらず英語です(利用者の文はそのまま送るので、どの言語で聞いてもよい)。 `localeText` を途中で変えたときは、出ている知らせ・エラー・反映した条件のチップは、次に頼んだときから新しい文言になります。
+`GridAskBar` / `useGridAsk` の `localeText` で、バーの文言(入力欄・ボタン・知らせ・反映した条件のチップ・「使えなかった部分」の理由)を変えられます。既定は日本語です。英語はグリッドと同じ入口 `@ishibashi0112/spreadsheet-grid/locales/en` の `gridAskLocaleTextEn` です。条件の要約(`conditionContains` など)はグリッドの `localeText` と同じキーです。AI に送る指示(`system` / `prompt` の決まった文)は言語によらず英語です(利用者の文はそのまま送るので、どの言語で聞いてもよい)。列の見出し・候補の値・日付の期間のプリセットの名前は画面と同じ文字を送ります(組み込みのプリセットは `localeText` の `datePresetToday` などなので、英語なら `Today`)。 `localeText` を途中で変えたときは、出ている知らせ・エラー・反映した条件のチップは、次に頼んだときから新しい文言になります。
 
 ```tsx
 import { GridAskBar } from '@ishibashi0112/spreadsheet-grid/ai';
@@ -160,7 +160,7 @@ core の関数(`createGridAskRequest` / `readGridAskAnswer` / `describeGridAskVi
 | `fromAi` | `AI から: {text}` | `From the AI: {text}` | AI が「できなかった」と書いてきた文。 |
 | `askFailed` | `AI に聞けませんでした。もう一度試してください。` | `Couldn't reach the AI. Try again.` | `ask` が失敗したとき(`error`)。 |
 | `noGrid` | `表が見つかりませんでした。表が出てから、もう一度試してください。` | `The grid wasn't found. Try again once it's on the page.` | `grid` の ref が空のとき(`error`)。 |
-| `changedNotice` | `表の条件が変わったので、ここからは変えられません。表のフィルターや並びで直してください。` | `The grid has changed since, so this can't be changed here. Use the grid's filters and sorting.` | 反映したあと表を手で変えたとき(`notice`)。 |
+| `changedNotice` | `表の条件が変わったので、ここからは変えられません。表のフィルターや並びで直してください。` | `The grid's conditions have changed, so they can't be changed from here. Use the grid's filters and sorting.` | 反映したあと表を手で変えたとき(`notice`)。 |
 
 **反映した条件のチップ**
 

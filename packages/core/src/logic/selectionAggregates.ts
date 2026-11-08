@@ -20,7 +20,7 @@ export type SelectionAggregateTarget<T> = {
   columns: GridColumn<T>[];
 };
 
-// 選択から集計対象を求めます。選択が 2 セル未満 / データ列が無いときは null(集計しない)。
+// 選択から集計対象を求めます。選択のデータ列のセルが 2 つ未満(データ列が無いときを含む)は null(集計しない)。
 export const resolveSelectionAggregateTarget = <T,>(
   selection: GridSelection,
   viewRowCount: number,
@@ -30,14 +30,12 @@ export const resolveSelectionAggregateTarget = <T,>(
   if (!range) {
     return null;
   }
-  const selectedCellCount = (range.endRow - range.startRow + 1) * (range.endCol - range.startCol + 1);
-  if (selectedCellCount < 2) {
-    return null;
-  }
   const columns = orderedColumns
     .slice(range.startCol, range.endCol + 1)
     .filter((column) => !isSyntheticColumnKey(column.key));
-  if (columns.length === 0) {
+  // 変更(英語対応の確かめ直し): 2 セル以上かどうかはデータ列のセルで数えます(下部バーのセルの数と同じ)。これまでは合成列も
+  //   数えていて、行ドラッグのハンドル列からデータ列 1 つまで広げると「1 セル」なのに集計が出ていました。
+  if ((range.endRow - range.startRow + 1) * columns.length < 2) {
     return null;
   }
   return { startRow: range.startRow, endRow: range.endRow, columns };
