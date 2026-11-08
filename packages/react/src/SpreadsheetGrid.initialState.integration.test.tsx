@@ -138,6 +138,19 @@ describe('initialState(DU-12)', () => {
     expect(restoreColumnsFromState(columns, undefined)).toBe(columns);
     expect(restoreColumnsFromState(columns, { sort: [] })).toBe(columns);
     expect(restoreColumnsFromState(columns, 'broken')).toBe(columns);
+    // 追加(段階 2 の確かめ直し S-N2): 保存した columns に同じ key が重なっていても、列は 1 つだけ。
+    expect(
+      restoreColumnsFromState(columns, { columns: [{ key: 'qty' }, { key: 'name' }, { key: 'qty', visible: false }] }).map(
+        (column) => [column.key, column.visible],
+      ),
+    ).toEqual([
+      ['qty', undefined],
+      ['name', undefined],
+    ]);
+    // 追加(段階 2 の確かめ直し): readonly の配列(as const の列定義など)も受ける。
+    const readonlyColumns: readonly GridColumn<Row>[] = columns;
+    const restoredFromReadonly: GridColumn<Row>[] = restoreColumnsFromState(readonlyColumns, saved);
+    expect(restoredFromReadonly.map((column) => column.key)).toEqual(['qty', 'name']);
 
     const ref = createRef<SpreadsheetGridHandle<Row>>();
     render(

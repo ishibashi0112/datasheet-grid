@@ -281,18 +281,22 @@ export const migrateGridState = (input: unknown): GridState => {
   //   返します。undefined = 列メタ未適用(v1 後方互換: v1 保存値は columns フィールドが無いため undefined)。
   //   空配列([])は「present だが列メタ無し(0 列 or 全無効)」で、buildGridState 出力との往復一致のため
   //   undefined へ潰しません(applyState では [] 適用=実質 no-op)。
+  //   - 同じ key が 2 回以上あれば最初の 1 つだけ使います(追加: 段階 2 の確かめ直し S-N2。手で書いた / 壊れた保存値で
+  //     列が二重に並んでいた)。
   let columns: GridColumnState[] | undefined;
   const rawColumns = source.columns;
   if (Array.isArray(rawColumns)) {
     const normalized: GridColumnState[] = [];
+    const seenKeys = new Set<string>();
     for (const item of rawColumns) {
       if (!item || typeof item !== 'object') {
         continue;
       }
       const e = item as Record<string, unknown>;
-      if (typeof e.key !== 'string') {
+      if (typeof e.key !== 'string' || seenKeys.has(e.key)) {
         continue;
       }
+      seenKeys.add(e.key);
       const entry: GridColumnState = { key: e.key };
       if (typeof e.visible === 'boolean') {
         entry.visible = e.visible;
@@ -465,7 +469,8 @@ export const applyColumnState = <T,>(
   const ordered: GridColumn<T>[] = [];
   for (const meta of savedColumnState) {
     const column = byKey.get(meta.key);
-    if (!column) {
+    // 同じ key が重なっていたら最初の 1 つだけ(migrateGridState でも捨てるが、直接渡されたときのため)。
+    if (!column || consumedKeys.has(meta.key)) {
       continue;
     }
     consumedKeys.add(meta.key);
@@ -487,16 +492,18 @@ export const applyColumnState = <T,>(
 //   (これまでは方法が無く、アプリが同じ関数を自作していた)。applyState と同じ規則(保存に無い列は末尾、今の列に無い保存の
 //   列は捨てる、固定列ごとに並べ直す)で、幅は列定義へ焼き込みません(initialState の columnWidths で戻す)。保存した columns が
 //   無い / 読めないときは渡した配列をそのまま返します。
+// 変更(段階 2 の確かめ直し): readonly の配列(as const の列定義など)も受けます。そのまま返すときも columns prop へ渡せるよう
+//   型は C[] にします(グリッドは columns を書き換えない)。
 export const restoreColumnsFromState = <C extends { key: string; visible?: boolean; pinned?: GridColumn<unknown>['pinned'] }>(
-  columns: C[],
+  columns: readonly C[],
   state: unknown,
 ): C[] => {
   if (state === null || typeof state !== 'object') {
-    return columns;
+    return columns as C[];
   }
   const saved = migrateGridStatePatch(state).columns;
   if (!saved) {
-    return columns;
+    return columns as C[];
   }
   return applyColumnState(columns as unknown as GridColumn<unknown>[], saved, {}) as unknown as C[];
 };

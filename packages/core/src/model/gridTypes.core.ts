@@ -3418,10 +3418,11 @@ export type SpreadsheetGridProps<T, F extends GridFrameworkTypes = GridFramework
   getFilterOptions?: (params: GetFilterOptionsParams<T, F>) => Promise<GetFilterOptionsResult>;
   /**
    * ソート機能の有効化。ソートは列メニュー(⋮)の「昇順 / 降順で並び替え」と「並び替えを管理…」
-   * パネルから行う(ヘッダー本体のクリックは列範囲選択)。`false` でメニューのソート項目が消え、
-   * `applyState` 等で載った `sort` も適用されない。ソート順は値で決まり、数値として解釈できる値 →
-   * 文字列(日本語照合・数字は数値順)→ 空白セル(null / undefined / 空文字)
-   * の順。**空白セルは昇順でも降順でも末尾**(Excel と同じ)。
+   * パネルから行う(ヘッダー本体のクリックは列範囲選択。`Shift` を押しながら見出しを押すと、
+   * 選ぶのではなくその列を並べ替えに足す = 押すたびに昇順 → 降順 → 外す)。`false`
+   * でメニューのソート項目が消え、`applyState` 等で載った `sort` も適用されない。
+   * ソート順は値で決まり、数値として解釈できる値 → 文字列(日本語照合・数字は数値順)→ 空白セル(null
+   * / undefined / 空文字)の順。**空白セルは昇順でも降順でも末尾**(Excel と同じ)。
    *
    * @defaultValue `true`
    */
