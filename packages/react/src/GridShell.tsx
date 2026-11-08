@@ -3874,6 +3874,8 @@ export function useGridShell<T extends object>({
     canUndoRows,
     canRedoRows,
     clearUndoHistory,
+    // 追加(段階 2 DU-21): applyRows の委譲先(履歴に積んでから onRowsChange)。
+    applyRowsChange: handleRowsChange,
     detailRowEnabled,
     detailIsExpandable,
     detailIndexCacheRef: detailIndexCacheHolder,

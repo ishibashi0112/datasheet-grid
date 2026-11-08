@@ -143,6 +143,8 @@ export type GridApiArgs<T> = {
   find: { open: (query?: string) => void; close: () => void; next: () => void; prev: () => void };
   // undo / redo(history controller)。
   undoRows: () => void;
+  // 追加(段階 2 DU-21): applyRows の委譲先(履歴に積んでから onRowsChange。onRowsChange 未指定 / serverSide は undefined)。
+  applyRowsChange?: ((nextRows: T[]) => void) | undefined;
   redoRows: () => void;
   canUndoRows: () => boolean;
   canRedoRows: () => boolean;
@@ -646,6 +648,22 @@ export const createGridApi = <T,>(features: Pick<GridCoreFeatures, 'export'> = {
     canRedo: () => args?.canRedoRows() ?? false,
     clearUndoHistory: () => {
       args?.clearUndoHistory();
+    },
+    applyRows: (nextRows) => {
+      const s = args;
+      if (!s) {
+        return;
+      }
+      if (!s.applyRowsChange || s.isServerSide) {
+        if (process.env.NODE_ENV !== 'production') {
+          console.warn(
+            '[spreadsheet-grid] applyRows: onRowsChange が無いか serverSide なので、何もしません' +
+              '(serverSide の行はサーバーで変えて refreshServerSide() で取り直してください)。',
+          );
+        }
+        return;
+      }
+      s.applyRowsChange(nextRows);
     },
 
     // ── 行グルーピング ──

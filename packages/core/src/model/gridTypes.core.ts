@@ -2330,6 +2330,16 @@ export type SpreadsheetGridHandle<T> = {
    * の外部差し替えはグリッド側でも自動検知して破棄するため、通常は呼ばなくてよい。
    */
   clearUndoHistory: () => void;
+  // 追加(段階 2 DU-21): 外からの変更(行の削除ボタンなど)を「元に戻す」の履歴に積んでから onRowsChange へ渡します
+  //   (rows を外から差し替えると履歴は消えるので、これまでは外の変更を元に戻せなかった)。
+  /**
+   * 外からの変更(行の削除ボタン / 一括更新など)を「元に戻す」の履歴に積んでから `onRowsChange`
+   * へ渡す(`Ctrl/Cmd+Z` / `undo()` で戻せる)。`rows` を外から直接差し替えると履歴は消えるので、
+   * 元に戻せるようにしたい変更はこれで渡す。履歴が無効(`enableUndoRedo={false}` / `readOnly`)
+   * なら積まずに `onRowsChange` へ渡す。`onRowsChange` が無いとき・serverSide
+   * では何もしない(開発時に警告)。
+   */
+  applyRows: (nextRows: T[]) => void;
 
   // ── 行グルーピング ──
   // 追加(grouping ④): 指定グループの開閉を設定します(collapsed: true = 折りたたみ)。

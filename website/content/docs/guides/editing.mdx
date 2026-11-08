@@ -71,6 +71,17 @@ const addRow = () => {
 
 右クリックメニューから開いたモーダルを閉じた後など、キーがグリッドへ届かなくなったときは `focus()` でグリッドへフォーカスを戻せます(`imeDirectInput` 有効時は入力受けへ)。詳しくは [命令的 API](/docs/api/handle#フォーカス--編集の開始) を参照してください。
 
+## 外からの変更も「元に戻す」で戻せるようにする
+
+グリッドの外のボタン(「選んだ行を削除」など)で `rows` を差し替えると、元に戻すの履歴は消えます(グリッドの外の変更はグリッドが知らないため)。元に戻せるようにしたい変更は、`setRows` の代わりに命令的 API の `applyRows(nextRows)` で渡します。履歴に積んでから `onRowsChange` へ渡すので、`Ctrl/Cmd+Z` で戻せます。
+
+```tsx
+const deleteSelected = () => {
+  const keys = new Set(gridRef.current?.getSelectedRowKeys() ?? []);
+  gridRef.current?.applyRows(rows.filter((row) => !keys.has(row.id)));
+};
+```
+
 ## バリデーション
 
 ```tsx

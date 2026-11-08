@@ -18,6 +18,7 @@ DevBI(このライブラリを使うアプリ)からの報告の対応です。�
 
 - 列見出しの水平寄せ `GridColumn.headerAlign`(`'left' | 'center' | 'right'`。書かなければ列の `align` と同じ)。右寄せの見出しは並びが鏡写しになり、並べ替えの矢印とフィルターの印がラベルの左、ホバーで出る grip と ⋮ も左に出ます。中央は文字だけ中央です。CSS のクラス `.ssg-header-cell--align-right` / `.ssg-header-cell--align-center` も公開しました。
 - 状態の初期値 `initialState`(列幅 / フィルター / ソート。`getState()` の値をそのまま渡せる)。最初の 1 回(マウント時)だけ使い、最初の描画・サーバーの描画・serverSide の最初の `getRows` から効きます。これまでは最初の描画の後に `applyState` を呼ぶしかなく、serverSide はまず条件なしで取りに行き、Next.js などでは URL から戻した絞り込みがサーバーの描画に載りませんでした。マウント時は `onStateChange` などを呼びません。列の並び / 表示 / 固定(`columns`)は使いません。
+- ハンドル `applyRows(nextRows)`: 外からの変更(行の削除ボタンなど)を「元に戻す」の履歴に積んでから `onRowsChange` へ渡します。`rows` を外から差し替えると履歴が消えるので、これまでは外の変更を元に戻せませんでした。
 - ハンドル `getRowNumber(rowKey)`: 行番号の列に出ている番号(1 始まり)を返します。ラベル行は数えないので、ラベル行があると `getViewRowIndex(rowKey) + 1` とは違います。ラベル行のキーと表示に無い行は `null` です。
 
 ### 変更

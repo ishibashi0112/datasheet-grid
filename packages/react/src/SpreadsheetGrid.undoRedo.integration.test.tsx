@@ -483,3 +483,50 @@ describe('SpreadsheetGrid undo/redo(結合)', () => {
     expect(currentRows[0].name).toBe('A');
   });
 });
+
+// 追加(段階 2 DU-21): 外からの変更(行の削除ボタンなど)を「元に戻す」の履歴に載せるハンドル applyRows です。
+//   rows を外から差し替えると履歴は消える(書いてある動き)ので、これまでは外の変更を元に戻せませんでした。
+describe('applyRows()(DU-21)', () => {
+  it('外からの変更を履歴に積んでから onRowsChange へ渡す(元に戻すで戻り、やり直しでまた消える)', () => {
+    const gridRef = createRef<SpreadsheetGridHandle<Row>>();
+    const onUndoRedoStateChange = vi.fn();
+    render(<UndoRedoHarness gridRef={gridRef} onUndoRedoStateChange={onUndoRedoStateChange} />);
+    act(() => {
+      gridRef.current?.applyRows(currentRows.filter((row) => row.id !== 2));
+    });
+    expect(currentRows.map((row) => row.id)).toEqual([1, 3]);
+    expect(gridRef.current?.canUndo()).toBe(true);
+    expect(onUndoRedoStateChange).toHaveBeenLastCalledWith({ canUndo: true, canRedo: false });
+    act(() => {
+      gridRef.current?.undo();
+    });
+    expect(currentRows.map((row) => row.id)).toEqual([1, 2, 3]);
+    act(() => {
+      gridRef.current?.redo();
+    });
+    expect(currentRows.map((row) => row.id)).toEqual([1, 3]);
+  });
+
+  it('rows を外から直接差し替えたときは、これまでどおり履歴が消える', () => {
+    const gridRef = createRef<SpreadsheetGridHandle<Row>>();
+    render(<UndoRedoHarness gridRef={gridRef} />);
+    act(() => {
+      gridRef.current?.applyRows(currentRows.slice(1));
+    });
+    expect(gridRef.current?.canUndo()).toBe(true);
+    act(() => {
+      externalSetRows(currentRows.slice(1));
+    });
+    expect(gridRef.current?.canUndo()).toBe(false);
+  });
+
+  it('履歴が無効(enableUndoRedo=false)なら履歴に積まずに onRowsChange へ渡す', () => {
+    const gridRef = createRef<SpreadsheetGridHandle<Row>>();
+    render(<UndoRedoHarness gridRef={gridRef} enableUndoRedo={false} />);
+    act(() => {
+      gridRef.current?.applyRows(currentRows.slice(1));
+    });
+    expect(currentRows.map((row) => row.id)).toEqual([2, 3]);
+    expect(gridRef.current?.canUndo()).toBe(false);
+  });
+});
