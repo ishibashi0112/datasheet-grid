@@ -179,6 +179,31 @@ describe('複数行のエディタ(DU-14)', () => {
     expect(activeCell(ref)).toEqual({ row: 0, col: 2 });
   });
 
+  // 修正(段階 2 の見直し): 複数行の入力欄の中がスクロールするときは PageUp / PageDown を入力欄に任せる(長い文を 1 画面ずつ
+  //   動ける)。スクロールしきったとき・中がスクロールしないときはこれまでどおり止める(グリッドがスクロールしてエディタが
+  //   画面の外へ出ないように)。
+  it('PageUp / PageDown は入力欄の中がその向きへスクロールできるときだけ入力欄に任せる', () => {
+    const { container } = open(makeColumns());
+    const input = textarea(container)!;
+    const press = (key: string) => fireEvent.keyDown(input, { key });
+    // 中がスクロールしない(jsdom の既定は scrollHeight = clientHeight = 0)。
+    expect(press('PageDown')).toBe(false);
+    expect(press('PageUp')).toBe(false);
+    // 中が 3 画面ぶんあり、先頭にいる。
+    Object.defineProperty(input, 'clientHeight', { configurable: true, get: () => 100 });
+    Object.defineProperty(input, 'scrollHeight', { configurable: true, get: () => 300 });
+    input.scrollTop = 0;
+    expect(press('PageDown')).toBe(true);
+    expect(press('PageUp')).toBe(false);
+    // 末尾までスクロールした。
+    input.scrollTop = 200;
+    expect(press('PageDown')).toBe(false);
+    expect(press('PageUp')).toBe(true);
+    // 編集は続く(確定も取り消しもしない)。
+    expect(textarea(container)).not.toBeNull();
+    expect(changeCount).toBe(0);
+  });
+
   it('multiline を付けない text 列は今までどおり 1 行の入力欄', () => {
     const { container } = open(makeColumns(undefined, false));
     expect(textarea(container)).toBeNull();
