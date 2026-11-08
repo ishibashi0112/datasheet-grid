@@ -10,7 +10,7 @@
 
 詳しい使い方は[ドキュメントサイト](https://datasheet-grid.vercel.app)と [API リファレンス](./packages/react/API_REFERENCE.md)を参照してください。
 
-## 未リリース
+## 0.64.0 — 2026-11-08
 
 英語の UI に対応しました。既定は日本語のままです。
 
