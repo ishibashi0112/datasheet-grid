@@ -1649,7 +1649,7 @@ export const OrdersTable = () => <Grid columns={columns} dataSource={dataSource}
 
 | 公開物 | 説明 |
 | --- | --- |
-| `createSpreadsheetGrid({ features }): <T extends object>(props: SpreadsheetGridProps<T>) => JSX.Element` | 機能セットを差し込んだグリッドのコンポーネントを作る。`features` は `{ キー: 機能の部品 }`(下の表)。機能の組み合わせは作ったときに固定される(描画のたびに作り直すとグリッドの状態が消える)。 |
+| `createSpreadsheetGrid({ features }): <T extends object>(props: SpreadsheetGridProps<T>) => JSX.Element` | 機能セットを差し込んだグリッドのコンポーネントを作る。`features` は `{ キー: 機能の部品 }`(下の表)。機能の組み合わせは作ったときに固定される。モジュールの先頭で 1 回だけ呼ぶ(コンポーネントの中で呼ぶと描画のたびに作り直されてグリッドの状態が消える。そうなっていれば開発時に `console.warn` で知らせる)。 |
 | `standardFeatures` | よく使う組み合わせ(プリセット): `filtering` / `columnMenu` / `toolPanel` / `columnAutosize` / `export`。ほかの機能は `{ ...standardFeatures, find: findFeature }` のように広げて足す。 |
 | `xxxFeature`(20 個) | 機能の部品。名前は「キー + `Feature`」(下の表)。中身は内部の部品なので、そのまま `features` に渡す(自分で作ったり書き換えたりしない)。 |
 | 型 `GridFeatures` / `CreateSpreadsheetGridOptions` | `features` の型と、`createSpreadsheetGrid` の引数の型。機能の組み合わせを変数にして export するときは `GridFeatures` を注釈する(`export const companyFeatures: GridFeatures = { ...standardFeatures, find: findFeature }`。注釈しないと推論された型が内部の型を指し、`declaration: true` で TS2742 になる)。 |

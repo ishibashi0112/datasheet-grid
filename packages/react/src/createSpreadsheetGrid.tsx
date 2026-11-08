@@ -6,6 +6,7 @@
 import { useGridShell } from './GridShell';
 import { resolveGridShellFeatures } from './features/resolve';
 import type { ReactGridFeatures } from './features/types';
+import { traceGridFactory, useRecreatedGridWarning } from './hooks/useRecreatedGridWarning';
 import { useUnregisteredFeatureWarnings } from './hooks/useUnregisteredFeatureWarnings';
 import type { SpreadsheetGridProps } from './model/gridTypes';
 import { withRefProp } from './withRefProp';
@@ -55,8 +56,11 @@ export function createSpreadsheetGrid({ features }: CreateSpreadsheetGridOptions
     }
   }
   const hasOverrides = Object.keys(overrides).length > 0;
+  // 追加(段階 2 DU-26): コンポーネントの中で呼ばれて描くたびに作り直されていたら、開発時に警告します(本番は null)。
+  const trace = traceGridFactory();
   function SpreadsheetGrid<T extends object>(props: SpreadsheetGridProps<T>) {
     useUnregisteredFeatureWarnings(props, features);
+    useRecreatedGridWarning(trace, props.rows);
     return useGridShell(hasOverrides ? { ...props, ...(overrides as Partial<SpreadsheetGridProps<T>>) } : props, shellFeatures);
   }
   // dist では関数名が縮められるので、React の開発ツールと警告に出す名前を付けます。

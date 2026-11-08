@@ -128,7 +128,7 @@ const Grid = createSpreadsheetGrid({ features });
 
 ## 注意
 
-- `createSpreadsheetGrid` はモジュールの先頭で呼んでください。コンポーネントの中で呼ぶと描画のたびに別のコンポーネントになり、グリッドの状態(選択・スクロール位置など)が消えます。
+- `createSpreadsheetGrid` はモジュールの先頭で呼んでください。コンポーネントの中で呼ぶと描画のたびに別のコンポーネントになり、グリッドの状態(選択・スクロール位置・編集中の値など)が消えます。そうなっているときは開発時に `console.warn` で知らせます(`useMemo` で 1 回だけ作る形は警告しませんが、eslint-plugin-react-hooks の `static-components` が指摘するのでモジュールの先頭を勧めます)。
 - Next.js(App Router)では、`createSpreadsheetGrid` を呼ぶファイルに `'use client'` を付けてください。作ったコンポーネントや `standardFeatures` は関数なので、サーバーコンポーネントから props で渡せません(クライアントコンポーネントの中で import して使います)。
 - 機能の組み合わせは作ったときに決まります。途中で機能を足したいときは、別の組み合わせで作ったコンポーネントに切り替えてください。
 - 全部入りの `SpreadsheetGrid` と同じアプリで混ぜることはできますが、`/lite` は機能ごとのファイルに分けた別のビルドなので共通部分を共有しません。同じページで両方を使うと共通部分が二重に入り、ページを分けても `/lite` だけのページが大きくなることがあります(Next.js 16 の Turbopack の実測で、`standardFeatures` のページが約 85KB → 約 92KB)。どちらかの入口に揃えてください。
