@@ -70,6 +70,9 @@ export type PointerInteractionsArgs<T> = {
   enableRangeSelection: boolean;
   enableSorting: boolean;
   orderedColumns: GridColumn<T>[];
+  // 追加(段階 2 の確かめ直し S-N3): 最初のデータのセル(ラベル行と操作用の合成列を飛ばす)。アクティブセルが無いときに行番号 /
+  //   列見出しを押したときのアクティブセルの列 / 行に使います(これまでは 0 で、枠が展開トグル列やラベル行に乗っていた)。
+  resolveFirstDataCell?: () => CellCoord;
   filteredRowsLength: number;
   visibleColumnsLength: number;
   paneLayout: GridPaneLayout<T>;
@@ -236,7 +239,15 @@ export const createPointerInteractionsController = <T,>(): PointerInteractionsCo
     if (args === null) {
       return;
     }
-    const { gridRootRef, dispatch, enableRangeSelection, enableRowSelection, onGutterRowSelect, onCellDoubleClickRef } = args;
+    const {
+      gridRootRef,
+      dispatch,
+      enableRangeSelection,
+      enableRowSelection,
+      onGutterRowSelect,
+      onCellDoubleClickRef,
+      resolveFirstDataCell,
+    } = args;
     gridRootRef.current?.focus({ preventScroll: true });
     const { target } = pending;
     if (target.kind === 'cell') {
@@ -265,11 +276,11 @@ export const createPointerInteractionsController = <T,>(): PointerInteractionsCo
         onGutterRowSelect(target.rowIndex, { shiftKey: false });
         return;
       }
-      dispatch(gridActions.startRowSelection(target.rowIndex));
+      dispatch(gridActions.startRowSelection(target.rowIndex, resolveFirstDataCell?.().col));
       dispatch(gridActions.endSelection());
       return;
     }
-    dispatch(gridActions.startColumnSelection(target.colIndex));
+    dispatch(gridActions.startColumnSelection(target.colIndex, resolveFirstDataCell?.().row));
     dispatch(gridActions.endSelection());
   };
 
@@ -547,12 +558,12 @@ export const createPointerInteractionsController = <T,>(): PointerInteractionsCo
       const { selection, activeCell } = args.uiState;
       const anchorRow = selection?.type === 'row' ? selection.startRow : activeCell?.row;
       if (anchorRow !== undefined) {
-        args.dispatch(gridActions.startRowSelection(anchorRow));
+        args.dispatch(gridActions.startRowSelection(anchorRow, args.resolveFirstDataCell?.().col));
         args.dispatch(gridActions.updateRowSelection(rowIndex));
         return;
       }
     }
-    args.dispatch(gridActions.startRowSelection(rowIndex));
+    args.dispatch(gridActions.startRowSelection(rowIndex, args.resolveFirstDataCell?.().col));
   };
 
   const handleRowHeaderPointerEnter = (rowIndex: number, event: GridPointerEventLike) => {
@@ -591,7 +602,7 @@ export const createPointerInteractionsController = <T,>(): PointerInteractionsCo
       }
       return;
     }
-    args.dispatch(gridActions.startColumnSelection(colIndex));
+    args.dispatch(gridActions.startColumnSelection(colIndex, args.resolveFirstDataCell?.().row));
   };
 
   const handleColumnHeaderPointerEnter = (colIndex: number, event: GridPointerEventLike) => {

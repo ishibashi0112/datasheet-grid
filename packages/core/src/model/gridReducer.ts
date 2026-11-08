@@ -154,7 +154,8 @@ export const gridUiReducer = (
         ...state,
         activeCell: {
           row: action.row,
-          col: state.activeCell?.col ?? 0,
+          // 変更(段階 2 の確かめ直し S-N3): アクティブセルが無ければ渡された列(最初のデータの列)。
+          col: state.activeCell?.col ?? action.col ?? 0,
         },
         selection: {
           type: 'row',
@@ -230,7 +231,8 @@ export const gridUiReducer = (
       return {
         ...state,
         activeCell: {
-          row: state.activeCell?.row ?? 0,
+          // 変更(段階 2 の確かめ直し S-N3): アクティブセルが無ければ渡された行(最初のデータ行)。
+          row: state.activeCell?.row ?? action.row ?? 0,
           col: action.col,
         },
         selection: {

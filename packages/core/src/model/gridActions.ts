@@ -13,9 +13,10 @@ export type GridUiAction =
   | { type: 'cell/activate'; cell: CellCoord | null }
   | { type: 'selection/start'; cell: CellCoord }
   | { type: 'selection/update'; cell: CellCoord }
-  | { type: 'rowSelection/start'; row: number }
+  // 変更(段階 2 の確かめ直し S-N3): col / row はアクティブセルが無いときの列 / 行(未指定は 0)。
+  | { type: 'rowSelection/start'; row: number; col?: number }
   | { type: 'rowSelection/update'; row: number }
-  | { type: 'columnSelection/start'; col: number }
+  | { type: 'columnSelection/start'; col: number; row?: number }
   | { type: 'columnSelection/update'; col: number }
   | { type: 'selection/end' }
   | { type: 'selection/clear' }
@@ -83,18 +84,14 @@ export const gridActions = {
     type: 'selection/update',
     cell,
   }),
-  startRowSelection: (row: number): GridUiAction => ({
-    type: 'rowSelection/start',
-    row,
-  }),
+  startRowSelection: (row: number, col?: number): GridUiAction =>
+    col === undefined ? { type: 'rowSelection/start', row } : { type: 'rowSelection/start', row, col },
   updateRowSelection: (row: number): GridUiAction => ({
     type: 'rowSelection/update',
     row,
   }),
-  startColumnSelection: (col: number): GridUiAction => ({
-    type: 'columnSelection/start',
-    col,
-  }),
+  startColumnSelection: (col: number, row?: number): GridUiAction =>
+    row === undefined ? { type: 'columnSelection/start', col } : { type: 'columnSelection/start', col, row },
   updateColumnSelection: (col: number): GridUiAction => ({
     type: 'columnSelection/update',
     col,

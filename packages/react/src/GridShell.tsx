@@ -2181,6 +2181,8 @@ export function useGridShell<T extends object>({
     //             enableSorting=false 時はガード、orderedColumns で colIndex→key 解決。
     enableSorting: sortingEnabled,
     orderedColumns,
+    // 追加(段階 2 の確かめ直し S-N3): アクティブセルが無いときに行番号 / 列見出しを押したときのアクティブセルの列 / 行。
+    resolveFirstDataCell: () => resolveFirstDataCell(rowModel, visibleColumns),
     filteredRowsLength: viewRowCount,
     visibleColumnsLength: visibleColumns.length,
     // 変更(10-E): グローバル columnMeasurements / rowHeaderWidth から

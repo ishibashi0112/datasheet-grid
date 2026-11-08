@@ -782,6 +782,22 @@ describe('展開行のカードと Tab(C-N2)', () => {
     }
   });
 
+  // 追加(段階 2 の 3 回目の確かめ直し S-N3): アクティブセルが無いときに行番号を押すと、アクティブセルの枠が先頭の展開トグル列に
+  //   乗り、バーの番地は次のデータ列の「A4」、→ で最初のデータ列へ移っても「A4」のままだった。最初のデータの列にする。
+  it('アクティブセルが無いときの行番号のクリックは、アクティブセルを最初のデータの列にする', () => {
+    const ref = createRef<SpreadsheetGridHandle<Row>>();
+    const { container } = render(
+      <SpreadsheetGrid ref={ref} columns={columns} rows={rows} rowKeyGetter={rowKeyGetter} detailRow={detailRow} />,
+    );
+    const rowHeader = container.querySelector<HTMLElement>('[data-pane="left"].ssg-body-row[data-row-index="1"] .ssg-row-header-cell');
+    act(() => {
+      fireEvent.pointerDown(rowHeader!, { button: 0, pointerType: 'mouse', pointerId: 1 });
+      fireEvent.pointerUp(window, { button: 0, pointerType: 'mouse', pointerId: 1 });
+    });
+    expect(ref.current?.getSelection()).toEqual({ type: 'row', startRow: 1, endRow: 1 });
+    expect(ref.current?.getActiveCell()).toEqual({ row: 1, col: 1 });
+  });
+
   it('detailRow が無ければ目印を描かない', () => {
     const { container } = render(<SpreadsheetGrid columns={columns} rows={rows} rowKeyGetter={rowKeyGetter} />);
     expect(container.querySelector('.ssg-tab-exit')).toBeNull();

@@ -403,6 +403,19 @@ describe('選択の API でラベル行を指したとき(N2-1)', () => {
     expect(labeledRef.current?.getActiveCell()).toEqual({ row: 3, col: 1 });
   });
 
+  // 追加(段階 2 の 3 回目の確かめ直し S-N3): アクティブセルが無いときに列見出しを押すと、アクティブセルは 0 行目(先頭がラベル行
+  //   ならラベル行の上)になっていた。最初のデータ行にする。
+  it('アクティブセルが無いときの列見出しのクリックは、アクティブセルを最初のデータ行にする', () => {
+    const labeledRef = setupLabeled();
+    const header = document.querySelector<HTMLElement>('.ssg-header-cell[data-ssg-col-key="qty"]');
+    act(() => {
+      fireEvent.pointerDown(header!, { button: 0, pointerType: 'mouse', pointerId: 1 });
+      fireEvent.pointerUp(window, { button: 0, pointerType: 'mouse', pointerId: 1 });
+    });
+    expect(labeledRef.current?.getSelection()).toEqual({ type: 'col', startCol: 1, endCol: 1 });
+    expect(labeledRef.current?.getActiveCell()).toEqual({ row: 1, col: 1 });
+  });
+
   // 追加(段階 2 の 3 回目の確かめ直し N3-1): ラベル行だけの範囲は 0 セルのまま残り、アクティブセルは範囲の外、バーの番地は
   //   逆向き(「A11:B10」)、そこから Shift+↓ でアクティブセルがラベル行に乗っていた。寄せたデータ行の同じ列の範囲にする。
   it('selectRange でラベル行だけを指したら、寄せたデータ行の同じ列の範囲にする', () => {
