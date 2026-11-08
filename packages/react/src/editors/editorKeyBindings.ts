@@ -58,16 +58,11 @@ export const isMultilineNewlineEnter = (
 
 // 追加(dogfood DF-13): 1 行の入力欄では PageUp / PageDown(と日付の Home / End)は入力欄の操作にならず、ブラウザが
 //   グリッドをスクロールしてエディタが画面の外へ出ていました。編集中はこれらのキーでスクロールしません(編集は続く)。
+//   注記(段階 2 の見直し): 複数行の入力欄(<textarea>)でも止めます。中がスクロールするときだけ入力欄に任せる形を試したところ、
+//   Chromium は入力欄の中と一緒にグリッドもスクロールし(キャレットを見せるため。入力欄が画面に収まっていても)、
+//   エディタの上の方が見出しの下へ隠れたため戻しました(実ブラウザの確認は監査ハーネス t-stage2.mjs)。
 export const isEditorScrollKey = (key: string, blockHomeEnd: boolean): boolean =>
   key === 'PageUp' || key === 'PageDown' || (blockHomeEnd && (key === 'Home' || key === 'End'));
-
-// 修正(段階 2 の見直し): 複数行の入力欄(<textarea>)の中がその向きへまだスクロールできるか。できるときは PageUp / PageDown を
-//   入力欄に任せます(長い文を 1 画面ずつ動ける。これまでは止めていた)。スクロールしきったときと中がスクロールしないときは
-//   これまでどおり止めます(グリッドがスクロールしてエディタが画面の外へ出ないように)。
-const canTextAreaScroll = (element: HTMLTextAreaElement, key: string): boolean =>
-  key === 'PageDown'
-    ? element.scrollTop + element.clientHeight < element.scrollHeight - 1
-    : key === 'PageUp' && element.scrollTop > 0;
 
 export const createEditorKeyDownHandler =
   ({
@@ -86,9 +81,7 @@ export const createEditorKeyDownHandler =
     }
 
     if (isEditorScrollKey(event.key, blockHomeEnd)) {
-      if (!(event.currentTarget instanceof HTMLTextAreaElement && canTextAreaScroll(event.currentTarget, event.key))) {
-        event.preventDefault();
-      }
+      event.preventDefault();
       return;
     }
 
