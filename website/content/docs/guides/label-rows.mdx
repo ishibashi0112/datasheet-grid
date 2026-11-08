@@ -83,7 +83,7 @@ labelRow={{
 }}
 ```
 
-TypeScript 5.5 以上なら、`(row) => row.kind === 'label'` と書くだけでも型ガードと推論されます。型引数を書くときは `<SpreadsheetGrid<Row, Month>>`(1 つだけなら今までどおり `row` は `Row`)、設定を変数に置くときは `LabelRowOptions<Row, Month>` です。
+TypeScript 5.5 以上なら、`(row) => row.kind === 'label'` と書くだけでも型ガードと推論されます。型引数を書くときは `<SpreadsheetGrid<Row, Month>>` と 2 つ書きます(1 つだけ `<SpreadsheetGrid<Row>>` と書くと、型ガードにしても `row` は `Row` のままで、`getLabel` の中で `Property 'label' does not exist` になります)。設定を変数に置くときは `LabelRowOptions<Row, Month>` です。
 
 ## セクションとソート / フィルター
 
