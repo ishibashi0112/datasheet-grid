@@ -834,6 +834,14 @@ describe('差し込み式: filtering', () => {
     expect(warn.mock.calls.filter(([message]) => String(message).includes('`onFiltersChange`'))).toHaveLength(0);
   });
 
+  // 追加(段階 2 DU-25): 列定義を機能違いのグリッドで共有するとき、filtering の無い方で filterType の警告を消せなかった。
+  //   enableColumnFilter={false} を明示したら、列の filterType は使わないと分かっているので警告しない。
+  it('enableColumnFilter={false} を明示したら、列の filterType の警告を出さない(列定義を共有できる)', () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    render(<ColumnMenuOnlyGrid rows={rows} columns={filterColumns} rowKeyGetter={(r) => r.id} enableColumnFilter={false} />);
+    expect(warn.mock.calls.filter(([message]) => String(message).includes('`columns[].filterType`'))).toHaveLength(0);
+  });
+
   it('機能セットに無い構成で applyState に渡したフィルターは行に効かず、開発時に 1 回だけ警告する', () => {
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
     const ref = createRef<SpreadsheetGridHandle<Row>>();
