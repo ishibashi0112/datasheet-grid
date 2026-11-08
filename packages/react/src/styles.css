@@ -988,6 +988,9 @@
     position: absolute;
     right: 10px;
     z-index: 20;
+    /* 追加(英語対応の確かめ直し): 狭いグリッド(約 330px 未満)でバーが左へはみ出さないよう、入力欄を縮めて枠の中に収める。 */
+    box-sizing: border-box;
+    max-width: calc(100% - 20px);
     display: flex;
     align-items: center;
     gap: 4px;
@@ -1006,6 +1009,8 @@
   }
   .ssg-find-bar-input {
     width: 160px;
+    min-width: 0;
+    flex: 0 1 auto;
     border: 0;
     outline: none;
     background: transparent;
@@ -1713,10 +1718,16 @@
     gap: 4px;
     overflow: hidden;
     white-space: nowrap;
+    /* 追加(英語対応の確かめ直し): 入りきらないときに切れる端(左)をぼかし、切れた数字(「2,194.65」の「,194.65」)を
+       そのままの値と読み違えないようにする。入りきるときはこの端は空きなので見た目は変わらない。 */
+    -webkit-mask-image: linear-gradient(to right, transparent, #000 20px);
+    mask-image: linear-gradient(to right, transparent, #000 20px);
   }
   .ssg-bar-aggregates--trailing .ssg-bar-aggregates-inner {
     justify-content: flex-start;
     padding-left: 6px;
+    -webkit-mask-image: linear-gradient(to left, transparent, #000 20px);
+    mask-image: linear-gradient(to left, transparent, #000 20px);
   }
   .ssg-bar-aggregate-value {
     margin-left: 0.25em;

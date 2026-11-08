@@ -10,6 +10,8 @@ export default defineConfig({
     alias: [
       { find: /^@ishibashi0112\/spreadsheet-grid$/, replacement: `${REPO}/packages/react/src/index.ts` },
       { find: /^@ishibashi0112\/spreadsheet-grid\/style\.css$/, replacement: `${REPO}/packages/react/src/styles.css` },
+      // 追加(英語対応): 英語の文言の入口(?lang=en)。
+      { find: /^@ishibashi0112\/spreadsheet-grid\/locales\/en$/, replacement: `${REPO}/packages/react/src/locales/en.ts` },
     ],
     dedupe: ['react', 'react-dom'],
   },

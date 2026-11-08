@@ -43,13 +43,15 @@ describe('warnUnregisteredFeatureProps', () => {
 describe('warnUnregisteredFeatureState', () => {
   it('状態ごとに 1 回だけ警告し、本番では警告しない', () => {
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
-    warnUnregisteredFeatureState('フィルターの状態');
-    warnUnregisteredFeatureState('フィルターの状態');
+    warnUnregisteredFeatureState('フィルターの状態', 'The filter state');
+    warnUnregisteredFeatureState('フィルターの状態', 'The filter state');
     expect(warn).toHaveBeenCalledTimes(1);
     expect(warn.mock.calls[0]?.[0]).toContain('フィルターの状態が設定されましたが');
+    // 変更(英語対応): 2 行目は英語。
+    expect(warn.mock.calls[0]?.[0]).toContain('\n[spreadsheet-grid] The filter state was set but has no effect');
     resetUnregisteredFeatureWarnings();
     vi.stubEnv('NODE_ENV', 'production');
-    warnUnregisteredFeatureState('フィルターの状態');
+    warnUnregisteredFeatureState('フィルターの状態', 'The filter state');
     expect(warn).toHaveBeenCalledTimes(1);
   });
 });

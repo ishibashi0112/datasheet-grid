@@ -29,6 +29,23 @@ describe('createLocaleTextResolver', () => {
     expect(texts.columnCount).toBe(DEFAULT_GRID_LOCALE_TEXT.columnCount);
   });
 
+  // 追加(英語対応の見直し): JS や型の変換で null などが渡っても、置き換えのときに落ちず既定のまま。
+  it('null や文字列でない値のキーは既定のまま(関数と配列は使う)', () => {
+    const resolve = createLocaleTextResolver();
+    const columns = ({ count }: { count: number }) => `${count} cols`;
+    const texts = resolve({
+      rowCount: null,
+      none: 0,
+      filterColumns: columns,
+      listSeparator: { text: '/' },
+    } as unknown as Parameters<typeof resolve>[0]);
+    expect(texts.rowCount).toBe(DEFAULT_GRID_LOCALE_TEXT.rowCount);
+    expect(texts.none).toBe('なし');
+    expect(texts.listSeparator).toBe(DEFAULT_GRID_LOCALE_TEXT.listSeparator);
+    expect(texts.filterColumns).toBe(columns);
+    expect(formatLocaleText(texts.rowCount, { shown: 1, total: 2 })).toBe('行 1 / 2');
+  });
+
   it('中身が同じなら、別のオブジェクトでも同じ参照を返す', () => {
     const resolve = createLocaleTextResolver();
     const first = resolve({ rowCount: 'Rows: {shown}' });

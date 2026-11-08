@@ -6,10 +6,12 @@
 //   整えます(これまでは生の値で、同じ列のデータ行と書き方が違っていた)。formatClipboardValue の row にはそのグループの
 //   最初の行を渡します(グループ元の列の値はグループの中で同じ)。空白のグループは「(空白)」のままです。
 import type { GridColumn, GridGroupRow } from '../model/gridTypes.unbound';
-import { GROUP_EMPTY_LABEL, groupIndexOfOrderValue, isGroupOrderValue } from './grouping';
+import type { GridLocaleText } from '../model/gridTypes.core';
+import { groupIndexOfOrderValue, isGroupOrderValue } from './grouping';
+import { DEFAULT_GRID_LOCALE_TEXT, formatLocaleText } from './localeText';
 
-// 小計の行の自分の段の文字(「関東 小計」)。
-export const GROUP_SUBTOTAL_SUFFIX = ' 小計';
+// 追加(英語対応): 小計の行の自分の段の文字(「関東 小計」= localeText の exportSubtotal)と空白のグループの名前(blank)。
+export type GroupExportLocaleText = Pick<GridLocaleText, 'exportSubtotal' | 'blank'>;
 
 type GroupSubtotalLineParams<T> = {
   // 全展開した表示順(flattenGroupTree の displayOrder。負値がグループ行)。
@@ -22,6 +24,8 @@ type GroupSubtotalLineParams<T> = {
   groupColumnKeys: readonly string[];
   // order の値(source index)→ 行。グループ元の列を formatClipboardValue で整えるときの row に使います。
   getSourceRow?: (sourceIndex: number) => T | undefined;
+  // 追加(英語対応): 小計の文言(未指定は日本語の既定)。
+  texts?: GroupExportLocaleText;
 };
 
 // 小計の行の 1 行。values は生の値(getExportData の value)、texts は文字(CSV / getExportData の text)です。
@@ -36,6 +40,7 @@ export const createGroupSubtotalLineGetter = <T,>({
   columns,
   groupColumnKeys,
   getSourceRow,
+  texts: localeTexts = DEFAULT_GRID_LOCALE_TEXT,
 }: GroupSubtotalLineParams<T>): ((index: number) => GroupSubtotalLine | undefined) => {
   // 各グループの祖先(段の順)。groups は DFS 順なので、段ごとの直近のグループを持てば祖先が分かります。
   const ancestorGroups: GridGroupRow[][] = [];
@@ -90,8 +95,8 @@ export const createGroupSubtotalLineGetter = <T,>({
           texts.push(valueText(ancestorValue, column, representativeRow()));
         } else if (level === group.level) {
           // 空白のグループは「(空白) 小計」(画面のグループ行と同じ)。
-          const label = group.value === null ? GROUP_EMPTY_LABEL : valueText(group.value, column, representativeRow());
-          const text = `${label}${GROUP_SUBTOTAL_SUFFIX}`;
+          const label = group.value === null ? localeTexts.blank : valueText(group.value, column, representativeRow());
+          const text = formatLocaleText(localeTexts.exportSubtotal, { label });
           values.push(text);
           texts.push(text);
         } else {

@@ -11,32 +11,8 @@ export type CalendarDayCell = {
   inCurrentMonth: boolean;
 };
 
-// 曜日ヘッダーです(日曜始まり ── Excel / カレンダー慣習)。
-export const CALENDAR_DOW_LABELS: ReadonlyArray<string> = [
-  '日',
-  '月',
-  '火',
-  '水',
-  '木',
-  '金',
-  '土',
-];
-
-// 月ビューのラベルです(1 月始まりの 12 要素。index = monthIndex)。
-export const CALENDAR_MONTH_LABELS: ReadonlyArray<string> = [
-  '1月',
-  '2月',
-  '3月',
-  '4月',
-  '5月',
-  '6月',
-  '7月',
-  '8月',
-  '9月',
-  '10月',
-  '11月',
-  '12月',
-];
+// 変更(英語対応): 曜日(日曜始まり)と月のラベル・日ビューのタイトルは文言の表(localeText の calendarWeekdays /
+//   calendarMonths / calendarTitle)へ移しました。
 
 // 日ビューのセルを列挙します。日曜始まり・常に 6 週 42 セル固定です
 //   (月によって行数が変わるとパネル高さが揺れ、ナビ操作でボタン位置がずれるため)。
@@ -61,12 +37,6 @@ export const buildCalendarDayCells = (
 // 'YYYY-MM-DD' → 'YYYY/MM/DD'(入力フィールドの表示形式)。空はそのまま空です。
 export const formatFilterDateDisplay = (key: string): string =>
   key === '' ? '' : key.replaceAll('-', '/');
-
-// 日ビューのタイトルです(例: '2026年 8月')。
-export const formatCalendarTitle = (
-  year: number,
-  monthIndex: number,
-): string => `${year}年 ${monthIndex + 1}月`;
 
 // 年ビュー(12 年 / ページ)の先頭年です。12 年境界へ揃えます(2026 → 2016)。
 export const yearGridStart = (year: number): number => year - (year % 12);

@@ -9,6 +9,7 @@ import {
   resolveTotalRowCaption,
   type TotalRowCells,
 } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/totalRow';
+import { useGridLocaleText } from '../hooks/useGridLocaleText';
 
 // 追加(合計行 3A): 表の下端に固定する合計行です(3 ペインそれぞれに描きます)。
 //
@@ -61,6 +62,7 @@ function GridTotalRowInner<T>({
   slots,
   onPointerEnter,
 }: GridTotalRowProps<T>) {
+  const texts = useGridLocaleText();
   const entries = renderEntries.filter(Boolean);
   // 見えるセルが無いペインの行は支援技術から隠します(セルを持たない行を表に出さない)。
   const hasCells = ownsRowHeader || entries.length > 0;
@@ -107,7 +109,7 @@ function GridTotalRowInner<T>({
           let content: ReactNode = null;
           if (cell) {
             const text = formatTotalRowCellText(column, cell);
-            const caption = resolveTotalRowCaption(cell.kind);
+            const caption = resolveTotalRowCaption(cell.kind, texts);
             content = renderCell ? (
               renderCell({ column, value: cell.value, kind: cell.kind, text, caption })
             ) : (

@@ -27,6 +27,7 @@ import {
 import { cx } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/cx';
 import type { GridResolvedSlot } from '../model/gridTypes';
 import { isImeComposingKeyEvent } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/domGuards';
+import { useGridLocaleText } from '../hooks/useGridLocaleText';
 
 // 追加(dogfood DF-13): PageUp / PageDown で動かす候補の数です。
 const SELECT_PAGE_STEP = 8;
@@ -63,6 +64,8 @@ export function SelectCellEditor({
   enterMove,
   initialText,
 }: SelectCellEditorProps) {
+  // 追加(英語対応): 文言(localeText)。
+  const texts = useGridLocaleText();
   const inputRef = useRef<HTMLInputElement | null>(null);
   const listRef = useRef<HTMLDivElement | null>(null);
   // 修正(audit RD-9): 開始文字列があればタイプアヘッドを 1 回適用した状態から始めます(続けて打つと前方一致を
@@ -272,7 +275,7 @@ export function SelectCellEditor({
               onPointerDown={(event) => event.preventDefault()}
             >
               {options.length === 0 ? (
-                <div className="ssg-select-editor-empty">候補がありません</div>
+                <div className="ssg-select-editor-empty">{texts.noOptions}</div>
               ) : (
                 options.map((option, index) => (
                   <div

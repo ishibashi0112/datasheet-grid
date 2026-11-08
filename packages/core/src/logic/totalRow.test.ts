@@ -15,6 +15,7 @@ import { DETAIL_TOGGLE_COLUMN_KEY } from './detailRow';
 import { GROUP_AUTO_COLUMN_KEY } from './grouping';
 import { ROW_DRAG_HANDLE_COLUMN_KEY } from './rowReorder';
 import type { GridColumn } from '../model/gridTypes.unbound';
+import { DEFAULT_GRID_LOCALE_TEXT } from './localeText';
 
 type Row = { name: string; qty: unknown; price: unknown };
 
@@ -179,13 +180,13 @@ describe('formatTotalRowCellText', () => {
   });
 
   it('見出しは合計以外の組み込み集計だけ', () => {
-    expect(resolveTotalRowCaption('avg')).toBe('平均');
-    expect(resolveTotalRowCaption('min')).toBe('最小');
-    expect(resolveTotalRowCaption('max')).toBe('最大');
-    expect(resolveTotalRowCaption('count')).toBe('個数');
-    expect(resolveTotalRowCaption('sum')).toBeUndefined();
-    expect(resolveTotalRowCaption('custom')).toBeUndefined();
-    expect(resolveTotalRowCaption('value')).toBeUndefined();
+    expect(resolveTotalRowCaption('avg', DEFAULT_GRID_LOCALE_TEXT)).toBe('平均');
+    expect(resolveTotalRowCaption('min', DEFAULT_GRID_LOCALE_TEXT)).toBe('最小');
+    expect(resolveTotalRowCaption('max', DEFAULT_GRID_LOCALE_TEXT)).toBe('最大');
+    expect(resolveTotalRowCaption('count', DEFAULT_GRID_LOCALE_TEXT)).toBe('個数');
+    expect(resolveTotalRowCaption('sum', DEFAULT_GRID_LOCALE_TEXT)).toBeUndefined();
+    expect(resolveTotalRowCaption('custom', DEFAULT_GRID_LOCALE_TEXT)).toBeUndefined();
+    expect(resolveTotalRowCaption('value', DEFAULT_GRID_LOCALE_TEXT)).toBeUndefined();
   });
 });
 

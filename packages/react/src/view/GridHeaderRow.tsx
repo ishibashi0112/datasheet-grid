@@ -32,6 +32,8 @@ import { isActiveColumnFilterValue } from '@ishibashi0112/spreadsheet-grid-core/
 import { DETAIL_TOGGLE_COLUMN_KEY, isSyntheticColumnKey } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/detailRow';
 import { ROW_DRAG_HANDLE_COLUMN_KEY } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/rowReorder';
 import type { GridResolvedSlots } from '../model/gridTypes';
+import { useGridLocaleText } from '../hooks/useGridLocaleText';
+import { formatLocaleText } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/localeText';
 
 // 追加(10-C): このヘッダーがどのペインを描画しているかの種別です。
 export type GridPaneKind = 'left' | 'center' | 'right';
@@ -237,6 +239,8 @@ function GridHeaderRowInner<T>({
   // 追加(13-B3-2): バッジ grip の pointerdown(列 D&D)。
   onColumnDragHandlePointerDown,
 }: GridHeaderRowProps<T>) {
+  // 追加(英語対応): 文言(localeText)。
+  const texts = useGridLocaleText();
   return (
     <div
       data-pane={pane}
@@ -281,7 +285,7 @@ function GridHeaderRowInner<T>({
           {showSelectAllCheckbox ? (
             <RowSelectionCheckbox
               slot={slots?.checkbox}
-              label="すべての行を選択"
+              label={texts.selectAllRows}
               state={
                 selectAllState === 'all'
                   ? 'checked'
@@ -441,10 +445,8 @@ function GridHeaderRowInner<T>({
                 <span
                   aria-hidden="true"
                   data-ssg-tooltip={
-                    (sortEntry.direction === 'asc'
-                      ? '昇順で並び替え中'
-                      : '降順で並び替え中') +
-                    (sortState.length > 1 ? ` (優先度 ${sortIndex + 1})` : '')
+                    (sortEntry.direction === 'asc' ? texts.sortedAscending : texts.sortedDescending) +
+                    (sortState.length > 1 ? formatLocaleText(texts.sortPriority, { priority: sortIndex + 1 }) : '')
                   }
                   className="ssg-header-sort"
                 >
@@ -460,7 +462,7 @@ function GridHeaderRowInner<T>({
               {isColumnFiltered && (
                 <span
                   aria-hidden="true"
-                  data-ssg-tooltip="フィルター適用中"
+                  data-ssg-tooltip={texts.columnFiltered}
                   className="ssg-header-filtered-mark"
                 >
                   <svg
@@ -487,7 +489,7 @@ function GridHeaderRowInner<T>({
                   onPointerDown={(event) =>
                     onColumnDragHandlePointerDown(column, event)
                   }
-                  data-ssg-tooltip="ドラッグで列を移動"
+                  data-ssg-tooltip={texts.dragColumn}
                   aria-hidden="true"
                   className="ssg-header-grip"
                 >
@@ -511,8 +513,8 @@ function GridHeaderRowInner<T>({
 
               {showColumnMenuButton && (
                 <HeaderActionButton
-                  title="列メニュー"
-                  ariaLabel={`${column.title?.trim() || column.key} の列メニュー`}
+                  title={texts.columnMenu}
+                  ariaLabel={formatLocaleText(texts.columnMenuFor, { column: column.title?.trim() || column.key })}
                   isActive={isMenuOpenForColumn}
                   className={slots?.iconButton?.className}
                   style={slots?.iconButton?.style}

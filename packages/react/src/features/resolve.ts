@@ -193,7 +193,11 @@ const useInertFilterOrder: GridShellFeatures['filtering']['useFilterOrder'] = (a
   const hasFilterState = args.globalFilterText.trim() !== '' || Object.keys(args.columnFilters).length > 0;
   useEffect(() => {
     if (hasFilterState) {
-      warnUnregisteredFeatureState('フィルターの状態(applyState / setGlobalFilterText)', 'filtering');
+      warnUnregisteredFeatureState(
+        'フィルターの状態(applyState / setGlobalFilterText)',
+        'The filter state (applyState / setGlobalFilterText)',
+        'filtering',
+      );
     }
   }, [hasFilterState]);
   return {

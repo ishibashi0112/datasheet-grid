@@ -15,6 +15,8 @@ import { CustomCellEditor } from './editors/CustomCellEditor';
 import { toDateInputValue } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/editorValues';
 import { cx } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/cx';
 import type { GridResolvedSlots } from './model/gridTypes';
+import { useGridLocaleText } from './hooks/useGridLocaleText';
+import { formatLocaleText } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/localeText';
 
 // 変更(editor 基盤): EditorCommitDirection は model/gridTypes.ts へ移設しました(公開型化)。
 //   既存 import 互換のため re-export を残します。
@@ -116,6 +118,8 @@ export function CellEditorLayer<T>({
   domId,
   alignTop,
 }: CellEditorLayerProps<T>) {
+  // 追加(英語対応): 文言(localeText)。
+  const texts = useGridLocaleText();
   // 変更(editor 基盤): 「新しい編集セッションの開始」検知を、ドラフト直接リセットから
   //   sessionId カウンタ + key 再マウントへ置き換えました。rect の null → 非 null 遷移を
   //   レンダー中に検知して sessionId を進め、子エディタを key={sessionId} で再マウントします。
@@ -285,7 +289,7 @@ export function CellEditorLayer<T>({
       style={{ ...slots?.cellEditor?.style, ...wrapperStyle }}
       // 追加(audit V-05): エディタは行の外に重ねて描画するため、どの列を編集しているかを名前で伝えます。
       {...(editorSession
-        ? { role: 'group', 'aria-label': `${editorSession.column.title || editorSession.column.key} を編集` }
+        ? { role: 'group', 'aria-label': formatLocaleText(texts.editCell, { column: editorSession.column.title || editorSession.column.key }) }
         : {})}
       // 追加(見直し): 編集中のセルが aria-owns でこの枠を子に持ちます(開いているペインの枠だけ)。
       id={isOpen && editorSession ? domId : undefined}

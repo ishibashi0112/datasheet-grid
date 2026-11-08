@@ -417,6 +417,31 @@ describe('createDataColumnNamer (audit V-12)', () => {
     expect(namer(1)).toBe('A');
   });
 
+  // 追加(英語対応 L-N1): 展開トグル列 / 行ドラッグのハンドル列のセルも「列の名前 行番号」(文言の表の名前)。
+  //   これまでは次のデータ列の「A1」で、どのセルか分からなかった。範囲は従来どおり次のデータ列の文字。
+  it('展開トグル列 / 行ドラッグのハンドル列のセルは「名前 行番号」、データ列を含む範囲は次のデータ列の文字', () => {
+    const namer = createDataColumnNamer(ordered, { detail: 'Details', rowDrag: 'Move' });
+    expect(formatGridCellLabel({ row: 6, col: 0 }, namer)).toBe('Move 7');
+    expect(formatGridCellLabel({ row: 6, col: 1 }, namer)).toBe('Details 7');
+    expect(formatGridCellLabel({ row: 6, col: 2 }, namer)).toBe('A7');
+    expect(
+      formatGridSelectionLabel({ type: 'cell', range: { start: { row: 0, col: 1 }, end: { row: 0, col: 1 } } }, namer),
+    ).toBe('Details 1');
+    expect(
+      formatGridSelectionLabel({ type: 'cell', range: { start: { row: 0, col: 0 }, end: { row: 2, col: 3 } } }, namer),
+    ).toBe('A1:B3');
+    // 名前で出す列だけをまたぐ範囲は両端を名前で(データのセルが無いのに「A8」と出していた)。データ列まで広げたら従来どおり。
+    expect(
+      formatGridSelectionLabel({ type: 'cell', range: { start: { row: 7, col: 0 }, end: { row: 7, col: 1 } } }, namer),
+    ).toBe('Move 8:Details 8');
+    expect(
+      formatGridSelectionLabel({ type: 'cell', range: { start: { row: 7, col: 0 }, end: { row: 7, col: 2 } } }, namer),
+    ).toBe('A8');
+    // 名前を渡さなければ日本語の既定。
+    expect(formatGridCellLabel({ row: 0, col: 1 }, createDataColumnNamer(ordered))).toBe('詳細 1');
+    expect(formatGridCellLabel({ row: 0, col: 0 }, createDataColumnNamer(ordered))).toBe('移動 1');
+  });
+
   it('合成列が無ければ従来どおり(toExcelColumnName そのもの)', () => {
     const namer = createDataColumnNamer([{ key: 'a' }, { key: 'b' }]);
     expect(namer(0)).toBe('A');

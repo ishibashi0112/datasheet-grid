@@ -10,25 +10,36 @@ import type {
 } from '../model/gridTypes.unbound';
 import { getCellValue } from '../utils/permissions';
 import { parseNumberText } from './editorValues';
+import type { GridLocaleText } from '../model/gridTypes.core';
+import { DEFAULT_GRID_LOCALE_TEXT, formatLocaleText } from './localeText';
+
+// 追加(英語対応): 検査のメッセージの文言(localeText の一部)。未指定は日本語の既定です。
+export type ValidationLocaleText = Pick<
+  GridLocaleText,
+  'invalidValue' | 'enterNumber' | 'enterInteger' | 'enterMin' | 'enterMax' | 'enterRange'
+>;
 
 // validate が false / 空メッセージを返した場合の既定メッセージです。
-export const DEFAULT_INVALID_MESSAGE = '入力値が不正です';
+// 変更(英語対応): 文言の表(localeText の invalidValue)の既定と同じ値です。
+export const DEFAULT_INVALID_MESSAGE = DEFAULT_GRID_LOCALE_TEXT.invalidValue;
 
 // validate の返り値(boolean | string | { message })を正規化します。
 //   string は常に「無効 + メッセージ」です(空文字は既定メッセージへ倒します)。
+// 変更(英語対応): 既定のメッセージを任意で受けます。
 export const normalizeValidationResult = (
   result: CellValidationResult,
+  fallbackMessage: string = DEFAULT_INVALID_MESSAGE,
 ): { valid: boolean; message: string } => {
   if (result === true) {
     return { valid: true, message: '' };
   }
   if (result === false) {
-    return { valid: false, message: DEFAULT_INVALID_MESSAGE };
+    return { valid: false, message: fallbackMessage };
   }
   if (typeof result === 'string') {
-    return { valid: false, message: result || DEFAULT_INVALID_MESSAGE };
+    return { valid: false, message: result || fallbackMessage };
   }
-  return { valid: false, message: result.message || DEFAULT_INVALID_MESSAGE };
+  return { valid: false, message: result.message || fallbackMessage };
 };
 
 // 追加(数値の検査): number エディタの min / max / integer による組み込みの検査です。どれかがあるときだけ
@@ -39,25 +50,28 @@ export const normalizeValidationResult = (
 const getNumberRules = <T,>({ editor }: GridColumn<T>) =>
   editor?.type === 'number' && (editor.min != null || editor.max != null || editor.integer) ? editor : undefined;
 
-const getNumberRuleMessage = <T,>(column: GridColumn<T>, value: unknown): string | null => {
+// 変更(英語対応): メッセージは文言の表から作ります(enterNumber / enterInteger / enterMin / enterMax / enterRange)。
+const getNumberRuleMessage = <T,>(column: GridColumn<T>, value: unknown, texts: ValidationLocaleText): string | null => {
   const rules = getNumberRules(column);
   if (!rules || value == null || (typeof value === 'string' && !value.trim())) {
     return null;
   }
   const { min, max } = rules;
   const numeric = typeof value === 'string' ? (parseNumberText(value) ?? NaN) : typeof value === 'number' ? value : NaN;
-  const reason = !Number.isFinite(numeric)
-    ? '数値'
-    : rules.integer && !Number.isInteger(numeric)
-      ? '整数'
-      : (min != null && numeric < min) || (max != null && numeric > max)
-        ? max == null
-          ? `${min} 以上`
-          : min == null
-            ? `${max} 以下`
-            : `${min}〜${max} `
-        : '';
-  return reason ? `${reason}で入力してください` : null;
+  if (!Number.isFinite(numeric)) {
+    return texts.enterNumber;
+  }
+  if (rules.integer && !Number.isInteger(numeric)) {
+    return texts.enterInteger;
+  }
+  if ((min != null && numeric < min) || (max != null && numeric > max)) {
+    return max == null
+      ? formatLocaleText(texts.enterMin, { min: min as number })
+      : min == null
+        ? formatLocaleText(texts.enterMax, { max })
+        : formatLocaleText(texts.enterRange, { min, max });
+  }
+  return null;
 };
 
 // 追加(数値の検査): 検査のある列か(validate か、number エディタの min / max / integer)。mark 表示と
@@ -68,18 +82,20 @@ export const hasCellValidation = <T,>(column: GridColumn<T>): boolean => !!(colu
 // 変更(数値の検査): validate が NG ならそのメッセージ、validate が通した(か無い)ときだけ組み込みの検査(数値か →
 //   整数か → 範囲)を行います。validate を先にするのは、利用側のメッセージ(英語のアプリ等)を組み込みの日本語の
 //   メッセージで上書きしないため(validate の受け取る値と動きは従来どおり)。
+// 変更(英語対応): 組み込みのメッセージの文言を任意で受けます(未指定は日本語の既定)。
 export const getInvalidMessage = <T,>(
   column: GridColumn<T>,
   row: T,
   value: unknown,
+  texts: ValidationLocaleText = DEFAULT_GRID_LOCALE_TEXT,
 ): string | null => {
   if (column.validate) {
-    const normalized = normalizeValidationResult(column.validate({ value, row, column }));
+    const normalized = normalizeValidationResult(column.validate({ value, row, column }), texts.invalidValue);
     if (!normalized.valid) {
       return normalized.message;
     }
   }
-  return getNumberRuleMessage(column, value);
+  return getNumberRuleMessage(column, value, texts);
 };
 
 // 書き込み可否の判定です。validationMode 既定 'mark' は常に write(警告は表示側で導出)、
@@ -88,11 +104,12 @@ export const decideCellWrite = <T,>(
   column: GridColumn<T>,
   row: T,
   value: unknown,
+  texts?: ValidationLocaleText,
 ): { action: 'write' } | { action: 'reject'; message: string } => {
   if ((column.validationMode ?? 'mark') !== 'reject') {
     return { action: 'write' };
   }
-  const message = getInvalidMessage(column, row, value);
+  const message = getInvalidMessage(column, row, value, texts);
   return message === null
     ? { action: 'write' }
     : { action: 'reject', message };
@@ -108,6 +125,7 @@ export const scanInvalidCells = <T,>(
   columns: GridColumn<T>[],
   getRowKey: (row: T, sourceRowIndex: number) => GridRowKey | undefined,
   isLabelRow?: (row: T, sourceRowIndex: number) => boolean,
+  texts?: ValidationLocaleText,
 ): GridInvalidCell[] => {
   const validateColumns = columns.filter(hasCellValidation);
   if (validateColumns.length === 0) {
@@ -123,6 +141,7 @@ export const scanInvalidCells = <T,>(
         column,
         row,
         getCellValue(row, column),
+        texts,
       );
       if (message !== null) {
         invalidCells.push({

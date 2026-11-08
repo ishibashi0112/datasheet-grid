@@ -428,8 +428,10 @@ export const writeTextToClipboard = async (text: string): Promise<boolean> => {
   if (copyTextViaExecCommand(text)) {
     return true;
   }
+  // 変更(英語対応): 文は日本語の行と英語の行の 2 行です(コピーの失敗は本番でも出します)。
   console.warn(
-    '[SpreadsheetGrid] クリップボードへのコピーに失敗しました(navigator.clipboard が利用できず、execCommand フォールバックも失敗)。',
+    '[SpreadsheetGrid] クリップボードへのコピーに失敗しました(navigator.clipboard が利用できず、execCommand フォールバックも失敗)。\n' +
+      '[SpreadsheetGrid] Failed to copy to the clipboard (navigator.clipboard is unavailable and the execCommand fallback failed).',
   );
   return false;
 };

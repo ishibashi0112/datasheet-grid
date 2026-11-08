@@ -12,6 +12,7 @@ import {
   type GridAskOptions,
 } from './gridAsk';
 import { buildGridState } from './gridState';
+import { DEFAULT_GRID_ASK_LOCALE_TEXT, resolveGridAskLocaleText } from './gridAskLocaleText';
 import type { ColumnFilterValue, GridColumn, GridState } from '../model/gridTypes.unbound';
 
 type Row = Record<string, unknown>;
@@ -882,5 +883,20 @@ describe('見え方の比較とチップ', () => {
     expect(isSameGridAskView(state, moved)).toBe(true);
     expect(isSameGridAskView(state, removeGridAskItem(state, 'q'))).toBe(false);
     expect(isSameGridAskView(state, removeGridAskItem(state, 'h:memo'))).toBe(false);
+  });
+});
+
+// 追加(英語対応の見直し): AI バーの文言も、null のキーは既定のまま(置き換えのときに落ちない)。
+describe('resolveGridAskLocaleText', () => {
+  it('渡したキーだけ置き換え、undefined / null のキーは既定のまま', () => {
+    const texts = resolveGridAskLocaleText({
+      placeholder: 'Ask',
+      noGrid: undefined,
+      askFailed: null,
+    } as unknown as Parameters<typeof resolveGridAskLocaleText>[0]);
+    expect(texts.placeholder).toBe('Ask');
+    expect(texts.noGrid).toBe(DEFAULT_GRID_ASK_LOCALE_TEXT.noGrid);
+    expect(texts.askFailed).toBe(DEFAULT_GRID_ASK_LOCALE_TEXT.askFailed);
+    expect(resolveGridAskLocaleText(undefined)).toBe(DEFAULT_GRID_ASK_LOCALE_TEXT);
   });
 });

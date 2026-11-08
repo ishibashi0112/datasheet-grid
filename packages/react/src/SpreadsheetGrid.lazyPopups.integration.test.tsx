@@ -174,7 +174,7 @@ describe('SpreadsheetGrid ポップオーバー部品の遅延読み込み', () 
       expect(shell?.tabIndex).toBe(-1);
       await waitFor(() =>
         expect(consoleError).toHaveBeenCalledWith(
-          '[SpreadsheetGrid] ポップオーバー部品の読み込みに失敗しました。',
+          '[SpreadsheetGrid] ポップオーバー部品の読み込みに失敗しました。\n[SpreadsheetGrid] Failed to load the popup components.',
           expect.anything(),
         ),
       );

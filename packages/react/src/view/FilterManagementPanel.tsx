@@ -18,6 +18,9 @@
 //   は中身(グローバル行 / 一覧 / フッター)だけを描画します。タブ非アクティブ時は
 //   アンマウントされるため、isOpen prop は不要になりました。
 
+import { formatLocaleText } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/localeText';
+import { usePopupLocaleText } from '../hooks/usePopupLocaleText';
+
 // 追加(FM-1): 一覧 1 行ぶんの情報です(要約文字列は logic/filterSummary.ts で生成済み)。
 export type FilterManagementEntry = {
   columnKey: string;
@@ -102,6 +105,7 @@ export function FilterManagementPanel({
   onClearAllFilters,
   onClearGlobalFilter,
 }: FilterManagementPanelProps) {
+  const texts = usePopupLocaleText();
   const canClearAll = canFilter && entries.length > 0;
   const canAdd = canFilter && addableColumns.length > 0;
 
@@ -119,12 +123,12 @@ export function FilterManagementPanel({
             <SearchGlyph />
           </span>
           <span className="ssg-filter-manage-main">
-            <span className="ssg-filter-manage-name">グローバルフィルター</span>
+            <span className="ssg-filter-manage-name">{texts.globalFilterTitle}</span>
             <span
               className="ssg-filter-manage-summary"
               data-ssg-tooltip={globalFilterText}
             >
-              "{globalFilterText}" を含む行
+              {formatLocaleText(texts.globalFilterRows, { text: globalFilterText })}
             </span>
           </span>
           <span className="ssg-filter-manage-actions">
@@ -132,8 +136,8 @@ export function FilterManagementPanel({
               type="button"
               className="ssg-filter-manage-icon-btn ssg-filter-manage-icon-btn--danger"
               disabled={!canFilter}
-              data-ssg-tooltip="グローバルフィルターをクリア"
-              aria-label="グローバルフィルターをクリア"
+              data-ssg-tooltip={texts.clearGlobalFilterTitle}
+              aria-label={texts.clearGlobalFilterTitle}
               onClick={onClearGlobalFilter}
             >
               ×
@@ -146,7 +150,7 @@ export function FilterManagementPanel({
       <div className="ssg-filter-manage-list">
         {entries.length === 0 ? (
           <div className="ssg-filter-manage-empty">
-            適用中の列フィルターはありません
+            {texts.noColumnFilters}
           </div>
         ) : (
           entries.map((entry) => (
@@ -159,12 +163,12 @@ export function FilterManagementPanel({
                   {entry.title}
                   {entry.isHidden && (
                     <span className="ssg-filter-manage-hidden-note">
-                      (非表示列)
+                      {texts.filterHiddenColumn}
                     </span>
                   )}
                   {entry.isGrouped && (
                     <span className="ssg-filter-manage-hidden-note">
-                      (グループ化中)
+                      {texts.filterGroupedColumn}
                     </span>
                   )}
                 </span>
@@ -182,12 +186,12 @@ export function FilterManagementPanel({
                   disabled={!canFilter || entry.isHidden}
                   data-ssg-tooltip={
                     entry.isHidden
-                      ? '非表示列のためジャンプ編集できません(× でクリアは可能)'
+                      ? texts.filterJumpUnavailable
                       : entry.isGrouped === true
-                        ? 'グループの列の見出しの下で編集'
-                        : 'この列へジャンプして編集'
+                        ? texts.filterEditUnderGroup
+                        : texts.filterJump
                   }
-                  aria-label={`${entry.title} のフィルターを編集`}
+                  aria-label={formatLocaleText(texts.filterEditFor, { column: entry.title })}
                   onClick={() => {
                     onEditFilter(entry.columnKey);
                   }}
@@ -198,8 +202,8 @@ export function FilterManagementPanel({
                   type="button"
                   className="ssg-filter-manage-icon-btn ssg-filter-manage-icon-btn--danger"
                   disabled={!canFilter}
-                  data-ssg-tooltip="この列のフィルターをクリア"
-                  aria-label={`${entry.title} のフィルターをクリア`}
+                  data-ssg-tooltip={texts.filterClear}
+                  aria-label={formatLocaleText(texts.filterClearFor, { column: entry.title })}
                   onClick={() => {
                     onClearFilter(entry.columnKey);
                   }}
@@ -220,7 +224,7 @@ export function FilterManagementPanel({
           className="ssg-filter-manage-add"
           value=""
           disabled={!canAdd}
-          aria-label="フィルターを追加する列を選択"
+          aria-label={texts.addFilterLabel}
           onChange={(event) => {
             const key = event.target.value;
             if (key) {
@@ -229,7 +233,7 @@ export function FilterManagementPanel({
           }}
         >
           <option value="">
-            {canAdd ? '+ フィルターを追加…' : '+ 追加できる列がありません'}
+            {canAdd ? texts.addFilter : texts.addFilterNone}
           </option>
           {addableColumns.map((column) => (
             <option key={column.key} value={column.key}>
@@ -243,7 +247,7 @@ export function FilterManagementPanel({
           disabled={!canClearAll}
           onClick={onClearAllFilters}
         >
-          すべてクリア
+          {texts.clearAll}
         </button>
       </div>
     </>

@@ -22,6 +22,7 @@ import type {
 import { usePanelHeaderDrag } from '../hooks/usePanelHeaderDrag';
 import { usePortalTokens } from '../hooks/usePortalTokens';
 import type { GridResolvedSlot } from '../model/gridTypes';
+import { usePopupLocaleText } from '../hooks/usePopupLocaleText';
 
 // 追加(UP-1): SegmentedControl の 1 セグメント分の表示情報です。
 //   badge は件数バッジ(適用中フィルター数 / ソート基準数)。undefined / 0 は非表示です。
@@ -68,6 +69,7 @@ export function ToolPanel({
   onPanelMove,
   children,
 }: ToolPanelProps) {
+  const texts = usePopupLocaleText();
   // hooks は早期 return より前・無条件で呼びます(layout=null のときはフック側が開始しません)。
   const { handleHeaderPointerDown } = usePanelHeaderDrag({
     layout,
@@ -191,7 +193,7 @@ export function ToolPanel({
         <button
           type="button"
           onClick={onRequestClose}
-          aria-label="閉じる"
+          aria-label={texts.close}
           className="ssg-popover-close"
         >
           ×

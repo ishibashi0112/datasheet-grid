@@ -133,7 +133,4 @@ export const isRowDragOperable = (
   orderIsIdentity: boolean,
 ): boolean => available && orderIsIdentity;
 
-// 操作不可(ソート / フィルター中)のハンドルに出すツールチップ文言です。
-export const ROW_DRAG_DISABLED_TOOLTIP =
-  'ソート / フィルター適用中は行を並び替えできません';
-export const ROW_DRAG_HANDLE_TOOLTIP = 'ドラッグで行を移動';
+// 変更(英語対応): ハンドルのツールチップの文言は文言の表(localeText の dragRow / dragRowDisabled)へ移しました。

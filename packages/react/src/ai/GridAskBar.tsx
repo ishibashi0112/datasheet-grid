@@ -6,14 +6,16 @@ import { useEffect, useRef, useState, useSyncExternalStore, type KeyboardEvent, 
 import { systemColorSchemeStore } from '@ishibashi0112/spreadsheet-grid-core/internal/controllers/systemColorSchemeStore';
 import { resolveGridThemeClassName } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/theme';
 import type { GridTheme } from '../model/gridTypes';
+import { resolveGridAskLocaleText } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/gridAskLocaleText';
+import { formatLocaleText } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/localeTextFilters';
 import { useGridAsk, type UseGridAskOptions } from './useGridAsk';
 
 export type GridAskBarProps<T> = UseGridAskOptions<T> & {
   /** 入力欄の下に出す例の文(押すとその文で聞く)。 */
   examples?: readonly string[];
-  /** 入力欄のプレースホルダー。 */
+  /** 入力欄のプレースホルダー(既定は文言の `placeholder`)。 */
   placeholder?: string;
-  /** 入力欄のラベル(読み上げ用)。 */
+  /** 入力欄のラベル(読み上げ用。既定は文言の `label`)。 */
   label?: string;
   /** バーの root に足すクラス。 */
   className?: string;
@@ -28,13 +30,15 @@ const cx = (...names: (string | false | null | undefined)[]): string => names.fi
  */
 export function GridAskBar<T>({
   examples,
-  placeholder = 'ことばで絞り込み・並べ替え(例: 今月の分を金額の高い順に)',
-  label = 'ことばで絞り込み',
+  placeholder,
+  label,
   className,
   theme = 'light',
   ...options
 }: GridAskBarProps<T>) {
   const ask = useGridAsk(options);
+  // 追加(英語対応): 文言(既定は日本語)。
+  const texts = resolveGridAskLocaleText(options.localeText);
   const [text, setText] = useState('');
   const systemPrefersDark = useSyncExternalStore(
     systemColorSchemeStore.subscribe,
@@ -164,15 +168,15 @@ export function GridAskBar<T>({
           className="ssg-ask-input"
           type="text"
           value={text}
-          placeholder={placeholder}
-          aria-label={label}
+          placeholder={placeholder ?? texts.placeholder}
+          aria-label={label ?? texts.label}
           enterKeyHint="send"
           onChange={(event) => setText(event.target.value)}
           onKeyDown={handleKeyDown}
         />
         {asking ? (
           <button type="button" className="ssg-ask-button" onClick={handleStop}>
-            止める
+            {texts.stop}
           </button>
         ) : (
           <button
@@ -181,13 +185,13 @@ export function GridAskBar<T>({
             disabled={text.trim() === ''}
             onClick={handleAsk}
           >
-            聞く
+            {texts.submit}
           </button>
         )}
       </form>
       {examples && examples.length > 0 && (
         <div className="ssg-ask-examples">
-          <span className="ssg-ask-examples-label">例:</span>
+          <span className="ssg-ask-examples-label">{texts.examples}</span>
           {examples.map((example, index) => (
             // 聞いている間は aria-disabled(disabled にすると押したボタンからフォーカスが外れ、Esc が届かない)。
             <button
@@ -213,7 +217,8 @@ export function GridAskBar<T>({
         {asking && (
           <div className="ssg-ask-status">
             <span className="ssg-ask-spinner" aria-hidden="true" />
-            考えています…<span className="ssg-ask-hint">Esc でも止まります</span>
+            {texts.thinking}
+            <span className="ssg-ask-hint">{texts.escHint}</span>
           </div>
         )}
         {!asking && ask.error !== null && (
@@ -229,7 +234,7 @@ export function GridAskBar<T>({
                   send(sentText);
                 }}
               >
-                もう一度
+                {texts.retry}
               </button>
             )}
           </div>
@@ -239,7 +244,7 @@ export function GridAskBar<T>({
             {session.phase === 'applied' && (
               <div className="ssg-ask-result">
                 <div className="ssg-ask-result-head">
-                  <span className="ssg-ask-result-title">反映した条件</span>
+                  <span className="ssg-ask-result-title">{texts.appliedTitle}</span>
                   <span className="ssg-ask-result-actions">
                     <button
                       type="button"
@@ -249,7 +254,7 @@ export function GridAskBar<T>({
                         ask.undo();
                       }}
                     >
-                      元に戻す
+                      {texts.undo}
                     </button>
                     <button
                       type="button"
@@ -259,7 +264,7 @@ export function GridAskBar<T>({
                         ask.dismiss();
                       }}
                     >
-                      閉じる
+                      {texts.close}
                     </button>
                   </span>
                 </div>
@@ -272,7 +277,7 @@ export function GridAskBar<T>({
                         <button
                           type="button"
                           className="ssg-ask-chip-remove"
-                          aria-label={`${item.label} ${item.text} を外す`}
+                          aria-label={formatLocaleText(texts.removeItem, { label: item.label, text: item.text })}
                           onClick={() => {
                             keepFocus(index);
                             ask.remove(item.id);
@@ -284,13 +289,13 @@ export function GridAskBar<T>({
                     ))}
                   </ul>
                 ) : (
-                  <div className="ssg-ask-empty">条件はすべて外れています。</div>
+                  <div className="ssg-ask-empty">{texts.allRemoved}</div>
                 )}
               </div>
             )}
             {session.phase === 'unchanged' && (
               <div className="ssg-ask-note">
-                <span>変える条件はありませんでした。</span>
+                <span>{texts.unchanged}</span>
                 <button
                   type="button"
                   className="ssg-ask-link"
@@ -299,13 +304,13 @@ export function GridAskBar<T>({
                     ask.dismiss();
                   }}
                 >
-                  閉じる
+                  {texts.close}
                 </button>
               </div>
             )}
             {session.phase === 'undone' && (
               <div className="ssg-ask-note">
-                <span>元に戻しました。</span>
+                <span>{texts.undone}</span>
                 <button
                   type="button"
                   className="ssg-ask-link"
@@ -314,13 +319,13 @@ export function GridAskBar<T>({
                     ask.dismiss();
                   }}
                 >
-                  閉じる
+                  {texts.close}
                 </button>
               </div>
             )}
             {session.phase !== 'undone' && session.phase !== 'changed' && session.dropped.length > 0 && (
               <div className="ssg-ask-note ssg-ask-note--warn">
-                <span className="ssg-ask-note-title">使えなかった部分</span>
+                <span className="ssg-ask-note-title">{texts.droppedTitle}</span>
                 <ul className="ssg-ask-dropped">
                   {session.dropped.map((reason, index) => (
                     <li key={index}>{reason}</li>
@@ -330,7 +335,7 @@ export function GridAskBar<T>({
             )}
             {session.phase !== 'undone' && session.phase !== 'changed' && session.unsupported !== null && (
               <div className="ssg-ask-note">
-                <span>AI から: {session.unsupported}</span>
+                <span>{formatLocaleText(texts.fromAi, { text: session.unsupported })}</span>
               </div>
             )}
           </>
@@ -348,7 +353,7 @@ export function GridAskBar<T>({
                   ask.dismiss();
                 }}
               >
-                閉じる
+                {texts.close}
               </button>
             )}
           </div>

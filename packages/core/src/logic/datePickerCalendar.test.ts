@@ -4,7 +4,6 @@ import { describe, it, expect } from 'vitest';
 import {
   buildCalendarDayCells,
   buildYearGrid,
-  formatCalendarTitle,
   formatFilterDateDisplay,
   yearGridStart,
 } from './datePickerCalendar';
@@ -40,11 +39,6 @@ describe('表示整形 / 年グリッド', () => {
   it('formatFilterDateDisplay: キーをスラッシュ区切りへ(空は空のまま)', () => {
     expect(formatFilterDateDisplay('2026-08-27')).toBe('2026/08/27');
     expect(formatFilterDateDisplay('')).toBe('');
-  });
-
-  it('formatCalendarTitle: 「YYYY年 M月」', () => {
-    expect(formatCalendarTitle(2026, 7)).toBe('2026年 8月');
-    expect(formatCalendarTitle(2026, 0)).toBe('2026年 1月');
   });
 
   it('yearGridStart / buildYearGrid: 12 年境界へ揃えた 12 年ページ', () => {

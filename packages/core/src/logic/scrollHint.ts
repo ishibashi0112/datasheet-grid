@@ -10,10 +10,13 @@
 
 import type {
   GridFrameworkTypes,
+  GridLocaleTextTemplate,
   ScrollHintOptions,
   ScrollHintRenderArgs,
   ScrollHintTrigger,
 } from '../model/gridTypes.core';
+import { formatLocaleText } from './localeText';
+import { DEFAULT_SCROLL_HINT_LOCALE_TEXT } from './localeTextFeatures';
 
 // 解決済みオプションです(view 消費用の内部型)。省略項目を既定値で埋めます。
 export type ResolvedScrollHintOptions<
@@ -145,12 +148,14 @@ export const niceStepAtLeast = (raw: number): number => {
 //   useManUnit を明示すると圧縮可否を呼び出し側で統一できます(computeScrollHintRulerTicks は
 //   「刻みが 1 万の倍数のときだけ全目盛りを万表記」にして、5,000 / 1万 / 15,000 … のような
 //   表記混在を防ぎます)。0 は常に '0' です。
+// 変更(英語対応): 「N万」の書き方は文言(localeText の scrollHintTenThousands。英語は元の数の桁区切り)。
 export const formatScrollHintRulerValue = (
   value: number,
   useManUnit: boolean = value >= 10_000 && value % 10_000 === 0,
+  tenThousands: GridLocaleTextTemplate<{ value: string; full: string }> = DEFAULT_SCROLL_HINT_LOCALE_TEXT.scrollHintTenThousands,
 ): string =>
   value !== 0 && useManUnit
-    ? `${(value / 10_000).toLocaleString()}万`
+    ? formatLocaleText(tenThousands, { value: (value / 10_000).toLocaleString(), full: value.toLocaleString() })
     : value.toLocaleString();
 
 export type ScrollHintRulerTick = {
@@ -166,6 +171,8 @@ export type ScrollHintRulerParams = {
   // ルーラーの描画高さ(= viewportHeight - headerHeight)。
   rulerHeight: number;
   minTickSpacingPx?: number;
+  // 追加(英語対応): 1 万の倍数の目盛りの書き方(未指定は既定の「N万」)。
+  tenThousands?: GridLocaleTextTemplate<{ value: string; full: string }>;
 };
 
 // ルーラーの目盛り列を計算します。0 から rowCount まで、最小ラベル間隔を守る
@@ -175,6 +182,7 @@ export const computeScrollHintRulerTicks = ({
   rowCount,
   rulerHeight,
   minTickSpacingPx = SCROLL_HINT_RULER_MIN_TICK_SPACING_PX,
+  tenThousands,
 }: ScrollHintRulerParams): ScrollHintRulerTick[] => {
   if (rowCount <= 0 || rulerHeight <= 0) {
     return [];
@@ -188,7 +196,7 @@ export const computeScrollHintRulerTicks = ({
     ticks.push({
       row: value,
       y: (value / rowCount) * rulerHeight,
-      label: formatScrollHintRulerValue(value, useManUnit),
+      label: formatScrollHintRulerValue(value, useManUnit, tenThousands),
     });
   }
   return ticks;

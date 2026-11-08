@@ -60,6 +60,8 @@ import { getCellValue, isCellEditable } from '@ishibashi0112/spreadsheet-grid-co
 import { cx } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/cx';
 import type { GridResolvedSlots, GridSlotProps } from '../model/gridTypes';
 import { arePropsEqualWithStyleKeys, resolveSlotProps } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/slotProps';
+import { useGridLocaleText } from '../hooks/useGridLocaleText';
+import { formatLocaleText } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/localeText';
 
 type VirtualRowLike = {
   index: number;
@@ -247,6 +249,8 @@ function GridBodyRowInner<T>({
   rowStyle,
   slots,
 }: GridBodyRowProps<T>) {
+  // 追加(英語対応): 文言(localeText)。
+  const texts = useGridLocaleText();
   // 追加(audit RD-4): canEditCell の第 5 引数(行内の全セルで共有。canEditCell 未指定なら作りません)。
   const canEditContext = canEditCell ? { sourceRowIndex, rowKey } : undefined;
   return (
@@ -304,7 +308,7 @@ function GridBodyRowInner<T>({
           {showRowCheckbox ? (
             <RowSelectionCheckbox
               slot={slots?.checkbox}
-              label={`行 ${rowNumber} を選択`}
+              label={formatLocaleText(texts.selectRow, { row: rowNumber })}
               state={isRowChecked ? 'checked' : 'unchecked'}
             />
           ) : (
@@ -424,7 +428,7 @@ function GridBodyRowInner<T>({
         // 変更(数値の検査): validate の無い number 列でも min / max / integer があれば評価します。
         const invalidMessage =
           showValidationMarks && hasCellValidation(column)
-            ? getInvalidMessage(column, row, getCellValue(row, column))
+            ? getInvalidMessage(column, row, getCellValue(row, column), texts)
             : null;
         // 追加(G-3): セルのメモ(右上の印 + ツールチップ)。ツールチップは入力エラーと同じ data-ssg-tooltip を
         //   使い、両方あれば「エラー → 改行 → メモ」の順につなぎます(静的な文言のため、メモのあるセルでは

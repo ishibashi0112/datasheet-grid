@@ -39,7 +39,7 @@
 | `showCopyRange` | `boolean` | `true` | `Ctrl/Cmd+C` のあと、コピー元の範囲に Excel と同じ「動く点線」を残す(`.ssg-copy-range-overlay`。`motion` が `'off'` なら静的な点線)。`Esc` と編集開始で消え、ソート / フィルター / グループ開閉 / 行数 / 列の変化で描画しなくなる(貼り付けでは残る)。`false` で点線を出さない(コピー自体は従来どおり)。 |
 | `hoverHighlight` | `'row' \| 'cross'` | `'row'` | ホバーの強調範囲。`'row'` はポインタの行だけ(従来)。`'cross'` はその行に加えて、ポインタの列(列ヘッダー + 同じ列の他セルに薄い帯 `.ssg-col-hover-overlay`)と行番号も染めるクロスヘア表示。色はトークン `--ssg-col-hover-bg`(帯)/ `--ssg-select-bg`(ヘッダー・行番号)。横に長い表で「この値はどの列か」を視線移動なしで答えるため。 |
 | `highlightChanges` | `boolean` | `false` | `rows` が変わったとき、値が変わったセルを一瞬アクセント色で光らせ(`.ssg-body-cell--changed`、`--ssg-motion-slow`)、数値の既定セルは旧値から新値へカウントアップする(`--ssg-motion-base`。表示は `valueFormatter` で整形)。セル編集 / 貼り付け / クリア / undo・redo / 外部からの `rows` 差し替えのすべてが対象。clientSide 専用(SSRM では無効)。描画中のセルだけが対象で、変わったセルが 200 を超えるとフラッシュのみ、2,000 を超える・行の挿入 / 削除 / 並べ替えを伴う・参照の変わった行が 5,000 を超える(データの読み直し)ときは何もしない。 |
-| `showSaveStatus` | `boolean` | `true` | serverSide の書き戻し(`dataSource.updateRows`)で、確定したセルに保存状態の印を出す。保存中は斜線 + 小さなスピナー(`[data-ssg-save="pending"]`)、成功は ✓ バッジを 1.3 秒(`"ok"`)、失敗は揺れ + 赤いフラッシュ + ✕ バッジ(`"failed"`)とセル下の「保存に失敗しました」チップ(4 秒 / スクロールで消える)。既存の保存失敗バー(`onServerSideWriteError`)とは独立に出る。描画中のセルだけが対象(保存中の印は、スクロールで外れて戻ったセルにも付き直す)。clientSide では何も出ない。 |
+| `showSaveStatus` | `boolean` | `true` | serverSide の書き戻し(`dataSource.updateRows`)で、確定したセルに保存状態の印を出す。保存中は斜線 + 小さなスピナー(`[data-ssg-save="pending"]`)、成功は ✓ バッジを 1.3 秒(`"ok"`)、失敗は揺れ + 赤いフラッシュ + ✕ バッジ(`"failed"`)とセル下のチップ(文言は `localeText` の `saveFailedCell`。既定「保存に失敗しました。値を戻しました」。4 秒 / スクロールで消える)。既存の保存失敗バー(`onServerSideWriteError`)とは独立に出る。描画中のセルだけが対象(保存中の印は、スクロールで外れて戻ったセルにも付き直す)。clientSide では何も出ない。 |
 | `rowDragMotion` | `'ghost' \| 'live'` | `'ghost'` | 行ドラッグ並べ替え(`enableRowDrag`)の表示方式。`'ghost'` は従来(ゴースト + ガイド線、ドロップ後に新しい位置へスライド)。`'live'` は掴んだ行がポインタに追従し、通る先の行がその場で上下へ退避する(ドロップ先が「隙間」として見える。枠外で離しても直前の位置へ確定、`Esc` で元へ戻る。ウィンドウからフォーカスが外れたときも元へ戻る)。`motion` が `'off'` のときは `'ghost'` と同じ。 |
 | `columnDragMotion` | `'ghost' \| 'live'` | `'ghost'` | 列ヘッダーのドラッグ並べ替え(`onColumnsChange` 指定時)の表示方式。`'ghost'` は従来(ゴースト + 縦線、ドロップ後に新しい位置へスライド)。`'live'` は同じペイン内では掴んだ列(ヘッダー + 描画中のセル)がポインタに追従し、通る先の列がその場で左右へ退避する(ドロップ先が「隙間」として見える。枠外で離しても直前の位置へ確定、`Esc` で元へ戻る。ウィンドウからフォーカスが外れたときも元へ戻る)。固定列のペインをまたいで移す(固定の変更)ときは、掴んだ列の複製(浮かぶ列)がポインタに付いてきて元のペインは列が抜けた分だけ詰まり、移動先は縦線で示す(浮かぶ列の見出しに、固定ペインへはピン / 中央へは移動の矢印のアイコン。浮かぶ列は表の枠の内側に収まり、離すと新しい位置へ滑り込む)。`motion` が `'off'` のときは `'ghost'` と同じ。 |
 | `find` | `boolean \| FindOptions` | `false` | **セル内検索**。`true` でグリッド右上の検索バー(`.ssg-find-bar`)と `Ctrl/Cmd+F`(グリッドにフォーカスがあるときだけ横取り)が有効になる。表示文字列(`valueFormatter` 適用後)への部分一致で、ヒットをすべて `<mark class="ssg-find-mark">` で強調し、`Enter` / `↓` で次、`Shift+Enter` / `↑` で前へ(アクティブセルとスクロールが追従)、`Esc` で閉じる。行は消さない(絞り込みのフィルターとは別)。`FindOptions` = `{ shortcut?: boolean(既定 true。false でブラウザ標準の検索に譲る), caseSensitive?: boolean(既定 false) }`。走査は時間分割(1 チャンク 10ms)で入力を止めない。SSRM はロード済み範囲だけが対象。ヒットは 10,000 件で打ち切り(件数に `+`)。詳細は「セル内検索」節。 |
@@ -82,16 +82,16 @@
 | `onCellDoubleClick` | `(params: GridCellDoubleClickParams<T>) => void` | — | データセルのダブルクリック(タッチのダブルタップ含む)で、既定の動作(編集可能セルなら編集開始)の前に呼ばれる。読み取り専用セルでも呼ばれる。`params.preventDefault()` で既定の動作を止められる(`params.event.preventDefault()` では止まらない)。対象のセルは `onCellClick` と同じ。インライン関数可。 |
 | `onActiveCellChange` | `(cell: GridCellRef<T> \| null) => void` | — | アクティブセルが変わったときに呼ばれる(クリック / キー操作 / `setActiveCell` など由来を問わない)。アクティブセルが無くなった / データセル以外(グループ行 / ラベル行 / 未ロード行 / 合成列)へ移ったときは `null`。行キー・列キー・位置(`rowIndex` / `colIndex`)がすべて同じなら呼ばれない(同じセルへの再設定)。座標が同じでも、ソートなどでその位置の行が変われば呼ばれる。初回マウントでは呼ばれない。通知はペイント後(クリックでは `onCellClick` より先)。インライン関数可。 |
 | `enableColumnHeaderHover` | `boolean` | `true` | 列ヘッダーのホバー時にヘッダーセルを薄くハイライト。 |
-| `noMatchingRowsText` | `string` | `'一致する行がありません'` | フィルター結果 0 行時のオーバーレイ文言。serverSide(`dataSource`)では列 / グローバルフィルターが掛かった状態で 0 件のときにこちら、掛かっていなければ `noRowsText` を出す。 |
-| `noRowsText` | `string` | `'表示する行がありません'` | rows が 0 件のときの文言。 |
+| `noMatchingRowsText` | `string` | `localeText` の `noMatchingRows`(`'一致する行がありません'`) | フィルター結果 0 行時のオーバーレイ文言。serverSide(`dataSource`)では列 / グローバルフィルターが掛かった状態で 0 件のときにこちら、掛かっていなければ `noRowsText` を出す。 |
+| `noRowsText` | `string` | `localeText` の `noRows`(`'表示する行がありません'`) | rows が 0 件のときの文言。 |
 | `ariaLabel` | `string` | — | 表(`role="grid"` の要素)のアクセシブル名。スクリーンリーダーが表を読み上げるときの名前で、1 画面に複数のグリッドを置くときは付けておくと区別できる(「アクセシビリティ」節)。 |
 | `showTopBar` | `boolean` | `true` | 上部バー(ツールバー)の表示有無。`false` で `renderTopBar` / `enableGlobalFilter` に関わらず一切描画しない(表示のマスタースイッチ。矛盾指定時は `renderTopBar` より優先)。 |
 | `showTopBarSummary` | `boolean` | `true` | 既定トップバーの summary chips(件数/フィルター/ソート)の表示有無。`renderTopBar` 未指定時のみ有効。これと `showTopBarFilter` がともに非表示なら既定トップバーは描画されない(空バーを出さない)。 |
 | `showTopBarCounts` | `boolean` | `true` | 既定トップバーの Rows / Columns 件数 chips の表示有無。`showTopBarSummary=true`(かつ `renderTopBar` 未指定)のときのみ有効。Filter / Sort chips は対象外。 |
 | `showTopBarFilter` | `boolean` | `true` | 既定トップバーのグローバルフィルター入力欄の表示有無。`renderTopBar` 未指定時のみ有効。`enableGlobalFilter=false` のときは本値に関わらず非表示。 |
-| `globalFilterPlaceholder` | `string` | `'グローバルフィルター'` | 既定トップバーのグローバルフィルター入力の placeholder。`renderTopBar` 未指定時のみ有効。 |
+| `globalFilterPlaceholder` | `string` | `localeText` の `globalFilterPlaceholder`(`'グローバルフィルター'`) | 既定トップバーのグローバルフィルター入力の placeholder。`renderTopBar` 未指定時のみ有効。 |
 | `globalFilterIcon` | `ReactNode` | 組み込み検索アイコン | 既定トップバーのグローバルフィルター入力の左アイコン。`renderTopBar` 未指定時のみ有効。`undefined`=組み込みの検索(虫眼鏡)アイコン / `null`(など falsy)=アイコン無し / 任意 `ReactNode`=差し替え。クリアボタンは入力枠の内側右に `×` で表示され、入力が空のときは出ない。 |
-| `localeText` | `Partial<GridLocaleText>` | 日本語 | 文言(今は上部 / 下部バーの文言)。変えたいキーだけを渡す(`{ rowCount: 'Rows: {shown} / {total}' }`)。`{name}` の所は値に置き換わる。キーの一覧は「バーの文言(`localeText`)」節。 |
+| `localeText` | `Partial<GridLocaleText>` | 日本語 | グリッドが自分で出す文言(バー・メニュー・列フィルター・ツールパネル・検索・読み上げの名前・検証のメッセージなど)。変えたいキーだけを渡す(`{ noRows: 'データがありません' }`)。`{name}` の所は値に置き換わる。英語は入口 `/locales/en` の `localeTextEn`(`localeText={localeTextEn}`)。キーの一覧は「文言(`localeText`)と英語」節。 |
 | `showBottomBar` | `boolean` | `true` | 下部バー(ステータスバー)の表示有無。`false` で `renderBottomBar` に関わらず一切描画しない(表示のマスタースイッチ。矛盾指定時は `renderBottomBar` より優先)。 |
 | `showBottomBarCounts` | `boolean` | `true` | 既定ボトムバーの Rows / Columns 件数 chips(左側)の表示有無。`renderBottomBar` 未指定時のみ有効。右側の Active / Selection / 選択統計 / Cols は対象外。 |
 | `showSelectionAggregates` | `boolean` | `true` | 2 セル以上を選んだとき、選択範囲の集計(平均 / データの個数 / 合計)を既定ボトムバーの右側(Active / Selection の隣の空き)に出す。数えるのは表示中のデータ行 × データ列のセルで(フィルターで隠れた行・グループ行・ラベル行・合成列は対象外)、合計 / 平均は数値と数値の文字列だけ(グループ集計と同じ判定)、データの個数は空でないセル。大きな選択は時間分割で計算し、その間は「集計中…」。SSRM では読み込み済みの行だけで計算し「読み込み済みの行のみ」と添える。`false` では計算もせず `slotContext.selectionAggregates` は `null`(「選択範囲の集計」節)。 |
@@ -146,62 +146,337 @@
 
 ボトムバーは行 / 列の件数を `showBottomBarCounts`、選択範囲の集計を `showSelectionAggregates` で出し分けできる(右側のセル / 範囲 / 選択の大きさ / 列数は対象外)。それ以外の内訳を変えたい場合は `renderBottomBar` を使う。
 
-### バーの文言(`localeText`)
+### 文言(`localeText`)と英語
 
-既定バーの文言は日本語です(0.63.0 から。0.62.0 までは「Toolbar」「Rows: 120 / 120」「Active: B3」など英語でした)。`localeText` に変えたいキーだけを渡すと、その文言だけが置き換わります。`{name}` の所は値に置き換わります。`renderTopBar` / `renderBottomBar` の `ctx.derivedSummary` の文字(`rowSummaryText` など)も同じ文言で作られます。
+グリッドが自分で出す文言(上部 / 下部のバー、列メニュー、列フィルター、ツールパネル、セル内検索、フィルハンドル、行グループの行、読み上げの名前とツールチップ、組み込みの検査のメッセージ、serverSide の失敗のバー、エクスポートの小計など)は、すべて `localeText` で変えられます。既定は日本語です。英語にするときは入口 `@ishibashi0112/spreadsheet-grid/locales/en` の `localeTextEn` を渡します(英語の文言は別の入口なので、日本語のまま使う利用者の JS には入りません)。
 
 ```tsx
-// 英語にする例
-<SpreadsheetGrid
-  localeText={{
-    rowCount: 'Rows: {shown} / {total}',
-    columnCount: 'Columns: {shown} / {total}',
-    filterSummary: 'Filter: {value}',
-    filterGlobal: '"{text}"',
-    filterColumns: '{count} columns',
-    sortSummary: 'Sort: {value}',
-    sortEntry: '{column} ({direction})',
-    sortAscending: 'asc',
-    sortDescending: 'desc',
-    activeCell: 'Cell {cell}',
-    selection: 'Range {range}',
-    selectionSize: '{cells} cells / {rows} rows',
-    selectedColumns: '{count} columns',
-    aggregateAverage: 'Average',
-    aggregateCount: 'Count',
-    aggregateSum: 'Sum',
-    aggregateComputing: 'Calculating… {percent}%',
-    aggregatePartial: 'Loaded rows only',
-    none: 'none',
-    listSeparator: ', ',
-  }}
-  …
-/>
+import { SpreadsheetGrid } from '@ishibashi0112/spreadsheet-grid';
+import { localeTextEn } from '@ishibashi0112/spreadsheet-grid/locales/en';
+
+// 英語にする
+<SpreadsheetGrid localeText={localeTextEn} … />
+
+// 英語のうち一部だけ変える
+<SpreadsheetGrid localeText={{ ...localeTextEn, rowCount: 'Showing {shown} of {total}' }} … />
+
+// 日本語のまま一部だけ変える(渡さなかったキーは既定のまま)
+<SpreadsheetGrid localeText={{ noRows: 'データがありません' }} … />
 ```
 
-| キー | 既定 | 中身 |
-| --- | --- | --- |
-| `rowCount` | `行 {shown} / {total}` | 行の件数(`{shown}` = 表示中、`{total}` = 全部。ラベル行は数えない) |
-| `columnCount` | `列 {shown} / {total}` | 列の件数 |
-| `filterSummary` | `絞り込み: {value}` | 絞り込みの要約(`{value}` は `none` / `filterGlobal` / `filterColumns`。両方なら ` + ` でつなぐ) |
-| `filterGlobal` | `「{text}」` | 検索欄の文字(16 文字を超えると切る) |
-| `filterColumns` | `{count} 列` | 列の絞り込みの数 |
-| `sortSummary` | `並び替え: {value}` | 並び替えの要約(`{value}` は `none` か、`sortEntry` を `listSeparator` でつないだもの) |
-| `sortEntry` | `{column}({direction})` | 並び替えの 1 列(`{direction}` は `sortAscending` / `sortDescending`) |
-| `sortAscending` / `sortDescending` | `昇順` / `降順` | 並び替えの向き |
-| `activeCell` | `セル {cell}` | アクティブセルの番地(`B3`。行グルーピングの自動グループ列のセルは見出しの名前と行番号で `地域 › 担当 3`。無ければ `none`) |
-| `selection` | `範囲 {range}` | 選択範囲(`B3:D5`、1 セルなら `B3`(自動グループ列のセルは `activeCell` と同じ名前、自動グループ列の中だけの範囲は `地域 › 担当 4:6`)、行は `3:5`、列は `B:D`。無ければ `none`) |
-| `selectionSize` | `{cells} セル / {rows} 行` | 選択範囲の大きさ |
-| `selectedColumns` | `{count} 列` | 選択範囲の列数 |
-| `aggregateAverage` / `aggregateCount` / `aggregateSum` | `平均` / `データの個数` / `合計` | 選択範囲の集計の見出し(後ろに `: 値`) |
-| `aggregateComputing` | `集計中… {percent}%` | 大きな選択範囲を集計している間 |
-| `aggregatePartial` | `読み込み済みの行のみ` | serverSide で読み込んでいない行を飛ばしたときの添え書き |
-| `none` | `なし` | 絞り込み / 並び替え / アクティブセル / 選択範囲が無いとき |
-| `listSeparator` | `、` | 並び替えの列の区切り |
+- 値は文字列か関数です(型 `GridLocaleTextTemplate`)。文字列は `{name}` の所が値に置き換わり、関数は値を受け取って文字列を返します(数で言い方が変わる言語のため。例 ``filterColumns: ({ count }) => (count === 1 ? '1 column' : `${count} columns`)``)。関数を入れた表は、コンポーネントの外で作るか `useMemo` で包んでください(関数は参照で比べるので、描くたびに新しい関数を作ると、そのたびに文言を使う部分がすべて描き直されます)。
+- 曜日(`calendarWeekdays`)と月(`calendarMonths`)は配列(日曜から 7 つ / 1 月から 12)です。
+- Next.js(App Router)では、`localeTextEn` は関数を含むので、サーバーコンポーネントから props で渡せません(開くと 500、静的なページはビルドが止まる。型の検査は通る)。グリッドを描く `'use client'` のファイルの中で import して渡してください。サーバーからは言語(`'en'` などの文字)だけを渡します。
+- 文言を渡す prop(`noRowsText` / `noMatchingRowsText` / `globalFilterPlaceholder` / `totalRow.label` / `GridAskBar` の `placeholder` / `label`)を渡したときは、そちらが優先です。
+- 英語でも、日付の書き方(`yyyy/mm/dd`)・数の書き方・件数の数字(区切りを入れない `行 1000000 / 1000000`)は変わりません。列の `valueFormatter` など利用側が渡す文字も変わりません。
+- `localeText={{ … }}` をその場で書いても、中身(文字列・配列・関数の参照)が同じ間は作り直しません。
+- `localeText` を途中で変えると(言語の切り替えなど)、グリッドの文言はすぐに変わります。ただし、出ている間に変えた serverSide の保存の失敗の吹き出し(数秒で消える)は前の文言のままです。
+- 展開行(`detailRow`)のカードの中などに別のグリッドを置くときは、そのグリッドにも `localeText` を渡します(外のグリッドの文言は引き継ぎません)。
+- 開発時の console の警告は、言語によらず日本語の行と英語の行の 2 行です(本番では出ません)。
+- AI バー(`GridAskBar` / `useGridAsk`)の文言は、`GridAskBar` の `localeText` で別に渡します(「ことばで絞り込み」の「AI バーの文言(`localeText`)」)。
 
-- 件数の数字は区切りを入れずにそのまま出します(`行 1000000 / 1000000`)。
-- `localeText={{ … }}` をその場で書いても、中身が同じ間は要約を作り直しません。
-- メニュー・フィルター画面・ツールチップなどの文言は、まだ日本語だけです(英語は後の版で文言のセットとして足す予定です)。
+キーの一覧(既定と英語):
+
+**上部 / 下部のバー**
+
+| キー | 既定(日本語) | 英語(`localeTextEn`) | 説明 |
+| --- | --- | --- | --- |
+| `rowCount` | `行 {shown} / {total}` | `Rows {shown} of {total}` | 行の件数。`{shown}` = 表示中の行数、`{total}` = 全部の行数(ラベル行は数えない)。 |
+| `columnCount` | `列 {shown} / {total}` | `Columns {shown} of {total}` | 列の件数。`{shown}` = 表示中の列数、`{total}` = 全部の列数。 |
+| `filterSummary` | `絞り込み: {value}` | `Filter: {value}` | 絞り込みの要約。`{value}` は `none` / `filterGlobal` / `filterColumns`(両方なら ` + ` でつなぐ)。 |
+| `filterGlobal` | `「{text}」` | `"{text}"` | 検索欄の文字(`{text}`。長いと 16 文字で切る)。 |
+| `filterColumns` | `{count} 列` | (数で変わる) | 列の絞り込みの数(`{count}`)。 |
+| `sortSummary` | `並び替え: {value}` | `Sort: {value}` | 並び替えの要約。`{value}` は `none` か、`sortEntry` を `listSeparator` でつないだもの。 |
+| `sortEntry` | `{column}({direction})` | `{column} ({direction})` | 並び替えの 1 列。`{column}` = 列の見出し、`{direction}` = `sortAscending` / `sortDescending`。 |
+| `sortAscending` | `昇順` | `ascending` | 昇順(バーの要約)。 |
+| `sortDescending` | `降順` | `descending` | 降順(バーの要約)。 |
+| `activeCell` | `セル {cell}` | `Cell {cell}` | アクティブセルの番地(`{cell}`。無ければ `none`)。 |
+| `selection` | `範囲 {range}` | `Range {range}` | 選択範囲(`{range}`。`B3:D5` / 行 `3:5` / 列 `B:D`。無ければ `none`)。 |
+| `selectionSize` | `{cells} セル / {rows} 行` | (数で変わる) | 選択範囲の大きさ。`{cells}` = セル数、`{rows}` = 行数。 |
+| `selectedColumns` | `{count} 列` | (数で変わる) | 選択範囲の列数(`{count}`)。 |
+| `detailColumnName` | `詳細` | `Details` | 展開のボタンの列の名前(アクティブセルがこの列にあるときの番地「詳細 7」)。 |
+| `rowDragColumnName` | `移動` | `Move` | 行を動かすハンドルの列の名前(番地「移動 7」)。 |
+| `aggregateAverage` | `平均` | `Average` | 選択範囲の集計の平均。 |
+| `aggregateCount` | `データの個数` | `Count` | 選択範囲の集計のデータの個数。 |
+| `aggregateSum` | `合計` | `Sum` | 選択範囲の集計の合計。 |
+| `aggregateComputing` | `集計中… {percent}%` | `Calculating… {percent}%` | 大きな選択範囲を集計している間(`{percent}` = 進み具合)。 |
+| `aggregatePartial` | `読み込み済みの行のみ` | `Loaded rows only` | serverSide で読み込んでいない行を飛ばして集計したときの添え書き。 |
+| `none` | `なし` | `—` | 「なし」(絞り込み / 並び替え / アクティブセル / 選択範囲が無いとき)。 |
+| `listSeparator` | `、` | `, ` | 並べた項目の区切り(並び替えの列)。 |
+| `globalFilterPlaceholder` | `グローバルフィルター` | `Filter all columns` | 上部バーの検索欄の placeholder(prop `globalFilterPlaceholder` を渡せばそちら)。 |
+| `globalFilterLabel` | `表全体を検索` | `Search the whole table` | 上部バーの検索欄の読み上げの名前(placeholder を空にしたとき)。 |
+| `clearGlobalFilter` | `フィルターをクリア` | `Clear filter` | 上部バーの検索欄の × の読み上げの名前。 |
+| `toggleFilterPanel` | `フィルター管理パネルを開閉` | `Show or hide the filter panel` | 上部バーの絞り込みの要約(押せるとき)の読み上げの名前とツールチップ。 |
+
+**共通**
+
+| キー | 既定(日本語) | 英語(`localeTextEn`) | 説明 |
+| --- | --- | --- | --- |
+| `clear` | `クリア` | `Clear` | 「クリア」のボタン / ツールチップ。 |
+| `clearAll` | `すべてクリア` | `Clear all` | 「すべてクリア」のボタン。 |
+| `close` | `閉じる` | `Close` | 「閉じる」のボタン / 読み上げの名前。 |
+| `apply` | `適用` | `Apply` | 列フィルターの「適用」。 |
+| `retry` | `再試行` | `Retry` | 読み込みに失敗したときの「再試行」。 |
+| `blank` | `(空白)` | `(Blank)` | 空の値の表示(グループ、列フィルターの候補、条件の要約)。 |
+| `noOptions` | `候補がありません` | `No options` | 選択肢が無いとき(select エディタ、列フィルター)。 |
+
+**表の本体と見出し**
+
+| キー | 既定(日本語) | 英語(`localeTextEn`) | 説明 |
+| --- | --- | --- | --- |
+| `noRows` | `表示する行がありません` | `No rows to show` | 行が 0 件のとき(prop `noRowsText` を渡せばそちら)。 |
+| `noMatchingRows` | `一致する行がありません` | `No matching rows` | 絞り込みで行が 0 件のとき(prop `noMatchingRowsText` を渡せばそちら)。 |
+| `selectAllRows` | `すべての行を選択` | `Select all rows` | 見出しのチェックボックスの読み上げの名前。 |
+| `selectRow` | `行 {row} を選択` | `Select row {row}` | 行のチェックボックスの読み上げの名前(`{row}` = 行番号)。 |
+| `sortedAscending` | `昇順で並び替え中` | `Sorted ascending` | 見出しの並び替えの印のツールチップ。 |
+| `sortedDescending` | `降順で並び替え中` | `Sorted descending` | 見出しの並び替えの印のツールチップ。 |
+| `sortPriority` | ` (優先度 {priority})` | ` (priority {priority})` | 複数の列で並べたときの優先度(上の 2 つの後ろに付く)。 |
+| `columnFiltered` | `フィルター適用中` | `Filtered` | 見出しの絞り込みの印のツールチップ。 |
+| `dragColumn` | `ドラッグで列を移動` | `Drag to move the column` | 見出しのつまみのツールチップ。 |
+| `columnMenu` | `列メニュー` | `Column menu` | 見出しの ⋮ のツールチップ。 |
+| `columnMenuFor` | `{column} の列メニュー` | `Column menu for {column}` | 見出しの ⋮ の読み上げの名前。 |
+| `showDetails` | `詳細を開く` | `Show details` | 展開のボタン(閉じているとき)の読み上げの名前。 |
+| `hideDetails` | `詳細を閉じる` | `Hide details` | 展開のボタン(開いているとき)の読み上げの名前。 |
+| `expandGroup` | `{group} を展開` | `Expand {group}` | グループ行の ▸ の読み上げの名前。 |
+| `collapseGroup` | `{group} を折りたたみ` | `Collapse {group}` | グループ行の ▾ の読み上げの名前。 |
+| `groupRowCount` | `({count}件)` | (数で変わる) | グループ行の件数(`{count}` は桁区切りした文字)。 |
+| `editCell` | `{column} を編集` | `Edit {column}` | セルのエディタの読み上げの名前。 |
+| `cellInput` | `セルへの入力` | `Cell input` | `imeDirectInput` の入力受けの読み上げの名前。 |
+| `sizingColumns` | `列幅を計算中…` | `Sizing columns…` | 列の幅を自動調整している間。 |
+| `applyingFilter` | `適用中 {percent}%` | `Filtering {percent}%` | 大きな表で検索欄の文字を当てている間。 |
+| `dragRow` | `ドラッグで行を移動` | `Drag to move the row` | 行を動かすハンドルのツールチップ。 |
+| `dragRowDisabled` | `ソート / フィルター適用中は行を並び替えできません` | `Rows can't be moved while the table is sorted or filtered` | 行を動かせないときのハンドルのツールチップ。 |
+| `dragRowLabel` | `行 {row}` | `Row {row}` | 行を動かしているときの影の文字(先頭の列が空のとき)。 |
+| `scrollHintRow` | `行 {row}` | `Row {row}` | スクロールの吹き出しの行番号(`{row}` は桁区切りした文字)。 |
+| `scrollHintJump` | `行 {row} へ` | `Go to row {row}` | スクロールバーの溝を指したときの行番号。 |
+| `scrollHintJumpSeparator` | `・` | `·` | スクロールバーの溝を指したときの行番号と補足(`scrollHint` の `hintColumn` / `renderHint`)の間の区切り。 |
+| `scrollHintTenThousands` | `{value}万` | `{full}` | スクロールのものさしの 1 万の倍数の目盛り(`{value}` = 万の数、`{full}` = 桁区切りした元の数)。 |
+
+**列メニュー**
+
+| キー | 既定(日本語) | 英語(`localeTextEn`) | 説明 |
+| --- | --- | --- | --- |
+| `menuFilter` | `フィルター…` | `Filter…` | 列メニューの「フィルター…」。 |
+| `menuSortAscending` | `昇順で並び替え` | `Sort ascending` | 列メニューの昇順。 |
+| `menuSortDescending` | `降順で並び替え` | `Sort descending` | 列メニューの降順。 |
+| `menuManageSort` | `並び替えを管理…` | `Manage sorting…` | 列メニューの並び替えの管理。 |
+| `menuManageFilters` | `フィルターを管理…` | `Manage filters…` | 列メニューのフィルターの管理。 |
+| `menuGroupBy` | `この列でグループ化` | `Group by this column` | 列メニューのグループ化。 |
+| `menuUngroup` | `グループ化を外す` | `Ungroup` | 列メニューのグループ化を外す。 |
+| `menuPin` | `列の固定` | `Pin column` | 列メニューの固定。 |
+| `menuPinNone` | `固定しない` | `No pin` | 固定の小メニューの「固定しない」。 |
+| `menuPinLeft` | `左に固定` | `Pin left` | 固定の小メニューの左。 |
+| `menuPinRight` | `右に固定` | `Pin right` | 固定の小メニューの右。 |
+| `menuPinUnavailable` | `onColumnsChange 未指定のため固定状態を変更できません` | `Pinning needs onColumnsChange.` | `onColumnsChange` が無いときの固定のツールチップ。 |
+| `menuAutosize` | `この列の幅を自動調整` | `Autosize this column` | 列メニューの幅の自動調整。 |
+| `menuAutosizeAll` | `すべての列の幅を自動調整` | `Autosize all columns` | 列メニューのすべての列の幅の自動調整。 |
+| `menuColumns` | `列の表示` | `Choose columns` | 列メニューの「列の表示」(ツールパネルの列を開く)。 |
+| `menuResetColumns` | `列のリセット` | `Reset columns` | 列メニューの列のリセット。 |
+| `resetColumnsHint` | `すべての列の幅・固定・表示・並び順を初期状態に戻します` | `Restores the width, pinning, visibility and order of all columns.` | 列のリセットのツールチップ(列メニューとツールパネル)。 |
+| `menuResetUnavailable` | `onColumnsChange 未指定のため列をリセットできません` | `Resetting columns needs onColumnsChange.` | `onColumnsChange` が無いときの列のリセットのツールチップ。 |
+
+**ツールパネル**
+
+| キー | 既定(日本語) | 英語(`localeTextEn`) | 説明 |
+| --- | --- | --- | --- |
+| `toolPanelFilters` | `フィルター` | `Filters` | ツールパネルのタブ。 |
+| `toolPanelSort` | `並び替え` | `Sort` | ツールパネルのタブ。 |
+| `toolPanelColumns` | `列` | `Columns` | ツールパネルのタブ。 |
+| `columnsPinnedLeft` | `左固定` | `Pinned left` | 列のタブの見出し。 |
+| `columnsUnpinned` | `固定なし` | `Not pinned` | 列のタブの見出し。 |
+| `columnsPinnedRight` | `右固定` | `Pinned right` | 列のタブの見出し。 |
+| `columnsHideAll` | `すべての列を非表示(先頭の列は残ります)` | `Hide all columns (the first one stays)` | 列のタブのすべてのチェック(すべて表示のとき)。 |
+| `columnsShowAll` | `すべての列を表示` | `Show all columns` | 列のタブのすべてのチェック。 |
+| `columnsDragToReorder` | `ドラッグして並べ替え` | `Drag to reorder` | 列のタブのつまみのツールチップ。 |
+| `columnsDragWithinSection` | `ドラッグして並べ替え(同じセクション内のみ)` | `Drag to reorder (within the same section)` | 列のタブのつまみのツールチップ(固定の区分があるとき)。 |
+| `columnsReorderUnavailable` | `onColumnsChange 未指定のため並べ替えできません` | `Reordering needs onColumnsChange.` | `onColumnsChange` が無いときのつまみのツールチップ。 |
+| `columnsReorderWhileSearching` | `検索中は並べ替えできません` | `Columns can't be reordered while searching.` | 列のタブで検索している間のつまみのツールチップ。 |
+| `columnsGroupedHint` | `グループ化している列です(値は自動グループ列に出ます)` | `This column is grouped. Its values appear in the group column.` | グループ化している列のツールチップ。 |
+| `groupedColumnTitle` | `{column}(グループ化中)` | `{column} (grouped)` | グループ化している列の名前(列のタブ、フィルターを足す列の一覧)。 |
+| `columnsSearchPlaceholder` | `検索...` | `Search…` | 列のタブの検索欄。 |
+| `columnsNoMatches` | `該当する列がありません` | `No matching columns` | 列のタブの検索で 0 件のとき。 |
+| `columnsReset` | `すべての列を初期状態に戻す` | `Reset all columns` | 列のタブのリセットのボタン。 |
+| `columnsUnavailable` | `onColumnsChange 未指定のため表示/非表示・リセットを変更できません` | `Showing, hiding and resetting columns needs onColumnsChange.` | `onColumnsChange` が無いときの列のタブのツールチップ。 |
+| `globalFilterTitle` | `グローバルフィルター` | `Global filter` | フィルターのタブの検索欄の文字の行。 |
+| `globalFilterRows` | `"{text}" を含む行` | `Rows containing "{text}"` | フィルターのタブの検索欄の文字の要約。 |
+| `clearGlobalFilterTitle` | `グローバルフィルターをクリア` | `Clear the global filter` | フィルターのタブの検索欄の文字の ×。 |
+| `noColumnFilters` | `適用中の列フィルターはありません` | `No column filters` | フィルターのタブで列の絞り込みが無いとき。 |
+| `addFilterLabel` | `フィルターを追加する列を選択` | `Choose a column to filter` | フィルターのタブの「追加」の読み上げの名前。 |
+| `addFilter` | `+ フィルターを追加…` | `+ Add filter…` | フィルターのタブの「追加」。 |
+| `addFilterNone` | `+ 追加できる列がありません` | `+ No columns to add` | フィルターのタブで足せる列が無いとき。 |
+| `sortPanelEmpty` | `並び替えは設定されていません` | `No sorting` | 並び替えのタブで並び替えが無いとき。 |
+| `sortPanelDrag` | `ドラッグして優先順位を変更` | `Drag to change the priority` | 並び替えのタブのつまみのツールチップ。 |
+| `sortPanelDisabled` | `並び替えが無効です` | `Sorting is turned off` | 並び替えが無効のときのツールチップ。 |
+| `sortPanelNeedsTwo` | `レベルが 2 件以上のとき並べ替えできます` | `Add a second level to reorder` | 並び替えのレベルが 1 つのときのつまみのツールチップ。 |
+| `sortPanelAscending` | `昇順` | `Ascending` | 並び替えのタブの昇順のボタンのツールチップと読み上げの名前。 |
+| `sortPanelAscendingShort` | `昇順` | `Asc` | 並び替えのタブの昇順のボタンに見せる文字(前に ↑ が付く。列の選択の幅を取りすぎないよう短く)。 |
+| `sortPanelDescending` | `降順` | `Descending` | 並び替えのタブの降順のボタンのツールチップと読み上げの名前。 |
+| `sortPanelDescendingShort` | `降順` | `Desc` | 並び替えのタブの降順のボタンに見せる文字(前に ↓ が付く)。 |
+| `sortPanelRemove` | `このレベルを削除` | `Remove this level` | 並び替えのレベルの ×。 |
+| `sortPanelAllUsed` | `すべての列が並び替えに使われています` | `All columns are already used` | 足せる列が無いときのツールチップ。 |
+| `sortPanelAddHint` | `並び替えの基準を追加します` | `Add a sort level` | 「基準を追加」のツールチップ。 |
+| `sortPanelAdd` | `＋ 基準を追加` | `+ Add level` | 「基準を追加」のボタン。 |
+| `sortPanelClearHint` | `すべての並び替えを解除します` | `Remove all sorting` | 「すべてクリア」のツールチップ。 |
+| `sortPanelReadOnly` | `並び替えが無効のため編集できません` | `Sorting is turned off, so it can't be changed` | 並び替えが無効のときの列の選択のツールチップ。 |
+
+**フィルターのチップと要約**
+
+| キー | 既定(日本語) | 英語(`localeTextEn`) | 説明 |
+| --- | --- | --- | --- |
+| `filterHiddenColumn` | `(非表示列)` | ` (hidden)` | 隠した列のフィルターの印(見出しのすぐ後ろにつなぐので、英語は先頭に空白)。 |
+| `filterGroupedColumn` | `(グループ化中)` | ` (grouped)` | グループ化している列のフィルターの印(英語は先頭に空白)。 |
+| `filterJumpUnavailable` | `非表示列のためジャンプ編集できません(× でクリアは可能)` | `This column is hidden, so its filter can't be opened here. You can still clear it with ×.` | 隠した列のフィルターのツールチップ。 |
+| `filterEditUnderGroup` | `グループの列の見出しの下で編集` | `Opens under the group column header` | グループ化している列のフィルターのツールチップ。 |
+| `filterJump` | `この列へジャンプして編集` | `Go to this column to edit` | フィルターのチップのツールチップ。 |
+| `filterEditFor` | `{column} のフィルターを編集` | `Edit the filter on {column}` | フィルターのチップの読み上げの名前。 |
+| `filterClear` | `この列のフィルターをクリア` | `Clear this column's filter` | フィルターのチップの × のツールチップ。 |
+| `filterClearFor` | `{column} のフィルターをクリア` | `Clear the filter on {column}` | フィルターのチップの × の読み上げの名前。 |
+| `filterNone` | `フィルターなし` | `No filter` | 条件の無いフィルターの要約。 |
+| `filterCustom` | `カスタム条件` | `Custom filter` | `custom` のフィルターの要約(値が文字でないとき)。 |
+| `filterExcluded` | `{count} 件を除外` | (数で変わる) | 値の選択の要約(除外)。 |
+| `filterSelected` | `{count} 件を選択` | `{count} selected` | 値の選択の要約(3 件以上)。 |
+| `filterMatches` | `"{value}" に一致` | `Is "{value}"` | `select` のフィルターの要約。 |
+| `filterBoth` | `{condition} かつ {set}` | `{condition} and {set}` | 条件と値の選択の両方があるときの要約。 |
+| `filterCurrentNone` | `（なし）` | `(none)` | 列フィルターの「現在値」が無いとき。 |
+| `filterCurrentExcluded` | `{count}件を除外中` | (数で変わる) | 列フィルターの「現在値」(値の選択・除外)。 |
+| `filterCurrentSelected` | `{count}件を選択中` | `{count} selected` | 列フィルターの「現在値」(値の選択)。 |
+
+**条件(要約と列フィルター)**
+
+| キー | 既定(日本語) | 英語(`localeTextEn`) | 説明 |
+| --- | --- | --- | --- |
+| `conditionGreaterThanOrEqual` | `{value} 以上` | `≥ {value}` | 条件の要約。 |
+| `conditionGreaterThan` | `{value} より大きい` | `> {value}` | 条件の要約。 |
+| `conditionLessThanOrEqual` | `{value} 以下` | `≤ {value}` | 条件の要約。 |
+| `conditionLessThan` | `{value} 未満` | `< {value}` | 条件の要約。 |
+| `conditionEquals` | `{value} に等しい` | `= {value}` | 条件の要約(文字の列では `{value}` に引用符が付く)。 |
+| `conditionNotEquals` | `{value} に等しくない` | `≠ {value}` | 条件の要約。 |
+| `conditionRange` | `{min} 〜 {max}` | `{min} – {max}` | 範囲の条件の要約。 |
+| `conditionOnOrAfter` | `{value} 以降` | `On or after {value}` | 日付の条件の要約。 |
+| `conditionOnOrBefore` | `{value} 以前` | `On or before {value}` | 日付の条件の要約。 |
+| `conditionContains` | `"{value}" を含む` | `Contains "{value}"` | 文字の条件の要約。 |
+| `conditionStartsWith` | `"{value}" で始まる` | `Starts with "{value}"` | 文字の条件の要約。 |
+| `conditionEndsWith` | `"{value}" で終わる` | `Ends with "{value}"` | 文字の条件の要約。 |
+| `conditionBlank` | `(空白)` | `(Blank)` | 空白の条件の要約。 |
+| `conditionNotBlank` | `(空白でない)` | `(Not blank)` | 空白でない条件の要約。 |
+| `datePresetToday` | `今日` | `Today` | 日付の組み込みのプリセット。 |
+| `datePresetThisMonth` | `今月` | `This month` | 日付の組み込みのプリセット。 |
+| `datePresetLast30Days` | `過去 30 日` | `Last 30 days` | 日付の組み込みのプリセット。 |
+| `operatorEquals` | `に等しい` | `Equals` | 列フィルターの演算子。 |
+| `operatorNotEquals` | `に等しくない` | `Does not equal` | 列フィルターの演算子。 |
+| `operatorGreaterThanOrEqual` | `以上` | `Greater than or equal to` | 列フィルターの演算子。 |
+| `operatorGreaterThan` | `より大きい` | `Greater than` | 列フィルターの演算子。 |
+| `operatorLessThanOrEqual` | `以下` | `Less than or equal to` | 列フィルターの演算子。 |
+| `operatorLessThan` | `未満` | `Less than` | 列フィルターの演算子。 |
+| `operatorBetween` | `範囲` | `Between` | 列フィルターの演算子。 |
+| `operatorContains` | `を含む` | `Contains` | 列フィルターの演算子。 |
+| `operatorStartsWith` | `で始まる` | `Starts with` | 列フィルターの演算子。 |
+| `operatorEndsWith` | `で終わる` | `Ends with` | 列フィルターの演算子。 |
+| `operatorOnOrAfter` | `以降` | `On or after` | 列フィルターの演算子。 |
+| `operatorOnOrBefore` | `以前` | `On or before` | 列フィルターの演算子。 |
+| `operatorBlank` | `空白` | `Blank` | 列フィルターの演算子。 |
+| `operatorNotBlank` | `空白でない` | `Not blank` | 列フィルターの演算子。 |
+
+**列フィルター**
+
+| キー | 既定(日本語) | 英語(`localeTextEn`) | 説明 |
+| --- | --- | --- | --- |
+| `filterTitle` | `列フィルター: {column}` | `Filter: {column}` | 列フィルターの見出し。 |
+| `filterCollecting` | `候補を収集中… {percent}%` | `Collecting values… {percent}%` | 大きな列の候補を集めている間。 |
+| `filterOptionsLoading` | `候補を取得中…` | `Loading values…` | `getFilterOptions` を待っている間。 |
+| `filterOptionsLoadingShort` | `取得中…` | `Loading…` | 同上(条件と値の両方がある列の短い表示)。 |
+| `filterOptionsFailed` | `候補の取得に失敗しました` | `Couldn't load the values` | `getFilterOptions` が失敗したとき。 |
+| `filterOptionsFailedShort` | `取得失敗` | `Failed` | 同上(短い表示)。 |
+| `filterOptionsTruncated` | `（先頭のみ・打ち切り）` | `(first values only)` | 候補が多くて途中までのとき。 |
+| `filterSearchPlaceholder` | `検索（Enter で確定）` | `Search (Enter to apply)` | 値の一覧の検索欄。 |
+| `filterSelectAll` | `（すべて選択）` | `(Select all)` | 値の一覧の「すべて選択」。 |
+| `filterSelectAllResults` | `（検索結果をすべて選択）` | `(Select all results)` | 値の一覧で検索しているときの「すべて選択」。 |
+| `filterNoOptionsSource` | `候補が未指定です（serverSide では列に filterOptions などの候補供給が必要）` | `No values. With serverSide, give the column filterOptions or another source of values.` | serverSide で候補が無いとき。 |
+| `filterNoMatches` | `一致する候補がありません` | `No matching values` | 値の一覧の検索で 0 件のとき。 |
+| `filterSelectedCount` | `選択中: {selected} / {total} 件` | `Selected {selected} of {total}` | 値の一覧の選んだ数。 |
+| `filterShownCount` | `（表示中 {count} 件）` | ` ({count} shown)` | 値の一覧で検索しているときの表示中の数。 |
+| `filterMatchCount` | `一致 {count} 件` | (数で変わる) | 値の見出しの件数(検索しているとき)。 |
+| `filterTotalCount` | `全 {count} 件` | `{count} total` | 値の見出しの件数。 |
+| `filterOptionCount` | `候補数: {count}` | `Values: {count}` | `select` のフィルターの候補の数。 |
+| `filterAll` | `（すべて）` | `(All)` | `select` のフィルターの「すべて」。 |
+| `filterConditionSection` | `条件` | `Condition` | 条件と値の両方がある列の見出し。 |
+| `filterValuesSection` | `値` | `Values` | 条件と値の両方がある列の見出し。 |
+| `filterOperator` | `条件の演算子` | `Operator` | 演算子の選択の読み上げの名前。 |
+| `filterValue` | `条件の値` | `Value` | 条件の値の入力欄の読み上げの名前。 |
+| `filterValuePlaceholder` | `値` | `Value` | 条件の値の入力欄の placeholder。 |
+| `filterMin` | `下限` | `Min` | 範囲の下限。 |
+| `filterMax` | `上限` | `Max` | 範囲の上限。 |
+| `filterRangeSeparator` | `〜` | `–` | 範囲の下限と上限の間の印。 |
+| `filterNoValue` | `この演算子は値入力を使いません` | `This operator doesn't take a value` | 空白の演算子を選んだとき。 |
+| `filterDate` | `条件の日付` | `Date` | 日付の入力欄の読み上げの名前。 |
+| `filterStartDate` | `開始日` | `Start date` | 日付の範囲の始まり。 |
+| `filterEndDate` | `終了日` | `End date` | 日付の範囲の終わり。 |
+| `filterTextPlaceholder` | `部分一致で絞り込み` | `Contains…` | 文字のフィルターの入力欄。 |
+| `filterTextHint` | `部分一致検索です` | `Matches text anywhere in the value` | 文字のフィルターの説明。 |
+| `filterCurrentValue` | `現在値: {value}` | `Current: {value}` | 列フィルターの今の値。 |
+| `treeExpand` | `展開する` | `Expand` | 日付の値の一覧の ▸。 |
+| `treeCollapse` | `折りたたむ` | `Collapse` | 日付の値の一覧の ▾。 |
+| `dateTreeYear` | `{year} 年` | `{year}` | 日付の値の一覧の年。 |
+| `dateTreeMonth` | `{month} 月` | (数で変わる) | 日付の値の一覧の月(`{month}` = 1〜12)。 |
+| `dateTreeDay` | `{day} 日` | `{day}` | 日付の値の一覧の日。 |
+
+**日付のカレンダー**
+
+| キー | 既定(日本語) | 英語(`localeTextEn`) | 説明 |
+| --- | --- | --- | --- |
+| `calendarWeekdays` | `日` `月` `火` `水` `木` `金` `土` | `Su` `Mo` `Tu` `We` `Th` `Fr` `Sa` | 曜日(日曜から 7 つ)。 |
+| `calendarMonths` | `1月` `2月` `3月` `4月` `5月` `6月` `7月` `8月` `9月` `10月` `11月` `12月` | `Jan` `Feb` `Mar` `Apr` `May` `Jun` `Jul` `Aug` `Sep` `Oct` `Nov` `Dec` | 月を選ぶ画面の月(1 月から 12 個)。 |
+| `calendarTitle` | `{year}年 {month}月` | (数で変わる) | 日を選ぶ画面の見出し(`{month}` = 1〜12)。 |
+| `calendarYear` | `{year}年` | `{year}` | 月を選ぶ画面の見出し。 |
+| `calendarOpen` | `カレンダーを開く` | `Open calendar` | カレンダーのボタン。 |
+| `calendarClose` | `カレンダーを閉じる` | `Close calendar` | カレンダーのボタン(開いているとき)。 |
+| `calendarPrevious` | `前へ` | `Previous` | カレンダーの前へ。 |
+| `calendarNext` | `次へ` | `Next` | カレンダーの次へ。 |
+| `calendarChangeView` | `表示単位を切り替える` | `Change view` | カレンダーの見出しのボタン。 |
+| `calendarBack` | `← 戻る` | `← Back` | カレンダーの戻る。 |
+| `calendarToday` | `今日` | `Today` | カレンダーの今日。 |
+
+**セル内検索とフィル**
+
+| キー | 既定(日本語) | 英語(`localeTextEn`) | 説明 |
+| --- | --- | --- | --- |
+| `findLabel` | `セル内検索` | `Find in cells` | 検索のバーの読み上げの名前。 |
+| `findPlaceholder` | `検索` | `Find` | 検索の入力欄の placeholder。 |
+| `findInput` | `検索文字列` | `Search text` | 検索の入力欄の読み上げの名前。 |
+| `findSearching` | `検索中…` | `Searching…` | 検索している間。 |
+| `findNoResults` | `0 件` | `No results` | 検索で 0 件のとき。 |
+| `findPrevious` | `前のヒットへ` | `Previous match` | 検索の ↑ の読み上げの名前。 |
+| `findPreviousHint` | `前へ(Shift+Enter)` | `Previous (Shift+Enter)` | 検索の ↑ のツールチップ。 |
+| `findNext` | `次のヒットへ` | `Next match` | 検索の ↓ の読み上げの名前。 |
+| `findNextHint` | `次へ(Enter)` | `Next (Enter)` | 検索の ↓ のツールチップ。 |
+| `findClose` | `検索を閉じる` | `Close find` | 検索の × の読み上げの名前。 |
+| `findCloseHint` | `閉じる(Esc)` | `Close (Esc)` | 検索の × のツールチップ。 |
+| `fillOptions` | `オートフィル オプション` | `Auto Fill Options` | フィルのボタンのツールチップとメニューの名前。 |
+| `fillOptionsCurrent` | `オートフィル オプション({kind})` | `Auto Fill Options ({kind})` | フィルのボタンの読み上げの名前(`{kind}` = `fillSeries` / `fillCopy`)。 |
+| `fillSeries` | `連続データ` | `Fill Series` | フィルのメニュー。 |
+| `fillCopy` | `セルのコピー` | `Copy Cells` | フィルのメニュー。 |
+
+**検証・保存・集計**
+
+| キー | 既定(日本語) | 英語(`localeTextEn`) | 説明 |
+| --- | --- | --- | --- |
+| `invalidValue` | `入力値が不正です` | `Invalid value` | `validate` が false / 空の文字を返したときのメッセージ。 |
+| `enterNumber` | `数値で入力してください` | `Enter a number` | number エディタの検査(数値でない)。 |
+| `enterInteger` | `整数で入力してください` | `Enter a whole number` | number エディタの検査(`integer`)。 |
+| `enterMin` | `{min} 以上で入力してください` | `Enter {min} or more` | number エディタの検査(`min` だけ)。 |
+| `enterMax` | `{max} 以下で入力してください` | `Enter {max} or less` | number エディタの検査(`max` だけ)。 |
+| `enterRange` | `{min}〜{max} で入力してください` | `Enter a number from {min} to {max}` | number エディタの検査(`min` と `max`)。 |
+| `saveFailedCell` | `保存に失敗しました。値を戻しました` | `Couldn't save. The value was restored.` | serverSide の保存に失敗したセルの下に出るチップ(`showSaveStatus`)。 |
+| `loadFailed` | `行の取得に失敗しました({count} ブロック)` | (数で変わる) | serverSide の読み込みに失敗したときのバー。 |
+| `dismissLoadError` | `エラー通知を閉じる` | `Dismiss the error` | 同上の × の読み上げの名前。 |
+| `saveFailed` | `変更の保存に失敗しました({count} 行)。値を元に戻しました` | (数で変わる) | serverSide の保存に失敗したときのバー。 |
+| `dismissSaveError` | `保存エラー通知を閉じる` | `Dismiss the save error` | 同上の × の読み上げの名前。 |
+| `totalRowLabel` | `合計` | `Total` | 合計行の左端の文字(`totalRow.label` を渡せばそちら)。 |
+| `totalAverage` | `平均` | `Avg` | 合計行 / グループ行の集計の種類。 |
+| `totalMin` | `最小` | `Min` | 合計行 / グループ行の集計の種類。 |
+| `totalMax` | `最大` | `Max` | 合計行 / グループ行の集計の種類。 |
+| `totalCount` | `個数` | `Count` | 合計行 / グループ行の集計の種類。 |
+| `exportSubtotal` | `{label} 小計` | `{label} subtotal` | エクスポートの小計の行(`includeGroupRows`)。 |
 
 ### 選択範囲の集計(`showSelectionAggregates`)
 
@@ -1099,7 +1374,7 @@ const columns: GridColumn<Order>[] = [
 
 | Name | Type | Default | Description |
 | --- | --- | --- | --- |
-| `label` | `string` | `'合計'` | 見出し。行ドラッグ / 展開トグルの合成列を除いた先頭列に出す(その列に値があるときは行番号の欄へ)。 |
+| `label` | `string` | `localeText` の `totalRowLabel`(`'合計'`) | 見出し。行ドラッグ / 展開トグルの合成列を除いた先頭列に出す(その列に値があるときは行番号の欄へ)。 |
 | `values` | `Record<string, unknown>` | — | 列 key → 表示する値。指定した列は計算せずこの値を出す(`aggFunc` より優先。serverSide はこれだけ)。 |
 | `renderCell` | `(ctx: TotalRowCellContext<T>) => ReactNode` | — | 値のあるセルの中身を差し替える。`ctx = { column, value, kind, text, caption }`(`kind` は `'sum' \| 'avg' \| 'min' \| 'max' \| 'count' \| 'custom' \| 'value'`、`text` は既定の表示文字列、`caption` は種類の見出し)。 |
 | `height` | `number` | `rowHeight` | 合計行の高さ(px)。 |
@@ -1264,7 +1539,7 @@ const gridRef = useRef<SpreadsheetGridHandle<Row>>(null);
 // const csv = gridRef.current?.exportCsv({ scope: 'selection' });
 ```
 
-`viewRowIndex` / `colIndex` は**ビュー座標**(フィルター/ソート適用後の表示 index。`colIndex` は固定列を含む視覚順 = 左→中央→右)。`viewRowIndex` はラベル行・グループ行も 1 行に数え、`colIndex` は行ドラッグのハンドル列・展開トグル列・自動グループ列(ライブラリが足す列)も数える。行キー / 列キーからは `getViewRowIndex(rowKey)` / `getColIndex(columnKey)` で引ける。アクティブセルは表示位置に付く(上の行を消すと、同じ位置に来た別の行を指す。Excel と同じ)。範囲外 index は内部でクランプ/無視する。表示行数が減った(rows 差し替え / フィルター / グループの折りたたみ等)ときも、はみ出したアクティブセル / 選択範囲は範囲内へ詰められる(アクティブセルは最終行へ寄せ、範囲ははみ出した部分を切り詰める。0 行になったらセル / 行の選択とアクティブセルは解除)。このため `getActiveCell()` / `getSelection()` が存在しない行を返すことはない。
+`viewRowIndex` / `colIndex` は**ビュー座標**(フィルター/ソート適用後の表示 index。`colIndex` は固定列を含む視覚順 = 左→中央→右)。`viewRowIndex` はラベル行・グループ行も 1 行に数え、`colIndex` は行ドラッグのハンドル列・展開トグル列・自動グループ列(ライブラリが足す列)も数える。行キー / 列キーからは `getViewRowIndex(rowKey)` / `getColIndex(columnKey)` で引ける。アクティブセルは表示位置に付く(上の行を消すと、同じ位置に来た別の行を指す。Excel と同じ)。範囲外 index は内部でクランプ/無視する。表示行数が減った(rows 差し替え / フィルター / グループの折りたたみ等)ときも、はみ出したアクティブセル / 選択範囲は範囲内へ詰められる(アクティブセルは最終行へ寄せ、範囲ははみ出した部分を切り詰める。0 行になったらセル / 行の選択とアクティブセルは解除)。行が 0 件のときの `selectCell` / `selectRange` / `setActiveCell` は何もしない。このため `getActiveCell()` / `getSelection()` が存在しない行を返すことはない。
 
 ### スクロール
 
@@ -1734,22 +2009,22 @@ export const OrdersTable = () => <Grid columns={columns} dataSource={dataSource}
 
 | キー | 部品 | 中身(関係する prop) | 目安(gzip) |
 | --- | --- | --- | --- |
-| `filtering` | `filteringFeature` | グローバル / 列フィルター、フィルターのポップオーバー(遅延読み込み)、チップバー、非同期の候補(`enableGlobalFilter` / `enableColumnFilter` / `columns[].filterType` / `getFilterOptions` / `showFilterChipBar` / `onFiltersChange` / `manualFiltering` ほか) | +12.6KB(+ 遅延 6.2KB) |
-| `fillHandle` | `fillHandleFeature` | フィルハンドル(`fillHandle`) | +8.8KB |
+| `filtering` | `filteringFeature` | グローバル / 列フィルター、フィルターのポップオーバー(遅延読み込み)、チップバー、非同期の候補(`enableGlobalFilter` / `enableColumnFilter` / `columns[].filterType` / `getFilterOptions` / `showFilterChipBar` / `onFiltersChange` / `manualFiltering` ほか) | +12.7KB(+ 遅延 7.7KB) |
+| `fillHandle` | `fillHandleFeature` | フィルハンドル(`fillHandle`) | +9.2KB |
 | `columnReorder` | `columnReorderFeature` | 列ヘッダーのドラッグ並べ替え(`onColumnsChange` 指定時 / `columnDragMotion`) | +5.7KB |
-| `rowDrag` | `rowDragFeature` | 行のドラッグ並べ替え(`enableRowDrag` / `isRowDraggable` / `onRowMove` / `rowDragMotion`。ハンドルの `moveRow()` は本体にあるので無くても使える) | +4.4KB |
-| `serverSide` | `serverSideFeature` | サーバーサイド行モデル(SSRM)の読み取りと書き戻し、保存状態の表示(`dataSource` / `serverSideRefreshToken` / `showSaveStatus` ほか) | +4.4KB |
-| `columnMenu` | `columnMenuFeature` | 列メニュー(ソート・固定。幅の自動調整は `columnAutosize`、フィルターの入口は `filtering`、パネルの入口は `toolPanel` があるとき。`enableColumnMenu`) | +2.9KB |
-| `export` | `exportFeature` | CSV / TSV / `getExportData`(ハンドルの `exportCsv` / `downloadCsv` / `getExportData`) | +2.6KB |
-| `grouping` | `groupingFeature` | 行グルーピングと集計(`columns[].rowGroup` / `aggFunc`) | +2.3KB |
+| `rowDrag` | `rowDragFeature` | 行のドラッグ並べ替え(`enableRowDrag` / `isRowDraggable` / `onRowMove` / `rowDragMotion`。ハンドルの `moveRow()` は本体にあるので無くても使える) | +4.7KB |
+| `serverSide` | `serverSideFeature` | サーバーサイド行モデル(SSRM)の読み取りと書き戻し、保存状態の表示(`dataSource` / `serverSideRefreshToken` / `showSaveStatus` ほか) | +4.7KB |
+| `columnMenu` | `columnMenuFeature` | 列メニュー(ソート・固定。幅の自動調整は `columnAutosize`、フィルターの入口は `filtering`、パネルの入口は `toolPanel` があるとき。`enableColumnMenu`) | +3.2KB |
+| `grouping` | `groupingFeature` | 行グルーピングと集計(`columns[].rowGroup` / `aggFunc`) | +2.7KB |
+| `export` | `exportFeature` | CSV / TSV / `getExportData`(ハンドルの `exportCsv` / `downloadCsv` / `getExportData`) | +2.5KB |
+| `find` | `findFeature` | セル内検索(`find` / `onFindChange`) | +2.4KB |
+| `scrollHint` | `scrollHintFeature` | スクロール位置インジケーター(`scrollHint`) | +2.4KB |
 | `columnAutosize` | `columnAutosizeFeature` | 列幅の自動調整(境界のダブルクリック・列メニューの項目・`autoSizeColumns`) | +2.2KB |
+| `selectionAggregates` | `selectionAggregatesFeature` | 選択範囲の集計(`showSelectionAggregates`) | +2.2KB |
 | `contextMenu` | `contextMenuFeature` | セル / 行の右クリックメニュー(`enableContextMenu` / `getContextMenuItems`) | +2.0KB |
-| `find` | `findFeature` | セル内検索(`find` / `onFindChange`) | +2.0KB |
-| `scrollHint` | `scrollHintFeature` | スクロール位置インジケーター(`scrollHint`) | +2.0KB |
 | `labelRow` | `labelRowFeature` | ラベル行(`labelRow`) | +1.8KB |
-| `selectionAggregates` | `selectionAggregatesFeature` | 選択範囲の集計(`showSelectionAggregates`) | +1.8KB |
-| `totalRow` | `totalRowFeature` | 合計行(`totalRow`) | +1.7KB |
-| `toolPanel` | `toolPanelFeature` | ツールパネル(フィルター管理 / 列の表示 / 並び替え。部品は遅延読み込み) | +1.7KB(+ 遅延 5.5KB) |
+| `totalRow` | `totalRowFeature` | 合計行(`totalRow`) | +1.8KB |
+| `toolPanel` | `toolPanelFeature` | ツールパネル(フィルター管理 / 列の表示 / 並び替え。部品は遅延読み込み) | +1.7KB(+ 遅延 7.1KB) |
 | `conditionalFormat` | `conditionalFormatFeature` | 条件付き書式とチップ(`columns[].conditionalFormat`) | +1.4KB |
 | `imeDirectInput` | `imeDirectInputFeature` | IME オンのままの直接入力(`imeDirectInput`) | +1.2KB |
 | `motionExtras` | `motionExtrasFeature` | 変更のハイライト、コピー範囲の点線、十字ホバー(`highlightChanges` / `showCopyRange` / `hoverHighlight`) | +1.2KB |
@@ -1759,10 +2034,10 @@ export const OrdersTable = () => <Grid columns={columns} dataSource={dataSource}
 
 | 構成 | 初期 JS(gzip) |
 | --- | --- |
-| 全部入り(`SpreadsheetGrid`) | 約 130KB |
-| `/lite` 機能なし | 約 73KB |
+| 全部入り(`SpreadsheetGrid`) | 約 131KB |
+| `/lite` 機能なし | 約 74KB |
 | `/lite` + `standardFeatures` | 約 94KB |
-| `/lite` + `standardFeatures` + `serverSideFeature` | 約 98KB |
+| `/lite` + `standardFeatures` + `serverSideFeature` | 約 99KB |
 
 - 各機能の目安は「機能なし」に 1 つだけ足したときの増え方で、組み合わせると共通部分のぶん合計より少し小さくなる。バンドラーによって数 KB 前後する(0.61.0 の全部入りの実測で、Vite 8(Rolldown)は esbuild より約 1.5KB 小さく、Vite 7(Rollup)はほぼ同じ。Next.js 16 では webpack が Turbopack より約 4KB 大きい)。
 - 使わない機能がバンドルから落ちることは、Vite 8・webpack 5・Next.js 16(既定の Turbopack)・esbuild で確かめている(バンドラーが `package.json` の `sideEffects` と `/* @__PURE__ */` を解釈する必要がある)。
@@ -1786,7 +2061,7 @@ import { preloadGridPopups } from '@ishibashi0112/spreadsheet-grid';
 
 ## ことばで絞り込み(`/ai` サブパス)
 
-`@ishibashi0112/spreadsheet-grid/ai` の `GridAskBar` をグリッドの上に置くと、利用者が「東京の在庫が 10 個以下を高い順に」のように書いた文を AI に頼んで、グリッドのフィルター・並び・グローバル検索・列の表示へ反映できる(0.57.0 で追加)。グリッドは AI を呼ばない。利用側が渡す `ask`(自分のサーバー → 好きな AI)で聞くので、AI の種類は問わず、API キーはサーバーに置ける。全部入り・`/lite` とは別の入口で、使うときだけバンドルに入る(全部入り・`/lite` の JS の大きさは変わらない。`/ai` は約 12.4KB gzip)。
+`@ishibashi0112/spreadsheet-grid/ai` の `GridAskBar` をグリッドの上に置くと、利用者が「東京の在庫が 10 個以下を高い順に」のように書いた文を AI に頼んで、グリッドのフィルター・並び・グローバル検索・列の表示へ反映できる(0.57.0 で追加)。グリッドは AI を呼ばない。利用側が渡す `ask`(自分のサーバー → 好きな AI)で聞くので、AI の種類は問わず、API キーはサーバーに置ける。全部入り・`/lite` とは別の入口で、使うときだけバンドルに入る(全部入り・`/lite` の JS の大きさは変わらない。`/ai` は約 13.8KB gzip)。
 
 ```tsx
 import { useRef } from 'react';
@@ -1869,7 +2144,8 @@ export async function POST(req: Request) {
 | `allowColumnVisibility` | `boolean` | 列を隠す・見せるのを許す。既定 `false`(列の表示の反映にはグリッドの `onColumnsChange` が要るので、渡しているときに付ける)。 |
 | `onApply` | `(event: { text, state, dropped, unsupported }) => void` | 反映したあとに呼ぶ(ログなどに)。 |
 | `onError` | `(error: unknown) => void` | `ask` が失敗(throw / reject)したときに呼ぶ。止めたときは呼ばない。 |
-| `placeholder` / `label` | `string` | 入力欄のプレースホルダーと、読み上げ用のラベル(既定「ことばで絞り込み」)。 |
+| `placeholder` / `label` | `string` | 入力欄のプレースホルダーと、読み上げ用のラベル(既定は `localeText` の `placeholder` / `label` = 「ことばで絞り込み」)。 |
+| `localeText` | `Partial<GridAskLocaleText>` | バーの文言(既定は日本語)。変えたいキーだけを渡す。英語は入口 `/locales/en` の `gridAskLocaleTextEn`。キーは「AI バーの文言(`localeText`)」。 |
 | `className` | `string` | バーの root(`.ssg-ask`)に足すクラス。 |
 | `theme` | `'light' \| 'dark' \| 'auto' \| 'class'` | 配色。既定 `'light'`。グリッドの `theme` と同じ値を渡す。 |
 
@@ -1897,10 +2173,109 @@ export async function POST(req: Request) {
 ### 送るものと検査
 
 - **送るもの**: 列の `key` / `title` / 使える条件 / 列定義にある候補(最大 50 件を並べ、残りは件数だけ)/ `columnHints` / 今の条件(AI が変えられる列の分。値の選択は 1 列 500 件まで)/ 今日の日付 / 利用者の文。**行のデータは送らない**(列定義に候補が無い列の「値の選択」は、AI が文から書いた値をそのまま使う)。
-- **答えはすべて検査する**: 表への指示に見えない答え(サーバーのエラーの `{ error }` など。`mode` も `filters` も無い答え)は表を変えずに知らせる(`mode` があって `filters` だけが無い答えは条件なしとして読む)。無い列・その列で使えない条件・候補に無い値・数や日付として読めない値・長すぎる値(条件と検索の文字は 200 字、選ぶ値は 1 つ 1000 字・1 列 1000 件まで。切り詰めずに捨てる)は捨て、何を捨てたかを「使えなかった部分」に日本語で出す(20 件まで)。列は `key` で引き、無ければ見出し(同じ見出しが 1 列だけのとき)で引く。候補は値・表示名のどちらで答えても値へ直す(select の値 `''` は「すべて」と同じなので選ばない)。数は全角や 3 桁区切りも読み、日付は `YYYY-MM-DD` へ揃える。範囲の逆転は入れ替える。並びの向きは大文字や `ascending` / `descending` も読む(refine で書いてきた並びが 1 つも使えないときは今の並びのまま)。形の読めない条件・列の指定・検索の文字も、件数を「使えなかった部分」に出す。AI が「できなかった」と書いてきた文(`unsupported`)は「AI から: …」として出す。列が 100 を超える表では、`schema` で列を enum にしない(enum の数に上限がある AI があるため。無い列は検査で捨てる)。
+- **答えはすべて検査する**: 表への指示に見えない答え(サーバーのエラーの `{ error }` など。`mode` も `filters` も無い答え)は表を変えずに知らせる(`mode` があって `filters` だけが無い答えは条件なしとして読む)。無い列・その列で使えない条件・候補に無い値・数や日付として読めない値・長すぎる値(条件と検索の文字は 200 字、選ぶ値は 1 つ 1000 字・1 列 1000 件まで。切り詰めずに捨てる)は捨て、何を捨てたかを「使えなかった部分」に出す(20 件まで。文言は `localeText`、既定は日本語)。列は `key` で引き、無ければ見出し(同じ見出しが 1 列だけのとき)で引く。候補は値・表示名のどちらで答えても値へ直す(select の値 `''` は「すべて」と同じなので選ばない)。数は全角や 3 桁区切りも読み、日付は `YYYY-MM-DD` へ揃える。範囲の逆転は入れ替える。並びの向きは大文字や `ascending` / `descending` も読む(refine で書いてきた並びが 1 つも使えないときは今の並びのまま)。形の読めない条件・列の指定・検索の文字も、件数を「使えなかった部分」に出す。AI が「できなかった」と書いてきた文(`unsupported`)は「AI から: …」として出す。列が 100 を超える表では、`schema` で列を enum にしない(enum の数に上限がある AI があるため。無い列は検査で捨てる)。
 - **反映と元に戻す**: 答えはすぐ反映し、反映した状態の条件をチップ(列フィルター → 並び → 検索 → 隠した列)で見せる。チップの select / set の値は表示名(`filterOptions` / select エディタの選択肢。無ければ値のまま)で、数の条件は列の `valueFormatter` で書く(グリッドのチップバー・フィルターの管理と同じ)。チップの × でその条件だけ外せる。「元に戻す」で頼む前の見え方(フィルター・並び・検索・隠した列)へ戻す(列幅・列の順番・固定はそのまま)。反映したあとに表を手で変えたときは(チップバーの ×・グローバル検索・`applyState` など。クリック / キー操作の後と 1 秒ごとに `getState()` で確かめる)、チップと「元に戻す」を下げて「表の条件が変わったので…」と知らせる(押してから知らせるのではない。列の表示を AI に任せていないときは、手で隠した列は比べず、元に戻すでも変えない)。列の表示が変わらないときは `applyState` に `columns` を渡さない(列定義を `onColumnsChange` で書き直さない)。
 - **入力**: Enter で送る。日本語の変換を確定する Enter では送らない。答えを読めたら入力欄を空にする(考えている間に書き換えていれば残す。失敗したときは直して送れるよう残す)。考えている間は「止める」か Esc で取り消せる(届いた答えは捨てる)。Esc はフォーカスがバーの中か、どこにも無いときに効く(表やほかの部品の Esc は取らない。日本語の変換中の Esc では止めない。バーを shadow root の中に置いても効く)。「聞く」「止める」のダブルクリックの 2 回目は無視する(止めたつもりで送り直したり、送ってすぐ止めたりしない)。考えている間、例のボタンは `aria-disabled`。失敗したときは表を変えずに「もう一度」を出す(失敗した文を送り直す)。表(`grid` の ref)がまだ無いときは知らせる。聞いている間に props(列・`allow*`・`onApply` など)が変わったら、答えは変わったあとの設定で読む。押したボタン(チップの × / 元に戻す / 閉じる)が消えたら、フォーカスは次のチップか入力欄へ移す。チップと例は全文を `title` に持つ(狭い幅では省略表示)。
 - **見た目**: 色はグリッドと同じトークン(`--ssg-*`)で決まる。バーはグリッドの外にあるので、トークンを `.ssg-root { … }` で上書きしているときは `.ssg-root, .ssg-ask { … }` のように `.ssg-ask` も並べる。`themes/*.css` はバーにも効く。クラスは `.ssg-ask` / `.ssg-ask-form` / `.ssg-ask-input` / `.ssg-ask-examples` / `.ssg-ask-chips` / `.ssg-ask-chip` / `.ssg-ask-note`(公開契約。ほかの `ssg-ask-*` は内部)。
+
+### AI バーの文言(`localeText`)
+
+`GridAskBar` / `useGridAsk` の `localeText` で、バーの文言(入力欄・ボタン・知らせ・反映した条件のチップ・「使えなかった部分」の理由)を変えられます。既定は日本語です。英語はグリッドと同じ入口 `@ishibashi0112/spreadsheet-grid/locales/en` の `gridAskLocaleTextEn` です。条件の要約(`conditionContains` など)はグリッドの `localeText` と同じキーです。AI に送る指示(`system` / `prompt` の決まった文)は言語によらず英語です(利用者の文はそのまま送るので、どの言語で聞いてもよい)。列の見出し・候補の値・日付の期間のプリセットの名前は画面と同じ文字を送ります(組み込みのプリセットは `localeText` の `datePresetToday` などなので、英語なら `Today`)。 `localeText` を途中で変えたときは、出ている知らせ・エラー・反映した条件のチップは、次に頼んだときから新しい文言になります。
+
+```tsx
+import { GridAskBar } from '@ishibashi0112/spreadsheet-grid/ai';
+import { gridAskLocaleTextEn, localeTextEn } from '@ishibashi0112/spreadsheet-grid/locales/en';
+
+<GridAskBar grid={gridRef} columns={columns} ask={ask} localeText={gridAskLocaleTextEn} />
+<SpreadsheetGrid ref={gridRef} columns={columns} rows={rows} localeText={localeTextEn} />
+```
+
+core の関数(`createGridAskRequest` / `readGridAskAnswer` / `describeGridAskView`)にも `options.localeText` で渡せます(「使えなかった部分」の理由とチップの文言)。
+
+
+**入力欄と結果**
+
+| キー | 既定(日本語) | 英語(`gridAskLocaleTextEn`) | 説明 |
+| --- | --- | --- | --- |
+| `placeholder` | `ことばで絞り込み・並べ替え(例: 今月の分を金額の高い順に)` | `Filter or sort in plain words (e.g. this month, largest amount first)` | 入力欄のプレースホルダー(`placeholder` を渡すとそちら)。 |
+| `label` | `ことばで絞り込み` | `Filter in plain words` | 入力欄の読み上げの名前(`label` を渡すとそちら)。 |
+| `submit` | `聞く` | `Ask` | 送るボタン。 |
+| `stop` | `止める` | `Stop` | 聞いている間のボタン。 |
+| `examples` | `例:` | `Try:` | 例の文の前。 |
+| `thinking` | `考えています…` | `Thinking…` | 聞いている間。 |
+| `escHint` | `Esc でも止まります` | `Press Esc to stop` | 聞いている間の補足。 |
+| `retry` | `もう一度` | `Try again` | 失敗したときのボタン。 |
+| `appliedTitle` | `反映した条件` | `Applied` | 反映した条件のチップの見出し。 |
+| `undo` | `元に戻す` | `Undo` | 元に戻すボタン。 |
+| `close` | `閉じる` | `Close` | 閉じるボタン。 |
+| `removeItem` | `{label} {text} を外す` | `Remove {label} {text}` | チップの × の読み上げの名前。 |
+| `allRemoved` | `条件はすべて外れています。` | `All conditions have been removed.` | チップをすべて外したとき。 |
+| `unchanged` | `変える条件はありませんでした。` | `Nothing to change.` | 答えで表が変わらなかったとき。 |
+| `undone` | `元に戻しました。` | `Undone.` | 元に戻したあと。 |
+| `droppedTitle` | `使えなかった部分` | `Couldn't use` | 使えなかった部分の見出し。 |
+| `fromAi` | `AI から: {text}` | `From the AI: {text}` | AI が「できなかった」と書いてきた文。 |
+| `askFailed` | `AI に聞けませんでした。もう一度試してください。` | `Couldn't reach the AI. Try again.` | `ask` が失敗したとき(`error`)。 |
+| `noGrid` | `表が見つかりませんでした。表が出てから、もう一度試してください。` | `The grid wasn't found. Try again once it's on the page.` | `grid` の ref が空のとき(`error`)。 |
+| `changedNotice` | `表の条件が変わったので、ここからは変えられません。表のフィルターや並びで直してください。` | `The grid's conditions have changed, so they can't be changed from here. Use the grid's filters and sorting.` | 反映したあと表を手で変えたとき(`notice`)。 |
+
+**反映した条件のチップ**
+
+| キー | 既定(日本語) | 英語(`gridAskLocaleTextEn`) | 説明 |
+| --- | --- | --- | --- |
+| `itemSort` | `並び` | `Sort` | 並びのチップの名前。 |
+| `itemSortEntry` | `{column} {direction}` | `{column} {direction}` | 並びのチップの中身(1 列ぶん)。 |
+| `ascending` | `昇順` | `ascending` | 昇順。 |
+| `descending` | `降順` | `descending` | 降順。 |
+| `itemSearch` | `検索` | `Search` | 検索の文字のチップの名前。 |
+| `itemHidden` | `隠した列` | `Hidden` | 隠した列のチップの名前。 |
+
+**使えなかった部分の理由**
+
+| キー | 既定(日本語) | 英語(`gridAskLocaleTextEn`) | 説明 |
+| --- | --- | --- | --- |
+| `quote` | `「{text}」` | `"{text}"` | 理由に引く答えの文字の囲み。 |
+| `quoteSeparator` | (空) | `, ` | 引いた文字を並べるときの区切り。 |
+| `emptyText` | `(空)` | `(empty)` | 引く文字が空のとき。 |
+| `unnamed` | `(名前なし)` | `(no name)` | 列の名前が空のとき。 |
+| `andMore` | `{items}ほか {count} 件` | `{items} and {count} more` | 引いた値が 6 つ以上のとき。 |
+| `moreReasons` | `ほか {count} 件` | `{count} more` | 理由が多いときの最後の行。 |
+| `columnReason` | `{column}: {reason}` | `{column}: {reason}` | 列についての理由。 |
+| `readError` | `AI の答えを読めませんでした。言い方を変えて、もう一度試してください。` | `Couldn't read the AI's answer. Try wording it differently.` | 答えを読めないとき(`error`)。 |
+| `shapeError` | `AI の答えが表への指示になっていませんでした。言い方を変えてください。` | `The AI's answer wasn't an instruction for the grid. Try wording it differently.` | 答えが表への指示でないとき(`error`)。 |
+| `filtersLocked` | `列の条件は変えない設定です` | `Column filters are locked` | `allowFilter: false` のとき。 |
+| `noSuchColumn` | `{column}という列はありません` | `There is no column {column}` | 無い列。 |
+| `notFilterable` | `この列では絞り込めません` | `This column can't be filtered` | 絞り込めない列。 |
+| `noOperator` | `条件の種類がありません` | `The condition has no type` | 条件の種類が無いとき。 |
+| `operatorUnavailable` | `この列では{operator}の条件は使えません` | `{operator} can't be used on this column` | その列で使えない条件。 |
+| `oneCondition` | `条件は 1 列に 1 つまでです` | `Only one condition per column` | 1 列に条件が 2 つ。 |
+| `oneSelection` | `値の選択は 1 列に 1 つまでです` | `Only one value choice per column` | 1 列に値の選択が 2 つ。 |
+| `unreadableFilters` | `読めない条件({count} 件)は使えません` | `Unreadable conditions ({count}) can't be used` | 読めない条件。 |
+| `noNumberRange` | `範囲の両端の数がありません` | `The range needs two numbers` | 数の範囲の両端が無い。 |
+| `notNumber` | `{value}は数として読めません` | `{value} is not a number` | 数として読めない。 |
+| `noText` | `探す文字がありません` | `No text to look for` | 文字の条件が空。 |
+| `textTooLong` | `探す文字は {limit} 字までです` | `Text to look for can be up to {limit} characters` | 文字の条件が長すぎる。 |
+| `unknownPeriod` | `{value}という期間は使えません` | `{value} is not an available period` | 無いプリセット。 |
+| `noDateRange` | `範囲の両端の日付がありません` | `The range needs two dates` | 日付の範囲の両端が無い。 |
+| `notDate` | `{value}は日付として読めません` | `{value} is not a date` | 日付として読めない。 |
+| `noValues` | `選ぶ値がありません` | `No values to choose` | 値の選択が空。 |
+| `noSelectableValues` | `選べる値がありません` | `None of the values can be chosen` | 選べる値が 1 つも無い。 |
+| `tooManyValues` | `選べる値は {limit} 件までです({count} 件は使いませんでした)` | `Up to {limit} values can be chosen ({count} not used)` | 選ぶ値が多すぎる。 |
+| `notInOptions` | `{values}は候補にありません` | `Not in the list: {values}` | 候補に無い値(いくつか)。 |
+| `notAnOption` | `{value}は候補にありません` | `{value} is not in the list` | 候補に無い値。 |
+| `cannotFilterBy` | `{value}では絞り込めません` | `Can't filter by {value}` | その値では絞り込めない。 |
+| `valueTooLong` | `{limit} 字を超える値は使えません` | `Values over {limit} characters can't be used` | 長すぎる値。 |
+| `valuesTooLong` | `{limit} 字を超える値({count} 件)は使えません` | `Values over {limit} characters ({count}) can't be used` | 長すぎる値(いくつか)。 |
+| `unreadableValues` | `値として読めないもの({count} 件)は使えません` | `Unreadable values ({count}) can't be used` | 値として読めないもの。 |
+| `sortLocked` | `並びは変えない設定です` | `Sorting is locked` | `allowSort: false` のとき。 |
+| `sortNoSuchColumn` | `並び: {column}という列はありません` | `Sort: there is no column {column}` | 並びの無い列。 |
+| `sortBadDirection` | `並び: {column} の向き{direction}は使えません` | `Sort: {direction} can't be used for {column}` | 並びの向きが読めない。 |
+| `searchUnreadable` | `検索の文字を読めませんでした` | `Couldn't read the search text` | 検索の文字が読めない。 |
+| `searchLocked` | `検索の文字は変えない設定です` | `The search text is locked` | `allowSearch: false` のとき。 |
+| `searchTooLong` | `検索の文字は {limit} 字までです` | `The search text can be up to {limit} characters` | 検索の文字が長すぎる。 |
+| `columnsLocked` | `列の表示は変えない設定です` | `Column visibility is locked` | `allowColumnVisibility` が無いとき。 |
+| `unreadableColumns` | `読めない列の指定({count} 件)は使えません` | `Unreadable column changes ({count}) can't be used` | 読めない列の指定。 |
+| `cannotHideAll` | `すべての列は隠せません` | `All columns can't be hidden` | すべての列を隠す答え。 |
+| `operatorLabels` | (条件ごと) | (条件ごと) | `operatorUnavailable` の `{operator}` に入る条件の名前(条件の記号ごと)。 |
 
 ### 自前の見た目で作る(`useGridAsk`)と core の関数
 
@@ -1925,7 +2300,7 @@ export async function POST(req: Request) {
 
 | 関数 | 説明 |
 | --- | --- |
-| `createGridAskRequest(text, state, options): GridAskRequest` | 利用者の文と今の状態(`getState()`)から頼み `{ system, prompt, schema, text }` を作る。`options` は `{ columns, columnHints?, allowFilter?, allowSort?, allowSearch?, allowColumnVisibility?, now? }`。 |
+| `createGridAskRequest(text, state, options): GridAskRequest` | 利用者の文と今の状態(`getState()`)から頼み `{ system, prompt, schema, text }` を作る。`options` は `{ columns, columnHints?, allowFilter?, allowSort?, allowSearch?, allowColumnVisibility?, now?, localeText? }`。 |
 | `readGridAskAnswer(answer, state, options): GridAskResult` | 答えを検査して `{ ok: true, state, changed, dropped, unsupported }`(`state` は `applyState` に渡せる状態)か `{ ok: false, message }` を返す。 |
 | `gridAskSystemPrompt` | `system` の文(いつも同じ)。 |
 | `describeGridAskView(state, options)` / `removeGridAskItem(state, id)` | 状態のチップの一覧 / チップ 1 件を外した状態。 |

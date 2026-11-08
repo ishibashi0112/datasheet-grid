@@ -1,0 +1,104 @@
+---
+title: 英語と文言
+description: localeText でグリッドが出す文言を英語にする・一部だけ変える(バー・メニュー・フィルター・ツールパネル・検索・読み上げの名前・検査のメッセージ)
+---
+
+グリッドが自分で出す文言は、すべて `localeText` から来ます。既定は日本語です。英語にするときは入口 `@ishibashi0112/spreadsheet-grid/locales/en` の `localeTextEn` を渡します。英語の文言は別の入口なので、日本語のまま使うアプリの JS には入りません。
+
+## デモ(日本語 / 英語の切り替え)
+
+<LocaleDemo />
+
+- 上の切り替えで、上部 / 下部のバー、列メニュー(見出しの ⋮)、列フィルター、ツールパネル、セル内検索(`Ctrl/Cmd+F`)、合計行、選択範囲の集計(2 セル以上を選ぶ)、数量の検査のメッセージ(印の付いたセルにポインタを乗せる)が切り替わります。
+- 列の見出しと値は利用側のデータなので、デモの中で言語ごとに用意しています。グリッドはこれらを訳しません。
+
+## 使い方
+
+```tsx
+import { SpreadsheetGrid } from '@ishibashi0112/spreadsheet-grid';
+import { localeTextEn } from '@ishibashi0112/spreadsheet-grid/locales/en';
+
+<SpreadsheetGrid rows={rows} columns={columns} localeText={localeTextEn} />
+```
+
+一部だけ変えるときは、変えたいキーだけを渡します。渡さなかったキーは既定(日本語)のままです。英語の一部を変えるときは `localeTextEn` に重ねます。
+
+```tsx
+// 日本語のまま、行が無いときの文言だけ変える
+<SpreadsheetGrid localeText={{ noRows: 'データがありません' }} … />
+
+// 英語にして、行の件数の言い方だけ変える
+<SpreadsheetGrid localeText={{ ...localeTextEn, rowCount: 'Showing {shown} of {total}' }} … />
+```
+
+### Next.js(App Router)
+
+`localeTextEn` は関数(数で変わる言い方)を含むので、サーバーコンポーネントから props で渡せません(開くと 500 になり、静的なページはビルドが止まります。型の検査は通るので書いた時点では気づけません)。グリッドを描く `'use client'` のファイルの中で import し、サーバーからは言語だけを渡します。
+
+```tsx
+// app/orders/orders-grid.tsx
+'use client';
+import { SpreadsheetGrid } from '@ishibashi0112/spreadsheet-grid';
+import { localeTextEn } from '@ishibashi0112/spreadsheet-grid/locales/en';
+
+export function OrdersGrid({ lang, rows }: { lang: 'ja' | 'en'; rows: Order[] }) {
+  return <SpreadsheetGrid rows={rows} columns={columns} localeText={lang === 'en' ? localeTextEn : undefined} />;
+}
+
+// app/orders/page.tsx(サーバーコンポーネント)
+<OrdersGrid lang="en" rows={rows} />
+```
+
+## 文言の書き方
+
+- 文字列は `{name}` の所が値に置き換わります(`rowCount` の `{shown}` / `{total}` など。使える名前はキーの一覧の説明に書いてあります)。
+- 数で言い方が変わる言語のために、値を関数にもできます。関数は値を受け取って文字列を返します。関数を入れた表は、コンポーネントの外で作るか `useMemo` で包みます(関数は参照で比べるので、描くたびに新しい関数を作ると、そのたびに文言を使う部分がすべて描き直されます)。
+
+```tsx
+// コンポーネントの外で 1 回だけ作る
+const localeText = {
+  ...localeTextEn,
+  filterColumns: ({ count }: { count: number }) => (count === 1 ? '1 column' : `${count} columns`),
+};
+```
+
+- 曜日(`calendarWeekdays`。日曜から 7 つ)と月(`calendarMonths`。1 月から 12)は配列です。
+- `localeText={{ … }}` をその場で書いても、中身(文字列・配列・関数の参照)が同じ間は作り直しません。
+- 展開行のカードの中などに別のグリッドを置くときは、そのグリッドにも `localeText` を渡します(外のグリッドの文言は引き継ぎません)。
+
+## 変わるものと変わらないもの
+
+変わるもの:
+
+- 上部 / 下部のバー(件数・絞り込み / 並び替えの要約・セルの番地・選択範囲の集計)、フィルターチップ
+- 列メニュー、列フィルター(条件の名前・日付のカレンダー・候補の一覧)、ツールパネル、セル内検索、フィルハンドルのボタン
+- 行グループの行、合計行の見出し、行が無いときの文言、serverSide の読み込み / 失敗のバー
+- 読み上げの名前(`aria-label` など)とツールチップ、組み込みの検査(number の `min` / `max` / `integer`)のメッセージ
+
+変わらないもの:
+
+- 列の見出しや値、`valueFormatter` / `renderCell` の出力など、利用側が渡す文字
+- 日付の書き方(`yyyy/mm/dd`)と数の書き方(件数の数字に区切りを入れないなど)
+- 開発時の console の警告。言語によらず日本語の行と英語の行の 2 行です(本番では出ません)
+
+文言を渡す prop(`noRowsText` / `noMatchingRowsText` / `globalFilterPlaceholder` / `totalRow.label`)を渡したときは、そちらが優先です。フィルハンドルで曜日や月の続きを埋めるときは、英語の曜日 / 月(`Mon` / `January` など)も日本語と同じように続きます。
+
+## AI バー(ことばで絞り込み)
+
+[ことばで絞り込み](/docs/guides/ai-filter)の `GridAskBar` / `useGridAsk` は、同じ入口の `gridAskLocaleTextEn` を `localeText` に渡します。
+
+```tsx
+import { gridAskLocaleTextEn, localeTextEn } from '@ishibashi0112/spreadsheet-grid/locales/en';
+
+<GridAskBar grid={gridRef} columns={columns} ask={ask} localeText={gridAskLocaleTextEn} />
+<SpreadsheetGrid ref={gridRef} columns={columns} rows={rows} localeText={localeTextEn} />
+```
+
+## キーの一覧
+
+キーと既定(日本語)・英語の値の一覧は API リファレンスにあります。
+
+- グリッド: [文言(`localeText`)と英語](/docs/api/props#文言localetextと英語)
+- AI バー: [AI バーの文言(`localeText`)](/docs/api/ai#ai-バーの文言localetext)
+
+core(`@ishibashi0112/spreadsheet-grid-core`)からも、既定の表(`DEFAULT_GRID_LOCALE_TEXT` など)と英語の表(`localeTextEn` / `gridAskLocaleTextEn`)を読めます。

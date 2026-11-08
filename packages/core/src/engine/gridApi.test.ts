@@ -206,6 +206,19 @@ describe('createGridApi', () => {
     expect(actions[0]).toMatchObject({ type: 'cell/activate', cell: null });
   });
 
+  // 追加(英語対応の確かめ直し): 0 行のときは無い 1 行目を選ばない(getSelection() が存在しない行を返さない)。
+  it('0 行のときの selectCell / selectRange / setActiveCell は何もしない(クリアの null はそのまま)', () => {
+    const api = createGridApi<Row>(withExport);
+    const { args, actions } = makeArgs();
+    api.update({ ...args, viewRowCount: 0 });
+    api.handle.selectCell(0, 0);
+    api.handle.selectRange({ start: { row: 2, col: 1 }, end: { row: 3, col: 1 } });
+    api.handle.setActiveCell({ row: 0, col: 0 });
+    expect(actions).toEqual([]);
+    api.handle.setActiveCell(null);
+    expect(actions[0]).toMatchObject({ type: 'cell/activate', cell: null });
+  });
+
   it('exportCsv は scope に応じて行 / 列を解決し、selection 無しの scope=selection は空文字', () => {
     const api = createGridApi<Row>(withExport);
     const { args } = makeArgs();
@@ -392,6 +405,39 @@ describe('createGridApi', () => {
       click.mockRestore();
       vi.unstubAllGlobals();
       vi.useRealTimers();
+    }
+  });
+});
+// 追加(英語対応): 使い方の誤りの警告は開発時だけ出し(本番の JS から文を除く)、日本語の行と英語の行の 2 行。
+describe('使い方の誤りの警告(開発時だけ・2 行)', () => {
+  it('serverSide の getInvalidCells / clientSide の refreshServerSide・retryServerSideLoads は開発時だけ警告する', () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    try {
+      const serverApi = createGridApi<Row>(withExport);
+      serverApi.update(makeArgs({ isServerSide: true }).args);
+      const clientApi = createGridApi<Row>(withExport);
+      clientApi.update(makeArgs().args);
+      const callAll = () => {
+        expect(serverApi.handle.getInvalidCells()).toEqual([]);
+        clientApi.handle.refreshServerSide();
+        clientApi.handle.retryServerSideLoads();
+      };
+      callAll();
+      const messages = warn.mock.calls.map(([message]) => String(message));
+      expect(messages).toHaveLength(3);
+      for (const message of messages) {
+        const lines = message.split('\n');
+        expect(lines).toHaveLength(2);
+        expect(lines[1]).not.toMatch(/[぀-ヿ㐀-鿿]/);
+      }
+      expect(messages[0]).toContain('getInvalidCells is not available with serverSide');
+      warn.mockClear();
+      vi.stubEnv('NODE_ENV', 'production');
+      callAll();
+      expect(warn).not.toHaveBeenCalled();
+    } finally {
+      vi.unstubAllEnvs();
+      warn.mockRestore();
     }
   });
 });

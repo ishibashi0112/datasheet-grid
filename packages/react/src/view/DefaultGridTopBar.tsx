@@ -2,6 +2,7 @@ import type { ReactNode } from 'react';
 import type { SpreadsheetGridDerivedSummary } from '../model/gridTypes';
 import { cx } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/cx';
 import type { GridResolvedSlot } from '../model/gridTypes';
+import { useGridLocaleText } from '../hooks/useGridLocaleText';
 
 // 追加(F-filter UI): 既定の左アイコン(検索)です。zero-dep のためインライン SVG で持ち、currentColor で
 //   .ssg-bar-input-icon の color を継承します。グローバルフィルタ(全列横断のテキスト検索)を示す虫眼鏡。
@@ -86,11 +87,14 @@ export function DefaultGridTopBar({
   showSummary = true,
   showFilter = true,
   showCounts = true,
-  globalFilterPlaceholder = 'グローバルフィルター',
+  // 変更(英語対応): 未指定は文言(localeText の globalFilterPlaceholder)。
+  globalFilterPlaceholder: globalFilterPlaceholderProp,
   globalFilterIcon,
   onFilterSummaryClick,
   slot,
 }: DefaultGridTopBarProps) {
+  const texts = useGridLocaleText();
+  const globalFilterPlaceholder = globalFilterPlaceholderProp ?? texts.globalFilterPlaceholder;
   // undefined のときだけ既定アイコン。null など falsy なら「アイコン無し」、ReactNode はそのまま差し替え。
   const filterIconNode =
     globalFilterIcon === undefined ? DEFAULT_FILTER_ICON : globalFilterIcon;
@@ -126,8 +130,8 @@ export function DefaultGridTopBar({
                   event.stopPropagation();
                 }}
                 onClick={onFilterSummaryClick}
-                data-ssg-tooltip="フィルター管理パネルを開閉"
-                aria-label="フィルター管理パネルを開閉"
+                data-ssg-tooltip={texts.toggleFilterPanel}
+                aria-label={texts.toggleFilterPanel}
               >
                 {derivedSummary.filterSummaryText}
               </button>
@@ -161,7 +165,7 @@ export function DefaultGridTopBar({
               placeholder={globalFilterPlaceholder}
               // 追加(audit V-14): placeholder だけだと値の入力後に名前が消える UA があるため、名前を明示します。
               //   名前は従来どおり placeholder の文言(利用側の言語に合わせる)。空文字のときだけ既定の名前にします。
-              aria-label={globalFilterPlaceholder || '表全体を検索'}
+              aria-label={globalFilterPlaceholder || texts.globalFilterLabel}
               className="ssg-bar-input"
             />
             {hasFilterText ? (
@@ -169,8 +173,8 @@ export function DefaultGridTopBar({
                 type="button"
                 onClick={() => setGlobalFilterText('')}
                 className="ssg-bar-input-clear"
-                aria-label="フィルターをクリア"
-                data-ssg-tooltip="クリア"
+                aria-label={texts.clearGlobalFilter}
+                data-ssg-tooltip={texts.clear}
               >
                 {CLEAR_ICON}
               </button>

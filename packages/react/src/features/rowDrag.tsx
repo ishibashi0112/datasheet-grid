@@ -8,10 +8,12 @@ import { useCallback } from 'react';
 import { useIsomorphicLayoutEffect } from '../hooks/useController';
 import { cx } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/cx';
 import { isSyntheticColumnKey } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/detailRow';
-import {
-  ROW_DRAG_DISABLED_TOOLTIP,
-  ROW_DRAG_HANDLE_TOOLTIP,
-} from '@ishibashi0112/spreadsheet-grid-core/internal/logic/rowReorder';
+import { formatLocaleText } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/localeText';
+// 追加(英語対応): 行ドラッグの機能だけが使う文言(既定は localeTextRowDrag.ts。機能の localeText でシェルが埋める)。
+import { DEFAULT_ROW_DRAG_LOCALE_TEXT } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/localeTextFeatures';
+import type { FeatureLocaleText } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/localeText';
+
+type RowDragTexts = FeatureLocaleText<typeof DEFAULT_ROW_DRAG_LOCALE_TEXT>;
 import { getCellValue } from '@ishibashi0112/spreadsheet-grid-core/internal/utils/permissions';
 import { useRowDragController } from '../hooks/useRowDragController';
 import type { ReactGridFeatures, RowDragFeatureArgs, RowDragFeatureResult } from './types';
@@ -23,12 +25,13 @@ const useRowDragFeature = <T,>({
   visibleColumns,
   isRowDraggable,
   hasRowKeys,
+  localeTexts,
   ...controllerArgs
 }: RowDragFeatureArgs<T>): RowDragFeatureResult<T> => {
   // ゴーストのラベル: 先頭の(合成列でない)表示列の表示値。空なら「行 N」。
   const getRowDragLabel = useCallback(
     (viewIndex: number): string => {
-      const fallback = `行 ${viewIndex + 1}`;
+      const fallback = formatLocaleText((localeTexts as RowDragTexts).dragRowLabel, { row: viewIndex + 1 });
       const row = rowModel.getRow(viewIndex);
       if (!row) {
         return fallback;
@@ -45,7 +48,7 @@ const useRowDragFeature = <T,>({
         : String(value ?? '');
       return text.trim().length > 0 ? text : fallback;
     },
-    [rowModel, visibleColumns],
+    [rowModel, visibleColumns, localeTexts],
   );
   // 追加(1.0 前の最終チェック FC-12): 掴んだ行を控え、離すときに今の並びで探し直します(ドラッグ中にポーリング等で
   //   行の並びが変わると、掴んだときの index のまま別の行を動かしていた)。行の参照で探し、見つからなければ
@@ -111,7 +114,7 @@ const useRowDragFeature = <T,>({
             !rowDragOperable && 'ssg-row-drag-handle--disabled',
           )}
           data-ssg-tooltip={
-            rowDragOperable ? ROW_DRAG_HANDLE_TOOLTIP : ROW_DRAG_DISABLED_TOOLTIP
+            rowDragOperable ? (localeTexts as RowDragTexts).dragRow : (localeTexts as RowDragTexts).dragRowDisabled
           }
           aria-hidden="true"
           onPointerDown={
@@ -138,7 +141,7 @@ const useRowDragFeature = <T,>({
         </span>
       );
     },
-    [isRowDraggable, rowModel, rowDragOperable, onRowDragHandlePointerDown],
+    [isRowDraggable, rowModel, rowDragOperable, onRowDragHandlePointerDown, localeTexts],
   );
 
   return {
@@ -161,4 +164,6 @@ const useRowDragFeature = <T,>({
 
 export const rowDragFeature: NonNullable<ReactGridFeatures['rowDrag']> = {
   useRowDrag: useRowDragFeature,
+  // 追加(英語対応): この機能だけが使う文言の既定(シェルが本体の既定に重ねる)。
+  localeText: DEFAULT_ROW_DRAG_LOCALE_TEXT,
 };

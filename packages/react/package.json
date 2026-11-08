@@ -63,6 +63,11 @@
       "import": "./dist/ai.js",
       "require": "./dist/ai.cjs"
     },
+    "./locales/en": {
+      "types": "./dist/locales/en.d.ts",
+      "import": "./dist/locales/en.js",
+      "require": "./dist/locales/en.cjs"
+    },
     "./testing": {
       "types": "./dist/testing/index.d.ts",
       "import": "./dist/testing.js",

@@ -21,7 +21,7 @@ import type {
   SpreadsheetGridProps,
 } from '../model/gridTypes.unbound';
 import { isUnchangedEditorCommit, parseCommittedValue, writeRowsCell } from '../logic/editorValues';
-import { decideCellWrite } from '../logic/validation';
+import { decideCellWrite, type ValidationLocaleText } from '../logic/validation';
 import { clamp } from '../logic/geometry';
 import { isFocusInsideDetailCard } from '../logic/detailRow';
 import { getCellValue, isViewCellEditable } from '../utils/permissions';
@@ -44,6 +44,8 @@ export type EditControllerArgs<T extends object> = {
   //   readOnly へ切り替わった / canEditCell の結果が変わった場合に書き込めてしまうため)。未指定は従来どおり。
   readOnly?: boolean;
   canEditCell?: SpreadsheetGridProps<T>['canEditCell'];
+  // 追加(英語対応): reject の検査のメッセージの文言(localeText。未指定は日本語の既定)。
+  localeTexts?: ValidationLocaleText;
 };
 
 export type EditController<T extends object> = {
@@ -317,7 +319,7 @@ export const createEditController = <T extends object>(): EditController<T> => {
     const unchanged = isUnchangedEditorCommit(column, getCellValue(row, column), committedValue);
     if (!unchanged && applyServerSideCellEdits) {
       const parsedValue = parseCommittedValue(column, committedValue, row);
-      const decision = decideCellWrite(column, row, parsedValue);
+      const decision = decideCellWrite(column, row, parsedValue, args.localeTexts);
       if (decision.action === 'reject') {
         return { status: 'rejected', message: decision.message };
       }
@@ -326,7 +328,7 @@ export const createEditController = <T extends object>(): EditController<T> => {
       ]);
     } else if (!unchanged && onRowsChange) {
       const parsedValue = parseCommittedValue(column, committedValue, row);
-      const decision = decideCellWrite(column, row, parsedValue);
+      const decision = decideCellWrite(column, row, parsedValue, args.localeTexts);
       if (decision.action === 'reject') {
         return { status: 'rejected', message: decision.message };
       }

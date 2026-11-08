@@ -57,6 +57,7 @@ Tiers reflect each vendor's public documentation as of 2026-10. Please open an i
 - Built-in CSV export (`downloadCsv` / `exportCsv`), plus a library-agnostic `getExportData()` for Excel / XLSX / ODS — feed the shaped data (filter/sort/visible-order aware) to your own writer such as [hucre](https://github.com/productdevbook/hucre), ExcelJS, or SheetJS. No spreadsheet library is bundled; multi-sheet is composed on your side. See [`API_REFERENCE.md`](./packages/react/API_REFERENCE.md).
 - Export scopes: `'view'` (default — every filtered/sorted view row, scroll-independent), `'raw'` (every source row, ignoring filter & sort), `'rendered'` (only the rows currently rendered by virtualization — scroll-dependent), `'selection'`. Legacy `'all'` / `'visible'` keep working as deprecated aliases of `'view'` / `'rendered'`.
 - Touch-friendly basics — on touch devices a tap selects a cell, a double tap starts editing (works even where the browser never fires `dblclick`), and swipes scroll instead of starting a range selection. The column menu (`⋮`) is always visible on hover-less devices.
+- English or Japanese UI — every text the grid draws (bars, menus, filters, tool panel, find, ARIA labels, validation messages) comes from `localeText`. The default is Japanese; pass `localeTextEn` from `@ishibashi0112/spreadsheet-grid/locales/en` for English, or override single keys.
 - TypeScript-first, fully controlled API.
 
 ## Installation
@@ -160,6 +161,20 @@ These examples open in StackBlitz, so you can run and edit them without installi
 - [Editable inventory grid](https://stackblitz.com/fork/github/ishibashi0112/datasheet-grid/tree/main/examples/basic?file=src/App.tsx&terminal=dev) — 10,000 rows with editors, validation, filters, conditional formatting, a total row, the fill handle, find and CSV export.
 - [Server-side row model](https://stackblitz.com/fork/github/ishibashi0112/datasheet-grid/tree/main/examples/server-side?file=src/App.tsx&terminal=dev) — 100,000 rows fetched as you scroll; sorting and filtering run on the (simulated) server, and edits are saved with a rollback on failure.
 - [Inside Astryx](https://stackblitz.com/fork/github/ishibashi0112/datasheet-grid/tree/main/examples/astryx?file=src/App.tsx&terminal=dev) — the grid themed by `themes/astryx.css`, with Astryx components in cells.
+
+### English UI
+
+The grid's own texts default to **Japanese**. For English, pass `localeTextEn` (a separate entry point, so Japanese-only apps don't ship it):
+
+```tsx
+import { localeTextEn } from '@ishibashi0112/spreadsheet-grid/locales/en'
+
+<SpreadsheetGrid localeText={localeTextEn} /* … */ />
+// change single texts on top of it
+<SpreadsheetGrid localeText={{ ...localeTextEn, rowCount: 'Showing {shown} of {total}' }} /* … */ />
+```
+
+Values are strings with `{name}` placeholders or functions (for plurals). Dates keep the `yyyy/mm/dd` format. The `/ai` bar takes `gridAskLocaleTextEn` from the same entry point. All keys: [API reference](./packages/react/API_REFERENCE.md) (“文言(`localeText`)と英語”).
 
 ## Cell editors & validation
 
@@ -281,7 +296,7 @@ The preset drives the default `rowHeight` / `headerHeight` (compact: 28/32, stan
 
 ## Smaller bundles (`/lite`, 0.54.0+)
 
-`SpreadsheetGrid` includes every feature (about 130KB gzip of initial JS). `@ishibashi0112/spreadsheet-grid/lite` builds a grid with only the features you pass, and leaves the rest out of your bundle:
+`SpreadsheetGrid` includes every feature (about 131KB gzip of initial JS). `@ishibashi0112/spreadsheet-grid/lite` builds a grid with only the features you pass, and leaves the rest out of your bundle:
 
 ```tsx
 import { createSpreadsheetGrid, standardFeatures, serverSideFeature } from '@ishibashi0112/spreadsheet-grid/lite';
@@ -293,8 +308,8 @@ const Grid = createSpreadsheetGrid({ features: { ...standardFeatures, serverSide
 
 | Setup | Initial JS (gzip) |
 | --- | --- |
-| `SpreadsheetGrid` (everything) | ~130KB |
-| `/lite`, no features | ~73KB |
+| `SpreadsheetGrid` (everything) | ~131KB |
+| `/lite`, no features | ~74KB |
 | `/lite` + `standardFeatures` (filters, column menu, tool panel, column autosize, export) | ~94KB |
 
 Props, the `ref` handle and types are the same as `SpreadsheetGrid`. Props of features you did not pass do nothing, and in development a `console.warn` names the feature to add. See the [`/lite` section of the API reference](packages/react/API_REFERENCE.md#機能を選んで組み込むlite-サブパス) for the 20 features and their sizes.
@@ -316,7 +331,7 @@ const ask: GridAsk = async (request, { signal }) => {
 <SpreadsheetGrid ref={gridRef} columns={columns} rows={rows} />
 ```
 
-It is a separate entry (~12.4KB gzip), so `SpreadsheetGrid` and `/lite` do not grow. Server code for Claude, OpenAI, Gemini and the Vercel AI SDK (AI Gateway) is in the [guide with a live demo](https://datasheet-grid.vercel.app/docs/guides/ai-filter); the full API and the list of what the AI can change are in the [`/ai` section of the API reference](packages/react/API_REFERENCE.md#ことばで絞り込みai-サブパス).
+It is a separate entry (~13.8KB gzip), so `SpreadsheetGrid` and `/lite` do not grow. Server code for Claude, OpenAI, Gemini and the Vercel AI SDK (AI Gateway) is in the [guide with a live demo](https://datasheet-grid.vercel.app/docs/guides/ai-filter); the full API and the list of what the AI can change are in the [`/ai` section of the API reference](packages/react/API_REFERENCE.md#ことばで絞り込みai-サブパス).
 
 ## Server-side mode (SSRM)
 
@@ -468,6 +483,7 @@ Details: [Versioning](https://datasheet-grid.vercel.app/docs/versioning) (Japane
 - CSV エクスポート（`downloadCsv` / `exportCsv`）を内蔵。Excel / XLSX / ODS はライブラリ非依存の `getExportData()` で、整形済みデータ（フィルター/ソート/可視列順を反映）を [hucre](https://github.com/productdevbook/hucre) / ExcelJS / SheetJS など任意の writer へ流す方式。xlsx ライブラリは同梱せず、マルチシートは利用側で合成。詳細は [`API_REFERENCE.md`](./packages/react/API_REFERENCE.md)。
 - エクスポート scope: `'view'`（既定＝フィルター/ソート後の全ビュー行。スクロール位置に非依存）/ `'raw'`（フィルター/ソート無視の全ソース行）/ `'rendered'`（描画中の行のみ＝スクロール位置に依存）/ `'selection'`（選択範囲）。旧 `'all'` / `'visible'` は `'view'` / `'rendered'` の deprecated エイリアスとして従来どおり動作。
 - タッチ操作の基本対応 — タッチ端末ではタップでセル選択、ダブルタップで編集開始（`dblclick` を発火しないブラウザでも動作）、スワイプは範囲選択にならずスクロール。列メニュー（`⋮`）はホバー不可の端末で常時表示。
+- 英語の UI — グリッドが出す文言(バー・メニュー・フィルター・ツールパネル・検索・読み上げの名前・検証のメッセージ)はすべて `localeText` から。既定は日本語で、`@ishibashi0112/spreadsheet-grid/locales/en` の `localeTextEn` を渡すと英語、1 つずつの置き換えもできます。
 - TypeScript ファースト、完全 controlled な API。
 
 ### インストール
@@ -571,6 +587,20 @@ export function Example() {
 - [編集できる在庫表](https://stackblitz.com/fork/github/ishibashi0112/datasheet-grid/tree/main/examples/basic?file=src/App.tsx&terminal=dev) — 10,000 行。エディタ / バリデーション / フィルター / 条件付き書式 / 合計行 / フィルハンドル / セル内検索 / CSV
 - [サーバーサイド行モデル](https://stackblitz.com/fork/github/ishibashi0112/datasheet-grid/tree/main/examples/server-side?file=src/App.tsx&terminal=dev) — 100,000 件をスクロールに合わせて取得。ソート・フィルターは(擬似的な)サーバー側で処理し、編集は保存(失敗すると元に戻る)
 - [Astryx の中のグリッド](https://stackblitz.com/fork/github/ishibashi0112/datasheet-grid/tree/main/examples/astryx?file=src/App.tsx&terminal=dev) — `themes/astryx.css` で配色を揃え、セルに Astryx の部品を描く
+
+#### 英語の UI
+
+グリッドが自分で出す文言の既定は日本語です。英語にするときは `localeTextEn` を渡します(別の入口なので、日本語だけのアプリの JS には入りません):
+
+```tsx
+import { localeTextEn } from '@ishibashi0112/spreadsheet-grid/locales/en'
+
+<SpreadsheetGrid localeText={localeTextEn} /* … */ />
+// 一部だけ変える
+<SpreadsheetGrid localeText={{ ...localeTextEn, rowCount: 'Showing {shown} of {total}' }} /* … */ />
+```
+
+値は `{name}` の所が置き換わる文字列か関数(数で言い方が変わるとき)です。日付の書き方は `yyyy/mm/dd` のままです。`/ai` のバーは同じ入口の `gridAskLocaleTextEn` を使います。キーの一覧は [API リファレンス](./packages/react/API_REFERENCE.md)の「文言(`localeText`)と英語」。
 
 ### セルエディタとバリデーション
 
@@ -692,7 +722,7 @@ flex column の残り（ページヘッダーの下など）を埋める:
 
 ### バンドルを小さくする(`/lite`、0.54.0 から)
 
-`SpreadsheetGrid` は全機能入りです(初期読み込みの JS が約 130KB gzip)。`@ishibashi0112/spreadsheet-grid/lite` では、渡した機能だけを入れたグリッドを作れます。渡さなかった機能はバンドルに入りません:
+`SpreadsheetGrid` は全機能入りです(初期読み込みの JS が約 131KB gzip)。`@ishibashi0112/spreadsheet-grid/lite` では、渡した機能だけを入れたグリッドを作れます。渡さなかった機能はバンドルに入りません:
 
 ```tsx
 import { createSpreadsheetGrid, standardFeatures, serverSideFeature } from '@ishibashi0112/spreadsheet-grid/lite';
@@ -704,8 +734,8 @@ const Grid = createSpreadsheetGrid({ features: { ...standardFeatures, serverSide
 
 | 構成 | 初期 JS(gzip) |
 | --- | --- |
-| `SpreadsheetGrid`(全部入り) | 約 130KB |
-| `/lite` 機能なし | 約 73KB |
+| `SpreadsheetGrid`(全部入り) | 約 131KB |
+| `/lite` 機能なし | 約 74KB |
 | `/lite` + `standardFeatures`(フィルター・列メニュー・ツールパネル・列幅の自動調整・エクスポート) | 約 94KB |
 
 props・`ref` ハンドル・型は `SpreadsheetGrid` と同じです。渡していない機能の prop は何もせず、開発時は足すべき機能を `console.warn` で知らせます。20 の機能とサイズは [API リファレンスの `/lite` の節](packages/react/API_REFERENCE.md#機能を選んで組み込むlite-サブパス)にあります。
@@ -727,7 +757,7 @@ const ask: GridAsk = async (request, { signal }) => {
 <SpreadsheetGrid ref={gridRef} columns={columns} rows={rows} />
 ```
 
-別の入口(約 12.4KB gzip)なので、`SpreadsheetGrid` と `/lite` の大きさは変わりません。Claude・OpenAI・Gemini・Vercel AI SDK(AI Gateway)のサーバー側のコードは[デモ付きのガイド](https://datasheet-grid.vercel.app/docs/guides/ai-filter)に、API の全体と AI が変えられるものの一覧は [API リファレンスの `/ai` の節](packages/react/API_REFERENCE.md#ことばで絞り込みai-サブパス)にあります。
+別の入口(約 13.8KB gzip)なので、`SpreadsheetGrid` と `/lite` の大きさは変わりません。Claude・OpenAI・Gemini・Vercel AI SDK(AI Gateway)のサーバー側のコードは[デモ付きのガイド](https://datasheet-grid.vercel.app/docs/guides/ai-filter)に、API の全体と AI が変えられるものの一覧は [API リファレンスの `/ai` の節](packages/react/API_REFERENCE.md#ことばで絞り込みai-サブパス)にあります。
 
 ### サーバーサイドモード（SSRM）
 

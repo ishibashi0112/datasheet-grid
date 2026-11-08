@@ -10,6 +10,33 @@
 
 詳しい使い方は[ドキュメントサイト](https://datasheet-grid.vercel.app)と [API リファレンス](./packages/react/API_REFERENCE.md)を参照してください。
 
+## 未リリース
+
+英語の UI に対応しました。既定は日本語のままです。
+
+### 追加
+
+- 英語の文言: 入口 `@ishibashi0112/spreadsheet-grid/locales/en` の `localeTextEn`(グリッド)と `gridAskLocaleTextEn`(`/ai` の AI バー)。`<SpreadsheetGrid localeText={localeTextEn} />` で、グリッドが自分で出す文言がすべて英語になります。別の入口なので、日本語のまま使うアプリの JS には入りません。日付の書き方(`yyyy/mm/dd`)と数の書き方は変わりません。
+- `localeText` を、上部 / 下部のバーだけでなく、グリッドが自分で出すすべての文言(列メニュー・列フィルター・日付のカレンダー・ツールパネル・セル内検索・フィルハンドルのボタン・行グループの行・合計行の見出し・行が無いときの文言・serverSide の読み込み / 失敗のバー・エクスポートの小計・読み上げの名前とツールチップ・組み込みの検査のメッセージ)へ広げました。キーは API リファレンスの「文言(`localeText`)と英語」にあります。値は文字列(`{name}` の所が値に置き換わる)か、値を受け取って文字列を返す関数(英語の `1 column` / `3 columns` のように数で言い方が変わるとき。型 `GridLocaleTextTemplate`)です。文言を渡す prop(`noRowsText` / `noMatchingRowsText` / `globalFilterPlaceholder` / `totalRow.label`)を渡したときは、そちらが優先です。
+- `GridAskBar` / `useGridAsk` の `localeText`(型 `GridAskLocaleText`)。入力欄・ボタン・知らせ・反映した条件のチップ・「使えなかった部分」の理由の文言を変えられます。
+- core: 既定の文言の表(`DEFAULT_GRID_LOCALE_TEXT` / `DEFAULT_POPUP_LOCALE_TEXT` / 機能ごとの `DEFAULT_FIND_LOCALE_TEXT` など / `DEFAULT_GRID_ASK_LOCALE_TEXT`)、英語の表(`localeTextEn` / `gridAskLocaleTextEn`)、`formatLocaleText`。`createGridAskRequest` / `readGridAskAnswer` の `options.localeText`。
+
+### 挙動の変化
+
+- 展開トグルの列 / 行ドラッグのハンドルの列のセルがアクティブのとき、下部バーの番地を列の名前と行番号(「詳細 7」「移動 7」。英語は `Details 7` / `Move 7`)で出します。これまでは隣の先頭のデータ列と同じ文字(`A7`)で、どのセルか分かりませんでした。
+- 開発時の console の警告を、言語によらず日本語の行と英語の行の 2 行にしました。
+- 使い方の誤りの警告(serverSide での `getInvalidCells()` / `moveRow()`、clientSide での `refreshServerSide()` / `retryServerSideLoads()`、serverSide でのエクスポートの scope `'raw'` など)を開発時だけにしました(これまでは本番でも出ていた)。
+- serverSide と行グルーピング / 行グルーピングとラベル行 / serverSide と auto-height / auto-height の行数の上限 / 展開行の高さの上限の 5 つの警告が、利用側の開発時に出るようになりました(これまではライブラリのビルドで消えていて、どこでも出ていなかった)。
+
+### 修正
+
+- 行ドラッグのハンドル列と展開トグル列だけをまたぐ範囲の番地を、両端の列の名前で出します(「移動 8:詳細 8」)。これまではデータのセルが無いのに「A8」と出ていました。
+- 選択範囲の集計を、データ列のセルが 2 つ以上のときだけ出します。行ドラッグのハンドル列などからデータ列 1 つまで広げた範囲で、下部バーは「1 セル」なのに集計が出ていました。
+- 行が 0 件のときの `selectRange()` / `selectCell()` / `setActiveCell()` は何もしません。これまでは無い 1 行目が選ばれ、`getSelection()` がその行を返していました。
+- 狭い画面で、列メニューの「列の固定」の小メニューが画面の左の外へ出ていたのを、画面の中に収めました(ルートのメニューに重ねて開きます)。狭いグリッド(約 330px 未満)では、セル内検索のバーの入力欄を縮めてグリッドの中に収めます。
+- 下部バーの選択範囲の集計が入りきらないときは、切れる端をぼかします(切れた数字を別の値と読み違えないように)。
+- ツールパネルの並び替えのタブの昇順 / 降順のボタンに、読み上げの名前(`aria-label`)を付けました(日本語は「昇順」/「降順」。これまではボタンの文字の「↑ 昇順」)。
+
 ## 0.63.0 — 2026-11-08
 
 実際にアプリを作って確かめたチェック(`docs/audits/2026-11-07/`)の残り(段階 2 の 22 件)と、DevBI(このライブラリを使うアプリ)からの報告の対応です。初期 JS(gzip)が約 10KB 増えます: 全部入り 約 119.8KB → 130.1KB、`/lite` 機能なし 約 64.6KB → 73.1KB、`/lite` + `standardFeatures` 約 83.7KB → 93.5KB(`/ai` は約 12.4KB のまま)。うち約 3.2KB は依存の `@tanstack/virtual-core` 3.19 のぶんで(「変更」を参照)、これまでの依存の範囲でも新しく入れると入っていたものです。

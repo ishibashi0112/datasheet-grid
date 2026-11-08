@@ -11,11 +11,11 @@ import {
   type GridCellRef,
   type GridColumn,
   type GridDensity,
-  type GridLocaleText,
   type GridMotion,
   type GridTheme,
   type RowSelectionMode,
 } from '@ishibashi0112/spreadsheet-grid';
+import { localeTextEn } from '@ishibashi0112/spreadsheet-grid/locales/en';
 import '@ishibashi0112/spreadsheet-grid/style.css';
 
 type Row = {
@@ -115,30 +115,6 @@ function buildRows(count: number, longNames = false): Row[] {
   return rows;
 }
 
-// バーの文言を英語にするとき(localeText。API リファレンスの「バーの文言」の例と同じ)。
-const ENGLISH_BAR_TEXT: Partial<GridLocaleText> = {
-  rowCount: 'Rows: {shown} / {total}',
-  columnCount: 'Columns: {shown} / {total}',
-  filterSummary: 'Filter: {value}',
-  filterGlobal: '"{text}"',
-  filterColumns: '{count} columns',
-  sortSummary: 'Sort: {value}',
-  sortEntry: '{column} ({direction})',
-  sortAscending: 'asc',
-  sortDescending: 'desc',
-  activeCell: 'Cell {cell}',
-  selection: 'Range {range}',
-  selectionSize: '{cells} cells / {rows} rows',
-  selectedColumns: '{count} columns',
-  aggregateAverage: 'Average',
-  aggregateCount: 'Count',
-  aggregateSum: 'Sum',
-  aggregateComputing: 'Calculating… {percent}%',
-  aggregatePartial: 'Loaded rows only',
-  none: 'none',
-  listSeparator: ', ',
-};
-
 // ラベル行(見出し行)を 20 行ごとに差し込む。見出し行は rows に混在させ、labelRow.isLabelRow で識別する。
 const LABEL_ROW_INTERVAL = 20;
 function insertLabelRows(rows: Row[]): Row[] {
@@ -184,8 +160,8 @@ type Settings = {
   // 2 セル以上を選んだときの平均 / データの個数 / 合計(既定 true)。
   showSelectionAggregates: boolean;
   showFilterChipBar: boolean;
-  // バーの文言を英語に(localeText。既定は日本語)。
-  englishBarText: boolean;
+  // グリッドの文言を英語に(localeText に /locales/en の localeTextEn。既定は日本語)。
+  english: boolean;
   enableSorting: boolean;
   enableColumnFilter: boolean;
   enableGlobalFilter: boolean;
@@ -260,7 +236,7 @@ const DEFAULTS: Settings = {
   showBottomBar: true,
   showSelectionAggregates: true,
   showFilterChipBar: false,
-  englishBarText: false,
+  english: false,
   enableSorting: true,
   enableColumnFilter: true,
   enableGlobalFilter: true,
@@ -320,7 +296,7 @@ function buildSnippet(s: Settings): string {
     // showSelectionAggregates は既定 true のため、OFF のときだけ載せる。
     ...(s.showSelectionAggregates ? [] : ['  showSelectionAggregates={false}']),
     `  showFilterChipBar={${s.showFilterChipBar}}`,
-    ...(s.englishBarText ? ['  localeText={englishBarText} // バーの文言を英語に(中身は API リファレンスの例)'] : []),
+    ...(s.english ? ["  localeText={localeTextEn} // import { localeTextEn } from '@ishibashi0112/spreadsheet-grid/locales/en'"] : []),
     `  enableSorting={${s.enableSorting}}`,
     `  enableColumnFilter={${s.enableColumnFilter}}`,
     `  enableGlobalFilter={${s.enableGlobalFilter}}`,
@@ -616,7 +592,7 @@ function PlaygroundGrid({ settings }: { settings: Settings }) {
         showBottomBar={settings.showBottomBar}
         showSelectionAggregates={settings.showSelectionAggregates}
         showFilterChipBar={settings.showFilterChipBar}
-        localeText={settings.englishBarText ? ENGLISH_BAR_TEXT : undefined}
+        localeText={settings.english ? localeTextEn : undefined}
         autoHeight={settings.autoHeight}
         verticalAlign={settings.verticalAlign === 'unset' ? undefined : settings.verticalAlign}
         enableSorting={settings.enableSorting}
@@ -826,9 +802,9 @@ export function Playground() {
           />
           <Toggle label="showFilterChipBar" checked={settings.showFilterChipBar} onChange={(v) => set('showFilterChipBar', v)} />
           <Toggle
-            label="localeText(バーの文言を英語に)"
-            checked={settings.englishBarText}
-            onChange={(v) => set('englishBarText', v)}
+            label="localeText(グリッドの文言を英語に = localeTextEn)"
+            checked={settings.english}
+            onChange={(v) => set('english', v)}
           />
         </Group>
 

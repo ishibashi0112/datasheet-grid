@@ -26,6 +26,7 @@ import { physicalToLogicalScrollTop } from '@ishibashi0112/spreadsheet-grid-core
 import type { SelectionOverlayRect } from '../SelectionOverlay';
 import type { GridSelection } from '../model/gridTypes';
 import type { FillHandleFeatureArgs, FillHandleFeatureResult, ReactGridFeatures } from './types';
+import { DEFAULT_FILL_HANDLE_LOCALE_TEXT } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/localeTextFeatures';
 
 const useFillHandleFeature = <T,>({
   fillHandle,
@@ -269,4 +270,6 @@ const useFillHandleFeature = <T,>({
 
 export const fillHandleFeature: NonNullable<ReactGridFeatures['fillHandle']> = {
   useFillHandle: useFillHandleFeature,
+  // 追加(英語対応): この機能だけが使う文言の既定(シェルが本体の既定に重ねる)。
+  localeText: DEFAULT_FILL_HANDLE_LOCALE_TEXT,
 };

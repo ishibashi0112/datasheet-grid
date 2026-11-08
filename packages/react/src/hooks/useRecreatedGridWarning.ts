@@ -39,7 +39,10 @@ function useRecreatedGridWarningInDev(trace: GridFactoryTrace | null, rows: unkn
       console.warn(
         '[spreadsheet-grid] createSpreadsheetGrid がコンポーネントの中で呼ばれ、描くたびにグリッドが作り直されています' +
           '(選択・スクロール位置・編集中の値などが毎回消えます)。モジュールの先頭で 1 回だけ呼んでください' +
-          '(モジュールの先頭で呼んでいて、そのファイルを書き換えた直後(HMR)に 1 回だけ出たのなら、書き換えで作り直されたためで問題ありません)。',
+          '(モジュールの先頭で呼んでいて、そのファイルを書き換えた直後(HMR)に 1 回だけ出たのなら、書き換えで作り直されたためで問題ありません)。\n' +
+          '[spreadsheet-grid] createSpreadsheetGrid is called inside a component, so the grid is recreated on every render ' +
+          '(the selection, scroll position and values being edited are lost each time). Call it once at the top level of a module ' +
+          '(if it already is and this appeared once right after editing that file (HMR), it is only the reload and is fine).',
       );
     }
     mountedCounts.set(trace.id, (mountedCounts.get(trace.id) ?? 0) + 1);

@@ -14,6 +14,10 @@ import {
   type GridAskOptions,
   type GridAskRequest,
 } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/gridAsk';
+import {
+  resolveGridAskLocaleText,
+  type GridAskLocaleText,
+} from '@ishibashi0112/spreadsheet-grid-core/internal/logic/gridAskLocaleText';
 import type { GridColumn, GridState } from '../model/gridTypes';
 
 // 型だけの宣言です(利用側のバンドラが process.env.NODE_ENV を文字列へ置き換える。hooks/useUnregisteredFeatureWarnings と同じ)。
@@ -60,6 +64,8 @@ export type UseGridAskOptions<T> = {
   onApply?: (event: GridAskApplyEvent) => void;
   /** ask が失敗したとき(throw / reject)に呼ぶ。止めたときは呼ばない。 */
   onError?: (error: unknown) => void;
+  /** 文言(既定は日本語。英語は `gridAskLocaleTextEn`。一部だけ渡すと残りは既定)。 */
+  localeText?: Partial<GridAskLocaleText>;
 };
 
 /** 最後の頼みの結果です。 */
@@ -107,9 +113,7 @@ type SessionState = {
   applied: GridState;
 };
 
-const ASK_ERROR = 'AI に聞けませんでした。もう一度試してください。';
-const NO_GRID_ERROR = '表が見つかりませんでした。表が出てから、もう一度試してください。';
-const CHANGED_NOTICE = '表の条件が変わったので、ここからは変えられません。表のフィルターや並びで直してください。';
+// 変更(英語対応): 失敗と知らせの文言は文言の表(localeText の askFailed / noGrid / changedNotice)へ移しました。
 // 追加(dogfood DU-08): 反映したあと表が手で変わったかを確かめる間隔(ms)。クリックとキー操作の後にも確かめます。
 const CHANGE_CHECK_INTERVAL_MS = 1000;
 const CHANGE_CHECK_AFTER_INPUT_MS = 400;
@@ -128,6 +132,7 @@ const toAskOptions = <T,>(options: UseGridAskOptions<T>): GridAskOptions<T> => (
   allowSort: options.allowSort,
   allowSearch: options.allowSearch,
   allowColumnVisibility: options.allowColumnVisibility,
+  localeText: options.localeText,
 });
 
 // 隠した列が変わらないときは columns を渡しません(列定義を onColumnsChange で書き直さないため)。
@@ -188,6 +193,7 @@ export function useGridAsk<T>(options: UseGridAskOptions<T>): UseGridAskResult {
   );
 
   const askOptions = toAskOptions(options);
+  const texts = resolveGridAskLocaleText(options.localeText);
   const describe = (state: GridState): GridAskItem[] => describeGridAskView(state, askOptions);
   const columnVisibility = options.allowColumnVisibility ?? false;
 
@@ -203,7 +209,8 @@ export function useGridAsk<T>(options: UseGridAskOptions<T>): UseGridAskResult {
   useEffect(() => {
     if (unknownHintKeys !== '') {
       console.warn(
-        `[spreadsheet-grid] GridAskBar / useGridAsk の columnHints に列に無いキーがあります: ${unknownHintKeys}。列の key と同じ名前にしてください(この補足や \`false\` は効いていません)。`,
+        `[spreadsheet-grid] GridAskBar / useGridAsk の columnHints に列に無いキーがあります: ${unknownHintKeys}。列の key と同じ名前にしてください(この補足や \`false\` は効いていません)。\n` +
+          `[spreadsheet-grid] columnHints of GridAskBar / useGridAsk has keys that are not columns: ${unknownHintKeys}. Use the column keys (these hints and \`false\` have no effect).`,
       );
     }
   }, [unknownHintKeys]);
@@ -230,7 +237,7 @@ export function useGridAsk<T>(options: UseGridAskOptions<T>): UseGridAskResult {
       setSession((current) =>
         current === appliedSession ? { ...current, view: { ...current.view, phase: 'changed' } } : current,
       );
-      setNotice(CHANGED_NOTICE);
+      setNotice(resolveGridAskLocaleText(latestRef.current.localeText).changedNotice);
     };
     const checkSoon = () => {
       if (inputTimer === null) {
@@ -260,7 +267,7 @@ export function useGridAsk<T>(options: UseGridAskOptions<T>): UseGridAskResult {
     }
     const grid = options.grid.current;
     if (grid === null) {
-      setError(NO_GRID_ERROR);
+      setError(texts.noGrid);
       return false;
     }
     const controller = new AbortController();
@@ -280,7 +287,7 @@ export function useGridAsk<T>(options: UseGridAskOptions<T>): UseGridAskResult {
       pendingRef.current = null;
       setStatus('idle');
       latestRef.current.onError?.(caught);
-      setError(ASK_ERROR);
+      setError(texts.askFailed);
       return false;
     }
     // 止めたあとに答えが届いたら捨てます(cancel が状態を戻し済み)。
@@ -294,7 +301,7 @@ export function useGridAsk<T>(options: UseGridAskOptions<T>): UseGridAskResult {
     const latestOptions = toAskOptions(latest);
     const target = latest.grid.current;
     if (target === null) {
-      setError(NO_GRID_ERROR);
+      setError(texts.noGrid);
       return false;
     }
     const before = target.getState();
@@ -344,7 +351,7 @@ export function useGridAsk<T>(options: UseGridAskOptions<T>): UseGridAskResult {
     }
     const now = target.getState();
     if (!isViewUnchanged(now, current.applied, columnVisibility)) {
-      setNotice(CHANGED_NOTICE);
+      setNotice(texts.changedNotice);
       setSession({ ...current, view: { ...current.view, phase: 'changed' } });
       return null;
     }

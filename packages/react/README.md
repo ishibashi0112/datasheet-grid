@@ -48,9 +48,11 @@ export function App() {
 
 More runnable examples (server-side row model, Astryx) are in [`examples/`](https://github.com/ishibashi0112/datasheet-grid/tree/main/examples); each opens in StackBlitz.
 
+**English UI:** the grid's own texts (bars, menus, filters, ARIA labels, messages) default to Japanese. Pass `localeText={localeTextEn}` (`import { localeTextEn } from '@ishibashi0112/spreadsheet-grid/locales/en'`); override single keys with `{ ...localeTextEn, rowCount: '…' }`.
+
 ## Smaller bundles: `/lite` (0.54.0+)
 
-`SpreadsheetGrid` includes every feature (about 130KB gzip of initial JS). The `/lite` entry builds a grid with only the features you pass; the rest is left out of your bundle (about 73KB with no features, about 94KB with the `standardFeatures` preset).
+`SpreadsheetGrid` includes every feature (about 131KB gzip of initial JS). The `/lite` entry builds a grid with only the features you pass; the rest is left out of your bundle (about 74KB with no features, about 94KB with the `standardFeatures` preset).
 
 ```tsx
 import { createSpreadsheetGrid, standardFeatures, serverSideFeature } from '@ishibashi0112/spreadsheet-grid/lite'
@@ -64,7 +66,7 @@ Props, the `ref` handle and types are the same as `SpreadsheetGrid`. Props of fe
 
 ## Natural-language filtering: `/ai` (0.57.0+)
 
-`GridAskBar` from the `/ai` entry turns a sentence ("Tokyo items with 10 or fewer in stock, most expensive first") into the grid's filters, sort, global search and column visibility. The grid never calls an AI: your `ask` function forwards the request to your own server, which calls any model with structured output. Row data is never sent, and every answer is validated, shown as chips and undoable. It is a separate entry (about 12.4KB gzip). Server code for Claude, OpenAI, Gemini and the Vercel AI SDK (AI Gateway) is in the [guide](https://datasheet-grid.vercel.app/docs/guides/ai-filter); the API is in `API_REFERENCE.md` (「ことばで絞り込み」).
+`GridAskBar` from the `/ai` entry turns a sentence ("Tokyo items with 10 or fewer in stock, most expensive first") into the grid's filters, sort, global search and column visibility. The grid never calls an AI: your `ask` function forwards the request to your own server, which calls any model with structured output. Row data is never sent, and every answer is validated, shown as chips and undoable. It is a separate entry (about 13.8KB gzip). Server code for Claude, OpenAI, Gemini and the Vercel AI SDK (AI Gateway) is in the [guide](https://datasheet-grid.vercel.app/docs/guides/ai-filter); the API is in `API_REFERENCE.md` (「ことばで絞り込み」).
 
 ```tsx
 import { GridAskBar } from '@ishibashi0112/spreadsheet-grid/ai'
@@ -101,6 +103,7 @@ This library is new, so AI coding assistants rarely know its API and tend to gue
 - **Imperative API.** Pass `ref` to get a `SpreadsheetGridHandle<T>` (no `forwardRef` needed on your side; works the same on React 18.3 and 19).
 - **Positions are view positions.** `viewRowIndex` / `colIndex` (in `selectCell` and the like) are positions after sorting and filtering, and `colIndex` also counts the columns the grid adds (row drag handle, detail toggle, auto group column). Look them up with `getViewRowIndex(rowKey)` / `getColIndex(columnKey)` instead of `rows.findIndex`.
 - **Next.js App Router.** Render the grid from a Client Component (a file with `'use client'`); the package does not add the directive.
+- **UI language.** The grid's own texts are Japanese by default. For English pass `localeText={localeTextEn}` from `@ishibashi0112/spreadsheet-grid/locales/en` (and `gridAskLocaleTextEn` to `GridAskBar`).
 
 ## Versioning
 
@@ -122,13 +125,15 @@ CSS は `import '@ishibashi0112/spreadsheet-grid/style.css'` を 1 回読み込�
 
 Astryx / Mantine / HeroUI v3 / shadcn/ui の中で使うときは、`style.css` の後にそれぞれのテーマ(`themes/astryx.css` / `themes/mantine.css` / `themes/heroui.css` / `themes/shadcn.css`)を読み込むと、配色がデザインシステムのテーマとライト / ダークに揃います([ガイド](https://datasheet-grid.vercel.app/docs/guides/design-systems))。
 
+グリッドが自分で出す文言(バー・メニュー・フィルター・読み上げの名前・メッセージ)の既定は日本語です。英語にするときは `@ishibashi0112/spreadsheet-grid/locales/en` の `localeTextEn` を `localeText` に渡します(1 つずつ変えるなら `{ ...localeTextEn, rowCount: '…' }`)。
+
 ブラウザで動かせるサンプル(編集できる在庫表 / サーバーサイド行モデル / Astryx)は [`examples/`](https://github.com/ishibashi0112/datasheet-grid/tree/main/examples) にあり、どれも StackBlitz で開けます。
 
 対応ブラウザは Chrome / Edge 111 以降、Firefox 121 以降、Safari 16.4 以降です。
 
 ### バンドルを小さくする: `/lite`(0.54.0 から)
 
-`SpreadsheetGrid` は全機能入りです(初期読み込みの JS が約 130KB gzip)。`/lite` の入口では、渡した機能だけを入れたグリッドを作れます。渡さなかった機能はバンドルに入りません(機能なしで約 73KB、プリセット `standardFeatures` で約 94KB)。
+`SpreadsheetGrid` は全機能入りです(初期読み込みの JS が約 131KB gzip)。`/lite` の入口では、渡した機能だけを入れたグリッドを作れます。渡さなかった機能はバンドルに入りません(機能なしで約 74KB、プリセット `standardFeatures` で約 94KB)。
 
 ```tsx
 import { createSpreadsheetGrid, standardFeatures, serverSideFeature } from '@ishibashi0112/spreadsheet-grid/lite'
@@ -142,7 +147,7 @@ props・`ref` ハンドル・型は `SpreadsheetGrid` と同じです。渡し�
 
 ### ことばで絞り込み: `/ai`(0.57.0 から)
 
-`/ai` の入口の `GridAskBar` は、「東京の在庫が 10 個以下を高い順に」のような文から、グリッドのフィルター・並び・グローバル検索・列の表示を AI に入れさせます。グリッドは AI を呼びません。利用側の `ask` が自分のサーバーへ頼みを送り、サーバーが好きな AI を構造化出力で呼びます。行のデータは送らず、答えはすべて検査してチップで見せ、元に戻せます。別の入口です(約 12.4KB gzip)。Claude・OpenAI・Gemini・Vercel AI SDK(AI Gateway)のサーバー側のコードは[ガイド](https://datasheet-grid.vercel.app/docs/guides/ai-filter)に、API は `API_REFERENCE.md` の「ことばで絞り込み」にあります。
+`/ai` の入口の `GridAskBar` は、「東京の在庫が 10 個以下を高い順に」のような文から、グリッドのフィルター・並び・グローバル検索・列の表示を AI に入れさせます。グリッドは AI を呼びません。利用側の `ask` が自分のサーバーへ頼みを送り、サーバーが好きな AI を構造化出力で呼びます。行のデータは送らず、答えはすべて検査してチップで見せ、元に戻せます。別の入口です(約 13.8KB gzip)。Claude・OpenAI・Gemini・Vercel AI SDK(AI Gateway)のサーバー側のコードは[ガイド](https://datasheet-grid.vercel.app/docs/guides/ai-filter)に、API は `API_REFERENCE.md` の「ことばで絞り込み」にあります。
 
 ```tsx
 import { GridAskBar } from '@ishibashi0112/spreadsheet-grid/ai'
@@ -179,6 +184,7 @@ npm パッケージに同梱されているため、オフライン(`node_module
 - **命令的 API。** `ref` を渡すと `SpreadsheetGridHandle<T>` を受け取れます(利用側で `forwardRef` は不要。React 18.3 / 19 のどちらでも同じ)。
 - **位置は表示の位置。** `selectCell` などの `viewRowIndex` / `colIndex` は並べ替え・絞り込みの後の表示の位置で、`colIndex` は行ドラッグのハンドル列・展開トグル列・自動グループ列(ライブラリが足す列)も数えます。`rows.findIndex` ではなく `getViewRowIndex(rowKey)` / `getColIndex(columnKey)` で引いてください。
 - **Next.js App Router。** クライアントコンポーネント(`'use client'` のファイル)から描画してください。パッケージ側はディレクティブを付けていません。
+- **UI の言語。** グリッドが出す文言の既定は日本語です。英語は `@ishibashi0112/spreadsheet-grid/locales/en` の `localeTextEn` を `localeText` に渡します(`GridAskBar` には `gridAskLocaleTextEn`)。
 
 ### バージョンの方針
 

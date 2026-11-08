@@ -6,6 +6,7 @@ import {
   buildDateTreeRows,
   normalizeDateSetOptions,
 } from './dateFilterTree';
+import { DEFAULT_POPUP_LOCALE_TEXT } from './localeTextPopups';
 
 describe('normalizeDateSetOptions', () => {
   it('表記ゆれ(2026/7/1 等)を同一キーへ集約し、日付昇順 → 非日付 → 空白の順に並べる', () => {
@@ -38,7 +39,7 @@ describe('buildDateTreeRows', () => {
   ]);
 
   it('全て畳み(既定)では年と特殊リーフのみが並ぶ', () => {
-    const rows = buildDateTreeRows(options, new Set());
+    const rows = buildDateTreeRows(options, new Set(), DEFAULT_POPUP_LOCALE_TEXT);
     expect(rows.map((row) => row.key)).toEqual(['y:2025', 'y:2026', 'メモ', '']);
     const year2026 = rows[1];
     expect(year2026?.type).toBe('group');
@@ -55,6 +56,7 @@ describe('buildDateTreeRows', () => {
     const rows = buildDateTreeRows(
       options,
       new Set(['y:2026', 'm:2026-02']),
+      DEFAULT_POPUP_LOCALE_TEXT,
     );
     expect(rows.map((row) => row.key)).toEqual([
       'y:2025',
@@ -78,7 +80,7 @@ describe('buildDateTreeRows', () => {
   });
 
   it('特殊リーフ(空白 / 非日付)はルート直下 depth 0 の末尾に並ぶ', () => {
-    const rows = buildDateTreeRows(options, new Set());
+    const rows = buildDateTreeRows(options, new Set(), DEFAULT_POPUP_LOCALE_TEXT);
     const specials = rows.slice(-2);
     expect(specials.map((row) => [row.type, row.depth, row.label])).toEqual([
       ['leaf', 0, 'メモ'],

@@ -6,6 +6,8 @@ import { cx } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/cx';
 import type { FindSnapshot } from '@ishibashi0112/spreadsheet-grid-core/internal/controllers/findController';
 import type { GridResolvedSlot } from '../model/gridTypes';
 import { isImeComposingKeyEvent } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/domGuards';
+import { useFeatureLocaleText } from '../hooks/useGridLocaleText';
+import type { DEFAULT_FIND_LOCALE_TEXT } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/localeTextFeatures';
 
 type GridFindBarProps = {
   snapshot: FindSnapshot;
@@ -18,6 +20,8 @@ type GridFindBarProps = {
 };
 
 export function GridFindBar({ snapshot, headerHeight, onQueryChange, onNext, onPrev, onClose, slot }: GridFindBarProps) {
+  // 追加(英語対応): 文言(localeText)。
+  const texts = useFeatureLocaleText<typeof DEFAULT_FIND_LOCALE_TEXT>();
   const inputRef = useRef<HTMLInputElement | null>(null);
   // 開いたときに入力へフォーカス(マウント時のみ。再描画では奪わない)。
   useEffect(() => {
@@ -30,9 +34,9 @@ export function GridFindBar({ snapshot, headerHeight, onQueryChange, onNext, onP
     snapshot.query.length === 0
       ? ''
       : snapshot.scanning
-        ? '検索中…'
+        ? texts.findSearching
         : count === 0
-          ? '0 件'
+          ? texts.findNoResults
           : `${(snapshot.currentIndex ?? 0) + 1} / ${count}${snapshot.truncated ? '+' : ''}`;
 
   const handleKeyDown = (event: KeyboardEvent<HTMLInputElement>) => {
@@ -67,7 +71,7 @@ export function GridFindBar({ snapshot, headerHeight, onQueryChange, onNext, onP
       className={cx('ssg-find-bar', slot?.className)}
       style={style}
       role="search"
-      aria-label="セル内検索"
+      aria-label={texts.findLabel}
       // 検索バー内のポインタ操作をグリッド本体(選択開始 / 外側クリック判定)へ伝播させない。
       onPointerDown={(event) => event.stopPropagation()}
       data-ssg-find-bar=""
@@ -83,8 +87,8 @@ export function GridFindBar({ snapshot, headerHeight, onQueryChange, onNext, onP
         className="ssg-find-bar-input"
         type="text"
         value={snapshot.query}
-        placeholder="検索"
-        aria-label="検索文字列"
+        placeholder={texts.findPlaceholder}
+        aria-label={texts.findInput}
         onChange={(event: ChangeEvent<HTMLInputElement>) => onQueryChange(event.target.value)}
         onKeyDown={handleKeyDown}
       />
@@ -94,13 +98,13 @@ export function GridFindBar({ snapshot, headerHeight, onQueryChange, onNext, onP
       >
         {countLabel}
       </span>
-      <button type="button" className="ssg-find-bar-btn" onClick={onPrev} disabled={count === 0} aria-label="前のヒットへ" data-ssg-tooltip="前へ(Shift+Enter)">
+      <button type="button" className="ssg-find-bar-btn" onClick={onPrev} disabled={count === 0} aria-label={texts.findPrevious} data-ssg-tooltip={texts.findPreviousHint}>
         ↑
       </button>
-      <button type="button" className="ssg-find-bar-btn" onClick={onNext} disabled={count === 0} aria-label="次のヒットへ" data-ssg-tooltip="次へ(Enter)">
+      <button type="button" className="ssg-find-bar-btn" onClick={onNext} disabled={count === 0} aria-label={texts.findNext} data-ssg-tooltip={texts.findNextHint}>
         ↓
       </button>
-      <button type="button" className="ssg-find-bar-btn" onClick={onClose} aria-label="検索を閉じる" data-ssg-tooltip="閉じる(Esc)">
+      <button type="button" className="ssg-find-bar-btn" onClick={onClose} aria-label={texts.findClose} data-ssg-tooltip={texts.findCloseHint}>
         ×
       </button>
     </div>

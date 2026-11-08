@@ -52,6 +52,7 @@ import {
 import type { LabelExportLine } from '../logic/exportCsv';
 import type { TotalRowCells } from '../logic/totalRow';
 import { scanInvalidCells } from '../logic/validation';
+import type { ResolvedGridLocaleText } from '../logic/localeText';
 import type { ToolPanelTab } from '../controllers/toolPanelController';
 import { createInertExportCommands, type GridCoreFeatures } from './features';
 
@@ -68,14 +69,20 @@ const warnDroppedStateColumns = (keys: string[]): void => {
   if (process.env.NODE_ENV === 'production') {
     return;
   }
+  const list = keys.map((key) => `\`${key}\``).join(', ');
   console.warn(
-    `[spreadsheet-grid] applyState: 今の列定義(columns)に無い列 ${keys.map((key) => `\`${key}\``).join(', ')} の` +
+    `[spreadsheet-grid] applyState: 今の列定義(columns)に無い列 ${list} の` +
       '列幅 / フィルター / 並べ替えを捨てました。列定義を読み込む前なら、列定義を渡してから applyState を呼んでください。' +
-      '列を消した後の古い保存状態なら、applyState の後の getState() の値を保存し直すと出なくなります。',
+      '列を消した後の古い保存状態なら、applyState の後の getState() の値を保存し直すと出なくなります。\n' +
+      `[spreadsheet-grid] applyState: dropped the widths / filters / sort of ${list}, which are not in the current columns. ` +
+      'If the columns are not loaded yet, pass them before calling applyState. ' +
+      'If the saved state is from before those columns were removed, save getState() again after applyState to stop this warning.',
   );
 };
 
 export type GridApiArgs<T> = {
+  // 追加(英語対応): グリッドの文言(getInvalidCells のメッセージ・エクスポートの小計。未指定は日本語の既定)。
+  localeTexts?: ResolvedGridLocaleText;
   scrollContainerRef: ReadonlyRef<HTMLElement | null>;
   dispatch: (action: GridUiAction) => void;
   rowModel: RowModel<T>;
@@ -288,6 +295,11 @@ export const createGridApi = <T,>(features: Pick<GridCoreFeatures, 'export' | 'g
 
   // 追加(audit B-05): 選択 / アクティブセル API の入力をビュー座標内へクランプします(行は viewRowCount、
   //   列は orderedColumns.length 基準。0 行 / 0 列なら 0)。
+  // 追加(英語対応の確かめ直し): セルが 1 つも無い(0 行 / 0 列)か。0 行のときに selectRange / selectCell / setActiveCell を
+  //   呼ぶと、クランプで無い 1 行目が選ばれ(バーに「F1」「1 セル」)、getSelection() が存在しない行を返していた。
+  const hasNoCells = (s: { viewRowCount: number; orderedColumns: readonly unknown[] }) =>
+    s.viewRowCount <= 0 || s.orderedColumns.length === 0;
+
   const clampCellCoord = (cell: CellCoord): CellCoord => {
     const s = args;
     if (!s) {
@@ -390,6 +402,10 @@ export const createGridApi = <T,>(features: Pick<GridCoreFeatures, 'export' | 'g
       if (!s) {
         return;
       }
+      // セルが無いときは無視します(クリアの null はそのまま)。
+      if (cell && hasNoCells(s)) {
+        return;
+      }
       // 変更(audit B-05): 範囲外 index はビュー座標内へクランプする(API_REFERENCE「範囲外 index は内部で
       //   クランプ / 無視する」との整合。旧実装は reducer へそのまま入り getActiveCell が範囲外を返していた)。
       const inView = cell ? clampCellCoord(cell) : null;
@@ -470,7 +486,7 @@ export const createGridApi = <T,>(features: Pick<GridCoreFeatures, 'export' | 'g
 
     selectCell: (viewRowIndex, colIndex, cellOptions) => {
       const s = args;
-      if (!s) {
+      if (!s || hasNoCells(s)) {
         return;
       }
       const inView = clampCellCoord({ row: viewRowIndex, col: colIndex });
@@ -486,7 +502,7 @@ export const createGridApi = <T,>(features: Pick<GridCoreFeatures, 'export' | 'g
 
     selectRange: (range, rangeOptions) => {
       const s = args;
-      if (!s) {
+      if (!s || hasNoCells(s)) {
         return;
       }
       let start = clampCellCoord(range.start);
@@ -701,7 +717,9 @@ export const createGridApi = <T,>(features: Pick<GridCoreFeatures, 'export' | 'g
         if (process.env.NODE_ENV !== 'production') {
           console.warn(
             '[spreadsheet-grid] applyRows: onRowsChange が無いか serverSide なので、何もしません' +
-              '(serverSide の行はサーバーで変えて refreshServerSide() で取り直してください)。',
+              '(serverSide の行はサーバーで変えて refreshServerSide() で取り直してください)。\n' +
+              '[spreadsheet-grid] applyRows: does nothing without onRowsChange or with serverSide ' +
+              '(change serverSide rows on the server and reload them with refreshServerSide()).',
           );
         }
         return;
@@ -788,11 +806,17 @@ export const createGridApi = <T,>(features: Pick<GridCoreFeatures, 'export' | 'g
         return [];
       }
       if (s.isServerSide) {
-        console.warn('[SpreadsheetGrid] getInvalidCells は serverSide モードでは利用できません(空配列を返します)。');
+        // 変更(英語対応): 開発時だけ警告します(本番の JS から文を除く)。
+        if (process.env.NODE_ENV !== 'production') {
+          console.warn(
+            '[SpreadsheetGrid] getInvalidCells は serverSide モードでは利用できません(空配列を返します)。\n' +
+              '[SpreadsheetGrid] getInvalidCells is not available with serverSide (returns an empty array).',
+          );
+        }
         return [];
       }
       // 変更(dogfood DF-03): ラベル行は検査しません。
-      return scanInvalidCells(s.rows, s.columns, s.resolvedRowKeyGetter, s.labelRowExport?.isLabelRow);
+      return scanInvalidCells(s.rows, s.columns, s.resolvedRowKeyGetter, s.labelRowExport?.isLabelRow, s.localeTexts);
     },
 
     // ── serverSide(SSRM)──
@@ -802,11 +826,15 @@ export const createGridApi = <T,>(features: Pick<GridCoreFeatures, 'export' | 'g
         return;
       }
       if (!s.isServerSide) {
-        console.warn(
-          // 変更(1.0 前の最終チェック FC-33): /lite で serverSide の機能が無いと dataSource を渡しても clientSide になるので、
-          //   その場合も分かる文にします。
-          '[SpreadsheetGrid] refreshServerSide は clientSide(rows)モードでは何もしません。dataSource を渡したときだけ有効です(/lite の createSpreadsheetGrid では features に serverSide: serverSideFeature も要ります)。',
-        );
+        // 変更(英語対応): 開発時だけ警告します(本番の JS から文を除く)。
+        if (process.env.NODE_ENV !== 'production') {
+          console.warn(
+            // 変更(1.0 前の最終チェック FC-33): /lite で serverSide の機能が無いと dataSource を渡しても clientSide になるので、
+            //   その場合も分かる文にします。
+            '[SpreadsheetGrid] refreshServerSide は clientSide(rows)モードでは何もしません。dataSource を渡したときだけ有効です(/lite の createSpreadsheetGrid では features に serverSide: serverSideFeature も要ります)。\n' +
+              '[SpreadsheetGrid] refreshServerSide does nothing with clientSide rows. It works only when dataSource is passed (with /lite createSpreadsheetGrid, features also needs serverSide: serverSideFeature).',
+          );
+        }
         return;
       }
       s.serverSideRefresh();
@@ -817,11 +845,15 @@ export const createGridApi = <T,>(features: Pick<GridCoreFeatures, 'export' | 'g
         return;
       }
       if (!s.isServerSide) {
-        console.warn(
-          // 変更(1.0 前の最終チェック FC-33): /lite で serverSide の機能が無いと dataSource を渡しても clientSide になるので、
-          //   その場合も分かる文にします。
-          '[SpreadsheetGrid] retryServerSideLoads は clientSide(rows)モードでは何もしません。dataSource を渡したときだけ有効です(/lite の createSpreadsheetGrid では features に serverSide: serverSideFeature も要ります)。',
-        );
+        // 変更(英語対応): 開発時だけ警告します(本番の JS から文を除く)。
+        if (process.env.NODE_ENV !== 'production') {
+          console.warn(
+            // 変更(1.0 前の最終チェック FC-33): /lite で serverSide の機能が無いと dataSource を渡しても clientSide になるので、
+            //   その場合も分かる文にします。
+            '[SpreadsheetGrid] retryServerSideLoads は clientSide(rows)モードでは何もしません。dataSource を渡したときだけ有効です(/lite の createSpreadsheetGrid では features に serverSide: serverSideFeature も要ります)。\n' +
+              '[SpreadsheetGrid] retryServerSideLoads does nothing with clientSide rows. It works only when dataSource is passed (with /lite createSpreadsheetGrid, features also needs serverSide: serverSideFeature).',
+          );
+        }
         return;
       }
       s.serverSideRetryFailed();

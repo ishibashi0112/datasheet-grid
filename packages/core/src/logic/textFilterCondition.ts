@@ -2,6 +2,12 @@ import type { ParsedTextFilter } from '../model/gridTypes.unbound';
 // 追加(filter-ext C): 候補連動(条件で Set 候補一覧を絞る)の単一値判定です。
 //   行 predicate(compileParsedTextPredicate)と同一の意味論を共有します。
 import { matchesParsedTextFilter } from './filtering';
+import {
+  DEFAULT_FILTER_LOCALE_TEXT,
+  formatLocaleText,
+  type FilterLocaleText,
+  type FilterOperatorLocaleTextKey,
+} from './localeTextFilters';
 
 // 追加(filter-ext C): textSet(テキスト条件 AND 選択)の条件欄 UI 純ロジックです。
 //   構造は numberFilterCondition.ts(数値版)と同型: popover が構造化 draft(演算子 + 値)を
@@ -29,17 +35,18 @@ export const DEFAULT_TEXT_FILTER_DRAFT: TextFilterConditionDraft = {
   value: '',
 };
 
-// 演算子セレクトの表示順とラベルです(日本語 — 合意済み)。
+// 演算子セレクトの表示順とラベルです。
+// 変更(英語対応): ラベルは文言の表のキーにしました(列フィルターが localeText から引く)。
 export const TEXT_FILTER_OPERATOR_OPTIONS: ReadonlyArray<{
   value: TextFilterOperator;
-  label: string;
+  labelKey: FilterOperatorLocaleTextKey;
 }> = [
-  { value: 'contains', label: 'を含む' },
-  { value: 'equals', label: 'に等しい' },
-  { value: 'startsWith', label: 'で始まる' },
-  { value: 'endsWith', label: 'で終わる' },
-  { value: 'blank', label: '空白' },
-  { value: 'notBlank', label: '空白でない' },
+  { value: 'contains', labelKey: 'operatorContains' },
+  { value: 'equals', labelKey: 'operatorEquals' },
+  { value: 'startsWith', labelKey: 'operatorStartsWith' },
+  { value: 'endsWith', labelKey: 'operatorEndsWith' },
+  { value: 'blank', labelKey: 'operatorBlank' },
+  { value: 'notBlank', labelKey: 'operatorNotBlank' },
 ];
 
 // 演算子で値入力の有無が決まります(空白系 = 0 / 他 = 1)。
@@ -64,20 +71,24 @@ export const buildParsedTextFilterFromDraft = (
 
 // parsed を人間可読の表示文字列へ整形します(チップ / 管理パネル / popover サマリーに
 //   そのまま出ます)。演算子ラベルとの対応を保つこと。
-export const formatParsedTextFilter = (parsed: ParsedTextFilter): string => {
+// 変更(英語対応): 文言を任意で受けます(既定 = 日本語)。
+export const formatParsedTextFilter = (
+  parsed: ParsedTextFilter,
+  texts: FilterLocaleText = DEFAULT_FILTER_LOCALE_TEXT,
+): string => {
   switch (parsed.mode) {
     case 'contains':
-      return `"${parsed.value}" を含む`;
+      return formatLocaleText(texts.conditionContains, { value: parsed.value });
     case 'equals':
-      return `"${parsed.value}" に等しい`;
+      return formatLocaleText(texts.conditionEquals, { value: `"${parsed.value}"` });
     case 'startsWith':
-      return `"${parsed.value}" で始まる`;
+      return formatLocaleText(texts.conditionStartsWith, { value: parsed.value });
     case 'endsWith':
-      return `"${parsed.value}" で終わる`;
+      return formatLocaleText(texts.conditionEndsWith, { value: parsed.value });
     case 'blank':
-      return '(空白)';
+      return texts.conditionBlank;
     case 'notBlank':
-      return '(空白でない)';
+      return texts.conditionNotBlank;
   }
 };
 

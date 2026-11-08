@@ -61,13 +61,15 @@ export function Inventory() {
 - **位置は表示の位置。** `selectCell` などの `viewRowIndex` / `colIndex` は並べ替え・絞り込みの後の表示の位置で、`colIndex` はライブラリが足す列(行ドラッグのハンドル列など)も数えます。`rows.findIndex` ではなく `getViewRowIndex(rowKey)` / `getColIndex(columnKey)` で引きます。行を足してすぐ編集するときは `startEditing(viewRowIndex, colIndex)`、モーダルを閉じた後にキーを戻すときは `focus()`。
 - **Next.js App Router。** グリッドは `'use client'` のファイルから描画します。
 - **改行を含む値の列は `editor: { type: 'text', multiline: true }`。** 既定の 1 行の入力欄はブラウザが改行を消すので、直して確定すると改行が無くなります。改行どおりに表示するのは `autoHeight` の列だけです。
+- **UI の言語。** グリッドが出す文言(バー・メニュー・フィルター・読み上げの名前・メッセージ)の既定は日本語です。英語にするときは `@ishibashi0112/spreadsheet-grid/locales/en` の `localeTextEn` を `localeText` に渡します(1 つずつ変えるなら `{ ...localeTextEn, rowCount: '…' }`。値に関数を入れる表はコンポーネントの外で作るか `useMemo` で包む)。`GridAskBar` には同じ入口の `gridAskLocaleTextEn` を渡します。どちらも関数を含むので、Next.js ではサーバーコンポーネントから props で渡さず、`'use client'` のファイルで import します。
 - **行のクラスは行と各セルの両方に付く。** `getRowClassName` の class と style は行・「#」セル・各セルに付きます。行を薄くするなら class を返して `.ssg-body-row.<class> { opacity: 0.5 }` と書きます(style や素のクラスで `opacity` を書くと 2 回掛かります)。
 
 ## 4. 入口の選び方
 
-- `@ishibashi0112/spreadsheet-grid` の `SpreadsheetGrid`: 全部入り(初期 JS 約 130KB gzip)。迷ったらこれ。
-- `@ishibashi0112/spreadsheet-grid/lite` の `createSpreadsheetGrid`: 使う機能だけを入れる(機能なしで約 73KB、`standardFeatures` で約 94KB)。モジュールの先頭で 1 回だけ作ります。部品の名前は「キー + `Feature`」です(例: `{ ...standardFeatures, serverSide: serverSideFeature }`)。`standardFeatures` は `filtering` / `columnMenu` / `toolPanel` / `columnAutosize` / `export`。足りない機能は開発時に `console.warn` が名指しします。全部入りと同じアプリで混ぜると共通部分が二重に入るので、どちらかの入口に揃えます。
+- `@ishibashi0112/spreadsheet-grid` の `SpreadsheetGrid`: 全部入り(初期 JS 約 131KB gzip)。迷ったらこれ。
+- `@ishibashi0112/spreadsheet-grid/lite` の `createSpreadsheetGrid`: 使う機能だけを入れる(機能なしで約 74KB、`standardFeatures` で約 94KB)。モジュールの先頭で 1 回だけ作ります。部品の名前は「キー + `Feature`」です(例: `{ ...standardFeatures, serverSide: serverSideFeature }`)。`standardFeatures` は `filtering` / `columnMenu` / `toolPanel` / `columnAutosize` / `export`。足りない機能は開発時に `console.warn` が名指しします。全部入りと同じアプリで混ぜると共通部分が二重に入るので、どちらかの入口に揃えます。
 - `@ishibashi0112/spreadsheet-grid/ai`: `GridAskBar`(ことばで絞り込み。利用者の文から AI がフィルター・並び・検索を入れる)。グリッドの上に置いて `grid` に ref を渡します。AI は利用側の `ask`(自分のサーバー経由。API キーをブラウザに置かない)で呼び、行のデータは送りません。
+- `@ishibashi0112/spreadsheet-grid/locales/en`: 英語の文言 `localeTextEn`(グリッドの `localeText` へ)と `gridAskLocaleTextEn`(`GridAskBar` の `localeText` へ)。
 - `@ishibashi0112/spreadsheet-grid/testing`: jsdom のテストで行と列を描画させる `installJsdomLayoutStubs()`。
 - 型は React 版から import します(`GridColumn` / `SpreadsheetGridHandle` など)。コアの `@ishibashi0112/spreadsheet-grid-core` を React のアプリで直接使う必要はありません。コアのサブパス(`@ishibashi0112/spreadsheet-grid-core/internal/…` と旧 `…-core/<dir>/<module>`)は内部の部品で、どの版でも変わるので import しません。
 
@@ -88,6 +90,7 @@ export function Inventory() {
 | スクロール・選択・undo をコードから | 「命令的 API」 |
 | 右クリックメニュー、セルのクリックの通知 | 「コンテキストメニュー」「セル操作の通知」 |
 | 見た目(クラス・色・デザインシステム) | 「パーツ別スロット」「デザインシステムのテーマ」「スタイリング用の状態クラス」 |
+| 英語の UI・文言を変える | 「文言(`localeText`)と英語」「AI バーの文言(`localeText`)」 |
 | 文から絞り込み・並べ替え(AI) | 「ことばで絞り込み」 |
 | 機能を絞って小さくする | 「機能を選んで組み込む」 |
 | jsdom でのテスト | 「テスト支援」 |

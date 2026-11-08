@@ -10,6 +10,12 @@
 import { useState, type ReactNode } from 'react';
 import { createSaveStatusController } from '@ishibashi0112/spreadsheet-grid-core/internal/controllers/saveStatusController';
 import { cx } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/cx';
+import { formatLocaleText, type ResolvedGridLocaleText } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/localeText';
+// 追加(英語対応): サーバーの機能だけが使う文言(既定は localeTextServerSide.ts。機能の localeText でシェルが埋める)。
+import { DEFAULT_SERVER_SIDE_LOCALE_TEXT } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/localeTextFeatures';
+import type { FeatureLocaleText } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/localeText';
+
+type ServerSideTexts = FeatureLocaleText<typeof DEFAULT_SERVER_SIDE_LOCALE_TEXT>;
 import {
   useServerSideRowModel,
   type ServerSideLoadErrorState,
@@ -37,7 +43,8 @@ const useServerSide = <T,>(args: ServerSideFeatureArgs<T>): ServerSideFeatureRes
   // 変更(SSRM 書き戻し): 保存失敗バー(writeError)と同時表示できるよう、絶対配置を
   //   縦積みコンテナ(.ssg-ssrm-error-bars)へ移しました(単独表示の見た目は従来と同一)。
   // 変更(差し込み式 段階 5): シェルの JSX から移しました(シェルが isServerSide のときだけ呼ぶ)。
-  const renderErrorBars = (errorBarSlot: GridResolvedSlots['errorBar']): ReactNode =>
+  // 変更(英語対応): 文言はシェルから受けます。
+  const renderErrorBars = (errorBarSlot: GridResolvedSlots['errorBar'], texts: ResolvedGridLocaleText): ReactNode =>
     ((result.loadError !== null &&
       result.loadError !== dismissedLoadError) ||
       (result.writeError !== null &&
@@ -52,20 +59,19 @@ const useServerSide = <T,>(args: ServerSideFeatureArgs<T>): ServerSideFeatureRes
             >
               <span className="ssg-ssrm-error-bar-dot" aria-hidden="true" />
               <span className="ssg-ssrm-error-bar-msg">
-                行の取得に失敗しました(
-                {result.loadError.failedBlockCount} ブロック)
+                {formatLocaleText((texts as ServerSideTexts).loadFailed, { count: result.loadError.failedBlockCount })}
               </span>
               <button
                 type="button"
                 className="ssg-ssrm-error-bar-retry"
                 onClick={result.retryFailedBlocks}
               >
-                再試行
+                {texts.retry}
               </button>
               <button
                 type="button"
                 className="ssg-ssrm-error-bar-close"
-                aria-label="エラー通知を閉じる"
+                aria-label={(texts as ServerSideTexts).dismissLoadError}
                 onClick={() => setDismissedLoadError(result.loadError)}
               >
                 ×
@@ -84,13 +90,12 @@ const useServerSide = <T,>(args: ServerSideFeatureArgs<T>): ServerSideFeatureRes
             >
               <span className="ssg-ssrm-error-bar-dot" aria-hidden="true" />
               <span className="ssg-ssrm-error-bar-msg">
-                変更の保存に失敗しました(
-                {result.writeError.failedRowCount} 行)。値を元に戻しました
+                {formatLocaleText((texts as ServerSideTexts).saveFailed, { count: result.writeError.failedRowCount })}
               </span>
               <button
                 type="button"
                 className="ssg-ssrm-error-bar-close"
-                aria-label="保存エラー通知を閉じる"
+                aria-label={(texts as ServerSideTexts).dismissSaveError}
                 onClick={() => setDismissedWriteError(result.writeError)}
               >
                 ×
@@ -106,4 +111,6 @@ const useServerSide = <T,>(args: ServerSideFeatureArgs<T>): ServerSideFeatureRes
 export const serverSideFeature: NonNullable<ReactGridFeatures['serverSide']> = {
   createSaveStatusController,
   useServerSide,
+  // 追加(英語対応): この機能だけが使う文言の既定(シェルが本体の既定に重ねる)。
+  localeText: DEFAULT_SERVER_SIDE_LOCALE_TEXT,
 };
