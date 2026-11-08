@@ -2858,6 +2858,14 @@ export function useGridShell<T extends object>({
   const editingColumn = uiState.editingCell
     ? orderedColumns[uiState.editingCell.col]
     : undefined;
+  // 追加(段階 2 の確かめ直し N3-2): 編集中のセルが上にそろえて描かれているか(GridBodyLayer の alignTop と同じ条件)。
+  //   複数行のエディタの 1 行目をセルの文字にそろえるのに使います。
+  const editorAlignTop =
+    editingColumn !== undefined &&
+    editingCellPlacement !== null &&
+    autoHeightActive &&
+    editingCellPlacement.rect.height > rowHeight &&
+    (editingColumn.verticalAlign ?? verticalAlign ?? (editingColumn.autoHeight === true ? 'top' : 'center')) === 'top';
 
   // 追加(editor: select): 編集中セルのセッション情報(行 / ビュー座標 / 生値)です。
   //   CellEditorLayer へ渡し、select の動的 options 解決・初期ハイライトに使います(編集中のみ非 null)。
@@ -4420,6 +4428,7 @@ export function useGridShell<T extends object>({
                   align={editingColumn?.align}
                   enterMove={editorEnterMove}
                   domId={cellEditorDomId}
+                  alignTop={editorAlignTop}
                 />
 
                 <GridBodyLayer
@@ -4641,6 +4650,7 @@ export function useGridShell<T extends object>({
                   align={editingColumn?.align}
                   enterMove={editorEnterMove}
                   domId={cellEditorDomId}
+                  alignTop={editorAlignTop}
                 />
 
                 <GridBodyLayer
@@ -4863,6 +4873,7 @@ export function useGridShell<T extends object>({
                   align={editingColumn?.align}
                   enterMove={editorEnterMove}
                   domId={cellEditorDomId}
+                  alignTop={editorAlignTop}
                 />
 
                 <GridBodyLayer

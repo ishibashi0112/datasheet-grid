@@ -139,6 +139,42 @@ import { open, check, summary, waitIdle, unexpectedPageErrors, header, cell } fr
   await waitIdle(page, 100);
   const opened = await page.evaluate(() => document.querySelector('textarea.ssg-cell-editor-input')?.value ?? null);
   check('DU-14: F2 opens a textarea with the line break kept', opened === 'A\nB', JSON.stringify(opened));
+  // N3-2: 1 行目の位置をセルの文字にそろえる(背の高い行 = 上にそろえたセル、1 行の行 = 真ん中のセル)。違いは枠線の 2px まで。
+  //   これまでは背の高い行で余白 6px が足され、文字が 8px 下、入力欄はセルより約 15px 高かった。
+  const alignment = (row) =>
+    page.evaluate((row) => {
+      const ta = document.querySelector('textarea.ssg-cell-editor-input');
+      const cell = document.querySelector(`[data-pane="center"].ssg-body-row[data-row-index="${row}"] .ssg-body-cell[data-ssg-col-key="note"]`);
+      const content = cell?.querySelector('[data-autoheight-content]');
+      if (!ta || !cell || !content) return null;
+      const taTop = ta.getBoundingClientRect().top + ta.clientTop + parseFloat(getComputedStyle(ta).paddingTop);
+      return {
+        textOffset: Math.round((taTop - content.getBoundingClientRect().top) * 10) / 10,
+        extraHeight: Math.round(ta.getBoundingClientRect().height - cell.getBoundingClientRect().height),
+      };
+    }, row);
+  const tallAlign = await alignment(0);
+  check(
+    'N3-2: in a tall row the multiline editor puts its first line where the cell text is (within the 2px border)',
+    tallAlign !== null && Math.abs(tallAlign.textOffset) <= 2.5 && tallAlign.extraHeight <= 4,
+    tallAlign,
+  );
+  await page.keyboard.press('Escape');
+  await waitIdle(page, 100);
+  await noteCell(1).click();
+  await page.keyboard.press('F2');
+  await waitIdle(page, 100);
+  const singleAlign = await alignment(1);
+  check(
+    'N3-2: in a one-line row the multiline editor keeps the first line centered like the cell',
+    singleAlign !== null && Math.abs(singleAlign.textOffset) <= 2.5 && singleAlign.extraHeight <= 0,
+    singleAlign,
+  );
+  await page.keyboard.press('Escape');
+  await waitIdle(page, 100);
+  await noteCell(0).click();
+  await page.keyboard.press('F2');
+  await waitIdle(page, 100);
   await page.keyboard.press('End');
   await page.keyboard.press('Control+End');
   await page.keyboard.press('Alt+Enter');

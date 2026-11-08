@@ -37,6 +37,8 @@ type TextCellEditorProps = {
   // 追加(段階 2 の確かめ直し N2-2): 列の wordBreak / lineBreak(複数行の入力欄でもセルと同じ位置で折り返す)。
   wordBreak?: string;
   lineBreak?: string;
+  // 追加(段階 2 の確かめ直し N3-2): 編集中のセルが上にそろえて描かれているか(背の高い行の auto-height の列など)。
+  alignTop?: boolean;
 };
 
 // 追加(段階 2 DU-14): 複数行の入力欄の 1 行の高さが読めないとき(line-height: normal など)の値です。
@@ -44,11 +46,24 @@ type TextCellEditorProps = {
 //   余白の計算には実際の値を読みます(これまでは 20px 固定で、行の間隔 24px のページでは開くと行が詰まって見えた)。
 const FALLBACK_LINE_HEIGHT = 20;
 
-// 追加(段階 2 DU-14): 複数行の入力欄の高さを中身に合わせます。下限はセルの高さ、上限は表の見える範囲の下端まで
-//   (超える分は入力欄の中でスクロール)。上下の余白は 1 行の値が基準の行の高さ(36px)の真ん中に来る量(最大 6px。背の高いセルでも 1 行目は上の近く)。
-const fitMultilineEditor = (textarea: HTMLTextAreaElement, cellHeight: number) => {
+// 追加(段階 2 の確かめ直し N3-2): 複数行の入力欄の上下の余白です。1 行目をセルの文字にそろえる量で、上にそろえたセルは 0、
+//   真ん中にそろえたセルは開いたときの中身の高さをセルの真ん中に置く量(4 は上下の枠線 2px × 2)。これまでは 1 行の値を
+//   基準の行の高さの真ん中に置く量(最大 6px)で、背の高い行では文字がセルより下へずれ、入力欄もその分セルより高くなっていました。
+const resolveMultilinePadding = (textarea: HTMLTextAreaElement, cellHeight: number, alignTop: boolean): number => {
+  if (alignTop) {
+    return 0;
+  }
+  textarea.style.paddingTop = '0px';
+  textarea.style.paddingBottom = '0px';
+  textarea.style.height = '0px';
   const lineHeight = Number.parseFloat(getComputedStyle(textarea).lineHeight) || FALLBACK_LINE_HEIGHT;
-  const padding = Math.max(0, Math.min(6, Math.floor((cellHeight - 4 - lineHeight) / 2)));
+  const textHeight = Math.max(textarea.scrollHeight, lineHeight);
+  return Math.max(0, Math.floor((cellHeight - 4 - textHeight) / 2));
+};
+
+// 追加(段階 2 DU-14): 複数行の入力欄の高さを中身に合わせます。下限はセルの高さ、上限は表の見える範囲の下端まで
+//   (超える分は入力欄の中でスクロール)。上下の余白は resolveMultilinePadding で決めた量(打っている間は変えない)。
+const fitMultilineEditor = (textarea: HTMLTextAreaElement, cellHeight: number, padding: number) => {
   textarea.style.paddingTop = `${padding}px`;
   textarea.style.paddingBottom = `${padding}px`;
   textarea.style.height = `${cellHeight}px`;
@@ -74,11 +89,15 @@ export function TextCellEditor({
   cellHeight = 0,
   wordBreak,
   lineBreak,
+  alignTop = false,
 }: TextCellEditorProps) {
   const inputRef = useRef<HTMLInputElement | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
   // 追加(段階 2 DU-14): 改行を入れた後に置くキャレットの位置(execCommand が使えないときの代わりの入れ方で使う)。
   const pendingCaretRef = useRef<number | null>(null);
+  // 追加(段階 2 の確かめ直し N3-2): 複数行の入力欄の上下の余白(セルの高さと揃え方ごとに開いたときに 1 回だけ決める。
+  //   打っている間に変えると、改行を入れたときに文字が上下へ動くため)。
+  const multilinePaddingRef = useRef<{ key: string; padding: number } | null>(null);
   const [draftValue, setDraftValue] = useState(initialValue);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
@@ -88,13 +107,17 @@ export function TextCellEditor({
     if (!multiline || !textarea) {
       return;
     }
-    fitMultilineEditor(textarea, cellHeight);
+    const paddingKey = `${cellHeight}:${alignTop}`;
+    if (multilinePaddingRef.current?.key !== paddingKey) {
+      multilinePaddingRef.current = { key: paddingKey, padding: resolveMultilinePadding(textarea, cellHeight, alignTop) };
+    }
+    fitMultilineEditor(textarea, cellHeight, multilinePaddingRef.current.padding);
     const caret = pendingCaretRef.current;
     if (caret !== null) {
       pendingCaretRef.current = null;
       textarea.setSelectionRange(caret, caret);
     }
-  }, [multiline, cellHeight, draftValue]);
+  }, [multiline, cellHeight, alignTop, draftValue]);
 
   // マウント時(= 編集セッション開始時)に自動フォーカスし、末尾へキャレット移動します。
   useEffect(() => {

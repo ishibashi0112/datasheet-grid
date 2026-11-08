@@ -90,6 +90,8 @@ type CellEditorLayerProps<T> = {
   enterMove?: EditorEnterMove;
   // 追加(見直し): 開いているときの枠の DOM id(編集中のセルが aria-owns で子に持つ)。
   domId?: string;
+  // 追加(段階 2 の確かめ直し N3-2): 編集中のセルが上にそろえて描かれているか(複数行のエディタの 1 行目をセルの文字にそろえる)。
+  alignTop?: boolean;
 };
 
 // 追加: 編集中セルの上にエディタを重ねる editor layer です。
@@ -112,6 +114,7 @@ export function CellEditorLayer<T>({
   align,
   enterMove,
   domId,
+  alignTop,
 }: CellEditorLayerProps<T>) {
   // 変更(editor 基盤): 「新しい編集セッションの開始」検知を、ドラフト直接リセットから
   //   sessionId カウンタ + key 再マウントへ置き換えました。rect の null → 非 null 遷移を
@@ -271,6 +274,7 @@ export function CellEditorLayer<T>({
         // 追加(段階 2 の確かめ直し N2-2): 複数行の入力欄もセルと同じ位置で折り返します。
         wordBreak={editorSession?.column.wordBreak}
         lineBreak={editorSession?.column.lineBreak}
+        alignTop={alignTop}
       />
     );
   }

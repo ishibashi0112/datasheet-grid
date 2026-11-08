@@ -228,6 +228,34 @@ describe('複数行のエディタ(DU-14)', () => {
     }
   });
 
+  // 追加(段階 2 の 3 回目の確かめ直し N3-2): 背の高い行(上にそろえたセル)でも余白が 6px で、文字がセルより下へずれ、入力欄も
+  //   その分セルより高くなっていた。上にそろえたセルは余白 0、真ん中にそろえたセルは中身をセルの真ん中に置く量。
+  //   jsdom のレイアウトスタブでは auto-height の行は 600px(基準の 36px より高い)、1 行の高さは読めないので 20px。
+  it('背の高い行の上にそろえたセルでは上下の余白 0、真ん中にそろえたセルでは中身を真ん中に置く量', () => {
+    const tallColumns = (verticalAlign?: 'top' | 'center'): GridColumn<Row>[] =>
+      makeColumns().map((column) =>
+        column.key === 'memo' ? { ...column, autoHeight: true, ...(verticalAlign ? { verticalAlign } : {}) } : column,
+      );
+    const openTall = (columns: GridColumn<Row>[]) => {
+      const ref = createRef<SpreadsheetGridHandle<Row>>();
+      const utils = render(
+        <SpreadsheetGrid ref={ref} columns={columns} rows={initialRows} rowKeyGetter={(row) => row.id} autoHeight />,
+      );
+      act(() => {
+        ref.current?.setActiveCell({ row: 0, col: 1 });
+      });
+      fireEvent.keyDown(utils.container.querySelector<HTMLElement>('.ssg-shell')!, { key: 'F2' });
+      return utils;
+    };
+    const top = openTall(tallColumns());
+    expect(textarea(top.container)?.style.paddingTop).toBe('0px');
+    expect(textarea(top.container)?.style.paddingBottom).toBe('0px');
+    cleanup();
+    const center = openTall(tallColumns('center'));
+    // (600 - 枠 4 - 20) / 2 = 288px
+    expect(textarea(center.container)?.style.paddingTop).toBe('288px');
+  });
+
   it('multiline を付けない text 列は今までどおり 1 行の入力欄', () => {
     const { container } = open(makeColumns(undefined, false));
     expect(textarea(container)).toBeNull();
