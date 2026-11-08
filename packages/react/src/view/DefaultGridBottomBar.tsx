@@ -1,6 +1,10 @@
-import type { GridLocaleText, GridSelectionAggregates, SpreadsheetGridDerivedSummary } from '../model/gridTypes';
+import type { GridSelectionAggregates, SpreadsheetGridDerivedSummary } from '../model/gridTypes';
 import { cx } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/cx';
-import { DEFAULT_GRID_LOCALE_TEXT, formatLocaleText } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/localeText';
+import {
+  DEFAULT_GRID_LOCALE_TEXT,
+  formatLocaleText,
+  type ResolvedGridLocaleText,
+} from '@ishibashi0112/spreadsheet-grid-core/internal/logic/localeText';
 import type { GridResolvedSlot } from '../model/gridTypes';
 import type { GridSelectionAggregates as GridSelectionAggregatesView } from './GridSelectionAggregates';
 
@@ -16,7 +20,7 @@ type DefaultGridBottomBarProps = {
   // 変更(差し込み式 段階 2): 集計の表示部品(機能 features/selectionAggregates から。無ければ出さない)。
   SelectionAggregates?: typeof GridSelectionAggregatesView;
   // 追加(段階 2 DU-18): 文言(未指定は既定の日本語)。
-  localeTexts?: Readonly<GridLocaleText>;
+  localeTexts?: ResolvedGridLocaleText;
 };
 
 // 追加: Grid 下部の既定ステータスバーです。

@@ -8,6 +8,7 @@
 //     同じ)です。count と formatter の無い列の数値は下部バーの集計(選択範囲の合計・平均・個数)と同じ書式
 //     (浮動小数の誤差を丸め、小数は 4 桁まで、桁区切りあり)です。
 import type { GridAggFunc, GridColumn, TotalRowCellKind } from '../model/gridTypes.unbound';
+import type { GridLocaleText } from '../model/gridTypes.core';
 import { getCellValue } from '../utils/permissions';
 import {
   accumulateBuiltinAgg,
@@ -20,7 +21,7 @@ import type { RowOrder } from './filtering';
 import { ROW_DRAG_HANDLE_COLUMN_KEY } from './rowReorder';
 import { formatSelectionAggregateNumber } from './selectionAggregates';
 
-export const TOTAL_ROW_DEFAULT_LABEL = '合計';
+// 変更(英語対応): 合計行のラベルの既定は文言の表(localeText の totalRowLabel)へ移しました。
 
 // 合計行 1 セルぶんの値と種別です(値のない列は Map に入りません)。
 export type TotalRowCell = { value: unknown; kind: TotalRowCellKind };
@@ -38,15 +39,20 @@ export type TotalRowInputs<T> = {
 };
 
 // 合計・カスタム・values 以外の集計は、値の前に種類を小さく出します。
-const TOTAL_ROW_CAPTIONS: Readonly<Partial<Record<TotalRowCellKind, string>>> = {
-  avg: '平均',
-  min: '最小',
-  max: '最大',
-  count: '個数',
-};
+// 変更(英語対応): 文言は文言の表から(localeText の totalAverage / totalMin / totalMax / totalCount)。
+const TOTAL_ROW_CAPTION_KEYS = {
+  avg: 'totalAverage',
+  min: 'totalMin',
+  max: 'totalMax',
+  count: 'totalCount',
+} as const satisfies Partial<Record<TotalRowCellKind, keyof GridLocaleText>>;
 
-export const resolveTotalRowCaption = (kind: TotalRowCellKind): string | undefined =>
-  TOTAL_ROW_CAPTIONS[kind];
+export type TotalRowCaptionLocaleText = Pick<GridLocaleText, 'totalAverage' | 'totalMin' | 'totalMax' | 'totalCount'>;
+
+export const resolveTotalRowCaption = (kind: TotalRowCellKind, texts: TotalRowCaptionLocaleText): string | undefined => {
+  const key = (TOTAL_ROW_CAPTION_KEYS as Partial<Record<TotalRowCellKind, keyof TotalRowCaptionLocaleText>>)[kind];
+  return key === undefined ? undefined : texts[key];
+};
 
 const hasOwn = (record: Readonly<Record<string, unknown>>, key: string): boolean =>
   Object.prototype.hasOwnProperty.call(record, key);

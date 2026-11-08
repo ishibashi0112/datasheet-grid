@@ -10,8 +10,15 @@ import { matchesParsedDateFilter, toDateKey } from './filtering';
 import {
   BUILTIN_DATE_FILTER_PRESET_OPTIONS,
   dateFilterPresetLabel,
+  type FilterLocaleTextKeyOfPreset,
   type NormalizedDateFilterPreset,
 } from './dateFilterPresets';
+import {
+  DEFAULT_FILTER_LOCALE_TEXT,
+  formatLocaleText,
+  type FilterLocaleText,
+  type FilterOperatorLocaleTextKey,
+} from './localeTextFilters';
 
 // 追加(filter-ext D): dateSet(日付条件 AND 選択)の条件欄 UI 純ロジックです。
 //   構造は numberFilterCondition / textFilterCondition と同型ですが、次の 2 点が固有です。
@@ -47,18 +54,19 @@ export const DEFAULT_DATE_FILTER_DRAFT: DateFilterConditionDraft = {
   preset: null,
 };
 
-// 演算子セレクトの表示順とラベルです(日本語 — 合意済み)。
+// 演算子セレクトの表示順とラベルです。
+// 変更(英語対応): ラベルは文言の表のキーにしました(列フィルターが localeText から引く)。
 export const DATE_FILTER_OPERATOR_OPTIONS: ReadonlyArray<{
   value: DateFilterOperator;
-  label: string;
+  labelKey: FilterOperatorLocaleTextKey;
 }> = [
-  { value: 'range', label: '範囲' },
-  { value: 'onOrAfter', label: '以降' },
-  { value: 'onOrBefore', label: '以前' },
-  { value: 'equals', label: 'に等しい' },
-  { value: 'notEquals', label: 'に等しくない' },
-  { value: 'blank', label: '空白' },
-  { value: 'notBlank', label: '空白でない' },
+  { value: 'range', labelKey: 'operatorBetween' },
+  { value: 'onOrAfter', labelKey: 'operatorOnOrAfter' },
+  { value: 'onOrBefore', labelKey: 'operatorOnOrBefore' },
+  { value: 'equals', labelKey: 'operatorEquals' },
+  { value: 'notEquals', labelKey: 'operatorNotEquals' },
+  { value: 'blank', labelKey: 'operatorBlank' },
+  { value: 'notBlank', labelKey: 'operatorNotBlank' },
 ];
 
 // 相対プリセットチップの表示順とラベルです。
@@ -66,7 +74,7 @@ export const DATE_FILTER_OPERATOR_OPTIONS: ReadonlyArray<{
 //   共有するため)。既存参照の互換用に同名 export を残します。
 export const DATE_FILTER_PRESET_OPTIONS: ReadonlyArray<{
   value: DateFilterPreset;
-  label: string;
+  labelKey: FilterLocaleTextKeyOfPreset;
 }> = BUILTIN_DATE_FILTER_PRESET_OPTIONS;
 
 // 演算子で値入力の個数が決まります(範囲 = 2 / 空白系 = 0 / 他 = 1)。
@@ -138,27 +146,29 @@ export const buildParsedDateFilterFromDraft = (
 // parsed を人間可読の表示文字列へ整形します(チップ / 管理パネル / popover サマリー)。
 // 変更(preset-opt): カスタムプリセットのラベルを引くため、正規化済み構成を任意で受けます
 //   (未指定 = ビルトインのみ。未知 ID は生 ID 表示のフォールバック)。
+// 変更(英語対応): 文言を任意で受けます(既定 = 日本語)。
 export const formatParsedDateFilter = (
   parsed: ParsedDateFilter,
   presets?: readonly NormalizedDateFilterPreset[],
+  texts: FilterLocaleText = DEFAULT_FILTER_LOCALE_TEXT,
 ): string => {
   switch (parsed.mode) {
     case 'range':
-      return `${parsed.from} 〜 ${parsed.to}`;
+      return formatLocaleText(texts.conditionRange, { min: parsed.from, max: parsed.to });
     case 'onOrAfter':
-      return `${parsed.value} 以降`;
+      return formatLocaleText(texts.conditionOnOrAfter, { value: parsed.value });
     case 'onOrBefore':
-      return `${parsed.value} 以前`;
+      return formatLocaleText(texts.conditionOnOrBefore, { value: parsed.value });
     case 'equals':
-      return `${parsed.value} に等しい`;
+      return formatLocaleText(texts.conditionEquals, { value: parsed.value });
     case 'notEquals':
-      return `${parsed.value} に等しくない`;
+      return formatLocaleText(texts.conditionNotEquals, { value: parsed.value });
     case 'blank':
-      return '(空白)';
+      return texts.conditionBlank;
     case 'notBlank':
-      return '(空白でない)';
+      return texts.conditionNotBlank;
     case 'preset':
-      return dateFilterPresetLabel(parsed.preset, presets);
+      return dateFilterPresetLabel(parsed.preset, presets, texts);
   }
 };
 

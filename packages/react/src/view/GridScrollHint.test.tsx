@@ -4,7 +4,10 @@
 //   「スクロール中フラグ」だけは実イベント(fireEvent.scroll)+ fake timers で検証します。
 // @vitest-environment jsdom
 import { describe, it, expect, vi, beforeAll, afterEach } from 'vitest';
-import { render, cleanup, act, fireEvent } from '@testing-library/react';
+import { render as renderBase, cleanup, act, fireEvent } from '@testing-library/react';
+import type { ReactElement, ReactNode } from 'react';
+import { GridLocaleTextContext, mergeFeatureLocaleDefaults } from '../hooks/useGridLocaleText';
+import { fullGridFeatures } from '../features/full';
 import { useRef } from 'react';
 
 import { GridScrollHint } from './GridScrollHint';
@@ -14,6 +17,15 @@ import type { ResolvedScrollHintOptions } from '@ishibashi0112/spreadsheet-grid-
 import { createUniformRowMetrics } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/verticalGeometry';
 import type { RowModel, ScrollHintOptions } from '../model/gridTypes';
 import type { ReactGridTypes } from '../model/gridTypes';
+
+// 追加(英語対応): 機能だけが使う文言(列メニュー・チップ・スクロールの吹き出しなど)は、シェルが機能の既定を重ねて
+//   context で渡します。部品だけを描くテストでは全部入りの機能セットの既定を渡します。
+const fullLocaleTexts = mergeFeatureLocaleDefaults(fullGridFeatures);
+const FeatureLocaleTextWrapper = ({ children }: { children: ReactNode }) => (
+  <GridLocaleTextContext.Provider value={fullLocaleTexts}>{children}</GridLocaleTextContext.Provider>
+);
+const render = (ui: ReactElement) => renderBase(ui, { wrapper: FeatureLocaleTextWrapper });
+
 
 // jsdom には ResizeObserver が無い(GridScrollHint がマウント時に new する)ため最小スタブを
 //   入れます。observe は no-op(コールバックを呼ばない)なのでスクロールバー幅は初期値 0 の

@@ -1,9 +1,16 @@
 // 追加(選択範囲の集計)/ 変更(差し込み式 段階 2): 既定の下部バー(DefaultGridBottomBar)に出す選択範囲の集計です。
 //   DefaultGridBottomBar から移しただけで中身は同じです(機能 features/selectionAggregates の部品)。
-import type { GridLocaleText, GridSelectionAggregates as GridSelectionAggregatesValue } from '../model/gridTypes';
+import type { GridSelectionAggregates as GridSelectionAggregatesValue } from '../model/gridTypes';
 import { cx } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/cx';
 import { formatSelectionAggregateNumber } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/selectionAggregates';
-import { DEFAULT_GRID_LOCALE_TEXT, formatLocaleText } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/localeText';
+import {
+  DEFAULT_GRID_LOCALE_TEXT,
+  formatLocaleText,
+  type FeatureLocaleText,
+  type ResolvedGridLocaleText,
+} from '@ishibashi0112/spreadsheet-grid-core/internal/logic/localeText';
+// 追加(英語対応): 選択範囲の集計の機能だけが使う文言(既定は localeTextAggregates.ts。機能の localeText でシェルが埋める)。
+import type { DEFAULT_AGGREGATES_LOCALE_TEXT } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/localeTextFeatures';
 
 // 追加(選択範囲の集計): Excel のステータスバーと同じ「平均 / データの個数 / 合計」を並べます。
 //   数値が 1 つも無い(文字だけ)ときは「データの個数」だけ、空のセルだけのときは何も出しません。
@@ -13,17 +20,18 @@ import { DEFAULT_GRID_LOCALE_TEXT, formatLocaleText } from '@ishibashi0112/sprea
 export function GridSelectionAggregates({
   aggregates,
   trailing,
-  localeTexts = DEFAULT_GRID_LOCALE_TEXT,
+  localeTexts: localeTextsInput = DEFAULT_GRID_LOCALE_TEXT,
 }: {
   aggregates: GridSelectionAggregatesValue | null | undefined;
   // 右グループの後ろ(件数なし)なら true: 区切り線を先頭に、中身を左寄せにします。
   trailing: boolean;
   // 追加(段階 2 DU-18): 文言(未指定は既定の日本語)。
-  localeTexts?: Readonly<GridLocaleText>;
+  localeTexts?: ResolvedGridLocaleText;
 }) {
   if (!aggregates) {
     return null;
   }
+  const localeTexts = localeTextsInput as FeatureLocaleText<typeof DEFAULT_AGGREGATES_LOCALE_TEXT>;
   const chips: { key: string; text: string; label?: string; value?: string; muted?: boolean }[] = [];
   if (aggregates.status === 'computing') {
     chips.push({

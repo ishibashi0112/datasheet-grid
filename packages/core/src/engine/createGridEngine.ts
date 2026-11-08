@@ -203,15 +203,19 @@ const resolveInitialUiState = (
       warnedInitialStates.add(initialState);
     }
     if (dropped.length > 0) {
+      const list = dropped.map((key) => `\`${key}\``).join(', ');
       console.warn(
-        `[spreadsheet-grid] initialState: 今の列定義(columns)に無い列 ${dropped.map((key) => `\`${key}\``).join(', ')} の` +
-          '列幅 / フィルター / 並べ替えを捨てました。',
+        `[spreadsheet-grid] initialState: 今の列定義(columns)に無い列 ${list} の` +
+          '列幅 / フィルター / 並べ替えを捨てました。\n' +
+          `[spreadsheet-grid] initialState: dropped the widths / filters / sort of ${list}, which are not in the current columns.`,
       );
     }
     if (patch.columns !== undefined && !isSameColumnLayout(patch.columns, columns)) {
       console.warn(
         '[spreadsheet-grid] initialState の columns(列の並び / 表示 / 固定)が columns prop と違いますが、使いません。' +
-          'columns prop で決めてください(マウントの後に変えるなら applyState)。',
+          'columns prop で決めてください(マウントの後に変えるなら applyState)。\n' +
+          '[spreadsheet-grid] initialState.columns (order / visibility / pinning) differs from the columns prop and is not used. ' +
+          'Set them in the columns prop (use applyState to change them after mounting).',
       );
     }
   }

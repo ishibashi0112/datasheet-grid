@@ -23,6 +23,7 @@ import { useCallback, useMemo, useRef, useState } from 'react';
 import { cx } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/cx';
 import type { PointerEvent } from 'react';
 import type { GridSortEntry } from '../model/gridTypes';
+import { usePopupLocaleText } from '../hooks/usePopupLocaleText';
 
 // 追加(MS-3-1): パネルが必要とする最小の列情報です(並び替え可能な列のみを渡します)。
 export type SortManagementColumn = {
@@ -86,6 +87,7 @@ export function SortManagementPanel({
   onClearAll,
   onMove,
 }: SortManagementPanelProps) {
+  const texts = usePopupLocaleText();
   // 既に並び替えに使われている列キーの集合です(列セレクトの候補絞り込みに使います)。
   const usedKeys = useMemo(
     () => new Set(entries.map((entry) => entry.columnKey)),
@@ -210,7 +212,7 @@ export function SortManagementPanel({
       {/* ── レベル一覧(スクロール) ── */}
       <div ref={listRef} className="ssg-sort-list">
         {entries.length === 0 ? (
-          <div className="ssg-sort-empty">並び替えは設定されていません</div>
+          <div className="ssg-sort-empty">{texts.sortPanelEmpty}</div>
         ) : (
           entries.map((entry, index) => {
             // この行の列セレクト候補: 自分の列 + 他レベルで未使用の列。
@@ -245,13 +247,13 @@ export function SortManagementPanel({
                 {/* ⠿ ドラッグハンドル(MS-3-2) */}
                 <span
                   role="button"
-                  aria-label="ドラッグして優先順位を変更"
+                  aria-label={texts.sortPanelDrag}
                   data-ssg-tooltip={
                     !canSort
-                      ? '並び替えが無効です'
+                      ? texts.sortPanelDisabled
                       : entries.length < 2
-                        ? 'レベルが 2 件以上のとき並べ替えできます'
-                        : 'ドラッグして優先順位を変更'
+                        ? texts.sortPanelNeedsTwo
+                        : texts.sortPanelDrag
                   }
                   onPointerDown={(event) =>
                     handleHandlePointerDown(index, event)
@@ -293,25 +295,25 @@ export function SortManagementPanel({
                     type="button"
                     disabled={!canSort}
                     onClick={() => onChangeDirection(index, 'asc')}
-                    data-ssg-tooltip="昇順"
+                    data-ssg-tooltip={texts.sortPanelAscending}
                     className={cx(
                       'ssg-sort-dir-btn',
                       entry.direction === 'asc' && 'ssg-sort-dir-btn--active',
                     )}
                   >
-                    ↑ 昇順
+                    ↑ {texts.sortPanelAscending}
                   </button>
                   <button
                     type="button"
                     disabled={!canSort}
                     onClick={() => onChangeDirection(index, 'desc')}
-                    data-ssg-tooltip="降順"
+                    data-ssg-tooltip={texts.sortPanelDescending}
                     className={cx(
                       'ssg-sort-dir-btn',
                       entry.direction === 'desc' && 'ssg-sort-dir-btn--active',
                     )}
                   >
-                    ↓ 降順
+                    ↓ {texts.sortPanelDescending}
                   </button>
                 </div>
 
@@ -320,8 +322,8 @@ export function SortManagementPanel({
                   type="button"
                   disabled={!canSort}
                   onClick={() => onRemoveLevel(index)}
-                  aria-label="このレベルを削除"
-                  data-ssg-tooltip="このレベルを削除"
+                  aria-label={texts.sortPanelRemove}
+                  data-ssg-tooltip={texts.sortPanelRemove}
                   className="ssg-sort-delete"
                 >
                   ×
@@ -349,14 +351,14 @@ export function SortManagementPanel({
           }}
           data-ssg-tooltip={
             !canSort
-              ? '並び替えが無効です'
+              ? texts.sortPanelDisabled
               : firstUnusedColumn === null
-                ? 'すべての列が並び替えに使われています'
-                : '並び替えの基準を追加します'
+                ? texts.sortPanelAllUsed
+                : texts.sortPanelAddHint
           }
           className="ssg-sort-footer-btn ssg-sort-footer-btn--add"
         >
-          ＋ 基準を追加
+          {texts.sortPanelAdd}
         </button>
 
         <button
@@ -368,16 +370,16 @@ export function SortManagementPanel({
             }
             onClearAll();
           }}
-          data-ssg-tooltip="すべての並び替えを解除します"
+          data-ssg-tooltip={texts.sortPanelClearHint}
           className="ssg-sort-footer-btn ssg-sort-footer-btn--clear"
         >
-          すべてクリア
+          {texts.clearAll}
         </button>
       </div>
 
       {!canSort && (
         <div className="ssg-sort-note">
-          並び替えが無効のため編集できません
+          {texts.sortPanelReadOnly}
         </div>
       )}
     </>

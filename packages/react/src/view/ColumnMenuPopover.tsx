@@ -25,19 +25,22 @@ import type { GridColumnPinned, GridSortDirection } from '../model/gridTypes';
 import type { ColumnMenuLayout } from '../hooks/useColumnMenuController';
 import type { GridResolvedSlots } from '../model/gridTypes';
 import { usePortalTokens } from '../hooks/usePortalTokens';
+import { useFeatureLocaleText } from '../hooks/useGridLocaleText';
+import type { DEFAULT_COLUMN_MENU_LOCALE_TEXT } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/localeTextFeatures';
 
 type ColumnMenuPinnedItem = {
   // 注記: undefined = 固定なし(中央スクロール領域)です。
   value: GridColumnPinned | undefined;
-  label: string;
+  // 変更(英語対応): 名前は文言(localeText)のキー。
+  label: 'menuPinNone' | 'menuPinLeft' | 'menuPinRight';
 };
 
 // 変更(13-A2): 項目順を AG Grid の Pin Column サブメニュー
 //             (No Pin / Pin Left / Pin Right)に合わせます。
 const PINNED_ITEMS: ColumnMenuPinnedItem[] = [
-  { value: undefined, label: '固定しない' },
-  { value: 'left', label: '左に固定' },
-  { value: 'right', label: '右に固定' },
+  { value: undefined, label: 'menuPinNone' },
+  { value: 'left', label: 'menuPinLeft' },
+  { value: 'right', label: 'menuPinRight' },
 ];
 
 // 追加(13-A2): サブメニューの幅と、ルートメニューとの水平間隔です。
@@ -145,6 +148,8 @@ export function ColumnMenuPopover({
   onUngroup,
   onRequestClose,
 }: ColumnMenuPopoverProps) {
+  // 追加(英語対応): 文言(localeText)。
+  const texts = useFeatureLocaleText<typeof DEFAULT_COLUMN_MENU_LOCALE_TEXT>();
   // 変更(13-B1): isPinSubmenuOpen: boolean → openSubmenuKey: string | null へ一般化します
   //             (13-A2 セッションの設計決定どおり)。
   //   - サブメニューを持つルート項目: onPointerEnter で setOpenSubmenuKey(自分の key)
@@ -259,7 +264,7 @@ export function ColumnMenuPopover({
             style={slots?.menuItem?.style}
           >
             <span className="ssg-menu-icon" />
-            <span className="ssg-menu-label">フィルター…</span>
+            <span className="ssg-menu-label">{texts.menuFilter}</span>
           </button>
 
           <div className="ssg-menu-separator" />
@@ -305,7 +310,7 @@ export function ColumnMenuPopover({
                 sortDirection === 'asc' && 'ssg-menu-label--sorted',
               )}
             >
-              昇順で並び替え
+              {texts.menuSortAscending}
             </span>
           </button>
 
@@ -334,7 +339,7 @@ export function ColumnMenuPopover({
                 sortDirection === 'desc' && 'ssg-menu-label--sorted',
               )}
             >
-              降順で並び替え
+              {texts.menuSortDescending}
             </span>
           </button>
 
@@ -359,7 +364,7 @@ export function ColumnMenuPopover({
               style={slots?.menuItem?.style}
             >
               <span className="ssg-menu-icon" />
-              <span className="ssg-menu-label">並び替えを管理…</span>
+              <span className="ssg-menu-label">{texts.menuManageSort}</span>
             </button>
           )}
         </>
@@ -387,7 +392,7 @@ export function ColumnMenuPopover({
             style={slots?.menuItem?.style}
         >
           <span className="ssg-menu-icon" />
-          <span className="ssg-menu-label">フィルターを管理…</span>
+          <span className="ssg-menu-label">{texts.menuManageFilters}</span>
         </button>
       )}
 
@@ -410,7 +415,7 @@ export function ColumnMenuPopover({
           style={slots?.menuItem?.style}
         >
           <span className="ssg-menu-icon" />
-          <span className="ssg-menu-label">この列でグループ化</span>
+          <span className="ssg-menu-label">{texts.menuGroupBy}</span>
         </button>
       )}
       {onUngroup && (
@@ -426,7 +431,7 @@ export function ColumnMenuPopover({
           style={slots?.menuItem?.style}
         >
           <span className="ssg-menu-icon" />
-          <span className="ssg-menu-label">グループ化を外す</span>
+          <span className="ssg-menu-label">{texts.menuUngroup}</span>
         </button>
       )}
       {(onGroupByColumn || onUngroup) && <div className="ssg-menu-separator" />}
@@ -459,7 +464,7 @@ export function ColumnMenuPopover({
         >
           {/* 注記: ✓ 列との左端揃えのため、サブメニュー項目と同じ幅のスペーサを置きます。*/}
           <span className="ssg-menu-icon" />
-          <span className="ssg-menu-label">列の固定</span>
+          <span className="ssg-menu-label">{texts.menuPin}</span>
           <span className="ssg-menu-caret">›</span>
         </button>
 
@@ -501,15 +506,13 @@ export function ColumnMenuPopover({
                   >
                     ✓
                   </span>
-                  <span className="ssg-menu-label">{item.label}</span>
+                  <span className="ssg-menu-label">{texts[item.label]}</span>
                 </button>
               );
             })}
 
             {!canChangePinned && (
-              <div className="ssg-menu-note">
-                onColumnsChange 未指定のため固定状態を変更できません
-              </div>
+              <div className="ssg-menu-note">{texts.menuPinUnavailable}</div>
             )}
           </div>
         )}
@@ -537,7 +540,7 @@ export function ColumnMenuPopover({
           >
             {/* 注記: ✓ 列との左端揃え用スペーサです(ピン行と同じ幅)。*/}
             <span className="ssg-menu-icon" />
-            <span className="ssg-menu-label">この列の幅を自動調整</span>
+            <span className="ssg-menu-label">{texts.menuAutosize}</span>
           </button>
 
           <button
@@ -552,7 +555,7 @@ export function ColumnMenuPopover({
                 style={slots?.menuItem?.style}
           >
             <span className="ssg-menu-icon" />
-            <span className="ssg-menu-label">すべての列の幅を自動調整</span>
+            <span className="ssg-menu-label">{texts.menuAutosizeAll}</span>
           </button>
         </>
       )}
@@ -575,7 +578,7 @@ export function ColumnMenuPopover({
           style={slots?.menuItem?.style}
         >
           <span className="ssg-menu-icon" />
-          <span className="ssg-menu-label">列の表示</span>
+          <span className="ssg-menu-label">{texts.menuColumns}</span>
         </button>
       )}
 
@@ -589,8 +592,8 @@ export function ColumnMenuPopover({
         tabIndex={canResetColumns ? 0 : -1}
         data-ssg-tooltip={
           canResetColumns
-            ? 'すべての列の幅・固定・表示・並び順を初期状態に戻します'
-            : 'onColumnsChange 未指定のため列をリセットできません'
+            ? texts.resetColumnsHint
+            : texts.menuResetUnavailable
         }
         onPointerEnter={() => {
           setOpenSubmenuKey(null);
@@ -610,7 +613,7 @@ export function ColumnMenuPopover({
         style={slots?.menuItem?.style}
       >
         <span className="ssg-menu-icon" />
-        <span className="ssg-menu-label">列のリセット</span>
+        <span className="ssg-menu-label">{texts.menuResetColumns}</span>
       </button>
 
       <div className="ssg-menu-footer">
@@ -619,7 +622,7 @@ export function ColumnMenuPopover({
           onClick={onRequestClose}
           className="ssg-menu-close-btn"
         >
-          閉じる
+          {texts.close}
         </button>
       </div>
     </div>,

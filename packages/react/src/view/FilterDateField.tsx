@@ -18,15 +18,14 @@ import {
 import { cx } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/cx';
 import { toDateKey } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/filtering';
 import {
-  CALENDAR_DOW_LABELS,
-  CALENDAR_MONTH_LABELS,
   buildCalendarDayCells,
   buildYearGrid,
-  formatCalendarTitle,
   formatFilterDateDisplay,
   yearGridStart,
 } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/datePickerCalendar';
 import { isImeComposingKeyEvent } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/domGuards';
+import { usePopupLocaleText } from '../hooks/usePopupLocaleText';
+import { formatLocaleText } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/localeText';
 
 // ドリルアップの表示段です(日 → 月 → 年)。
 type CalendarView = 'days' | 'months' | 'years';
@@ -53,6 +52,7 @@ export function FilterDateField({
   onRequestClose,
   align = 'left',
 }: FilterDateFieldProps) {
+  const texts = usePopupLocaleText();
   // 編集中テキストです。null = 未編集(表示は value 由来)。編集開始で raw を保持し、
   //   確定(commit)で null へ戻します(props 同期の effect を持たないための導出パターン)。
   const [editingText, setEditingText] = useState<string | null>(null);
@@ -218,9 +218,9 @@ export function FilterDateField({
 
   const navTitle =
     view === 'days'
-      ? formatCalendarTitle(visibleYear, visibleMonth)
+      ? formatLocaleText(texts.calendarTitle, { year: visibleYear, month: visibleMonth + 1 })
       : view === 'months'
-        ? `${visibleYear}年`
+        ? formatLocaleText(texts.calendarYear, { year: visibleYear })
         : `${yearGridStart(visibleYear)} – ${yearGridStart(visibleYear) + 11}`;
 
   return (
@@ -251,7 +251,7 @@ export function FilterDateField({
         <button
           type="button"
           className="ssg-dp-cal-btn"
-          aria-label={panelOpen ? 'カレンダーを閉じる' : 'カレンダーを開く'}
+          aria-label={panelOpen ? texts.calendarClose : texts.calendarOpen}
           {...pressHandler(() => {
             if (panelOpen) {
               closePanel();
@@ -288,7 +288,7 @@ export function FilterDateField({
             <button
               type="button"
               className="ssg-dp-nav-btn"
-              aria-label="前へ"
+              aria-label={texts.calendarPrevious}
               {...pressHandler(() => stepVisible(-1))}
             >
               ‹
@@ -298,7 +298,7 @@ export function FilterDateField({
               className="ssg-dp-nav-title"
               // 年ビューが最上段のため、これ以上のドリルアップはありません。
               disabled={view === 'years'}
-              aria-label="表示単位を切り替える"
+              aria-label={texts.calendarChangeView}
               {...pressHandler(drillUp)}
             >
               {navTitle}
@@ -306,7 +306,7 @@ export function FilterDateField({
             <button
               type="button"
               className="ssg-dp-nav-btn"
-              aria-label="次へ"
+              aria-label={texts.calendarNext}
               {...pressHandler(() => stepVisible(1))}
             >
               ›
@@ -316,9 +316,9 @@ export function FilterDateField({
           {view === 'days' && (
             <>
               <div className="ssg-dp-dow">
-                {CALENDAR_DOW_LABELS.map((label, index) => (
+                {texts.calendarWeekdays.map((label, index) => (
                   <span
-                    key={label}
+                    key={index}
                     className={cx(
                       index === 0 && 'ssg-dp-dow--sun',
                       index === 6 && 'ssg-dp-dow--sat',
@@ -353,9 +353,9 @@ export function FilterDateField({
 
           {view === 'months' && (
             <div className="ssg-dp-grid">
-              {CALENDAR_MONTH_LABELS.map((label, monthIndex) => (
+              {texts.calendarMonths.map((label, monthIndex) => (
                 <button
-                  key={label}
+                  key={monthIndex}
                   type="button"
                   className={cx(
                     'ssg-dp-cell',
@@ -401,7 +401,7 @@ export function FilterDateField({
                 className="ssg-dp-foot-btn"
                 {...pressHandler(drillDown)}
               >
-                ← 戻る
+                {texts.calendarBack}
               </button>
             )}
             <button
@@ -409,14 +409,14 @@ export function FilterDateField({
               className="ssg-dp-foot-btn"
               {...pressHandler(() => commitAndClose(todayKey))}
             >
-              今日
+              {texts.calendarToday}
             </button>
             <button
               type="button"
               className="ssg-dp-foot-btn ssg-dp-foot-btn--muted"
               {...pressHandler(() => commitAndClose(''))}
             >
-              クリア
+              {texts.clear}
             </button>
           </div>
         </div>

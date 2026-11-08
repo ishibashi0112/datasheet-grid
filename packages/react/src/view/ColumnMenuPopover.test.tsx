@@ -2,10 +2,22 @@
 // 追加(差し込み式 段階 3): ツールパネルを開く 3 項目を省いた構成(ツールパネルの機能なし)の項目と区切り。
 // @vitest-environment jsdom
 import { describe, it, expect, afterEach } from 'vitest';
-import { render, cleanup } from '@testing-library/react';
+import { render as renderBase, cleanup } from '@testing-library/react';
+import type { ReactElement, ReactNode } from 'react';
+import { GridLocaleTextContext, mergeFeatureLocaleDefaults } from '../hooks/useGridLocaleText';
+import { fullGridFeatures } from '../features/full';
 import { createRef, type ComponentProps } from 'react';
 
 import { ColumnMenuPopover } from './ColumnMenuPopover';
+
+// 追加(英語対応): 機能だけが使う文言(列メニュー・チップ・スクロールの吹き出しなど)は、シェルが機能の既定を重ねて
+//   context で渡します。部品だけを描くテストでは全部入りの機能セットの既定を渡します。
+const fullLocaleTexts = mergeFeatureLocaleDefaults(fullGridFeatures);
+const FeatureLocaleTextWrapper = ({ children }: { children: ReactNode }) => (
+  <GridLocaleTextContext.Provider value={fullLocaleTexts}>{children}</GridLocaleTextContext.Provider>
+);
+const render = (ui: ReactElement) => renderBase(ui, { wrapper: FeatureLocaleTextWrapper });
+
 
 afterEach(() => {
   cleanup();

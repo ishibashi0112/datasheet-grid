@@ -22,6 +22,9 @@ import type {
 import type { GridFillKind } from '../model/gridTypes';
 import type { SelectionOverlayRect } from '../SelectionOverlay';
 import { usePortalTokens } from '../hooks/usePortalTokens';
+import { useFeatureLocaleText } from '../hooks/useGridLocaleText';
+import type { DEFAULT_FILL_HANDLE_LOCALE_TEXT } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/localeTextFeatures';
+import { formatLocaleText } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/localeText';
 
 // 描画部品が使うコントローラの面(行の型 T に依らない部分だけ)。
 type FillUiController = Pick<
@@ -103,6 +106,8 @@ export function FillOptionsChip({
   chipRef: RefObject<HTMLButtonElement | null>;
   controller: FillUiController;
 }) {
+  // 追加(英語対応): 文言(localeText)。
+  const texts = useFeatureLocaleText<typeof DEFAULT_FILL_HANDLE_LOCALE_TEXT>();
   if (!position) {
     return null;
   }
@@ -118,10 +123,10 @@ export function FillOptionsChip({
       className={cx('ssg-fill-options', menuOpen && 'ssg-fill-options--open')}
       style={style}
       data-ssg-fill-options=""
-      aria-label={kind === 'series' ? 'オートフィル オプション(連続データ)' : 'オートフィル オプション(セルのコピー)'}
+      aria-label={formatLocaleText(texts.fillOptionsCurrent, { kind: kind === 'series' ? texts.fillSeries : texts.fillCopy })}
       aria-haspopup="menu"
       aria-expanded={menuOpen}
-      title="オートフィル オプション"
+      title={texts.fillOptions}
       onPointerDown={(event) => {
         // フォーカスをグリッドに残します(ボタンの祖先にセルは無いため選択は始まらない)。伝播は止めません
         //   (開いている別のポップオーバーの「外側の押下で閉じる」へ届かせる。自分のメニューはボタンを内側とみなす)。
@@ -154,9 +159,10 @@ export function FillOptionsChip({
   );
 }
 
-const MENU_ITEMS: { kind: GridFillKind; label: string }[] = [
-  { kind: 'series', label: '連続データ' },
-  { kind: 'copy', label: 'セルのコピー' },
+// 変更(英語対応): 名前は文言(localeText の fillSeries / fillCopy)。
+const MENU_ITEMS: { kind: GridFillKind; label: 'fillSeries' | 'fillCopy' }[] = [
+  { kind: 'series', label: 'fillSeries' },
+  { kind: 'copy', label: 'fillCopy' },
 ];
 
 // 連続データ / セルのコピーを選ぶメニュー(ポータル)。開いたら選ばれている項目へフォーカスします。
@@ -175,6 +181,8 @@ export function FillOptionsMenu({
   panelRef: RefObject<HTMLDivElement | null>;
   controller: FillUiController;
 }) {
+  // 追加(英語対応): 文言(localeText)。
+  const texts = useFeatureLocaleText<typeof DEFAULT_FILL_HANDLE_LOCALE_TEXT>();
   useEffect(() => {
     panelRef.current?.querySelector<HTMLButtonElement>('[aria-checked="true"]')?.focus({ preventScroll: true });
   }, [panelRef]);
@@ -200,7 +208,7 @@ export function FillOptionsMenu({
     <div
       ref={panelRef}
       role="menu"
-      aria-label="オートフィル オプション"
+      aria-label={texts.fillOptions}
       className={cx('ssg-menu-panel', 'ssg-fill-menu', themeClassName)}
       style={{ position: 'fixed', top: layout.top, left: layout.left, zIndex: 1000 }}
       onPointerDown={(event) => event.stopPropagation()}
@@ -221,7 +229,7 @@ export function FillOptionsMenu({
             onClick={() => controller.chooseKind(item.kind)}
           >
             <span className="ssg-menu-icon ssg-fill-menu-check">{checked ? '✓' : ''}</span>
-            <span className="ssg-menu-label">{item.label}</span>
+            <span className="ssg-menu-label">{texts[item.label]}</span>
           </button>
         );
       })}

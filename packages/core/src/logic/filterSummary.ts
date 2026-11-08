@@ -7,6 +7,8 @@ import { formatParsedTextFilter } from './textFilterCondition';
 import { formatParsedDateFilter } from './dateFilterCondition';
 // 追加(preset-opt): dateSet カスタムプリセットのラベル逆引き用の正規形です。
 import { normalizeDateFilterPresets, type NormalizedDateFilterPreset } from './dateFilterPresets';
+// 追加(英語対応): 要約の文言(localeText の一部。既定 = 日本語)。
+import { DEFAULT_FILTER_LOCALE_TEXT, formatLocaleText, type FilterLocaleText } from './localeTextFilters';
 
 // 追加(FM-1 / フィルター管理パネル): 列フィルター値(判別共用体)を人間可読な要約文字列へ
 //   変換する純関数です。FilterManagementPanel の一覧行で使い、FM-2(フィルターチップバー)
@@ -32,13 +34,18 @@ export type ColumnFilterDescribeOptions = {
   labelOf?: (value: string) => string | undefined;
   // 数値の条件(number / numberSet)の数値 → 表示(列の valueFormatter)。
   formatNumber?: (value: number) => string;
+  // 追加(英語対応): 要約の文言(未指定 = 日本語の既定)。
+  texts?: FilterLocaleText;
 };
 
 // set の値表示です。空文字セル値は「(空白)」と表示します(セル値の String 化で空になった
 //   値も候補として選択できる仕様のため、無表示だと「", "」のような欠けた列挙になります)。
 // 変更(dogfood DU-07): ラベルがあればラベルを出します(これまでは「"mansion"」と値が出ていた)。
-const formatSetValue = (value: string, labelOf?: (value: string) => string | undefined): string =>
-  value === '' ? '(空白)' : `"${labelOf?.(value) ?? value}"`;
+const formatSetValue = (
+  value: string,
+  labelOf: ((value: string) => string | undefined) | undefined,
+  texts: FilterLocaleText,
+): string => (value === '' ? texts.blank : `"${labelOf?.(value) ?? value}"`);
 
 // 追加(別視点のレビュー): numberSet の選択のキー(数を String にしたもの)に数値の書き方を当てます。読めないキーは undefined。
 const formatNumericKey = (key: string, formatNumber: ((value: number) => string) | undefined): string | undefined => {
@@ -54,16 +61,17 @@ const formatNumericKey = (key: string, formatNumber: ((value: number) => string)
 const describeSetSelection = (
   mode: 'include' | 'exclude' | undefined,
   values: string[],
-  labelOf?: (value: string) => string | undefined,
+  labelOf: ((value: string) => string | undefined) | undefined,
+  texts: FilterLocaleText,
 ): string => {
   // mode 省略は include 扱いです(反転set 導入前の値との後方互換)。
   if ((mode ?? 'include') === 'exclude') {
-    return `${values.length} 件を除外`;
+    return formatLocaleText(texts.filterExcluded, { count: values.length });
   }
   if (values.length > 0 && values.length <= 2) {
-    return values.map((value) => formatSetValue(value, labelOf)).join(', ');
+    return values.map((value) => formatSetValue(value, labelOf, texts)).join(', ');
   }
-  return `${values.length} 件を選択`;
+  return formatLocaleText(texts.filterSelected, { count: values.length });
 };
 
 // 追加(dogfood DU-07): 列から要約の表し方を作ります。
@@ -72,7 +80,11 @@ const describeSetSelection = (
 //     真偽値の列の 'false' を渡すと真として「有効」になっていました(列フィルターのポップオーバーの候補も値のまま)。
 //   - 数値: valueFormatter があれば当てます(「100000 以下」→「100,000 以下」。行は無いので row は undefined。
 //     例外や空の文字列は値のまま)。numberSet の選択は、数として読めるキーだけ数にして当てます。
-export const createColumnFilterDescribeOptions = <T,>(column: GridColumn<T>): ColumnFilterDescribeOptions => {
+// 変更(英語対応): 要約の文言を任意で受けます(dateSet のプリセットのラベルにも使う)。
+export const createColumnFilterDescribeOptions = <T,>(
+  column: GridColumn<T>,
+  texts: FilterLocaleText = DEFAULT_FILTER_LOCALE_TEXT,
+): ColumnFilterDescribeOptions => {
   const labels = new Map<string, string>();
   const editorOptions = column.editor?.type === 'select' && Array.isArray(column.editor.options) ? column.editor.options : [];
   for (const option of [...editorOptions, ...(column.filterOptions ?? [])]) {
@@ -91,9 +103,10 @@ export const createColumnFilterDescribeOptions = <T,>(column: GridColumn<T>): Co
     }
   };
   return {
-    datePresets: normalizeDateFilterPresets(column.dateFilterPresets),
+    datePresets: normalizeDateFilterPresets(column.dateFilterPresets, texts),
     labelOf: (value) => labels.get(value),
     formatNumber: formatter ? (value) => format(value) ?? String(value) : undefined,
+    texts,
   };
 };
 
@@ -107,19 +120,26 @@ export const describeColumnFilterValue = (
   value: ColumnFilterValue,
   options: ColumnFilterDescribeOptions = {},
 ): string => {
-  const { datePresets, labelOf, formatNumber } = options;
+  const { datePresets, labelOf, formatNumber, texts = DEFAULT_FILTER_LOCALE_TEXT } = options;
   switch (value.kind) {
     case 'text':
     case 'date':
-      return `"${value.value.trim()}" を含む`;
+      return formatLocaleText(texts.conditionContains, { value: value.value.trim() });
     case 'select':
-      return `"${labelOf?.(value.value) ?? value.value}" に一致`;
+      return formatLocaleText(texts.filterMatches, { value: labelOf?.(value.value) ?? value.value });
     case 'number':
       // 変更(dogfood DU-07): 数値の書き方があって式が読めていれば、数値に書き方を当てて出します。
-      return formatNumber && value.parsed ? formatParsedNumberFilter(value.parsed, formatNumber) : value.raw;
+      // 変更(英語対応): raw が既定(日本語)の書き方どおりなら、文言の表で作り直します(raw は言語によらず日本語のため)。
+      //   利用側が渡した式(">= 1000" など)はそのままです。
+      if (!value.parsed) {
+        return value.raw;
+      }
+      return formatNumber || value.raw === formatParsedNumberFilter(value.parsed)
+        ? formatParsedNumberFilter(value.parsed, formatNumber, texts)
+        : value.raw;
     case 'set':
       // 変更(filter-ext B): 実装は describeSetSelection へ抽出しました(numberSet と共有)。
-      return describeSetSelection(value.mode, value.values, labelOf);
+      return describeSetSelection(value.mode, value.values, labelOf, texts);
     // 追加(filter-ext B/C/D): 条件 AND 選択の複合です。両方あれば「かつ」で結合します
     //   (例: 「10 以上 かつ 3 件を選択」)。両方 null は commit 側で clear 済みの防御表示です。
     case 'numberSet':
@@ -127,10 +147,10 @@ export const describeColumnFilterValue = (
     case 'dateSet': {
       const conditionText = value.condition
         ? value.kind === 'numberSet'
-          ? formatParsedNumberFilter(value.condition, formatNumber)
+          ? formatParsedNumberFilter(value.condition, formatNumber, texts)
           : value.kind === 'textSet'
-            ? formatParsedTextFilter(value.condition)
-            : formatParsedDateFilter(value.condition, datePresets)
+            ? formatParsedTextFilter(value.condition, texts)
+            : formatParsedDateFilter(value.condition, datePresets, texts)
         : null;
       // dateSet の選択は日付の値(ツリーの葉)なので、ラベル / 書き方は当てません。numberSet の選択は、ラベルが無ければ
       //   数として読めるキーに数値の書き方を当てます。
@@ -140,17 +160,17 @@ export const describeColumnFilterValue = (
           : value.kind === 'numberSet'
             ? (key: string) => labelOf?.(key) ?? formatNumericKey(key, formatNumber)
             : labelOf;
-      const setText = value.set ? describeSetSelection(value.set.mode, value.set.values, setLabelOf) : null;
+      const setText = value.set ? describeSetSelection(value.set.mode, value.set.values, setLabelOf, texts) : null;
       if (conditionText && setText) {
-        return `${conditionText} かつ ${setText}`;
+        return formatLocaleText(texts.filterBoth, { condition: conditionText, set: setText });
       }
-      return conditionText ?? setText ?? 'フィルターなし';
+      return conditionText ?? setText ?? texts.filterNone;
     }
     case 'custom': {
       if (typeof value.value === 'string' && value.value.trim().length > 0) {
         return `"${value.value.trim()}"`;
       }
-      return 'カスタム条件';
+      return texts.filterCustom;
     }
   }
 };

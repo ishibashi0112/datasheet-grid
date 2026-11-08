@@ -6,10 +6,22 @@
 //   コールバック発火のみを固定します(FilterManagementPanel.test と同じ方針)。
 // @vitest-environment jsdom
 import { describe, it, expect, afterEach, vi } from 'vitest';
-import { render, screen, fireEvent, cleanup } from '@testing-library/react';
+import { render as renderBase, screen, fireEvent, cleanup } from '@testing-library/react';
+import type { ReactElement, ReactNode } from 'react';
+import { GridLocaleTextContext, mergeFeatureLocaleDefaults } from '../hooks/useGridLocaleText';
+import { fullGridFeatures } from '../features/full';
 
 import GridFilterChipBar from './GridFilterChipBar';
 import type { FilterManagementEntry } from './FilterManagementPanel';
+
+// 追加(英語対応): 機能だけが使う文言(列メニュー・チップ・スクロールの吹き出しなど)は、シェルが機能の既定を重ねて
+//   context で渡します。部品だけを描くテストでは全部入りの機能セットの既定を渡します。
+const fullLocaleTexts = mergeFeatureLocaleDefaults(fullGridFeatures);
+const FeatureLocaleTextWrapper = ({ children }: { children: ReactNode }) => (
+  <GridLocaleTextContext.Provider value={fullLocaleTexts}>{children}</GridLocaleTextContext.Provider>
+);
+const render = (ui: ReactElement) => renderBase(ui, { wrapper: FeatureLocaleTextWrapper });
+
 
 afterEach(() => {
   cleanup();

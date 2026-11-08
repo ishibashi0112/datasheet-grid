@@ -42,6 +42,8 @@ import { cx } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/cx';
 import type { PointerEvent } from 'react';
 // 追加(13-B3-1.5): セクション分けの所属ペイン種別です(pinned 由来)。
 import type { ColumnPane } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/geometry';
+import { usePopupLocaleText } from '../hooks/usePopupLocaleText';
+import { formatLocaleText } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/localeText';
 
 // 追加(13-B2-1): パネルが必要とする最小の列情報です。
 // 変更(13-B3-1.5): 所属ペイン(pinned 由来。left / center / right)を追加します。
@@ -85,11 +87,12 @@ const AUTO_SCROLL_SPEED = 12;
 
 // 追加(13-B3-1.5): セクション(所属ペイン)の小見出しラベルです。
 const PANE_ORDER: ColumnPane[] = ['left', 'center', 'right'];
-const SECTION_LABELS: Record<ColumnPane, string> = {
-  left: '左固定',
-  center: '固定なし',
-  right: '右固定',
-};
+// 変更(英語対応): ラベルは文言の表のキーにしました。
+const SECTION_LABELS = {
+  left: 'columnsPinnedLeft',
+  center: 'columnsUnpinned',
+  right: 'columnsPinnedRight',
+} as const satisfies Record<ColumnPane, string>;
 
 // 変更(13-B3-1.5): セクション内(= fromKey と同一ペイン)でのみ並べ替え、確定時に
 //   left 群 → center 群 → right 群を各セクションの表示順で連結した「全列キー順」を返します
@@ -209,6 +212,7 @@ export function ColumnChooserPanel({
   onResetColumns,
   onReorderColumns,
 }: ColumnChooserPanelProps) {
+  const texts = usePopupLocaleText();
   const [query, setQuery] = useState('');
   const searchInputRef = useRef<HTMLInputElement | null>(null);
 
@@ -240,8 +244,8 @@ export function ColumnChooserPanel({
   // 追加(13-B2-4): 全選択トグルのラベルです。状態でクリック時の動作が変わるため、
   //   ツールチップ / aria-label を切り替えます。
   const masterActionLabel = allVisible
-    ? 'すべての列を非表示(先頭の列は残ります)'
-    : 'すべての列を表示';
+    ? texts.columnsHideAll
+    : texts.columnsShowAll;
 
   const filteredItems = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -478,13 +482,13 @@ export function ColumnChooserPanel({
         {/* ⠿ ドラッグハンドル(13-B3-1) */}
         <span
           role="button"
-          aria-label="ドラッグして並べ替え"
+          aria-label={texts.columnsDragToReorder}
           data-ssg-tooltip={
             !canToggle
-              ? 'onColumnsChange 未指定のため並べ替えできません'
+              ? texts.columnsReorderUnavailable
               : query.trim() !== ''
-                ? '検索中は並べ替えできません'
-                : 'ドラッグして並べ替え(同じセクション内のみ)'
+                ? texts.columnsReorderWhileSearching
+                : texts.columnsDragWithinSection
           }
           onPointerDown={(event) =>
             handleDragHandlePointerDown(item.key, pane, event)
@@ -505,7 +509,7 @@ export function ColumnChooserPanel({
           type="button"
           disabled={disabled}
           data-ssg-tooltip={
-            item.grouped ? 'グループ化している列です(値は自動グループ列に出ます)' : undefined
+            item.grouped ? texts.columnsGroupedHint : undefined
           }
           onClick={() => {
             if (disabled) {
@@ -525,7 +529,7 @@ export function ColumnChooserPanel({
               disabled && (!item.visible || item.grouped) && 'ssg-chooser-label--muted',
             )}
           >
-            {item.grouped ? `${item.title}(グループ化中)` : item.title}
+            {item.grouped ? formatLocaleText(texts.groupedColumnTitle, { column: item.title }) : item.title}
           </span>
         </button>
       </div>
@@ -555,7 +559,7 @@ export function ColumnChooserPanel({
             type="text"
             value={query}
             onChange={(event) => setQuery(event.target.value)}
-            placeholder="検索..."
+            placeholder={texts.columnsSearchPlaceholder}
             className="ssg-chooser-search-input"
           />
         </div>
@@ -564,13 +568,13 @@ export function ColumnChooserPanel({
       {/* ── 列一覧(スクロール) ── */}
       <div ref={listRef} className="ssg-chooser-list">
         {filteredItems.length === 0 ? (
-          <div className="ssg-chooser-empty">該当する列がありません</div>
+          <div className="ssg-chooser-empty">{texts.columnsNoMatches}</div>
         ) : (
           sections.map((section) => (
             <div key={section.pane} data-chooser-section={section.pane}>
               {showHeadings && (
                 <div className="ssg-chooser-section-heading">
-                  {SECTION_LABELS[section.pane]}
+                  {texts[SECTION_LABELS[section.pane]]}
                 </div>
               )}
               {section.items.map((item, indexInPane) =>
@@ -598,15 +602,15 @@ export function ColumnChooserPanel({
             }
             onResetColumns();
           }}
-          data-ssg-tooltip="すべての列の幅・固定・表示・並び順を初期状態に戻します"
+          data-ssg-tooltip={texts.resetColumnsHint}
           className="ssg-chooser-reset-btn"
         >
-          すべての列を初期状態に戻す
+          {texts.columnsReset}
         </button>
 
         {!canToggle && (
           <div className="ssg-chooser-note">
-            onColumnsChange 未指定のため表示/非表示・リセットを変更できません
+            {texts.columnsUnavailable}
           </div>
         )}
       </div>

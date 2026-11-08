@@ -101,7 +101,9 @@ const warnComputedColumnWrite = (row: unknown, key: string): void => {
   console.warn(
     `[spreadsheet-grid] 列 \`${key}\` は getValue だけで setValue が無いため、書き込んだ値は行に新しいプロパティ ` +
       `\`${key}\` として足され、表示(getValue)は変わりません。編集させないなら \`editable: false\`、` +
-      '書き戻すなら `setValue` を渡してください。',
+      '書き戻すなら `setValue` を渡してください。\n' +
+      `[spreadsheet-grid] Column \`${key}\` has getValue but no setValue, so a written value is added to the row as a new property ` +
+      `\`${key}\` and the display (getValue) does not change. Pass \`editable: false\` to prevent editing, or \`setValue\` to write the value back.`,
   );
 };
 

@@ -29,6 +29,9 @@ import {
 import type { ResolvedScrollHintOptions } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/scrollHint';
 import type { GridResolvedSlot } from '../model/gridTypes';
 import type { ReactGridTypes } from '../model/gridTypes';
+import { useFeatureLocaleText } from '../hooks/useGridLocaleText';
+import type { DEFAULT_SCROLL_HINT_LOCALE_TEXT } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/localeTextFeatures';
+import { formatLocaleText } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/localeText';
 
 // スクロール停止からフェードアウトまでの猶予(ms)です(trigger='scroll' / 'hover')。
 const SCROLL_HINT_LINGER_MS = 1000;
@@ -85,6 +88,8 @@ export function GridScrollHint<T>({
   slot,
   labelViewIndexes,
 }: GridScrollHintProps<T>) {
+  // 追加(英語対応): 文言(localeText)。
+  const texts = useFeatureLocaleText<typeof DEFAULT_SCROLL_HINT_LOCALE_TEXT>();
   // スクロール活動フラグ(最後のスクロールから LINGER ms 経過で消灯)。
   const [scrollActive, setScrollActive] = useState(false);
   // コンテナ / ガターのホバーフラグ(trigger='hover' 用)。
@@ -215,9 +220,10 @@ export function GridScrollHint<T>({
         ? computeScrollHintRulerTicks({
             rowCount: dataRowCount,
             rulerHeight,
+            tenThousands: texts.scrollHintTenThousands,
           })
         : [],
-    [options.ruler, dataRowCount, rulerHeight],
+    [options.ruler, dataRowCount, rulerHeight, texts.scrollHintTenThousands],
   );
 
   if (track === null || rowMetrics.rowCount <= 0) {
@@ -389,10 +395,11 @@ export function GridScrollHint<T>({
                 'ssg-scroll-hint-jumpline-label--below',
             )}
           >
-            行 {rowNumberOf(jumpPreview.rowIndex).toLocaleString()} へ
+            {formatLocaleText(texts.scrollHintJump, { row: rowNumberOf(jumpPreview.rowIndex).toLocaleString() })}
             {jumpPreview.detail !== null && (
               <span className="ssg-scroll-hint-jumpline-detail">
-                {' '}・ {jumpPreview.detail}
+                {` ${texts.scrollHintJumpSeparator} `}
+                {jumpPreview.detail}
               </span>
             )}
           </span>
@@ -410,7 +417,7 @@ export function GridScrollHint<T>({
           }}
         >
           <span className="ssg-scroll-hint-bubble-main">
-            行 {rowNumberOf(topRowIndex).toLocaleString()}
+            {formatLocaleText(texts.scrollHintRow, { row: rowNumberOf(topRowIndex).toLocaleString() })}
             <span className="ssg-scroll-hint-bubble-total">
               {' '}/ {dataRowCount.toLocaleString()}
             </span>

@@ -1,4 +1,6 @@
 import { toDateSetKey } from './filtering';
+import type { GridLocaleText } from '../model/gridTypes.core';
+import { formatLocaleText } from './localeTextFilters';
 
 // 追加(filter-ext D): dateSet の年 / 月 / 日 3 階層ツリーの純ロジックです。
 //   日付はユニーク値が行数に比例して増えるため、フラット列挙(SetFilterBody)では
@@ -67,9 +69,11 @@ export type DateTreeRow = {
 // 正規化済み候補と展開状態から「可視行」を平坦化します(仮想化リストの入力)。
 //   - 年(depth 0)→ 展開で月(depth 1)→ 展開で日(depth 2)。
 //   - 空白・非日付の特殊リーフはルート直下(depth 0)の末尾に並びます。
+// 変更(英語対応): 年 / 月 / 日の見出しの文言を受けます(localeText の dateTreeYear / dateTreeMonth / dateTreeDay)。
 export const buildDateTreeRows = (
   options: ReadonlyArray<DateSetOption>,
   expandedKeys: ReadonlySet<string>,
+  texts: Pick<GridLocaleText, 'dateTreeYear' | 'dateTreeMonth' | 'dateTreeDay'>,
 ): DateTreeRow[] => {
   // 年 → 月 → 日 の階層 Map を構築します(options は normalizeDateSetOptions 済み = 昇順)。
   const years = new Map<string, Map<string, string[]>>();
@@ -105,7 +109,7 @@ export const buildDateTreeRows = (
     rows.push({
       type: 'group',
       key: yearKey,
-      label: `${year} 年`,
+      label: formatLocaleText(texts.dateTreeYear, { year: Number(year) }),
       depth: 0,
       leafKeys: yearLeafKeys,
       expanded: yearExpanded,
@@ -119,7 +123,7 @@ export const buildDateTreeRows = (
       rows.push({
         type: 'group',
         key: monthKey,
-        label: `${Number(month.slice(5, 7))} 月`,
+        label: formatLocaleText(texts.dateTreeMonth, { month: Number(month.slice(5, 7)) }),
         depth: 1,
         leafKeys: [...days],
         expanded: monthExpanded,
@@ -131,7 +135,7 @@ export const buildDateTreeRows = (
         rows.push({
           type: 'leaf',
           key: day,
-          label: `${Number(day.slice(8, 10))} 日`,
+          label: formatLocaleText(texts.dateTreeDay, { day: Number(day.slice(8, 10)) }),
           depth: 2,
           leafKeys: [day],
           expanded: false,

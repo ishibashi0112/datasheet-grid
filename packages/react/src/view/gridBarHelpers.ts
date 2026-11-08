@@ -2,7 +2,6 @@ import type { ReactNode } from 'react';
 import type {
   CellCoord,
   ColumnFilterValue,
-  GridLocaleText,
   GridSelection,
   GridColumn,
   SpreadsheetGridSlotContext,
@@ -10,7 +9,8 @@ import type {
   SpreadsheetGridSelectionStats,
 } from '../model/gridTypes';
 import { toExcelColumnName } from '@ishibashi0112/spreadsheet-grid-core/internal/utils/excelColumnName';
-import { isSyntheticColumnKey } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/detailRow';
+import { DETAIL_TOGGLE_COLUMN_KEY, isSyntheticColumnKey } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/detailRow';
+import { ROW_DRAG_HANDLE_COLUMN_KEY } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/rowReorder';
 // 追加(段階 2 G1): 自動グループ列のセルの番地は見出しの名前で出します。
 import { GROUP_AUTO_COLUMN_KEY } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/grouping';
 // 追加(dogfood DF-10): 番地と件数をラベル行を飛ばして数えます(行ヘッダーの番号と揃える)。
@@ -18,7 +18,11 @@ import { countLabelsBefore } from '@ishibashi0112/spreadsheet-grid-core/internal
 // 追加(12-A): set フィルター対応のフィルター有効判定を共有します。
 import { isActiveColumnFilterValue } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/filtering';
 // 追加(段階 2 DU-18): バーの文言(localeText。既定は日本語)。
-import { DEFAULT_GRID_LOCALE_TEXT, formatLocaleText } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/localeText';
+import {
+  DEFAULT_GRID_LOCALE_TEXT,
+  formatLocaleText,
+  type ResolvedGridLocaleText,
+} from '@ishibashi0112/spreadsheet-grid-core/internal/logic/localeText';
 
 // 追加: Grid の slot renderer を解決します。
 export const resolveGridSlot = <T,>(
@@ -52,21 +56,29 @@ export type GridColumnNamer = ((columnIndex: number) => string) & {
   readonly cellNameOf?: (columnIndex: number) => string | undefined;
 };
 
+// 追加(英語対応 L-N1): 展開トグル列 / 行ドラッグのハンドル列のセルも名前で出します(names = 文言の表の
+//   detailColumnName / rowDragColumnName。「詳細 7」「Move 7」)。これまでは次のデータ列の「A7」で、どのセルか分からなかった。
 export const createDataColumnNamer = (
   orderedColumns: ReadonlyArray<{ key: string; title?: string }>,
+  names: { detail: string; rowDrag: string } = {
+    detail: DEFAULT_GRID_LOCALE_TEXT.detailColumnName,
+    rowDrag: DEFAULT_GRID_LOCALE_TEXT.rowDragColumnName,
+  },
 ): GridColumnNamer => {
   const syntheticBefore: number[] = [];
+  const cellNames = new Map<number, string>();
   let count = 0;
-  let groupColumnIndex = -1;
-  let groupColumnName = '';
   for (const [index, column] of orderedColumns.entries()) {
     syntheticBefore.push(count);
     if (isSyntheticColumnKey(column.key)) {
       count += 1;
     }
     if (column.key === GROUP_AUTO_COLUMN_KEY) {
-      groupColumnIndex = index;
-      groupColumnName = column.title || column.key;
+      cellNames.set(index, column.title || column.key);
+    } else if (column.key === DETAIL_TOGGLE_COLUMN_KEY) {
+      cellNames.set(index, names.detail);
+    } else if (column.key === ROW_DRAG_HANDLE_COLUMN_KEY) {
+      cellNames.set(index, names.rowDrag);
     }
   }
   if (count === 0) {
@@ -74,11 +86,8 @@ export const createDataColumnNamer = (
   }
   const namer = (columnIndex: number) =>
     toExcelColumnName(Math.max(columnIndex - (syntheticBefore[columnIndex] ?? count), 0));
-  if (groupColumnIndex < 0) {
-    return namer;
-  }
   return Object.assign(namer, {
-    cellNameOf: (columnIndex: number) => (columnIndex === groupColumnIndex ? groupColumnName : undefined),
+    cellNameOf: (columnIndex: number) => cellNames.get(columnIndex),
   });
 };
 
@@ -127,7 +136,7 @@ export const formatGridCellLabel = (
   cell: CellCoord | null,
   toColumnName: GridColumnNamer = toExcelColumnName,
   rowNumberer: GridRowNumberer = PLAIN_ROW_NUMBERER,
-  texts: Readonly<GridLocaleText> = DEFAULT_GRID_LOCALE_TEXT,
+  texts: ResolvedGridLocaleText = DEFAULT_GRID_LOCALE_TEXT,
 ) => {
   if (!cell) {
     return texts.none;
@@ -142,7 +151,7 @@ export const formatGridSelectionLabel = (
   selection: GridSelection,
   toColumnName: GridColumnNamer = toExcelColumnName,
   rowNumberer: GridRowNumberer = PLAIN_ROW_NUMBERER,
-  texts: Readonly<GridLocaleText> = DEFAULT_GRID_LOCALE_TEXT,
+  texts: ResolvedGridLocaleText = DEFAULT_GRID_LOCALE_TEXT,
 ) => {
   if (!selection) {
     return texts.none;
@@ -199,7 +208,7 @@ export const formatGridRowSummary = <T,>(
   context: Pick<SpreadsheetGridSlotContext<T>, 'rows'>,
   filteredRowCount: number,
   totalRowCount: number = context.rows.length,
-  texts: Readonly<GridLocaleText> = DEFAULT_GRID_LOCALE_TEXT,
+  texts: ResolvedGridLocaleText = DEFAULT_GRID_LOCALE_TEXT,
 ) => formatLocaleText(texts.rowCount, { shown: filteredRowCount, total: totalRowCount });
 
 // 追加: columns / visibleColumns の概要テキストです。
@@ -229,7 +238,7 @@ const countDataColumnsInRange = <T,>(columns: ReadonlyArray<GridColumn<T>>, star
 
 export const formatGridColumnSummary = <T,>(
   context: Pick<SpreadsheetGridSlotContext<T>, 'columns' | 'visibleColumns'>,
-  texts: Readonly<GridLocaleText> = DEFAULT_GRID_LOCALE_TEXT,
+  texts: ResolvedGridLocaleText = DEFAULT_GRID_LOCALE_TEXT,
 ) => formatLocaleText(texts.columnCount, { shown: countDataColumns(context.visibleColumns), total: context.columns.length });
 
 // 追加: selection から選択セル数 / 行数 / 列数を算出します。
@@ -306,7 +315,7 @@ export const formatGridSelectionStatsLabel = <T,>(
   context: Pick<SpreadsheetGridSlotContext<T>, 'selection' | 'visibleColumns'>,
   filteredRowCount: number,
   rowNumberer: GridRowNumberer = PLAIN_ROW_NUMBERER,
-  texts: Readonly<GridLocaleText> = DEFAULT_GRID_LOCALE_TEXT,
+  texts: ResolvedGridLocaleText = DEFAULT_GRID_LOCALE_TEXT,
 ) => {
   const stats = getGridSelectionStats(context, filteredRowCount, rowNumberer);
   return formatLocaleText(texts.selectionSize, { cells: stats.selectedCellCount, rows: stats.selectedRowCount });
@@ -329,7 +338,7 @@ export const formatGridFilterSummary = <T,>(
     SpreadsheetGridSlotContext<T>,
     'globalFilterText' | 'columnFilterValues'
   >,
-  texts: Readonly<GridLocaleText> = DEFAULT_GRID_LOCALE_TEXT,
+  texts: ResolvedGridLocaleText = DEFAULT_GRID_LOCALE_TEXT,
 ) => {
   const globalFilterText = context.globalFilterText.trim();
   const columnFilterCount = countActiveColumnFilters(context.columnFilterValues);
@@ -356,7 +365,7 @@ const getColumnLabelByKey = <T,>(
 // 追加: ソート状態の要約テキストです。
 export const formatGridSortSummary = <T,>(
   context: Pick<SpreadsheetGridSlotContext<T>, 'columns' | 'sortState'>,
-  texts: Readonly<GridLocaleText> = DEFAULT_GRID_LOCALE_TEXT,
+  texts: ResolvedGridLocaleText = DEFAULT_GRID_LOCALE_TEXT,
 ) => {
   // 変更(MS-1): 配列を優先順位順に「列名(方向)」で連結します。
   const value =
@@ -395,7 +404,7 @@ export const buildGridDerivedSummary = <T,>(
   // 追加(dogfood DF-10): 行の番号と行数(未指定はラベル行を考慮しない)。
   rowNumberer: GridRowNumberer = PLAIN_ROW_NUMBERER,
   // 追加(段階 2 DU-18): 文言(未指定は既定の日本語)。
-  texts: Readonly<GridLocaleText> = DEFAULT_GRID_LOCALE_TEXT,
+  texts: ResolvedGridLocaleText = DEFAULT_GRID_LOCALE_TEXT,
 ): SpreadsheetGridDerivedSummary => {
   const selectionStats = getGridSelectionStats(context, filteredRowCount, rowNumberer);
   const hasGlobalFilter = context.globalFilterText.trim().length > 0;

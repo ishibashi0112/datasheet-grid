@@ -35,6 +35,12 @@ import {
   describeColumnFilterValue,
 } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/filterSummary';
 import { normalizeDateFilterPresets } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/dateFilterPresets';
+import { formatLocaleText } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/localeText';
+// 追加(英語対応): フィルターの機能だけが使う文言(既定は localeTextFiltering.ts。機能の localeText でシェルが埋める)。
+import { DEFAULT_FILTERING_LOCALE_TEXT } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/localeTextFeatures';
+import type { FeatureLocaleText } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/localeText';
+
+type FilteringTexts = FeatureLocaleText<typeof DEFAULT_FILTERING_LOCALE_TEXT>;
 import { inferColumnFilterType } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/inferFilterType';
 import { getCellValue } from '@ishibashi0112/spreadsheet-grid-core/internal/utils/permissions';
 import { computeSinglePaneColumnExtent } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/geometry';
@@ -217,7 +223,9 @@ const useFilterPopoverContent = <T,>({
   renderFilterDateInput,
   popoverSlot,
   portalClassName,
+  localeTexts,
 }: FilterPopoverContentFeatureArgs<T>): ReactNode => {
+  const texts = localeTexts as FilteringTexts;
   const {
     filterPopoverState,
     filterPopoverLayout,
@@ -350,29 +358,31 @@ const useFilterPopoverContent = <T,>({
   //             件数カウンタを表示するため参考表示のみです)。
   const openedFilterCurrentValueText = (() => {
     if (!openedFilterColumn) {
-      return '（なし）';
+      return texts.filterCurrentNone;
     }
     const rawValue = columnFilters[openedFilterColumn.key];
     if (isSetColumnFilterValue(rawValue)) {
       // 変更(反転set): exclude は「除外中」表示にします(total 非依存で正確)。
-      return rawValue.mode === 'exclude'
-        ? `${rawValue.values.length}件を除外中`
-        : `${rawValue.values.length}件を選択中`;
+      return formatLocaleText(
+        rawValue.mode === 'exclude' ? texts.filterCurrentExcluded : texts.filterCurrentSelected,
+        { count: rawValue.values.length },
+      );
     }
     // 追加(記述子化 / number): number 記述子は raw(式そのもの)を現在値表示にします。
+    // 変更(英語対応): 既定の書き方の raw は文言の表で作り直します(raw は言語によらず日本語のため。describeColumnFilterValue)。
     if (isNumberColumnFilterValue(rawValue)) {
-      return rawValue.raw;
+      return describeColumnFilterValue(rawValue, { texts: localeTexts });
     }
     // 変更(記述子化): text/date/select は記述子のため String() 直書きでは "[object Object]" に
     //   なります。表示文字列は columnFilterValueToDraftText 経由で取り出します(custom は空 → なし)。
     const text = columnFilterValueToDraftText(rawValue);
-    return text.trim() ? text : '（なし）';
+    return text.trim() ? text : texts.filterCurrentNone;
   })();
 
   // 追加(preset-opt): 開いている列のプリセット構成(正規形)です。popover のチップ描画・
   //   候補連動・サマリーのラベル逆引きが共有します(dateSet 以外の列では実質未使用)。
   const openedDatePresets = openedFilterColumn
-    ? normalizeDateFilterPresets(openedFilterColumn.dateFilterPresets)
+    ? normalizeDateFilterPresets(openedFilterColumn.dateFilterPresets, localeTexts)
     : undefined;
 
   // 追加(filter-ext B/C): 複合(numberSet / textSet)popover のフッター上サマリーです
@@ -381,8 +391,8 @@ const useFilterPopoverContent = <T,>({
   // 変更(dogfood DU-07): select / set の値はラベルで、数値の条件は列の valueFormatter で出します。
   const openedComboSummaryText =
     openedFilterColumn && openedSetFilterValue && isActiveColumnFilterValue(openedSetFilterValue)
-      ? describeColumnFilterValue(openedSetFilterValue, createColumnFilterDescribeOptions(openedFilterColumn))
-      : 'フィルターなし';
+      ? describeColumnFilterValue(openedSetFilterValue, createColumnFilterDescribeOptions(openedFilterColumn, localeTexts))
+      : localeTexts.filterNone;
 
   // 変更(lazy-popups): 部品(別チャンク)の読み込み前は描画しません(読み込み完了でシェルごと再描画)。
   const renderedFilterPopover = openedFilterColumn && views ? (
@@ -457,6 +467,7 @@ const useFilterManagement = <T,>({
   rightPaneTotalWidth,
   openColumnFilterPopover,
   groupColumns,
+  localeTexts,
 }: FilterManagementFeatureArgs<T>): FilterManagementFeatureResult => {
   // 追加(段階 2 DU-11): 行グルーピング中のグループ元の列の key(無ければ空)。
   const groupColumnKeys = useMemo(() => new Set((groupColumns ?? []).map((column) => column.key)), [groupColumns]);
@@ -478,7 +489,7 @@ const useFilterManagement = <T,>({
         //   構成を渡します(他 kind は未使用のため従来どおり)。
         // 変更(dogfood DU-07): select / set の値はラベルで、数値の条件は列の valueFormatter で出します
         //   (チップバーとフィルターの管理が共有)。
-        summaryText: describeColumnFilterValue(value, createColumnFilterDescribeOptions(column)),
+        summaryText: describeColumnFilterValue(value, createColumnFilterDescribeOptions(column, localeTexts)),
         isHidden,
         isGrouped,
       });
@@ -498,7 +509,7 @@ const useFilterManagement = <T,>({
       }
     }
     return entries;
-  }, [columnFilters, columns, orderedColumns, groupColumnKeys]);
+  }, [columnFilters, columns, orderedColumns, groupColumnKeys, localeTexts]);
 
   // 追加(FM-1): 「フィルターを追加」の候補列です(可視・filterType あり・未適用)。
   //   非表示列は除外します(追加 = ✎ と同じ「ジャンプ + popover」で、非表示列は開けないため)。
@@ -518,10 +529,10 @@ const useFilterManagement = <T,>({
         .map((column) => ({
           key: column.key,
           title: groupColumnKeys.has(column.key)
-            ? `${column.title || column.key}(グループ化中)`
+            ? formatLocaleText((localeTexts as FilteringTexts).groupedColumnTitle, { column: column.title || column.key })
             : column.title || column.key,
         })),
-    [columnFilters, visibleColumns, groupColumns, groupColumnKeys],
+    [columnFilters, visibleColumns, groupColumns, groupColumnKeys, localeTexts],
   );
 
   // 追加(FM-1): 対象列まで横スクロールしてからフィルター popover を開きます(パネルの
@@ -645,5 +656,7 @@ export const filteringFeature: NonNullable<ReactGridFeatures['filtering']> = {
   useFilterPopoverViews,
   useFilterPopoverContent,
   useFilterManagement,
+  // 追加(英語対応): この機能だけが使う文言の既定(シェルが本体の既定に重ねる)。
+  localeText: DEFAULT_FILTERING_LOCALE_TEXT,
   FilterChipBar: GridFilterChipBar,
 };

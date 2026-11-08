@@ -395,3 +395,36 @@ describe('createGridApi', () => {
     }
   });
 });
+// 追加(英語対応): 使い方の誤りの警告は開発時だけ出し(本番の JS から文を除く)、日本語の行と英語の行の 2 行。
+describe('使い方の誤りの警告(開発時だけ・2 行)', () => {
+  it('serverSide の getInvalidCells / clientSide の refreshServerSide・retryServerSideLoads は開発時だけ警告する', () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    try {
+      const serverApi = createGridApi<Row>(withExport);
+      serverApi.update(makeArgs({ isServerSide: true }).args);
+      const clientApi = createGridApi<Row>(withExport);
+      clientApi.update(makeArgs().args);
+      const callAll = () => {
+        expect(serverApi.handle.getInvalidCells()).toEqual([]);
+        clientApi.handle.refreshServerSide();
+        clientApi.handle.retryServerSideLoads();
+      };
+      callAll();
+      const messages = warn.mock.calls.map(([message]) => String(message));
+      expect(messages).toHaveLength(3);
+      for (const message of messages) {
+        const lines = message.split('\n');
+        expect(lines).toHaveLength(2);
+        expect(lines[1]).not.toMatch(/[぀-ヿ㐀-鿿]/);
+      }
+      expect(messages[0]).toContain('getInvalidCells is not available with serverSide');
+      warn.mockClear();
+      vi.stubEnv('NODE_ENV', 'production');
+      callAll();
+      expect(warn).not.toHaveBeenCalled();
+    } finally {
+      vi.unstubAllEnvs();
+      warn.mockRestore();
+    }
+  });
+});

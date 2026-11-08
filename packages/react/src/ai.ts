@@ -34,3 +34,5 @@ export type {
   GridAskResult,
   GridAskSort,
 } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/gridAsk';
+// 追加(英語対応): バーの文言(GridAskBar / useGridAsk の localeText)の型。英語は入口 /locales/en の gridAskLocaleTextEn。
+export type { GridAskLocaleText } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/gridAskLocaleText';

@@ -11,7 +11,8 @@ import { render, cleanup, act, fireEvent } from '@testing-library/react';
 import { createRef, useState } from 'react';
 
 import { SpreadsheetGrid } from './SpreadsheetGrid';
-import { ROW_DRAG_HANDLE_COLUMN_KEY, ROW_DRAG_DISABLED_TOOLTIP } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/rowReorder';
+import { ROW_DRAG_HANDLE_COLUMN_KEY } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/rowReorder';
+import { DEFAULT_ROW_DRAG_LOCALE_TEXT } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/localeTextFeatures';
 import { GRID_STATE_VERSION } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/gridState';
 import type {
   GridColumn,
@@ -543,7 +544,7 @@ describe('行ドラッグ並び替え(結合)', () => {
     expect(headerKeys(container)[0]).toBe(ROW_DRAG_HANDLE_COLUMN_KEY);
     const disabledHandle = handleAt(container, 0);
     expect(disabledHandle?.classList.contains('ssg-row-drag-handle--disabled')).toBe(true);
-    expect(disabledHandle?.dataset.ssgTooltip).toBe(ROW_DRAG_DISABLED_TOOLTIP);
+    expect(disabledHandle?.dataset.ssgTooltip).toBe(DEFAULT_ROW_DRAG_LOCALE_TEXT.dragRowDisabled);
     act(() => {
       pressHandle(disabledHandle as HTMLElement, 1, upperHalfY(0));
     });

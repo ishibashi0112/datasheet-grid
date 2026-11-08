@@ -35,8 +35,9 @@ export const preloadGridPopups = async (): Promise<void> => {
   await Promise.all([filterPopoverModule.load(), toolPanelModule.load()]);
 };
 
+// 変更(英語対応): 文は日本語の行と英語の行の 2 行です(読み込みの失敗は本番でも出します)。
 const reportLoadError = (error: unknown) => {
-  console.error('[SpreadsheetGrid] ポップオーバー部品の読み込みに失敗しました。', error);
+  console.error('[SpreadsheetGrid] ポップオーバー部品の読み込みに失敗しました。\n[SpreadsheetGrid] Failed to load the popup components.', error);
 };
 
 const getNull = () => null;

@@ -1520,53 +1520,517 @@ export type SpreadsheetGridSelectionStats = {
 // 追加(段階 2 DU-32): auto-height で背の高くなった行での縦の揃え(グリッドと列の verticalAlign)。
 export type GridVerticalAlign = 'top' | 'center';
 
-// 追加(段階 2 DU-18): グリッドの文言(`localeText` prop)。今は上部 / 下部バーの文言で、`{name}` の所は値に置き換えます。
-//   既定は日本語(英語などは後の版で文言のセットとして足す)。
+// 追加(段階 2 DU-18): グリッドの文言(`localeText` prop)。`{name}` の所は値に置き換えます。
+// 変更(英語対応): バーだけでなく、グリッドが自分で出す文言(メニュー・列フィルター・ツールパネル・検索・読み上げの名前・
+//   検証のメッセージなど)をすべてここへ集めました。既定は日本語、英語は `/locales/en` の `localeTextEn`。
+//   値は文字列か、値を受け取って文字列を返す関数(英語の「1 column」「3 columns」のように数で言い方を変えるため)。
 /**
- * グリッドの文言です(`localeText` prop に変えたいキーだけを渡します)。`{name}` の所は値に置き換わります。
- * 今は上部 / 下部バーの文言です。
+ * 値を埋める文言です。文字列なら `{name}` の所が値に置き換わり、関数なら値を受け取って文字列を返します。
+ */
+export type GridLocaleTextTemplate<P> = string | ((values: P) => string);
+
+/**
+ * グリッドの文言です(`localeText` prop に変えたいキーだけを渡します)。既定は日本語で、英語は
+ * `@ishibashi0112/spreadsheet-grid/locales/en` の `localeTextEn` です。
  */
 export type GridLocaleText = {
-  /** 行の件数。`{shown}` = 表示中の行数、`{total}` = 全部の行数(ラベル行は数えない)。既定 `'行 {shown} / {total}'`。 */
-  rowCount: string;
-  /** 列の件数。`{shown}` = 表示中の列数、`{total}` = 全部の列数。既定 `'列 {shown} / {total}'`。 */
-  columnCount: string;
-  /** 絞り込みの要約。`{value}` は `none` / `filterGlobal` / `filterColumns`(両方なら ` + ` でつなぐ)。既定 `'絞り込み: {value}'`。 */
-  filterSummary: string;
-  /** 検索欄の文字(`{text}`。長いと 16 文字で切る)。既定 `'「{text}」'`。 */
-  filterGlobal: string;
-  /** 列の絞り込みの数(`{count}`)。既定 `'{count} 列'`。 */
-  filterColumns: string;
-  /** 並び替えの要約。`{value}` は `none` か、`sortEntry` を `listSeparator` でつないだもの。既定 `'並び替え: {value}'`。 */
-  sortSummary: string;
-  /** 並び替えの 1 列。`{column}` = 列の見出し、`{direction}` = `sortAscending` / `sortDescending`。既定 `'{column}({direction})'`。 */
-  sortEntry: string;
-  /** 昇順。既定 `'昇順'`。 */
+  // ── 上部 / 下部のバー ──
+  /** 行の件数。`{shown}` = 表示中の行数、`{total}` = 全部の行数(ラベル行は数えない)。既定 `行 {shown} / {total}`、英語 `Rows {shown} of {total}`。 */
+  rowCount: GridLocaleTextTemplate<{ shown: number; total: number }>;
+  /** 列の件数。`{shown}` = 表示中の列数、`{total}` = 全部の列数。既定 `列 {shown} / {total}`、英語 `Columns {shown} of {total}`。 */
+  columnCount: GridLocaleTextTemplate<{ shown: number; total: number }>;
+  /** 絞り込みの要約。`{value}` は `none` / `filterGlobal` / `filterColumns`(両方なら ` + ` でつなぐ)。既定 `絞り込み: {value}`、英語 `Filter: {value}`。 */
+  filterSummary: GridLocaleTextTemplate<{ value: string }>;
+  /** 検索欄の文字(`{text}`。長いと 16 文字で切る)。既定 `「{text}」`、英語 `"{text}"`。 */
+  filterGlobal: GridLocaleTextTemplate<{ text: string }>;
+  /** 列の絞り込みの数(`{count}`)。既定 `{count} 列`、英語 `(関数)`。 */
+  filterColumns: GridLocaleTextTemplate<{ count: number }>;
+  /** 並び替えの要約。`{value}` は `none` か、`sortEntry` を `listSeparator` でつないだもの。既定 `並び替え: {value}`、英語 `Sort: {value}`。 */
+  sortSummary: GridLocaleTextTemplate<{ value: string }>;
+  /** 並び替えの 1 列。`{column}` = 列の見出し、`{direction}` = `sortAscending` / `sortDescending`。既定 `{column}({direction})`、英語 `{column} ({direction})`。 */
+  sortEntry: GridLocaleTextTemplate<{ column: string; direction: string }>;
+  /** 昇順(バーの要約)。既定 `昇順`、英語 `ascending`。 */
   sortAscending: string;
-  /** 降順。既定 `'降順'`。 */
+  /** 降順(バーの要約)。既定 `降順`、英語 `descending`。 */
   sortDescending: string;
-  /** アクティブセルの番地(`{cell}`。無ければ `none`)。既定 `'セル {cell}'`。 */
-  activeCell: string;
-  /** 選択範囲(`{range}`。`B3:D5` / 行 `3:5` / 列 `B:D`。無ければ `none`)。既定 `'範囲 {range}'`。 */
-  selection: string;
-  /** 選択範囲の大きさ。`{cells}` = セル数、`{rows}` = 行数。既定 `'{cells} セル / {rows} 行'`。 */
-  selectionSize: string;
-  /** 選択範囲の列数(`{count}`)。既定 `'{count} 列'`。 */
-  selectedColumns: string;
-  /** 選択範囲の集計の平均。既定 `'平均'`。 */
+  /** アクティブセルの番地(`{cell}`。無ければ `none`)。既定 `セル {cell}`、英語 `Cell {cell}`。 */
+  activeCell: GridLocaleTextTemplate<{ cell: string }>;
+  /** 選択範囲(`{range}`。`B3:D5` / 行 `3:5` / 列 `B:D`。無ければ `none`)。既定 `範囲 {range}`、英語 `Range {range}`。 */
+  selection: GridLocaleTextTemplate<{ range: string }>;
+  /** 選択範囲の大きさ。`{cells}` = セル数、`{rows}` = 行数。既定 `{cells} セル / {rows} 行`、英語 `(関数)`。 */
+  selectionSize: GridLocaleTextTemplate<{ cells: number; rows: number }>;
+  /** 選択範囲の列数(`{count}`)。既定 `{count} 列`、英語 `(関数)`。 */
+  selectedColumns: GridLocaleTextTemplate<{ count: number }>;
+  /** 展開のボタンの列の名前(アクティブセルがこの列にあるときの番地「詳細 7」)。既定 `詳細`、英語 `Details`。 */
+  detailColumnName: string;
+  /** 行を動かすハンドルの列の名前(番地「移動 7」)。既定 `移動`、英語 `Move`。 */
+  rowDragColumnName: string;
+  /** 選択範囲の集計の平均。既定 `平均`、英語 `Average`。 */
   aggregateAverage: string;
-  /** 選択範囲の集計のデータの個数。既定 `'データの個数'`。 */
+  /** 選択範囲の集計のデータの個数。既定 `データの個数`、英語 `Count`。 */
   aggregateCount: string;
-  /** 選択範囲の集計の合計。既定 `'合計'`。 */
+  /** 選択範囲の集計の合計。既定 `合計`、英語 `Sum`。 */
   aggregateSum: string;
-  /** 大きな選択範囲を集計している間(`{percent}` = 進み具合)。既定 `'集計中… {percent}%'`。 */
-  aggregateComputing: string;
-  /** serverSide で読み込んでいない行を飛ばして集計したときの添え書き。既定 `'読み込み済みの行のみ'`。 */
+  /** 大きな選択範囲を集計している間(`{percent}` = 進み具合)。既定 `集計中… {percent}%`、英語 `Calculating… {percent}%`。 */
+  aggregateComputing: GridLocaleTextTemplate<{ percent: number }>;
+  /** serverSide で読み込んでいない行を飛ばして集計したときの添え書き。既定 `読み込み済みの行のみ`、英語 `Loaded rows only`。 */
   aggregatePartial: string;
-  /** 「なし」(絞り込み / 並び替え / アクティブセル / 選択範囲が無いとき)。既定 `'なし'`。 */
+  /** 「なし」(絞り込み / 並び替え / アクティブセル / 選択範囲が無いとき)。既定 `なし`、英語 `—`。 */
   none: string;
-  /** 並べた項目の区切り(並び替えの列)。既定 `'、'`。 */
+  /** 並べた項目の区切り(並び替えの列)。既定 `、`、英語 `, `。 */
   listSeparator: string;
+  /** 上部バーの検索欄の placeholder(prop `globalFilterPlaceholder` を渡せばそちら)。既定 `グローバルフィルター`、英語 `Filter all columns`。 */
+  globalFilterPlaceholder: string;
+  /** 上部バーの検索欄の読み上げの名前(placeholder を空にしたとき)。既定 `表全体を検索`、英語 `Search the whole table`。 */
+  globalFilterLabel: string;
+  /** 上部バーの検索欄の × の読み上げの名前。既定 `フィルターをクリア`、英語 `Clear filter`。 */
+  clearGlobalFilter: string;
+  /** 上部バーの絞り込みの要約(押せるとき)の読み上げの名前とツールチップ。既定 `フィルター管理パネルを開閉`、英語 `Show or hide the filter panel`。 */
+  toggleFilterPanel: string;
+  // ── 共通 ──
+  /** 「クリア」のボタン / ツールチップ。既定 `クリア`、英語 `Clear`。 */
+  clear: string;
+  /** 「すべてクリア」のボタン。既定 `すべてクリア`、英語 `Clear all`。 */
+  clearAll: string;
+  /** 「閉じる」のボタン / 読み上げの名前。既定 `閉じる`、英語 `Close`。 */
+  close: string;
+  /** 列フィルターの「適用」。既定 `適用`、英語 `Apply`。 */
+  apply: string;
+  /** 読み込みに失敗したときの「再試行」。既定 `再試行`、英語 `Retry`。 */
+  retry: string;
+  /** 空の値の表示(グループ、列フィルターの候補、条件の要約)。既定 `(空白)`、英語 `(Blank)`。 */
+  blank: string;
+  /** 選択肢が無いとき(select エディタ、列フィルター)。既定 `候補がありません`、英語 `No options`。 */
+  noOptions: string;
+  // ── 表の本体と見出し ──
+  /** 行が 0 件のとき(prop `noRowsText` を渡せばそちら)。既定 `表示する行がありません`、英語 `No rows to show`。 */
+  noRows: string;
+  /** 絞り込みで行が 0 件のとき(prop `noMatchingRowsText` を渡せばそちら)。既定 `一致する行がありません`、英語 `No matching rows`。 */
+  noMatchingRows: string;
+  /** 見出しのチェックボックスの読み上げの名前。既定 `すべての行を選択`、英語 `Select all rows`。 */
+  selectAllRows: string;
+  /** 行のチェックボックスの読み上げの名前(`{row}` = 行番号)。既定 `行 {row} を選択`、英語 `Select row {row}`。 */
+  selectRow: GridLocaleTextTemplate<{ row: number }>;
+  /** 見出しの並び替えの印のツールチップ。既定 `昇順で並び替え中`、英語 `Sorted ascending`。 */
+  sortedAscending: string;
+  /** 見出しの並び替えの印のツールチップ。既定 `降順で並び替え中`、英語 `Sorted descending`。 */
+  sortedDescending: string;
+  /** 複数の列で並べたときの優先度(上の 2 つの後ろに付く)。既定 ` (優先度 {priority})`、英語 ` (priority {priority})`。 */
+  sortPriority: GridLocaleTextTemplate<{ priority: number }>;
+  /** 見出しの絞り込みの印のツールチップ。既定 `フィルター適用中`、英語 `Filtered`。 */
+  columnFiltered: string;
+  /** 見出しのつまみのツールチップ。既定 `ドラッグで列を移動`、英語 `Drag to move the column`。 */
+  dragColumn: string;
+  /** 見出しの ⋮ のツールチップ。既定 `列メニュー`、英語 `Column menu`。 */
+  columnMenu: string;
+  /** 見出しの ⋮ の読み上げの名前。既定 `{column} の列メニュー`、英語 `Column menu for {column}`。 */
+  columnMenuFor: GridLocaleTextTemplate<{ column: string }>;
+  /** 展開のボタン(閉じているとき)の読み上げの名前。既定 `詳細を開く`、英語 `Show details`。 */
+  showDetails: string;
+  /** 展開のボタン(開いているとき)の読み上げの名前。既定 `詳細を閉じる`、英語 `Hide details`。 */
+  hideDetails: string;
+  /** グループ行の ▸ の読み上げの名前。既定 `{group} を展開`、英語 `Expand {group}`。 */
+  expandGroup: GridLocaleTextTemplate<{ group: string }>;
+  /** グループ行の ▾ の読み上げの名前。既定 `{group} を折りたたみ`、英語 `Collapse {group}`。 */
+  collapseGroup: GridLocaleTextTemplate<{ group: string }>;
+  /** グループ行の件数(`{count}` は桁区切りした文字)。既定 `({count}件)`、英語 `(関数)`。 */
+  groupRowCount: GridLocaleTextTemplate<{ count: string }>;
+  /** セルのエディタの読み上げの名前。既定 `{column} を編集`、英語 `Edit {column}`。 */
+  editCell: GridLocaleTextTemplate<{ column: string }>;
+  /** `imeDirectInput` の入力受けの読み上げの名前。既定 `セルへの入力`、英語 `Cell input`。 */
+  cellInput: string;
+  /** 列の幅を自動調整している間。既定 `列幅を計算中…`、英語 `Sizing columns…`。 */
+  sizingColumns: string;
+  /** 大きな表で検索欄の文字を当てている間。既定 `適用中 {percent}%`、英語 `Filtering {percent}%`。 */
+  applyingFilter: GridLocaleTextTemplate<{ percent: number }>;
+  /** 行を動かすハンドルのツールチップ。既定 `ドラッグで行を移動`、英語 `Drag to move the row`。 */
+  dragRow: string;
+  /** 行を動かせないときのハンドルのツールチップ。既定 `ソート / フィルター適用中は行を並び替えできません`、英語 `Rows can't be moved while the table is sorted or filtered`。 */
+  dragRowDisabled: string;
+  /** 行を動かしているときの影の文字(先頭の列が空のとき)。既定 `行 {row}`、英語 `Row {row}`。 */
+  dragRowLabel: GridLocaleTextTemplate<{ row: number }>;
+  /** スクロールの吹き出しの行番号(`{row}` は桁区切りした文字)。既定 `行 {row}`、英語 `Row {row}`。 */
+  scrollHintRow: GridLocaleTextTemplate<{ row: string }>;
+  /** スクロールバーの溝を指したときの行番号。既定 `行 {row} へ`、英語 `Go to row {row}`。 */
+  scrollHintJump: GridLocaleTextTemplate<{ row: string }>;
+  /** スクロールバーの溝を指したときの行番号と補足(`scrollHint` の `hintColumn` / `renderHint`)の間の区切り。既定 `・`、英語 `·`。 */
+  scrollHintJumpSeparator: string;
+  /** スクロールのものさしの 1 万の倍数の目盛り(`{value}` = 万の数、`{full}` = 桁区切りした元の数)。既定 `{value}万`、英語 `{full}`。 */
+  scrollHintTenThousands: GridLocaleTextTemplate<{ value: string; full: string }>;
+  // ── 列メニュー ──
+  /** 列メニューの「フィルター…」。既定 `フィルター…`、英語 `Filter…`。 */
+  menuFilter: string;
+  /** 列メニューの昇順。既定 `昇順で並び替え`、英語 `Sort ascending`。 */
+  menuSortAscending: string;
+  /** 列メニューの降順。既定 `降順で並び替え`、英語 `Sort descending`。 */
+  menuSortDescending: string;
+  /** 列メニューの並び替えの管理。既定 `並び替えを管理…`、英語 `Manage sorting…`。 */
+  menuManageSort: string;
+  /** 列メニューのフィルターの管理。既定 `フィルターを管理…`、英語 `Manage filters…`。 */
+  menuManageFilters: string;
+  /** 列メニューのグループ化。既定 `この列でグループ化`、英語 `Group by this column`。 */
+  menuGroupBy: string;
+  /** 列メニューのグループ化を外す。既定 `グループ化を外す`、英語 `Ungroup`。 */
+  menuUngroup: string;
+  /** 列メニューの固定。既定 `列の固定`、英語 `Pin column`。 */
+  menuPin: string;
+  /** 固定の小メニューの「固定しない」。既定 `固定しない`、英語 `No pin`。 */
+  menuPinNone: string;
+  /** 固定の小メニューの左。既定 `左に固定`、英語 `Pin left`。 */
+  menuPinLeft: string;
+  /** 固定の小メニューの右。既定 `右に固定`、英語 `Pin right`。 */
+  menuPinRight: string;
+  /** `onColumnsChange` が無いときの固定のツールチップ。既定 `onColumnsChange 未指定のため固定状態を変更できません`、英語 `Pinning needs onColumnsChange.`。 */
+  menuPinUnavailable: string;
+  /** 列メニューの幅の自動調整。既定 `この列の幅を自動調整`、英語 `Autosize this column`。 */
+  menuAutosize: string;
+  /** 列メニューのすべての列の幅の自動調整。既定 `すべての列の幅を自動調整`、英語 `Autosize all columns`。 */
+  menuAutosizeAll: string;
+  /** 列メニューの「列の表示」(ツールパネルの列を開く)。既定 `列の表示`、英語 `Choose columns`。 */
+  menuColumns: string;
+  /** 列メニューの列のリセット。既定 `列のリセット`、英語 `Reset columns`。 */
+  menuResetColumns: string;
+  /** 列のリセットのツールチップ(列メニューとツールパネル)。既定 `すべての列の幅・固定・表示・並び順を初期状態に戻します`、英語 `Restores the width, pinning, visibility and order of all columns.`。 */
+  resetColumnsHint: string;
+  /** `onColumnsChange` が無いときの列のリセットのツールチップ。既定 `onColumnsChange 未指定のため列をリセットできません`、英語 `Resetting columns needs onColumnsChange.`。 */
+  menuResetUnavailable: string;
+  // ── ツールパネル ──
+  /** ツールパネルのタブ。既定 `フィルター`、英語 `Filters`。 */
+  toolPanelFilters: string;
+  /** ツールパネルのタブ。既定 `並び替え`、英語 `Sort`。 */
+  toolPanelSort: string;
+  /** ツールパネルのタブ。既定 `列`、英語 `Columns`。 */
+  toolPanelColumns: string;
+  /** 列のタブの見出し。既定 `左固定`、英語 `Pinned left`。 */
+  columnsPinnedLeft: string;
+  /** 列のタブの見出し。既定 `固定なし`、英語 `Not pinned`。 */
+  columnsUnpinned: string;
+  /** 列のタブの見出し。既定 `右固定`、英語 `Pinned right`。 */
+  columnsPinnedRight: string;
+  /** 列のタブのすべてのチェック(すべて表示のとき)。既定 `すべての列を非表示(先頭の列は残ります)`、英語 `Hide all columns (the first one stays)`。 */
+  columnsHideAll: string;
+  /** 列のタブのすべてのチェック。既定 `すべての列を表示`、英語 `Show all columns`。 */
+  columnsShowAll: string;
+  /** 列のタブのつまみのツールチップ。既定 `ドラッグして並べ替え`、英語 `Drag to reorder`。 */
+  columnsDragToReorder: string;
+  /** 列のタブのつまみのツールチップ(固定の区分があるとき)。既定 `ドラッグして並べ替え(同じセクション内のみ)`、英語 `Drag to reorder (within the same section)`。 */
+  columnsDragWithinSection: string;
+  /** `onColumnsChange` が無いときのつまみのツールチップ。既定 `onColumnsChange 未指定のため並べ替えできません`、英語 `Reordering needs onColumnsChange.`。 */
+  columnsReorderUnavailable: string;
+  /** 列のタブで検索している間のつまみのツールチップ。既定 `検索中は並べ替えできません`、英語 `Columns can't be reordered while searching.`。 */
+  columnsReorderWhileSearching: string;
+  /** グループ化している列のツールチップ。既定 `グループ化している列です(値は自動グループ列に出ます)`、英語 `This column is grouped. Its values appear in the group column.`。 */
+  columnsGroupedHint: string;
+  /** グループ化している列の名前(列のタブ、フィルターを足す列の一覧)。既定 `{column}(グループ化中)`、英語 `{column} (grouped)`。 */
+  groupedColumnTitle: GridLocaleTextTemplate<{ column: string }>;
+  /** 列のタブの検索欄。既定 `検索...`、英語 `Search…`。 */
+  columnsSearchPlaceholder: string;
+  /** 列のタブの検索で 0 件のとき。既定 `該当する列がありません`、英語 `No matching columns`。 */
+  columnsNoMatches: string;
+  /** 列のタブのリセットのボタン。既定 `すべての列を初期状態に戻す`、英語 `Reset all columns`。 */
+  columnsReset: string;
+  /** `onColumnsChange` が無いときの列のタブのツールチップ。既定 `onColumnsChange 未指定のため表示/非表示・リセットを変更できません`、英語 `Showing, hiding and resetting columns needs onColumnsChange.`。 */
+  columnsUnavailable: string;
+  /** フィルターのタブの検索欄の文字の行。既定 `グローバルフィルター`、英語 `Global filter`。 */
+  globalFilterTitle: string;
+  /** フィルターのタブの検索欄の文字の要約。既定 `"{text}" を含む行`、英語 `Rows containing "{text}"`。 */
+  globalFilterRows: GridLocaleTextTemplate<{ text: string }>;
+  /** フィルターのタブの検索欄の文字の ×。既定 `グローバルフィルターをクリア`、英語 `Clear the global filter`。 */
+  clearGlobalFilterTitle: string;
+  /** フィルターのタブで列の絞り込みが無いとき。既定 `適用中の列フィルターはありません`、英語 `No column filters`。 */
+  noColumnFilters: string;
+  /** フィルターのタブの「追加」の読み上げの名前。既定 `フィルターを追加する列を選択`、英語 `Choose a column to filter`。 */
+  addFilterLabel: string;
+  /** フィルターのタブの「追加」。既定 `+ フィルターを追加…`、英語 `+ Add filter…`。 */
+  addFilter: string;
+  /** フィルターのタブで足せる列が無いとき。既定 `+ 追加できる列がありません`、英語 `+ No columns to add`。 */
+  addFilterNone: string;
+  /** 並び替えのタブで並び替えが無いとき。既定 `並び替えは設定されていません`、英語 `No sorting`。 */
+  sortPanelEmpty: string;
+  /** 並び替えのタブのつまみのツールチップ。既定 `ドラッグして優先順位を変更`、英語 `Drag to change the priority`。 */
+  sortPanelDrag: string;
+  /** 並び替えが無効のときのツールチップ。既定 `並び替えが無効です`、英語 `Sorting is turned off`。 */
+  sortPanelDisabled: string;
+  /** 並び替えのレベルが 1 つのときのつまみのツールチップ。既定 `レベルが 2 件以上のとき並べ替えできます`、英語 `Add a second level to reorder`。 */
+  sortPanelNeedsTwo: string;
+  /** 並び替えのタブの昇順のボタン(前に ↑ が付く)。既定 `昇順`、英語 `Ascending`。 */
+  sortPanelAscending: string;
+  /** 並び替えのタブの降順のボタン(前に ↓ が付く)。既定 `降順`、英語 `Descending`。 */
+  sortPanelDescending: string;
+  /** 並び替えのレベルの ×。既定 `このレベルを削除`、英語 `Remove this level`。 */
+  sortPanelRemove: string;
+  /** 足せる列が無いときのツールチップ。既定 `すべての列が並び替えに使われています`、英語 `All columns are already used`。 */
+  sortPanelAllUsed: string;
+  /** 「基準を追加」のツールチップ。既定 `並び替えの基準を追加します`、英語 `Add a sort level`。 */
+  sortPanelAddHint: string;
+  /** 「基準を追加」のボタン。既定 `＋ 基準を追加`、英語 `+ Add level`。 */
+  sortPanelAdd: string;
+  /** 「すべてクリア」のツールチップ。既定 `すべての並び替えを解除します`、英語 `Remove all sorting`。 */
+  sortPanelClearHint: string;
+  /** 並び替えが無効のときの列の選択のツールチップ。既定 `並び替えが無効のため編集できません`、英語 `Sorting is turned off, so it can't be changed`。 */
+  sortPanelReadOnly: string;
+  // ── フィルターのチップと要約 ──
+  /** 隠した列のフィルターの印。既定 `(非表示列)`、英語 `(hidden)`。 */
+  filterHiddenColumn: string;
+  /** グループ化している列のフィルターの印。既定 `(グループ化中)`、英語 `(grouped)`。 */
+  filterGroupedColumn: string;
+  /** 隠した列のフィルターのツールチップ。既定 `非表示列のためジャンプ編集できません(× でクリアは可能)`、英語 `This column is hidden, so its filter can't be opened here. You can still clear it with ×.`。 */
+  filterJumpUnavailable: string;
+  /** グループ化している列のフィルターのツールチップ。既定 `グループの列の見出しの下で編集`、英語 `Opens under the group column header`。 */
+  filterEditUnderGroup: string;
+  /** フィルターのチップのツールチップ。既定 `この列へジャンプして編集`、英語 `Go to this column to edit`。 */
+  filterJump: string;
+  /** フィルターのチップの読み上げの名前。既定 `{column} のフィルターを編集`、英語 `Edit the filter on {column}`。 */
+  filterEditFor: GridLocaleTextTemplate<{ column: string }>;
+  /** フィルターのチップの × のツールチップ。既定 `この列のフィルターをクリア`、英語 `Clear this column's filter`。 */
+  filterClear: string;
+  /** フィルターのチップの × の読み上げの名前。既定 `{column} のフィルターをクリア`、英語 `Clear the filter on {column}`。 */
+  filterClearFor: GridLocaleTextTemplate<{ column: string }>;
+  /** 条件の無いフィルターの要約。既定 `フィルターなし`、英語 `No filter`。 */
+  filterNone: string;
+  /** `custom` のフィルターの要約(値が文字でないとき)。既定 `カスタム条件`、英語 `Custom filter`。 */
+  filterCustom: string;
+  /** 値の選択の要約(除外)。既定 `{count} 件を除外`、英語 `Excluding {count}`。 */
+  filterExcluded: GridLocaleTextTemplate<{ count: number }>;
+  /** 値の選択の要約(3 件以上)。既定 `{count} 件を選択`、英語 `{count} selected`。 */
+  filterSelected: GridLocaleTextTemplate<{ count: number }>;
+  /** `select` のフィルターの要約。既定 `"{value}" に一致`、英語 `Is "{value}"`。 */
+  filterMatches: GridLocaleTextTemplate<{ value: string }>;
+  /** 条件と値の選択の両方があるときの要約。既定 `{condition} かつ {set}`、英語 `{condition} and {set}`。 */
+  filterBoth: GridLocaleTextTemplate<{ condition: string; set: string }>;
+  /** 列フィルターの「現在値」が無いとき。既定 `（なし）`、英語 `(none)`。 */
+  filterCurrentNone: string;
+  /** 列フィルターの「現在値」(値の選択・除外)。既定 `{count}件を除外中`、英語 `Excluding {count}`。 */
+  filterCurrentExcluded: GridLocaleTextTemplate<{ count: number }>;
+  /** 列フィルターの「現在値」(値の選択)。既定 `{count}件を選択中`、英語 `{count} selected`。 */
+  filterCurrentSelected: GridLocaleTextTemplate<{ count: number }>;
+  // ── 条件(要約と列フィルター) ──
+  /** 条件の要約。既定 `{value} 以上`、英語 `≥ {value}`。 */
+  conditionGreaterThanOrEqual: GridLocaleTextTemplate<{ value: string }>;
+  /** 条件の要約。既定 `{value} より大きい`、英語 `> {value}`。 */
+  conditionGreaterThan: GridLocaleTextTemplate<{ value: string }>;
+  /** 条件の要約。既定 `{value} 以下`、英語 `≤ {value}`。 */
+  conditionLessThanOrEqual: GridLocaleTextTemplate<{ value: string }>;
+  /** 条件の要約。既定 `{value} 未満`、英語 `< {value}`。 */
+  conditionLessThan: GridLocaleTextTemplate<{ value: string }>;
+  /** 条件の要約(文字の列では `{value}` に引用符が付く)。既定 `{value} に等しい`、英語 `= {value}`。 */
+  conditionEquals: GridLocaleTextTemplate<{ value: string }>;
+  /** 条件の要約。既定 `{value} に等しくない`、英語 `≠ {value}`。 */
+  conditionNotEquals: GridLocaleTextTemplate<{ value: string }>;
+  /** 範囲の条件の要約。既定 `{min} 〜 {max}`、英語 `{min} – {max}`。 */
+  conditionRange: GridLocaleTextTemplate<{ min: string; max: string }>;
+  /** 日付の条件の要約。既定 `{value} 以降`、英語 `On or after {value}`。 */
+  conditionOnOrAfter: GridLocaleTextTemplate<{ value: string }>;
+  /** 日付の条件の要約。既定 `{value} 以前`、英語 `On or before {value}`。 */
+  conditionOnOrBefore: GridLocaleTextTemplate<{ value: string }>;
+  /** 文字の条件の要約。既定 `"{value}" を含む`、英語 `Contains "{value}"`。 */
+  conditionContains: GridLocaleTextTemplate<{ value: string }>;
+  /** 文字の条件の要約。既定 `"{value}" で始まる`、英語 `Starts with "{value}"`。 */
+  conditionStartsWith: GridLocaleTextTemplate<{ value: string }>;
+  /** 文字の条件の要約。既定 `"{value}" で終わる`、英語 `Ends with "{value}"`。 */
+  conditionEndsWith: GridLocaleTextTemplate<{ value: string }>;
+  /** 空白の条件の要約。既定 `(空白)`、英語 `(Blank)`。 */
+  conditionBlank: string;
+  /** 空白でない条件の要約。既定 `(空白でない)`、英語 `(Not blank)`。 */
+  conditionNotBlank: string;
+  /** 日付の組み込みのプリセット。既定 `今日`、英語 `Today`。 */
+  datePresetToday: string;
+  /** 日付の組み込みのプリセット。既定 `今月`、英語 `This month`。 */
+  datePresetThisMonth: string;
+  /** 日付の組み込みのプリセット。既定 `過去 30 日`、英語 `Last 30 days`。 */
+  datePresetLast30Days: string;
+  /** 列フィルターの演算子。既定 `に等しい`、英語 `Equals`。 */
+  operatorEquals: string;
+  /** 列フィルターの演算子。既定 `に等しくない`、英語 `Does not equal`。 */
+  operatorNotEquals: string;
+  /** 列フィルターの演算子。既定 `以上`、英語 `Greater than or equal to`。 */
+  operatorGreaterThanOrEqual: string;
+  /** 列フィルターの演算子。既定 `より大きい`、英語 `Greater than`。 */
+  operatorGreaterThan: string;
+  /** 列フィルターの演算子。既定 `以下`、英語 `Less than or equal to`。 */
+  operatorLessThanOrEqual: string;
+  /** 列フィルターの演算子。既定 `未満`、英語 `Less than`。 */
+  operatorLessThan: string;
+  /** 列フィルターの演算子。既定 `範囲`、英語 `Between`。 */
+  operatorBetween: string;
+  /** 列フィルターの演算子。既定 `を含む`、英語 `Contains`。 */
+  operatorContains: string;
+  /** 列フィルターの演算子。既定 `で始まる`、英語 `Starts with`。 */
+  operatorStartsWith: string;
+  /** 列フィルターの演算子。既定 `で終わる`、英語 `Ends with`。 */
+  operatorEndsWith: string;
+  /** 列フィルターの演算子。既定 `以降`、英語 `On or after`。 */
+  operatorOnOrAfter: string;
+  /** 列フィルターの演算子。既定 `以前`、英語 `On or before`。 */
+  operatorOnOrBefore: string;
+  /** 列フィルターの演算子。既定 `空白`、英語 `Blank`。 */
+  operatorBlank: string;
+  /** 列フィルターの演算子。既定 `空白でない`、英語 `Not blank`。 */
+  operatorNotBlank: string;
+  // ── 列フィルター ──
+  /** 列フィルターの見出し。既定 `列フィルター: {column}`、英語 `Filter: {column}`。 */
+  filterTitle: GridLocaleTextTemplate<{ column: string }>;
+  /** 大きな列の候補を集めている間。既定 `候補を収集中… {percent}%`、英語 `Collecting values… {percent}%`。 */
+  filterCollecting: GridLocaleTextTemplate<{ percent: number }>;
+  /** `getFilterOptions` を待っている間。既定 `候補を取得中…`、英語 `Loading values…`。 */
+  filterOptionsLoading: string;
+  /** 同上(条件と値の両方がある列の短い表示)。既定 `取得中…`、英語 `Loading…`。 */
+  filterOptionsLoadingShort: string;
+  /** `getFilterOptions` が失敗したとき。既定 `候補の取得に失敗しました`、英語 `Couldn't load the values`。 */
+  filterOptionsFailed: string;
+  /** 同上(短い表示)。既定 `取得失敗`、英語 `Failed`。 */
+  filterOptionsFailedShort: string;
+  /** 候補が多くて途中までのとき。既定 `（先頭のみ・打ち切り）`、英語 `(first values only)`。 */
+  filterOptionsTruncated: string;
+  /** 値の一覧の検索欄。既定 `検索（Enter で確定）`、英語 `Search (Enter to apply)`。 */
+  filterSearchPlaceholder: string;
+  /** 値の一覧の「すべて選択」。既定 `（すべて選択）`、英語 `(Select all)`。 */
+  filterSelectAll: string;
+  /** 値の一覧で検索しているときの「すべて選択」。既定 `（検索結果をすべて選択）`、英語 `(Select all results)`。 */
+  filterSelectAllResults: string;
+  /** serverSide で候補が無いとき。既定 `候補が未指定です（serverSide では列に filterOptions などの候補供給が必要）`、英語 `No values. With serverSide, give the column filterOptions or another source of values.`。 */
+  filterNoOptionsSource: string;
+  /** 値の一覧の検索で 0 件のとき。既定 `一致する候補がありません`、英語 `No matching values`。 */
+  filterNoMatches: string;
+  /** 値の一覧の選んだ数。既定 `選択中: {selected} / {total} 件`、英語 `Selected {selected} of {total}`。 */
+  filterSelectedCount: GridLocaleTextTemplate<{ selected: number; total: number }>;
+  /** 値の一覧で検索しているときの表示中の数。既定 `（表示中 {count} 件）`、英語 ` ({count} shown)`。 */
+  filterShownCount: GridLocaleTextTemplate<{ count: number }>;
+  /** 値の見出しの件数(検索しているとき)。既定 `一致 {count} 件`、英語 `(関数)`。 */
+  filterMatchCount: GridLocaleTextTemplate<{ count: number }>;
+  /** 値の見出しの件数。既定 `全 {count} 件`、英語 `{count} total`。 */
+  filterTotalCount: GridLocaleTextTemplate<{ count: number }>;
+  /** `select` のフィルターの候補の数。既定 `候補数: {count}`、英語 `Values: {count}`。 */
+  filterOptionCount: GridLocaleTextTemplate<{ count: number }>;
+  /** `select` のフィルターの「すべて」。既定 `（すべて）`、英語 `(All)`。 */
+  filterAll: string;
+  /** 条件と値の両方がある列の見出し。既定 `条件`、英語 `Condition`。 */
+  filterConditionSection: string;
+  /** 条件と値の両方がある列の見出し。既定 `値`、英語 `Values`。 */
+  filterValuesSection: string;
+  /** 演算子の選択の読み上げの名前。既定 `条件の演算子`、英語 `Operator`。 */
+  filterOperator: string;
+  /** 条件の値の入力欄の読み上げの名前。既定 `条件の値`、英語 `Value`。 */
+  filterValue: string;
+  /** 条件の値の入力欄の placeholder。既定 `値`、英語 `Value`。 */
+  filterValuePlaceholder: string;
+  /** 範囲の下限。既定 `下限`、英語 `Min`。 */
+  filterMin: string;
+  /** 範囲の上限。既定 `上限`、英語 `Max`。 */
+  filterMax: string;
+  /** 空白の演算子を選んだとき。既定 `この演算子は値入力を使いません`、英語 `This operator doesn't take a value`。 */
+  filterNoValue: string;
+  /** 日付の入力欄の読み上げの名前。既定 `条件の日付`、英語 `Date`。 */
+  filterDate: string;
+  /** 日付の範囲の始まり。既定 `開始日`、英語 `Start date`。 */
+  filterStartDate: string;
+  /** 日付の範囲の終わり。既定 `終了日`、英語 `End date`。 */
+  filterEndDate: string;
+  /** 文字のフィルターの入力欄。既定 `部分一致で絞り込み`、英語 `Contains…`。 */
+  filterTextPlaceholder: string;
+  /** 文字のフィルターの説明。既定 `部分一致検索です`、英語 `Matches text anywhere in the value`。 */
+  filterTextHint: string;
+  /** 列フィルターの今の値。既定 `現在値: {value}`、英語 `Current: {value}`。 */
+  filterCurrentValue: GridLocaleTextTemplate<{ value: string }>;
+  /** 日付の値の一覧の ▸。既定 `展開する`、英語 `Expand`。 */
+  treeExpand: string;
+  /** 日付の値の一覧の ▾。既定 `折りたたむ`、英語 `Collapse`。 */
+  treeCollapse: string;
+  /** 日付の値の一覧の年。既定 `{year} 年`、英語 `{year}`。 */
+  dateTreeYear: GridLocaleTextTemplate<{ year: number }>;
+  /** 日付の値の一覧の月(`{month}` = 1〜12)。既定 `{month} 月`、英語 `(関数)`。 */
+  dateTreeMonth: GridLocaleTextTemplate<{ month: number }>;
+  /** 日付の値の一覧の日。既定 `{day} 日`、英語 `{day}`。 */
+  dateTreeDay: GridLocaleTextTemplate<{ day: number }>;
+  // ── 日付のカレンダー ──
+  /** 曜日(日曜から 7 つ)。既定 `日 月 火 水 木 金 土`、英語 `Su Mo Tu We Th Fr Sa`。 */
+  calendarWeekdays: readonly string[];
+  /** 月を選ぶ画面の月(1 月から 12 個)。既定 `1月 2月 3月 4月 5月 6月 7月 8月 9月 10月 11月 12月`、英語 `Jan Feb Mar Apr May Jun Jul Aug Sep Oct Nov Dec`。 */
+  calendarMonths: readonly string[];
+  /** 日を選ぶ画面の見出し(`{month}` = 1〜12)。既定 `{year}年 {month}月`、英語 `(関数)`。 */
+  calendarTitle: GridLocaleTextTemplate<{ year: number; month: number }>;
+  /** 月を選ぶ画面の見出し。既定 `{year}年`、英語 `{year}`。 */
+  calendarYear: GridLocaleTextTemplate<{ year: number }>;
+  /** カレンダーのボタン。既定 `カレンダーを開く`、英語 `Open calendar`。 */
+  calendarOpen: string;
+  /** カレンダーのボタン(開いているとき)。既定 `カレンダーを閉じる`、英語 `Close calendar`。 */
+  calendarClose: string;
+  /** カレンダーの前へ。既定 `前へ`、英語 `Previous`。 */
+  calendarPrevious: string;
+  /** カレンダーの次へ。既定 `次へ`、英語 `Next`。 */
+  calendarNext: string;
+  /** カレンダーの見出しのボタン。既定 `表示単位を切り替える`、英語 `Change view`。 */
+  calendarChangeView: string;
+  /** カレンダーの戻る。既定 `← 戻る`、英語 `← Back`。 */
+  calendarBack: string;
+  /** カレンダーの今日。既定 `今日`、英語 `Today`。 */
+  calendarToday: string;
+  // ── セル内検索とフィル ──
+  /** 検索のバーの読み上げの名前。既定 `セル内検索`、英語 `Find in cells`。 */
+  findLabel: string;
+  /** 検索の入力欄の placeholder。既定 `検索`、英語 `Find`。 */
+  findPlaceholder: string;
+  /** 検索の入力欄の読み上げの名前。既定 `検索文字列`、英語 `Search text`。 */
+  findInput: string;
+  /** 検索している間。既定 `検索中…`、英語 `Searching…`。 */
+  findSearching: string;
+  /** 検索で 0 件のとき。既定 `0 件`、英語 `No results`。 */
+  findNoResults: string;
+  /** 検索の ↑ の読み上げの名前。既定 `前のヒットへ`、英語 `Previous match`。 */
+  findPrevious: string;
+  /** 検索の ↑ のツールチップ。既定 `前へ(Shift+Enter)`、英語 `Previous (Shift+Enter)`。 */
+  findPreviousHint: string;
+  /** 検索の ↓ の読み上げの名前。既定 `次のヒットへ`、英語 `Next match`。 */
+  findNext: string;
+  /** 検索の ↓ のツールチップ。既定 `次へ(Enter)`、英語 `Next (Enter)`。 */
+  findNextHint: string;
+  /** 検索の × の読み上げの名前。既定 `検索を閉じる`、英語 `Close find`。 */
+  findClose: string;
+  /** 検索の × のツールチップ。既定 `閉じる(Esc)`、英語 `Close (Esc)`。 */
+  findCloseHint: string;
+  /** フィルのボタンのツールチップとメニューの名前。既定 `オートフィル オプション`、英語 `Auto Fill Options`。 */
+  fillOptions: string;
+  /** フィルのボタンの読み上げの名前(`{kind}` = `fillSeries` / `fillCopy`)。既定 `オートフィル オプション({kind})`、英語 `Auto Fill Options ({kind})`。 */
+  fillOptionsCurrent: GridLocaleTextTemplate<{ kind: string }>;
+  /** フィルのメニュー。既定 `連続データ`、英語 `Fill Series`。 */
+  fillSeries: string;
+  /** フィルのメニュー。既定 `セルのコピー`、英語 `Copy Cells`。 */
+  fillCopy: string;
+  // ── 検証・保存・集計 ──
+  /** `validate` が false / 空の文字を返したときのメッセージ。既定 `入力値が不正です`、英語 `Invalid value`。 */
+  invalidValue: string;
+  /** number エディタの検査(数値でない)。既定 `数値で入力してください`、英語 `Enter a number`。 */
+  enterNumber: string;
+  /** number エディタの検査(`integer`)。既定 `整数で入力してください`、英語 `Enter a whole number`。 */
+  enterInteger: string;
+  /** number エディタの検査(`min` だけ)。既定 `{min} 以上で入力してください`、英語 `Enter {min} or more`。 */
+  enterMin: GridLocaleTextTemplate<{ min: number }>;
+  /** number エディタの検査(`max` だけ)。既定 `{max} 以下で入力してください`、英語 `Enter {max} or less`。 */
+  enterMax: GridLocaleTextTemplate<{ max: number }>;
+  /** number エディタの検査(`min` と `max`)。既定 `{min}〜{max} で入力してください`、英語 `Enter a number from {min} to {max}`。 */
+  enterRange: GridLocaleTextTemplate<{ min: number; max: number }>;
+  /** serverSide の保存に失敗したセルの印のツールチップ。既定 `保存に失敗しました。値を戻しました`、英語 `Couldn't save. The value was restored.`。 */
+  saveFailedCell: string;
+  /** serverSide の読み込みに失敗したときのバー。既定 `行の取得に失敗しました({count} ブロック)`、英語 `(関数)`。 */
+  loadFailed: GridLocaleTextTemplate<{ count: number }>;
+  /** 同上の × の読み上げの名前。既定 `エラー通知を閉じる`、英語 `Dismiss the error`。 */
+  dismissLoadError: string;
+  /** serverSide の保存に失敗したときのバー。既定 `変更の保存に失敗しました({count} 行)。値を元に戻しました`、英語 `(関数)`。 */
+  saveFailed: GridLocaleTextTemplate<{ count: number }>;
+  /** 同上の × の読み上げの名前。既定 `保存エラー通知を閉じる`、英語 `Dismiss the save error`。 */
+  dismissSaveError: string;
+  /** 合計行の左端の文字(`totalRow.label` を渡せばそちら)。既定 `合計`、英語 `Total`。 */
+  totalRowLabel: string;
+  /** 合計行 / グループ行の集計の種類。既定 `平均`、英語 `Avg`。 */
+  totalAverage: string;
+  /** 合計行 / グループ行の集計の種類。既定 `最小`、英語 `Min`。 */
+  totalMin: string;
+  /** 合計行 / グループ行の集計の種類。既定 `最大`、英語 `Max`。 */
+  totalMax: string;
+  /** 合計行 / グループ行の集計の種類。既定 `個数`、英語 `Count`。 */
+  totalCount: string;
+  /** エクスポートの小計の行(`includeGroupRows`)。既定 `{label} 小計`、英語 `{label} subtotal`。 */
+  exportSubtotal: GridLocaleTextTemplate<{ label: string }>;
 };
 
 export type SpreadsheetGridDerivedSummary = {

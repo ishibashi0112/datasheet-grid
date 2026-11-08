@@ -24,6 +24,8 @@ export default defineConfig({
         // 追加(ことばで絞り込み): /ai(GridAskBar / useGridAsk)。core と React だけを使い、index とはチャンクを共有しません
         //   (本体のモジュールを import すると共有チャンクに分かれて全部入りの形が変わるため、src/ai/ は本体を import しない)。
         ai: resolve(import.meta.dirname, 'src/ai.ts'),
+        // 追加(英語対応): /locales/en(英語の文言)。core の英語の表を再エクスポートするだけ(dist/locales/en.js)。
+        'locales/en': resolve(import.meta.dirname, 'src/locales/en.ts'),
       },
       formats: ['es', 'cjs'],
       fileName: (format, entryName) => `${entryName}.${format === 'es' ? 'js' : 'cjs'}`,

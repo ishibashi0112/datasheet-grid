@@ -41,3 +41,22 @@ export type {
   GridAskResult,
   GridAskSort,
 } from './logic/gridAsk';
+// 追加(英語対応): 文言の既定(日本語)と英語。既定は本体(DEFAULT_GRID_LOCALE_TEXT)・遅れて読み込む部品(DEFAULT_POPUP_…)・
+//   機能ごと(DEFAULT_FIND_… など)に分かれていて、合わせて GridLocaleText のすべてのキーです。AI バーの文言は
+//   createGridAskRequest / readGridAskAnswer の options.localeText へ渡します。
+export { DEFAULT_GRID_LOCALE_TEXT, formatLocaleText } from './logic/localeText';
+export { DEFAULT_POPUP_LOCALE_TEXT } from './logic/localeTextPopups';
+export {
+  DEFAULT_AGGREGATES_LOCALE_TEXT,
+  DEFAULT_COLUMN_MENU_LOCALE_TEXT,
+  DEFAULT_FILL_HANDLE_LOCALE_TEXT,
+  DEFAULT_FILTERING_LOCALE_TEXT,
+  DEFAULT_FIND_LOCALE_TEXT,
+  DEFAULT_GROUPING_LOCALE_TEXT,
+  DEFAULT_ROW_DRAG_LOCALE_TEXT,
+  DEFAULT_SCROLL_HINT_LOCALE_TEXT,
+  DEFAULT_SERVER_SIDE_LOCALE_TEXT,
+} from './logic/localeTextFeatures';
+export { DEFAULT_GRID_ASK_LOCALE_TEXT } from './logic/gridAskLocaleText';
+export type { GridAskLocaleText } from './logic/gridAskLocaleText';
+export { gridAskLocaleTextEn, localeTextEn } from './locales/en';

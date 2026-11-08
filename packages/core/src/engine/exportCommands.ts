@@ -22,6 +22,9 @@ import { normalizeExportScope } from '../logic/exportScope';
 import type { GridApiArgs } from './gridApi';
 import type { GroupingFeature } from './features';
 
+// 型だけの宣言です(ブラウザに process は無く、利用側のバンドラが process.env.NODE_ENV を文字列へ置き換える)。
+declare const process: { env: { NODE_ENV?: string } };
+
 // ダウンロード用の URL を破棄するまでの猶予(FC-34)。
 const DOWNLOAD_URL_REVOKE_DELAY_MS = 1000;
 
@@ -115,9 +118,13 @@ export const createExportCommands = <T,>(
     if (normalized === 'raw') {
       // serverSide はソース行配列を持たない(未ロード行が存在する)ため 'view' 相当へフォールバックし警告。
       if (s.isServerSide) {
-        console.warn(
-          "SpreadsheetGrid: scope 'raw' は serverSide では未ロード行を取得できないため、'view'(ロード済みビュー行)として扱います。全件エクスポートはサーバ側での実施を推奨します。",
-        );
+        // 変更(英語対応): 開発時だけ警告します(本番の JS から文を除く)。
+        if (process.env.NODE_ENV !== 'production') {
+          console.warn(
+            "SpreadsheetGrid: scope 'raw' は serverSide では未ロード行を取得できないため、'view'(ロード済みビュー行)として扱います。全件エクスポートはサーバ側での実施を推奨します。\n" +
+              "SpreadsheetGrid: scope 'raw' cannot read rows that are not loaded with serverSide, so it is treated as 'view' (the loaded rows). Export all rows on the server instead.",
+          );
+        }
         return {
           getRow: getViewRow,
           startRow: 0,
@@ -289,7 +296,7 @@ export const createExportCommands = <T,>(
     exportColumns: GridColumn<T>[],
   ): ((index: number) => GroupSubtotalLine | undefined) | undefined =>
     includeGroupRows === true && resolved.groupDisplay
-      ? createGroupSubtotalLineGetter({ ...resolved.groupDisplay, columns: exportColumns })
+      ? createGroupSubtotalLineGetter({ ...resolved.groupDisplay, columns: exportColumns, texts: getArgs()?.localeTexts })
       : undefined;
 
   const buildCsv = (options?: CsvExportOptions): string => {

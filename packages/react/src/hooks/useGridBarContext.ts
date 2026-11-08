@@ -3,11 +3,11 @@ import { selectGlobalFilter } from '@ishibashi0112/spreadsheet-grid-core/interna
 import type {
   GlobalFilterStatus,
   GridColumn,
-  GridLocaleText,
   GridSelectionAggregates,
   GridUiState,
   SpreadsheetGridSlotContext,
 } from '../model/gridTypes';
+import type { ResolvedGridLocaleText } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/localeText';
 import { buildGridDerivedSummary, createDataColumnNamer, createDataRowNumberer } from '../view/gridBarHelpers';
 
 // 追加: derivedSummary / setGlobalFilterText を載せる前の中間 slot context 型です。
@@ -29,7 +29,7 @@ type GridSlotContextBase<T> = Omit<
 type UseGridBarContextArgs<T> = {
   rows: T[];
   // 追加(段階 2 DU-18): 文言(既定と合わせたもの。中身が同じ間は同じ参照)。
-  localeTexts: Readonly<GridLocaleText>;
+  localeTexts: ResolvedGridLocaleText;
   // 変更(DS-3-7): filteredRows(配列)→ 件数(viewRowCount)+ 遅延 factory(getFilteredRows)。
   //   サマリは viewRowCount を使い、公開 slotContext.filteredRows は getFilteredRows() を
   //   遅延 getter で返します(外部スロットが読んだ時だけ materialize)。
@@ -114,9 +114,15 @@ export const useGridBarContext = <T,>({
     ],
   );
 
+  // 変更(英語対応 L-N1): 合成列のセルの番地に文言の表の名前を使います。
+  const detailColumnName = localeTexts.detailColumnName;
+  const rowDragColumnName = localeTexts.rowDragColumnName;
   const columnNamer = useMemo(
-    () => (orderedColumns ? createDataColumnNamer(orderedColumns) : undefined),
-    [orderedColumns],
+    () =>
+      orderedColumns
+        ? createDataColumnNamer(orderedColumns, { detail: detailColumnName, rowDrag: rowDragColumnName })
+        : undefined,
+    [orderedColumns, detailColumnName, rowDragColumnName],
   );
   const rowNumberer = useMemo(() => createDataRowNumberer(labelViewIndexes), [labelViewIndexes]);
   const derivedSummary = useMemo(

@@ -10,8 +10,12 @@ import {
   formatTotalRowCellText,
   formatTotalRowNumber,
   resolveTotalRowCaption,
+  type TotalRowCaptionLocaleText,
 } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/totalRow';
 import type { GridPaneKind } from './GridHeaderRow';
+import { useFeatureLocaleText } from '../hooks/useGridLocaleText';
+import type { DEFAULT_GROUPING_LOCALE_TEXT } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/localeTextFeatures';
+import { formatLocaleText } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/localeText';
 
 // ──────────────────────────────────────────────────────────
 // 追加(grouping ③): グループ行です(A2 = セル分割型)。列セルの絶対配置・境界を leaf 行と
@@ -58,9 +62,10 @@ type GridBodyGroupRowProps<T> = {
 const resolveAggregateDisplay = <T,>(
   column: GridColumn<T>,
   value: unknown,
+  texts: TotalRowCaptionLocaleText,
 ): { text: string; caption: string | undefined } => {
   const kind = typeof column.aggFunc === 'string' ? column.aggFunc : 'custom';
-  return { text: formatTotalRowCellText(column, { value, kind }), caption: resolveTotalRowCaption(kind) };
+  return { text: formatTotalRowCellText(column, { value, kind }), caption: resolveTotalRowCaption(kind, texts) };
 };
 
 // 1 階層ぶんのインデント幅(px)です。
@@ -86,6 +91,10 @@ function GridBodyGroupRowInner<T>({
   onCellPointerEnter,
   slots,
 }: GridBodyGroupRowProps<T>) {
+  // 追加(英語対応): 文言(localeText)。
+  const texts = useFeatureLocaleText<typeof DEFAULT_GROUPING_LOCALE_TEXT>();
+  // 追加(英語対応): 空のグループの名前は文言の表から(core は既定の「(空白)」で作る)。
+  const groupLabel = groupRow.value === null ? texts.blank : groupRow.label;
   return (
     <div
       data-pane={pane}
@@ -144,7 +153,7 @@ function GridBodyGroupRowInner<T>({
             groupRow.aggregates,
             column.key,
           )
-            ? resolveAggregateDisplay(column, groupRow.aggregates[column.key])
+            ? resolveAggregateDisplay(column, groupRow.aggregates[column.key], texts)
             : null;
 
         return (
@@ -195,16 +204,16 @@ function GridBodyGroupRowInner<T>({
                   tabIndex={-1}
                   className="ssg-group-toggle"
                   aria-expanded={!isCollapsed}
-                  aria-label={`${groupRow.label} を${isCollapsed ? '展開' : '折りたたみ'}`}
+                  aria-label={formatLocaleText(isCollapsed ? texts.expandGroup : texts.collapseGroup, { group: groupLabel })}
                   onClick={() => onGroupToggle(groupRow.groupKey)}
                   onDoubleClick={(event) => event.stopPropagation()}
                 >
                   {isCollapsed ? '▸' : '▾'}
                 </button>
-                <span className="ssg-group-label">{groupRow.label}</span>
+                <span className="ssg-group-label">{groupLabel}</span>
                 {/* 変更(段階 2 の確かめ直し): 件数も桁区切り(同じ行の集計「個数 6,220」と同じ書き方)。 */}
                 <span className="ssg-group-count">
-                  ({formatTotalRowNumber(groupRow.leafCount)}件)
+                  {formatLocaleText(texts.groupRowCount, { count: formatTotalRowNumber(groupRow.leafCount) })}
                 </span>
               </>
             ) : aggregate ? (

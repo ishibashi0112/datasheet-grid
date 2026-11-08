@@ -99,6 +99,9 @@ import {
 } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/dateFilterTree';
 import type { GridResolvedSlot } from '../model/gridTypes';
 import { isImeComposingKeyEvent } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/domGuards';
+import { usePopupLocaleText } from '../hooks/usePopupLocaleText';
+import { formatLocaleText } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/localeText';
+import { DEFAULT_FILTER_LOCALE_TEXT } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/localeTextFilters';
 
 // 追加: popover のレイアウト情報です。
 // 追加(FIT-1): maxHeight(viewport 内へ収める上限)。指定時は popover の flex 化と併せて
@@ -208,6 +211,11 @@ type ColumnFilterPopoverProps = {
 // 変更(DENS-B): 28 → 24(compact 化。CSS 側の .ssg-filter-selectall 高さとも揃えます)。
 const SET_FILTER_OPTION_ROW_HEIGHT = 24;
 
+// 追加(英語対応): 集めた候補の空白(値が空で、ラベルが既定の「(空白)」)は文言の表の blank で出します(候補は core が
+//   既定の文言で作るため。利用側が filterOptions で渡したラベルはそのまま)。
+const displayOptionLabel = (value: string, label: string, blank: string): string =>
+  value === '' && label === DEFAULT_FILTER_LOCALE_TEXT.blank ? blank : label;
+
 // ── set フィルター本体 ──────────────────────────────────
 // 追加(12-A): set フィルターの検索 state / 仮想化は popover 全体とライフサイクルが
 //             異なる(開閉でリセットしたい・親 SpreadsheetGrid を再レンダーさせたくない)
@@ -248,6 +256,7 @@ function SetFilterBody({
   selectAllUsesExplicitScope = false,
   truncated = false,
 }: SetFilterBodyProps) {
+  const texts = usePopupLocaleText();
   const [searchText, setSearchText] = useState('');
   // 追加(12-A): 候補 5,000 件規模での連続タイピングに備え、絞り込み計算は
   //             低優先度レンダーへ遅延します(11-B7 のグローバルフィルタと同型)。
@@ -361,7 +370,7 @@ function SetFilterBody({
             onRequestClose();
           }
         }}
-        placeholder="検索（Enter で確定）"
+        placeholder={texts.filterSearchPlaceholder}
         className="ssg-filter-input"
       />
 
@@ -379,7 +388,7 @@ function SetFilterBody({
           onChange={handleSelectAllToggle}
         />
         <span className="ssg-filter-selectall-label">
-          {isSearching ? '（検索結果をすべて選択）' : '（すべて選択）'}
+          {isSearching ? texts.filterSelectAllResults : texts.filterSelectAll}
         </span>
       </label>
 
@@ -389,9 +398,9 @@ function SetFilterBody({
           <div className="ssg-filter-empty">
             {options.length === 0
               ? isServerSide
-                ? '候補が未指定です（serverSide では列に filterOptions などの候補供給が必要）'
-                : '候補がありません'
-              : '一致する候補がありません'}
+                ? texts.filterNoOptionsSource
+                : texts.noOptions
+              : texts.filterNoMatches}
           </div>
         ) : (
           <div
@@ -419,7 +428,7 @@ function SetFilterBody({
                     onChange={() => onValueToggle(option.value)}
                   />
                   <span className="ssg-filter-option-label">
-                    {option.label}
+                    {displayOptionLabel(option.value, option.label, texts.blank)}
                   </span>
                 </label>
               );
@@ -429,8 +438,8 @@ function SetFilterBody({
       </div>
 
       <div className="ssg-filter-meta">
-        選択中: {totalSelectedCount} / {options.length} 件
-        {isSearching ? `（表示中 ${visibleOptions.length} 件）` : ''}
+        {formatLocaleText(texts.filterSelectedCount, { selected: totalSelectedCount, total: options.length })}
+        {isSearching ? formatLocaleText(texts.filterShownCount, { count: visibleOptions.length }) : ''}
         {truncated && <TruncatedNote />}
       </div>
     </>
@@ -488,6 +497,7 @@ function NumberConditionEditor({
   onDraftChange,
   onKeyDown,
 }: NumberConditionEditorProps) {
+  const texts = usePopupLocaleText();
   const operandCount = numberFilterOperandCount(draft.operator);
   return (
     <>
@@ -501,11 +511,11 @@ function NumberConditionEditor({
         }
         onKeyDown={onKeyDown}
         className="ssg-filter-select"
-        aria-label="条件の演算子"
+        aria-label={texts.filterOperator}
       >
         {NUMBER_FILTER_OPERATOR_OPTIONS.map((option) => (
           <option key={option.value} value={option.value}>
-            {option.label}
+            {texts[option.labelKey]}
           </option>
         ))}
       </select>
@@ -531,9 +541,9 @@ function NumberConditionEditor({
               onDraftChange({ ...draft, value1: event.currentTarget.value })
             }
             onKeyDown={onKeyDown}
-            placeholder={operandCount === 2 ? '下限' : '値'}
+            placeholder={operandCount === 2 ? texts.filterMin : texts.filterValuePlaceholder}
             className="ssg-filter-input"
-            aria-label={operandCount === 2 ? '下限' : '条件の値'}
+            aria-label={operandCount === 2 ? texts.filterMin : texts.filterValue}
           />
           {operandCount === 2 && (
             <>
@@ -553,15 +563,15 @@ function NumberConditionEditor({
                   onDraftChange({ ...draft, value2: event.currentTarget.value })
                 }
                 onKeyDown={onKeyDown}
-                placeholder="上限"
+                placeholder={texts.filterMax}
                 className="ssg-filter-input"
-                aria-label="上限"
+                aria-label={texts.filterMax}
               />
             </>
           )}
         </div>
       ) : (
-        <div className="ssg-filter-meta">この演算子は値入力を使いません</div>
+        <div className="ssg-filter-meta">{texts.filterNoValue}</div>
       )}
     </>
   );
@@ -588,6 +598,7 @@ function TextConditionEditor({
   onDraftChange,
   onKeyDown,
 }: TextConditionEditorProps) {
+  const texts = usePopupLocaleText();
   const operandCount = textFilterOperandCount(draft.operator);
   return (
     <>
@@ -601,11 +612,11 @@ function TextConditionEditor({
         }
         onKeyDown={onKeyDown}
         className="ssg-filter-select"
-        aria-label="条件の演算子"
+        aria-label={texts.filterOperator}
       >
         {TEXT_FILTER_OPERATOR_OPTIONS.map((option) => (
           <option key={option.value} value={option.value}>
-            {option.label}
+            {texts[option.labelKey]}
           </option>
         ))}
       </select>
@@ -627,13 +638,13 @@ function TextConditionEditor({
               onDraftChange({ ...draft, value: event.currentTarget.value })
             }
             onKeyDown={onKeyDown}
-            placeholder="値"
+            placeholder={texts.filterValuePlaceholder}
             className="ssg-filter-input"
-            aria-label="条件の値"
+            aria-label={texts.filterValue}
           />
         </div>
       ) : (
-        <div className="ssg-filter-meta">この演算子は値入力を使いません</div>
+        <div className="ssg-filter-meta">{texts.filterNoValue}</div>
       )}
     </>
   );
@@ -669,6 +680,7 @@ function DateConditionEditor({
   renderDateInput,
   onRequestClose,
 }: DateConditionEditorProps) {
+  const texts = usePopupLocaleText();
   const operandCount =
     draft.preset !== null ? 0 : dateFilterOperandCount(draft.operator);
 
@@ -698,11 +710,11 @@ function DateConditionEditor({
         }
         onKeyDown={onKeyDown}
         className="ssg-filter-select"
-        aria-label="条件の演算子"
+        aria-label={texts.filterOperator}
       >
         {DATE_FILTER_OPERATOR_OPTIONS.map((option) => (
           <option key={option.value} value={option.value}>
-            {option.label}
+            {texts[option.labelKey]}
           </option>
         ))}
       </select>
@@ -717,7 +729,7 @@ function DateConditionEditor({
             renderDateInput({
               value: draft.value1,
               onChange: (value) => handleSlotChange('value1', value),
-              ariaLabel: operandCount === 2 ? '開始日' : '条件の日付',
+              ariaLabel: operandCount === 2 ? texts.filterStartDate : texts.filterDate,
               slot: operandCount === 2 ? 'from' : 'single',
             })
           ) : (
@@ -726,7 +738,7 @@ function DateConditionEditor({
               onCommit={(value) =>
                 onDraftChange({ ...draft, value1: value, preset: null })
               }
-              ariaLabel={operandCount === 2 ? '開始日' : '条件の日付'}
+              ariaLabel={operandCount === 2 ? texts.filterStartDate : texts.filterDate}
               inputRef={valueInputRef}
               onRequestClose={onRequestClose}
             />
@@ -738,7 +750,7 @@ function DateConditionEditor({
                 renderDateInput({
                   value: draft.value2,
                   onChange: (value) => handleSlotChange('value2', value),
-                  ariaLabel: '終了日',
+                  ariaLabel: texts.filterEndDate,
                   slot: 'to',
                 })
               ) : (
@@ -747,7 +759,7 @@ function DateConditionEditor({
                   onCommit={(value) =>
                     onDraftChange({ ...draft, value2: value, preset: null })
                   }
-                  ariaLabel="終了日"
+                  ariaLabel={texts.filterEndDate}
                   onRequestClose={onRequestClose}
                   align="right"
                 />
@@ -756,7 +768,7 @@ function DateConditionEditor({
           )}
         </div>
       ) : draft.preset === null ? (
-        <div className="ssg-filter-meta">この演算子は値入力を使いません</div>
+        <div className="ssg-filter-meta">{texts.filterNoValue}</div>
       ) : null}
       {/* 変更(preset-opt): チップは列ごとの構成(dateFilterPresets)から描画します。
           空構成(false / [])ではチップ行そのものを出しません(オプトアウト)。 */}
@@ -830,6 +842,7 @@ function DateSetFilterBody({
   isServerSide,
   truncated = false,
 }: DateSetFilterBodyProps) {
+  const texts = usePopupLocaleText();
   const [searchText, setSearchText] = useState('');
   const deferredSearchText = useDeferredValue(searchText);
   // 展開状態(年 / 月ノードのキー集合)。既定は全て畳み(年のみ表示)です。
@@ -843,8 +856,8 @@ function DateSetFilterBody({
     [options, deferredSearchText],
   );
   const treeRows = useMemo(
-    () => buildDateTreeRows(options, expandedKeys),
-    [options, expandedKeys],
+    () => buildDateTreeRows(options, expandedKeys, texts),
+    [options, expandedKeys, texts],
   );
 
   const listScrollRef = useRef<HTMLDivElement | null>(null);
@@ -944,7 +957,7 @@ function DateSetFilterBody({
               }
             }}
             className="ssg-filter-tree-toggle"
-            aria-label={row.expanded ? '折りたたむ' : '展開する'}
+            aria-label={row.expanded ? texts.treeCollapse : texts.treeExpand}
           >
             {row.expanded ? '▾' : '▸'}
           </button>
@@ -968,7 +981,7 @@ function DateSetFilterBody({
             onSelectAllChange(row.leafKeys, !isChecked);
           }}
         />
-        <span className="ssg-filter-option-label">{row.label}</span>
+        <span className="ssg-filter-option-label">{displayOptionLabel(row.key, row.label, texts.blank)}</span>
       </>
     );
   };
@@ -1002,7 +1015,7 @@ function DateSetFilterBody({
             onRequestClose();
           }
         }}
-        placeholder="検索（Enter で確定）"
+        placeholder={texts.filterSearchPlaceholder}
         className="ssg-filter-input"
       />
 
@@ -1020,7 +1033,7 @@ function DateSetFilterBody({
           }
         />
         <span className="ssg-filter-selectall-label">
-          {isSearching ? '（検索結果をすべて選択）' : '（すべて選択）'}
+          {isSearching ? texts.filterSelectAllResults : texts.filterSelectAll}
         </span>
       </label>
 
@@ -1029,9 +1042,9 @@ function DateSetFilterBody({
           <div className="ssg-filter-empty">
             {options.length === 0
               ? isServerSide
-                ? '候補が未指定です（serverSide では列に filterOptions などの候補供給が必要）'
-                : '候補がありません'
-              : '一致する候補がありません'}
+                ? texts.filterNoOptionsSource
+                : texts.noOptions
+              : texts.filterNoMatches}
           </div>
         ) : (
           <div
@@ -1059,7 +1072,7 @@ function DateSetFilterBody({
                       onChange={() => onValueToggle(option.value)}
                     />
                     <span className="ssg-filter-option-label">
-                      {option.label}
+                      {displayOptionLabel(option.value, option.label, texts.blank)}
                     </span>
                   </label>
                 );
@@ -1087,8 +1100,8 @@ function DateSetFilterBody({
       </div>
 
       <div className="ssg-filter-meta">
-        選択中: {totalSelectedCount} / {options.length} 件
-        {isSearching ? `（表示中 ${flatMatches.length} 件）` : ''}
+        {formatLocaleText(texts.filterSelectedCount, { selected: totalSelectedCount, total: options.length })}
+        {isSearching ? formatLocaleText(texts.filterShownCount, { count: flatMatches.length }) : ''}
         {truncated && <TruncatedNote />}
       </div>
     </>
@@ -1125,12 +1138,13 @@ function OptionsPendingBody({
   errorMessage?: string;
   onRetry?: () => void;
 }) {
+  const texts = usePopupLocaleText();
   if (status === 'loading') {
-    return <div className="ssg-filter-collecting">候補を取得中…</div>;
+    return <div className="ssg-filter-collecting">{texts.filterOptionsLoading}</div>;
   }
   return (
     <div className="ssg-filter-error" role="alert">
-      <div>候補の取得に失敗しました</div>
+      <div>{texts.filterOptionsFailed}</div>
       {errorMessage ? (
         <div className="ssg-filter-error-detail" title={errorMessage}>
           {errorMessage}
@@ -1153,7 +1167,7 @@ function OptionsPendingBody({
           }}
           className="ssg-filter-btn-secondary"
         >
-          再試行
+          {texts.retry}
         </button>
       ) : null}
     </div>
@@ -1162,7 +1176,8 @@ function OptionsPendingBody({
 
 // 追加(async-options): 候補打ち切りの注記(メタ行の末尾)。
 function TruncatedNote() {
-  return <span className="ssg-filter-truncated">（先頭のみ・打ち切り）</span>;
+  const texts = usePopupLocaleText();
+  return <span className="ssg-filter-truncated">{texts.filterOptionsTruncated}</span>;
 }
 
 function ComboFilterLayout({
@@ -1176,10 +1191,11 @@ function ComboFilterLayout({
   children,
   optionsMeta,
 }: ComboFilterLayoutProps) {
+  const texts = usePopupLocaleText();
   return (
     <>
       <div className="ssg-filter-sec-head">
-        <span className="ssg-filter-sec-label">条件</span>
+        <span className="ssg-filter-sec-label">{texts.filterConditionSection}</span>
         <button
           type="button"
           onPointerDown={(event) => {
@@ -1198,15 +1214,16 @@ function ComboFilterLayout({
           className="ssg-filter-sec-clear"
           disabled={!conditionActive}
         >
-          クリア
+          {texts.clear}
         </button>
       </div>
       {conditionEditor}
       <div className="ssg-filter-sep" />
       <div className="ssg-filter-sec-head">
-        <span className="ssg-filter-sec-label">値</span>
+        <span className="ssg-filter-sec-label">{texts.filterValuesSection}</span>
         <span className="ssg-filter-sec-meta">
-          {optionsMeta ?? (conditionActive ? `一致 ${options.length} 件` : `全 ${options.length} 件`)}
+          {optionsMeta ??
+            formatLocaleText(conditionActive ? texts.filterMatchCount : texts.filterTotalCount, { count: options.length })}
         </span>
         <button
           type="button"
@@ -1226,7 +1243,7 @@ function ComboFilterLayout({
           className="ssg-filter-sec-clear"
           disabled={setSelection === null}
         >
-          クリア
+          {texts.clear}
         </button>
       </div>
       {children}
@@ -1276,6 +1293,7 @@ export function ColumnFilterPopover({
   onSetReplaceSelection,
   isServerSide = false,
 }: ColumnFilterPopoverProps) {
+  const texts = usePopupLocaleText();
   // 追加(filter-ext B/C): 複合(numberSet / textSet / dateSet)の検索ボックス用ローカル ref です。
   //   複合では controller の textInputRef(autofocus 対象)を条件の値入力へ割り当てるため、
   //   Set 本体の検索ボックスにはこちらを渡します(early return より前に置くこと)。
@@ -1342,7 +1360,7 @@ export function ColumnFilterPopover({
   const textDraft = textConditionDraft ?? DEFAULT_TEXT_FILTER_DRAFT;
   const dateDraft = dateConditionDraft ?? DEFAULT_DATE_FILTER_DRAFT;
   // 追加(preset-opt): プリセット構成です。未指定はビルトイン 3 種(従来挙動)。
-  const resolvedDatePresets = datePresets ?? normalizeDateFilterPresets(undefined);
+  const resolvedDatePresets = datePresets ?? normalizeDateFilterPresets(undefined, texts);
 
   // 追加(filter-ext B/C/D): 候補連動(合意仕様 §2.3)── 条件 draft から parsed を合成し、
   //   Set 候補一覧を条件を満たす値だけに絞ります(条件なしは同一参照で素通し)。
@@ -1436,14 +1454,14 @@ export function ColumnFilterPopover({
       className={cx('ssg-filter-popover', themeClassName, popoverSlot?.className)}
       style={{ ...popoverSlot?.style, ...wrapperStyle }}
     >
-      <div className="ssg-filter-title">列フィルター: {title}</div>
+      <div className="ssg-filter-title">{formatLocaleText(texts.filterTitle, { column: title })}</div>
 
       {(isImmediateFilter || filterType === 'select') &&
       optionsStatus === 'collecting' ? (
         // 追加(DS-4 #1): 大規模列(>閾値)の候補収集中です。universe 未確定のため操作 UI は出さず、
         //   進捗のみ表示します(収集完了 = ready で本来の set / select UI へ切り替わります)。
         <div className="ssg-filter-collecting">
-          候補を収集中… {Math.round(optionsProgress * 100)}%
+          {formatLocaleText(texts.filterCollecting, { percent: Math.round(optionsProgress * 100) })}
         </div>
       ) : (isImmediateFilter || filterType === 'select') && optionsPending ? (
         // 追加(async-options): getFilterOptions からの取得中 / 失敗です。複合列は条件エディタを出したまま
@@ -1457,7 +1475,7 @@ export function ColumnFilterPopover({
             setSelection={setSelection}
             onSelectionClear={onComboSelectionClear}
             summaryText={comboSummaryText}
-            optionsMeta={optionsStatus === 'loading' ? '取得中…' : '取得失敗'}
+            optionsMeta={optionsStatus === 'loading' ? texts.filterOptionsLoadingShort : texts.filterOptionsFailedShort}
           >
             <OptionsPendingBody
               status={optionsStatus === 'loading' ? 'loading' : 'error'}
@@ -1561,15 +1579,15 @@ export function ColumnFilterPopover({
             }}
             className="ssg-filter-select"
           >
-            <option value="">（すべて）</option>
+            <option value="">{texts.filterAll}</option>
             {selectOptions.map((option) => (
               <option key={`${title}-${option.value}`} value={option.value}>
-                {option.label}
+                {displayOptionLabel(option.value, option.label, texts.blank)}
               </option>
             ))}
           </select>
           <div className="ssg-filter-meta">
-            候補数: {selectOptions.length}
+            {formatLocaleText(texts.filterOptionCount, { count: selectOptions.length })}
             {optionsTruncated && <TruncatedNote />}
           </div>
         </>
@@ -1599,11 +1617,11 @@ export function ColumnFilterPopover({
                 onRequestClose();
               }
             }}
-            placeholder="部分一致で絞り込み"
+            placeholder={texts.filterTextPlaceholder}
             className="ssg-filter-input"
           />
           <div className="ssg-filter-meta ssg-filter-meta--ellipsis">
-            部分一致検索です
+            {texts.filterTextHint}
           </div>
         </>
       )}
@@ -1613,7 +1631,7 @@ export function ColumnFilterPopover({
           変更(filter-ext B): numberSet も同様(複合サマリー行を上に表示済み)。 */}
       {!isImmediateFilter && (
         <div className="ssg-filter-meta ssg-filter-meta--ellipsis">
-          現在値: {currentValueText}
+          {formatLocaleText(texts.filterCurrentValue, { value: currentValueText })}
         </div>
       )}
 
@@ -1640,7 +1658,7 @@ export function ColumnFilterPopover({
               }}
               className="ssg-filter-btn-secondary"
             >
-              クリア
+              {texts.clear}
             </button>
             <button
               type="button"
@@ -1659,7 +1677,7 @@ export function ColumnFilterPopover({
               }}
               className="ssg-filter-btn-primary"
             >
-              閉じる
+              {texts.close}
             </button>
           </>
         ) : (
@@ -1682,7 +1700,7 @@ export function ColumnFilterPopover({
               }}
               className="ssg-filter-btn-secondary"
             >
-              クリア
+              {texts.clear}
             </button>
             <button
               type="button"
@@ -1702,7 +1720,7 @@ export function ColumnFilterPopover({
               }}
               className="ssg-filter-btn-primary"
             >
-              適用
+              {texts.apply}
             </button>
           </>
         )}

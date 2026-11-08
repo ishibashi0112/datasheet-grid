@@ -15,6 +15,9 @@
 import type { FilterManagementEntry } from './FilterManagementPanel';
 import { cx } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/cx';
 import type { GridResolvedSlot } from '../model/gridTypes';
+import { useFeatureLocaleText } from '../hooks/useGridLocaleText';
+import type { DEFAULT_FILTERING_LOCALE_TEXT } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/localeTextFeatures';
+import { formatLocaleText } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/localeText';
 
 type GridFilterChipBarProps = {
   // 適用中フィルターの一覧です(FilterManagementPanel と同じ構築物を受け取ります)。
@@ -36,6 +39,8 @@ export function GridFilterChipBar({
   onClearAllFilters,
   slot,
 }: GridFilterChipBarProps) {
+  // 追加(英語対応): 文言(localeText)。
+  const texts = useFeatureLocaleText<typeof DEFAULT_FILTERING_LOCALE_TEXT>();
   // 有効フィルター 0 件は非表示です(合意 b: 空バーは出さない)。
   if (entries.length === 0) {
     return null;
@@ -61,19 +66,19 @@ export function GridFilterChipBar({
             disabled={!canFilter || entry.isHidden}
             data-ssg-tooltip={
               entry.isHidden
-                ? '非表示列のためジャンプ編集できません(× でクリアは可能)'
+                ? texts.filterJumpUnavailable
                 : entry.isGrouped === true
-                  ? 'グループの列の見出しの下で編集'
-                  : 'この列へジャンプして編集'
+                  ? texts.filterEditUnderGroup
+                  : texts.filterJump
             }
-            aria-label={`${entry.title} のフィルターを編集`}
+            aria-label={formatLocaleText(texts.filterEditFor, { column: entry.title })}
             onClick={() => {
               onEditFilter(entry.columnKey);
             }}
           >
             <span className="ssg-filter-chip-name">
               {entry.title}
-              {entry.isHidden ? '(非表示列)' : entry.isGrouped === true ? '(グループ化中)' : ''}
+              {entry.isHidden ? texts.filterHiddenColumn : entry.isGrouped === true ? texts.filterGroupedColumn : ''}
             </span>
             <span className="ssg-filter-chip-summary">
               {entry.summaryText}
@@ -83,8 +88,8 @@ export function GridFilterChipBar({
             type="button"
             className="ssg-filter-chip-clear"
             disabled={!canFilter}
-            data-ssg-tooltip="この列のフィルターをクリア"
-            aria-label={`${entry.title} のフィルターをクリア`}
+            data-ssg-tooltip={texts.filterClear}
+            aria-label={formatLocaleText(texts.filterClearFor, { column: entry.title })}
             onClick={() => {
               onClearFilter(entry.columnKey);
             }}
@@ -99,7 +104,7 @@ export function GridFilterChipBar({
         disabled={!canFilter}
         onClick={onClearAllFilters}
       >
-        すべてクリア
+        {texts.clearAll}
       </button>
     </div>
   );

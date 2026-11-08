@@ -12,6 +12,7 @@
 //     行 / 列)にも保存中の印を付け直します(これまでは印が消え、保存中なのに普通のセルに見えていた)。
 import type { GridRowKey } from '../model/gridTypes.unbound';
 import { isInsideDetailCardOf } from '../logic/detailRow';
+import { DEFAULT_GRID_LOCALE_TEXT } from '../logic/localeText';
 
 type ReadonlyRef<V> = { readonly current: V };
 
@@ -25,6 +26,8 @@ export type SaveStatusArgs = {
   // シェル要素(チップの配置基準。null なら scrollContainer を使う)。
   shellRef?: ReadonlyRef<HTMLElement | null>;
   enabled: boolean;
+  // 追加(英語対応): 保存に失敗したセルの下に出す文言(localeText の saveFailedCell。未指定 = 日本語の既定)。
+  failedText?: string;
 };
 
 export type SaveStatusController = {
@@ -39,7 +42,6 @@ export const SAVE_FAILED_CHIP_CLASS_NAME = 'ssg-save-failed-chip';
 export const OK_BADGE_MS = 1300;
 export const FAILED_BADGE_MS = 1300;
 export const FAILED_CHIP_MS = 4000;
-export const FAILED_CHIP_TEXT = '保存に失敗しました。値を戻しました';
 
 const cssEscape = (value: string): string =>
   typeof CSS !== 'undefined' && typeof CSS.escape === 'function'
@@ -134,7 +136,7 @@ export const createSaveStatusController = (): SaveStatusController => {
     chip = document.createElement('div');
     chip.className = SAVE_FAILED_CHIP_CLASS_NAME;
     chip.setAttribute('role', 'status');
-    chip.textContent = FAILED_CHIP_TEXT;
+    chip.textContent = args?.failedText ?? DEFAULT_GRID_LOCALE_TEXT.saveFailedCell;
     chip.style.left = `${Math.max(0, cellRect.left - shellRect.left)}px`;
     chip.style.top = `${cellRect.bottom - shellRect.top + 4}px`;
     shell.appendChild(chip);

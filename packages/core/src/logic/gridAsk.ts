@@ -15,6 +15,9 @@ import { createColumnFilterDescribeOptions, describeColumnFilterValue } from './
 import { formatDateKey, toDateKey } from './filtering';
 import { cloneColumnFilterValue, isSameColumnFilterValue, isSameFilterState, isSameSortState } from './gridState';
 import { formatParsedNumberFilter } from './numberFilterCondition';
+// 追加(英語対応): /ai の文言(既定 = 日本語)。
+import { resolveGridAskLocaleText, type GridAskLocaleText, type GridAskOp } from './gridAskLocaleText';
+import { formatLocaleText } from './localeTextFilters';
 
 // 追加(ことばで絞り込み): 利用者の文(「東京の在庫が 10 個以下を高い順に」)を AI に渡す頼みへ組み立て、
 //   AI の答えを検査して GridState(フィルター / 並び / 検索 / 列の表示)へ変える純ロジックです。
@@ -26,27 +29,8 @@ import { formatParsedNumberFilter } from './numberFilterCondition';
 //   React 版の入口 `/ai`(GridAskBar / useGridAsk)が使い、サーバー側や他のフレームワークからも使えます。
 
 // AI が答えに書く条件の種類です(列ごとに使えるものは filterType で決まります)。
-export type GridAskOp =
-  | '='
-  | '!='
-  | '>'
-  | '>='
-  | '<'
-  | '<='
-  | 'between'
-  | 'contains'
-  | 'equals'
-  | 'startsWith'
-  | 'endsWith'
-  | 'onOrAfter'
-  | 'onOrBefore'
-  | 'notEquals'
-  | 'preset'
-  | 'blank'
-  | 'notBlank'
-  | 'in'
-  | 'notIn'
-  | 'clear';
+// 変更(英語対応): 定義は gridAskLocaleText.ts へ移しました(文言の表が条件ごとの名前を持つため)。
+export type { GridAskOp };
 
 // 答えの 1 件のフィルターです。使わない欄は null。数と日付も文字列で書きます('10000' / '2026-10-01')。
 export type GridAskFilter = {
@@ -100,6 +84,8 @@ export type GridAskOptions<T> = {
   allowColumnVisibility?: boolean;
   // 「今日」です(既定 new Date())。プロンプトの日付と、テストで日付を固定するために使います。
   now?: Date;
+  // 追加(英語対応): 文言(使えなかった理由・チップ・バーの表示。既定は日本語、英語は gridAskLocaleTextEn)。
+  localeText?: Partial<GridAskLocaleText>;
 };
 
 export type GridAskResult =
@@ -109,7 +95,7 @@ export type GridAskResult =
       state: GridState;
       // 今の状態からフィルター / 並び / 検索 / 列の表示のどれかが変わるか。
       changed: boolean;
-      // 使えなかった部分(日本語)。
+      // 使えなかった部分(localeText の文言。既定は日本語)。
       dropped: string[];
       // AI が「できなかった」と書いてきた文(無ければ null)。
       unsupported: string | null;
@@ -175,29 +161,7 @@ const TYPE_WORDS: Record<AskFilterType, string> = {
   set: 'choice',
 };
 
-// 使えなかった理由に出す条件の名前です。
-const OP_LABELS: Record<GridAskOp, string> = {
-  '=': 'に等しい',
-  '!=': 'に等しくない',
-  '>': 'より大きい',
-  '>=': '以上',
-  '<': '未満',
-  '<=': '以下',
-  between: '範囲',
-  contains: 'を含む',
-  equals: 'に等しい',
-  startsWith: 'で始まる',
-  endsWith: 'で終わる',
-  onOrAfter: '以降',
-  onOrBefore: '以前',
-  notEquals: 'に等しくない',
-  preset: '今日・今月など',
-  blank: '空白',
-  notBlank: '空白でない',
-  in: '値を選ぶ',
-  notIn: '値を除く',
-  clear: '外す',
-};
+// 変更(英語対応): 使えなかった理由に出す条件の名前は文言の表(localeText の operatorLabels)へ移しました。
 
 // プロンプトに並べる候補の上限です(残りは件数だけ書きます。検査は全候補で行います)。
 const LISTED_OPTION_LIMIT = 50;
@@ -287,6 +251,8 @@ const resolveAskColumns = <T,>(
   state: GridState,
 ): AskColumn<T>[] => {
   const allowFilter = isAllowed(options.allowFilter, true);
+  // 追加(英語対応): 組み込みのプリセットの名前(AI に見せる候補)も文言の表から。
+  const presetTexts = options.localeText ? resolveGridAskLocaleText(options.localeText) : undefined;
   const result: AskColumn<T>[] = [];
   for (const column of options.columns) {
     const hint = ownValue(options.columnHints, column.key);
@@ -294,7 +260,7 @@ const resolveAskColumns = <T,>(
       continue;
     }
     const filterType = allowFilter ? resolveFilterType(column, ownValue(state.filters.columnFilters, column.key)) : null;
-    const presets = filterType === 'dateSet' ? normalizeDateFilterPresets(column.dateFilterPresets) : [];
+    const presets = filterType === 'dateSet' ? normalizeDateFilterPresets(column.dateFilterPresets, presetTexts) : [];
     const ops = filterType === null
       ? []
       : filterType === 'dateSet' && presets.length === 0
@@ -598,24 +564,36 @@ const toNumber = (value: unknown): number | null => {
 };
 
 // 理由に引く答えの文字です(長い文字は省略。空は「(空)」)。
-const quote = (value: unknown): string => {
+// 変更(英語対応): 文言(t)を受けます。quoted は囲み(「」)を付けたもの。
+const quote = (value: unknown, t: GridAskLocaleText): string => {
   const text = toText(value);
   if (text === '') {
-    return '(空)';
+    return t.emptyText;
   }
   return text.length > QUOTE_LIMIT ? `${text.slice(0, QUOTE_LIMIT)}…` : text;
 };
 
-const quoteList = (values: string[]): string => {
-  const head = values.slice(0, 5).map((value) => `「${quote(value)}」`).join('');
-  return values.length > 5 ? `${head}ほか ${values.length - 5} 件` : head;
+const quoted = (value: unknown, t: GridAskLocaleText): string => formatLocaleText(t.quote, { text: quote(value, t) });
+
+const quoteList = (values: string[], t: GridAskLocaleText): string => {
+  const head = values.slice(0, 5).map((value) => quoted(value, t)).join(t.quoteSeparator);
+  return values.length > 5 ? formatLocaleText(t.andMore, { items: head, count: values.length - 5 }) : head;
 };
 
-const columnLabel = (value: unknown): string => (toText(value) === '' ? '(名前なし)' : quote(value));
+const columnLabel = (value: unknown, t: GridAskLocaleText): string =>
+  formatLocaleText(t.quote, { text: toText(value) === '' ? t.unnamed : quote(value, t) });
 
-const tooLongText = (): string => `探す文字は ${TEXT_LIMIT} 字までです`;
+const tooLongText = (t: GridAskLocaleText): string => formatLocaleText(t.textTooLong, { limit: TEXT_LIMIT });
 
-const buildNumberCondition = (op: GridAskOp, filter: Record<string, unknown>): Built<ParsedNumberFilter> => {
+// 列についての理由(「列の名前: 理由」)。
+const columnReason = (title: string, reason: string, t: GridAskLocaleText): string =>
+  formatLocaleText(t.columnReason, { column: title, reason });
+
+const buildNumberCondition = (
+  op: GridAskOp,
+  filter: Record<string, unknown>,
+  t: GridAskLocaleText,
+): Built<ParsedNumberFilter> => {
   if (op === 'blank' || op === 'notBlank') {
     return ok({ mode: op });
   }
@@ -623,28 +601,32 @@ const buildNumberCondition = (op: GridAskOp, filter: Record<string, unknown>): B
     const from = toNumber(filter.value);
     const to = toNumber(filter.to);
     if (from === null || to === null) {
-      return ng('範囲の両端の数がありません');
+      return ng(t.noNumberRange);
     }
     return ok({ mode: 'range', min: Math.min(from, to), max: Math.max(from, to) });
   }
   const value = toNumber(filter.value);
   if (value === null) {
-    return ng(`「${quote(filter.value)}」は数として読めません`);
+    return ng(formatLocaleText(t.notNumber, { value: quoted(filter.value, t) }));
   }
   return ok({ mode: 'comparison', operator: op as ComparisonOp, value });
 };
 
 // 文字の条件は前後の空白を外します(フィルター画面と同じ)。長すぎる文字は切り詰めずに捨てます。
-const buildTextCondition = (op: GridAskOp, filter: Record<string, unknown>): Built<ParsedTextFilter> => {
+const buildTextCondition = (
+  op: GridAskOp,
+  filter: Record<string, unknown>,
+  t: GridAskLocaleText,
+): Built<ParsedTextFilter> => {
   if (op === 'blank' || op === 'notBlank') {
     return ok({ mode: op });
   }
   const value = toText(filter.value);
   if (value === '') {
-    return ng('探す文字がありません');
+    return ng(t.noText);
   }
   if (value.length > TEXT_LIMIT) {
-    return ng(tooLongText());
+    return ng(tooLongText(t));
   }
   return ok({ mode: op as 'contains' | 'equals' | 'startsWith' | 'endsWith', value });
 };
@@ -653,6 +635,7 @@ const buildDateCondition = <T,>(
   column: AskColumn<T>,
   op: GridAskOp,
   filter: Record<string, unknown>,
+  t: GridAskLocaleText,
 ): Built<ParsedDateFilter> => {
   if (op === 'blank' || op === 'notBlank') {
     return ok({ mode: op });
@@ -660,19 +643,21 @@ const buildDateCondition = <T,>(
   if (op === 'preset') {
     const id = toText(filter.value);
     const preset = column.presets.find((entry) => entry.id === id || entry.label === id);
-    return preset ? ok({ mode: 'preset', preset: preset.id }) : ng(`「${quote(filter.value)}」という期間は使えません`);
+    return preset
+      ? ok({ mode: 'preset', preset: preset.id })
+      : ng(formatLocaleText(t.unknownPeriod, { value: quoted(filter.value, t) }));
   }
   if (op === 'between') {
     const from = toDateKey(toText(filter.value));
     const to = toDateKey(toText(filter.to));
     if (from === null || to === null) {
-      return ng('範囲の両端の日付がありません');
+      return ng(t.noDateRange);
     }
     return ok(from <= to ? { mode: 'range', from, to } : { mode: 'range', from: to, to: from });
   }
   const value = toDateKey(toText(filter.value));
   if (value === null) {
-    return ng(`「${quote(filter.value)}」は日付として読めません`);
+    return ng(formatLocaleText(t.notDate, { value: quoted(filter.value, t) }));
   }
   return ok({ mode: op as 'onOrAfter' | 'onOrBefore' | 'equals' | 'notEquals', value });
 };
@@ -723,6 +708,8 @@ type BuildContext = {
   refine: boolean;
   cleared: boolean;
   dropped: string[];
+  // 追加(英語対応): 文言。
+  t: GridAskLocaleText;
 };
 
 // in / notIn の値を選びます。今の選択にある値は書かれたまま使います(言い直しで '100.00' を '100' に
@@ -734,14 +721,15 @@ const pickValues = <T,>(
   mode: SetMode,
   context: BuildContext,
 ): Built<string[]> => {
+  const { t } = context;
   if (!Array.isArray(raw)) {
-    return ng('選ぶ値がありません');
+    return ng(t.noValues);
   }
   const current = setOf(context.original);
   const echoed = new Set(current?.values ?? []);
   if (raw.length > VALUES_LIMIT) {
     context.dropped.push(
-      `${column.title}: 選べる値は ${VALUES_LIMIT} 件までです(${raw.length - VALUES_LIMIT} 件は使いませんでした)`,
+      columnReason(column.title, formatLocaleText(t.tooManyValues, { limit: VALUES_LIMIT, count: raw.length - VALUES_LIMIT }), t),
     );
   }
   const picked = new Set<string>();
@@ -782,17 +770,19 @@ const pickValues = <T,>(
     }
   }
   if (unknown.length > 0) {
-    context.dropped.push(`${column.title}: ${quoteList(unknown)}は候補にありません`);
+    context.dropped.push(columnReason(column.title, formatLocaleText(t.notInOptions, { values: quoteList(unknown, t) }), t));
   }
   if (tooLong > 0) {
-    context.dropped.push(`${column.title}: ${VALUE_TEXT_LIMIT} 字を超える値(${tooLong} 件)は使えません`);
+    context.dropped.push(
+      columnReason(column.title, formatLocaleText(t.valuesTooLong, { limit: VALUE_TEXT_LIMIT, count: tooLong }), t),
+    );
   }
   if (unreadable > 0) {
-    context.dropped.push(`${column.title}: 値として読めないもの(${unreadable} 件)は使えません`);
+    context.dropped.push(columnReason(column.title, formatLocaleText(t.unreadableValues, { count: unreadable }), t));
   }
   // AI が選んだ値が 1 つも無ければ使いません(下で見せていない残りだけが残る選択にしない)。
   if (picked.size === 0) {
-    return ng('選べる値がありません');
+    return ng(t.noSelectableValues);
   }
   if (current === null || current.mode !== mode) {
     return ok([...picked]);
@@ -822,37 +812,39 @@ const buildFilterValue = <T,>(
   context: BuildContext,
 ): Built<ColumnFilterValue> => {
   const filterType = column.filterType as AskFilterType;
-  const original = context.original;
+  const { original, t } = context;
   switch (filterType) {
     case 'text':
     case 'date': {
       const value = toText(filter.value);
       if (value === '') {
-        return ng('探す文字がありません');
+        return ng(t.noText);
       }
       // 前後の空白だけが違う言い直しは今の値のまま(グリッドも前後の空白を外して比べる)。
       if ((original?.kind === 'text' || original?.kind === 'date') && original.kind === filterType && original.value.trim() === value) {
         return ok({ kind: filterType, value: original.value });
       }
-      return value.length > TEXT_LIMIT ? ng(tooLongText()) : ok({ kind: filterType, value });
+      return value.length > TEXT_LIMIT ? ng(tooLongText(t)) : ok({ kind: filterType, value });
     }
     case 'select': {
       const text = toRawText(filter.value);
       if (text.trim() === '') {
-        return ng('選ぶ値がありません');
+        return ng(t.noValues);
       }
       if (original?.kind === 'select' && (original.value === text || original.value === text.trim())) {
         return ok({ kind: 'select', value: original.value });
       }
       const value = column.options ? matchOption(column.options, text) : text.trim();
       if (value === null) {
-        return ng(`「${quote(text)}」は候補にありません`);
+        return ng(formatLocaleText(t.notAnOption, { value: quoted(text, t) }));
       }
       // '' は「すべて」(条件なし)と同じなので選べません。
       if (value === '') {
-        return ng(`「${quote(text)}」では絞り込めません`);
+        return ng(formatLocaleText(t.cannotFilterBy, { value: quoted(text, t) }));
       }
-      return value.length > VALUE_TEXT_LIMIT ? ng(`${VALUE_TEXT_LIMIT} 字を超える値は使えません`) : ok({ kind: 'select', value });
+      return value.length > VALUE_TEXT_LIMIT
+        ? ng(formatLocaleText(t.valueTooLong, { limit: VALUE_TEXT_LIMIT }))
+        : ok({ kind: 'select', value });
     }
     case 'set': {
       const mode: SetMode = op === 'notIn' ? 'exclude' : 'include';
@@ -860,7 +852,7 @@ const buildFilterValue = <T,>(
       return 'error' in picked ? picked : ok({ kind: 'set', mode, values: picked.value });
     }
     case 'number': {
-      const parsed = buildNumberCondition(op, filter);
+      const parsed = buildNumberCondition(op, filter, t);
       if ('error' in parsed) {
         return parsed;
       }
@@ -880,7 +872,7 @@ const buildFilterValue = <T,>(
           : ({ kind: filterType, condition: null, set: null } as CompositeValue);
       if (op === 'in' || op === 'notIn') {
         if (context.fixed.has('set')) {
-          return ng('値の選択は 1 列に 1 つまでです');
+          return ng(t.oneSelection);
         }
         const mode: SetMode = op === 'notIn' ? 'exclude' : 'include';
         const picked = pickValues(column, filter.values, mode, context);
@@ -891,22 +883,22 @@ const buildFilterValue = <T,>(
         return ok(next);
       }
       if (context.fixed.has('condition')) {
-        return ng('条件は 1 列に 1 つまでです');
+        return ng(t.oneCondition);
       }
       if (next.kind === 'numberSet') {
-        const parsed = buildNumberCondition(op, filter);
+        const parsed = buildNumberCondition(op, filter, t);
         if ('error' in parsed) {
           return parsed;
         }
         next.condition = parsed.value;
       } else if (next.kind === 'textSet') {
-        const parsed = buildTextCondition(op, filter);
+        const parsed = buildTextCondition(op, filter, t);
         if ('error' in parsed) {
           return parsed;
         }
         next.condition = parsed.value;
       } else {
-        const parsed = buildDateCondition(column, op, filter);
+        const parsed = buildDateCondition(column, op, filter, t);
         if ('error' in parsed) {
           return parsed;
         }
@@ -916,9 +908,6 @@ const buildFilterValue = <T,>(
     }
   }
 };
-
-const READ_ERROR = 'AI の答えを読めませんでした。言い方を変えて、もう一度試してください。';
-const SHAPE_ERROR = 'AI の答えが表への指示になっていませんでした。言い方を変えてください。';
 
 // 答えが文字列なら JSON として読みます(```json の囲みや前後の文は外します)。
 const parseAnswer = (answer: unknown): unknown => {
@@ -967,9 +956,9 @@ const withKeptSort = (
   return [...next, ...current.filter((entry) => !isAskable(entry.columnKey)).map((entry) => ({ ...entry }))];
 };
 
-const limitDropped = (dropped: string[]): string[] =>
+const limitDropped = (dropped: string[], t: GridAskLocaleText): string[] =>
   dropped.length > DROPPED_LIMIT
-    ? [...dropped.slice(0, DROPPED_LIMIT - 1), `ほか ${dropped.length - DROPPED_LIMIT + 1} 件`]
+    ? [...dropped.slice(0, DROPPED_LIMIT - 1), formatLocaleText(t.moreReasons, { count: dropped.length - DROPPED_LIMIT + 1 })]
     : dropped;
 
 /**
@@ -981,9 +970,10 @@ export const readGridAskAnswer = <T,>(
   state: GridState,
   options: GridAskOptions<T>,
 ): GridAskResult => {
+  const t = resolveGridAskLocaleText(options.localeText);
   const parsed = parseAnswer(answer);
   if (parsed === undefined) {
-    return { ok: false, message: READ_ERROR };
+    return { ok: false, message: t.readError };
   }
   // 表への指示に見えない答え(サーバーのエラーの { error } など)と mode が違う答えは、表を変えずに読めなかった
   //   ことにします(replace として読むと、表の条件が全部消えるため)。mode が無いだけなら replace、filters が
@@ -997,7 +987,7 @@ export const readGridAskAnswer = <T,>(
     (filtersField !== undefined && !Array.isArray(filtersField)) ||
     (filtersField === undefined && mode === undefined)
   ) {
-    return { ok: false, message: SHAPE_ERROR };
+    return { ok: false, message: t.shapeError };
   }
   const rawFilters: unknown[] = Array.isArray(filtersField) ? filtersField : [];
   const columns = resolveAskColumns(options, state);
@@ -1035,7 +1025,7 @@ export const readGridAskAnswer = <T,>(
 
   if (!allowFilter) {
     if (rawFilters.length > 0) {
-      dropped.push('列の条件は変えない設定です');
+      dropped.push(t.filtersLocked);
     }
   } else {
     const touched = new Set<string>();
@@ -1052,23 +1042,25 @@ export const readGridAskAnswer = <T,>(
       }
       const column = resolveColumn(filter.column);
       if (!column) {
-        dropped.push(`「${columnLabel(filter.column)}」という列はありません`);
+        dropped.push(formatLocaleText(t.noSuchColumn, { column: columnLabel(filter.column, t) }));
         continue;
       }
       const opText = typeof filter.op === 'string' ? filter.op.trim() : '';
       if (column.filterType === null) {
-        dropped.push(`${column.title}: この列では絞り込めません`);
+        dropped.push(columnReason(column.title, t.notFilterable, t));
         continue;
       }
       if (opText === '') {
-        dropped.push(`${column.title}: 条件の種類がありません`);
+        dropped.push(columnReason(column.title, t.noOperator, t));
         continue;
       }
       const op = opText as GridAskOp;
       if (!column.ops.includes(op)) {
-        // OP_LABELS は自分のキーだけを引きます('toString' などで prototype の値を出さない)。
-        const opLabel = Object.prototype.hasOwnProperty.call(OP_LABELS, op) ? OP_LABELS[op] : quote(filter.op);
-        dropped.push(`${column.title}: この列では「${opLabel}」の条件は使えません`);
+        // 条件の名前は自分のキーだけを引きます('toString' などで prototype の値を出さない)。
+        const opLabel = Object.prototype.hasOwnProperty.call(t.operatorLabels, op) ? t.operatorLabels[op] : quote(filter.op, t);
+        dropped.push(
+          columnReason(column.title, formatLocaleText(t.operatorUnavailable, { operator: formatLocaleText(t.quote, { text: opLabel }) }), t),
+        );
         continue;
       }
       if (op === 'clear') {
@@ -1081,7 +1073,7 @@ export const readGridAskAnswer = <T,>(
       const isComposite =
         column.filterType === 'numberSet' || column.filterType === 'textSet' || column.filterType === 'dateSet';
       if (touched.has(column.key) && !isComposite) {
-        dropped.push(`${column.title}: 条件は 1 列に 1 つまでです`);
+        dropped.push(columnReason(column.title, t.oneCondition, t));
         continue;
       }
       // replace では AI に見せた列の今の条件を消してあるので、base は同じ答えで先に決めた値だけになります。
@@ -1093,9 +1085,10 @@ export const readGridAskAnswer = <T,>(
         refine,
         cleared: cleared.has(column.key),
         dropped,
+        t,
       });
       if ('error' in built) {
-        dropped.push(`${column.title}: ${built.error}`);
+        dropped.push(columnReason(column.title, built.error, t));
         continue;
       }
       columnFilters.set(column.key, built.value);
@@ -1106,14 +1099,14 @@ export const readGridAskAnswer = <T,>(
       }
     }
     if (unreadableFilters > 0) {
-      dropped.push(`読めない条件(${unreadableFilters} 件)は使えません`);
+      dropped.push(formatLocaleText(t.unreadableFilters, { count: unreadableFilters }));
     }
   }
 
   if (Array.isArray(source.sort)) {
     if (!allowSort) {
       if (source.sort.length > 0) {
-        dropped.push('並びは変えない設定です');
+        dropped.push(t.sortLocked);
       }
     } else {
       const nextSort: GridSortEntry[] = [];
@@ -1121,12 +1114,12 @@ export const readGridAskAnswer = <T,>(
         const entry = asRecord(rawEntry);
         const column = entry ? resolveColumn(entry.column) : undefined;
         if (!entry || !column) {
-          dropped.push(`並び: 「${columnLabel(entry?.column)}」という列はありません`);
+          dropped.push(formatLocaleText(t.sortNoSuchColumn, { column: columnLabel(entry?.column, t) }));
           continue;
         }
         const direction = readDirection(entry.direction);
         if (direction === null) {
-          dropped.push(`並び: ${column.title} の向き「${quote(entry.direction)}」は使えません`);
+          dropped.push(formatLocaleText(t.sortBadDirection, { column: column.title, direction: quoted(entry.direction, t) }));
           continue;
         }
         if (!nextSort.some((item) => item.columnKey === column.key)) {
@@ -1142,20 +1135,20 @@ export const readGridAskAnswer = <T,>(
   }
 
   if (source.search !== undefined && source.search !== null && typeof source.search !== 'string') {
-    dropped.push('検索の文字を読めませんでした');
+    dropped.push(t.searchUnreadable);
   } else if (typeof source.search === 'string') {
     const search = source.search.trim();
     const currentSearch = state.filters.globalText;
     if (!allowSearch) {
       // 空は replace の「空から始める」どおりに返しただけなので知らせません(検索はそのまま)。
       if (search !== '' && search !== currentSearch.trim()) {
-        dropped.push('検索の文字は変えない設定です');
+        dropped.push(t.searchLocked);
       }
     } else if (search !== '' && search === currentSearch.trim()) {
       // 前後の空白だけが違う言い直しは今の文字のまま。
       globalText = currentSearch;
     } else if (search.length > TEXT_LIMIT) {
-      dropped.push(`検索の文字は ${TEXT_LIMIT} 字までです`);
+      dropped.push(formatLocaleText(t.searchTooLong, { limit: TEXT_LIMIT }));
     } else {
       globalText = search;
     }
@@ -1168,11 +1161,11 @@ export const readGridAskAnswer = <T,>(
     (Array.isArray(source.hide) ? source.hide.length - hide.length : 0) +
     (Array.isArray(source.show) ? source.show.length - show.length : 0);
   if (unreadableKeys > 0) {
-    dropped.push(`読めない列の指定(${unreadableKeys} 件)は使えません`);
+    dropped.push(formatLocaleText(t.unreadableColumns, { count: unreadableKeys }));
   }
   if (hide.length > 0 || show.length > 0) {
     if (!allowColumnVisibility || !nextColumns) {
-      dropped.push('列の表示は変えない設定です');
+      dropped.push(t.columnsLocked);
     } else {
       const present = new Set(nextColumns.map((entry) => entry.key));
       const showSet = new Set<string>();
@@ -1183,7 +1176,7 @@ export const readGridAskAnswer = <T,>(
           if (column && present.has(column.key)) {
             target.add(column.key);
           } else {
-            dropped.push(`「${columnLabel(raw)}」という列はありません`);
+            dropped.push(formatLocaleText(t.noSuchColumn, { column: columnLabel(raw, t) }));
           }
         }
       }
@@ -1197,7 +1190,7 @@ export const readGridAskAnswer = <T,>(
         return entry;
       });
       if (applied.length > 0 && applied.every((entry) => entry.visible === false)) {
-        dropped.push('すべての列は隠せません');
+        dropped.push(t.cannotHideAll);
       } else {
         nextColumns = applied;
       }
@@ -1219,7 +1212,7 @@ export const readGridAskAnswer = <T,>(
     ok: true,
     state: nextState,
     changed: !isSameGridAskView(nextState, state),
-    dropped: limitDropped(dropped),
+    dropped: limitDropped(dropped, t),
     unsupported,
   };
 };
@@ -1250,6 +1243,7 @@ export const isGridAskColumnsChanged = (a: GridState, b: GridState): boolean => 
  * 隠した列は allowColumnVisibility のときだけ出します。
  */
 export const describeGridAskView = <T,>(state: GridState, options: GridAskOptions<T>): GridAskItem[] => {
+  const t = resolveGridAskLocaleText(options.localeText);
   const byKey = new Map(options.columns.map((column) => [column.key, column]));
   const titleOf = (key: string): string => byKey.get(key)?.title || key;
   const items: GridAskItem[] = [];
@@ -1259,22 +1253,25 @@ export const describeGridAskView = <T,>(state: GridState, options: GridAskOption
     items.push({
       id: `f:${key}`,
       label: titleOf(key),
-      text: describeColumnFilterValue(value, column ? createColumnFilterDescribeOptions(column) : undefined),
+      text: describeColumnFilterValue(value, column ? createColumnFilterDescribeOptions(column, t) : { texts: t }),
     });
   }
   for (const entry of state.sort) {
     items.push({
       id: `s:${entry.columnKey}`,
-      label: '並び',
-      text: `${titleOf(entry.columnKey)} ${entry.direction === 'desc' ? '降順' : '昇順'}`,
+      label: t.itemSort,
+      text: formatLocaleText(t.itemSortEntry, {
+        column: titleOf(entry.columnKey),
+        direction: entry.direction === 'desc' ? t.descending : t.ascending,
+      }),
     });
   }
   if (state.filters.globalText !== '') {
-    items.push({ id: 'q', label: '検索', text: `「${state.filters.globalText}」` });
+    items.push({ id: 'q', label: t.itemSearch, text: formatLocaleText(t.quote, { text: state.filters.globalText }) });
   }
   if (isAllowed(options.allowColumnVisibility, false)) {
     for (const key of hiddenKeysOf(state.columns)) {
-      items.push({ id: `h:${key}`, label: '隠した列', text: titleOf(key) });
+      items.push({ id: `h:${key}`, label: t.itemHidden, text: titleOf(key) });
     }
   }
   return items;

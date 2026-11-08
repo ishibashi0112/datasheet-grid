@@ -2,10 +2,13 @@
 //   中身は今までどおりの部品で、シェルは集計の hook を元の位置で呼び、既定の下部バーは表示部品をこの表から受け取ります。
 //   機能セットに無い構成では集計しません(slot context の selectionAggregates は null、既定の下部バーにも出ない)。
 import { useSelectionAggregates } from '../hooks/useSelectionAggregates';
+import { DEFAULT_AGGREGATES_LOCALE_TEXT } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/localeTextFeatures';
 import { GridSelectionAggregates } from '../view/GridSelectionAggregates';
 import type { ReactGridFeatures } from './types';
 
 export const selectionAggregatesFeature: NonNullable<ReactGridFeatures['selectionAggregates']> = {
   useSelectionAggregates,
   SelectionAggregates: GridSelectionAggregates,
+  // 追加(英語対応): この機能だけが使う文言の既定(シェルが本体の既定に重ねる)。
+  localeText: DEFAULT_AGGREGATES_LOCALE_TEXT,
 };

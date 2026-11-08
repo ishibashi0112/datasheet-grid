@@ -5,6 +5,12 @@ import type {
 // 追加(filter-ext B): 候補連動(条件で Set 候補一覧を絞る)の単一値判定です。
 //   行 predicate(compileParsedNumberPredicate)と同一の意味論を共有します。
 import { matchesParsedNumberFilter } from './filtering';
+import {
+  DEFAULT_FILTER_LOCALE_TEXT,
+  formatLocaleText,
+  type FilterLocaleText,
+  type FilterOperatorLocaleTextKey,
+} from './localeTextFilters';
 
 // 追加(filter-ext A): number フィルターの「演算子セレクト + 値入力」UI の純ロジックです。
 //   旧 UI は「>=10 / 10..20」の式テキストを commit 時に parse していましたが、
@@ -41,20 +47,21 @@ export const DEFAULT_NUMBER_FILTER_DRAFT: NumberFilterConditionDraft = {
   value2: '',
 };
 
-// 演算子セレクトの表示順とラベルです(日本語 — 合意済み)。
+// 演算子セレクトの表示順とラベルです。
+// 変更(英語対応): ラベルは文言の表のキーにしました(列フィルターが localeText から引く)。
 export const NUMBER_FILTER_OPERATOR_OPTIONS: ReadonlyArray<{
   value: NumberFilterOperator;
-  label: string;
+  labelKey: FilterOperatorLocaleTextKey;
 }> = [
-  { value: 'gte', label: '以上' },
-  { value: 'gt', label: 'より大きい' },
-  { value: 'lte', label: '以下' },
-  { value: 'lt', label: '未満' },
-  { value: 'eq', label: 'に等しい' },
-  { value: 'ne', label: 'に等しくない' },
-  { value: 'between', label: '範囲' },
-  { value: 'blank', label: '空白' },
-  { value: 'notBlank', label: '空白でない' },
+  { value: 'gte', labelKey: 'operatorGreaterThanOrEqual' },
+  { value: 'gt', labelKey: 'operatorGreaterThan' },
+  { value: 'lte', labelKey: 'operatorLessThanOrEqual' },
+  { value: 'lt', labelKey: 'operatorLessThan' },
+  { value: 'eq', labelKey: 'operatorEquals' },
+  { value: 'ne', labelKey: 'operatorNotEquals' },
+  { value: 'between', labelKey: 'operatorBetween' },
+  { value: 'blank', labelKey: 'operatorBlank' },
+  { value: 'notBlank', labelKey: 'operatorNotBlank' },
 ];
 
 // 演算子で値入力の個数が決まります(範囲 = 2 / 空白系 = 0 / 他 = 1)。
@@ -127,35 +134,37 @@ export const buildParsedNumberFilterFromDraft = (
 //   現在値表示にそのまま出ます)。演算子ラベルとの対応を保つこと。
 // 変更(dogfood DU-07): 数値の書き方を任意で受けます(チップ / 管理パネルで列の valueFormatter を当てるため。
 //   raw として保存する文字列は従来どおり書き方なし)。
+// 変更(英語対応): 文言を任意で受けます(チップ / 管理パネルは localeText の文言。raw は言語によらず既定 = 日本語)。
 export const formatParsedNumberFilter = (
   parsed: ParsedNumberFilter,
   formatNumber: (value: number) => string = String,
+  texts: FilterLocaleText = DEFAULT_FILTER_LOCALE_TEXT,
 ): string => {
   switch (parsed.mode) {
     case 'comparison': {
       const value = formatNumber(parsed.value);
       switch (parsed.operator) {
         case '>=':
-          return `${value} 以上`;
+          return formatLocaleText(texts.conditionGreaterThanOrEqual, { value });
         case '>':
-          return `${value} より大きい`;
+          return formatLocaleText(texts.conditionGreaterThan, { value });
         case '<=':
-          return `${value} 以下`;
+          return formatLocaleText(texts.conditionLessThanOrEqual, { value });
         case '<':
-          return `${value} 未満`;
+          return formatLocaleText(texts.conditionLessThan, { value });
         case '!=':
-          return `${value} に等しくない`;
+          return formatLocaleText(texts.conditionNotEquals, { value });
         case '=':
         default:
-          return `${value} に等しい`;
+          return formatLocaleText(texts.conditionEquals, { value });
       }
     }
     case 'range':
-      return `${formatNumber(parsed.min)} 〜 ${formatNumber(parsed.max)}`;
+      return formatLocaleText(texts.conditionRange, { min: formatNumber(parsed.min), max: formatNumber(parsed.max) });
     case 'blank':
-      return '(空白)';
+      return texts.conditionBlank;
     case 'notBlank':
-      return '(空白でない)';
+      return texts.conditionNotBlank;
   }
 };
 

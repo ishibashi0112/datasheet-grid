@@ -52,6 +52,8 @@ import {
 } from '@ishibashi0112/spreadsheet-grid-core/internal/controllers/detailTabOrder';
 import { useGridStore, useGridViewState } from './hooks/useGridStore';
 import { PortalTokenSourceContext } from './hooks/usePortalTokens';
+import { GridLocaleTextContext, mergeFeatureLocaleDefaults } from './hooks/useGridLocaleText';
+import { DetailToggleButton } from './view/DetailToggleButton';
 import {
   buildSelectionSnapshot,
 } from '@ishibashi0112/spreadsheet-grid-core/internal/model/gridSelectors';
@@ -67,7 +69,7 @@ import CellEditorLayer from './CellEditorLayer';
 // 追加(13-A): 列メニュー(「⋮」+ 右クリック)の popover controller です。
 import { useGridClipboardController } from './hooks/useGridClipboardController';
 import { useGridBarContext } from './hooks/useGridBarContext';
-import { createLocaleTextResolver } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/localeText';
+import { createLocaleTextResolver, formatLocaleText } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/localeText';
 // 追加(選択範囲の集計)
 import { useGridEditController } from './hooks/useGridEditController';
 import { useGridHistoryController } from './hooks/useGridHistoryController';
@@ -200,10 +202,7 @@ import type { GridDetailLayerEntry } from './view/GridDetailLayer';
 import GridHeaderRow, { type GridPaneKind } from './view/GridHeaderRow';
 // 追加(合計行 3A): 下端に固定する合計行と、その集計(core)。
 // 変更(差し込み式 段階 2): 描画部品と集計 / 表示の関数は機能セット(features.totalRow)から受け取ります。
-import {
-  EMPTY_TOTAL_ROW_CELLS,
-  TOTAL_ROW_DEFAULT_LABEL,
-} from '@ishibashi0112/spreadsheet-grid-core/internal/logic/totalRow';
+import { EMPTY_TOTAL_ROW_CELLS } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/totalRow';
 import type { AutosizeTotalRowText } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/columnAutosize';
 // 変更(UP-1): フィルター管理 / 列の表示 / 並び替えの独立 3 パネルを統合ツールパネル
 //   (ToolPanel + useToolPanelController)へ集約しました。旧 3 controller
@@ -223,6 +222,11 @@ import type { GridShellFeatures } from './features/types';
 // import ColumnChooserPanel, {
 //   type ColumnChooserItem,
 // } from './view/ColumnChooserPanel';
+
+// 型だけの宣言です(利用側のバンドラが process.env.NODE_ENV を文字列へ置き換える。hooks/useUnregisteredFeatureWarnings と同じ)。
+// 変更(英語対応): 開発時の警告は import.meta.env.DEV ではなくこれで判定します(import.meta.env.DEV はライブラリのビルド時に
+//   false へ固定され、利用側の開発時にも警告が出ていなかった)。警告の文は日本語の行と英語の行の 2 行です。
+declare const process: { env: { NODE_ENV?: string } };
 
 // 追加(①-3): rows 未指定(serverSide 等)時の安定既定値です。参照同一を保ち、order パイプ
 //   ライン / rowModel など既存 memo を不要に揺らさないよう module スコープで 1 つだけ持ちます。
@@ -262,38 +266,13 @@ const DENSITY_DIMENSIONS: Record<
 // 追加: Grid 本体です。
 // 追加(本体分解 E-1): 展開行トグル列(T1)のセル本体です。列定義自体は engine/columnLayout.ts が合成し、
 //   フレームワーク依存のセル描画だけをここから渡します(モジュールレベルで参照安定)。
+// 変更(英語対応): 読み上げの名前を文言(localeText)から読むため、ボタンを部品にしました。
 const renderDetailToggleCell = (ctx: CellRenderContext<unknown>) => {
   const detail = ctx.detail;
   if (!detail || !detail.expandable) {
     return null;
   }
-  return (
-    <button
-      type="button"
-      // 変更(dogfood DF-08): Tab の順番に入れません(キーボードではトグル列のセルで Enter / Space。DU-04)。
-      tabIndex={-1}
-      className="ssg-detail-toggle"
-      aria-expanded={detail.expanded}
-      aria-label={detail.expanded ? '詳細を閉じる' : '詳細を開く'}
-      onClick={detail.toggle}
-      // 変更(dogfood DF-16): ▸ / ▾ は開閉だけにして、アクティブセルと選択を動かしません(セルの pointerdown は
-      //   GridBodyLayer がこのボタンから始まったものを無視する)。これまではトグル列(合成列)がアクティブセルになり、
-      //   onActiveCellChange に null が来ていました(アクティブセルに連動させた詳細パネルが、展開しただけで空になる)。
-      //   続けてキー操作できるよう、フォーカスはボタンではなくグリッドへ置きます(セルを押したときと同じ)。
-      //   変更(別視点のレビュー): 伝播は止めません(止めると window まで届かず、開いている右クリックメニューや
-      //   ポップオーバーが外側の pointerdown で閉じなかった)。
-      onPointerDown={(event) => {
-        if (event.button !== 0) {
-          return;
-        }
-        event.preventDefault();
-        event.currentTarget.closest<HTMLElement>('.ssg-shell')?.focus({ preventScroll: true });
-      }}
-      onDoubleClick={(event) => event.stopPropagation()}
-    >
-      {detail.expanded ? '▾' : '▸'}
-    </button>
-  );
+  return <DetailToggleButton detail={detail} />;
 };
 
 // 変更(差し込み式 段階 2): グリッド本体(旧 SpreadsheetGrid コンポーネントの中身)を、機能セット(features)を受け取る
@@ -413,8 +392,9 @@ export function useGridShell<T extends object>({
   // 追加(13-A): 列メニュー(「⋮」+ 右クリック)の有効化フラグです(既定 true)。
   enableColumnMenu = true,
   // 追加(12-B): 0 行時の空状態テキストです(AG Grid のオーバーレイ相当)。
-  noMatchingRowsText = '一致する行がありません',
-  noRowsText = '表示する行がありません',
+  // 変更(英語対応): 未指定は文言(localeText の noMatchingRows / noRows)。
+  noMatchingRowsText,
+  noRowsText,
   // 追加(audit V-05): 表(role="grid")のアクセシブル名。
   ariaLabel,
   // 追加: top/bottom バーの表示有無です(既定 true)。false で当該バーを一切描画しません
@@ -489,6 +469,12 @@ export function useGridShell<T extends object>({
   //   併用時に clientSide のフィルター / ソート / 候補収集が使われない rows に対して空走していた)。
   const rows = (dataSource != null ? EMPTY_ROWS : rowsProp) as T[];
   const columns = columnsProp as GridColumn<T>[];
+
+  // 追加(段階 2 DU-18): 文言を既定と合わせます(中身が同じなら同じ参照 = localeText={{ … }} をその場で書いても要約を作り直さない)。
+  // 変更(英語対応): グリッドのすべての文言になったので、機能の hook より前で解決し、部品へは context で渡します。
+  // 変更(英語対応): 既定は本体の既定に、機能セットの機能の文言の既定(機能の localeText)を重ねたもの。
+  const [resolveLocaleText] = useState(() => createLocaleTextResolver(mergeFeatureLocaleDefaults(features)));
+  const localeTexts = useMemo(() => resolveLocaleText(localeText), [resolveLocaleText, localeText]);
 
   // 追加(THEME-2): density プリセットの既定寸法を解決します(明示 prop が常に優先)。
   const rowHeight = rowHeightProp ?? DENSITY_DIMENSIONS[density].rowHeight;
@@ -798,7 +784,7 @@ export function useGridShell<T extends object>({
   // 変更(差し込み式 段階 2): 機能セットに totalRow が無ければ無効(prop は何もしない。開発時に警告)。
   const totalRowFeature = features.totalRow;
   const totalRowEnabled = (totalRow === true || totalRowOptions !== null) && totalRowFeature !== undefined;
-  const totalRowLabel = totalRowOptions?.label ?? TOTAL_ROW_DEFAULT_LABEL;
+  const totalRowLabel = totalRowOptions?.label ?? localeTexts.totalRowLabel;
   const totalRowValues = totalRowOptions?.values;
   const totalRowRenderCell = totalRowOptions?.renderCell;
   const footerHeight = totalRowEnabled ? Math.max(0, totalRowOptions?.height ?? rowHeight) : 0;
@@ -1163,24 +1149,26 @@ export function useGridShell<T extends object>({
   // SSRM で rowGroup 列が指定されたときの開発時警告です(例外は投げず、グルーピングを
   //   無視して通常表示を継続します)。
   useEffect(() => {
-    if (!import.meta.env.DEV) {
+    if (process.env.NODE_ENV === 'production') {
       return;
     }
     if (isServerSide && groupColumns.length > 0) {
       console.warn(
-        '[SpreadsheetGrid] serverSide(dataSource)では行グルーピング(rowGroup)は未対応です。rowGroup 指定を無視して通常表示します。',
+        '[SpreadsheetGrid] serverSide(dataSource)では行グルーピング(rowGroup)は未対応です。rowGroup 指定を無視して通常表示します。\n' +
+          '[SpreadsheetGrid] Row grouping (rowGroup) is not supported with serverSide (dataSource). rowGroup is ignored and rows are shown ungrouped.',
       );
     }
   }, [isServerSide, groupColumns.length]);
 
   // 追加(label-row ②): 行グルーピングとラベル行の併用は未対応(rowGroup 有効時はラベル行を非表示)の開発時警告。
   useEffect(() => {
-    if (!import.meta.env.DEV) {
+    if (process.env.NODE_ENV === 'production') {
       return;
     }
     if (rowGroupingActive && labelRowEnabled) {
       console.warn(
-        '[SpreadsheetGrid] 行グルーピング(rowGroup)とラベル行(labelRow)は併用できません。rowGroup 有効中はラベル行を表示しません。',
+        '[SpreadsheetGrid] 行グルーピング(rowGroup)とラベル行(labelRow)は併用できません。rowGroup 有効中はラベル行を表示しません。\n' +
+          '[SpreadsheetGrid] Row grouping (rowGroup) cannot be combined with label rows (labelRow). Label rows are hidden while rows are grouped.',
       );
     }
   }, [rowGroupingActive, labelRowEnabled]);
@@ -1438,13 +1426,13 @@ export function useGridShell<T extends object>({
       const cell = totalRowCells.get(column.key);
       if (cell) {
         const text = formatTotalRowCellText(column, cell);
-        texts.set(column.key, { text, caption: text !== '' ? resolveTotalRowCaption(cell.kind) : undefined });
+        texts.set(column.key, { text, caption: text !== '' ? resolveTotalRowCaption(cell.kind, localeTexts) : undefined });
       } else if (column.key === totalRowLabelColumnKey) {
         texts.set(column.key, { text: totalRowLabel });
       }
     }
     return texts;
-  }, [totalRowEnabled, totalRowFeature, orderedColumns, totalRowCells, totalRowLabelColumnKey, totalRowLabel]);
+  }, [totalRowEnabled, totalRowFeature, orderedColumns, totalRowCells, totalRowLabelColumnKey, totalRowLabel, localeTexts]);
   // 変更(差し込み式 段階 2): ランナーの接続は機能セットの hook(features/columnAutosize.ts)へ移し、この位置で
   //   呼びます(hook の順番は従来どおり)。無い構成では代役(列メニューの項目なし / autoSizeColumns は false 扱い)。
   const columnAutosize = features.columnAutosize.useColumnAutosize<T>({
@@ -1695,34 +1683,38 @@ export function useGridShell<T extends object>({
     scrollContainerRef,
     shellRef: gridRootRef,
     enabled: showSaveStatus && isServerSide,
+    failedText: localeTexts.saveFailedCell,
   });
   // gate 外フォールバック時の開発時警告(例外は投げず uniform にフォールバック)。
   // 変更(①-3): serverSide では行数に関わらず未対応の旨を警告します(行数上限とは別理由のため
   //   メッセージを分けます)。
   useEffect(() => {
-    if (!import.meta.env.DEV || !autoHeight || !hasAutoHeightColumn) {
+    if (process.env.NODE_ENV === 'production' || !autoHeight || !hasAutoHeightColumn) {
       return;
     }
     if (isServerSide) {
       console.warn(
-        '[SpreadsheetGrid] serverSide(dataSource)では auto-height は未対応です(未ロード行の高さが不明なため)。uniform 行高にフォールバックします。',
+        '[SpreadsheetGrid] serverSide(dataSource)では auto-height は未対応です(未ロード行の高さが不明なため)。uniform 行高にフォールバックします。\n' +
+          '[SpreadsheetGrid] auto-height is not supported with serverSide (dataSource) because rows that are not loaded have no height. Falling back to a uniform row height.',
       );
       return;
     }
     if (viewRowCount > AUTO_HEIGHT_MAX_ROWS) {
       console.warn(
-        `[SpreadsheetGrid] auto-height は ${AUTO_HEIGHT_MAX_ROWS} 行までです(現在 ${viewRowCount} 行)。uniform 行高にフォールバックします。`,
+        `[SpreadsheetGrid] auto-height は ${AUTO_HEIGHT_MAX_ROWS} 行までです(現在 ${viewRowCount} 行)。uniform 行高にフォールバックします。\n` +
+          `[SpreadsheetGrid] auto-height supports up to ${AUTO_HEIGHT_MAX_ROWS} rows (currently ${viewRowCount}). Falling back to a uniform row height.`,
       );
     }
   }, [autoHeight, hasAutoHeightColumn, viewRowCount, isServerSide]);
   // gate 外フォールバックの開発時警告(auto-height と同方針。例外は投げない)。
   useEffect(() => {
-    if (!import.meta.env.DEV || !detailRowEnabled) {
+    if (process.env.NODE_ENV === 'production' || !detailRowEnabled) {
       return;
     }
     if (detailExtras.length > 0 && !detailActive) {
       console.warn(
-        `[SpreadsheetGrid] 展開行は論理全高(行高合計 + 帯高)が ${MAX_BODY_PX}px 以内のときだけ描画します(行数上限超過)。展開状態は保持されますが帯は描かれません。`,
+        `[SpreadsheetGrid] 展開行は論理全高(行高合計 + 帯高)が ${MAX_BODY_PX}px 以内のときだけ描画します(行数上限超過)。展開状態は保持されますが帯は描かれません。\n` +
+          `[SpreadsheetGrid] Detail rows are drawn only while the total height (rows + details) is at most ${MAX_BODY_PX}px (too many rows). The expanded state is kept, but the details are not drawn.`,
       );
     }
   }, [detailRowEnabled, detailExtras, detailActive]);
@@ -2857,6 +2849,7 @@ export function useGridShell<T extends object>({
     // 追加(監査 RD-6): 確定時の編集可否の再評価に使います。
     readOnly,
     canEditCell,
+    localeTexts,
   });
 
   // ── IME オンのままの直接入力(G-2)─────────────────────
@@ -3324,6 +3317,7 @@ export function useGridShell<T extends object>({
       rightPaneTotalWidth,
       openColumnFilterPopover,
       groupColumns: activeGroupColumns,
+      localeTexts,
     });
 
   // 追加(FM-3): 既定トップバーの Filters chip クリックでパネルをトグルします。
@@ -3389,9 +3383,13 @@ export function useGridShell<T extends object>({
   const moveRowByKey = useCallback(
     (rowKey: GridRowKey, toIndex: number) => {
       if (isServerSide) {
-        console.warn(
-          '[SpreadsheetGrid] moveRow() は clientSide(rows + onRowsChange)専用です。serverSide では無効です。',
-        );
+        // 変更(英語対応): 開発時だけ警告します(本番の JS から文を除く)。
+        if (process.env.NODE_ENV !== 'production') {
+          console.warn(
+            '[SpreadsheetGrid] moveRow() は clientSide(rows + onRowsChange)専用です。serverSide では無効です。\n' +
+              '[SpreadsheetGrid] moveRow() works only with clientSide rows (rows + onRowsChange). It does nothing with serverSide.',
+          );
+        }
         return;
       }
       const fromIndex = rows.findIndex(
@@ -3435,6 +3433,7 @@ export function useGridShell<T extends object>({
       rowModel,
       visibleColumns,
       isRowDraggable,
+      localeTexts,
     });
 
   // 追加(13-B3-2): reorder 可能(controlled columns)なときだけバッジを grip 化します。
@@ -3482,6 +3481,7 @@ export function useGridShell<T extends object>({
     renderFilterDateInput,
     popoverSlot: slots.popover,
     portalClassName,
+    localeTexts,
   });
 
   // 変更(UI CSS移行): getHeaderActionButtonStyle(インライン)を撤去しました。
@@ -3694,10 +3694,6 @@ export function useGridShell<T extends object>({
     orderedColumns,
     rowModel,
   });
-
-  // 追加(段階 2 DU-18): 文言を既定と合わせます(中身が同じなら同じ参照 = localeText={{ … }} をその場で書いても要約を作り直さない)。
-  const [resolveLocaleText] = useState(createLocaleTextResolver);
-  const localeTexts = useMemo(() => resolveLocaleText(localeText), [resolveLocaleText, localeText]);
 
   const { slotContext } = useGridBarContext({
     rows,
@@ -3924,12 +3920,12 @@ export function useGridShell<T extends object>({
   const toolPanelTabs: ToolPanelTabDescriptor[] = availableToolPanelTabs.map(
     (tab): ToolPanelTabDescriptor => {
       if (tab === 'filter') {
-        return { tab, label: 'フィルター', badge: filterTabBadge };
+        return { tab, label: localeTexts.toolPanelFilters, badge: filterTabBadge };
       }
       if (tab === 'sort') {
-        return { tab, label: '並び替え', badge: uiState.sort.length };
+        return { tab, label: localeTexts.toolPanelSort, badge: uiState.sort.length };
       }
-      return { tab, label: '列' };
+      return { tab, label: localeTexts.toolPanelColumns };
     },
   );
 
@@ -4128,6 +4124,8 @@ export function useGridShell<T extends object>({
     isRowExportable,
     // 追加(label-row ④): ラベル行のエクスポート設定(scope 'raw' の除外 / includeLabelRows の出力値)。
     labelRowExport,
+    // 追加(英語対応): getInvalidCells のメッセージ・エクスポートの小計の文言。
+    localeTexts,
     // 追加(段階 2 N-4): getRowNumber が行番号の列と同じ番号を返すため(ラベル行を数えない)。
     labelViewIndexes: labelDisplay?.labelViewIndexes,
     // 追加(合計行 3A): 合計行のエクスポート(includeTotalRow)と、末尾 / 行を見せる位置の計算に使う高さ。
@@ -4997,8 +4995,8 @@ export function useGridShell<T extends object>({
               style={slots.emptyState?.style}
             >
               {(isServerSide ? !filterConditionsActive : rows.length === 0 && !manualFilterActive)
-                ? noRowsText
-                : noMatchingRowsText}
+                ? (noRowsText ?? localeTexts.noRows)
+                : (noMatchingRowsText ?? localeTexts.noMatchingRows)}
             </div>
           )}
         </div>
@@ -5038,7 +5036,7 @@ export function useGridShell<T extends object>({
             遅延表示(OVERLAY_DELAY_MS 経過後)・pointer-events: none で操作素通し。 */}
         {isAutosizing && (
           <div className="ssg-autosize-overlay">
-            <span className="ssg-autosize-pill">列幅を計算中…</span>
+            <span className="ssg-autosize-pill">{localeTexts.sizingColumns}</span>
           </div>
         )}
 
@@ -5055,7 +5053,7 @@ export function useGridShell<T extends object>({
             >
               <span className="ssg-filter-spinner" aria-hidden="true" />
               <span className="ssg-filter-overlay-text">
-                適用中 {Math.round(globalFilterProgress * 100)}%
+                {formatLocaleText(localeTexts.applyingFilter, { percent: Math.round(globalFilterProgress * 100) })}
               </span>
             </span>
           </div>
@@ -5076,7 +5074,7 @@ export function useGridShell<T extends object>({
 
         {/* 追加(batch 9): SSRM エラーバー(getRows 失敗の再試行 UI)/ 保存失敗バー(SSRM 書き戻し)です。
             変更(差し込み式 段階 5): 中身は機能セットの serverSide から(無い構成の代役は何も描かない)。 */}
-        {isServerSide && serverSide.renderErrorBars(slots.errorBar)}
+        {isServerSide && serverSide.renderErrorBars(slots.errorBar, localeTexts)}
         {/* 追加(G-2): IME オンのままの直接入力の入力受け(imeDirectInput 有効時のみ)。非制御で、値 / 位置 / 変換中の
             表示はコントローラが直接扱います。Tab の順番には入れません(タブストップはシェルのまま)。 */}
         {imeDirectInputEnabled ? (
@@ -5090,7 +5088,7 @@ export function useGridShell<T extends object>({
             autoCorrect="off"
             autoCapitalize="off"
             spellCheck={false}
-            aria-label="セルへの入力"
+            aria-label={localeTexts.cellInput}
           />
         ) : null}
       </div>
@@ -5108,6 +5106,8 @@ export function useGridShell<T extends object>({
     </div>
   );
   return (
-    <PortalTokenSourceContext.Provider value={gridRootRef}>{shellElement}</PortalTokenSourceContext.Provider>
+    <PortalTokenSourceContext.Provider value={gridRootRef}>
+      <GridLocaleTextContext.Provider value={localeTexts}>{shellElement}</GridLocaleTextContext.Provider>
+    </PortalTokenSourceContext.Provider>
   );
 }
