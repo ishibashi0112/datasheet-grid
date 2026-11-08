@@ -53,6 +53,26 @@ describe('computeVerticalScrollTarget', () => {
     ).toBe(9900);
   });
 
+  // 追加(段階 2 の確かめ直し N4-1): ラベル行の固定の帯(高さ 30)がヘッダーの直下にあるとき。
+  it('stickyTopInset: start と上へ見せる auto は帯の下に置き、帯に隠れている行は見えていない扱い', () => {
+    const stickyTopInset = { visibleAt: () => 30, coveringRowAt: () => 30 };
+    expect(computeVerticalScrollTarget({ ...V, rowTop: 10000, currentScrollTop: 0, align: 'start', stickyTopInset })).toBe(9970);
+    // 行の上端(10010)は見出しの下(10000)だが帯(〜10030)の裏 → 帯の下へ。
+    expect(computeVerticalScrollTarget({ ...V, rowTop: 10010, currentScrollTop: 10000, align: 'auto', stickyTopInset })).toBe(9980);
+    // 帯より下に見えていれば動かさない。
+    expect(computeVerticalScrollTarget({ ...V, rowTop: 10030, currentScrollTop: 10000, align: 'auto', stickyTopInset })).toBe(10000);
+    // 帯が無い位置(visibleAt 0)で上にはみ出す行は、行を隠す帯(coveringRowAt)の分だけ上へ。
+    expect(
+      computeVerticalScrollTarget({
+        ...V,
+        rowTop: 100,
+        currentScrollTop: 500,
+        align: 'auto',
+        stickyTopInset: { visibleAt: () => 0, coveringRowAt: () => 30 },
+      }),
+    ).toBe(70);
+  });
+
   it('auto: 下にはみ出すなら end 整列', () => {
     expect(
       computeVerticalScrollTarget({

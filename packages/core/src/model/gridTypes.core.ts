@@ -669,7 +669,8 @@ export type LabelRowOptions<T, F extends GridFrameworkTypes = GridFrameworkTypes
   //   次のラベル行が到達すると押し上げられて交代します。
   /**
    * 縦スクロール中、現在セクションのラベル行を列ヘッダー直下に固定する。
-   * 次のラベル行が到達すると押し上げられて交代する(clientSide のみ)。
+   * 次のラベル行が到達すると押し上げられて交代する(clientSide のみ)。キーボード操作 / `scrollToRow`
+   * / `scrollToCell` で上の行を見せるときは、固定した見出しの下に置く(裏に隠さない)。
    *
    * @defaultValue `false`
    */
@@ -2168,7 +2169,8 @@ export type SpreadsheetGridHandle<T> = {
   // 指定行が可視になるようスクロールします(align 既定 'auto')。
   /**
    * 指定行を可視域へ。`align`(既定 `'auto'`): `'auto'`(最小スクロール) / `'start'` / `'center'` /
-   * `'end'`。
+   * `'end'`。`labelRow.sticky` の表では、`'start'` と上へ動かす `'auto'`
+   * は行を固定した見出しの下に置く。
    */
   scrollToRow: (viewRowIndex: number, options?: { align?: ScrollAlign }) => void;
   // 指定セルが可視になるよう縦横スクロールします(固定列は横スクロール対象外)。

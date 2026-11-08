@@ -1200,7 +1200,7 @@ type Row = { id: string; kind?: 'label'; code: string; name: string; qty: number
 | `render` | `(ctx: LabelRowRenderContext<L>) => ReactNode` | — | 中身の React 描画(装飾)。`ctx = { row, rowKey, rowIndex, sourceRowIndex, label, sectionRowCount }`(`sectionRowCount` はフィルター後のセクション内データ行数。serverSide では `undefined`)。 |
 | `height` | `number \| ((row: L) => number)` | `rowHeight` | ラベル行の高さ(px)。行ごとに変えるときは関数。 |
 | `className` | `GridSlotProps \| ((row: L) => GridSlotProps \| undefined)` | — | 行要素へ追加する class(または `{ className, style }`)。`classNames.labelRow` に加えて付与。 |
-| `sticky` | `boolean` | `false` | 縦スクロール中、現在セクションのラベル行を列ヘッダー直下に固定する。次のラベル行が到達すると押し上げられて交代する(clientSide のみ)。 |
+| `sticky` | `boolean` | `false` | 縦スクロール中、現在セクションのラベル行を列ヘッダー直下に固定する。次のラベル行が到達すると押し上げられて交代する(clientSide のみ)。キーボード操作 / `scrollToRow` / `scrollToCell` で上の行を見せるときは、固定した見出しの下に置く(裏に隠さない)。 |
 | `sortMode` | `'section' \| 'follow' \| 'hide'` | `'section'` | ソート / フィルター適用時の扱い(下記)。 |
 | `keepEmptySections` | `boolean` | `false` | フィルターで中身が 0 件になったセクションのラベル行を残す。 |
 | `exportText` | `(row: L) => string \| Array<string \| number \| null \| undefined>` | `getLabel` を先頭列へ | エクスポート(`includeLabelRows: true`)時の出力値。文字列は先頭列(他列は空)、配列は列順にそのまま。 |
@@ -1270,7 +1270,7 @@ const gridRef = useRef<SpreadsheetGridHandle<Row>>(null);
 
 | メソッド | 説明 |
 | --- | --- |
-| `scrollToRow(viewRowIndex, { align? })` | 指定行を可視域へ。`align`(既定 `'auto'`): `'auto'`(最小スクロール) / `'start'` / `'center'` / `'end'`。 |
+| `scrollToRow(viewRowIndex, { align? })` | 指定行を可視域へ。`align`(既定 `'auto'`): `'auto'`(最小スクロール) / `'start'` / `'center'` / `'end'`。`labelRow.sticky` の表では、`'start'` と上へ動かす `'auto'` は行を固定した見出しの下に置く。 |
 | `scrollToCell(viewRowIndex, colIndex, { align? })` | 指定セルを縦横とも可視域へ。固定列(左右ピン)は常に可視のため横スクロールしない。 |
 | `scrollToTop()` / `scrollToBottom()` | 先頭 / 末尾へ。行高を実測するモード(auto-height 列 / 展開行)でも、`scrollToBottom()` は直後の計測で総高が伸びた分を短時間(約 1 秒・上スクロールで中断)自動で再補正し、1 回の呼び出しで末尾に届く。 |
 | `getVisibleRowRange()` | 現在描画中の行ウィンドウ `{ startIndex, endIndex }`(end 排他)。空は `null`。 |

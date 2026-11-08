@@ -124,6 +124,7 @@ import {
   // 追加(label-row ③.5): 縦固定の現在セクション判定で物理 scrollTop を論理へ換算します。
   physicalToLogicalScrollTop,
 } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/verticalGeometry';
+import type { StickyTopInset } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/scrollTargets';
 // 追加(detail ③): 展開行(Master/Detail)の純ロジック(トグル列キー / rowKey→view index 解決 / 選択帯分割)です。
 import {
   DEFAULT_DETAIL_ROW_HEIGHT,
@@ -1837,6 +1838,22 @@ export function useGridShell<T extends object>({
       pushOffset: resolution.pushOffset,
     };
   }, [labelSticky, labelDisplay, labelRowFeature, rowMetrics, scrollTop, verticalScaleFactor, rowModel]);
+  // 追加(段階 2 の確かめ直し N4-1): 縦スクロール固定の帯がヘッダーの直下で行を隠す高さ。アクティブセルの追従と
+  //   scrollToRow / scrollToCell が、上へ見せる行を帯の裏に置いていた(Ctrl+Home で最初の行がすべて隠れる)ため。
+  const stickyTopInset = useMemo<StickyTopInset | undefined>(() => {
+    if (!labelSticky || !labelDisplay || labelDisplay.labelViewIndexes.length === 0 || !labelRowFeature) {
+      return undefined;
+    }
+    const { labelViewIndexes } = labelDisplay;
+    return {
+      visibleAt: (logicalScrollTop) => {
+        const resolution = labelRowFeature.resolveStickyLabel(labelViewIndexes, rowMetrics, logicalScrollTop);
+        return resolution ? Math.max(resolution.height - resolution.pushOffset, 0) : 0;
+      },
+      // 上端が rowTop の行を可視域の先頭に置いたときの帯(その行が属するセクションのラベル。行がラベル行なら無し)。
+      coveringRowAt: (rowTop) => labelRowFeature.resolveStickyLabel(labelViewIndexes, rowMetrics, rowTop)?.height ?? 0,
+    };
+  }, [labelSticky, labelDisplay, labelRowFeature, rowMetrics]);
   // 追加(label-row ④): 命令的 API(exportCsv / getExportData)へ渡すラベル行のエクスポート設定です。
   //   変更(差し込み式 段階 5): ラベル行の機能が無い構成ではラベル行をデータ行として扱うので渡しません(全部入りでは
   //   labelRowEnabled は「labelRow の 2 つの関数がある」と同じ)。
@@ -2069,6 +2086,8 @@ export function useGridShell<T extends object>({
     verticalScaleFactor,
     // 追加(合計行 3A): スクロール可能な高さに足し、行を見せるときは合計行の裏に隠さない。
     footerHeight,
+    // 追加(段階 2 の確かめ直し N4-1): 上へ動いたアクティブセルをラベル行の固定の帯の裏に隠さない。
+    stickyTopInset,
   });
 
   // 注記(10-G): 旧実装にあった「中央ペインの scrollTop を transform で固定ペインへ同期する
@@ -4114,6 +4133,8 @@ export function useGridShell<T extends object>({
     // 追加(合計行 3A): 合計行のエクスポート(includeTotalRow)と、末尾 / 行を見せる位置の計算に使う高さ。
     totalRowExport,
     footerHeight,
+    // 追加(段階 2 の確かめ直し N4-1): scrollToRow / scrollToCell が上へ見せる行をラベル行の固定の帯の下に置く。
+    stickyTopInset,
     activeToolPanelTab,
     openToolPanel,
     closeToolPanel,

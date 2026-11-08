@@ -43,7 +43,7 @@ import {
   migrateGridStatePatch,
 } from '../logic/gridState';
 import { markUrgentFilters } from '../logic/urgentFilters';
-import { computeHorizontalScrollTarget, computeVerticalScrollTarget } from '../logic/scrollTargets';
+import { computeHorizontalScrollTarget, computeVerticalScrollTarget, type StickyTopInset } from '../logic/scrollTargets';
 import {
   collectAllGroupKeys,
   collectAllGroupRows,
@@ -110,6 +110,8 @@ export type GridApiArgs<T> = {
   physicalBodyHeight: number;
   // 追加(合計行 3A): 下端に固定する行(合計行)の高さ。末尾へのスクロール / 行を見せる位置に効きます。既定 0。
   footerHeight?: number;
+  // 追加(段階 2 の確かめ直し N4-1): ラベル行の縦スクロール固定の帯。行を上へ見せるときは帯の下に置きます。
+  stickyTopInset?: StickyTopInset;
   // 追加(監査 M-05): 行高を実測するモード(auto-height 列 / 展開行)か。scrollToBottom() 直後の計測で総高が
   //   伸びたとき、末尾へ再補正するかの判定に使います(固定行高では総高が計測で変わらないため補正しない)。
   measuredRowHeights?: boolean;
@@ -254,6 +256,7 @@ export const createGridApi = <T,>(features: Pick<GridCoreFeatures, 'export' | 'g
       viewportHeight: el.clientHeight - (s.footerHeight ?? 0),
       currentScrollTop: physicalToLogicalScrollTop(el.scrollTop, s.verticalScaleFactor),
       align,
+      stickyTopInset: s.stickyTopInset,
     });
   };
 

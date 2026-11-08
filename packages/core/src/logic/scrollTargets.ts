@@ -9,6 +9,15 @@ import type { ScrollAlign } from '../model/gridTypes.unbound';
 //   返り値は論理 scrollTop / scrollLeft で、呼び出し側が logicalToPhysicalScrollTop で物理へ戻します
 //   (横は圧縮対象外のため物理 = 論理)。下限は常に 0、上限は maxScroll*(省略時は無制限)でクランプします。
 
+// 追加(段階 2 の確かめ直し N4-1): ラベル行の縦スクロール固定(labelRow.sticky)の帯が、ヘッダーの直下で行を隠す高さです。
+//   visibleAt = その論理 scrollTop で見えている帯の高さ(押し上げを除く。帯が無ければ 0)、coveringRowAt = 上端が rowTop の行を
+//   可視域の先頭に置いたとき、その行を隠す帯の高さ(行がラベル行 / 最初のラベルより前なら 0)。行を上へ見せるときはこの分だけ
+//   上へずらして帯の下に置きます(見出しの直下に合わせると帯の裏に隠れていた)。
+export type StickyTopInset = {
+  visibleAt: (logicalScrollTop: number) => number;
+  coveringRowAt: (rowTop: number) => number;
+};
+
 export type VerticalScrollTargetParams = {
   // 行上端の content オフセット(= rowMetrics.rowTop(i)。ヘッダー高さは含めません)。
   rowTop: number;
@@ -21,6 +30,8 @@ export type VerticalScrollTargetParams = {
   align: ScrollAlign;
   // 論理 scrollTop の上限(省略時は +∞ = 上限なし。下限は常に 0)です。
   maxScrollTop?: number;
+  // 追加(段階 2 の確かめ直し N4-1): ラベル行の固定の帯(省略時は帯なし)。
+  stickyTopInset?: StickyTopInset;
 };
 
 export const computeVerticalScrollTarget = ({
@@ -31,25 +42,28 @@ export const computeVerticalScrollTarget = ({
   currentScrollTop,
   align,
   maxScrollTop,
+  stickyTopInset,
 }: VerticalScrollTargetParams): number => {
   const cellTop = headerHeight + rowTop;
   const cellBottom = cellTop + rowHeight;
+  // 行を可視域の先頭に置くときの位置(固定の帯があればその下)。
+  const alignedTop = () => cellTop - headerHeight - (stickyTopInset?.coveringRowAt(rowTop) ?? 0);
 
   let target: number;
   if (align === 'start') {
-    target = cellTop - headerHeight;
+    target = alignedTop();
   } else if (align === 'end') {
     target = cellBottom - viewportHeight;
   } else if (align === 'center') {
     target = (cellTop + cellBottom) / 2 - (headerHeight + viewportHeight) / 2;
   } else {
     // 'auto': 既に可視ならそのまま。上にはみ出すなら start 整列、下なら end 整列(最小スクロール)。
-    const visibleTop = currentScrollTop + headerHeight;
+    const visibleTop = currentScrollTop + headerHeight + (stickyTopInset?.visibleAt(currentScrollTop) ?? 0);
     const visibleBottom = currentScrollTop + viewportHeight;
     if (cellTop >= visibleTop && cellBottom <= visibleBottom) {
       target = currentScrollTop;
     } else if (cellTop < visibleTop) {
-      target = cellTop - headerHeight;
+      target = alignedTop();
     } else {
       target = cellBottom - viewportHeight;
     }

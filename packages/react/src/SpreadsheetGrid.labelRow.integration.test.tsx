@@ -277,6 +277,53 @@ describe('SpreadsheetGrid × ラベル行(縦スクロール固定)', () => {
     expect(stickyIn(container, 'center')).toBeNull();
   });
 
+  // 追加(段階 2 の確かめ直し N4-1): 上へ動いたアクティブセルの行を見出しの直下に合わせていたので、固定したラベルの帯の下に
+  //   隠れていた(Ctrl+Home で A1 がすべて隠れる)。帯の下に合わせる。
+  it('sticky: 上へ動いたアクティブセル / scrollToRow の start は、固定したラベルの帯の下に合わせる', async () => {
+    const ref = createRef<SpreadsheetGridHandle<Row>>();
+    const { container } = render(
+      <SpreadsheetGrid
+        ref={ref}
+        rows={manyRows}
+        columns={columns}
+        rowKeyGetter={rowKeyGetter}
+        rowHeight={30}
+        headerHeight={40}
+        labelRow={{ ...labelRow, sticky: true }}
+      />,
+    );
+    const scrollEl = container.querySelector<HTMLElement>('.ssg-scroll-container')!;
+    const shell = container.querySelector<HTMLElement>('.ssg-shell')!;
+    // セクション 2 のラベル(view 6 = 180px)が固定される位置。
+    await scrollTo(scrollEl, 200);
+    expect(stickyIn(container, 'center')?.dataset.ssgStickyLabelRowIndex).toBe('6');
+    act(() => {
+      ref.current?.selectCell(8, 1);
+    });
+    const calls: number[] = [];
+    scrollEl.scrollTo = ((options: ScrollToOptions) => {
+      calls.push(options.top ?? Number.NaN);
+    }) as typeof scrollEl.scrollTo;
+    // ↑ で view 7(210px)へ: 帯(200〜230px)に隠れるので、帯の下(180px = ラベル行の自然な位置)へ。
+    fireEvent.keyDown(shell, { key: 'ArrowUp' });
+    await flushAnimationFrame();
+    expect(calls.at(-1)).toBe(180);
+    // Ctrl+Home(最初のデータ行 = view 1 の 30px): 帯(セクション 1 のラベル 30px)の下 = 0px。
+    fireEvent.keyDown(shell, { key: 'Home', ctrlKey: true });
+    await flushAnimationFrame();
+    expect(ref.current?.getActiveCell()).toEqual({ row: 1, col: 0 });
+    expect(calls.at(-1)).toBe(0);
+    // scrollToRow の start(view 9 = 270px): セクション 2 の帯 30px の下 = 240px。ラベル行そのものは帯が無いので 180px。
+    act(() => {
+      ref.current?.scrollToRow(9, { align: 'start' });
+    });
+    expect(calls.at(-1)).toBe(240);
+    act(() => {
+      ref.current?.scrollToRow(6, { align: 'start' });
+    });
+    expect(calls.at(-1)).toBe(180);
+  });
+
   it('sticky 未指定 / false では固定レイヤーを出さない', async () => {
     const { container } = render(
       <SpreadsheetGrid rows={manyRows} columns={columns} rowKeyGetter={rowKeyGetter} rowHeight={30} labelRow={labelRow} />,
