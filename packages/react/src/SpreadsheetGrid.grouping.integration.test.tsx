@@ -688,6 +688,25 @@ describe('グルーピングの操作(dogfood)', () => {
     expect(onRowsChange).not.toHaveBeenCalled();
   });
 
+  // 追加(段階 2 G1): 自動グループ列のセルの番地は、先頭のデータ列と同じ文字ではなく見出しの名前と行番号。
+  it('G1: 自動グループ列のセルの番地は「見出しの名前 行番号」', () => {
+    const ref = createRef<SpreadsheetGridHandle<Row>>();
+    const { container } = render(<SpreadsheetGrid ref={ref} columns={groupedColumns} rows={rows} />);
+    const kanto = centerGroupRows(container)[0] as HTMLElement;
+    const groupCell = kanto.querySelector<HTMLElement>(`[data-ssg-col-key="${GROUP_AUTO_COLUMN_KEY}"]`);
+    expect(groupCell).not.toBeNull();
+    act(() => {
+      fireEvent.pointerDown(groupCell!, { button: 0, pointerId: 1, pointerType: 'mouse' });
+      fireEvent.pointerUp(window, { button: 0, pointerId: 1, pointerType: 'mouse' });
+    });
+    const bottomBar = container.querySelector('.ssg-bar--bottom');
+    expect(bottomBar?.textContent).toContain('セル 地域 › 担当 1');
+    act(() => {
+      ref.current?.setActiveCell({ row: 0, col: 1 });
+    });
+    expect(container.querySelector('.ssg-bar--bottom')?.textContent).toContain('セル A1');
+  });
+
   it('DU-05: グローバルフィルターはグループ元列の値でも探せる', () => {
     const ref = createRef<SpreadsheetGridHandle<Row>>();
     render(<SpreadsheetGrid ref={ref} columns={groupedColumns} rows={rows} enableGlobalFilter />);

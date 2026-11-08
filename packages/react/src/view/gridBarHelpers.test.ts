@@ -6,9 +6,11 @@ import { describe, it, expect } from 'vitest';
 import type { GridColumn, GridSelection } from '../model/gridTypes';
 import { DETAIL_TOGGLE_COLUMN_KEY } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/detailRow';
 import { ROW_DRAG_HANDLE_COLUMN_KEY } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/rowReorder';
+import { GROUP_AUTO_COLUMN_KEY } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/grouping';
 import {
   buildGridDerivedSummary,
   createDataColumnNamer,
+  createDataRowNumberer,
   formatGridCellLabel,
   formatGridColumnSummary,
   formatGridFilterSummary,
@@ -419,6 +421,26 @@ describe('createDataColumnNamer (audit V-12)', () => {
     const namer = createDataColumnNamer([{ key: 'a' }, { key: 'b' }]);
     expect(namer(0)).toBe('A');
     expect(namer(27)).toBe('AB');
+  });
+
+  // 追加(段階 2 G1): 自動グループ列のセルは見出しの名前と行番号(先頭のデータ列と同じ文字にしない)。範囲は従来どおり。
+  it('自動グループ列のセルは「見出しの名前 行番号」、範囲は次のデータ列の文字', () => {
+    const namer = createDataColumnNamer([
+      { key: ROW_DRAG_HANDLE_COLUMN_KEY },
+      { key: GROUP_AUTO_COLUMN_KEY, title: '地域 › 担当' },
+      { key: 'a' },
+      { key: 'b' },
+    ]);
+    expect(formatGridCellLabel({ row: 2, col: 1 }, namer)).toBe('地域 › 担当 3');
+    expect(formatGridCellLabel({ row: 2, col: 2 }, namer)).toBe('A3');
+    expect(
+      formatGridSelectionLabel({ type: 'cell', range: { start: { row: 2, col: 1 }, end: { row: 2, col: 1 } } }, namer),
+    ).toBe('地域 › 担当 3');
+    expect(
+      formatGridSelectionLabel({ type: 'cell', range: { start: { row: 0, col: 1 }, end: { row: 2, col: 3 } } }, namer),
+    ).toBe('A1:B3');
+    // ラベル行を飛ばした番号を使う(行ヘッダーと同じ)。
+    expect(formatGridCellLabel({ row: 2, col: 1 }, namer, createDataRowNumberer([0]))).toBe('地域 › 担当 2');
   });
 
   it('buildGridDerivedSummary へ渡すと activeCellLabel / selectionLabel に反映される', () => {

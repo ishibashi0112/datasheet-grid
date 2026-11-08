@@ -11,6 +11,8 @@ import type {
 } from '../model/gridTypes';
 import { toExcelColumnName } from '@ishibashi0112/spreadsheet-grid-core/internal/utils/excelColumnName';
 import { isSyntheticColumnKey } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/detailRow';
+// 追加(段階 2 G1): 自動グループ列のセルの番地は見出しの名前で出します。
+import { GROUP_AUTO_COLUMN_KEY } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/grouping';
 // 追加(dogfood DF-10): 番地と件数をラベル行を飛ばして数えます(行ヘッダーの番号と揃える)。
 import { countLabelsBefore } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/labelRows';
 // 追加(12-A): set フィルター対応のフィルター有効判定を共有します。
@@ -43,22 +45,51 @@ const truncateSummaryText = (value: string, maxLength = 16) => {
 // 追加(audit V-12): 列 index(画面の並び = 合成列込み)→ A1 の列名。合成列(行ドラッグハンドル / 展開トグル /
 //   自動グループ列)を数えないため、合成列が先頭にあっても最初のデータ列が "A" になります。合成列が無ければ
 //   toExcelColumnName そのもの(従来どおり)。
-export type GridColumnNamer = (columnIndex: number) => string;
+// 追加(段階 2 G1): cellNameOf は 1 つのセルの番地で、列の文字の代わりに名前を出す列(自動グループ列 = 見出しの名前)。
+//   「地域 › 担当 3」のように名前と行番号を空白でつなぎます。これまでは先頭のデータ列と同じ文字(「A3」)で、
+//   どのセルか分かりませんでした。範囲の番地(`A3:C5`)は従来どおり次のデータ列の文字です。
+export type GridColumnNamer = ((columnIndex: number) => string) & {
+  readonly cellNameOf?: (columnIndex: number) => string | undefined;
+};
 
-export const createDataColumnNamer = (orderedColumns: ReadonlyArray<{ key: string }>): GridColumnNamer => {
+export const createDataColumnNamer = (
+  orderedColumns: ReadonlyArray<{ key: string; title?: string }>,
+): GridColumnNamer => {
   const syntheticBefore: number[] = [];
   let count = 0;
-  for (const column of orderedColumns) {
+  let groupColumnIndex = -1;
+  let groupColumnName = '';
+  for (const [index, column] of orderedColumns.entries()) {
     syntheticBefore.push(count);
     if (isSyntheticColumnKey(column.key)) {
       count += 1;
+    }
+    if (column.key === GROUP_AUTO_COLUMN_KEY) {
+      groupColumnIndex = index;
+      groupColumnName = column.title || column.key;
     }
   }
   if (count === 0) {
     return toExcelColumnName;
   }
-  return (columnIndex) =>
+  const namer = (columnIndex: number) =>
     toExcelColumnName(Math.max(columnIndex - (syntheticBefore[columnIndex] ?? count), 0));
+  if (groupColumnIndex < 0) {
+    return namer;
+  }
+  return Object.assign(namer, {
+    cellNameOf: (columnIndex: number) => (columnIndex === groupColumnIndex ? groupColumnName : undefined),
+  });
+};
+
+// 追加(段階 2 G1): 1 つのセルの番地。名前で出す列は「名前 行番号」、それ以外は A1 形式。
+const formatSingleCell = (
+  toColumnName: GridColumnNamer,
+  columnIndex: number,
+  rowNumber: number,
+) => {
+  const name = toColumnName.cellNameOf?.(columnIndex);
+  return name === undefined ? `${toColumnName(columnIndex)}${rowNumber}` : `${name} ${rowNumber}`;
 };
 
 // 追加(dogfood DF-10): 行の番号(行ヘッダーの番号と同じ = ラベル行を飛ばした通し番号)と、範囲の中のデータ行の数。
@@ -101,7 +132,7 @@ export const formatGridCellLabel = (
   if (!cell) {
     return texts.none;
   }
-  return `${toColumnName(cell.col)}${rowNumberer.numberOf(cell.row)}`;
+  return formatSingleCell(toColumnName, cell.col, rowNumberer.numberOf(cell.row));
 };
 
 // 追加: selection の概要を短く整形します。
@@ -135,6 +166,9 @@ export const formatGridSelectionLabel = (
       selection.range.end.col,
     );
 
+    if (startRow === endRow && startCol === endCol) {
+      return formatSingleCell(toColumnName, startCol, rowNumberer.numberOf(startRow));
+    }
     const start = `${toColumnName(startCol)}${rowNumberer.numberOf(startRow)}`;
     const end = `${toColumnName(endCol)}${rowNumberer.lastNumberOf(endRow)}`;
     return start === end ? start : `${start}:${end}`;

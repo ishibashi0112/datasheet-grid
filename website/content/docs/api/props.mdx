@@ -181,8 +181,8 @@ description: SpreadsheetGridProps<T> の全 prop と既定値
 | `sortSummary` | `並び替え: {value}` | 並び替えの要約(`{value}` は `none` か、`sortEntry` を `listSeparator` でつないだもの) |
 | `sortEntry` | `{column}({direction})` | 並び替えの 1 列(`{direction}` は `sortAscending` / `sortDescending`) |
 | `sortAscending` / `sortDescending` | `昇順` / `降順` | 並び替えの向き |
-| `activeCell` | `セル {cell}` | アクティブセルの番地(無ければ `none`) |
-| `selection` | `範囲 {range}` | 選択範囲(`B3:D5`、1 セルなら `B3`、行は `3:5`、列は `B:D`。無ければ `none`) |
+| `activeCell` | `セル {cell}` | アクティブセルの番地(`B3`。行グルーピングの自動グループ列のセルは見出しの名前と行番号で `地域 › 担当 3`。無ければ `none`) |
+| `selection` | `範囲 {range}` | 選択範囲(`B3:D5`、1 セルなら `B3`(自動グループ列のセルは `activeCell` と同じ名前)、行は `3:5`、列は `B:D`。無ければ `none`) |
 | `selectionSize` | `{cells} セル / {rows} 行` | 選択範囲の大きさ |
 | `selectedColumns` | `{count} 列` | 選択範囲の列数 |
 | `aggregateAverage` / `aggregateCount` / `aggregateSum` | `平均` / `データの個数` / `合計` | 選択範囲の集計の見出し(後ろに `: 値`) |
