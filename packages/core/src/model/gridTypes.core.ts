@@ -2051,6 +2051,9 @@ export type CsvExportOptions = {
   includeLabelRows?: boolean;
   // 追加(合計行 3A): 合計行(totalRow)を末尾に含めるか(既定 false)。scope 'view' のときだけ出力します。
   includeTotalRow?: boolean;
+  // 追加(段階 2 DU-10): 行グルーピング中に、各グループの先頭へ小計の行を入れるか(既定 false)。scope 'view' のときだけ。
+  //   グループ元の列は祖先の値と「<ラベル> 小計」、集計のある列(aggFunc)はそのグループの集計値、ほかの列は空です。
+  includeGroupRows?: boolean;
 };
 
 // 追加(imperative API: getExportData): エクスポート用「整形済みデータ」のオプションです。CSV と同じ
@@ -2065,6 +2068,9 @@ export type GridExportOptions = {
   // 追加(合計行 3A): 合計行(totalRow)を末尾に含めるか(既定 false)。scope 'view' のときだけ出力し、
   //   GridExportData.rowKinds の 'total' で判別できます。
   includeTotalRow?: boolean;
+  // 追加(段階 2 DU-10): 行グルーピング中に、各グループの先頭へ小計の行を入れるか(既定 false。CsvExportOptions と同じ)。
+  //   GridExportData.rowKinds の 'group' で判別できます。
+  includeGroupRows?: boolean;
 };
 
 // 追加(imperative API: getExportData): エクスポート 1 セルの内容です。
@@ -2088,7 +2094,8 @@ export type GridExportData = {
   // 追加(label-row ④): rows と同じ長さの行種配列です(includeLabelRows / includeTotalRow で行が増えるときのみ存在)。
   //   'label' の行は labelRow.exportText 由来のセル列で、Excel 側で結合セル / 書式を当てる判定に使えます。
   //   追加(合計行 3A): 'total' は末尾の合計行です。
-  rowKinds?: Array<'data' | 'label' | 'total'>;
+  //   追加(段階 2 DU-10): 'group' はグループの小計の行です(includeGroupRows のとき)。
+  rowKinds?: Array<'data' | 'label' | 'total' | 'group'>;
 };
 
 // 追加(state v2): 列メタのシリアライズ単位です(getState / applyState の GridState.columns 要素)。

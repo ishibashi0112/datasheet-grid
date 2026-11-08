@@ -26,6 +26,8 @@ export type BuildGridExportDataParams<T> = {
   getLabelLine?: (rowIndex: number) => LabelExportLine | undefined;
   // 追加(合計行 3A): 末尾に出す合計行の値(serializeRowsToCsv と同じ契約)。指定時は rowKinds も返します。
   totalLine?: ReadonlyArray<unknown>;
+  // 追加(段階 2 DU-10): グループの小計の行(serializeRowsToCsv と同じ契約)。指定時は rowKinds も返します。
+  getGroupLine?: (rowIndex: number) => ReadonlyArray<unknown> | undefined;
 };
 
 // 行レンジ × 列集合から、列メタ(key / title)と 2 次元セル(value / text)を生成します。
@@ -37,6 +39,7 @@ export const buildGridExportData = <T,>({
   isRowIncluded,
   getLabelLine,
   totalLine,
+  getGroupLine,
 }: BuildGridExportDataParams<T>): GridExportData => {
   // 列メタは key(オブジェクト系ライブラリ用)と title(ヘッダー表示用)の双方を持たせます。
   const exportColumns = columns.map((column) => ({
@@ -48,12 +51,25 @@ export const buildGridExportData = <T,>({
   const rows: GridExportData['rows'] = [];
   // 追加(label-row ④): ラベル行を含める指定(getLabelLine)があるときだけ行種配列を付けます。
   //   追加(合計行 3A): 合計行を出すとき(totalLine)も付けます。
-  const rowKinds: Array<'data' | 'label' | 'total'> | undefined = getLabelLine || totalLine ? [] : undefined;
+  //   追加(段階 2 DU-10): 小計の行を出すとき(getGroupLine)も付けます。
+  const rowKinds: NonNullable<GridExportData['rowKinds']> | undefined =
+    getLabelLine || totalLine || getGroupLine ? [] : undefined;
   for (let rowIndex = startRow; rowIndex < endRow; rowIndex += 1) {
     const row = getRow(rowIndex);
     // SSRM 未ロード行(undefined)はスキップします。clientSide では常に行が存在します。
     // 追加(label-row ④): ラベル行(getRow が undefined)は getLabelLine が値を返せば 1 行として出力します。
     if (!row) {
+      const groupLine = getGroupLine?.(rowIndex);
+      if (groupLine) {
+        rows.push(
+          columns.map((_, index) => {
+            const value = groupLine[index];
+            return { value: value ?? null, text: totalExportCellText(value) };
+          }),
+        );
+        rowKinds?.push('group');
+        continue;
+      }
       const line = getLabelLine?.(rowIndex);
       if (line) {
         rows.push(

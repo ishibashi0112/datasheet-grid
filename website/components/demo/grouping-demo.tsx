@@ -1,6 +1,7 @@
 'use client';
 
-// 行グルーピング + 集計のデモ: 地域 > 担当 の 2 階層グルーピングと sum 集計、開閉の命令的 API。
+// 行グルーピング + 集計のデモ: 地域 > 担当 の 2 階層グルーピングと sum 集計、開閉の命令的 API、
+// グルーピング中の CSV(グループ元の列が先頭に入る / includeGroupRows で小計の行)。
 import { useRef, useState } from 'react';
 import {
   SpreadsheetGrid,
@@ -49,6 +50,8 @@ const initialRows: Row[] = [
 export function GroupingDemo() {
   const [rows, setRows] = useState<Row[]>(initialRows);
   const gridRef = useRef<SpreadsheetGridHandle<Row>>(null);
+  // CSV の中身を表の下に見せる(null は閉じている)。
+  const [csv, setCsv] = useState<string | null>(null);
 
   return (
     <div className="flex flex-col gap-2">
@@ -67,6 +70,20 @@ export function GroupingDemo() {
         >
           すべて折りたたむ
         </button>
+        <button
+          type="button"
+          className="rounded-md border px-2 py-1 hover:bg-fd-accent"
+          onClick={() => setCsv(gridRef.current?.exportCsv() ?? '')}
+        >
+          CSV を見る
+        </button>
+        <button
+          type="button"
+          className="rounded-md border px-2 py-1 hover:bg-fd-accent"
+          onClick={() => setCsv(gridRef.current?.exportCsv({ includeGroupRows: true }) ?? '')}
+        >
+          CSV を見る(小計の行つき)
+        </button>
       </div>
       <SpreadsheetGrid
         rows={rows}
@@ -77,6 +94,9 @@ export function GroupingDemo() {
         theme="auto"
         ref={gridRef}
       />
+      {csv !== null ? (
+        <pre className="max-h-60 overflow-auto rounded-md border p-2 text-xs">{csv.replace(/\r\n/g, '\n')}</pre>
+      ) : null}
     </div>
   );
 }

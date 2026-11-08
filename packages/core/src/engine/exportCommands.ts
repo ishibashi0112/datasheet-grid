@@ -6,13 +6,15 @@ import type {
   CsvExportOptions,
   CsvExportScope,
   GridColumn,
+  GridGroupRow,
   GridExportData,
   GridExportOptions,
   SpreadsheetGridHandle,
 } from '../model/gridTypes.unbound';
 import { normalizeCellRange, normalizeColumnRange, normalizeRowRange } from '../model/gridSelectors';
 import { isSyntheticColumnKey } from '../logic/detailRow';
-import { flattenGroupTree, isGroupOrderValue } from '../logic/grouping';
+import { collectGroupingColumns, flattenGroupTree, isGroupOrderValue } from '../logic/grouping';
+import { createGroupSubtotalLineGetter } from '../logic/groupExport';
 import { serializeRowsToCsv, type LabelExportLine } from '../logic/exportCsv';
 import { buildGridExportData } from '../logic/exportData';
 import { buildTotalRowExportLine } from '../logic/totalRow';
@@ -37,6 +39,9 @@ type ExportResolution<T> = {
   isRowIncluded?: (row: T, rowIndex: number) => boolean;
   // 追加(label-row ④): ラベル行の出力行(includeLabelRows: true のときだけ定義)。getRow と同じ index 空間。
   getLabelLine?: (rowIndex: number) => LabelExportLine | undefined;
+  // 追加(段階 2 DU-10): 行グルーピング中の 'view' の全展開した表示順とグループ行(小計の行を組み立てる元)と、
+  //   グループ元の列の key(階層の順)。
+  groupDisplay?: { order: ArrayLike<number>; groups: readonly GridGroupRow[]; groupColumnKeys: readonly string[] };
 };
 
 // エクスポート用の「全展開」開閉状態(行グルーピングの 'view' 出力で使用)。
@@ -83,6 +88,12 @@ export const createExportCommands = <T,>(getArgs: () => GridApiArgs<T> | null): 
             rowKey: s.resolvedRowKeyGetter(row, sourceIndex),
           })
       : undefined;
+    // 追加(段階 2 DU-10): 行グルーピング中は、表示から外れているグループ元の列(地域・区分など)を先頭に入れます
+    //   (入れないと、どの行がどのグループか分からない平らな表になっていた)。行の全体を出す scope('view' / 'raw' /
+    //   'rendered' / 行の選択)だけで、セル / 列の選択は選んだ列のままです。
+    const groupColumns = s.groupTree ? collectGroupingColumns(s.columns).groupColumns : [];
+    const withGroupColumns = (columns: GridColumn<T>[]): GridColumn<T>[] =>
+      groupColumns.length > 0 ? [...groupColumns, ...columns.filter((column) => !groupColumns.includes(column))] : columns;
     const normalized = normalizeExportScope(scope);
     if (normalized === 'raw') {
       // serverSide はソース行配列を持たない(未ロード行が存在する)ため 'view' 相当へフォールバックし警告。
@@ -106,7 +117,7 @@ export const createExportCommands = <T,>(getArgs: () => GridApiArgs<T> | null): 
         getRow: (index: number) => (isRawLabel(index) ? (undefined as unknown as T) : s.rows[index]),
         startRow: 0,
         endRow: s.rows.length,
-        columns: s.orderedColumns,
+        columns: withGroupColumns(s.orderedColumns),
         isRowIncluded: isRowIncludedRaw,
         getLabelLine:
           includeLabelRows && labelExport
@@ -119,7 +130,7 @@ export const createExportCommands = <T,>(getArgs: () => GridApiArgs<T> | null): 
         getRow: getViewRow,
         startRow: s.windowFirstRow,
         endRow: s.windowLastRow >= s.windowFirstRow ? s.windowLastRow + 1 : s.windowFirstRow,
-        columns: s.orderedColumns,
+        columns: withGroupColumns(s.orderedColumns),
         isRowIncluded: isRowIncludedView,
         getLabelLine: getViewLabelLine,
       };
@@ -146,7 +157,7 @@ export const createExportCommands = <T,>(getArgs: () => GridApiArgs<T> | null): 
           getRow: getViewRow,
           startRow: r.startRow,
           endRow: r.endRow + 1,
-          columns: s.orderedColumns,
+          columns: withGroupColumns(s.orderedColumns),
           isRowIncluded: isRowIncludedView,
           getLabelLine: getViewLabelLine,
         };
@@ -166,7 +177,8 @@ export const createExportCommands = <T,>(getArgs: () => GridApiArgs<T> | null): 
     //   全展開した表示順で走査し、グループ行(負値)は undefined としてスキップします。
     //   isRowExportable の viewRowIndex は「全展開時のビュー行 index」です。
     if (s.groupTree) {
-      const expandedOrder = flattenGroupTree(s.groupTree, NO_COLLAPSED_GROUPS).displayOrder;
+      const expanded = flattenGroupTree(s.groupTree, NO_COLLAPSED_GROUPS);
+      const expandedOrder = expanded.displayOrder;
       const getExpandedRow = (index: number): T => {
         const sourceIndex = expandedOrder[index];
         return (sourceIndex === undefined || isGroupOrderValue(sourceIndex) ? undefined : s.rows[sourceIndex]) as T;
@@ -175,7 +187,12 @@ export const createExportCommands = <T,>(getArgs: () => GridApiArgs<T> | null): 
         getRow: getExpandedRow,
         startRow: 0,
         endRow: expandedOrder.length,
-        columns: s.orderedColumns,
+        columns: withGroupColumns(s.orderedColumns),
+        groupDisplay: {
+          order: expandedOrder,
+          groups: expanded.groups,
+          groupColumnKeys: groupColumns.map((column) => column.key),
+        },
         isRowIncluded: isRowExportableProp
           ? (row: T, index: number) =>
               isRowExportableProp(row, {
@@ -213,6 +230,16 @@ export const createExportCommands = <T,>(getArgs: () => GridApiArgs<T> | null): 
     return buildTotalRowExportLine(exportColumns, totalRowExport.cells, totalRowExport.label);
   };
 
+  // 追加(段階 2 DU-10): 小計の行(includeGroupRows かつ行グルーピング中の 'view')。列は合成列を除いた後の出力列。
+  const resolveGroupLine = (
+    resolved: ExportResolution<T>,
+    includeGroupRows: boolean | undefined,
+    exportColumns: GridColumn<T>[],
+  ): ((index: number) => unknown[] | undefined) | undefined =>
+    includeGroupRows === true && resolved.groupDisplay
+      ? createGroupSubtotalLineGetter({ ...resolved.groupDisplay, columns: exportColumns })
+      : undefined;
+
   const buildCsv = (options?: CsvExportOptions): string => {
     const scope = options?.scope ?? 'view';
     const resolved = resolveExportScope(scope, options?.includeLabelRows === true);
@@ -232,6 +259,7 @@ export const createExportCommands = <T,>(getArgs: () => GridApiArgs<T> | null): 
       isRowIncluded: resolved.isRowIncluded,
       getLabelLine: resolved.getLabelLine,
       totalLine: resolveTotalLine(scope, options?.includeTotalRow, exportColumns),
+      getGroupLine: resolveGroupLine(resolved, options?.includeGroupRows, exportColumns),
     });
   };
 
@@ -250,6 +278,7 @@ export const createExportCommands = <T,>(getArgs: () => GridApiArgs<T> | null): 
       isRowIncluded: resolved.isRowIncluded,
       getLabelLine: resolved.getLabelLine,
       totalLine: resolveTotalLine(scope, options?.includeTotalRow, exportColumns),
+      getGroupLine: resolveGroupLine(resolved, options?.includeGroupRows, exportColumns),
     });
   };
 

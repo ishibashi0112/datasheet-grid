@@ -243,21 +243,53 @@ describe('行グルーピングの列面(結合)', () => {
     expect(cell('custom')?.textContent).toBe('3,001.5');
   });
 
-  it('エクスポートは自動グループ列を除外し leaf 行のみを出力する', () => {
+  // 変更(段階 2 DU-10): 表示から外れているグループ元の列(地域・担当)を先頭に入れます(これまでは「数量」だけの表で、
+  //   どの行がどのグループか分からなかった)。自動グループ列(合成列)は今までどおり出しません。
+  it('エクスポートは自動グループ列を除き、グループ元の列を先頭に入れて leaf 行を出力する', () => {
     const ref = createRef<SpreadsheetGridHandle<Row>>();
     render(<SpreadsheetGrid ref={ref} columns={groupedColumns} rows={rows} />);
 
     const csv = ref.current?.exportCsv({ includeHeaders: true }) ?? '';
-    const lines = csv.split('\r\n');
-    // ヘッダーに自動グループ列(地域 › 担当)は現れず、leaf 2 行のみが出力されます。
-    expect(lines[0]).toBe('数量');
-    expect(lines).toHaveLength(3);
-    expect(lines[1]).toBe('10');
-    expect(lines[2]).toBe('20');
+    expect(csv.split('\r\n')).toEqual(['地域,担当,数量', '関東,佐藤,10', '関西,田中,20']);
 
     const data = ref.current?.getExportData();
-    expect(data?.columns.map((c) => c.key)).toEqual(['qty']);
+    expect(data?.columns.map((c) => c.key)).toEqual(['region', 'rep', 'qty']);
     expect(data?.rows).toHaveLength(2);
+    expect(data?.rowKinds).toBeUndefined();
+    // scope 'raw'(全ソース行)も同じ列。
+    expect(ref.current?.exportCsv({ scope: 'raw' })).toBe('地域,担当,数量\r\n関東,佐藤,10\r\n関西,田中,20');
+  });
+
+  // 追加(段階 2 DU-10): includeGroupRows で各グループの先頭に小計の行(帳票向け)。
+  it('includeGroupRows: 各グループの先頭に小計の行を入れる(祖先の値 + 「<ラベル> 小計」 + 集計値)', () => {
+    const ref = createRef<SpreadsheetGridHandle<Row>>();
+    const twoPerRegion: Row[] = [
+      { region: '関東', rep: '佐藤', qty: 10 },
+      { region: '関西', rep: '田中', qty: 20 },
+      { region: '関東', rep: '鈴木', qty: 5 },
+    ];
+    render(<SpreadsheetGrid ref={ref} columns={groupedColumns} rows={twoPerRegion} />);
+    // 折りたたんでいても全部のグループを出す。
+    act(() => {
+      ref.current?.collapseAllGroups();
+    });
+    expect(ref.current?.exportCsv({ includeGroupRows: true }).split('\r\n')).toEqual([
+      '地域,担当,数量',
+      '関東 小計,,15',
+      '関東,佐藤 小計,10',
+      '関東,佐藤,10',
+      '関東,鈴木 小計,5',
+      '関東,鈴木,5',
+      '関西 小計,,20',
+      '関西,田中 小計,20',
+      '関西,田中,20',
+    ]);
+    const data = ref.current?.getExportData({ includeGroupRows: true });
+    expect(data?.rowKinds).toEqual(['group', 'group', 'data', 'group', 'data', 'group', 'group', 'data']);
+    // 集計値は生値(数値のまま)。
+    expect(data?.rows[0]?.map((cell) => cell.value)).toEqual(['関東 小計', null, 15]);
+    // 小計の行は scope 'view' だけ('raw' はフィルター / グループを無視するので入れない)。
+    expect(ref.current?.exportCsv({ scope: 'raw', includeGroupRows: true }).split('\r\n')).toHaveLength(4);
   });
 
   it('エクスポート(view)は折りたたみに関係なく全 leaf 行を出力する', () => {
@@ -276,7 +308,7 @@ describe('行グルーピングの列面(結合)', () => {
       ref.current?.collapseAllGroups();
     });
     // 折りたたみ後もグループ順(関東 → 関西)で leaf 2 行が出ます。
-    expect(ref.current?.exportCsv()).toBe('数量\r\n10\r\n20');
+    expect(ref.current?.exportCsv()).toBe('地域,担当,数量\r\n関東,佐藤,10\r\n関西,田中,20');
     expect(ref.current?.getExportData().rows).toHaveLength(2);
     // isRowExportable の viewRowIndex は全展開時のビュー行 index(グループ行 2 段の直下 = 2 / 5)。
     expect(isRowExportable.mock.calls.map((call) => (call as unknown[])[1])).toEqual([

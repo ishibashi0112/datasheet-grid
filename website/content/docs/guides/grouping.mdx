@@ -35,4 +35,25 @@ const columns: GridColumn<Row>[] = [
 - **leaf 限定の各機能** — グループ行は編集 / コピー / 行選択 / エクスポートの対象外です(すべて leaf 行が対象)。エクスポートは開閉状態に関わらず、フィルター / ソート後の leaf 行をすべて出力します(折りたたんだグループの配下も含みます)。
 - **clientSide 限定** — serverSide(`dataSource`)では `rowGroup` は無視されます。
 
+## エクスポート(CSV / TSV / Excel)
+
+グルーピング中の `exportCsv` / `downloadCsv` / `getExportData` は、表示から外れているグループ元の列を先頭に入れます。どの行にもグループの値が入った平らな表になるので、Excel のピボットや読み込み直しにそのまま使えます。`includeGroupRows: true` を渡すと、各グループの先頭に小計の行(集計のある列にそのグループの集計値)も入ります(帳票向け。scope `'view'` のときだけ)。
+
+```tsx
+gridRef.current?.exportCsv();
+// 地域,区分,担当,金額
+// 関東,法人,佐藤,100
+// 関東,個人,鈴木,200
+
+gridRef.current?.exportCsv({ includeGroupRows: true });
+// 地域,区分,担当,金額
+// 関東 小計,,,300
+// 関東,法人 小計,,100
+// 関東,法人,佐藤,100
+// 関東,個人 小計,,200
+// 関東,個人,鈴木,200
+```
+
+`getExportData({ includeGroupRows: true })` では `rowKinds` の `'group'` で小計の行を見分けられます(Excel 側で太字にするなど)。集計値は生値(数値のまま)です。
+
 開閉の命令的 API(`setGroupCollapsed` / `getGroupRows` など)は [API リファレンス](/docs/api/handle#行グルーピング) を参照してください。

@@ -1072,7 +1072,7 @@ const columns: GridColumn<Order>[] = [
 - **集計値の整形**: 合計行と同じ書式です(0.63.0 から。これまでは素の値で `4115.333333` のように出ていました)。文字列はそのまま、`count` は件数(桁区切り)、列に `valueFormatter` があれば集計値にも適用され(leaf セルと表示が揃う。`numberFormatter()` の 3 桁区切り等)、無ければ数値は桁区切り + 小数 4 桁まで(カスタム集計の数値も同じ)。合計以外(平均 / 最小 / 最大 / 個数)は値の前に種類を小さく出します(`平均 4,115.33`)。ただしグループ行に leaf 行は無いため **formatter の `row` は `undefined`** です。`row` を読む formatter は `row?.x` のように `row` が無いときも動くように書いてください(カスタムの `aggFunc` の戻り値にも formatter は掛かります。型でも `row` は `T | undefined`)。
 - **開閉**: シェブロン click / グループ行 double-click / グループ行上の `Enter`・`Space`。グループ行のセルを押すとそのセルがアクティブセルになるので、押してから `Enter` / `Space` でも開閉できます(矢印キーでグループ行へ移ったときと同じ)。命令的 API(下記)からも操作できます。開閉状態は UI 状態で、undo/redo・`getState()` の対象外です。
 - **並び / フィルター**: グループの並びは「ソート適用後の初出順」です(グループ元列をソートすればグループごと並び替わる)。グループ元列は表示から外れますが、そのソートと列フィルターは効きます(「並び替えを管理…」パネルの候補にはグループ元列が入り、自動グループ列は入りません。列フィルターは `applyState` などで掛けられ、フィルターの管理パネルとチップバーには非表示の列と同じく「(非表示列)」として出て × で外せます)。フィルターは leaf 行に適用され、0 件になったグループは表示から消えます。グローバルフィルター(`enableGlobalFilter`)はグループ元列の値も探します(「関東」でその地域の行が残る)。ツールパネルの「列」タブではグループ元列を「(グループ化中)」として出し、表示 / 非表示は切り替えられません(値は自動グループ列に出るため)。ドラッグで並べ替えると階層の順番も入れ替わります(階層は `columns` の並び順)。空値は 1 つの「(空白)」グループへ集約されます。
-- **leaf 限定の各機能**: グループ行は編集 / ペースト / クリア / コピー / 行選択 / エクスポートの対象外です(すべて leaf 行のみが対象)。エクスポート(scope `'view'`)は開閉状態に関わらず、フィルター / ソート後の leaf 行をすべて出力します(折りたたんだグループの配下も含む。`isRowExportable` の `ctx.viewRowIndex` は全展開時のビュー行 index)。件数表示(bar の Rows / 行選択件数)も leaf 基準です。
+- **leaf 限定の各機能**: グループ行は編集 / ペースト / クリア / コピー / 行選択 / エクスポートの対象外です(すべて leaf 行のみが対象)。エクスポート(scope `'view'`)は開閉状態に関わらず、フィルター / ソート後の leaf 行をすべて出力します(折りたたんだグループの配下も含む。`isRowExportable` の `ctx.viewRowIndex` は全展開時のビュー行 index)。表示から外れているグループ元の列は出力の先頭に入り(どの行がどのグループか分かる平らな表)、`includeGroupRows: true` で各グループの先頭に小計の行も入ります(帳票向け)。件数表示(bar の Rows / 行選択件数)も leaf 基準です。
 - **clientSide 限定**: serverSide(`dataSource`)では `rowGroup` は無視されます(開発時警告)。
 
 グループ行の記述子は `GridGroupRow`(`groupKey` / `columnKey` / `value` / `label` / `level` / `leafCount` / `aggregates`)としてバレルから公開されます(`getGroupRows()` の返り値)。
@@ -1401,7 +1401,7 @@ const addRow = () => {
 | `exportCsv(options?)` | CSV 文字列を返す(純粋・副作用なし)。 |
 | `downloadCsv(filename?, options?)` | `exportCsv` の結果を `.csv` としてダウンロード(`filename` 既定 `'export.csv'`、`bom` 既定 `true`)。 |
 
-`CsvExportOptions`: `scope`(下表)、`includeHeaders`(既定 `true`)、`delimiter`(既定 `','`。`'\t'` で TSV)、`bom`(`exportCsv` は既定 `false` / `downloadCsv` は既定 `true` = Excel 互換)、`escapeFormulas`(既定 `false`。`true` で `=` / `+` / `-` / `@` / タブ / CR で始まる値の先頭に `'` を付け、表計算ソフトで数式として実行されないようにする(CSV インジェクション対策)。`-5` のように数値として読める値はそのまま。ヘッダー行は対象外)、`includeLabelRows`(既定 `false`。ラベル行(`labelRow`)を `exportText`(未指定なら `getLabel` を先頭列・他列は空)の 1 行として出力する)、`includeTotalRow`(既定 `false`。合計行(`totalRow`)を末尾に 1 行出す。scope `'view'` のときだけで、値は生値)。値整形はコピー(クリップボード)と同じ規則(`formatClipboardValue` があればそれ、無ければ `String(value ?? '')`)。RFC 4180 のクォート、行区切りは CRLF。props の `isRowExportable` 指定時は `false` の行が出力から行ごと除かれる(コピー / `getExportData` も同じ規則)。
+`CsvExportOptions`: `scope`(下表)、`includeHeaders`(既定 `true`)、`delimiter`(既定 `','`。`'\t'` で TSV)、`bom`(`exportCsv` は既定 `false` / `downloadCsv` は既定 `true` = Excel 互換)、`escapeFormulas`(既定 `false`。`true` で `=` / `+` / `-` / `@` / タブ / CR で始まる値の先頭に `'` を付け、表計算ソフトで数式として実行されないようにする(CSV インジェクション対策)。`-5` のように数値として読める値はそのまま。ヘッダー行は対象外)、`includeLabelRows`(既定 `false`。ラベル行(`labelRow`)を `exportText`(未指定なら `getLabel` を先頭列・他列は空)の 1 行として出力する)、`includeTotalRow`(既定 `false`。合計行(`totalRow`)を末尾に 1 行出す。scope `'view'` のときだけで、値は生値)、`includeGroupRows`(既定 `false`。行グルーピング中に各グループの先頭へ小計の行を入れる。scope `'view'` のときだけ。グループ元の列は祖先のグループの値と「<ラベル> 小計」、集計のある列(`aggFunc`)はそのグループの集計値(生値)、ほかの列は空)。行グルーピング中は、表示から外れているグループ元の列を出力の先頭に入れる(scope `'view'` / `'raw'` / `'rendered'` と行の選択。セル / 列の選択は選んだ列のまま)。値整形はコピー(クリップボード)と同じ規則(`formatClipboardValue` があればそれ、無ければ `String(value ?? '')`)。RFC 4180 のクォート、行区切りは CRLF。props の `isRowExportable` 指定時は `false` の行が出力から行ごと除かれる(コピー / `getExportData` も同じ規則)。
 
 **scope 対応表**(`exportCsv` / `downloadCsv` / `getExportData` 共通):
 
@@ -1422,7 +1422,7 @@ serverSide(SSRM)の注意: `'view'` は未ロード行をスキップ(= ロー�
 | --- | --- |
 | `getExportData(options?)` | 列メタ + 2 次元セルの、シリアライズ非依存な整形済みデータを返す(純粋・副作用なし)。 |
 
-`GridExportOptions`: `scope`(既定 `'view'`。上記 **scope 対応表**と同一規則を共有)、`includeLabelRows`(既定 `false`。ラベル行を含める。含めたときは `rowKinds` で行種を判別できる)、`includeTotalRow`(既定 `false`。合計行を末尾に含める。scope `'view'` のときだけで、`rowKinds` の `'total'` で判別できる)。
+`GridExportOptions`: `scope`(既定 `'view'`。上記 **scope 対応表**と同一規則を共有)、`includeLabelRows`(既定 `false`。ラベル行を含める。含めたときは `rowKinds` で行種を判別できる)、`includeTotalRow`(既定 `false`。合計行を末尾に含める。scope `'view'` のときだけで、`rowKinds` の `'total'` で判別できる)、`includeGroupRows`(既定 `false`。行グルーピング中の小計の行。`exportCsv` と同じで、`rowKinds` の `'group'` で判別できる)。
 
 戻り値 `GridExportData`:
 
@@ -1430,7 +1430,7 @@ serverSide(SSRM)の注意: `'view'` は未ロード行をスキップ(= ロー�
 type GridExportData = {
   columns: { key: string; title: string }[];   // 視覚順(selection では選択列のみ)
   rows: { value: unknown; text: string }[][];   // scope の行レンジ(SSRM 未ロード行はスキップ)
-  rowKinds?: ('data' | 'label' | 'total')[];    // ラベル行 / 合計行を含めたときだけ(rows と同じ長さ)
+  rowKinds?: ('data' | 'label' | 'total' | 'group')[]; // ラベル行 / 合計行 / 小計の行を含めたときだけ(rows と同じ長さ)
 };
 ```
 
