@@ -483,15 +483,21 @@ export const createGridApi = <T,>(features: Pick<GridCoreFeatures, 'export' | 'g
       if (!s) {
         return;
       }
-      const start = clampCellCoord(range.start);
-      const end = clampCellCoord(range.end);
+      let start = clampCellCoord(range.start);
+      let end = clampCellCoord(range.end);
+      // 変更(N2-1): 範囲はそのまま、起点がラベル行ならアクティブセルだけを範囲の向き(無ければ逆)のデータ行へ寄せます
+      //   (全選択の後と同じ考え方)。
+      const activeRow = toDataRow(s, start.row, end.row < start.row ? -1 : 1);
+      // 変更(N3-1): ラベル行だけの範囲(寄せた先が範囲の外)は、寄せたデータ行の同じ列の範囲にします。これまでは 0 セルの範囲が
+      //   残り、アクティブセルは範囲の外、バーの番地は逆向き(「A11:B10」)、そこから Shift+↓ でラベル行に乗っていました。
+      if (activeRow < Math.min(start.row, end.row) || activeRow > Math.max(start.row, end.row)) {
+        start = { row: activeRow, col: start.col };
+        end = { row: activeRow, col: end.col };
+      }
       // ドラッグ選択相当: start(anchor)→ update(focus)→ end。
       s.dispatch(gridActions.startSelection(start));
       s.dispatch(gridActions.updateSelection(end));
       s.dispatch(gridActions.endSelection());
-      // 変更(N2-1): 範囲はそのまま、起点がラベル行ならアクティブセルだけを範囲の向き(無ければ逆)のデータ行へ寄せます
-      //   (全選択の後と同じ考え方)。
-      const activeRow = toDataRow(s, start.row, end.row < start.row ? -1 : 1);
       if (activeRow !== start.row) {
         s.dispatch(gridActions.activateCell({ row: activeRow, col: start.col }));
       }

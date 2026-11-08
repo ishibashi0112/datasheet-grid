@@ -2253,6 +2253,7 @@ export type SpreadsheetGridHandle<T> = {
   /**
    * セル範囲選択(ドラッグ相当)。アンカーは `range.start`。`range.start` がラベル行のときは、
    * 範囲はそのままで、アクティブセルだけを範囲の向き(無ければ逆)のデータ行へ寄せる。
+   * 範囲がラベル行だけのときは、寄せたデータ行の同じ列の範囲にする。
    */
   selectRange: (range: CellRange, options?: { scrollIntoView?: boolean }) => void;
   // 選択を解除します。

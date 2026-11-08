@@ -402,4 +402,27 @@ describe('選択の API でラベル行を指したとき(N2-1)', () => {
     });
     expect(labeledRef.current?.getActiveCell()).toEqual({ row: 3, col: 1 });
   });
+
+  // 追加(段階 2 の 3 回目の確かめ直し N3-1): ラベル行だけの範囲は 0 セルのまま残り、アクティブセルは範囲の外、バーの番地は
+  //   逆向き(「A11:B10」)、そこから Shift+↓ でアクティブセルがラベル行に乗っていた。寄せたデータ行の同じ列の範囲にする。
+  it('selectRange でラベル行だけを指したら、寄せたデータ行の同じ列の範囲にする', () => {
+    const labeledRef = setupLabeled();
+    act(() => {
+      labeledRef.current?.selectRange({ start: { row: 4, col: 0 }, end: { row: 4, col: 2 } });
+    });
+    expect(labeledRef.current?.getActiveCell()).toEqual({ row: 5, col: 0 });
+    expect(labeledRef.current?.getSelection()).toEqual({
+      type: 'cell',
+      range: { start: { row: 5, col: 0 }, end: { row: 5, col: 2 } },
+    });
+    // 末尾のラベル行だけ(下にデータ行が無い)は上のデータ行へ。
+    act(() => {
+      labeledRef.current?.selectRange({ start: { row: 6, col: 1 }, end: { row: 6, col: 1 } });
+    });
+    expect(labeledRef.current?.getActiveCell()).toEqual({ row: 5, col: 1 });
+    expect(labeledRef.current?.getSelection()).toEqual({
+      type: 'cell',
+      range: { start: { row: 5, col: 1 }, end: { row: 5, col: 1 } },
+    });
+  });
 });
