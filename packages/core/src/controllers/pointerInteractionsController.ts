@@ -541,6 +541,17 @@ export const createPointerInteractionsController = <T,>(): PointerInteractionsCo
       startGutterRowSelectionAutoScroll();
       return;
     }
+    // 追加(段階 2 の確かめ直し): Shift+クリックは、今の行の範囲の起点(無ければアクティブセルの行)から押した行までを選びます
+    //   (起点からドラッグしたのと同じ。セルの Shift+クリック = DU-15 と同じ考え方)。これまでは押した行だけでした。
+    if (event.shiftKey) {
+      const { selection, activeCell } = args.uiState;
+      const anchorRow = selection?.type === 'row' ? selection.startRow : activeCell?.row;
+      if (anchorRow !== undefined) {
+        args.dispatch(gridActions.startRowSelection(anchorRow));
+        args.dispatch(gridActions.updateRowSelection(rowIndex));
+        return;
+      }
+    }
     args.dispatch(gridActions.startRowSelection(rowIndex));
   };
 

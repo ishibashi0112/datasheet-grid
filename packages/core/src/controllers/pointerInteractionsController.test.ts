@@ -194,6 +194,49 @@ describe('pointerInteractionsController', () => {
     noRange.dispose();
   });
 
+  // 追加(段階 2 の確かめ直し): 行番号の Shift+クリックは押した行だけを選んでいた(ドラッグとセルの Shift+クリックは広がる)。
+  it('行番号の Shift+クリックは、今の行の範囲の起点(無ければアクティブセルの行)から押した行までを選ぶ', () => {
+    const controller = createPointerInteractionsController<Row>();
+    const args = makeArgs({
+      uiState: { ...createInitialGridUiState(), activeCell: { row: 1, col: 1 }, selection: { type: 'row', startRow: 1, endRow: 2 } },
+    });
+    controller.update(args);
+    controller.handleRowHeaderPointerDown(5, pointerEvent({ shiftKey: true }));
+    expect(args.actions).toEqual([
+      { type: 'rowSelection/start', row: 1 },
+      { type: 'rowSelection/update', row: 5 },
+    ]);
+    firePointerUp({ pointerId: 1, clientX: 10, clientY: 10 });
+    controller.dispose();
+
+    // 行の範囲が無ければアクティブセルの行を起点にする(セルの範囲を選んでいたときも)。
+    const fromCell = createPointerInteractionsController<Row>();
+    const cellArgs = makeArgs({
+      uiState: {
+        ...createInitialGridUiState(),
+        activeCell: { row: 3, col: 1 },
+        selection: { type: 'cell', range: { start: { row: 3, col: 1 }, end: { row: 4, col: 1 } } },
+      },
+    });
+    fromCell.update(cellArgs);
+    fromCell.handleRowHeaderPointerDown(0, pointerEvent({ shiftKey: true }));
+    expect(cellArgs.actions).toEqual([
+      { type: 'rowSelection/start', row: 3 },
+      { type: 'rowSelection/update', row: 0 },
+    ]);
+    firePointerUp({ pointerId: 1, clientX: 10, clientY: 10 });
+    fromCell.dispose();
+
+    // 起点が無ければ、これまでどおり押した行だけ。
+    const noAnchor = createPointerInteractionsController<Row>();
+    const noAnchorArgs = makeArgs();
+    noAnchor.update(noAnchorArgs);
+    noAnchor.handleRowHeaderPointerDown(2, pointerEvent({ shiftKey: true }));
+    expect(noAnchorArgs.actions).toEqual([{ type: 'rowSelection/start', row: 2 }]);
+    firePointerUp({ pointerId: 1, clientX: 10, clientY: 10 });
+    noAnchor.dispose();
+  });
+
   it('タッチはタップを保留し、動かずに pointerup したら確定、同一セルの連続タップはダブルクリック扱い', () => {
     const controller = createPointerInteractionsController<Row>();
     const onDouble = vi.fn();

@@ -713,7 +713,7 @@ const [rows, setRows] = useState(initialRows);
 
 端の行 / 列はラベル行を飛ばし、先頭の列は操作用の合成列(行ドラッグのハンドル列・展開トグル列)を飛ばした最初の列(`←` ではこれらの列へも移れる。自動グループ列には止まる)。`Shift` で範囲を広げるときは今の範囲の終わりから動かす(ドラッグや `Shift`+クリックで選んだ範囲もそのまま広がる。キー操作だけで広げた範囲はこれまでどおり)。アクティブセルが無いとき(`Tab` でグリッドに入った直後など)の最初の矢印 / `Tab` / `Enter` / `PageUp` / `PageDown` は、先頭のセル(ラベル行を飛ばした最初の行 × 上の先頭の列)に止まる(編集は始めない。`Shift+Tab` はグリッドの外へ。`Ctrl/Cmd+End` などは無くても端へ)。
 
-マウス: セルを押すとアクティブセル、そのままドラッグで範囲選択。`Shift` を押しながらセルを押すと、今の範囲の起点(範囲が無ければアクティブセル)から押したセルまでを選ぶ(アクティブセルは起点のまま。`Shift`+矢印と同じ起点。`enableRangeSelection={false}` では押したセルだけ)。
+マウス: セルを押すとアクティブセル、そのままドラッグで範囲選択。`Shift` を押しながらセルを押すと、今の範囲の起点(範囲が無ければアクティブセル)から押したセルまでを選ぶ(アクティブセルは起点のまま。`Shift`+矢印と同じ起点。`enableRangeSelection={false}` では押したセルだけ)。行番号も同じで、`Shift` を押しながら行番号を押すと、今の行の範囲の起点(無ければアクティブセルの行)から押した行までを選ぶ(`enableRowSelection` の表ではチェックボックスの行選択の範囲)。
 
 編集エディタ内: `Enter` = 確定して下へ(移動先は `editorEnterMove` で変更可。既定 `'down'`)、`Tab` / `Shift+Tab` = 確定して右 / 左へ、`Escape` = キャンセル、フォーカスアウト = 確定。複数行の text エディタ(`editor: { type: 'text', multiline: true }`)は `Alt+Enter` と `Ctrl` / `⌘+Enter` で改行(`enterKey: 'newline'` の列は `Enter` で改行し、`Ctrl` / `⌘+Enter` で確定)。`PageUp` / `PageDown` はグリッドをスクロールしない(select エディタでは候補を 8 件ずつ移る。複数行の text エディタの中は、ホイールか矢印キー / `Ctrl+Home` / `Ctrl+End` で動く)。`Home` / `End` は text / number ではカーソルの移動、select では先頭 / 末尾の候補、date では何もしない(どれもグリッドをスクロールしない)。値を変えずに確定したとき(F2 → `Enter` など)は書き込まない(`onRowsChange` / `dataSource.updateRows` を呼ばず、undo 履歴にも積まない。確定後の移動はふつうどおり)。IME 変換中(`isComposing`。Safari が変換の確定で送る `keyCode` 229 の keydown も含む)の `Enter` / `Escape` / `Tab` は IME の操作としてのみ扱われ、セル編集の確定 / キャンセルには使われない。
 
