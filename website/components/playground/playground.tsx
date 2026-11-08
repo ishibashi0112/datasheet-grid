@@ -241,6 +241,8 @@ type Settings = {
   autoHeight: boolean;
   // 伸びた行での縦の揃え(verticalAlign)。'unset' は未指定(auto-height の列は上、ほかは真ん中 = 既定)。
   verticalAlign: 'unset' | 'top' | 'center';
+  // 商品名の列を複数行のエディタで編集する(editor: { type: 'text', multiline: true, enterKey })。'off' は 1 行の入力欄(既定)。
+  multilineEditor: 'off' | 'commit' | 'newline';
 };
 
 const DEFAULTS: Settings = {
@@ -292,6 +294,7 @@ const DEFAULTS: Settings = {
   headerAlign: 'follow',
   autoHeight: false,
   verticalAlign: 'unset',
+  multilineEditor: 'off',
 };
 
 function buildSnippet(s: Settings): string {
@@ -384,6 +387,13 @@ function buildSnippet(s: Settings): string {
       lines.push(`  verticalAlign="${s.verticalAlign}"`);
     }
   }
+  if (s.multilineEditor !== 'off') {
+    lines.push(
+      s.multilineEditor === 'commit'
+        ? "  // columns の商品名列: editor: { type: 'text', multiline: true }(Enter で確定、Alt+Enter / Ctrl(⌘)+Enter で改行)"
+        : "  // columns の商品名列: editor: { type: 'text', multiline: true, enterKey: 'newline' }(Enter で改行、Ctrl(⌘)+Enter で確定)",
+    );
+  }
   if (s.headerAlign !== 'follow') {
     lines.push(`  // columns の各列: headerAlign: '${s.headerAlign}'(未指定なら列の align に合わせる)`);
   }
@@ -467,7 +477,15 @@ function PlaygroundGrid({ settings }: { settings: Settings }) {
     () =>
       columns.map((column): GridColumn<Row> => {
         if (column.key === 'name') {
-          return { ...column, aggFunc: settings.totalRow ? 'count' : undefined, autoHeight: settings.autoHeight || undefined };
+          return {
+            ...column,
+            aggFunc: settings.totalRow ? 'count' : undefined,
+            autoHeight: settings.autoHeight || undefined,
+            editor:
+              settings.multilineEditor === 'off'
+                ? undefined
+                : { type: 'text', multiline: true, enterKey: settings.multilineEditor },
+          };
         }
         if (column.key === 'status') {
           return {
@@ -505,7 +523,15 @@ function PlaygroundGrid({ settings }: { settings: Settings }) {
       })
         // 列見出しの寄せ。'follow' は undefined(列の align に合わせる)。onColumnsChange で state へ戻った値も毎回上書きする。
         .map((column) => ({ ...column, headerAlign: settings.headerAlign === 'follow' ? undefined : settings.headerAlign })),
-    [columns, settings.cellNote, settings.conditionalFormat, settings.totalRow, settings.headerAlign, settings.autoHeight],
+    [
+      columns,
+      settings.cellNote,
+      settings.conditionalFormat,
+      settings.totalRow,
+      settings.headerAlign,
+      settings.autoHeight,
+      settings.multilineEditor,
+    ],
   );
   // セル操作の通知のログ(新しい順に 5 件)。
   const [eventLog, setEventLog] = useState<string[]>([]);
@@ -841,6 +867,18 @@ export function Playground() {
               <option value="unset">未指定</option>
               <option value="top">top</option>
               <option value="center">center</option>
+            </select>
+          </label>
+          <label className="flex items-center justify-between gap-2 text-sm">
+            <code className="text-xs">商品名の editor.multiline</code>
+            <select
+              className={selectClass}
+              value={settings.multilineEditor}
+              onChange={(e) => set('multilineEditor', e.target.value as Settings['multilineEditor'])}
+            >
+              <option value="off">なし(1 行)</option>
+              <option value="commit">Enter で確定</option>
+              <option value="newline">Enter で改行</option>
             </select>
           </label>
           <label className="flex items-center justify-between gap-2 text-sm">

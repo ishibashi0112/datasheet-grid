@@ -464,7 +464,8 @@
   /* auto-height 駆動セル: 折り返し表示。変更(段階 2 DU-32): 箱は行の高さで、中身は器(.ssg-autoheight-content)に
      入れて器の高さを測ります。縦の揃えはほかのセルと同じく真ん中で、背の高い行では --valign-top で上にそろえます。 */
   .ssg-body-cell--autoheight {
-    white-space: normal;
+    /* 変更(段階 2 DU-14): 値の改行どおりに折り返します(連続する空白は今までどおり 1 つに詰める)。 */
+    white-space: pre-line;
     word-break: break-word;
     overflow: visible;
   }
@@ -1438,6 +1439,24 @@
     color: var(--ssg-cell-text);
     background-color: var(--ssg-cell-bg);
     pointer-events: auto;
+  }
+
+  /* 追加(段階 2 DU-14): 複数行の text エディタ(editor: { type: 'text', multiline: true })。枠の左上から下へ伸びます
+     (高さと上下の余白はエディタが中身に合わせて書く。エラーの吹き出しはこの箱の下に出る)。 */
+  .ssg-cell-editor-multiline {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+  }
+  .ssg-cell-editor-input--multiline {
+    display: block;
+    resize: none;
+    overflow-y: auto;
+    font-family: inherit;
+    line-height: 20px;
+    white-space: pre-wrap;
+    overflow-wrap: break-word;
   }
 
   /* 追加(G-2): IME オンのままの直接入力(imeDirectInput)の入力受け。待機中は透明で操作を受けず(フォーカスだけ持つ)、

@@ -60,6 +60,7 @@ export function Inventory() {
 - **命令的 API。** `ref` を渡すと `SpreadsheetGridHandle<T>` が入ります(利用側で `forwardRef` は要りません。React 18.3 / 19 のどちらでも同じ)。
 - **位置は表示の位置。** `selectCell` などの `viewRowIndex` / `colIndex` は並べ替え・絞り込みの後の表示の位置で、`colIndex` はライブラリが足す列(行ドラッグのハンドル列など)も数えます。`rows.findIndex` ではなく `getViewRowIndex(rowKey)` / `getColIndex(columnKey)` で引きます。行を足してすぐ編集するときは `startEditing(viewRowIndex, colIndex)`、モーダルを閉じた後にキーを戻すときは `focus()`。
 - **Next.js App Router。** グリッドは `'use client'` のファイルから描画します。
+- **改行を含む値の列は `editor: { type: 'text', multiline: true }`。** 既定の 1 行の入力欄はブラウザが改行を消すので、直して確定すると改行が無くなります。改行どおりに表示するのは `autoHeight` の列だけです。
 - **行のクラスは行と各セルの両方に付く。** `getRowClassName` の class と style は行・「#」セル・各セルに付きます。行を薄くするなら class を返して `.ssg-body-row.<class> { opacity: 0.5 }` と書きます(style や素のクラスで `opacity` を書くと 2 回掛かります)。
 
 ## 4. 入口の選び方

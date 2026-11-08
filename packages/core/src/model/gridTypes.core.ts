@@ -924,6 +924,9 @@ export type EditorCommitDirection = 'down' | 'up' | 'right' | 'left';
 //   その場に留まります。Tab / Shift+Tab(右 / 左)には影響しません。
 export type EditorEnterMove = 'down' | 'up' | 'right' | 'left' | 'none';
 
+// 追加(段階 2 DU-14): 複数行の text エディタ(editor: { type: 'text', multiline: true })の Enter の動きです。
+export type GridTextEditorEnterKey = 'commit' | 'newline';
+
 // 追加(editor: select): select エディタの候補型です。select / set フィルターの候補
 //   (GridSelectFilterOption)と共有し、同じ配列を filterOptions と使い回せます。
 export type GridSelectEditorOption = GridSelectFilterOption;
@@ -932,7 +935,15 @@ export type GridSelectEditorOption = GridSelectFilterOption;
 //   同じ判別共用体の流儀で、種別ごとの付随オプションを型で強制します)。未指定は text と同じ
 //   既定エディタです。種別は段階的に追加します(date / checkbox / custom は後続)。
 export type GridColumnEditor<T, F extends GridFrameworkTypes = GridFrameworkTypes> =
-  | { type: 'text' }
+  | {
+      type: 'text';
+      // 追加(段階 2 DU-14): 改行を含む値を編集する複数行の入力欄(textarea。中身に合わせて下へ伸び、表の見える範囲を
+      //   超える分は入力欄の中でスクロール)。1 行の入力欄は改行を消すので、改行を含む値の列はこれを使います。
+      multiline?: boolean;
+      // 追加(段階 2 DU-14): multiline のときの Enter。'commit'(既定。Excel と同じ: Enter で確定、Alt+Enter と
+      //   Ctrl / ⌘+Enter で改行)/ 'newline'(Enter で改行、Ctrl / ⌘+Enter で確定。メモ帳やチャットに近い)。
+      enterKey?: GridTextEditorEnterKey;
+    }
   | {
       // 数値エディタ(<input type="number">)。min / max / step はネイティブ属性へ反映します。
       //   既定パーサ: '' → null / 数値文字列 → number / 非数値 → 生文字列のまま

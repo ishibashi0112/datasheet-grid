@@ -264,6 +264,10 @@ export function CellEditorLayer<T>({
         onCommit={onCommit}
         onCancel={onCancel}
         align={align}
+        // 追加(段階 2 DU-14): editor: { type: 'text', multiline: true } は複数行の入力欄で開きます。
+        multiline={editor?.type === 'text' && editor.multiline === true}
+        enterKey={editor?.type === 'text' ? editor.enterKey : undefined}
+        cellHeight={rect.height}
       />
     );
   }
