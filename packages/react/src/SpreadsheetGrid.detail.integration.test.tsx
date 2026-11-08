@@ -718,6 +718,31 @@ describe('展開行のカードと Tab(C-N2)', () => {
     expect(document.activeElement).toBe(shell);
   });
 
+  // 追加(段階 2 の確かめ直し): カードの中にフォーカスがあるまま閉じると(キーボードで「閉じる」を押す)、カードと一緒に
+  //   フォーカスが消えて body へ落ち、その後の ↓ も Tab も表に届かなかった。その行のセルへ戻す。
+  it('カードの中にフォーカスがあるまま閉じたら、その行のセル(アクティブセルの列)へ戻してフォーカスをシェルへ', () => {
+    const { ref, container, shell } = renderGrid(['a', 'c']);
+    act(() => {
+      ref.current?.setActiveCell({ row: 0, col: LAST_COL });
+    });
+    const button = cardOf(container, 2)?.querySelector<HTMLButtonElement>('button');
+    button!.focus();
+    act(() => {
+      button!.click();
+    });
+    expect(cardOf(container, 2)).toBeNull();
+    expect(ref.current?.getActiveCell()).toEqual({ row: 2, col: LAST_COL });
+    expect(document.activeElement).toBe(shell);
+    // フォーカスがカードの外(表の後ろのボタン)なら、閉じてもフォーカスとアクティブセルは動かさない。
+    const outside = container.querySelector<HTMLButtonElement>('div > button:last-of-type');
+    outside!.focus();
+    act(() => {
+      ref.current?.setDetailRowExpanded('a', false);
+    });
+    expect(document.activeElement).toBe(outside);
+    expect(ref.current?.getActiveCell()).toEqual({ row: 2, col: LAST_COL });
+  });
+
   it('detailRow が無ければ目印を描かない', () => {
     const { container } = render(<SpreadsheetGrid columns={columns} rows={rows} rowKeyGetter={rowKeyGetter} />);
     expect(container.querySelector('.ssg-tab-exit')).toBeNull();

@@ -127,6 +127,7 @@ import {
 // 追加(detail ③): 展開行(Master/Detail)の純ロジック(トグル列キー / rowKey→view index 解決 / 選択帯分割)です。
 import {
   DEFAULT_DETAIL_ROW_HEIGHT,
+  DETAIL_TOGGLE_COLUMN_KEY,
   isInsideDetailCardOf,
   isSyntheticColumnKey,
   seedDetailIndexCache,
@@ -718,19 +719,47 @@ export function useGridShell<T extends object>({
   });
   // 変更(本体分解 E-6c): useRef → 差し替え可能なホルダー(logic/detailRow.createDetailIndexCacheHolder)。
   const detailIndexCacheHolder = engine.detailIndexCache;
+  // 追加(段階 2 の確かめ直し): その行のカードの中にフォーカスがあるまま閉じると、カードと一緒にフォーカスが消えて body へ
+  //   落ちていました(キーボードで「閉じる」= collapse() を押すと、その後の ↓ も Tab も表に届かない)。閉じる前にフォーカスが
+  //   その行のカードの中なら、その行のセル(列はアクティブセルの列、無ければ最初のデータの列)をアクティブセルにして、
+  //   フォーカスを表へ戻します(カードの最初の要素から Shift+Tab で戻るときと同じ)。
+  const returnFocusFromDetailCard = useCallback(
+    (viewIndex: number) => {
+      const scroll = scrollContainerRef.current;
+      const card = scroll ? findDetailCard(scroll, viewIndex) : null;
+      if (!card || !card.contains(card.ownerDocument.activeElement)) {
+        return;
+      }
+      const activeCol = gridStore.getState().activeCell?.col;
+      const firstDataCol = orderedColumns.findIndex(
+        (column) => column.key !== DETAIL_TOGGLE_COLUMN_KEY && column.key !== ROW_DRAG_HANDLE_COLUMN_KEY,
+      );
+      const cell = { row: viewIndex, col: activeCol ?? Math.max(0, firstDataCol) };
+      dispatch(gridActions.startSelection(cell));
+      dispatch(gridActions.endSelection());
+      gridRootRef.current?.focus({ preventScroll: true });
+    },
+    [dispatch, gridStore, orderedColumns],
+  );
   const toggleDetailRowAt = useCallback(
     (rowKey: GridRowKey, viewIndex: number) => {
       seedDetailIndexCache(detailIndexCacheHolder.current, rowKey, viewIndex);
+      if (gridStore.getState().expandedDetailRowKeys.has(rowKey)) {
+        returnFocusFromDetailCard(viewIndex);
+      }
       dispatch(gridActions.toggleDetailRow(rowKey));
     },
-    [dispatch, detailIndexCacheHolder],
+    [dispatch, detailIndexCacheHolder, gridStore, returnFocusFromDetailCard],
   );
   const setDetailRowExpandedAt = useCallback(
     (rowKey: GridRowKey, viewIndex: number, expanded: boolean) => {
       seedDetailIndexCache(detailIndexCacheHolder.current, rowKey, viewIndex);
+      if (!expanded) {
+        returnFocusFromDetailCard(viewIndex);
+      }
       dispatch(gridActions.setDetailRowExpanded(rowKey, expanded));
     },
-    [dispatch, detailIndexCacheHolder],
+    [dispatch, detailIndexCacheHolder, returnFocusFromDetailCard],
   );
   // 追加(label-row ②): ラベル行(見出し / 区切り行)のオプションを分解します(下流の memo 依存を
   //   プリミティブ / 関数参照にするため。labelRow オブジェクトをインラインで渡しても各段は揺れません)。
