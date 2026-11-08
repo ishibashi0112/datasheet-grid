@@ -2230,7 +2230,7 @@ export type SpreadsheetGridHandle<T> = {
    * アクティブセル設定(`null` で解除)。`scrollIntoView: true`
    * で可視化も行う(固定列のセルでも縦方向へスクロールする)。中央ペイン(固定でない列)のセルは、
    * 指定が無くてもアクティブセルの位置が変わると見える位置までスクロールされる(クリック /
-   * キー操作と同じ動き)。
+   * キー操作と同じ動き)。ラベル行(`labelRow`)を指したときは、下のデータ行(無ければ上)へ寄せる。
    */
   setActiveCell: (
     cell: CellCoord | null,
@@ -2240,14 +2240,20 @@ export type SpreadsheetGridHandle<T> = {
   /** 現在の選択状態(`GridSelection`)。 */
   getSelection: () => GridSelection;
   // 単一セルを選択(クリック相当)。scrollIntoView:true で可視化も行います。
-  /** 単一セル選択(クリック相当)。スクロールの扱いは `setActiveCell` と同じ。 */
+  /**
+   * 単一セル選択(クリック相当)。スクロールの扱いと、ラベル行を指したときの扱いは `setActiveCell`
+   * と同じ。
+   */
   selectCell: (
     viewRowIndex: number,
     colIndex: number,
     options?: { scrollIntoView?: boolean },
   ) => void;
   // セル範囲を選択(ドラッグ選択相当)。アンカーは range.start です。
-  /** セル範囲選択(ドラッグ相当)。アンカーは `range.start`。 */
+  /**
+   * セル範囲選択(ドラッグ相当)。アンカーは `range.start`。`range.start` がラベル行のときは、
+   * 範囲はそのままで、アクティブセルだけを範囲の向き(無ければ逆)のデータ行へ寄せる。
+   */
   selectRange: (range: CellRange, options?: { scrollIntoView?: boolean }) => void;
   // 選択を解除します。
   /** 選択解除。 */

@@ -338,3 +338,68 @@ describe('getRowNumber()(N-4)', () => {
     expect(shown).toEqual(['1', '2', '3', '4']);
   });
 });
+
+// 追加(段階 2 の確かめ直し N2-1): 選択 / アクティブセルの API でラベル行(セルを持たない)を指したとき、アクティブセルの枠が
+//   ラベル行に乗り、バーの番地は次のデータ行の番号、↓ を押しても同じ番地のままだった。下のデータ行(無ければ上)へ寄せる。
+describe('選択の API でラベル行を指したとき(N2-1)', () => {
+  type LabeledRow = Row & { label?: string };
+  const labeledRows: LabeledRow[] = [
+    { id: 1, name: '', qty: 0, done: false, label: '第1節' },
+    ...rows,
+    { id: 2, name: '', qty: 0, done: false, label: '第2節' },
+    { id: 40, name: 'delta', qty: 4, done: false },
+    { id: 3, name: '', qty: 0, done: false, label: '末尾' },
+  ];
+  const setupLabeled = () => {
+    const labeledRef = createRef<SpreadsheetGridHandle<LabeledRow>>();
+    render(
+      <SpreadsheetGrid<LabeledRow>
+        ref={labeledRef}
+        rows={labeledRows}
+        columns={columns as GridColumn<LabeledRow>[]}
+        rowKeyGetter={(row) => row.id}
+        labelRow={{ isLabelRow: (row) => row.label !== undefined, getLabel: (row) => row.label ?? '' }}
+        height={300}
+      />,
+    );
+    return labeledRef;
+  };
+
+  it('selectCell / setActiveCell は下のデータ行へ寄せる(最後のラベル行は上のデータ行へ)', () => {
+    const labeledRef = setupLabeled();
+    // 表示の並び: 0 第1節 / 1 alpha / 2 beta / 3 gamma / 4 第2節 / 5 delta / 6 末尾
+    act(() => {
+      labeledRef.current?.selectCell(4, 1);
+    });
+    expect(labeledRef.current?.getActiveCell()).toEqual({ row: 5, col: 1 });
+    expect(labeledRef.current?.getSelection()).toEqual({
+      type: 'cell',
+      range: { start: { row: 5, col: 1 }, end: { row: 5, col: 1 } },
+    });
+    act(() => {
+      labeledRef.current?.setActiveCell({ row: 0, col: 0 });
+    });
+    expect(labeledRef.current?.getActiveCell()).toEqual({ row: 1, col: 0 });
+    act(() => {
+      labeledRef.current?.selectCell(6, 2);
+    });
+    expect(labeledRef.current?.getActiveCell()).toEqual({ row: 5, col: 2 });
+  });
+
+  it('selectRange は範囲をそのままにして、アクティブセルだけを範囲の向きにあるデータ行へ寄せる', () => {
+    const labeledRef = setupLabeled();
+    act(() => {
+      labeledRef.current?.selectRange({ start: { row: 4, col: 0 }, end: { row: 5, col: 2 } });
+    });
+    expect(labeledRef.current?.getSelection()).toEqual({
+      type: 'cell',
+      range: { start: { row: 4, col: 0 }, end: { row: 5, col: 2 } },
+    });
+    expect(labeledRef.current?.getActiveCell()).toEqual({ row: 5, col: 0 });
+    // 上向きの範囲(起点が下)は上のデータ行へ。
+    act(() => {
+      labeledRef.current?.selectRange({ start: { row: 4, col: 1 }, end: { row: 1, col: 1 } });
+    });
+    expect(labeledRef.current?.getActiveCell()).toEqual({ row: 3, col: 1 });
+  });
+});

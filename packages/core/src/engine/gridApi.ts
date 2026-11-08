@@ -293,6 +293,24 @@ export const createGridApi = <T,>(features: Pick<GridCoreFeatures, 'export' | 'g
     };
   };
 
+  // 追加(段階 2 の確かめ直し N2-1): 選択 / アクティブセルの API でラベル行(セルを持たない)を指したときの行です。step の向き
+  //   (既定は下)のデータ行、無ければ逆の向きのデータ行へ寄せます(すべてラベル行ならそのまま)。これまではアクティブセルの枠が
+  //   ラベル行に乗り、バーの番地は次のデータ行の番号で、↓ を押しても同じ番地のままでした。
+  const toDataRow = (s: GridApiArgs<T>, row: number, step: 1 | -1 = 1): number => {
+    const isLabel = (index: number) => s.rowModel.getLabelRow?.(index) !== undefined;
+    if (!isLabel(row)) {
+      return row;
+    }
+    for (const direction of [step, -step]) {
+      for (let index = row + direction; index >= 0 && index < s.viewRowCount; index += direction) {
+        if (!isLabel(index)) {
+          return index;
+        }
+      }
+    }
+    return row;
+  };
+
   // 追加(作り直しの確認 N-3): store の今の UI 状態(無ければ描画のときの値)。
   const currentUi = (s: GridApiArgs<T>): GridUiState => s.getUiState?.() ?? s.uiState;
 
@@ -368,7 +386,9 @@ export const createGridApi = <T,>(features: Pick<GridCoreFeatures, 'export' | 'g
       }
       // 変更(audit B-05): 範囲外 index はビュー座標内へクランプする(API_REFERENCE「範囲外 index は内部で
       //   クランプ / 無視する」との整合。旧実装は reducer へそのまま入り getActiveCell が範囲外を返していた)。
-      const clamped = cell ? clampCellCoord(cell) : null;
+      const inView = cell ? clampCellCoord(cell) : null;
+      // 変更(N2-1): ラベル行を指したら下のデータ行(無ければ上)へ寄せます。
+      const clamped = inView ? { row: toDataRow(s, inView.row), col: inView.col } : null;
       s.dispatch(gridActions.activateCell(clamped));
       if (clamped && cellOptions?.scrollIntoView) {
         scrollToCellInternal(clamped.row, clamped.col, 'auto');
@@ -447,7 +467,9 @@ export const createGridApi = <T,>(features: Pick<GridCoreFeatures, 'export' | 'g
       if (!s) {
         return;
       }
-      const cell = clampCellCoord({ row: viewRowIndex, col: colIndex });
+      const inView = clampCellCoord({ row: viewRowIndex, col: colIndex });
+      // 変更(N2-1): ラベル行を指したら下のデータ行(無ければ上)へ寄せます。
+      const cell = { row: toDataRow(s, inView.row), col: inView.col };
       // クリック相当: pointerdown(start)→ pointerup(end)。activeCell=cell / 単一セル選択 / dragState クリア。
       s.dispatch(gridActions.startSelection(cell));
       s.dispatch(gridActions.endSelection());
@@ -467,6 +489,12 @@ export const createGridApi = <T,>(features: Pick<GridCoreFeatures, 'export' | 'g
       s.dispatch(gridActions.startSelection(start));
       s.dispatch(gridActions.updateSelection(end));
       s.dispatch(gridActions.endSelection());
+      // 変更(N2-1): 範囲はそのまま、起点がラベル行ならアクティブセルだけを範囲の向き(無ければ逆)のデータ行へ寄せます
+      //   (全選択の後と同じ考え方)。
+      const activeRow = toDataRow(s, start.row, end.row < start.row ? -1 : 1);
+      if (activeRow !== start.row) {
+        s.dispatch(gridActions.activateCell({ row: activeRow, col: start.col }));
+      }
       if (rangeOptions?.scrollIntoView) {
         scrollToCellInternal(end.row, end.col, 'auto');
       }
