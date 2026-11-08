@@ -33,7 +33,8 @@ import { OUT, open, check, skip, SUPPORTS, unexpectedPageErrors, summary, errors
   const afterOne = await page.evaluate(() => document.querySelectorAll('.ssg-center-pane .ssg-body-row').length);
   check('grouping: expand one top group shows its 3 children (7 rows)', afterOne === 7, afterOne);
   // クリック開閉
-  await page.locator('.ssg-body-row[data-pane="center"][data-ssg-group-row]').nth(1).locator('.ssg-group-toggle').first().click();
+  // 変更(段階 2 DU-22): 左固定列があると自動グループ列(開閉ボタン)は左のペインの行にあるので、ペインを問わず探す。
+  await page.locator('[data-ssg-group-row] .ssg-group-toggle').nth(1).click();
   await waitIdle(page, 150);
   const afterClick = await page.evaluate(() => document.querySelectorAll('.ssg-center-pane .ssg-body-row').length);
   check('grouping: toggle click expands leaf rows', afterClick > 7, afterClick);
