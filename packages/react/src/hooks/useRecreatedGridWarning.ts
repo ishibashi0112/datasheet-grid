@@ -4,6 +4,8 @@
 //   コミットで入れ替わり、しかも同じ rows を受けている(同じ場所の描き直し)とき。モジュールの先頭で作ったコンポーネントの
 //   切り替え(タブなど)は、作ったときに表示されていたグリッドが無いので当たりません。StrictMode の付け外しは同じ
 //   コンポーネントなので当たりません。本番では何もしない関数に差し替わり、利用側のバンドラが処理ごと取り除きます。
+//   追記(段階 2 の見直し): モジュールの先頭で作っていても、そのモジュールを書き換えたとき(HMR)は表示中にモジュールが
+//   読み直されて同じ形になり、1 回だけ出ることがあります(ライブラリからは見分けられない)。文言でそう断ります。
 import { useEffect } from 'react';
 
 // 型だけの宣言です(利用側のバンドラが process.env.NODE_ENV を文字列へ置き換える。useUnregisteredFeatureWarnings と同じ)。
@@ -36,7 +38,8 @@ function useRecreatedGridWarningInDev(trace: GridFactoryTrace | null, rows: unkn
       warned = true;
       console.warn(
         '[spreadsheet-grid] createSpreadsheetGrid がコンポーネントの中で呼ばれ、描くたびにグリッドが作り直されています' +
-          '(選択・スクロール位置・編集中の値などが毎回消えます)。モジュールの先頭で 1 回だけ呼んでください。',
+          '(選択・スクロール位置・編集中の値などが毎回消えます)。モジュールの先頭で 1 回だけ呼んでください' +
+          '(モジュールの先頭で呼んでいて、そのファイルを書き換えた直後(HMR)に 1 回だけ出たのなら、書き換えで作り直されたためで問題ありません)。',
       );
     }
     mountedCounts.set(trace.id, (mountedCounts.get(trace.id) ?? 0) + 1);
