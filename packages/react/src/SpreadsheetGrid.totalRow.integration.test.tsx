@@ -273,7 +273,7 @@ describe('合計行(totalRow)', () => {
     act(() => {
       ref.current?.collapseAllGroups();
     });
-    expect(container.querySelectorAll('.ssg-body-row[data-ssg-group-row]').length).toBe(2);
+    expect(container.querySelectorAll('[data-pane="center"].ssg-body-row[data-ssg-group-row]').length).toBe(2);
     expect(totalText(container, 'qty')).toBe('35');
   });
 

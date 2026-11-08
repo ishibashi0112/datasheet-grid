@@ -51,7 +51,7 @@ const getCell = (
   rowIndex: number,
   colIndex: number,
 ): HTMLElement => {
-  const rowEls = container.querySelectorAll('.ssg-body-row');
+  const rowEls = container.querySelectorAll('[data-pane="center"].ssg-body-row');
   const cell = rowEls[rowIndex]?.querySelectorAll<HTMLElement>('.ssg-body-cell')[
     colIndex
   ];
@@ -63,7 +63,7 @@ const getCell = (
 
 // 行ハイライト(.ssg-body-cell--row-hovered)が付いているビュー行 index の集合を返します。
 const hoveredRows = (container: HTMLElement): number[] => {
-  const rowEls = Array.from(container.querySelectorAll('.ssg-body-row'));
+  const rowEls = Array.from(container.querySelectorAll('[data-pane="center"].ssg-body-row'));
   return rowEls
     .map((rowEl, index) =>
       rowEl.querySelector('.ssg-body-cell--row-hovered') ? index : null,

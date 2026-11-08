@@ -100,7 +100,25 @@ describe('createColumnResolver', () => {
     expect(result.groupColumns.map((column) => column.key)).toEqual(['group']);
     expect(result.effectiveColumns.map((column) => column.key)).toEqual([GROUP_AUTO_COLUMN_KEY, 'id', 'name']);
     expect(result.effectiveColumns[0].title).toBe('グループ');
+    expect(result.effectiveColumns[0].pinned).toBeUndefined();
     expect(resolve({ ...baseInputs, columns: grouped, isServerSide: true }).rowGroupingActive).toBe(false);
+  });
+
+  // 追加(段階 2 DU-22): 左固定列があれば自動グループ列も左固定(展開トグル列と同じ)。左ペインの先頭に入る。
+  it('左固定列があるときは自動グループ列も左に固定する', () => {
+    const resolve = createColumnResolver<Row>(fullCoreFeatures);
+    const grouped: GridColumn<Row>[] = [
+      { ...columns[0], pinned: 'left' },
+      columns[1],
+      { key: 'group', title: 'グループ', width: 100, rowGroup: true },
+    ];
+    const result = resolve({ ...baseInputs, columns: grouped });
+    expect(result.effectiveColumns[0]).toMatchObject({ key: GROUP_AUTO_COLUMN_KEY, pinned: 'left' });
+    expect(result.orderedColumns.map((column) => `${column.key}:${column.pinned ?? '-'}`)).toEqual([
+      `${GROUP_AUTO_COLUMN_KEY}:left`,
+      'id:left',
+      'name:-',
+    ]);
   });
 
   it('機能セットに grouping が無ければ行グルーピングは無効で、rowGroup 列もそのまま表示する', () => {
@@ -160,5 +178,26 @@ describe('createPaneLayoutResolver', () => {
     // 手動リサイズ済み(columnWidths)は flex より優先。
     const manual = resolve({ orderedColumns: flexColumns, columnWidths: { name: 100 }, viewportWidth: 500, rowHeaderWidth: 56 });
     expect(manual.effectiveColumnWidths).toEqual({ name: 100 });
+  });
+
+  // 追加(段階 2 DU-22): 行番号の列は左固定列が無くても左ペイン(横スクロールで流れない)。幅 0 なら左ペインを作らない。
+  it('左固定列が無くても行番号の列は左ペインに置く(rowHeaderWidth 0 のときだけ中央)', () => {
+    const resolve = createPaneLayoutResolver<Row>();
+    const plain: GridColumn<Row>[] = [
+      { key: 'id', title: 'ID', width: 80 },
+      { key: 'name', title: '名前', width: 120 },
+    ];
+    const result = resolve({ orderedColumns: plain, columnWidths: {}, viewportWidth: 600, rowHeaderWidth: 56 });
+    expect(result.hasLeftPane).toBe(true);
+    expect(result.paneLayout.left.entries).toHaveLength(0);
+    expect(result.centerOwnsRowHeader).toBe(false);
+    expect(result.leftPaneTotalWidth).toBe(56);
+    expect(result.centerLeadingWidth).toBe(0);
+    expect(result.centerContentWidth).toBe(200);
+    expect(result.totalScrollWidth).toBe(256);
+    const noHeader = createPaneLayoutResolver<Row>()({ orderedColumns: plain, columnWidths: {}, viewportWidth: 600, rowHeaderWidth: 0 });
+    expect(noHeader.hasLeftPane).toBe(false);
+    expect(noHeader.leftPaneTotalWidth).toBe(0);
+    expect(noHeader.totalScrollWidth).toBe(200);
   });
 });

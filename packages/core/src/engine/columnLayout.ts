@@ -122,6 +122,8 @@ export const createColumnResolver = <T,>(features: Pick<GridCoreFeatures, 'group
       if (!rowGroupingActive) {
         return leadingColumns.length > 0 ? [...leadingColumns, ...columns] : columns;
       }
+      // 変更(段階 2 DU-22): 左固定列があるときは自動グループ列も左ペインへ入れます(展開トグル列と同じ。横にスクロールしても
+      //   どのグループの行かが見える。これまでは左固定列の裏へ流れていた)。
       const autoGroupColumn: GridColumn<T> = {
         key: GROUP_AUTO_COLUMN_KEY,
         title: groupColumns.map((column) => column.title || column.key).join(' › '),
@@ -129,6 +131,7 @@ export const createColumnResolver = <T,>(features: Pick<GridCoreFeatures, 'group
         minWidth: 120,
         readOnly: true,
         suppressAutoSize: true,
+        pinned: hasLeftPinnedColumn ? 'left' : undefined,
       };
       const grouped = [autoGroupColumn, ...columns.filter((column) => column.rowGroup !== true)];
       return leadingColumns.length > 0 ? [...leadingColumns, ...grouped] : grouped;
@@ -200,7 +203,7 @@ export type PaneLayoutResolution<T> = {
   paneLayout: GridPaneLayout<T>;
   hasLeftPane: boolean;
   hasRightPane: boolean;
-  // 行ヘッダー(#・行番号)を中央ペインが持つか(左固定列がなければ中央)。
+  // 行ヘッダー(#・行番号)を中央ペインが持つか(段階 2 DU-22 から、行ヘッダーの幅が 0 のときだけ中央。それ以外は左ペイン)。
   centerOwnsRowHeader: boolean;
   // 各ペインで列の前に確保する先頭幅。
   leftLeadingWidth: number;
@@ -262,7 +265,10 @@ export const createPaneLayoutResolver = <T,>() => {
     //   center 列幅に依存せず先に確定でき、循環しません。
     const leftPaneFixedWidth = sumResolvedWidths(paneSourceColumns.left, columnWidths);
     const rightPaneFixedWidth = sumResolvedWidths(paneSourceColumns.right, columnWidths);
-    const hasLeftPinned = paneSourceColumns.left.length > 0;
+    // 変更(段階 2 DU-22): 行番号の列(行ヘッダー)は左固定列が無くても左ペインに置きます(横にスクロールしても流れない。
+    //   Excel の行見出しと同じ)。幅 0 の行ヘッダー(rowHeaderWidth: 0)のときは従来どおり左ペインを作りません。
+    const rowHeaderPinned = rowHeaderWidth > 0;
+    const hasLeftPinned = paneSourceColumns.left.length > 0 || rowHeaderPinned;
     const flexLeftPaneTotalWidth = hasLeftPinned ? rowHeaderWidth + leftPaneFixedWidth : 0;
     const flexCenterLeadingWidth = hasLeftPinned ? 0 : rowHeaderWidth;
     const centerColumns = memoCenterColumns(paneSourceColumns.center);
@@ -288,7 +294,7 @@ export const createPaneLayoutResolver = <T,>() => {
       memoRightGeometry(paneSourceColumns.right, rightPaneWidthsKey),
     );
 
-    const hasLeftPane = paneLayout.left.entries.length > 0;
+    const hasLeftPane = paneLayout.left.entries.length > 0 || rowHeaderPinned;
     const hasRightPane = paneLayout.right.entries.length > 0;
     const centerOwnsRowHeader = !hasLeftPane;
     const leftLeadingWidth = rowHeaderWidth;

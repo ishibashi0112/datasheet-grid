@@ -193,7 +193,13 @@ export const createPointerInteractionsController = <T,>(): PointerInteractionsCo
       }
     }
     if (col === null && paneLayout.center.entries.length > 0) {
-      const localX = centerEl.scrollLeft + clientX - centerRect.left - centerLeadingWidth;
+      // 変更(段階 2 DU-22): 行ヘッダーだけの左ペインの上は、その右端(見えている先頭の列)として扱います(横にスクロール
+      //   した表で、行ヘッダーの下に隠れた列を拾わない)。左ペインは sticky; left: 0 なので右端は左端 + 行ヘッダーの幅。
+      const visibleClientX =
+        leftEl && paneLayout.left.entries.length === 0
+          ? Math.max(clientX, leftEl.getBoundingClientRect().left + leftLeadingWidth)
+          : clientX;
+      const localX = centerEl.scrollLeft + visibleClientX - centerRect.left - centerLeadingWidth;
       col = findLogicalIndexFromPaneOffset(paneLayout.center, Math.max(localX, 0));
     }
     if (col === null) {

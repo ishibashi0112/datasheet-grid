@@ -3130,7 +3130,8 @@ export type SpreadsheetGridProps<T, F extends GridFrameworkTypes = GridFramework
    */
   onFindChange?: (params: FindChangeParams) => void;
   /**
-   * 行番号列の幅(px)。
+   * 行番号列の幅(px)。行番号列は左固定列が無くても左に固定され、横にスクロールしても流れない(Excel
+   * の行見出しと同じ。0.63.0 から)。
    *
    * @defaultValue `56`
    */

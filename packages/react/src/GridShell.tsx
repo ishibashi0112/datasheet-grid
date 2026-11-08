@@ -4088,7 +4088,8 @@ export function useGridShell<T extends object>({
           {/*   固定列が無いときは hasLeftPane=false で width:0 の空ペイン（従来どおり）。*/}
           <div
             ref={leftPaneScrollRef}
-            style={pinnedPaneStyle('left', leftPaneTotalWidth, hasLeftPane)}
+            // 変更(段階 2 DU-22): 行ヘッダーだけの左ペイン(左固定列なし)は境界線と影を付けません(見た目は今までの行ヘッダーのまま)。
+            style={pinnedPaneStyle('left', leftPaneTotalWidth, paneLayout.left.entries.length > 0)}
           >
             {hasLeftPane && (
               <div

@@ -39,7 +39,7 @@ afterEach(() => {
 });
 
 const getRows = (container: HTMLElement) =>
-  Array.from(container.querySelectorAll<HTMLElement>('.ssg-body-row'));
+  Array.from(container.querySelectorAll<HTMLElement>('[data-pane="center"].ssg-body-row'));
 
 const getCell = (container: HTMLElement, rowIndex: number, colIndex: number) => {
   const cell = getRows(container)[rowIndex]?.querySelectorAll<HTMLElement>(
@@ -252,7 +252,10 @@ describe('slot-props: cellClassName / getRowClassName のオブジェクト形',
     const row2 = getRows(container)[1];
     expect(row2?.classList.contains('x-row-2')).toBe(true);
     expect(row2?.style.backgroundColor).toBe('rgb(5, 5, 5)');
-    const row2Header = row2?.querySelector<HTMLElement>('.ssg-row-header-cell');
+    // 行番号は左ペインの行にある(段階 2 DU-22)。
+    const row2Header = container
+      .querySelectorAll<HTMLElement>('[data-pane="left"].ssg-body-row')[1]
+      ?.querySelector<HTMLElement>('.ssg-row-header-cell');
     expect(row2Header?.classList.contains('x-row-2')).toBe(true);
     expect(row2Header?.style.backgroundColor).toBe('rgb(5, 5, 5)');
     const row2Cell = getCell(container, 1, 0);

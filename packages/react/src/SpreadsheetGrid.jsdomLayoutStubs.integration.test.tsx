@@ -40,13 +40,24 @@ describe('installJsdomLayoutStubs(testing サブパス)', () => {
       <SpreadsheetGrid<Row> rows={rows} columns={columns} />,
     );
 
-    const rowEls = container.querySelectorAll('.ssg-body-row');
+    const rowEls = container.querySelectorAll('[data-pane="center"].ssg-body-row');
     expect(rowEls).toHaveLength(rows.length);
     // 全列が描画される(no-op ResizeObserver だと列が 1 本も出ない)。
     const firstRowCells = rowEls[0].querySelectorAll('.ssg-body-cell');
     expect(firstRowCells).toHaveLength(columns.length);
     expect(firstRowCells[0].textContent).toBe('alpha');
     expect(firstRowCells[1].textContent).toBe('5');
+  });
+
+  // 追加(段階 2 DU-22): 行番号は左固定列が無くても左のペインの行に入る(横スクロールで流れない)。中央の行は行番号を持たない。
+  it('行番号は左のペインの行にあり、中央のペインの行はデータのセルだけ', () => {
+    const { container } = render(<SpreadsheetGrid<Row> rows={rows} columns={columns} />);
+    const leftRows = container.querySelectorAll('[data-pane="left"].ssg-body-row');
+    expect(leftRows).toHaveLength(rows.length);
+    expect(leftRows[0].querySelector('.ssg-row-header-cell')?.textContent).toBe('1');
+    expect(leftRows[0].querySelectorAll('.ssg-body-cell')).toHaveLength(0);
+    expect(container.querySelectorAll('[data-pane="center"].ssg-body-row .ssg-row-header-cell')).toHaveLength(0);
+    expect(container.querySelector('[data-pane="left"] .ssg-corner-cell')).not.toBeNull();
   });
 
   it('getRowClassName / cellClassName のクラスが DOM で検証できる', () => {
@@ -65,7 +76,7 @@ describe('installJsdomLayoutStubs(testing サブパス)', () => {
       />,
     );
 
-    const markedRows = container.querySelectorAll('.ssg-body-row.my-row-2');
+    const markedRows = container.querySelectorAll('[data-pane="center"].ssg-body-row.my-row-2');
     expect(markedRows).toHaveLength(1);
     expect(
       container.querySelectorAll('.ssg-body-cell.my-large-qty'),

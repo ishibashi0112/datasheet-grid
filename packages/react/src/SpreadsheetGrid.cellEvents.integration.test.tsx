@@ -47,7 +47,7 @@ afterEach(() => {
 });
 
 const getBodyRows = (container: HTMLElement): HTMLElement[] =>
-  Array.from(container.querySelectorAll<HTMLElement>('.ssg-body-row'));
+  Array.from(container.querySelectorAll<HTMLElement>('[data-pane="center"].ssg-body-row'));
 
 // viewRowIndex 行の colIndex 番目のデータセルを返します。
 const getCell = (container: HTMLElement, rowIndex: number, colIndex: number): HTMLElement => {
@@ -120,7 +120,8 @@ describe('セル操作の通知(G-1)', () => {
     );
     expect(headerCells.length).toBeGreaterThan(0);
     headerCells.forEach((cell) => fireEvent.click(cell));
-    const rowHeader = getBodyRows(container)[0]?.querySelector<HTMLElement>('.ssg-row-header-cell');
+    // 行番号は左ペインの行にある(段階 2 DU-22)。
+    const rowHeader = container.querySelector<HTMLElement>('[data-pane="left"].ssg-body-row .ssg-row-header-cell');
     expect(rowHeader).not.toBeNull();
     fireEvent.click(rowHeader!);
     // 別のセルで離したときの click は、2 つのセルの共通の親(行コンテナ等)で発火する。
