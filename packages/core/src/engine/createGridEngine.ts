@@ -12,6 +12,7 @@ import { createInitialGridUiState, gridUiReducer } from '../model/gridReducer';
 import { gridActions } from '../model/gridActions';
 import type { GridUiState } from '../model/gridTypes.unbound';
 import { dropUnknownColumnKeys, migrateGridStatePatch } from '../logic/gridState';
+import type { GridColumnState } from '../model/gridTypes.core';
 import {
   createDetailIndexCacheHolder,
   createDetailKeysPruner,
@@ -144,12 +145,42 @@ declare const process: { env: { NODE_ENV?: string } };
 
 // 追加(段階 2 DU-12): initialState から初期の UI 状態を作ります。applyState と同じ正規化(壊れた入力を捨てる + 今の列に
 //   無い列の幅 / フィルター / ソートを捨てる)を通し、reducer の同じ action で畳み込みます。列メタ(columns)は使いません。
-const resolveInitialUiState = (initialState: unknown, columnKeys: ReadonlySet<string>): GridUiState => {
+// 修正(段階 2 の見直し): initialState の columns(getState() の値をそのまま渡すと入っている)が columns prop と同じ並び / 表示 /
+//   固定かどうか(両方にある列だけで比べる)。同じなら警告しません(getState() の値をそのまま渡せる、のとおりにする)。
+const isSameColumnLayout = (
+  saved: readonly GridColumnState[],
+  columns: readonly { key: string; visible?: boolean; pinned?: 'left' | 'right' }[],
+): boolean => {
+  const byKey = new Map(columns.map((column) => [column.key, column]));
+  const savedKeys = new Set(saved.map((entry) => entry.key));
+  const savedShared = saved.filter((entry) => byKey.has(entry.key));
+  const currentShared = columns.filter((column) => savedKeys.has(column.key));
+  return (
+    savedShared.length === currentShared.length &&
+    savedShared.every((entry, index) => {
+      const column = currentShared[index];
+      return (
+        column !== undefined &&
+        column.key === entry.key &&
+        (column.visible !== false) === (entry.visible !== false) &&
+        (column.pinned ?? null) === (entry.pinned ?? null)
+      );
+    })
+  );
+};
+
+const resolveInitialUiState = (
+  initialState: unknown,
+  columns: readonly { key: string; visible?: boolean; pinned?: 'left' | 'right' }[],
+): GridUiState => {
   let state = createInitialGridUiState();
   if (initialState === undefined || initialState === null) {
     return state;
   }
-  const { patch, dropped } = dropUnknownColumnKeys(migrateGridStatePatch(initialState), columnKeys);
+  const { patch, dropped } = dropUnknownColumnKeys(
+    migrateGridStatePatch(initialState),
+    new Set(columns.map((column) => column.key)),
+  );
   if (process.env.NODE_ENV !== 'production') {
     if (dropped.length > 0) {
       console.warn(
@@ -157,10 +188,10 @@ const resolveInitialUiState = (initialState: unknown, columnKeys: ReadonlySet<st
           '列幅 / フィルター / 並べ替えを捨てました。',
       );
     }
-    if (patch.columns !== undefined) {
+    if (patch.columns !== undefined && !isSameColumnLayout(patch.columns, columns)) {
       console.warn(
-        '[spreadsheet-grid] initialState の columns(列の並び / 表示 / 固定)は使いません。columns prop で決めてください' +
-          '(マウントの後に変えるなら applyState)。',
+        '[spreadsheet-grid] initialState の columns(列の並び / 表示 / 固定)が columns prop と違いますが、使いません。' +
+          'columns prop で決めてください(マウントの後に変えるなら applyState)。',
       );
     }
   }
@@ -191,10 +222,16 @@ export const createGridEngine = <T,>(init: GridEngineInit<T>): GridEngine<T> => 
   // 変更(監査 RD-5 / M-03): 初期 state は列に依存しなくなりました(列幅 state は空で始まる)。
   // 変更(段階 2 DU-12): initialState があればその値で始めます(SSRM の最初の query とサーバーの描画にも効く)。
   const store = createGridStore(
-    resolveInitialUiState(init.initialState, new Set(init.columnInputs.columns.map((column) => column.key))),
+    resolveInitialUiState(init.initialState, init.columnInputs.columns),
   );
 
   const initialUiState = store.getState();
+  // 変更(差し込み式 段階 5): 機能セットに filtering が無ければ代役(見張らない)。
+  const dateRollover = (init.features.filtering?.createDateRolloverStore ?? createInertDateRolloverStore)();
+  // 修正(段階 2 の見直し): 最初の query のキーにも相対日付プリセットの範囲を入れます(シェルが最初の描画で作る query と
+  //   同じキーにする。initialState に「今月」などを入れると、これまでは debounce の後にキーが変わって最初のブロックを
+  //   取り直していた)。
+  const resolveRelativeDateKey = init.features.filtering?.resolveRelativeDateFilterKey;
   const initialServerSideQuery = rowPipeline.resolveServerSideQuery({
     isServerSide: init.serverSide.isServerSide,
     globalFilterEnabled: init.serverSide.enableGlobalFilter,
@@ -203,10 +240,12 @@ export const createGridEngine = <T,>(init: GridEngineInit<T>): GridEngine<T> => 
     columnFilters: initialUiState.filters.columnFilters,
     sortingEnabled: init.serverSide.enableSorting,
     sort: initialUiState.sort,
+    relativeDateKey:
+      init.serverSide.isServerSide && init.serverSide.enableColumnFilter && resolveRelativeDateKey
+        ? resolveRelativeDateKey(init.columnInputs.columns, initialUiState.filters.columnFilters, dateRollover.getSnapshot())
+        : undefined,
   });
   const serverSideQueryStore = createDebouncedValueStore(initialServerSideQuery, SERVER_SIDE_QUERY_DEBOUNCE_MS);
-  // 変更(差し込み式 段階 5): 機能セットに filtering が無ければ代役(見張らない)。
-  const dateRollover = (init.features.filtering?.createDateRolloverStore ?? createInertDateRolloverStore)();
 
   // 変更(差し込み式 段階 4): 機能セットに autoHeight が無ければ代役(測らない)。
   const autoHeightMeasurer = (init.features.autoHeight?.createAutoHeightMeasurer ?? createInertAutoHeightMeasurer)<T>();

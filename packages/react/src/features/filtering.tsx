@@ -639,6 +639,7 @@ const useFilterManagement = <T,>({
 export const filteringFeature: NonNullable<ReactGridFeatures['filtering']> = {
   createColumnFilterStage,
   createDateRolloverStore,
+  resolveRelativeDateFilterKey,
   useFilterOrder,
   useFilterPopover,
   useFilterPopoverViews,

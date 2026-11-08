@@ -46,4 +46,13 @@ describe('reconcileColumnWidths', () => {
   it('前回 columns が無い(初回)ときは列の存在だけを見る', () => {
     expect(reconcileColumnWidths({ a: 250, z: 10 }, null, [col('a', { width: 50 })])).toEqual({ a: 250 });
   });
+
+  // 修正(段階 2 の見直し): グリッドが足す列(自動グループ列 / 展開トグル列 / 行ドラッグのハンドル列)は columns に無いが消さない。
+  it('グリッドが足す列の幅は columns に無くても残す', () => {
+    expect(
+      reconcileColumnWidths({ __ssg_group__: 333, a: 250, z: 10 }, null, [col('a')]),
+    ).toEqual({ __ssg_group__: 333, a: 250 });
+    const widths = { __ssg_group__: 333, a: 250 };
+    expect(reconcileColumnWidths(widths, [col('a')], [col('a')])).toBe(widths);
+  });
 });

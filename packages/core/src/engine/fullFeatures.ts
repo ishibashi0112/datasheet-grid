@@ -15,6 +15,7 @@ import { createColumnFilterStage } from './columnFilterStage';
 import { createDateRolloverStore } from '../controllers/dateRolloverStore';
 import { createSaveStatusController } from '../controllers/saveStatusController';
 import { buildGroupTree, flattenGroupTree } from '../logic/grouping';
+import { resolveRelativeDateFilterKey } from '../logic/filtering';
 import {
   buildLabelDisplay,
   createLabelFreeOrder,
@@ -33,7 +34,7 @@ export const fullCoreFeatures: Required<GridCoreFeatures> = {
   motionExtras: { createChangeHighlightController },
   export: { createExportCommands },
   autoHeight: { createAutoHeightMeasurer, buildRowHeightStore, createAutoHeightRowMetrics },
-  filtering: { createColumnFilterStage, createDateRolloverStore },
+  filtering: { createColumnFilterStage, createDateRolloverStore, resolveRelativeDateFilterKey },
   serverSide: { createSaveStatusController },
   labelRow: {
     resolveLabelRowLayout,

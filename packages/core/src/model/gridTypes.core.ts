@@ -2783,10 +2783,12 @@ export type SpreadsheetGridProps<T, F extends GridFrameworkTypes = GridFramework
   /**
    * 状態(列幅 / フィルター / ソート)の初期値。**最初の 1 回(マウント時)だけ**使い、
    * 後から変えても今の状態は変わらない(変えるときは `applyState`)。最初の描画・サーバーの描画(SSR)
-   * ・serverSide の最初の `getRows` から効き、`getState()` もその値を返す。マウント時は
-   * `onStateChange` / `onFiltersChange` / `onSortChange` を呼ばない。`getState()`
-   * の値をそのまま渡せる(列メタの `columns` は使わない。列の並び / 表示 / 固定は `columns` prop
-   * で決める)。今の `columns` に無い列の幅 / フィルター / ソートは捨てる(開発時に警告)。URL
+   * ・serverSide の最初の `getRows` から効き(clientSide で 5 万行を超える表のグローバルフィルター
+   * `filters.globalText` だけは、時間を分けて評価するので最初の描画の少し後に効く)、`getState()`
+   * もその値を返す。マウント時は `onStateChange` / `onFiltersChange` / `onSortChange` を呼ばない。
+   * `getState()` の値をそのまま渡せる(列メタの `columns` は使わない。列の並び / 表示 / 固定は
+   * `columns` prop で決める。`columns` prop と違うときだけ開発時に警告)。今の `columns`
+   * に無い列の幅 / フィルター / ソートは捨てる(開発時に警告)。URL
    * のクエリや保存した状態から戻すときに使う。
    */
   initialState?: Omit<GridStatePatch, 'columns'>;

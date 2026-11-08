@@ -10,6 +10,7 @@ import { SpreadsheetGrid } from './SpreadsheetGrid';
 import { installJsdomLayoutStubs } from './testing';
 import type {
   GridColumn,
+  GridState,
   ServerSideDataSource,
   ServerSideGetRowsParams,
   SpreadsheetGridHandle,
@@ -140,5 +141,89 @@ describe('initialState(DU-12)', () => {
       expect(call.query.sort).toEqual([{ columnKey: 'qty', direction: 'asc' }]);
       expect(call.query.columnFilters).toEqual({ name: { kind: 'text', value: 'l' } });
     }
+  });
+
+  // 修正(段階 2 の見直し): グリッドが足す列(自動グループ列など)の幅もマウントの後に残す(applyState と同じ)。これまでは
+  //   マウント時の列幅の整合で columns に無い列として捨て、サーバーの描画の幅から既定の幅へ戻っていた。
+  it('自動グループ列の幅も最初の描画から効き、マウントの後も残る(columns を渡し直しても)', () => {
+    const ref = createRef<SpreadsheetGridHandle<Row>>();
+    const grouped: GridColumn<Row>[] = [
+      { key: 'name', title: '名前', width: 160, rowGroup: true },
+      { key: 'qty', title: '数量', width: 100 },
+    ];
+    const view = (cols: GridColumn<Row>[]) => (
+      <SpreadsheetGrid<Row>
+        ref={ref}
+        rows={rows}
+        columns={cols}
+        rowKeyGetter={(row) => row.id}
+        height={300}
+        initialState={{ columnWidths: { __ssg_group__: 333, qty: 150 } }}
+      />
+    );
+    const { container, rerender } = render(view(grouped));
+    expect(ref.current?.getState().columnWidths).toEqual({ __ssg_group__: 333, qty: 150 });
+    const groupHeader = container.querySelector<HTMLElement>('.ssg-header-row [data-ssg-col-key="__ssg_group__"]');
+    expect(groupHeader?.style.width).toBe('333px');
+    rerender(view(grouped.map((column) => ({ ...column }))));
+    expect(ref.current?.getState().columnWidths).toEqual({ __ssg_group__: 333, qty: 150 });
+  });
+
+  // 修正(段階 2 の見直し): getState() の値をそのまま渡しても警告しない(columns が columns prop と同じなら)。違うときだけ
+  //   「並び / 表示 / 固定は戻さない」と知らせる。
+  it('getState() の値をそのまま渡しても警告しない。columns が columns prop と違うときだけ知らせる', () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const first = createRef<SpreadsheetGridHandle<Row>>();
+    const { unmount } = render(
+      <SpreadsheetGrid<Row> ref={first} rows={rows} columns={columns} rowKeyGetter={(row) => row.id} height={300} initialState={initialState} />,
+    );
+    const saved = first.current?.getState();
+    unmount();
+    expect(saved?.columns).toBeDefined();
+    render(
+      <SpreadsheetGrid<Row> rows={rows} columns={columns} rowKeyGetter={(row) => row.id} height={300} initialState={saved} />,
+    );
+    expect(warn).not.toHaveBeenCalled();
+    cleanup();
+    const reordered: GridState = { ...saved!, columns: [{ key: 'qty' }, { key: 'name', pinned: 'left' }] };
+    render(
+      <SpreadsheetGrid<Row>
+        rows={rows}
+        columns={columns}
+        rowKeyGetter={(row) => row.id}
+        height={300}
+        initialState={reordered}
+      />,
+    );
+    expect(warn.mock.calls.some(([message]) => String(message).includes('initialState の columns'))).toBe(true);
+  });
+
+  // 修正(段階 2 の見直し): serverSide で相対日付のプリセット(今月など)を initialState に入れても、最初のブロックを 1 回だけ取る
+  //   (これまでは最初の query のキーに相対日付の範囲が入らず、debounce の後にキャッシュを捨てて取り直していた)。
+  it('serverSide: 相対日付のプリセットの initialState でも最初のブロックは 1 回だけ取る', async () => {
+    type Dated = { id: number; d: string };
+    const calls: ServerSideGetRowsParams[] = [];
+    const dataSource: ServerSideDataSource<Dated> = {
+      getRows: (params) => {
+        calls.push(params);
+        return Promise.resolve({ rows: [{ id: 1, d: '2026-11-08' }], totalRowCount: 1 });
+      },
+    };
+    render(
+      <SpreadsheetGrid<Dated>
+        rows={[]}
+        columns={[{ key: 'd', title: '日付', width: 120, filterType: 'dateSet' }]}
+        rowKeyGetter={(row) => row.id}
+        height={300}
+        dataSource={dataSource}
+        initialState={{
+          filters: { columnFilters: { d: { kind: 'dateSet', condition: { mode: 'preset', preset: 'thisMonth' }, set: null } } },
+        }}
+      />,
+    );
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 700));
+    });
+    expect(calls.filter((call) => call.startIndex === 0)).toHaveLength(1);
   });
 });
