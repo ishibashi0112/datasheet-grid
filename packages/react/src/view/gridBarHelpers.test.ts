@@ -443,6 +443,26 @@ describe('createDataColumnNamer (audit V-12)', () => {
     expect(formatGridCellLabel({ row: 2, col: 1 }, namer, createDataRowNumberer([0]))).toBe('地域 › 担当 2');
   });
 
+  // 追加(段階 2 の 3 回目の確かめ直し G-N7): 自動グループ列の中だけで縦に作った範囲は「A4:A6」(次のデータ列の文字)で、そこから
+  //   次のデータ列まで広げた範囲と見分けられなかった。自動グループ列だけの範囲は「見出しの名前 行の範囲」にする。
+  it('自動グループ列の中だけの範囲は「見出しの名前 行の範囲」、データ列へ広げた範囲は従来どおり', () => {
+    const namer = createDataColumnNamer([{ key: GROUP_AUTO_COLUMN_KEY, title: '地域 › 担当' }, { key: 'a' }, { key: 'b' }]);
+    expect(
+      formatGridSelectionLabel({ type: 'cell', range: { start: { row: 5, col: 0 }, end: { row: 3, col: 0 } } }, namer),
+    ).toBe('地域 › 担当 4:6');
+    expect(
+      formatGridSelectionLabel({ type: 'cell', range: { start: { row: 3, col: 0 }, end: { row: 5, col: 1 } } }, namer),
+    ).toBe('A4:A6');
+    // ラベル行を飛ばした番号を使う(範囲の終わりはその前のデータ行の番号)。
+    expect(
+      formatGridSelectionLabel(
+        { type: 'cell', range: { start: { row: 1, col: 0 }, end: { row: 4, col: 0 } } },
+        namer,
+        createDataRowNumberer([0, 4]),
+      ),
+    ).toBe('地域 › 担当 1:3');
+  });
+
   it('buildGridDerivedSummary へ渡すと activeCellLabel / selectionLabel に反映される', () => {
     const columns = makeCols(3);
     const summary = buildGridDerivedSummary(

@@ -169,6 +169,12 @@ export const formatGridSelectionLabel = (
     if (startRow === endRow && startCol === endCol) {
       return formatSingleCell(toColumnName, startCol, rowNumberer.numberOf(startRow));
     }
+    // 追加(段階 2 の確かめ直し G-N7): 名前で出す列(自動グループ列)の中だけの範囲は「名前 行の範囲」(「地域 › 担当 4:6」)。
+    //   これまでは次のデータ列の文字(「A4:A6」)で、そのデータ列まで広げた範囲と見分けられませんでした。
+    const name = startCol === endCol ? toColumnName.cellNameOf?.(startCol) : undefined;
+    if (name !== undefined) {
+      return `${name} ${rowNumberer.numberOf(startRow)}:${rowNumberer.lastNumberOf(endRow)}`;
+    }
     const start = `${toColumnName(startCol)}${rowNumberer.numberOf(startRow)}`;
     const end = `${toColumnName(endCol)}${rowNumberer.lastNumberOf(endRow)}`;
     return start === end ? start : `${start}:${end}`;
