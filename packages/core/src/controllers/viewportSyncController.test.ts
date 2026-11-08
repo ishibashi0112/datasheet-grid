@@ -6,6 +6,7 @@ import { describe, expect, it, vi } from 'vitest';
 import {
   clampScrollToContent,
   createViewportSyncController,
+  scrollCellIntoView,
   type ViewportSyncArgs,
 } from './viewportSyncController';
 
@@ -165,5 +166,40 @@ describe('viewportSyncController', () => {
       activeCellRect: { ...rect, top: 100 },
     });
     expect(up.scrollTo).toHaveBeenLastCalledWith(expect.objectContaining({ top: 100 / 2.4 }));
+  });
+});
+
+// 追加(段階 2 の確かめ直し N4-1 / N5-1): 行を見せる縦の位置。clientHeight 200 / headerHeight 40 = 見える本体 160px。
+describe('scrollCellIntoView の縦の位置', () => {
+  const geometry = {
+    headerHeight: 40,
+    leftPaneWidth: 0,
+    rightPaneWidth: 0,
+    centerLeadingWidth: 50,
+    verticalScaleFactor: 1,
+  };
+  const run = (scrollTop: number, rect: { top: number; height: number }, extra: object = {}) => {
+    const { element, raw, scrollTo } = createScrollElement();
+    raw.scrollTop = scrollTop;
+    scrollCellIntoView(element, { ...rect, left: 0, width: 100 }, { ...geometry, ...extra });
+    return scrollTo.mock.calls.at(-1)?.[0]?.top;
+  };
+
+  it('下にはみ出す行は下端に合わせる(見える高さに収まる行)', () => {
+    expect(run(0, { top: 300, height: 36 })).toBe(176);
+  });
+
+  it('見える高さより背の高い行は、下へ動くときも上端に合わせる(N5-1)', () => {
+    expect(run(0, { top: 300, height: 400 })).toBe(300);
+    // 上端に合わせ済みなら動かさない。
+    expect(run(300, { top: 300, height: 400 })).toBeUndefined();
+  });
+
+  it('ラベル行の固定の帯に隠れている行は、帯の下へ合わせる(N4-1)', () => {
+    const stickyTopInset = { visibleAt: () => 30, coveringRowAt: () => 30 };
+    // 行の上端 310 は見出しの直下(300)より下だが、帯(300〜330)の裏。
+    expect(run(300, { top: 310, height: 30 }, { stickyTopInset })).toBe(280);
+    // 帯より下なら動かさない。
+    expect(run(300, { top: 330, height: 30 }, { stickyTopInset })).toBeUndefined();
   });
 });

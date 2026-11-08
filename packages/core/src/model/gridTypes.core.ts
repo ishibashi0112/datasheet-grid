@@ -2168,9 +2168,9 @@ export type SpreadsheetGridHandle<T> = {
   // ── viewport(スクロール)──
   // 指定行が可視になるようスクロールします(align 既定 'auto')。
   /**
-   * 指定行を可視域へ。`align`(既定 `'auto'`): `'auto'`(最小スクロール) / `'start'` / `'center'` /
-   * `'end'`。`labelRow.sticky` の表では、`'start'` と上へ動かす `'auto'`
-   * は行を固定した見出しの下に置く。
+   * 指定行を可視域へ。`align`(既定 `'auto'`): `'auto'`(最小スクロール。
+   * 見える高さより背の高い行は上端に合わせる) / `'start'` / `'center'` / `'end'`。`labelRow.sticky`
+   * の表では、`'start'` と上へ動かす `'auto'` は行を固定した見出しの下に置く。
    */
   scrollToRow: (viewRowIndex: number, options?: { align?: ScrollAlign }) => void;
   // 指定セルが可視になるよう縦横スクロールします(固定列は横スクロール対象外)。

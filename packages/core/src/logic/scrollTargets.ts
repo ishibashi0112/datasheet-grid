@@ -64,6 +64,9 @@ export const computeVerticalScrollTarget = ({
       target = currentScrollTop;
     } else if (cellTop < visibleTop) {
       target = alignedTop();
+    } else if (rowHeight > visibleBottom - visibleTop) {
+      // 追加(段階 2 の確かめ直し N5-1): 見える高さより背の高い行は上端に合わせます(下端では書き出しが見えない)。
+      target = alignedTop();
     } else {
       target = cellBottom - viewportHeight;
     }

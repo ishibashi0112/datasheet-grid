@@ -73,6 +73,13 @@ describe('computeVerticalScrollTarget', () => {
     ).toBe(70);
   });
 
+  // 追加(段階 2 の確かめ直し N5-1): 見える高さ(400 - 40 = 360)より背の高い行は、下にはみ出しても上端に合わせる。
+  it('auto: 見える高さより背の高い行は下にはみ出しても start 整列', () => {
+    expect(
+      computeVerticalScrollTarget({ ...V, rowHeight: 500, rowTop: 10000, currentScrollTop: 0, align: 'auto' }),
+    ).toBe(10000);
+  });
+
   it('auto: 下にはみ出すなら end 整列', () => {
     expect(
       computeVerticalScrollTarget({
