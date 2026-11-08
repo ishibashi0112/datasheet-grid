@@ -70,6 +70,9 @@ export type PointerInteractionsArgs<T> = {
   enableRangeSelection: boolean;
   enableSorting: boolean;
   orderedColumns: GridColumn<T>[];
+  // 追加(段階 2 の確かめ直し S-N3): 最初のデータのセル(ラベル行と操作用の合成列を飛ばす)。アクティブセルが無いときに行番号 /
+  //   列見出しを押したときのアクティブセルの列 / 行に使います(これまでは 0 で、枠が展開トグル列やラベル行に乗っていた)。
+  resolveFirstDataCell?: () => CellCoord;
   filteredRowsLength: number;
   visibleColumnsLength: number;
   paneLayout: GridPaneLayout<T>;
@@ -193,7 +196,13 @@ export const createPointerInteractionsController = <T,>(): PointerInteractionsCo
       }
     }
     if (col === null && paneLayout.center.entries.length > 0) {
-      const localX = centerEl.scrollLeft + clientX - centerRect.left - centerLeadingWidth;
+      // 変更(段階 2 DU-22): 行ヘッダーだけの左ペインの上は、その右端(見えている先頭の列)として扱います(横にスクロール
+      //   した表で、行ヘッダーの下に隠れた列を拾わない)。左ペインは sticky; left: 0 なので右端は左端 + 行ヘッダーの幅。
+      const visibleClientX =
+        leftEl && paneLayout.left.entries.length === 0
+          ? Math.max(clientX, leftEl.getBoundingClientRect().left + leftLeadingWidth)
+          : clientX;
+      const localX = centerEl.scrollLeft + visibleClientX - centerRect.left - centerLeadingWidth;
       col = findLogicalIndexFromPaneOffset(paneLayout.center, Math.max(localX, 0));
     }
     if (col === null) {
@@ -230,7 +239,15 @@ export const createPointerInteractionsController = <T,>(): PointerInteractionsCo
     if (args === null) {
       return;
     }
-    const { gridRootRef, dispatch, enableRangeSelection, enableRowSelection, onGutterRowSelect, onCellDoubleClickRef } = args;
+    const {
+      gridRootRef,
+      dispatch,
+      enableRangeSelection,
+      enableRowSelection,
+      onGutterRowSelect,
+      onCellDoubleClickRef,
+      resolveFirstDataCell,
+    } = args;
     gridRootRef.current?.focus({ preventScroll: true });
     const { target } = pending;
     if (target.kind === 'cell') {
@@ -259,11 +276,11 @@ export const createPointerInteractionsController = <T,>(): PointerInteractionsCo
         onGutterRowSelect(target.rowIndex, { shiftKey: false });
         return;
       }
-      dispatch(gridActions.startRowSelection(target.rowIndex));
+      dispatch(gridActions.startRowSelection(target.rowIndex, resolveFirstDataCell?.().col));
       dispatch(gridActions.endSelection());
       return;
     }
-    dispatch(gridActions.startColumnSelection(target.colIndex));
+    dispatch(gridActions.startColumnSelection(target.colIndex, resolveFirstDataCell?.().row));
     dispatch(gridActions.endSelection());
   };
 
@@ -535,7 +552,18 @@ export const createPointerInteractionsController = <T,>(): PointerInteractionsCo
       startGutterRowSelectionAutoScroll();
       return;
     }
-    args.dispatch(gridActions.startRowSelection(rowIndex));
+    // 追加(段階 2 の確かめ直し): Shift+クリックは、今の行の範囲の起点(無ければアクティブセルの行)から押した行までを選びます
+    //   (起点からドラッグしたのと同じ。セルの Shift+クリック = DU-15 と同じ考え方)。これまでは押した行だけでした。
+    if (event.shiftKey) {
+      const { selection, activeCell } = args.uiState;
+      const anchorRow = selection?.type === 'row' ? selection.startRow : activeCell?.row;
+      if (anchorRow !== undefined) {
+        args.dispatch(gridActions.startRowSelection(anchorRow, args.resolveFirstDataCell?.().col));
+        args.dispatch(gridActions.updateRowSelection(rowIndex));
+        return;
+      }
+    }
+    args.dispatch(gridActions.startRowSelection(rowIndex, args.resolveFirstDataCell?.().col));
   };
 
   const handleRowHeaderPointerEnter = (rowIndex: number, event: GridPointerEventLike) => {
@@ -574,7 +602,7 @@ export const createPointerInteractionsController = <T,>(): PointerInteractionsCo
       }
       return;
     }
-    args.dispatch(gridActions.startColumnSelection(colIndex));
+    args.dispatch(gridActions.startColumnSelection(colIndex, args.resolveFirstDataCell?.().row));
   };
 
   const handleColumnHeaderPointerEnter = (colIndex: number, event: GridPointerEventLike) => {

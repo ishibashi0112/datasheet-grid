@@ -282,3 +282,93 @@ export const splitRowBandByDetail = (
   }
   return segments;
 };
+
+// 追加(段階 2 DF-25): 展開中の行が rows から消えたら、そのキーを展開中から外します(clientSide)。
+//   これまでは消した行のキーが getExpandedDetailRowKeys() に残り、onExpandedDetailRowKeysChange も来ず、同じキーの行を
+//   足し直すと開いたまま出ていました。外すのは「前の rows にあって今の rows に無い」キーだけです(行を読み込む前に
+//   setDetailRowExpanded で戻したキーは残す)。見るのは rows が変わったときだけで、前に見つけた位置で確かめ(編集では
+//   位置が変わらない)、外れたキーだけ今の rows を走査し、それでも無ければ前の rows にあったかを走査します。
+export type DetailKeysPrunerArgs<T> = {
+  // 展開行が有効で、rows がすべての行を持つ(serverSide ではない)とき true。
+  enabled: boolean;
+  rows: readonly T[];
+  expandedKeys: ReadonlySet<GridRowKey>;
+  keyOf: (row: T, sourceIndex: number) => GridRowKey;
+  setExpandedKeys: (keys: ReadonlySet<GridRowKey>) => void;
+};
+
+export type DetailKeysPruner<T> = {
+  update: (args: DetailKeysPrunerArgs<T>) => void;
+};
+
+const findKeysIn = <T>(
+  rows: readonly T[],
+  keyOf: (row: T, sourceIndex: number) => GridRowKey,
+  wanted: ReadonlySet<GridRowKey>,
+  found: Map<GridRowKey, number>,
+): void => {
+  let remaining = wanted.size;
+  for (let index = 0; index < rows.length && remaining > 0; index += 1) {
+    const key = keyOf(rows[index], index);
+    if (wanted.has(key) && !found.has(key)) {
+      found.set(key, index);
+      remaining -= 1;
+    }
+  }
+};
+
+export const createDetailKeysPruner = <T>(): DetailKeysPruner<T> => {
+  let lastRows: readonly T[] | null = null;
+  // 展開中のキー → 前の rows で見つけた source index(次に rows が変わったときの確認用)。
+  let known = new Map<GridRowKey, number>();
+  return {
+    update: ({ enabled, rows, expandedKeys, keyOf, setExpandedKeys }) => {
+      if (!enabled) {
+        lastRows = null;
+        known = new Map();
+        return;
+      }
+      if (rows === lastRows) {
+        return;
+      }
+      const previousRows = lastRows;
+      lastRows = rows;
+      if (expandedKeys.size === 0) {
+        known = new Map();
+        return;
+      }
+      const nextKnown = new Map<GridRowKey, number>();
+      const missing = new Set<GridRowKey>();
+      for (const key of expandedKeys) {
+        const index = known.get(key);
+        if (index !== undefined && index < rows.length && keyOf(rows[index], index) === key) {
+          nextKnown.set(key, index);
+        } else {
+          missing.add(key);
+        }
+      }
+      if (missing.size > 0) {
+        findKeysIn(rows, keyOf, missing, nextKnown);
+      }
+      known = nextKnown;
+      // 最初の rows(マウント時)では外しません。
+      if (previousRows === null) {
+        return;
+      }
+      const absent = new Set(Array.from(missing).filter((key) => !nextKnown.has(key)));
+      if (absent.size === 0) {
+        return;
+      }
+      const inPrevious = new Map<GridRowKey, number>();
+      findKeysIn(previousRows, keyOf, absent, inPrevious);
+      if (inPrevious.size === 0) {
+        return;
+      }
+      const next = new Set(expandedKeys);
+      for (const key of inPrevious.keys()) {
+        next.delete(key);
+      }
+      setExpandedKeys(next);
+    },
+  };
+};

@@ -19,7 +19,7 @@ import { usePortalTokens } from '../hooks/usePortalTokens';
 
 type CellContextMenuPopoverProps = {
   isOpen: boolean;
-  // 追加(TH-DK-2): ダークテーマ修飾子クラス('ssg-theme-dark' | undefined)。ポータルは
+  // 追加(TH-DK-2): ダークテーマ修飾子クラス('ssg-theme-dark' | 'ssg-theme-class' | undefined)。ポータルは
   //   .ssg-root 外のため、root と同じ修飾子を自身の root 要素へ直接付与します。
   themeClassName?: string;
   // 追加(slot-props): classNames 由来の解決済みスロット表(popover = パネル root / menuItem = 項目)。

@@ -6,6 +6,11 @@ import type { CellCoord, GridColumn, GridGroupRow as GridGroupRowDescriptor, Gri
 import { GROUP_AUTO_COLUMN_KEY } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/grouping';
 import type { PaneColumnEntry } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/geometry';
 import { cx } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/cx';
+import {
+  formatTotalRowCellText,
+  formatTotalRowNumber,
+  resolveTotalRowCaption,
+} from '@ishibashi0112/spreadsheet-grid-core/internal/logic/totalRow';
 import type { GridPaneKind } from './GridHeaderRow';
 
 // ──────────────────────────────────────────────────────────
@@ -47,25 +52,15 @@ type GridBodyGroupRowProps<T> = {
   slots?: GridResolvedSlots;
 };
 
-// 集計値の表示文字列です。undefined / null は空セル。列に valueFormatter があれば集計値にも
-//   適用し、leaf セルと表示を揃えます(グループ行に leaf 行は無いため row は undefined。
-//   変更(dogfood DF-06): 型も T | undefined になりました)。formatter 無しは String()(カスタム aggFunc は
-//   整形済み文字列を返せます)。
-const formatAggregateValue = <T,>(
+// 集計値の表示です。変更(段階 2 DU-23): 合計行と同じ書式にしました(これまでは素の値で「4115.333333」「6220」
+//   と出ていた)。文字列はそのまま、個数は件数(桁区切り)、それ以外は列の valueFormatter(row は undefined)、
+//   formatter の無い数値は桁区切り + 小数 4 桁まで。合計以外(平均 / 最小 / 最大 / 個数)は値の前に種類を小さく出します。
+const resolveAggregateDisplay = <T,>(
   column: GridColumn<T>,
   value: unknown,
-): string => {
-  if (value == null) {
-    return '';
-  }
-  if (column.valueFormatter) {
-    return column.valueFormatter({
-      value,
-      row: undefined,
-      column,
-    });
-  }
-  return String(value);
+): { text: string; caption: string | undefined } => {
+  const kind = typeof column.aggFunc === 'string' ? column.aggFunc : 'custom';
+  return { text: formatTotalRowCellText(column, { value, kind }), caption: resolveTotalRowCaption(kind) };
 };
 
 // 1 階層ぶんのインデント幅(px)です。
@@ -143,13 +138,13 @@ function GridBodyGroupRowInner<T>({
         const left = leadingWidth + entry.paneLocalStart;
         const size = entry.paneLocalSize;
         const isAutoGroupColumn = column.key === GROUP_AUTO_COLUMN_KEY;
-        const aggregateText =
+        const aggregate =
           !isAutoGroupColumn &&
           Object.prototype.hasOwnProperty.call(
             groupRow.aggregates,
             column.key,
           )
-            ? formatAggregateValue(column, groupRow.aggregates[column.key])
+            ? resolveAggregateDisplay(column, groupRow.aggregates[column.key])
             : null;
 
         return (
@@ -207,13 +202,30 @@ function GridBodyGroupRowInner<T>({
                   {isCollapsed ? '▸' : '▾'}
                 </button>
                 <span className="ssg-group-label">{groupRow.label}</span>
+                {/* 変更(段階 2 の確かめ直し): 件数も桁区切り(同じ行の集計「個数 6,220」と同じ書き方)。 */}
                 <span className="ssg-group-count">
-                  ({groupRow.leafCount}件)
+                  ({formatTotalRowNumber(groupRow.leafCount)}件)
                 </span>
               </>
-            ) : (
-              aggregateText
-            )}
+            ) : aggregate ? (
+              // 変更(段階 2 の確かめ直し): 合計行と同じく、列幅に収まらないときは末尾を「…」にし、ツールチップで全文を出します
+              //   (これまでは右寄せの値の左が「…」なしで切れ、¥689,661,632 が 9,661,632 のように別の数に読めていた)。
+              <span
+                className="ssg-group-value"
+                data-ssg-tooltip-overflow={
+                  aggregate.text !== ''
+                    ? aggregate.caption !== undefined
+                      ? `${aggregate.caption} ${aggregate.text}`
+                      : aggregate.text
+                    : undefined
+                }
+              >
+                {aggregate.caption !== undefined && aggregate.text !== '' && (
+                  <span className="ssg-group-caption">{aggregate.caption}</span>
+                )}
+                {aggregate.text}
+              </span>
+            ) : null}
           </div>
         );
       })}

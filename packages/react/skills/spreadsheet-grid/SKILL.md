@@ -60,12 +60,13 @@ export function Inventory() {
 - **命令的 API。** `ref` を渡すと `SpreadsheetGridHandle<T>` が入ります(利用側で `forwardRef` は要りません。React 18.3 / 19 のどちらでも同じ)。
 - **位置は表示の位置。** `selectCell` などの `viewRowIndex` / `colIndex` は並べ替え・絞り込みの後の表示の位置で、`colIndex` はライブラリが足す列(行ドラッグのハンドル列など)も数えます。`rows.findIndex` ではなく `getViewRowIndex(rowKey)` / `getColIndex(columnKey)` で引きます。行を足してすぐ編集するときは `startEditing(viewRowIndex, colIndex)`、モーダルを閉じた後にキーを戻すときは `focus()`。
 - **Next.js App Router。** グリッドは `'use client'` のファイルから描画します。
+- **改行を含む値の列は `editor: { type: 'text', multiline: true }`。** 既定の 1 行の入力欄はブラウザが改行を消すので、直して確定すると改行が無くなります。改行どおりに表示するのは `autoHeight` の列だけです。
 - **行のクラスは行と各セルの両方に付く。** `getRowClassName` の class と style は行・「#」セル・各セルに付きます。行を薄くするなら class を返して `.ssg-body-row.<class> { opacity: 0.5 }` と書きます(style や素のクラスで `opacity` を書くと 2 回掛かります)。
 
 ## 4. 入口の選び方
 
-- `@ishibashi0112/spreadsheet-grid` の `SpreadsheetGrid`: 全部入り(初期 JS 約 120KB gzip)。迷ったらこれ。
-- `@ishibashi0112/spreadsheet-grid/lite` の `createSpreadsheetGrid`: 使う機能だけを入れる(機能なしで約 65KB、`standardFeatures` で約 84KB)。モジュールの先頭で 1 回だけ作ります。部品の名前は「キー + `Feature`」です(例: `{ ...standardFeatures, serverSide: serverSideFeature }`)。`standardFeatures` は `filtering` / `columnMenu` / `toolPanel` / `columnAutosize` / `export`。足りない機能は開発時に `console.warn` が名指しします。全部入りと同じアプリで混ぜると共通部分が二重に入るので、どちらかの入口に揃えます。
+- `@ishibashi0112/spreadsheet-grid` の `SpreadsheetGrid`: 全部入り(初期 JS 約 130KB gzip)。迷ったらこれ。
+- `@ishibashi0112/spreadsheet-grid/lite` の `createSpreadsheetGrid`: 使う機能だけを入れる(機能なしで約 73KB、`standardFeatures` で約 94KB)。モジュールの先頭で 1 回だけ作ります。部品の名前は「キー + `Feature`」です(例: `{ ...standardFeatures, serverSide: serverSideFeature }`)。`standardFeatures` は `filtering` / `columnMenu` / `toolPanel` / `columnAutosize` / `export`。足りない機能は開発時に `console.warn` が名指しします。全部入りと同じアプリで混ぜると共通部分が二重に入るので、どちらかの入口に揃えます。
 - `@ishibashi0112/spreadsheet-grid/ai`: `GridAskBar`(ことばで絞り込み。利用者の文から AI がフィルター・並び・検索を入れる)。グリッドの上に置いて `grid` に ref を渡します。AI は利用側の `ask`(自分のサーバー経由。API キーをブラウザに置かない)で呼び、行のデータは送りません。
 - `@ishibashi0112/spreadsheet-grid/testing`: jsdom のテストで行と列を描画させる `installJsdomLayoutStubs()`。
 - 型は React 版から import します(`GridColumn` / `SpreadsheetGridHandle` など)。コアの `@ishibashi0112/spreadsheet-grid-core` を React のアプリで直接使う必要はありません。コアのサブパス(`@ishibashi0112/spreadsheet-grid-core/internal/…` と旧 `…-core/<dir>/<module>`)は内部の部品で、どの版でも変わるので import しません。

@@ -58,7 +58,7 @@ export function AiFilterDemo() {
         examples={EXAMPLE_TEXTS}
         columnHints={columnHints}
         allowColumnVisibility
-        theme="auto"
+        theme="class"
       />
       <SpreadsheetGrid
         ref={gridRef}
@@ -67,7 +67,7 @@ export function AiFilterDemo() {
         onColumnsChange={setColumns}
         rowKeyGetter={(row) => row.code}
         height={360}
-        theme="auto"
+        theme="class"
       />
       <details className="rounded-md border p-3 text-sm">
         <summary className="cursor-pointer">AI に渡した頼みと答え</summary>

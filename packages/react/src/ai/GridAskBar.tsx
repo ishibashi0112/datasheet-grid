@@ -4,7 +4,7 @@
 //   本体のモジュールは import しない(useGridAsk の先頭のコメント参照)。テーマの解決も core の store から直接行います。
 import { useEffect, useRef, useState, useSyncExternalStore, type KeyboardEvent, type MouseEvent } from 'react';
 import { systemColorSchemeStore } from '@ishibashi0112/spreadsheet-grid-core/internal/controllers/systemColorSchemeStore';
-import { resolveGridTheme } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/theme';
+import { resolveGridThemeClassName } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/theme';
 import type { GridTheme } from '../model/gridTypes';
 import { useGridAsk, type UseGridAskOptions } from './useGridAsk';
 
@@ -41,7 +41,8 @@ export function GridAskBar<T>({
     systemColorSchemeStore.getSnapshot,
     systemColorSchemeStore.getServerSnapshot,
   );
-  const dark = resolveGridTheme(theme, systemPrefersDark) === 'dark';
+  // 変更(段階 2 DU-13): theme="class" は修飾子 ssg-theme-class(グリッドと同じ)。
+  const themeClassName = resolveGridThemeClassName(theme, systemPrefersDark);
   const asking = ask.status === 'asking';
   const session = ask.session;
   const cancel = ask.cancel;
@@ -144,7 +145,7 @@ export function GridAskBar<T>({
   };
 
   return (
-    <div ref={rootRef} className={cx('ssg-ask', dark && 'ssg-theme-dark', className)} data-ssg-ask="">
+    <div ref={rootRef} className={cx('ssg-ask', themeClassName, className)} data-ssg-ask="">
       <form
         className="ssg-ask-form"
         onSubmit={(event) => {

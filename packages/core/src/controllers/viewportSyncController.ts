@@ -8,6 +8,7 @@
 //      確定等ではスクロールしない = scroll-jump 対策)。
 import type { ColumnMeasurement } from '../logic/geometry';
 import type { CellCoord } from '../model/gridTypes.unbound';
+import type { StickyTopInset } from '../logic/scrollTargets';
 import {
   logicalToPhysicalScrollTop,
   physicalToLogicalScrollTop,
@@ -42,6 +43,8 @@ export type ViewportSyncArgs<T> = {
   // 追加(合計行 3A): 下端に固定する行(合計行)の高さ。スクロール可能な高さに足し、行を見せるときは
   //   その裏に隠れないようにします。既定 0。
   footerHeight?: number;
+  // 追加(段階 2 の確かめ直し N4-1): ラベル行の縦スクロール固定の帯。上へ動いた active cell を帯の裏に隠さない。
+  stickyTopInset?: StickyTopInset;
 };
 
 export type ViewportSyncController<T> = {
@@ -85,6 +88,7 @@ export const scrollCellIntoView = (
     | 'verticalScaleFactor'
     | 'footerHeight'
     | 'activeCellPinned'
+    | 'stickyTopInset'
   >,
 ): void => {
   const cellTop = args.headerHeight + rect.top;
@@ -104,12 +108,17 @@ export const scrollCellIntoView = (
   let nextScrollTop = currentScrollTop;
   let nextScrollLeft = currentScrollLeft;
 
-  const visibleTop = currentScrollTop + args.headerHeight;
+  // 変更(段階 2 の確かめ直し N4-1): ラベル行の固定の帯に隠れている行も見えていない扱いにし、帯の下へ合わせます。
+  const visibleTop = currentScrollTop + args.headerHeight + (args.stickyTopInset?.visibleAt(currentScrollTop) ?? 0);
   const visibleBottom = currentScrollTop + viewportHeight;
+  const alignedTop = () =>
+    Math.max(cellTop - args.headerHeight - (args.stickyTopInset?.coveringRowAt(rect.top) ?? 0), 0);
   if (cellTop < visibleTop) {
-    nextScrollTop = Math.max(cellTop - args.headerHeight, 0);
+    nextScrollTop = alignedTop();
   } else if (cellBottom > visibleBottom) {
-    nextScrollTop = Math.max(cellBottom - viewportHeight, 0);
+    // 変更(段階 2 の確かめ直し N5-1): 見える高さより背の高い行(auto-height の長い文など)は、下端ではなく上端に合わせます
+    //   (下端に合わせると書き出しが見えなかった。Excel と同じ)。
+    nextScrollTop = rect.height > visibleBottom - visibleTop ? alignedTop() : Math.max(cellBottom - viewportHeight, 0);
   }
 
   const visibleLeft = currentScrollLeft + args.leftPaneWidth;

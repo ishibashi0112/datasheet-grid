@@ -33,7 +33,8 @@ import { OUT, open, check, skip, SUPPORTS, unexpectedPageErrors, summary, errors
   const afterOne = await page.evaluate(() => document.querySelectorAll('.ssg-center-pane .ssg-body-row').length);
   check('grouping: expand one top group shows its 3 children (7 rows)', afterOne === 7, afterOne);
   // クリック開閉
-  await page.locator('.ssg-body-row[data-pane="center"][data-ssg-group-row]').nth(1).locator('.ssg-group-toggle').first().click();
+  // 変更(段階 2 DU-22): 左固定列があると自動グループ列(開閉ボタン)は左のペインの行にあるので、ペインを問わず探す。
+  await page.locator('[data-ssg-group-row] .ssg-group-toggle').nth(1).click();
   await waitIdle(page, 150);
   const afterClick = await page.evaluate(() => document.querySelectorAll('.ssg-center-pane .ssg-body-row').length);
   check('grouping: toggle click expands leaf rows', afterClick > 7, afterClick);
@@ -73,12 +74,12 @@ import { OUT, open, check, skip, SUPPORTS, unexpectedPageErrors, summary, errors
   // グローバルフィルターは遅延 + 時間分割で効くため、負荷が高いと 300ms では間に合わないことがある(落ちたら待ち足りない
   //   だけ)。件数が 9 になるまで待ってから読む(上限 3 秒。来なければ下の check が落ちる)。
   await page
-    .waitForFunction(() => /Rows: 9 \/ 200/.test(document.querySelector('.ssg-bar--bottom')?.textContent ?? ''), null, { timeout: 3000 })
+    .waitForFunction(() => /行 9 \/ 200/.test(document.querySelector('.ssg-bar--bottom')?.textContent ?? ''), null, { timeout: 3000 })
     .catch(() => {});
   const groupsAfterFilter = await page.evaluate(() => window.__grid.getGroupRows().length);
   console.log('groups after filter (9 rows):', groupsAfterFilter);
   const bottom = await page.locator('.ssg-bar--bottom').textContent();
-  check('grouping: bottom bar counts leaf rows only', /Rows: 9 \/ 200/.test(bottom), bottom);
+  check('grouping: bottom bar counts leaf rows only', /行 9 \/ 200/.test(bottom), bottom);
   // labelRow と rowGroup 併用 → 警告
   await errorsOf(page);
   await page.evaluate(() => window.__setProps({ labelRow: { isLabelRow: (r) => r.isLabel === true, getLabel: (r) => r.label ?? '' } }));
@@ -215,7 +216,7 @@ import { OUT, open, check, skip, SUPPORTS, unexpectedPageErrors, summary, errors
   const labelCount = await page.evaluate(() => document.querySelectorAll('.ssg-center-pane [class*="label-row"]').length);
   check('label: label rows rendered', labelCount > 0, labelCount);
   const bottom = await page.locator('.ssg-bar--bottom').textContent();
-  check('label: counts exclude labels (200 / 200)', /Rows: 200 \/ 200/.test(bottom), bottom);
+  check('label: counts exclude labels (200 / 200)', /行 200 \/ 200/.test(bottom), bottom);
   // 行番号はデータ行の通し番号
   const rowNo = await page.evaluate(() => document.querySelector('.ssg-body-row[data-row-index="1"] .ssg-row-header-cell')?.textContent?.trim());
   console.log('row header text of view index 1 (first data row):', rowNo);

@@ -64,8 +64,9 @@ const setup = (props: Partial<HarnessProps> = {}) => {
   return { ...view, ref, onRows };
 };
 
-// セル(行 / 列 index)の中心のクライアント座標。
-const columnLeft = (col: number) => ROW_HEADER_WIDTH + columns.slice(0, col).reduce((sum, c) => sum + c.width, 0);
+// セル(行 / 列 index)の中心のクライアント座標。jsdom のスタブではどの要素も左上 (0, 0) なので、中央ペインの左端も 0
+//   (段階 2 DU-22 から行番号は左ペインにあり、中央ペインの先頭に行番号の幅は無い)。
+const columnLeft = (col: number) => columns.slice(0, col).reduce((sum, c) => sum + c.width, 0);
 const cellPoint = (row: number, col: number) => ({
   clientX: columnLeft(col) + columns[col].width / 2,
   clientY: HEADER_HEIGHT + row * ROW_HEIGHT + ROW_HEIGHT / 2,
@@ -155,7 +156,7 @@ describe('フィルハンドル(fillHandle)', () => {
     expect(grid.ref.current?.getSelection()).toEqual({ type: 'row', startRow: 1, endRow: 1 });
     expect(handleOf(grid.container)).toBeNull();
     // セルをクリックすると出る。
-    const cell = grid.container.querySelectorAll('.ssg-body-row')[2]?.querySelectorAll<HTMLElement>('.ssg-body-cell')[1];
+    const cell = grid.container.querySelectorAll('[data-pane="center"].ssg-body-row')[2]?.querySelectorAll<HTMLElement>('.ssg-body-cell')[1];
     act(() => {
       fireEvent.pointerDown(cell!, { button: 0, pointerType: 'mouse', pointerId: 1 });
       fireEvent.pointerUp(window, { button: 0, pointerType: 'mouse', pointerId: 1 });
@@ -174,8 +175,9 @@ describe('フィルハンドル(fillHandle)', () => {
       ref.current?.selectRange({ start: { row: 0, col: 0 }, end: { row: 1, col: 1 } });
     });
     const handle = handleOf(container);
-    // 角 = 列 1 の右端(80 + 100)、行 1 の下端(2 × 30)。left は行番号の幅込み、top はヘッダー込み。
-    expect(handle?.style.left).toBe(`${ROW_HEADER_WIDTH + 180}px`);
+    // 角 = 列 1 の右端(80 + 100)、行 1 の下端(2 × 30)。left は中央ペインの中の位置(段階 2 DU-22 から行番号は左ペイン)、
+    //   top はヘッダー込み。
+    expect(handle?.style.left).toBe('180px');
     expect(handle?.style.top).toBe(`${HEADER_HEIGHT + 60}px`);
   });
 
@@ -362,7 +364,7 @@ describe('フィルハンドル(fillHandle)', () => {
       getContextMenuItems: () => [{ kind: 'action', key: 'a', label: 'A', onSelect: () => {} }],
     });
     selectCell(ref, 0, 0);
-    const cell = container.querySelectorAll('.ssg-body-row')[0]?.querySelectorAll<HTMLElement>('.ssg-body-cell')[0];
+    const cell = container.querySelectorAll('[data-pane="center"].ssg-body-row')[0]?.querySelectorAll<HTMLElement>('.ssg-body-cell')[0];
     act(() => {
       fireEvent.contextMenu(cell!, { clientX: 10, clientY: 10 });
     });

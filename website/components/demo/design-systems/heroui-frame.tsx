@@ -1,19 +1,18 @@
 'use client';
 
 // HeroUI(v3)の画面: HeroUI の部品と並べてグリッドを置き、themes/heroui.css で配色を HeroUI のテーマへ揃える。
-// HeroUI のライト / ダークは <html> の dark クラスで決まるので、グリッドの theme にも同じものを渡す。
+// HeroUI のライト / ダークは <html> の dark クラスで決まるので、グリッドは theme="class" で同じクラスに付いてくる(サーバーの描画から正しい色)。
 import { useState } from 'react';
 import { Button, Chip } from '@heroui/react';
 import { SpreadsheetGrid } from '@ishibashi0112/spreadsheet-grid';
 import './heroui-frame.css';
 import '@ishibashi0112/spreadsheet-grid/style.css';
 import '@ishibashi0112/spreadsheet-grid/themes/heroui.css';
-import { buildColumns, gridProps, initialRows, nextRow, useSiteDark, type Row, type Status } from './shared';
+import { buildColumns, gridProps, initialRows, nextRow, type Row, type Status } from './shared';
 
 const STATUS_COLOR: Record<Status, 'success' | 'warning' | 'danger'> = { 有効: 'success', 保留: 'warning', 停止: 'danger' };
 
 export function HeroUIFrame() {
-  const siteDark = useSiteDark();
   const [rows, setRows] = useState<Row[]>(initialRows);
   const [lastOpened, setLastOpened] = useState<string | null>(null);
 
@@ -29,9 +28,6 @@ export function HeroUIFrame() {
       </Button>
     ),
   });
-
-  // サイトのライト / ダークが分かるまで(ハイドレーションまで)描かない。
-  if (siteDark === null) return null;
 
   return (
     <div className="flex min-h-screen flex-col gap-3 bg-background p-3 text-foreground">
@@ -52,7 +48,7 @@ export function HeroUIFrame() {
         rows={rows}
         columns={columns}
         onRowsChange={setRows}
-        theme={siteDark ? 'dark' : 'light'}
+        theme="class"
       />
     </div>
   );

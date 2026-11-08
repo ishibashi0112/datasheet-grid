@@ -52,18 +52,18 @@ if (SUPPORTS.clock) {
     await page.evaluate((s) => window.__grid.applyState(s), TODAY_STATE);
     await waitIdle(page, 300);
     const before = await bottomText(page);
-    check('L-15: today (2026-10-14) matches no rows', /Rows: 0 \/ 500/.test(before), before);
+    check('L-15: today (2026-10-14) matches no rows', /行 0 \/ 500/.test(before), before);
     // 深夜 0 時を越える(タイマーが発火)。他の入力は何も変えない。
     await page.clock.fastForward(60_000);
     await waitIdle(page, 400);
     const after = await bottomText(page);
     const dates = await page.evaluate(() => window.__grid.getExportData({ scope: 'view' }).rows.map((r) => r[5]));
-    check('L-15: after midnight, today follows to 2026-10-15 without other input', /Rows: 5 \/ 500/.test(after), { after, dates });
+    check('L-15: after midnight, today follows to 2026-10-15 without other input', /行 5 \/ 500/.test(after), { after, dates });
     // 翌々日の 0 時にも追従する(10/16 は該当なし)。
     await page.clock.fastForward(24 * 60 * 60 * 1000);
     await waitIdle(page, 400);
     const nextDay = await bottomText(page);
-    check('L-15: and again on the next midnight (2026-10-16)', /Rows: 0 \/ 500/.test(nextDay), nextDay);
+    check('L-15: and again on the next midnight (2026-10-16)', /行 0 \/ 500/.test(nextDay), nextDay);
     check('L-15: no page errors', pageErrors.length === 0, pageErrors.slice(0, 3));
     await close();
   }
@@ -82,7 +82,7 @@ if (SUPPORTS.clock) {
     await page.clock.resume();
     await waitIdle(page, 400);
     const after = await bottomText(page);
-    check('L-15: focus after sleep re-checks the date', /Rows: 5 \/ 500/.test(after), after);
+    check('L-15: focus after sleep re-checks the date', /行 5 \/ 500/.test(after), after);
     await close();
   }
   // プリセットが掛かっていなければ見張らない(タイマーで再計算しない): 列フィルターなしで深夜を越えても onStateChange 等は出ない。

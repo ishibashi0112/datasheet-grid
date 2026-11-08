@@ -43,7 +43,7 @@ export function ContextMenuDemo() {
         onRowsChange={setRows}
         rowKeyGetter={(row) => row.id}
         height={230}
-        theme="auto"
+        theme="class"
         enableContextMenu
         getContextMenuItems={({ target }) => {
           if (target.type !== 'cell' && target.type !== 'rowHeader') return [];

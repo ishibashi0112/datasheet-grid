@@ -10,6 +10,7 @@ import type {
   EditorCommitDirection,
   EditorCommitResult,
   EditorEnterMove,
+  GridTextEditorEnterKey,
 } from '../model/gridTypes';
 import { isImeComposingKeyEvent } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/domGuards';
 
@@ -39,10 +40,27 @@ type CreateEditorKeyDownHandlerArgs = {
   // 追加(dogfood DF-13): Home / End もブラウザの既定の動作(グリッドのスクロール)を止めます。文字の入力欄(text / number)では
   //   Home / End はカーソルの移動なので止めず、日付の入力欄(type="date")だけで true にします。
   blockHomeEnd?: boolean;
+  // 追加(段階 2 DU-14): 複数行のエディタ(textarea)の Enter。'commit' は Enter で確定 / Alt・Ctrl・⌘+Enter で改行、
+  //   'newline' は Enter(Shift / Alt 付きも)で改行 / Ctrl・⌘+Enter で確定。未指定は 1 行の入力欄(Enter で確定)。
+  multilineEnter?: GridTextEditorEnterKey;
+  // 追加(段階 2 DU-14): 修飾キー付きの Enter で改行を入れる処理(textarea の既定では入らないため。エディタが渡す)。
+  onInsertNewline?: (element: HTMLTextAreaElement) => void;
+};
+
+// 追加(段階 2 DU-14): 複数行のエディタで、この Enter が改行か(false なら確定)。
+export const isMultilineNewlineEnter = (
+  event: { altKey: boolean; ctrlKey: boolean; metaKey: boolean },
+  enterKey: GridTextEditorEnterKey,
+): boolean => {
+  const commandKey = event.ctrlKey || event.metaKey;
+  return enterKey === 'newline' ? !commandKey : event.altKey || commandKey;
 };
 
 // 追加(dogfood DF-13): 1 行の入力欄では PageUp / PageDown(と日付の Home / End)は入力欄の操作にならず、ブラウザが
 //   グリッドをスクロールしてエディタが画面の外へ出ていました。編集中はこれらのキーでスクロールしません(編集は続く)。
+//   注記(段階 2 の見直し): 複数行の入力欄(<textarea>)でも止めます。中がスクロールするときだけ入力欄に任せる形を試したところ、
+//   Chromium は入力欄の中と一緒にグリッドもスクロールし(キャレットを見せるため。入力欄が画面に収まっていても)、
+//   エディタの上の方が見出しの下へ隠れたため戻しました(実ブラウザの確認は監査ハーネス t-stage2.mjs)。
 export const isEditorScrollKey = (key: string, blockHomeEnd: boolean): boolean =>
   key === 'PageUp' || key === 'PageDown' || (blockHomeEnd && (key === 'Home' || key === 'End'));
 
@@ -54,8 +72,10 @@ export const createEditorKeyDownHandler =
     onRejected,
     enterMove,
     blockHomeEnd = false,
+    multilineEnter,
+    onInsertNewline,
   }: CreateEditorKeyDownHandlerArgs) =>
-  (event: KeyboardEvent<HTMLInputElement>): void => {
+  (event: KeyboardEvent<HTMLInputElement | HTMLTextAreaElement>): void => {
     if (isImeComposingKeyEvent(event.nativeEvent)) {
       return;
     }
@@ -71,6 +91,17 @@ export const createEditorKeyDownHandler =
         onRejected?.(result.message);
       }
     };
+
+    if (event.key === 'Enter' && multilineEnter !== undefined && isMultilineNewlineEnter(event, multilineEnter)) {
+      // 素の Enter / Shift+Enter は textarea が自分で改行を入れる。修飾キー付きは入らないので代わりに入れる。
+      if (event.altKey || event.ctrlKey || event.metaKey) {
+        event.preventDefault();
+        if (event.currentTarget instanceof HTMLTextAreaElement) {
+          onInsertNewline?.(event.currentTarget);
+        }
+      }
+      return;
+    }
 
     if (event.key === 'Enter') {
       event.preventDefault();

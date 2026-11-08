@@ -2,6 +2,7 @@
 //   - focus(): キーを受ける要素へフォーカス(imeDirectInput 有効時は入力受けへ)。モーダルを閉じた後にキーが届かなかった。
 //   - startEditing() / startEditing(viewRowIndex, colIndex): F2 と同じ編集開始 + 単一選択 + エディタへフォーカス。編集できないセルは false。
 //   - getViewRowIndex(rowKey) / getColIndex(columnKey): ソート中に足した行を rows.findIndex で選ぶと別の行になっていた。
+//   - getRowNumber(rowKey)(段階 2 N-4): 行番号の列と同じ番号。ラベル行があると表示位置 + 1 とずれ、利用側で数え直していた。
 // @vitest-environment jsdom
 import { describe, it, expect, beforeAll, afterAll, afterEach } from 'vitest';
 import { render, cleanup, act, fireEvent } from '@testing-library/react';
@@ -285,5 +286,156 @@ describe('getViewRowIndex() / getColIndex()(DU-03)', () => {
       ref.current?.selectCell(ref.current.getViewRowIndex(20), ref.current.getColIndex('qty'));
     });
     expect(ref.current?.getActiveCell()).toEqual({ row: 1, col: 2 });
+  });
+});
+
+describe('getRowNumber()(N-4)', () => {
+  it('行番号の列と同じ番号を返す(並べ替え・絞り込みに追従し、表示に無い行は null)', () => {
+    const { ref } = setup();
+    expect(ref.current?.getRowNumber(30)).toBe(3);
+    act(() => {
+      ref.current?.applyState({ sort: [{ columnKey: 'qty', direction: 'asc' }] });
+    });
+    // 並びは beta(1) / gamma(2) / alpha(3)。
+    expect(ref.current?.getRowNumber(30)).toBe(2);
+    expect(ref.current?.getRowNumber(10)).toBe(3);
+    act(() => {
+      ref.current?.applyState({ filters: { columnFilters: { name: { kind: 'text', value: 'be' } } } });
+    });
+    expect(ref.current?.getRowNumber(20)).toBe(1);
+    expect(ref.current?.getRowNumber(30)).toBeNull();
+    expect(ref.current?.getRowNumber(999)).toBeNull();
+  });
+
+  it('ラベル行を数えない(ラベル行のキーは null)。行番号の列の表示と一致する', () => {
+    type LabeledRow = Row & { label?: string };
+    const labeledRows: LabeledRow[] = [
+      { id: 1, name: '', qty: 0, done: false, label: '第1節' },
+      ...rows,
+      { id: 2, name: '', qty: 0, done: false, label: '第2節' },
+      { id: 40, name: 'delta', qty: 4, done: false },
+    ];
+    const labeledRef = createRef<SpreadsheetGridHandle<LabeledRow>>();
+    const { container } = render(
+      <SpreadsheetGrid<LabeledRow>
+        ref={labeledRef}
+        rows={labeledRows}
+        columns={columns as GridColumn<LabeledRow>[]}
+        rowKeyGetter={(row) => row.id}
+        labelRow={{ isLabelRow: (row) => row.label !== undefined, getLabel: (row) => row.label ?? '' }}
+        height={300}
+      />,
+    );
+    expect(labeledRef.current?.getRowNumber(1)).toBeNull();
+    expect(labeledRef.current?.getRowNumber(2)).toBeNull();
+    expect(labeledRef.current?.getRowNumber(10)).toBe(1);
+    expect(labeledRef.current?.getRowNumber(30)).toBe(3);
+    expect(labeledRef.current?.getRowNumber(40)).toBe(4);
+    // 画面の行番号の列(データ行の行ヘッダー)と同じ並び。
+    const shown = Array.from(container.querySelectorAll('.ssg-row-header-cell'))
+      .map((cell) => cell.textContent?.trim() ?? '')
+      .filter((text) => text !== '');
+    expect(shown).toEqual(['1', '2', '3', '4']);
+  });
+});
+
+// 追加(段階 2 の確かめ直し N2-1): 選択 / アクティブセルの API でラベル行(セルを持たない)を指したとき、アクティブセルの枠が
+//   ラベル行に乗り、バーの番地は次のデータ行の番号、↓ を押しても同じ番地のままだった。下のデータ行(無ければ上)へ寄せる。
+describe('選択の API でラベル行を指したとき(N2-1)', () => {
+  type LabeledRow = Row & { label?: string };
+  const labeledRows: LabeledRow[] = [
+    { id: 1, name: '', qty: 0, done: false, label: '第1節' },
+    ...rows,
+    { id: 2, name: '', qty: 0, done: false, label: '第2節' },
+    { id: 40, name: 'delta', qty: 4, done: false },
+    { id: 3, name: '', qty: 0, done: false, label: '末尾' },
+  ];
+  const setupLabeled = () => {
+    const labeledRef = createRef<SpreadsheetGridHandle<LabeledRow>>();
+    render(
+      <SpreadsheetGrid<LabeledRow>
+        ref={labeledRef}
+        rows={labeledRows}
+        columns={columns as GridColumn<LabeledRow>[]}
+        rowKeyGetter={(row) => row.id}
+        labelRow={{ isLabelRow: (row) => row.label !== undefined, getLabel: (row) => row.label ?? '' }}
+        height={300}
+      />,
+    );
+    return labeledRef;
+  };
+
+  it('selectCell / setActiveCell は下のデータ行へ寄せる(最後のラベル行は上のデータ行へ)', () => {
+    const labeledRef = setupLabeled();
+    // 表示の並び: 0 第1節 / 1 alpha / 2 beta / 3 gamma / 4 第2節 / 5 delta / 6 末尾
+    act(() => {
+      labeledRef.current?.selectCell(4, 1);
+    });
+    expect(labeledRef.current?.getActiveCell()).toEqual({ row: 5, col: 1 });
+    expect(labeledRef.current?.getSelection()).toEqual({
+      type: 'cell',
+      range: { start: { row: 5, col: 1 }, end: { row: 5, col: 1 } },
+    });
+    act(() => {
+      labeledRef.current?.setActiveCell({ row: 0, col: 0 });
+    });
+    expect(labeledRef.current?.getActiveCell()).toEqual({ row: 1, col: 0 });
+    act(() => {
+      labeledRef.current?.selectCell(6, 2);
+    });
+    expect(labeledRef.current?.getActiveCell()).toEqual({ row: 5, col: 2 });
+  });
+
+  it('selectRange は範囲をそのままにして、アクティブセルだけを範囲の向きにあるデータ行へ寄せる', () => {
+    const labeledRef = setupLabeled();
+    act(() => {
+      labeledRef.current?.selectRange({ start: { row: 4, col: 0 }, end: { row: 5, col: 2 } });
+    });
+    expect(labeledRef.current?.getSelection()).toEqual({
+      type: 'cell',
+      range: { start: { row: 4, col: 0 }, end: { row: 5, col: 2 } },
+    });
+    expect(labeledRef.current?.getActiveCell()).toEqual({ row: 5, col: 0 });
+    // 上向きの範囲(起点が下)は上のデータ行へ。
+    act(() => {
+      labeledRef.current?.selectRange({ start: { row: 4, col: 1 }, end: { row: 1, col: 1 } });
+    });
+    expect(labeledRef.current?.getActiveCell()).toEqual({ row: 3, col: 1 });
+  });
+
+  // 追加(段階 2 の 3 回目の確かめ直し S-N3): アクティブセルが無いときに列見出しを押すと、アクティブセルは 0 行目(先頭がラベル行
+  //   ならラベル行の上)になっていた。最初のデータ行にする。
+  it('アクティブセルが無いときの列見出しのクリックは、アクティブセルを最初のデータ行にする', () => {
+    const labeledRef = setupLabeled();
+    const header = document.querySelector<HTMLElement>('.ssg-header-cell[data-ssg-col-key="qty"]');
+    act(() => {
+      fireEvent.pointerDown(header!, { button: 0, pointerType: 'mouse', pointerId: 1 });
+      fireEvent.pointerUp(window, { button: 0, pointerType: 'mouse', pointerId: 1 });
+    });
+    expect(labeledRef.current?.getSelection()).toEqual({ type: 'col', startCol: 1, endCol: 1 });
+    expect(labeledRef.current?.getActiveCell()).toEqual({ row: 1, col: 1 });
+  });
+
+  // 追加(段階 2 の 3 回目の確かめ直し N3-1): ラベル行だけの範囲は 0 セルのまま残り、アクティブセルは範囲の外、バーの番地は
+  //   逆向き(「A11:B10」)、そこから Shift+↓ でアクティブセルがラベル行に乗っていた。寄せたデータ行の同じ列の範囲にする。
+  it('selectRange でラベル行だけを指したら、寄せたデータ行の同じ列の範囲にする', () => {
+    const labeledRef = setupLabeled();
+    act(() => {
+      labeledRef.current?.selectRange({ start: { row: 4, col: 0 }, end: { row: 4, col: 2 } });
+    });
+    expect(labeledRef.current?.getActiveCell()).toEqual({ row: 5, col: 0 });
+    expect(labeledRef.current?.getSelection()).toEqual({
+      type: 'cell',
+      range: { start: { row: 5, col: 0 }, end: { row: 5, col: 2 } },
+    });
+    // 末尾のラベル行だけ(下にデータ行が無い)は上のデータ行へ。
+    act(() => {
+      labeledRef.current?.selectRange({ start: { row: 6, col: 1 }, end: { row: 6, col: 1 } });
+    });
+    expect(labeledRef.current?.getActiveCell()).toEqual({ row: 5, col: 1 });
+    expect(labeledRef.current?.getSelection()).toEqual({
+      type: 'cell',
+      range: { start: { row: 5, col: 1 }, end: { row: 5, col: 1 } },
+    });
   });
 });

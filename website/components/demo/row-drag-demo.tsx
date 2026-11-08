@@ -102,7 +102,7 @@ export function RowDragDemo() {
         columns={columns}
         rowKeyGetter={(row) => row.id}
         height={360}
-        theme="auto"
+        theme="class"
         enableRowDrag
         rowDragMotion={dragMotion}
         // 「確定」のタスクは順番を固定(ハンドルを出さない)

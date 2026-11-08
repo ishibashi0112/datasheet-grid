@@ -422,6 +422,10 @@ export const createColumnHeaderDragController = <T,>(): ColumnHeaderDragControll
     if (args?.scrollContainerRef.current?.closest('.ssg-theme-dark') != null) {
       el.classList.add('ssg-theme-dark');
     }
+    // 追加(段階 2 DU-13): theme="class" の表のゴーストも同じ修飾子(ダークかどうかは CSS が祖先の .dark で決める)。
+    if (args?.scrollContainerRef.current?.closest('.ssg-theme-class') != null) {
+      el.classList.add('ssg-theme-class');
+    }
     // 追加(motion-0): モーション停止の修飾子もテーマと同じく祖先から引き継ぎます。
     if (args?.scrollContainerRef.current?.closest('.ssg-motion-off') != null) {
       el.classList.add('ssg-motion-off');
@@ -529,10 +533,11 @@ export const createColumnHeaderDragController = <T,>(): ColumnHeaderDragControll
     const rightEl = rightPaneScrollRef.current;
 
     // 空の左固定ペインへのドロップ帯(left wrapper は sticky;left:0 なので rect.left === ビューポート左端)。
+    // 変更(段階 2 DU-22): 行ヘッダーだけの左ペイン(左固定列なし)では、行ヘッダーの上もドロップ帯にし、縦線は行ヘッダーの右端に出します。
     if (leftEl && paneLayout.left.entries.length === 0) {
       const rect = leftEl.getBoundingClientRect();
-      if (clientX <= rect.left + EMPTY_PANE_DROP_BAND) {
-        return { pane: 'left', slot: 0, leftPx: EMPTY_PANE_INDICATOR_INSET };
+      if (clientX <= rect.left + Math.max(leftLeadingWidth, EMPTY_PANE_DROP_BAND)) {
+        return { pane: 'left', slot: 0, leftPx: leftLeadingWidth > 0 ? leftLeadingWidth : EMPTY_PANE_INDICATOR_INSET };
       }
     }
     // 左固定ペイン(非空)。右端より左。
@@ -819,7 +824,12 @@ export const createColumnHeaderDragController = <T,>(): ColumnHeaderDragControll
   const isUnderPinnedPane = (x: number): boolean => {
     if (args === null) return false;
     const leftEl = args.leftPaneScrollRef.current;
-    if (leftEl && args.paneLayout.left.entries.length > 0 && x < leftEl.getBoundingClientRect().right - 0.5) return true;
+    // 変更(段階 2 DU-22): 行ヘッダーだけの左ペイン(列なし)の下に潜った位置も含めます(sticky; left: 0 なので右端は左端 + 行ヘッダーの幅)。
+    if (leftEl) {
+      const leftRect = leftEl.getBoundingClientRect();
+      const leftRight = args.paneLayout.left.entries.length > 0 ? leftRect.right : leftRect.left + args.leftLeadingWidth;
+      if (x < leftRight - 0.5) return true;
+    }
     const rightEl = args.rightPaneScrollRef.current;
     if (rightEl && args.paneLayout.right.entries.length > 0 && x > rightEl.getBoundingClientRect().left + 0.5) return true;
     return false;

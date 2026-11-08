@@ -68,7 +68,7 @@ type CellEditorLayerProps<T> = {
   editor?: GridColumnEditor<T>;
   // 追加(editor: select): 編集中セルのセッション情報(編集中のみ非 null)。
   editorSession?: CellEditorSession<T> | null;
-  // 追加(editor: select): ポータル系エディタへ渡すテーマ修飾子('ssg-theme-dark' | undefined)。
+  // 追加(editor: select): ポータル系エディタへ渡すテーマ修飾子('ssg-theme-dark' | 'ssg-theme-class' | undefined)。
   themeClassName?: string;
   // 追加(slot-props): classNames 由来の解決済みスロット表(cellEditor = 枠 / popover = select 候補)。
   slots?: GridResolvedSlots;
@@ -90,6 +90,8 @@ type CellEditorLayerProps<T> = {
   enterMove?: EditorEnterMove;
   // 追加(見直し): 開いているときの枠の DOM id(編集中のセルが aria-owns で子に持つ)。
   domId?: string;
+  // 追加(段階 2 の確かめ直し N3-2): 編集中のセルが上にそろえて描かれているか(複数行のエディタの 1 行目をセルの文字にそろえる)。
+  alignTop?: boolean;
 };
 
 // 追加: 編集中セルの上にエディタを重ねる editor layer です。
@@ -112,6 +114,7 @@ export function CellEditorLayer<T>({
   align,
   enterMove,
   domId,
+  alignTop,
 }: CellEditorLayerProps<T>) {
   // 変更(editor 基盤): 「新しい編集セッションの開始」検知を、ドラフト直接リセットから
   //   sessionId カウンタ + key 再マウントへ置き換えました。rect の null → 非 null 遷移を
@@ -264,6 +267,14 @@ export function CellEditorLayer<T>({
         onCommit={onCommit}
         onCancel={onCancel}
         align={align}
+        // 追加(段階 2 DU-14): editor: { type: 'text', multiline: true } は複数行の入力欄で開きます。
+        multiline={editor?.type === 'text' && editor.multiline === true}
+        enterKey={editor?.type === 'text' ? editor.enterKey : undefined}
+        cellHeight={rect.height}
+        // 追加(段階 2 の確かめ直し N2-2): 複数行の入力欄もセルと同じ位置で折り返します。
+        wordBreak={editorSession?.column.wordBreak}
+        lineBreak={editorSession?.column.lineBreak}
+        alignTop={alignTop}
       />
     );
   }

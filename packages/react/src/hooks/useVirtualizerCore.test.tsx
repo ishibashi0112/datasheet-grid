@@ -88,8 +88,20 @@ describe('useVirtualizerCore', () => {
     try {
       const holder: { instance: Virtualizer<HTMLDivElement, Element> | null } = { instance: null };
       render(<RectHarness onInstance={(next) => (holder.instance = next)} />);
+      // @tanstack/virtual-core 3.19 から、通知の entry ではなく要素の clientWidth / clientHeight を読みます。
+      const element = holder.instance?.scrollElement;
+      if (!element) {
+        throw new Error('scroll element が無い');
+      }
+      const size = { width: 0, height: 0 };
+      Object.defineProperty(element, 'clientWidth', { configurable: true, get: () => size.width });
+      Object.defineProperty(element, 'clientHeight', { configurable: true, get: () => size.height });
       const fire = (inlineSize: number, blockSize: number) =>
-        act(() => resize?.([{ borderBoxSize: [{ inlineSize, blockSize }] }]));
+        act(() => {
+          size.width = inlineSize;
+          size.height = blockSize;
+          resize?.([{ borderBoxSize: [{ inlineSize, blockSize }] }]);
+        });
       fire(500, 300);
       expect(holder.instance?.scrollRect).toEqual({ width: 500, height: 300 });
       fire(0, 0);

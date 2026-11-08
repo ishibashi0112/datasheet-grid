@@ -26,7 +26,7 @@ description: labelRow で rows に混在させた見出し行を全幅の帯で�
 - `kind: 'label'` の行が見出しです。3 ペインを跨ぐ帯で描かれ、横にスクロールしても見出しは左端に留まります。
 - 縦にスクロールすると、現在の工程の見出しが列ヘッダー直下に固定され、次の見出しが来ると押し上げられて交代します(`sticky: true`)。
 - 列ヘッダーで並べ替えても、見出しの位置は動きません(並べ替えは各工程の中だけ)。「状態」列でフィルターすると、中身が 0 件になった工程は見出しごと消えます。
-- 行番号・件数(`Rows: X / Y`)は見出しを数えません。`↑` / `↓` は見出しに止まらず、貼り付けも見出しを飛ばして続きます。
+- 行番号・件数(バーの「行 X / Y」)は見出しを数えません。`↑` / `↓` は見出しに止まらず、貼り付けも見出しを飛ばして続きます。
 
 ## 使い方
 
@@ -67,6 +67,24 @@ labelRow={{
 
 既定表示(`render` 未指定)は左のアクセント線 + 太字で、色はトークン `--ssg-label-row-bg` / `--ssg-label-row-text` / `--ssg-label-row-accent` で調整できます。パーツ別スロットは `classNames.labelRow`(行要素)と `classNames.labelRowContent`(中身の器)です。
 
+### データ行とラベル行を別の型にする(TypeScript)
+
+ラベル行だけが持つ項目があるときは、行の型を union にして `isLabelRow` を型ガードで書くと、`getLabel` / `render` / `height` / `className` / `exportText` の `row` がラベル行の型になります。
+
+```tsx
+type Sale = { kind: 'sale'; id: number; customer: string; amount: number };
+type Month = { kind: 'label'; id: string; label: string };
+type Row = Sale | Month;
+
+labelRow={{
+  isLabelRow: (row): row is Month => row.kind === 'label',
+  getLabel: (row) => row.label,            // row は Month
+  render: ({ row }) => <strong>{row.label}</strong>,
+}}
+```
+
+TypeScript 5.5 以上なら、`(row) => row.kind === 'label'` と書くだけでも型ガードと推論されます。型引数を書くときは `<SpreadsheetGrid<Row, Month>>` と 2 つ書きます(1 つだけ `<SpreadsheetGrid<Row>>` と書くと、型ガードにしても `row` は `Row` のままで、`getLabel` の中で `Property 'label' does not exist` になります)。設定を変数に置くときは `LabelRowOptions<Row, Month>` です。
+
 ## セクションとソート / フィルター
 
 ラベル行から次のラベル行の直前までを 1 つの**セクション**とみなします(最初のラベル行より前の行は「ラベル無しの区間」)。ソートやフィルターをかけたときの扱いは `sortMode` で選べます。
@@ -81,7 +99,7 @@ labelRow={{
 
 ## 縦スクロール固定(`sticky`)
 
-`sticky: true` にすると、縦スクロール中に「現在のセクション」のラベル行が列ヘッダー直下に固定表示されます。次のラベル行の上端が固定帯の下端に到達すると、固定中の見出しが押し上げられて交代します(スマホの連絡先一覧のセクションヘッダーと同じ動き)。固定中の見出しも横スクロールで左端に留まります。
+`sticky: true` にすると、縦スクロール中に「現在のセクション」のラベル行が列ヘッダー直下に固定表示されます。次のラベル行の上端が固定帯の下端に到達すると、固定中の見出しが押し上げられて交代します(スマホの連絡先一覧のセクションヘッダーと同じ動き)。固定中の見出しも横スクロールで左端に留まります。キーボード操作(`↑` / `PageUp` / `Ctrl+Home` など)や `scrollToRow` / `scrollToCell` で上の行を見せるときは、固定した見出しの下に置きます(見出しの裏に隠しません)。
 
 ## エクスポート
 

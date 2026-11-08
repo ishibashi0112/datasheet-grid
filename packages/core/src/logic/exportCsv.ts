@@ -1,4 +1,5 @@
 import type { GridColumn } from '../model/gridTypes.unbound';
+import type { GroupSubtotalLine } from './groupExport';
 import { getCellValue } from '../utils/permissions';
 
 // 追加(imperative API #1): CSV エクスポートの純ロジックです。ハンドル(SpreadsheetGridHandle の
@@ -63,6 +64,9 @@ export type SerializeRowsToCsvParams<T> = {
   getLabelLine?: (rowIndex: number) => LabelExportLine | undefined;
   // 追加(合計行 3A): 末尾に出す合計行の値です(エクスポート列順。includeTotalRow のとき呼び出し側が渡す)。
   totalLine?: ReadonlyArray<unknown>;
+  // 追加(段階 2 DU-10): グループの小計の行です(includeGroupRows のとき呼び出し側が渡す)。getRow が undefined を
+  //   返した index に対して getLabelLine より先に呼ばれ、値の列(エクスポート列順)を返せばその行を出力します。
+  getGroupLine?: (rowIndex: number) => GroupSubtotalLine | undefined;
 };
 
 // 追加(label-row ④): ラベル行 1 行ぶんの出力値です(列順)。
@@ -88,6 +92,7 @@ export const serializeRowsToCsv = <T,>({
   isRowIncluded,
   getLabelLine,
   totalLine,
+  getGroupLine,
 }: SerializeRowsToCsvParams<T>): string => {
   const lines: string[] = [];
   // 追加(audit L-20): セル(とラベル行)の値に適用する無害化。ヘッダーは consumer の列タイトルなので対象外です。
@@ -108,6 +113,11 @@ export const serializeRowsToCsv = <T,>({
     // SSRM 未ロード行(undefined)はスキップします。clientSide では常に行が存在します。
     // 追加(label-row ④): ラベル行(getRow が undefined)は getLabelLine が値を返せば 1 行として出力します。
     if (!row) {
+      const groupLine = getGroupLine?.(rowIndex);
+      if (groupLine) {
+        lines.push(columns.map((_, index) => cellField(groupLine.texts[index] ?? '')).join(delimiter));
+        continue;
+      }
       const line = getLabelLine?.(rowIndex);
       if (line) {
         lines.push(

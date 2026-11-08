@@ -41,7 +41,7 @@ type SelectCellEditorProps = {
   ) => EditorCommitResult | void;
   onCancel: () => void;
   align?: 'left' | 'center' | 'right';
-  // ポータル root へ直接付与するテーマ修飾子('ssg-theme-dark' | undefined)です。
+  // ポータル root へ直接付与するテーマ修飾子('ssg-theme-dark' | 'ssg-theme-class' | undefined)です。
   themeClassName?: string;
   // 追加(slot-props): classNames.popover の解決済みスロット(候補リストのポータル root へ)。
   popoverSlot?: GridResolvedSlot;

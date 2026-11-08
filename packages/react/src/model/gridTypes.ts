@@ -17,7 +17,7 @@ export type CellRenderContext<T> = Core.CellRenderContext<T, ReactGridTypes>;
 /** 展開行(Master/Detail)の設定(`detailRow` prop)。各フィールドの説明は JSDoc と同梱の `API_REFERENCE.md`。 */
 export type DetailRowOptions<T> = Core.DetailRowOptions<T, ReactGridTypes>;
 /** ラベル行(見出し / 区切り行)の設定(`labelRow` prop)。各フィールドの説明は JSDoc と同梱の `API_REFERENCE.md`。 */
-export type LabelRowOptions<T> = Core.LabelRowOptions<T, ReactGridTypes>;
+export type LabelRowOptions<T, L extends T = T> = Core.LabelRowOptions<T, ReactGridTypes, L>;
 /** 合計行の設定(`totalRow` prop)。各フィールドの説明は JSDoc と同梱の `API_REFERENCE.md`。 */
 export type TotalRowOptions<T> = Core.TotalRowOptions<T, ReactGridTypes>;
 /** `totalRow.renderCell` へ渡る合計行のセルの文脈。 */
@@ -66,7 +66,8 @@ export type GridClassNames = Core.GridClassNames<ReactGridTypes>;
 /**
  * `SpreadsheetGrid` の props。各フィールドの説明は JSDoc と同梱の `API_REFERENCE.md`の「SpreadsheetGrid props」表。
  */
-export type SpreadsheetGridProps<T> = Core.SpreadsheetGridProps<T, ReactGridTypes> & {
+// 変更(段階 2 DU-27): L は labelRow のラベル行の型です(isLabelRow の型ガードから推論。既定は T)。
+export type SpreadsheetGridProps<T, L extends T = T> = Core.SpreadsheetGridProps<T, ReactGridTypes, L> & {
   // 追加(imperative API #1): React 19 の ref-as-prop。React 18 では公開コンポーネントを withRefProp が forwardRef で包みます。
   /**
    * 命令的 API(`SpreadsheetGridHandle`)を受け取る ref(利用側で `forwardRef` は不要。React 18.3 / 19 のどちらも同じ)。

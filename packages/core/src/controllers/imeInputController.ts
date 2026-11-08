@@ -212,6 +212,10 @@ export const createImeInputController = (): ImeInputController => {
     if (event.target !== input || event.key !== 'Tab' || event.defaultPrevented || isImeComposingKeyEvent(event)) {
       return;
     }
+    // 追加(段階 2 C-N2): グリッドがもうフォーカスを移していれば(展開行のカードがあるときの、表の直後の目印)、そこから進めます。
+    if (document.activeElement !== input) {
+      return;
+    }
     const rootEl = root();
     if (!rootEl) {
       return;

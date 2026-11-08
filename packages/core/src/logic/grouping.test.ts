@@ -186,6 +186,79 @@ describe('buildGroupTree', () => {
   });
 });
 
+// 追加(段階 2 DU-24): 集計のある列の並べ替えでは、同じ親の下のグループをその集計値の順に並べる。
+//   数量の合計: 関東 80(佐藤 50 / 高橋 30)、関西 70(田中 70)。
+describe('buildGroupTree の集計値の順(DU-24)', () => {
+  const labels = (sort: Parameters<typeof buildGroupTree>[4]) => {
+    const tree = buildGroupTree(ROWS, createSourceOrder(ROWS.length), [REGION, REP], [QTY, AMT], sort);
+    return tree.roots.map((root) => [root.groupRow.label, root.children.map((child) => child.groupRow.label)]);
+  };
+
+  it('集計のある列の昇順 / 降順で、各階層のグループがその集計値の順に並ぶ', () => {
+    expect(labels([{ columnKey: 'qty', direction: 'asc' }])).toEqual([
+      ['関西', ['田中']],
+      ['関東', ['高橋', '佐藤']],
+    ]);
+    expect(labels([{ columnKey: 'qty', direction: 'desc' }])).toEqual([
+      ['関東', ['佐藤', '高橋']],
+      ['関西', ['田中']],
+    ]);
+  });
+
+  it('グループ元の列の条件が先にある階層は初出順のまま、その下の階層は後ろの集計の条件で並ぶ', () => {
+    expect(
+      labels([
+        { columnKey: 'region', direction: 'asc' },
+        { columnKey: 'qty', direction: 'asc' },
+      ]),
+    ).toEqual([
+      ['関東', ['高橋', '佐藤']],
+      ['関西', ['田中']],
+    ]);
+    // 下の階層のグループ元の列は上の階層では飛ばし、その階層で止める。
+    expect(
+      labels([
+        { columnKey: 'rep', direction: 'desc' },
+        { columnKey: 'qty', direction: 'asc' },
+      ]),
+    ).toEqual([
+      ['関西', ['田中']],
+      ['関東', ['佐藤', '高橋']],
+    ]);
+  });
+
+  it('集計の無い列 / 並べ替えなし / 引数なしは初出順のまま', () => {
+    const firstSeen = [
+      ['関東', ['佐藤', '高橋']],
+      ['関西', ['田中']],
+    ];
+    expect(labels([{ columnKey: 'memo', direction: 'desc' }])).toEqual(firstSeen);
+    expect(labels([])).toEqual(firstSeen);
+    expect(labels(undefined)).toEqual(firstSeen);
+  });
+
+  it('同じ集計値は次の条件で決め、それでも同じなら初出順。空の集計値は昇順でも降順でも末尾', () => {
+    const rows: Row[] = [
+      { region: 'A', qty: 10, amt: 1 },
+      { region: 'B', qty: null, amt: 5 },
+      { region: 'C', qty: 10, amt: 9 },
+      { region: 'D', qty: 20, amt: 1 },
+    ];
+    const order = (sort: Parameters<typeof buildGroupTree>[4]) =>
+      buildGroupTree(rows, createSourceOrder(rows.length), [REGION], [col('qty', { aggFunc: 'max' }), AMT], sort).roots.map(
+        (root) => root.groupRow.label,
+      );
+    expect(order([{ columnKey: 'qty', direction: 'desc' }])).toEqual(['D', 'A', 'C', 'B']);
+    expect(order([{ columnKey: 'qty', direction: 'asc' }])).toEqual(['A', 'C', 'D', 'B']);
+    expect(
+      order([
+        { columnKey: 'qty', direction: 'asc' },
+        { columnKey: 'amt', direction: 'desc' },
+      ]),
+    ).toEqual(['C', 'A', 'D', 'B']);
+  });
+});
+
 describe('flattenGroupTree', () => {
   const tree = buildGroupTree(
     ROWS,

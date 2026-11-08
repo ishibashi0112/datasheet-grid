@@ -1,7 +1,8 @@
 'use client';
 
 // セル編集とバリデーションのデモ: エディタ種別(text / number / select / date / checkbox)と
-// validate(mark / reject)の組み合わせを 1 グリッドで体験できる。
+// validate(mark / reject)の組み合わせを 1 グリッドで体験できる。メモは複数行の text エディタ(Alt+Enter で改行)と
+// autoHeight(改行どおりに表示して行が伸びる)。
 // 「行を追加して編集」ボタンは命令的 API の startEditing / getViewRowIndex / getColIndex(足した行をすぐ編集)。
 import { useRef, useState } from 'react';
 import { flushSync } from 'react-dom';
@@ -70,14 +71,21 @@ const columns: GridColumn<Row>[] = [
     editable: true,
     editor: { type: 'checkbox' },
   },
-  { key: 'note', title: 'メモ(text)', width: 200, editable: true },
+  {
+    key: 'note',
+    title: 'メモ(複数行。Alt+Enter で改行)',
+    width: 240,
+    editable: true,
+    autoHeight: true,
+    editor: { type: 'text', multiline: true },
+  },
 ];
 
 const initialRows: Row[] = [
   { id: 1, name: 'ボルト M6', qty: 120, category: '通常', dueDate: '2026-08-01', active: true, note: '' },
   { id: 2, name: 'ナット M6', qty: 80, category: '通常', dueDate: '2026-08-01', active: true, note: 'ボルトとセット' },
   { id: 3, name: 'ワッシャー', qty: null, category: '保留', dueDate: null, active: false, note: '数量未定' },
-  { id: 4, name: 'アングル材', qty: 12, category: '特注', dueDate: '2026-09-15', active: true, note: '図面 A-102' },
+  { id: 4, name: 'アングル材', qty: 12, category: '特注', dueDate: '2026-09-15', active: true, note: '図面 A-102\n寸法は 2 枚目を参照' },
   { id: 5, name: '', qty: 5, category: '通常', dueDate: null, active: false, note: '品名未入力(mark 対象外・reject 列)' },
 ];
 
@@ -118,8 +126,9 @@ export function EditingDemo() {
         columns={columns}
         onRowsChange={setRows}
         rowKeyGetter={(row) => row.id}
-        height={260}
-        theme="auto"
+        height={280}
+        theme="class"
+        autoHeight
       />
     </div>
   );

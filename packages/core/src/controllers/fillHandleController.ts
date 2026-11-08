@@ -500,6 +500,9 @@ export const createFillHandleController = <T,>(): FillHandleController<T> => {
       menuPanel.current?.contains(target) === true || chipElement.current?.contains(target) === true,
     onOutsidePointerDown: (target) =>
       closeMenuWith(args !== null && isInsideGridRoot(args.gridRootRef, target)),
+    // 追加(段階 2 DF-23): グリッドが隠れたら閉じます(隠れたグリッドへフォーカスは戻さない)。
+    getGridRoot: () => args?.gridRootRef.current ?? null,
+    onGridHidden: () => closeMenuWith(false),
     onKeyDown: (event) => {
       if (event.key === 'Escape') {
         event.preventDefault();

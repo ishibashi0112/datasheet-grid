@@ -27,6 +27,8 @@ beforeAll(() => {
     configurable: true,
     get: () => 1600,
   });
+  // @tanstack/virtual-core 3.19 から、列の仮想化は見える幅を clientWidth で読みます(3.17 までは offsetWidth)。
+  Object.defineProperty(HTMLElement.prototype, 'clientWidth', { configurable: true, get: () => 1600 });
   Object.defineProperty(HTMLElement.prototype, 'offsetHeight', {
     configurable: true,
     get: () => 900,
@@ -182,7 +184,7 @@ describe('SpreadsheetGrid × ラベル行(描画)', () => {
       (row) => row.querySelector('.ssg-row-header-cell')?.textContent,
     );
     expect(numbers).toEqual(['1', '2', '3', '4', '5']);
-    expect(container.textContent).toContain('Rows: 5 / 5');
+    expect(container.textContent).toContain('行 5 / 5');
   });
 
   it('ソート(applyState)はセクション内に閉じ、ラベル行の位置は動かない', () => {
@@ -273,6 +275,53 @@ describe('SpreadsheetGrid × ラベル行(縦スクロール固定)', () => {
     // 先頭へ戻すと消える。
     await scrollTo(scrollEl, 0);
     expect(stickyIn(container, 'center')).toBeNull();
+  });
+
+  // 追加(段階 2 の確かめ直し N4-1): 上へ動いたアクティブセルの行を見出しの直下に合わせていたので、固定したラベルの帯の下に
+  //   隠れていた(Ctrl+Home で A1 がすべて隠れる)。帯の下に合わせる。
+  it('sticky: 上へ動いたアクティブセル / scrollToRow の start は、固定したラベルの帯の下に合わせる', async () => {
+    const ref = createRef<SpreadsheetGridHandle<Row>>();
+    const { container } = render(
+      <SpreadsheetGrid
+        ref={ref}
+        rows={manyRows}
+        columns={columns}
+        rowKeyGetter={rowKeyGetter}
+        rowHeight={30}
+        headerHeight={40}
+        labelRow={{ ...labelRow, sticky: true }}
+      />,
+    );
+    const scrollEl = container.querySelector<HTMLElement>('.ssg-scroll-container')!;
+    const shell = container.querySelector<HTMLElement>('.ssg-shell')!;
+    // セクション 2 のラベル(view 6 = 180px)が固定される位置。
+    await scrollTo(scrollEl, 200);
+    expect(stickyIn(container, 'center')?.dataset.ssgStickyLabelRowIndex).toBe('6');
+    act(() => {
+      ref.current?.selectCell(8, 1);
+    });
+    const calls: number[] = [];
+    scrollEl.scrollTo = ((options: ScrollToOptions) => {
+      calls.push(options.top ?? Number.NaN);
+    }) as typeof scrollEl.scrollTo;
+    // ↑ で view 7(210px)へ: 帯(200〜230px)に隠れるので、帯の下(180px = ラベル行の自然な位置)へ。
+    fireEvent.keyDown(shell, { key: 'ArrowUp' });
+    await flushAnimationFrame();
+    expect(calls.at(-1)).toBe(180);
+    // Ctrl+Home(最初のデータ行 = view 1 の 30px): 帯(セクション 1 のラベル 30px)の下 = 0px。
+    fireEvent.keyDown(shell, { key: 'Home', ctrlKey: true });
+    await flushAnimationFrame();
+    expect(ref.current?.getActiveCell()).toEqual({ row: 1, col: 0 });
+    expect(calls.at(-1)).toBe(0);
+    // scrollToRow の start(view 9 = 270px): セクション 2 の帯 30px の下 = 240px。ラベル行そのものは帯が無いので 180px。
+    act(() => {
+      ref.current?.scrollToRow(9, { align: 'start' });
+    });
+    expect(calls.at(-1)).toBe(240);
+    act(() => {
+      ref.current?.scrollToRow(6, { align: 'start' });
+    });
+    expect(calls.at(-1)).toBe(180);
   });
 
   it('sticky 未指定 / false では固定レイヤーを出さない', async () => {
@@ -370,13 +419,13 @@ describe('SpreadsheetGrid × ラベル行(検査・下部バー・フィルタ�
     act(() => {
       ref.current!.selectCell(4, 1);
     });
-    expect(container.textContent).toContain('Active: B3');
+    expect(container.textContent).toContain('セル B3');
     // b(行番号 2)から d(行番号 4)まで、ラベル行 [S2] をまたいで 2 列。
     act(() => {
       ref.current!.selectRange({ start: { row: 2, col: 1 }, end: { row: 5, col: 2 } });
     });
-    expect(container.textContent).toContain('Selection: B2 - C4');
-    expect(container.textContent).toContain('Cells: 6 / Rows: 3');
+    expect(container.textContent).toContain('範囲 B2:C4');
+    expect(container.textContent).toContain('6 セル / 3 行');
   });
 
   it('DF-12: set の候補はデータ行の値だけ(ラベル行の値も、ラベル行の空の値の「(空白)」も出ない)', () => {
@@ -429,7 +478,7 @@ describe('SpreadsheetGrid × ラベル行(検査・下部バー・フィルタ�
 });
 
 describe('SpreadsheetGrid × 合成列の数え方(DF-11)', () => {
-  it('「Columns: N / M」は行ドラッグのハンドル列と展開トグル列を数えない', () => {
+  it('「列 N / M」は行ドラッグのハンドル列と展開トグル列を数えない', () => {
     const plain = rows.filter((row) => row.kind !== 'label');
     const { container } = render(
       <SpreadsheetGrid
@@ -441,6 +490,6 @@ describe('SpreadsheetGrid × 合成列の数え方(DF-11)', () => {
         detailRow={{ render: () => null }}
       />,
     );
-    expect(container.textContent).toContain('Columns: 3 / 3');
+    expect(container.textContent).toContain('列 3 / 3');
   });
 });

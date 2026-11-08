@@ -1,6 +1,9 @@
 'use client';
 
-// 行グルーピング + 集計のデモ: 地域 > 担当 の 2 階層グルーピングと sum 集計、開閉の命令的 API。
+// 行グルーピング + 集計のデモ: 地域 > 担当 の 2 階層グルーピングと sum 集計、開閉の命令的 API、
+// グルーピング中の CSV(グループ元の列が先頭に入る / includeGroupRows で小計の行)、
+// グループ元の列の絞り込み(上部バーの「絞り込み」→「+ フィルターを追加…」の「地域(グループ化中)」)、
+// 列メニューの「この列でグループ化」/「グループ化を外す」(列定義を onColumnsChange で受け取る)、集計のある列の並べ替えでグループも集計値の順。
 import { useRef, useState } from 'react';
 import {
   SpreadsheetGrid,
@@ -19,9 +22,9 @@ type Row = {
   amount: number;
 };
 
-const columns: GridColumn<Row>[] = [
-  { key: 'region', title: '地域', width: 100, rowGroup: true },
-  { key: 'rep', title: '担当', width: 100, rowGroup: true },
+const initialColumns: GridColumn<Row>[] = [
+  { key: 'region', title: '地域', width: 100, rowGroup: true, filterType: 'set' },
+  { key: 'rep', title: '担当', width: 100, rowGroup: true, filterType: 'set' },
   { key: 'product', title: '商品', width: 170 },
   { key: 'qty', title: '数量', width: 100, align: 'right', aggFunc: 'sum' },
   {
@@ -48,7 +51,10 @@ const initialRows: Row[] = [
 
 export function GroupingDemo() {
   const [rows, setRows] = useState<Row[]>(initialRows);
+  const [columns, setColumns] = useState<GridColumn<Row>[]>(initialColumns);
   const gridRef = useRef<SpreadsheetGridHandle<Row>>(null);
+  // CSV の中身を表の下に見せる(null は閉じている)。
+  const [csv, setCsv] = useState<string | null>(null);
 
   return (
     <div className="flex flex-col gap-2">
@@ -67,16 +73,34 @@ export function GroupingDemo() {
         >
           すべて折りたたむ
         </button>
+        <button
+          type="button"
+          className="rounded-md border px-2 py-1 hover:bg-fd-accent"
+          onClick={() => setCsv(gridRef.current?.exportCsv() ?? '')}
+        >
+          CSV を見る
+        </button>
+        <button
+          type="button"
+          className="rounded-md border px-2 py-1 hover:bg-fd-accent"
+          onClick={() => setCsv(gridRef.current?.exportCsv({ includeGroupRows: true }) ?? '')}
+        >
+          CSV を見る(小計の行つき)
+        </button>
       </div>
       <SpreadsheetGrid
         rows={rows}
         columns={columns}
+        onColumnsChange={setColumns}
         onRowsChange={setRows}
         rowKeyGetter={(row) => row.id}
         height={380}
-        theme="auto"
+        theme="class"
         ref={gridRef}
       />
+      {csv !== null ? (
+        <pre className="max-h-60 overflow-auto rounded-md border p-2 text-xs">{csv.replace(/\r\n/g, '\n')}</pre>
+      ) : null}
     </div>
   );
 }

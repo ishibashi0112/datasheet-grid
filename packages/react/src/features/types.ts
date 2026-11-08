@@ -151,6 +151,8 @@ export type FilterPopoverFeatureArgs<T> = {
   rows: T[];
   // 追加(別視点のレビュー): ラベル行の判定('auto' 列の種別の推定でラベル行の値を数えないため。ラベル行が無ければ未指定)。
   isLabelRow?: (row: T, sourceIndex: number) => boolean;
+  // 追加(段階 2 DU-11): 行グルーピング中のグループ元の列(表示から外れているが絞り込める。グルーピングしていなければ空)。
+  groupColumns?: GridColumn<T>[];
 };
 export type FilterPopoverFeatureResult<T> = ReturnType<typeof useFilterPopoverController<T>>;
 // ポップオーバーの中身(候補の収集・派生値・コマンド群・描画)の hook が受け取るシェルの値です。
@@ -182,6 +184,8 @@ export type FilterManagementFeatureArgs<T> = {
   centerLeadingWidth: number;
   rightPaneTotalWidth: number;
   openColumnFilterPopover: (column: GridColumn<T>) => void;
+  // 追加(段階 2 DU-11): 行グルーピング中のグループ元の列(「フィルターを追加」の候補と、自動グループ列の見出しの下で開く)。
+  groupColumns?: GridColumn<T>[];
 };
 export type FilterManagementFeatureResult = {
   filterManagerEntries: FilterManagementEntry[];

@@ -47,8 +47,8 @@ afterAll(restore);
 ```tsx
 const { container } = render(<SpreadsheetGrid rows={rows} columns={columns} />);
 
-// 行・セルの描画
-expect(container.querySelectorAll('.ssg-body-row')).toHaveLength(rows.length);
+// 行・セルの描画(行は固定ペインにも描かれ、行番号は左のペインの行にあるので、中央のペインの行で数える)
+expect(container.querySelectorAll('[data-pane="center"].ssg-body-row')).toHaveLength(rows.length);
 
 // getRowClassName / cellClassName で付与したクラス
 expect(container.querySelectorAll('.ssg-body-cell.my-warn-cell')).toHaveLength(2);

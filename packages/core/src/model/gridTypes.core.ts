@@ -631,16 +631,21 @@ export type LabelRowRenderContext<T> = {
  * 各フィールドの説明は React 版パッケージ `@ishibashi0112/spreadsheet-grid` に同梱の `API_REFERENCE.md`
  * の「ラベル行(見出し / 区切り行)」節と同じ内容です。
  */
-export type LabelRowOptions<T, F extends GridFrameworkTypes = GridFrameworkTypes> = {
+// 変更(段階 2 DU-27): L はラベル行の型です。isLabelRow を型ガード(`(row): row is Section => …`。TypeScript 5.5 以上は
+//   `(row) => row.kind === 'label'` も型ガードと推論される)で書くと L が推論され、getLabel / render / height / className /
+//   exportText の row がその型になります(どれもラベル行にだけ呼ぶ)。型ガードでなければ L = T(従来どおり)。
+export type LabelRowOptions<T, F extends GridFrameworkTypes = GridFrameworkTypes, L extends T = T> = {
   // ラベル行の識別です(必須)。true を返した行をラベル行として扱います。sourceIndex は元 rows の index。
   //   rows / 本関数の参照が変わったときに全行を 1 パス評価するため、純粋・軽量であること。
   /**
    * ラベル行の識別。`rows` / 本関数が変わったときに全行を 1 パス評価するため純粋・軽量であること。
+   * 型ガード(`(row): row is Section => …`)で書くと、`getLabel` / `render` / `height` / `className`
+   * / `exportText` の `row` がその型になる(下記)。
    */
-  isLabelRow: (row: T, sourceIndex: number) => boolean;
+  isLabelRow: ((row: T, sourceIndex: number) => row is L) | ((row: T, sourceIndex: number) => boolean);
   // 表示文字列です(必須)。既定描画(render 未指定時)/ エクスポート / aria-label に使います。
   /** 表示文字列。既定描画(`render` 未指定時)/ エクスポート / `aria-label` に使う。 */
-  getLabel: (row: T) => string;
+  getLabel: (row: L) => string;
   // ラベル行の中身を任意の描画ノードで差し替えます(装飾)。未指定なら getLabel の文字列を既定スタイルで
   //   表示します。中身は中央ペインに描画され、横スクロールしてもビューポート左端(左固定ペインの右隣)に
   //   留まります(展開行カードと同じ機構)。
@@ -649,22 +654,23 @@ export type LabelRowOptions<T, F extends GridFrameworkTypes = GridFrameworkTypes
    * `ctx = { row, rowKey, rowIndex, sourceRowIndex, label, sectionRowCount }`(`sectionRowCount`
    * はフィルター後のセクション内データ行数。serverSide では `undefined`)。
    */
-  render?: (ctx: LabelRowRenderContext<T>) => F['node'];
+  render?: (ctx: LabelRowRenderContext<L>) => F['node'];
   // ラベル行の高さ(px)。未指定は rowHeight(データ行と同じ)。行ごとに変えるときは関数を渡します。
   /**
    * ラベル行の高さ(px)。行ごとに変えるときは関数。
    *
    * @defaultValue `rowHeight`
    */
-  height?: number | ((row: T) => number);
+  height?: number | ((row: L) => number);
   // ラベル行の行要素へ追加する className(または { className, style })。classNames.labelRow に加えて付与。
   /** 行要素へ追加する class(または `{ className, style }`)。`classNames.labelRow` に加えて付与。 */
-  className?: GridSlotProps<F> | ((row: T) => GridSlotProps<F> | undefined);
+  className?: GridSlotProps<F> | ((row: L) => GridSlotProps<F> | undefined);
   // 縦スクロール中、現在のセクションのラベル行を列ヘッダー直下に固定表示します(既定 false)。
   //   次のラベル行が到達すると押し上げられて交代します。
   /**
    * 縦スクロール中、現在セクションのラベル行を列ヘッダー直下に固定する。
-   * 次のラベル行が到達すると押し上げられて交代する(clientSide のみ)。
+   * 次のラベル行が到達すると押し上げられて交代する(clientSide のみ)。キーボード操作 / `scrollToRow`
+   * / `scrollToCell` で上の行を見せるときは、固定した見出しの下に置く(裏に隠さない)。
    *
    * @defaultValue `false`
    */
@@ -691,7 +697,7 @@ export type LabelRowOptions<T, F extends GridFrameworkTypes = GridFrameworkTypes
    *
    * @defaultValue `getLabel` を先頭列へ
    */
-  exportText?: (row: T) => string | ReadonlyArray<string | number | null | undefined>;
+  exportText?: (row: L) => string | ReadonlyArray<string | number | null | undefined>;
 };
 
 // 追加(合計行 3A): 合計行(totalRow)のセルの種別です。組み込み集計名、'custom'(aggFunc が関数)、
@@ -919,6 +925,9 @@ export type EditorCommitDirection = 'down' | 'up' | 'right' | 'left';
 //   その場に留まります。Tab / Shift+Tab(右 / 左)には影響しません。
 export type EditorEnterMove = 'down' | 'up' | 'right' | 'left' | 'none';
 
+// 追加(段階 2 DU-14): 複数行の text エディタ(editor: { type: 'text', multiline: true })の Enter の動きです。
+export type GridTextEditorEnterKey = 'commit' | 'newline';
+
 // 追加(editor: select): select エディタの候補型です。select / set フィルターの候補
 //   (GridSelectFilterOption)と共有し、同じ配列を filterOptions と使い回せます。
 export type GridSelectEditorOption = GridSelectFilterOption;
@@ -927,7 +936,15 @@ export type GridSelectEditorOption = GridSelectFilterOption;
 //   同じ判別共用体の流儀で、種別ごとの付随オプションを型で強制します)。未指定は text と同じ
 //   既定エディタです。種別は段階的に追加します(date / checkbox / custom は後続)。
 export type GridColumnEditor<T, F extends GridFrameworkTypes = GridFrameworkTypes> =
-  | { type: 'text' }
+  | {
+      type: 'text';
+      // 追加(段階 2 DU-14): 改行を含む値を編集する複数行の入力欄(textarea。中身に合わせて下へ伸び、表の見える範囲を
+      //   超える分は入力欄の中でスクロール)。1 行の入力欄は改行を消すので、改行を含む値の列はこれを使います。
+      multiline?: boolean;
+      // 追加(段階 2 DU-14): multiline のときの Enter。'commit'(既定。Excel と同じ: Enter で確定、Alt+Enter と
+      //   Ctrl / ⌘+Enter で改行)/ 'newline'(Enter で改行、Ctrl / ⌘+Enter で確定。メモ帳やチャットに近い)。
+      enterKey?: GridTextEditorEnterKey;
+    }
   | {
       // 数値エディタ(<input type="number">)。min / max / step はネイティブ属性へ反映します。
       //   既定パーサ: '' → null / 数値文字列 → number / 非数値 → 生文字列のまま
@@ -1183,6 +1200,12 @@ export type GridColumn<T, F extends GridFrameworkTypes = GridFrameworkTypes> = {
    * の対象外**(折り返し前提のため。下記「flex と autoSize」の制約を参照)。
    */
   autoHeight?: boolean;
+  // 追加(段階 2 DU-32): auto-height で背の高くなった行での縦の揃え(グリッドの verticalAlign より優先)。
+  /**
+   * auto-height で伸びた行での、この列の中身の縦の揃え(グリッドの `verticalAlign` より優先)。
+   * 書かなければグリッドの指定、それも無ければ `autoHeight` の列は上、ほかの列は真ん中。
+   */
+  verticalAlign?: GridVerticalAlign;
   /**
    * 列の表示/非表示。非表示にしても、その列に載った列フィルター / ソートは行の絞り込み /
    * 並べ替えに効き続ける(クイックフィルター = グローバル検索は可視列のみが対象)。
@@ -1212,7 +1235,9 @@ export type GridColumn<T, F extends GridFrameworkTypes = GridFrameworkTypes> = {
   /**
    * `true` でこの列を行グルーピングの対象にする(複数指定時は `columns` 配列の出現順が階層順)。
    * 有効時はグループ元列が表示から外れ、先頭に自動グループ列(ツリー表示)が注入される。**clientSide
-   * 限定**(serverSide では無視 + 開発時警告)。詳細は「行グルーピング + 集計」節。
+   * 限定**(serverSide では無視 + 開発時警告)。列のどれかに `rowGroup` を書いている(`false` を含む)
+   * 表では、列メニューに「この列でグループ化」/「グループ化を外す」が出る(`onColumnsChange`
+   * が要る。集計のある列には出ない)。詳細は「行グルーピング + 集計」節。
    */
   rowGroup?: boolean;
   // 追加(grouping ①): グルーピング時のこの列の集計です。組み込み(GridAggFuncName)または
@@ -1492,6 +1517,58 @@ export type SpreadsheetGridSelectionStats = {
 };
 
 // 追加: topBar / bottomBar でそのまま使える派生 summary です。
+// 追加(段階 2 DU-32): auto-height で背の高くなった行での縦の揃え(グリッドと列の verticalAlign)。
+export type GridVerticalAlign = 'top' | 'center';
+
+// 追加(段階 2 DU-18): グリッドの文言(`localeText` prop)。今は上部 / 下部バーの文言で、`{name}` の所は値に置き換えます。
+//   既定は日本語(英語などは後の版で文言のセットとして足す)。
+/**
+ * グリッドの文言です(`localeText` prop に変えたいキーだけを渡します)。`{name}` の所は値に置き換わります。
+ * 今は上部 / 下部バーの文言です。
+ */
+export type GridLocaleText = {
+  /** 行の件数。`{shown}` = 表示中の行数、`{total}` = 全部の行数(ラベル行は数えない)。既定 `'行 {shown} / {total}'`。 */
+  rowCount: string;
+  /** 列の件数。`{shown}` = 表示中の列数、`{total}` = 全部の列数。既定 `'列 {shown} / {total}'`。 */
+  columnCount: string;
+  /** 絞り込みの要約。`{value}` は `none` / `filterGlobal` / `filterColumns`(両方なら ` + ` でつなぐ)。既定 `'絞り込み: {value}'`。 */
+  filterSummary: string;
+  /** 検索欄の文字(`{text}`。長いと 16 文字で切る)。既定 `'「{text}」'`。 */
+  filterGlobal: string;
+  /** 列の絞り込みの数(`{count}`)。既定 `'{count} 列'`。 */
+  filterColumns: string;
+  /** 並び替えの要約。`{value}` は `none` か、`sortEntry` を `listSeparator` でつないだもの。既定 `'並び替え: {value}'`。 */
+  sortSummary: string;
+  /** 並び替えの 1 列。`{column}` = 列の見出し、`{direction}` = `sortAscending` / `sortDescending`。既定 `'{column}({direction})'`。 */
+  sortEntry: string;
+  /** 昇順。既定 `'昇順'`。 */
+  sortAscending: string;
+  /** 降順。既定 `'降順'`。 */
+  sortDescending: string;
+  /** アクティブセルの番地(`{cell}`。無ければ `none`)。既定 `'セル {cell}'`。 */
+  activeCell: string;
+  /** 選択範囲(`{range}`。`B3:D5` / 行 `3:5` / 列 `B:D`。無ければ `none`)。既定 `'範囲 {range}'`。 */
+  selection: string;
+  /** 選択範囲の大きさ。`{cells}` = セル数、`{rows}` = 行数。既定 `'{cells} セル / {rows} 行'`。 */
+  selectionSize: string;
+  /** 選択範囲の列数(`{count}`)。既定 `'{count} 列'`。 */
+  selectedColumns: string;
+  /** 選択範囲の集計の平均。既定 `'平均'`。 */
+  aggregateAverage: string;
+  /** 選択範囲の集計のデータの個数。既定 `'データの個数'`。 */
+  aggregateCount: string;
+  /** 選択範囲の集計の合計。既定 `'合計'`。 */
+  aggregateSum: string;
+  /** 大きな選択範囲を集計している間(`{percent}` = 進み具合)。既定 `'集計中… {percent}%'`。 */
+  aggregateComputing: string;
+  /** serverSide で読み込んでいない行を飛ばして集計したときの添え書き。既定 `'読み込み済みの行のみ'`。 */
+  aggregatePartial: string;
+  /** 「なし」(絞り込み / 並び替え / アクティブセル / 選択範囲が無いとき)。既定 `'なし'`。 */
+  none: string;
+  /** 並べた項目の区切り(並び替えの列)。既定 `'、'`。 */
+  listSeparator: string;
+};
+
 export type SpreadsheetGridDerivedSummary = {
   rowSummaryText: string;
   columnSummaryText: string;
@@ -1500,6 +1577,8 @@ export type SpreadsheetGridDerivedSummary = {
   activeCellLabel: string;
   selectionLabel: string;
   selectionStatsText: string;
+  // 追加(段階 2 DU-18): 選択範囲の列数の文言(既定の下部バーの「3 列」)。
+  selectedColumnsText: string;
   selectionStats: SpreadsheetGridSelectionStats;
   hasGlobalFilter: boolean;
   // 追加: グローバルフィルター入力値の短縮表示です。
@@ -1975,6 +2054,9 @@ export type CsvExportOptions = {
   includeLabelRows?: boolean;
   // 追加(合計行 3A): 合計行(totalRow)を末尾に含めるか(既定 false)。scope 'view' のときだけ出力します。
   includeTotalRow?: boolean;
+  // 追加(段階 2 DU-10): 行グルーピング中に、各グループの先頭へ小計の行を入れるか(既定 false)。scope 'view' のときだけ。
+  //   グループ元の列は祖先の値と「<ラベル> 小計」、集計のある列(aggFunc)はそのグループの集計値、ほかの列は空です。
+  includeGroupRows?: boolean;
 };
 
 // 追加(imperative API: getExportData): エクスポート用「整形済みデータ」のオプションです。CSV と同じ
@@ -1989,6 +2071,9 @@ export type GridExportOptions = {
   // 追加(合計行 3A): 合計行(totalRow)を末尾に含めるか(既定 false)。scope 'view' のときだけ出力し、
   //   GridExportData.rowKinds の 'total' で判別できます。
   includeTotalRow?: boolean;
+  // 追加(段階 2 DU-10): 行グルーピング中に、各グループの先頭へ小計の行を入れるか(既定 false。CsvExportOptions と同じ)。
+  //   GridExportData.rowKinds の 'group' で判別できます。
+  includeGroupRows?: boolean;
 };
 
 // 追加(imperative API: getExportData): エクスポート 1 セルの内容です。
@@ -2012,7 +2097,8 @@ export type GridExportData = {
   // 追加(label-row ④): rows と同じ長さの行種配列です(includeLabelRows / includeTotalRow で行が増えるときのみ存在)。
   //   'label' の行は labelRow.exportText 由来のセル列で、Excel 側で結合セル / 書式を当てる判定に使えます。
   //   追加(合計行 3A): 'total' は末尾の合計行です。
-  rowKinds?: Array<'data' | 'label' | 'total'>;
+  //   追加(段階 2 DU-10): 'group' はグループの小計の行です(includeGroupRows のとき)。
+  rowKinds?: Array<'data' | 'label' | 'total' | 'group'>;
 };
 
 // 追加(state v2): 列メタのシリアライズ単位です(getState / applyState の GridState.columns 要素)。
@@ -2082,8 +2168,9 @@ export type SpreadsheetGridHandle<T> = {
   // ── viewport(スクロール)──
   // 指定行が可視になるようスクロールします(align 既定 'auto')。
   /**
-   * 指定行を可視域へ。`align`(既定 `'auto'`): `'auto'`(最小スクロール) / `'start'` / `'center'` /
-   * `'end'`。
+   * 指定行を可視域へ。`align`(既定 `'auto'`): `'auto'`(最小スクロール。
+   * 見える高さより背の高い行は上端に合わせる) / `'start'` / `'center'` / `'end'`。`labelRow.sticky`
+   * の表では、`'start'` と上へ動かす `'auto'` は行を固定した見出しの下に置く。
    */
   scrollToRow: (viewRowIndex: number, options?: { align?: ScrollAlign }) => void;
   // 指定セルが可視になるよう縦横スクロールします(固定列は横スクロール対象外)。
@@ -2145,7 +2232,7 @@ export type SpreadsheetGridHandle<T> = {
    * アクティブセル設定(`null` で解除)。`scrollIntoView: true`
    * で可視化も行う(固定列のセルでも縦方向へスクロールする)。中央ペイン(固定でない列)のセルは、
    * 指定が無くてもアクティブセルの位置が変わると見える位置までスクロールされる(クリック /
-   * キー操作と同じ動き)。
+   * キー操作と同じ動き)。ラベル行(`labelRow`)を指したときは、下のデータ行(無ければ上)へ寄せる。
    */
   setActiveCell: (
     cell: CellCoord | null,
@@ -2155,14 +2242,21 @@ export type SpreadsheetGridHandle<T> = {
   /** 現在の選択状態(`GridSelection`)。 */
   getSelection: () => GridSelection;
   // 単一セルを選択(クリック相当)。scrollIntoView:true で可視化も行います。
-  /** 単一セル選択(クリック相当)。スクロールの扱いは `setActiveCell` と同じ。 */
+  /**
+   * 単一セル選択(クリック相当)。スクロールの扱いと、ラベル行を指したときの扱いは `setActiveCell`
+   * と同じ。
+   */
   selectCell: (
     viewRowIndex: number,
     colIndex: number,
     options?: { scrollIntoView?: boolean },
   ) => void;
   // セル範囲を選択(ドラッグ選択相当)。アンカーは range.start です。
-  /** セル範囲選択(ドラッグ相当)。アンカーは `range.start`。 */
+  /**
+   * セル範囲選択(ドラッグ相当)。アンカーは `range.start`。`range.start` がラベル行のときは、
+   * 範囲はそのままで、アクティブセルだけを範囲の向き(無ければ逆)のデータ行へ寄せる。
+   * 範囲がラベル行だけのときは、寄せたデータ行の同じ列の範囲にする。
+   */
   selectRange: (range: CellRange, options?: { scrollIntoView?: boolean }) => void;
   // 選択を解除します。
   /** 選択解除。 */
@@ -2185,6 +2279,14 @@ export type SpreadsheetGridHandle<T> = {
    * を返す。表示していない列(`visible: false` / グループ化中のグループ元列)は `-1`。
    */
   getColIndex: (columnKey: string) => number;
+  // 追加(段階 2 N-4): 行番号の列と同じ番号(ラベル行を数えない)。利用側でラベル行を数え直していた。
+  /**
+   * 行キーから、行番号の列に出ている番号(1 始まり)を返す。ラベル行(`labelRow`)は数えないので、
+   * ラベル行があると `getViewRowIndex(rowKey) + 1` とは違う。ラベル行のキーと表示に無い行は
+   * `null`。「3 行目に誤りがあります」のように、
+   * 利用者が画面で見る行番号でメッセージを出すときに使う。
+   */
+  getRowNumber: (rowKey: GridRowKey) => number | null;
 
   // ── フォーカス / 編集の開始 ──
   // 追加(dogfood DU-02): モーダルを閉じた後などにキーをグリッドへ戻す / 行を足してすぐ打てるように編集を始める。
@@ -2322,6 +2424,17 @@ export type SpreadsheetGridHandle<T> = {
    * の外部差し替えはグリッド側でも自動検知して破棄するため、通常は呼ばなくてよい。
    */
   clearUndoHistory: () => void;
+  // 追加(段階 2 DU-21): 外からの変更(行の削除ボタンなど)を「元に戻す」の履歴に積んでから onRowsChange へ渡します
+  //   (rows を外から差し替えると履歴は消えるので、これまでは外の変更を元に戻せなかった)。
+  /**
+   * 外からの変更(行の削除ボタン / 一括更新など)を「元に戻す」の履歴に積んでから `onRowsChange`
+   * へ渡す(`Ctrl/Cmd+Z` / `undo()` で戻せる)。`rows` を外から直接差し替えると履歴は消えるので、
+   * 元に戻せるようにしたい変更はこれで渡す。履歴が無効(`enableUndoRedo={false}` / `readOnly`)
+   * なら積まずに `onRowsChange` へ渡す。`onRowsChange` が無いとき・serverSide
+   * では何もしない(開発時に警告)。渡すのは次の行の配列で、関数(`setRows((prev) => …)` の形)
+   * は受けない(今の `rows` から次の配列を作って渡す)。
+   */
+  applyRows: (nextRows: T[]) => void;
 
   // ── 行グルーピング ──
   // 追加(grouping ④): 指定グループの開閉を設定します(collapsed: true = 折りたたみ)。
@@ -2460,7 +2573,9 @@ export type GridDensity = 'compact' | 'standard' | 'comfortable';
 //   (prefers-color-scheme)へ追従します。Mantine / HeroUI 等のクラスベース dark 運用では、
 //   利用側のカラースキーム(useMantineColorScheme 等)の解決値を 'light' | 'dark' で
 //   渡す使い方が本命です。
-export type GridTheme = 'light' | 'dark' | 'auto';
+// 変更(段階 2 DU-13): 'class' = ページの祖先の class="dark" / data-theme="dark" を CSS だけで見てダークにする
+//   (Tailwind / next-themes / shadcn の <html class="dark">。サーバーの描画から正しい色)。
+export type GridTheme = 'light' | 'dark' | 'auto' | 'class';
 // 追加(F-3): 条件付き書式ヘルパー(GridColumn.conditionalFormat)の型です。既定セルの描画に、値の「量」(データバー)/
 //   「量 or 基準からの向き」(カラースケール)/ 「状態」(チップ)を重ねます。min / max は省略時にビュー行から自動集計。
 //   表示だけで、CSV / TSV / クリップボード / getExportData / ソート / フィルターには影響しません。
@@ -2651,7 +2766,8 @@ export type ScrollHintOptions<T = unknown, F extends GridFrameworkTypes = GridFr
  * の「SpreadsheetGrid props」表と同じ内容です。
  * 説明中の「〜節」「下記」は同ファイル内の節を指します。
  */
-export type SpreadsheetGridProps<T, F extends GridFrameworkTypes = GridFrameworkTypes> = {
+// 変更(段階 2 DU-27): L は labelRow のラベル行の型です(LabelRowOptions。isLabelRow の型ガードから推論。既定は T)。
+export type SpreadsheetGridProps<T, F extends GridFrameworkTypes = GridFrameworkTypes, L extends T = T> = {
   // 追加(imperative API #1): React 19 の ref-as-prop。命令的ハンドル(SpreadsheetGridHandle)を受け取ります。
   //   forwardRef は使いません(React 19 で deprecated 予定のため。React 18 のときだけ React 版の withRefProp が包む = 2026-10-28)。状態は controlled のまま、prop で
   //   表現できない一発操作(スクロール/選択操作/CSV)だけをハンドルで提供します。
@@ -2671,6 +2787,22 @@ export type SpreadsheetGridProps<T, F extends GridFrameworkTypes = GridFramework
    * 復元」節を参照。
    */
   onStateChange?: (state: GridState) => void;
+  // 追加(段階 2 DU-12): 状態の初期値です(最初の 1 回 = マウント時だけ使う)。これまでは最初の描画の後に applyState を
+  //   呼ぶしかなく、SSRM はまず条件なしで取りに行き、サーバーの描画には URL から戻した絞り込みが載らなかった。
+  //   列メタ(columns)は columns prop の側で決めるので受けません。
+  /**
+   * 状態(列幅 / フィルター / ソート)の初期値。**最初の 1 回(マウント時)だけ**使い、
+   * 後から変えても今の状態は変わらない(変えるときは `applyState`)。最初の描画・サーバーの描画(SSR)
+   * ・serverSide の最初の `getRows` から効き(clientSide で 5 万行を超える表のグローバルフィルター
+   * `filters.globalText` だけは、時間を分けて評価するので最初の描画の少し後に効く)、`getState()`
+   * もその値を返す。マウント時は `onStateChange` / `onFiltersChange` / `onSortChange` を呼ばない。
+   * `getState()` の値をそのまま渡せる(列メタの `columns` は使わない。列の並び / 表示 / 固定は
+   * `columns` prop で決める。保存した値から戻すときは `restoreColumnsFromState(columns, saved)`
+   * で作った配列を渡す。並び / 表示 / 固定が `columns` prop と見た目で違うときだけ開発時に警告)。
+   * 今の `columns` に無い列の幅 / フィルター / ソートは捨てる(開発時に警告)。URL
+   * のクエリや保存した状態から戻すときに使う。
+   */
+  initialState?: Omit<GridStatePatch, 'columns'>;
   // 追加(change-callbacks): フィルター / ソートの状態が**実際に変化したとき**だけ、そのスライスの複製を渡して
   //   呼ばれます(onStateChange は列幅 / 列メタの変更でも呼ばれるため、フィルター / ソートだけを追いたい用途
   //   ── 例: 記述子から WHERE / ORDER BY を組み立てる ── 向け)。規約は onStateChange と同じ
@@ -2832,6 +2964,14 @@ export type SpreadsheetGridProps<T, F extends GridFrameworkTypes = GridFramework
    * @defaultValue `false`
    */
   autoHeight?: boolean;
+  // 追加(段階 2 DU-32): auto-height で背の高くなった行での縦の揃え(列の verticalAlign が優先)。
+  /**
+   * auto-height で伸びた行(基準の `rowHeight` より高い行)での、セルの中身の縦の揃え。書かなければ
+   * `autoHeight` の列は上(折り返した文章の 1 行目)、ほかの列は真ん中。`'top'` で全部の列を上に、
+   * `'center'` で全部の列を真ん中にそろえる(列ごとの指定は `GridColumn.verticalAlign` が優先)。1
+   * 行の行と、auto-height を使わないグリッドではどれも真ん中。詳細は「auto-height 行」節。
+   */
+  verticalAlign?: GridVerticalAlign;
   // 追加(C1): auto-height の未測定行に使う 1 行の推定高さ(px)。未指定時は rowHeight。
   /**
    * 未測定行の推定行高(px)。
@@ -2868,9 +3008,12 @@ export type SpreadsheetGridProps<T, F extends GridFrameworkTypes = GridFramework
   /**
    * カラーテーマ。`'dark'` でダークプリセット(`.ssg-theme-dark` のトークン一括上書き。Mantine dark
    * 系パレット)をグリッド本体・全ポータル(popover / menu / panel)
-   * ・ドラッグゴースト・ツールチップへ適用。`'auto'` は `prefers-color-scheme` へ追従(Mantine /
-   * HeroUI 等クラスベース dark 運用では、利用側カラースキームの解決値を `'light' | 'dark'`
-   * で渡す使い方を推奨)。個別の色調整はトークン(`--ssg-*`)の上書きで可能。
+   * ・ドラッグゴースト・ツールチップへ適用。`'auto'` は `prefers-color-scheme` へ追従。`'class'`
+   * は祖先の `class="dark"` か `data-theme="dark"` を CSS で見てダークにする(Tailwind / next-themes
+   * / shadcn/ui / HeroUI のようなクラスによるダーク向け。サーバーの描画から正しい色になる。
+   * ポップアップ類は `document.body` の直下に出るので、`dark` のクラス / 属性は `<html>` か
+   * `<body>` に付ける)。Mantine のようにほかの方法でダークを決めるものは、利用側の解決値を
+   * `'light' | 'dark'` で渡す。個別の色調整はトークン(`--ssg-*`)の上書きで可能。
    *
    * @defaultValue `'light'`
    */
@@ -3005,7 +3148,8 @@ export type SpreadsheetGridProps<T, F extends GridFrameworkTypes = GridFramework
    */
   onFindChange?: (params: FindChangeParams) => void;
   /**
-   * 行番号列の幅(px)。
+   * 行番号列の幅(px)。行番号列は左固定列が無くても左に固定され、横にスクロールしても流れない(Excel
+   * の行見出しと同じ。0.63.0 から)。
    *
    * @defaultValue `56`
    */
@@ -3276,10 +3420,11 @@ export type SpreadsheetGridProps<T, F extends GridFrameworkTypes = GridFramework
   getFilterOptions?: (params: GetFilterOptionsParams<T, F>) => Promise<GetFilterOptionsResult>;
   /**
    * ソート機能の有効化。ソートは列メニュー(⋮)の「昇順 / 降順で並び替え」と「並び替えを管理…」
-   * パネルから行う(ヘッダー本体のクリックは列範囲選択)。`false` でメニューのソート項目が消え、
-   * `applyState` 等で載った `sort` も適用されない。ソート順は値で決まり、数値として解釈できる値 →
-   * 文字列(日本語照合・数字は数値順)→ 空白セル(null / undefined / 空文字)
-   * の順。**空白セルは昇順でも降順でも末尾**(Excel と同じ)。
+   * パネルから行う(ヘッダー本体のクリックは列範囲選択。`Shift` を押しながら見出しを押すと、
+   * 選ぶのではなくその列を並べ替えに足す = 押すたびに昇順 → 降順 → 外す)。`false`
+   * でメニューのソート項目が消え、`applyState` 等で載った `sort` も適用されない。
+   * ソート順は値で決まり、数値として解釈できる値 → 文字列(日本語照合・数字は数値順)→ 空白セル(null
+   * / undefined / 空文字)の順。**空白セルは昇順でも降順でも末尾**(Excel と同じ)。
    *
    * @defaultValue `true`
    */
@@ -3532,6 +3677,15 @@ export type SpreadsheetGridProps<T, F extends GridFrameworkTypes = GridFramework
    * @defaultValue 組み込み検索アイコン
    */
   globalFilterIcon?: F['node'];
+  // 追加(段階 2 DU-18): 文言(今は上部 / 下部バー)。変えたいキーだけを渡し、ほかは既定(日本語)のまま。
+  /**
+   * 文言(今は上部 / 下部バーの文言)。
+   * 変えたいキーだけを渡す(`{ rowCount: 'Rows: {shown} / {total}' }`)。`{name}`
+   * の所は値に置き換わる。キーの一覧は「バーの文言(`localeText`)」節。
+   *
+   * @defaultValue 日本語
+   */
+  localeText?: Partial<GridLocaleText>;
   // 追加: 下部バー(ステータスバー)を表示するかどうかです。既定 true。
   //   false にすると renderBottomBar に関わらず下部バーを一切描画しません
   //   (表示のマスタースイッチ。矛盾指定時は renderBottomBar より優先されます)。
@@ -3676,7 +3830,7 @@ export type SpreadsheetGridProps<T, F extends GridFrameworkTypes = GridFramework
    *
    * @defaultValue —(無効)
    */
-  labelRow?: LabelRowOptions<T, F>;
+  labelRow?: LabelRowOptions<T, F, L>;
   // ── 追加(合計行 3A): 表の下端に固定する合計行 ──
   //   指定時のみ有効な opt-in 機能です。詳細は TotalRowOptions を参照。
   /**

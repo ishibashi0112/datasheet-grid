@@ -153,7 +153,7 @@ export function MotionDemo() {
         columns={columns}
         rowKeyGetter={(row) => row.id}
         height={400}
-        theme="auto"
+        theme="class"
         motion={motion}
         animateRows={animateRows}
         showCopyRange={showCopyRange}

@@ -103,22 +103,9 @@ function Grid(props: SpreadsheetGridProps<Row>) {
 import '@ishibashi0112/spreadsheet-grid/style.css';
 import '@ishibashi0112/spreadsheet-grid/themes/heroui.css';
 
-import { useSyncExternalStore } from 'react';
-import { useTheme } from 'next-themes';
-
-// next-themes の resolvedTheme はサーバーの描画では決まらず、ブラウザの最初の描画ではもう 'dark' のことがあります。
-// そのまま theme に渡すとハイドレーションで食い違い、グリッドが明るいまま戻らなくなります(ポップオーバーだけダーク)。
-// ハイドレーションが済むまでは 'light' を渡します。
-const noSubscribe = () => () => {};
-function useGridTheme(): 'light' | 'dark' {
-  const { resolvedTheme } = useTheme(); // <html> の dark クラスを付け替えているもの
-  const hydrated = useSyncExternalStore(noSubscribe, () => true, () => false);
-  return hydrated && resolvedTheme === 'dark' ? 'dark' : 'light';
-}
-
-function Grid(props: SpreadsheetGridProps<Row>) {
-  return <SpreadsheetGrid {...props} theme={useGridTheme()} />;
-}
+// HeroUI のライト / ダークは <html> の dark クラス(next-themes など)で決まります。
+// theme="class" はそのクラスを CSS で見るので、サーバーの描画から正しい色になります(フックは要りません)。
+<SpreadsheetGrid {...props} theme="class" />
 ```
 
 HeroUI v3 の配色の変数(`--surface` / `--accent` ほか)を使います。HeroUI v2(`--heroui-*` に HSL の成分を入れる形)は対象外です。HeroUI v3 の部品(`@heroui/react`)は React 19 が要ります。React 18 のアプリでは、配色の CSS(`@heroui/styles`)とこのテーマだけを使えます(部品をセルに置くのは React 19 から)。
@@ -128,7 +115,7 @@ HeroUI v3 の配色の変数(`--surface` / `--accent` ほか)を使います。H
 ```tsx
 import '@ishibashi0112/spreadsheet-grid/style.css';
 import '@ishibashi0112/spreadsheet-grid/themes/shadcn.css';
-// ライト / ダークの渡し方は HeroUI と同じ
+// ライト / ダークは HeroUI と同じく theme="class"(<html> の dark クラスに付いてくる)
 ```
 
 shadcn/ui の init が `globals.css` に書く配色の変数(`--background` / `--primary` / `--border` ほか)を使います。Tailwind CSS v4 向けの書き方(値が `oklch(...)` などの色そのもの)が対象で、Tailwind CSS v3 向けの書き方(値が `222.2 84% 4.9%` のような HSL の成分)では色になりません。成功 / 注意の色の変数が無いため、保存できた印とメモの印は Tailwind の green-600 / amber-500 です。

@@ -358,6 +358,21 @@ describe('buildGridState', () => {
     ).toEqual([]);
   });
 
+  // 追加(段階 2 の確かめ直し S-N2): 手で書いた / 壊れた保存値で同じ key が 2 回あると、applyState / restoreColumnsFromState が
+  //   その列を二重に返し、見出しも本体も同じ列が 2 列並んでいた(React の key 重複の警告も出る)。最初の 1 つだけ使う。
+  it('columns に同じ key が重なっていたら最初の 1 つだけ使う', () => {
+    const migrated = migrateGridState({
+      version: 2,
+      columns: [
+        { key: 'qty' },
+        { key: 'name', pinned: 'left' },
+        { key: 'qty', visible: false },
+        { key: 'date' },
+      ],
+    });
+    expect(migrated.columns).toEqual([{ key: 'qty' }, { key: 'name', pinned: 'left' }, { key: 'date' }]);
+  });
+
   it('追加(v2): columns の返り値は入力と参照を共有しない', () => {
     const input = {
       version: 2,

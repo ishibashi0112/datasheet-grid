@@ -42,44 +42,52 @@ describe('useResolvedGridTheme', () => {
     vi.unstubAllGlobals();
   });
 
+  // 変更(段階 2 DU-13): 返すのは実効テーマではなく、root と各ポータルへ付ける修飾子クラス(ライトはなし)。
   it("'light' / 'dark' は matchMedia に依らずそのまま返す", () => {
     stubMatchMedia(true);
     const light = renderHook(() => useResolvedGridTheme('light'));
-    expect(light.result.current).toBe('light');
+    expect(light.result.current).toBeUndefined();
     light.unmount();
     const dark = renderHook(() => useResolvedGridTheme('dark'));
-    expect(dark.result.current).toBe('dark');
+    expect(dark.result.current).toBe('ssg-theme-dark');
     dark.unmount();
   });
 
   it("'auto' は prefers-color-scheme: dark の一致状態を返す", () => {
     stubMatchMedia(true);
     const hook = renderHook(() => useResolvedGridTheme('auto'));
-    expect(hook.result.current).toBe('dark');
+    expect(hook.result.current).toBe('ssg-theme-dark');
     hook.unmount();
   });
 
   it("'auto' は配色設定の変化(change イベント)へ追従する", () => {
     const media = stubMatchMedia(false);
     const hook = renderHook(() => useResolvedGridTheme('auto'));
-    expect(hook.result.current).toBe('light');
+    expect(hook.result.current).toBeUndefined();
     act(() => {
       media.emit(true);
     });
-    expect(hook.result.current).toBe('dark');
+    expect(hook.result.current).toBe('ssg-theme-dark');
     act(() => {
       media.emit(false);
     });
-    expect(hook.result.current).toBe('light');
+    expect(hook.result.current).toBeUndefined();
     hook.unmount();
     // アンマウントで change 購読が解除されます。
     expect(media.listenerCount()).toBe(0);
   });
 
+  it("'class' は配色設定に依らず ssg-theme-class(ダークかどうかは CSS が祖先の .dark で決める)", () => {
+    stubMatchMedia(true);
+    const hook = renderHook(() => useResolvedGridTheme('class'));
+    expect(hook.result.current).toBe('ssg-theme-class');
+    hook.unmount();
+  });
+
   it('matchMedia 非対応環境(jsdom 素)では auto は light 扱い', () => {
     // stub しない = jsdom の window.matchMedia は undefined。
     const hook = renderHook(() => useResolvedGridTheme('auto'));
-    expect(hook.result.current).toBe('light');
+    expect(hook.result.current).toBeUndefined();
     hook.unmount();
   });
 });

@@ -18,6 +18,8 @@ export type { GridStore, GridViewState, GridViewStatePatch } from './model/gridS
 export { gridActions } from './model/gridActions';
 export type { GridUiAction } from './model/gridActions';
 export { numberFormatter } from './logic/valueFormatters';
+// 追加(段階 2 の確かめ直し): 保存した状態の列メタ(並び / 表示 / 固定)を列定義へ当てる(initialState と一緒に使う)。
+export { restoreColumnsFromState } from './logic/gridState';
 // 追加(ことばで絞り込み): AI に渡す頼みの組み立てと、AI の答えの検査(→ GridState)。グリッドは AI を呼ばず、利用側の
 //   ask(自分のサーバー → 好きな AI)が頼みを受けて答えを返します。React 版は入口 /ai(GridAskBar / useGridAsk)が使います。
 export {

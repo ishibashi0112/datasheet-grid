@@ -62,7 +62,9 @@ export function GridFilterChipBar({
             data-ssg-tooltip={
               entry.isHidden
                 ? '非表示列のためジャンプ編集できません(× でクリアは可能)'
-                : 'この列へジャンプして編集'
+                : entry.isGrouped === true
+                  ? 'グループの列の見出しの下で編集'
+                  : 'この列へジャンプして編集'
             }
             aria-label={`${entry.title} のフィルターを編集`}
             onClick={() => {
@@ -71,7 +73,7 @@ export function GridFilterChipBar({
           >
             <span className="ssg-filter-chip-name">
               {entry.title}
-              {entry.isHidden ? '(非表示列)' : ''}
+              {entry.isHidden ? '(非表示列)' : entry.isGrouped === true ? '(グループ化中)' : ''}
             </span>
             <span className="ssg-filter-chip-summary">
               {entry.summaryText}

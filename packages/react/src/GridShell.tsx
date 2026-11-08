@@ -17,6 +17,7 @@ import {
   useSyncExternalStore,
   type CSSProperties,
   type FocusEvent,
+  type KeyboardEvent as ReactKeyboardEvent,
   type PointerEvent,
   type MouseEvent as ReactMouseEvent,
   // 追加(UP-1): 統合ツールパネルのタブ別コンテンツテーブルの型に使います。
@@ -39,9 +40,16 @@ import { createGridEngine } from '@ishibashi0112/spreadsheet-grid-core/internal/
 import { useControllerLifecycle } from './hooks/useController';
 // 追加(G-2): IME オンのままの直接入力(imeDirectInput)の入力受けの属性名です。
 // 変更(差し込み式 段階 2): 入力してよいセルの判定 / 編集の初期値の決定は機能セット(features.imeDirectInput)から。
-import { IME_INPUT_ATTRIBUTE } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/domGuards';
+import { IME_INPUT_ATTRIBUTE, isImeComposingKeyEvent } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/domGuards';
 
 import { gridActions } from '@ishibashi0112/spreadsheet-grid-core/internal/model/gridActions';
+import { resolveFirstDataCell } from '@ishibashi0112/spreadsheet-grid-core/internal/controllers/keyboardController';
+// 追加(段階 2 C-N2): 展開行のカードと Tab の順番(最終列 → その行のカード → 表の外。Shift+Tab は逆順)。
+import {
+  findDetailCard,
+  focusDetailCardEdge,
+  isTabEdgeOfCard,
+} from '@ishibashi0112/spreadsheet-grid-core/internal/controllers/detailTabOrder';
 import { useGridStore, useGridViewState } from './hooks/useGridStore';
 import { PortalTokenSourceContext } from './hooks/usePortalTokens';
 import {
@@ -59,6 +67,7 @@ import CellEditorLayer from './CellEditorLayer';
 // 追加(13-A): 列メニュー(「⋮」+ 右クリック)の popover controller です。
 import { useGridClipboardController } from './hooks/useGridClipboardController';
 import { useGridBarContext } from './hooks/useGridBarContext';
+import { createLocaleTextResolver } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/localeText';
 // 追加(選択範囲の集計)
 import { useGridEditController } from './hooks/useGridEditController';
 import { useGridHistoryController } from './hooks/useGridHistoryController';
@@ -115,9 +124,12 @@ import {
   // 追加(label-row ③.5): 縦固定の現在セクション判定で物理 scrollTop を論理へ換算します。
   physicalToLogicalScrollTop,
 } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/verticalGeometry';
+import type { StickyTopInset } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/scrollTargets';
 // 追加(detail ③): 展開行(Master/Detail)の純ロジック(トグル列キー / rowKey→view index 解決 / 選択帯分割)です。
 import {
   DEFAULT_DETAIL_ROW_HEIGHT,
+  DETAIL_TOGGLE_COLUMN_KEY,
+  isInsideDetailCardOf,
   isSyntheticColumnKey,
   seedDetailIndexCache,
 } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/detailRow';
@@ -218,6 +230,8 @@ import type { GridShellFeatures } from './features/types';
 const EMPTY_ROWS: never[] = [];
 // 追加(作り直しの確認 lite-1): フィルターの機能が無い構成で見出しへ渡す、空の列フィルター(参照を保つ)。
 const NO_HEADER_COLUMN_FILTERS: Record<string, never> = {};
+// 追加(段階 2 DU-11): グルーピングしていないときのグループ元の列(参照を保つ)。
+const EMPTY_GROUP_COLUMNS: never[] = [];
 
 // 追加(stage ②): serverSide query 構築/debounce 用の安定既定値・定数です。
 //   clientSide では query を空に保ち(フックは inert)、参照同一で memo/effect を不要に揺らしません。
@@ -311,6 +325,8 @@ export function useGridShell<T extends object>({
   rowHeight: rowHeightProp,
   autoHeight = false,
   estimateRowHeight,
+  // 追加(段階 2 DU-32): 背の高い行での縦の揃え(列の verticalAlign が優先)。
+  verticalAlign,
   headerHeight: headerHeightProp,
   density = 'standard',
   theme = 'light',
@@ -413,6 +429,8 @@ export function useGridShell<T extends object>({
   //   既定はバー側(DefaultGridTopBar)で解決します(placeholder='グローバルフィルター'・icon=検索)。
   globalFilterPlaceholder,
   globalFilterIcon,
+  // 追加(段階 2 DU-18): 文言(今は上部 / 下部バー)。既定は日本語。
+  localeText,
   // 追加: 各バーの Rows / Columns 件数 chips セットの表示有無です(既定 true)。
   //   トップは showTopBarSummary=true のとき内側で効き、ボトムは左側の件数グループを制御します。
   showTopBarCounts = true,
@@ -454,6 +472,7 @@ export function useGridShell<T extends object>({
   ref,
   // 追加(state #2): 永続スライス変化の通知口(保存タイミング signal)。発火規約は型定義のコメント参照。
   onStateChange,
+  initialState,
   // 追加(change-callbacks): フィルター / ソートのスライス単位の変更通知。
   onFiltersChange,
   onSortChange,
@@ -499,6 +518,10 @@ export function useGridShell<T extends object>({
   //           集約し、固定列は position: sticky で横方向だけ留めることで、全ペインが同一
   //           ネイティブスクロールで動き、ズレが原理的に発生しなくなります。
   const scrollContainerRef = useRef<HTMLDivElement | null>(null);
+  // 追加(段階 2 C-N2): 表の直後の目印(展開行があるときだけ描く)。表の外へ出す Tab の既定動作の起点にし、表の後ろから
+  //   Shift+Tab で戻ってきたときはアクティブセルの行のカード(無ければシェル)へ移します。
+  const tableExitRef = useRef<HTMLSpanElement | null>(null);
+  const tableExitFocusingRef = useRef(false);
 
   // 追加(10-B): 左固定ペインの要素 ref です（clientX のペイン判定に使います）。
   const leftPaneScrollRef = useRef<HTMLDivElement | null>(null);
@@ -535,6 +558,8 @@ export function useGridShell<T extends object>({
   const [engine] = useState(() =>
     createGridEngine<T>({
       features,
+      // 追加(段階 2 DU-12): 状態の初期値(マウント時だけ使う)。
+      initialState,
       columnInputs: {
         columns,
         isServerSide: dataSource != null,
@@ -684,21 +709,73 @@ export function useGridShell<T extends object>({
   //   セル側のトグルは「そのセルの view index」でキャッシュを seed してから dispatch します
   //   (serverSide でも全行走査なしで帯の位置が決まる)。
   const detailRowEnabled = detailRow != null;
+  // 追加(段階 2 DF-25): 展開中の行が rows から消えたら、そのキーを外します(通知は上の detailKeysNotifier)。
+  //   serverSide は rows がすべての行ではないので見ません。
+  useControllerLifecycle(engine.detailKeysPruner, {
+    enabled: detailRowEnabled && !isServerSide,
+    rows,
+    expandedKeys: uiState.expandedDetailRowKeys,
+    keyOf: resolvedRowKeyGetter,
+    setExpandedKeys: (keys: ReadonlySet<GridRowKey>) => dispatch(gridActions.setExpandedDetailRowKeys(keys)),
+  });
   // 変更(本体分解 E-6c): useRef → 差し替え可能なホルダー(logic/detailRow.createDetailIndexCacheHolder)。
   const detailIndexCacheHolder = engine.detailIndexCache;
+  // 追加(段階 2 の確かめ直し): その行のカードの中にフォーカスがあるまま閉じると、カードと一緒にフォーカスが消えて body へ
+  //   落ちていました(キーボードで「閉じる」= collapse() を押すと、その後の ↓ も Tab も表に届かない)。閉じる前にフォーカスが
+  //   その行のカードの中なら、その行のセル(列はアクティブセルの列、無ければ最初のデータの列)をアクティブセルにして、
+  //   フォーカスを表へ戻します(カードの最初の要素から Shift+Tab で戻るときと同じ)。
+  const returnFocusFromDetailCard = useCallback(
+    (viewIndex: number) => {
+      const scroll = scrollContainerRef.current;
+      const card = scroll ? findDetailCard(scroll, viewIndex) : null;
+      if (!card || !card.contains(card.ownerDocument.activeElement)) {
+        return;
+      }
+      const activeCol = gridStore.getState().activeCell?.col;
+      const firstDataCol = orderedColumns.findIndex(
+        (column) => column.key !== DETAIL_TOGGLE_COLUMN_KEY && column.key !== ROW_DRAG_HANDLE_COLUMN_KEY,
+      );
+      const cell = { row: viewIndex, col: activeCol ?? Math.max(0, firstDataCol) };
+      dispatch(gridActions.startSelection(cell));
+      dispatch(gridActions.endSelection());
+      gridRootRef.current?.focus({ preventScroll: true });
+      // 追加(段階 2 の確かめ直し C-N7): 戻したセルを見える範囲へ(背の高いカードを読み進めると、行は見出しの裏に隠れている)。
+      //   カードが消えた後の配置で測るため、次のフレームで。見えていれば動かさない。
+      requestAnimationFrame(() => {
+        engine.gridApi.scrollToCellInternal(cell.row, cell.col, 'auto');
+      });
+    },
+    [dispatch, engine, gridStore, orderedColumns],
+  );
+  // 追加(段階 2 の確かめ直し C-N6): ハンドルで閉じる(setDetailRowExpanded(key, false) / collapseAllDetailRows())ときも同じく
+  //   戻します(これまではフォーカスが body へ落ちていた)。
+  const returnFocusFromDetailCards = useCallback(
+    (viewIndexes: readonly number[]) => {
+      for (const viewIndex of viewIndexes) {
+        returnFocusFromDetailCard(viewIndex);
+      }
+    },
+    [returnFocusFromDetailCard],
+  );
   const toggleDetailRowAt = useCallback(
     (rowKey: GridRowKey, viewIndex: number) => {
       seedDetailIndexCache(detailIndexCacheHolder.current, rowKey, viewIndex);
+      if (gridStore.getState().expandedDetailRowKeys.has(rowKey)) {
+        returnFocusFromDetailCard(viewIndex);
+      }
       dispatch(gridActions.toggleDetailRow(rowKey));
     },
-    [dispatch, detailIndexCacheHolder],
+    [dispatch, detailIndexCacheHolder, gridStore, returnFocusFromDetailCard],
   );
   const setDetailRowExpandedAt = useCallback(
     (rowKey: GridRowKey, viewIndex: number, expanded: boolean) => {
       seedDetailIndexCache(detailIndexCacheHolder.current, rowKey, viewIndex);
+      if (!expanded) {
+        returnFocusFromDetailCard(viewIndex);
+      }
       dispatch(gridActions.setDetailRowExpanded(rowKey, expanded));
     },
-    [dispatch, detailIndexCacheHolder],
+    [dispatch, detailIndexCacheHolder, returnFocusFromDetailCard],
   );
   // 追加(label-row ②): ラベル行(見出し / 区切り行)のオプションを分解します(下流の memo 依存を
   //   プリミティブ / 関数参照にするため。labelRow オブジェクトをインラインで渡しても各段は揺れません)。
@@ -790,6 +867,8 @@ export function useGridShell<T extends object>({
   // ── filter popover ────────────────────────────────────
   // 変更(差し込み式 段階 5): 列フィルターのポップオーバーの controller の接続('auto' 列の種別の推定とキャッシュ込み)は
   //   フィルターの機能(features/filtering)へ移しました(元の位置で呼ぶ)。無い構成では代役(閉じたまま)。
+  // 追加(段階 2 DU-11): 行グルーピング中のグループ元の列(表示から外れているが絞り込める)。グルーピングしていなければ空。
+  const activeGroupColumns = rowGroupingActive ? groupColumns : EMPTY_GROUP_COLUMNS;
   const filterPopover = features.filtering.useFilterPopover<T>({
     visibleColumns,
     columnFilters: uiState.filters.columnFilters,
@@ -798,6 +877,7 @@ export function useGridShell<T extends object>({
     isServerSide,
     rows,
     isLabelRow: labelRowEnabled ? labelIsLabelRow : undefined,
+    groupColumns: activeGroupColumns,
   });
   const {
     filterPopoverRef,
@@ -1135,6 +1215,8 @@ export function useGridShell<T extends object>({
         aggColumns,
         collapsedGroupKeys: uiState.collapsedGroupKeys,
         rowKeyGetter: resolvedRowKeyGetter,
+        sort: uiState.sort,
+        manualSorting,
       }),
     [
       rowPipeline,
@@ -1150,6 +1232,8 @@ export function useGridShell<T extends object>({
       aggColumns,
       uiState.collapsedGroupKeys,
       resolvedRowKeyGetter,
+      uiState.sort,
+      manualSorting,
     ],
   );
 
@@ -1754,6 +1838,22 @@ export function useGridShell<T extends object>({
       pushOffset: resolution.pushOffset,
     };
   }, [labelSticky, labelDisplay, labelRowFeature, rowMetrics, scrollTop, verticalScaleFactor, rowModel]);
+  // 追加(段階 2 の確かめ直し N4-1): 縦スクロール固定の帯がヘッダーの直下で行を隠す高さ。アクティブセルの追従と
+  //   scrollToRow / scrollToCell が、上へ見せる行を帯の裏に置いていた(Ctrl+Home で最初の行がすべて隠れる)ため。
+  const stickyTopInset = useMemo<StickyTopInset | undefined>(() => {
+    if (!labelSticky || !labelDisplay || labelDisplay.labelViewIndexes.length === 0 || !labelRowFeature) {
+      return undefined;
+    }
+    const { labelViewIndexes } = labelDisplay;
+    return {
+      visibleAt: (logicalScrollTop) => {
+        const resolution = labelRowFeature.resolveStickyLabel(labelViewIndexes, rowMetrics, logicalScrollTop);
+        return resolution ? Math.max(resolution.height - resolution.pushOffset, 0) : 0;
+      },
+      // 上端が rowTop の行を可視域の先頭に置いたときの帯(その行が属するセクションのラベル。行がラベル行なら無し)。
+      coveringRowAt: (rowTop) => labelRowFeature.resolveStickyLabel(labelViewIndexes, rowMetrics, rowTop)?.height ?? 0,
+    };
+  }, [labelSticky, labelDisplay, labelRowFeature, rowMetrics]);
   // 追加(label-row ④): 命令的 API(exportCsv / getExportData)へ渡すラベル行のエクスポート設定です。
   //   変更(差し込み式 段階 5): ラベル行の機能が無い構成ではラベル行をデータ行として扱うので渡しません(全部入りでは
   //   labelRowEnabled は「labelRow の 2 つの関数がある」と同じ)。
@@ -1821,6 +1921,8 @@ export function useGridShell<T extends object>({
   useControllerLifecycle(autoHeightMeasurer, {
     scrollContainerRef,
     autoHeightActive,
+    // 追加(段階 2 DU-32): 測った高さの下限(基準の行の高さ。セルの器は中身の高さなので、1 行でもこれより低くしない)。
+    minRowHeight: rowHeight,
     rowHeightStore,
     rowMetrics,
     rowModel,
@@ -1942,9 +2044,8 @@ export function useGridShell<T extends object>({
   //   ダーク時は root と全ポータル root へ .ssg-theme-dark を付与し、ダークプリセット
   //   (styles.css のトークン一括上書き)を効かせます。ゴースト / ツールチップは各自が
   //   DOM(root への closest / scrollContainer の祖先)から解決するため props 伝播は不要です。
-  const resolvedTheme = useResolvedGridTheme(theme);
-  const themeClassName =
-    resolvedTheme === 'dark' ? 'ssg-theme-dark' : undefined;
+  // 変更(段階 2 DU-13): theme="class" は修飾子 ssg-theme-class(ダークかどうかは CSS が祖先の .dark / data-theme で決める)。
+  const themeClassName = useResolvedGridTheme(theme);
   // ポータル root へまとめて付ける修飾子(テーマ + モーション)。各ポータルの prop 名は従来どおり
   //   themeClassName ですが、中身は「root と同じ修飾子クラス群」です。
   const portalClassName = cx(themeClassName, motionClassName) || undefined;
@@ -1985,6 +2086,8 @@ export function useGridShell<T extends object>({
     verticalScaleFactor,
     // 追加(合計行 3A): スクロール可能な高さに足し、行を見せるときは合計行の裏に隠さない。
     footerHeight,
+    // 追加(段階 2 の確かめ直し N4-1): 上へ動いたアクティブセルをラベル行の固定の帯の裏に隠さない。
+    stickyTopInset,
   });
 
   // 注記(10-G): 旧実装にあった「中央ペインの scrollTop を transform で固定ペインへ同期する
@@ -2097,6 +2200,8 @@ export function useGridShell<T extends object>({
     //             enableSorting=false 時はガード、orderedColumns で colIndex→key 解決。
     enableSorting: sortingEnabled,
     orderedColumns,
+    // 追加(段階 2 の確かめ直し S-N3): アクティブセルが無いときに行番号 / 列見出しを押したときのアクティブセルの列 / 行。
+    resolveFirstDataCell: () => resolveFirstDataCell(rowModel, visibleColumns),
     filteredRowsLength: viewRowCount,
     visibleColumnsLength: visibleColumns.length,
     // 変更(10-E): グローバル columnMeasurements / rowHeaderWidth から
@@ -2354,8 +2459,10 @@ export function useGridShell<T extends object>({
     dispatch(gridActions.startSelection(startCell));
     dispatch(gridActions.updateSelection(endCell));
     dispatch(gridActions.endSelection());
-    dispatch(gridActions.activateCell(startCell));
-  }, [dispatch, viewRowCount, visibleColumns.length]);
+    // 変更(段階 2 lite-2): 範囲は表の全体のまま、アクティブセルは最初のデータのセル(合成列とラベル行を飛ばす。Tab の最初の
+    //   止まり先と同じ)。これまでは (0, 0) で、枠が行ドラッグのハンドル列やラベル行に乗っていました。
+    dispatch(gridActions.activateCell(resolveFirstDataCell(rowModel, visibleColumns)));
+  }, [dispatch, viewRowCount, visibleColumns, rowModel]);
 
   // ── double click → edit ───────────────────────────────
   const handleCellDoubleClick = useCallback(
@@ -2519,6 +2626,105 @@ export function useGridShell<T extends object>({
     [rowModel, detailIsExpandable, toggleDetailRowAt],
   );
 
+  // 追加(段階 2 C-N2): 展開行のカードと Tab の順番です。最終列の Tab は、その行のカードが開いていればカードの最初の要素へ、
+  //   カードの最後の要素の Tab は表の外へ(別の行のカードを通らない)。Shift+Tab は逆順(カードの最初の要素 → その行の
+  //   最終列のセル、表の後ろから戻るとアクティブセルの行のカードの最後の要素)。これまではブラウザの既定(DOM の順)で、
+  //   画面の上の方にある別の行の開いたカードへ入っていました。カードが 1 枚も描かれていなければ従来どおり既定の動きです。
+  const hasDetailCards = detailRowEnabled && detailEntries.length > 0;
+  const moveFocusPastTable = useCallback(() => {
+    const exit = tableExitRef.current;
+    if (!exit) {
+      return;
+    }
+    // 既定動作(Tab)は今のフォーカスの位置から進むので、表の直後の目印へ移しておくと表の外(または検索バー / エラーバー)へ出ます。
+    tableExitFocusingRef.current = true;
+    try {
+      exit.focus({ preventScroll: true });
+    } finally {
+      tableExitFocusingRef.current = false;
+    }
+  }, []);
+  const handleTabPastLastColumn = useCallback(
+    (viewRowIndex: number): boolean => {
+      const scroll = scrollContainerRef.current;
+      if (!hasDetailCards || !scroll) {
+        return false;
+      }
+      const card = findDetailCard(scroll, viewRowIndex);
+      if (card && focusDetailCardEdge(card, 'first')) {
+        return true;
+      }
+      moveFocusPastTable();
+      return false;
+    },
+    [hasDetailCards, moveFocusPastTable],
+  );
+  const handleDetailCardKeyDown = useCallback(
+    (event: ReactKeyboardEvent<HTMLDivElement>, viewRowIndex: number) => {
+      if (
+        event.key !== 'Tab' ||
+        event.defaultPrevented ||
+        event.altKey ||
+        event.ctrlKey ||
+        event.metaKey ||
+        isImeComposingKeyEvent(event.nativeEvent)
+      ) {
+        return;
+      }
+      const target = event.target;
+      // 修正(段階 2 の見直し): カードから portal で出した要素(ダイアログ / ポップオーバー)のキーも React のイベントでは
+      //   カードへ届きます。DOM 上でカードの外なので数えません(数えると、DOM の順ではカードの要素がすべて前にあるため
+      //   「カードの最後」と判定し、ダイアログの中の Tab で表の外へ出ていた)。
+      if (
+        !(target instanceof Element) ||
+        !event.currentTarget.contains(target) ||
+        !isTabEdgeOfCard(event.currentTarget, target, event.shiftKey ? 'backward' : 'forward')
+      ) {
+        return;
+      }
+      if (!event.shiftKey) {
+        moveFocusPastTable();
+        return;
+      }
+      // Shift+Tab: カードの最初の要素から、その行の最終列のセルへ戻ります。
+      const lastCol = orderedColumns.length - 1;
+      if (lastCol < 0) {
+        return;
+      }
+      event.preventDefault();
+      const cell = { row: viewRowIndex, col: lastCol };
+      dispatch(gridActions.startSelection(cell));
+      dispatch(gridActions.endSelection());
+      dispatch(gridActions.activateCell(cell));
+      gridRootRef.current?.focus({ preventScroll: true });
+      scrollRestoredCellIntoView(cell);
+    },
+    [moveFocusPastTable, orderedColumns.length, dispatch, scrollRestoredCellIntoView],
+  );
+  const handleTableExitFocus = useCallback(
+    (event: FocusEvent<HTMLSpanElement>) => {
+      if (tableExitFocusingRef.current) {
+        return;
+      }
+      // 後ろ(表の外 / 検索バーなど)から Shift+Tab で来たら、アクティブセルの行のカードの最後の要素へ。前(表の中)から来たときと
+      //   カードが無いときはシェルへ(見えない目印にフォーカスを残さない)。
+      const related = event.relatedTarget;
+      const cameBackward =
+        !(related instanceof Node) ||
+        (event.currentTarget.compareDocumentPosition(related) & Node.DOCUMENT_POSITION_FOLLOWING) !== 0;
+      const active = uiState.activeCell;
+      const scroll = scrollContainerRef.current;
+      if (cameBackward && active && scroll) {
+        const card = findDetailCard(scroll, active.row);
+        if (card && focusDetailCardEdge(card, 'last')) {
+          return;
+        }
+      }
+      gridRootRef.current?.focus({ preventScroll: true });
+    },
+    [uiState.activeCell],
+  );
+
   // 追加(dogfood DF-08): スクロールする要素そのものにフォーカスが来たら(余白やスクロールバーのクリックなど)、シェルへ移します。
   const handleScrollContainerFocus = useCallback((event: FocusEvent<HTMLDivElement>) => {
     if (event.target === event.currentTarget) {
@@ -2590,7 +2796,44 @@ export function useGridShell<T extends object>({
     onToggleDetailRow: detailRowEnabled ? toggleDetailRowFromKeyboard : undefined,
     resolvePageRow,
     openColumnMenu: columnMenuEnabled ? openColumnMenuForCell : undefined,
+    // 追加(段階 2 C-N2): 最終列の Tab をその行の展開行のカードへ。
+    onTabPastLastColumn: detailRowEnabled ? handleTabPastLastColumn : undefined,
   });
+
+  // 修正(段階 2 の見直し): セルや見出しの中の消費側の要素(renderCell のボタンなど)で Tab を押し、表の中にもう止まる要素が
+  //   無いときは、既定動作の前にフォーカスを表の直後の目印へ移して表の外へ出します(何もしないと既定動作で目印に止まり、
+  //   「前から来た」としてシェルへ戻すので、Tab で後ろへ戻ったように見えていた)。グリッドのキー操作(keyboardController)と
+  //   エディタは Tab を自分で処理する(preventDefault)ので対象外、カードの中はカードの keydown が処理します。
+  const handleRootKeyDown = useCallback(
+    (event: ReactKeyboardEvent<HTMLDivElement>) => {
+      handleKeyDown(event);
+      if (
+        !hasDetailCards ||
+        event.key !== 'Tab' ||
+        event.shiftKey ||
+        event.defaultPrevented ||
+        event.altKey ||
+        event.ctrlKey ||
+        event.metaKey ||
+        isImeComposingKeyEvent(event.nativeEvent)
+      ) {
+        return;
+      }
+      const target = event.target;
+      const scroll = scrollContainerRef.current;
+      if (
+        !(target instanceof Element) ||
+        !scroll ||
+        !scroll.contains(target) ||
+        isInsideDetailCardOf(scroll, target) ||
+        !isTabEdgeOfCard(scroll, target, 'forward')
+      ) {
+        return;
+      }
+      moveFocusPastTable();
+    },
+    [handleKeyDown, hasDetailCards, moveFocusPastTable],
+  );
 
   // ── edit controller ───────────────────────────────────
   const { startEditWithValue, commitEdit, cancelEdit } = useGridEditController({
@@ -2651,6 +2894,14 @@ export function useGridShell<T extends object>({
   const editingColumn = uiState.editingCell
     ? orderedColumns[uiState.editingCell.col]
     : undefined;
+  // 追加(段階 2 の確かめ直し N3-2): 編集中のセルが上にそろえて描かれているか(GridBodyLayer の alignTop と同じ条件)。
+  //   複数行のエディタの 1 行目をセルの文字にそろえるのに使います。
+  const editorAlignTop =
+    editingColumn !== undefined &&
+    editingCellPlacement !== null &&
+    autoHeightActive &&
+    editingCellPlacement.rect.height > rowHeight &&
+    (editingColumn.verticalAlign ?? verticalAlign ?? (editingColumn.autoHeight === true ? 'top' : 'center')) === 'top';
 
   // 追加(editor: select): 編集中セルのセッション情報(行 / ビュー座標 / 生値)です。
   //   CellEditorLayer へ渡し、select の動的 options 解決・初期ハイライトに使います(編集中のみ非 null)。
@@ -2996,6 +3247,8 @@ export function useGridShell<T extends object>({
     handleColumnMenuOpenFilterManager,
     handleColumnMenuResetColumns,
     handleColumnMenuSortChange,
+    handleColumnMenuGroupBy,
+    handleColumnMenuUngroup,
     handleFilterManagerClearFilter,
     handleFilterManagerClearAll,
     handleFilterManagerClearGlobal,
@@ -3070,6 +3323,7 @@ export function useGridShell<T extends object>({
       centerLeadingWidth,
       rightPaneTotalWidth,
       openColumnFilterPopover,
+      groupColumns: activeGroupColumns,
     });
 
   // 追加(FM-3): 既定トップバーの Filters chip クリックでパネルをトグルします。
@@ -3441,8 +3695,13 @@ export function useGridShell<T extends object>({
     rowModel,
   });
 
+  // 追加(段階 2 DU-18): 文言を既定と合わせます(中身が同じなら同じ参照 = localeText={{ … }} をその場で書いても要約を作り直さない)。
+  const [resolveLocaleText] = useState(createLocaleTextResolver);
+  const localeTexts = useMemo(() => resolveLocaleText(localeText), [resolveLocaleText, localeText]);
+
   const { slotContext } = useGridBarContext({
     rows,
+    localeTexts,
     // 変更(DS-3-7): filteredRows(配列)→ viewRowCount(件数)+ getFilteredRows(遅延 factory)。
     //   bar summary は件数のみ、公開 slotContext.filteredRows は外部スロットが読んだ時だけ生成。
     // 変更(grouping ④): summary の件数はグループ行を除く leafRowCount です(slotContext.filteredRows
@@ -3592,6 +3851,15 @@ export function useGridShell<T extends object>({
   //           固定ペインの影が重なるよう position: relative + zIndex: 1（固定ペインより背面）。
 
   // ── column menu popover(13-A) ────────────────────────
+  // 追加(段階 2 DU-24): 列メニューのグループ化の入口。列のどれかに rowGroup を書いている(false を含む = グループ化を使う表)
+  //   ときだけ出します(グルーピングを使わない表のメニューは変えない)。列定義は controlled なので onColumnsChange が要り、
+  //   グルーピングの機能・clientSide・ラベル行なしが条件です。集計のある列(aggFunc)はグループ化の対象に出しません。
+  const columnMenuGroupingAvailable =
+    features.grouping !== undefined &&
+    !isServerSide &&
+    !labelRowEnabled &&
+    onColumnsChange !== undefined &&
+    columns.some((column) => column.rowGroup !== undefined);
   // 追加(13-A): 列メニュー popover の描画です(portal で body 直下へ出します)。
   const renderedColumnMenuPopover = openedMenuColumn ? (
     <features.columnMenu.ColumnMenuPopover
@@ -3624,6 +3892,20 @@ export function useGridShell<T extends object>({
       onOpenColumnChooser={toolPanelAvailable ? handleColumnMenuOpenChooser : undefined}
       canResetColumns={Boolean(onColumnsChange)}
       onResetColumns={handleColumnMenuResetColumns}
+      onGroupByColumn={
+        // 修正(段階 2 の見直し): 表に出ている最後のデータ列は出さない(自動グループ列だけが残ると列メニューが無くなり、
+        //   「グループ化を外す」へ戻れなかった。列の表示 / 非表示の「最後の 1 列は外せない」と同じ)。
+        columnMenuGroupingAvailable &&
+        openedMenuColumn.aggFunc == null &&
+        openedMenuColumn.rowGroup !== true &&
+        visibleColumns.some(
+          (column) =>
+            column.key !== openedMenuColumn.key && column.rowGroup !== true && !isSyntheticColumnKey(column.key),
+        )
+          ? () => handleColumnMenuGroupBy(openedMenuColumn.key)
+          : undefined
+      }
+      onUngroup={columnMenuGroupingAvailable && rowGroupingActive ? handleColumnMenuUngroup : undefined}
       onRequestClose={closeColumnMenu}
     />
   ) : null;
@@ -3788,6 +4070,7 @@ export function useGridShell<T extends object>({
           derivedSummary={slotContext.derivedSummary}
           selectionAggregates={slotContext.selectionAggregates}
           showCounts={showBottomBarCounts}
+          localeTexts={localeTexts}
           SelectionAggregates={features.selectionAggregates.SelectionAggregates}
         />,
       );
@@ -3825,6 +4108,7 @@ export function useGridShell<T extends object>({
     getUiState: gridStore.getState,
     // 追加(dogfood DU-02): focus() / startEditing() の委譲先(ルートへの focus は imeDirectInput 有効時は入力受けへ回る)。
     focusGrid: focusGridRoot,
+    beforeDetailRowsCollapse: returnFocusFromDetailCards,
     startEditCell: tryStartEditCell,
     headerHeight,
     verticalScaleFactor,
@@ -3844,9 +4128,13 @@ export function useGridShell<T extends object>({
     isRowExportable,
     // 追加(label-row ④): ラベル行のエクスポート設定(scope 'raw' の除外 / includeLabelRows の出力値)。
     labelRowExport,
+    // 追加(段階 2 N-4): getRowNumber が行番号の列と同じ番号を返すため(ラベル行を数えない)。
+    labelViewIndexes: labelDisplay?.labelViewIndexes,
     // 追加(合計行 3A): 合計行のエクスポート(includeTotalRow)と、末尾 / 行を見せる位置の計算に使う高さ。
     totalRowExport,
     footerHeight,
+    // 追加(段階 2 の確かめ直し N4-1): scrollToRow / scrollToCell が上へ見せる行をラベル行の固定の帯の下に置く。
+    stickyTopInset,
     activeToolPanelTab,
     openToolPanel,
     closeToolPanel,
@@ -3857,6 +4145,8 @@ export function useGridShell<T extends object>({
     canUndoRows,
     canRedoRows,
     clearUndoHistory,
+    // 追加(段階 2 DU-21): applyRows の委譲先(履歴に積んでから onRowsChange)。
+    applyRowsChange: handleRowsChange,
     detailRowEnabled,
     detailIsExpandable,
     detailIndexCacheRef: detailIndexCacheHolder,
@@ -3979,7 +4269,7 @@ export function useGridShell<T extends object>({
         //   (styles.css の .ssg-shell:focus-visible。Tab で入った直後など)。
         data-ssg-has-active-cell={uiState.activeCell === null ? undefined : ''}
         // 追加: popup open 中は root の keyboard/paste handler 自体を外します。
-        onKeyDown={isAnyGridPopupOpen ? undefined : handleKeyDown}
+        onKeyDown={isAnyGridPopupOpen ? undefined : handleRootKeyDown}
         onPaste={isAnyGridPopupOpen ? undefined : handlePaste}
         // 追加(バッチ②): ボディ右クリックの委譲。未 opt-in / 対象外は素通しで標準メニューになります。
         onContextMenu={handleBodyContextMenu}
@@ -4029,7 +4319,8 @@ export function useGridShell<T extends object>({
           {/*   固定列が無いときは hasLeftPane=false で width:0 の空ペイン（従来どおり）。*/}
           <div
             ref={leftPaneScrollRef}
-            style={pinnedPaneStyle('left', leftPaneTotalWidth, hasLeftPane)}
+            // 変更(段階 2 DU-22): 行ヘッダーだけの左ペイン(左固定列なし)は境界線と影を付けません(見た目は今までの行ヘッダーのまま)。
+            style={pinnedPaneStyle('left', leftPaneTotalWidth, paneLayout.left.entries.length > 0)}
           >
             {hasLeftPane && (
               <div
@@ -4176,6 +4467,7 @@ export function useGridShell<T extends object>({
                   align={editingColumn?.align}
                   enterMove={editorEnterMove}
                   domId={cellEditorDomId}
+                  alignTop={editorAlignTop}
                 />
 
                 <GridBodyLayer
@@ -4190,6 +4482,7 @@ export function useGridShell<T extends object>({
                   renderEntries={leftRenderEntries}
                   rowHeight={rowHeight}
                   autoHeight={autoHeightActive}
+                  verticalAlign={verticalAlign}
                   showCellOverflowTooltip={showCellOverflowTooltip}
                   showValidationMarks={showValidationMarks}
                   conditionalFormatStats={conditionalFormatStats}
@@ -4396,6 +4689,7 @@ export function useGridShell<T extends object>({
                   align={editingColumn?.align}
                   enterMove={editorEnterMove}
                   domId={cellEditorDomId}
+                  alignTop={editorAlignTop}
                 />
 
                 <GridBodyLayer
@@ -4410,6 +4704,7 @@ export function useGridShell<T extends object>({
                   renderEntries={centerRenderEntries}
                   rowHeight={rowHeight}
                   autoHeight={autoHeightActive}
+                  verticalAlign={verticalAlign}
                   showCellOverflowTooltip={showCellOverflowTooltip}
                   showValidationMarks={showValidationMarks}
                   conditionalFormatStats={conditionalFormatStats}
@@ -4446,6 +4741,7 @@ export function useGridShell<T extends object>({
                 <GridDetailLayer
                   slots={slots}
                   entries={detailEntries}
+                  onCardKeyDown={handleDetailCardKeyDown}
                   mode="center"
                   paneWidth={centerContentWidth}
                   cardStickyLeft={detailCardStickyLeft}
@@ -4616,6 +4912,7 @@ export function useGridShell<T extends object>({
                   align={editingColumn?.align}
                   enterMove={editorEnterMove}
                   domId={cellEditorDomId}
+                  alignTop={editorAlignTop}
                 />
 
                 <GridBodyLayer
@@ -4630,6 +4927,7 @@ export function useGridShell<T extends object>({
                   renderEntries={rightRenderEntries}
                   rowHeight={rowHeight}
                   autoHeight={autoHeightActive}
+                  verticalAlign={verticalAlign}
                   showCellOverflowTooltip={showCellOverflowTooltip}
                   showValidationMarks={showValidationMarks}
                   conditionalFormatStats={conditionalFormatStats}
@@ -4705,6 +5003,16 @@ export function useGridShell<T extends object>({
           )}
         </div>
         {/* ── /共有スクロールコンテナ ── */}
+        {/* 追加(段階 2 C-N2): 表の直後の目印(展開行があるときだけ)。Tab の順番に入れるのはカードが描かれているときだけです。 */}
+        {detailRowEnabled ? (
+          <span
+            ref={tableExitRef}
+            className="ssg-tab-exit"
+            tabIndex={hasDetailCards ? 0 : -1}
+            aria-hidden="true"
+            onFocus={handleTableExitFocus}
+          />
+        ) : null}
 
         {/* 追加(scrollHint): スクロール位置インジケーター(行番号バブル)です。autosize /
             filter overlay と同じくシェルへの絶対配置・pointer-events: none の装飾オーバーレイ。

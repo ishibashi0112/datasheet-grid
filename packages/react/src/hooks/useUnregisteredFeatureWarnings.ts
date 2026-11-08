@@ -77,7 +77,12 @@ const FEATURE_PROPS: { [K in FeatureName]-?: readonly FeaturePropCheck[] } = {
   filtering: [
     { prop: 'enableColumnFilter', isUsed: (props) => props.enableColumnFilter === true },
     { prop: 'enableGlobalFilter', isUsed: (props) => props.enableGlobalFilter === true },
-    { prop: 'columns[].filterType', isUsed: (props) => props.columns.some((column) => column.filterType !== undefined) },
+    // 変更(段階 2 DU-25): enableColumnFilter={false} を明示したら警告しません(列定義を機能違いのグリッドで共有するとき、
+    //   filtering の無い方で消せなかった)。
+    {
+      prop: 'columns[].filterType',
+      isUsed: (props) => props.enableColumnFilter !== false && props.columns.some((column) => column.filterType !== undefined),
+    },
     { prop: 'manualFiltering', isUsed: (props) => props.manualFiltering === true },
     { prop: 'getFilterOptions', isUsed: (props) => props.getFilterOptions !== undefined },
     { prop: 'showFilterChipBar', isUsed: (props) => props.showFilterChipBar === true },

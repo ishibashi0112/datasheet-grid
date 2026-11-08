@@ -144,7 +144,7 @@ export function ScrollHintDemo() {
         onRowsChange={setRows}
         rowKeyGetter={(row) => row.id}
         height={380}
-        theme="auto"
+        theme="class"
         scrollHint={scrollHint}
       />
     </div>

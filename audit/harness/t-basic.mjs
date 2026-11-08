@@ -345,7 +345,7 @@ await page.locator('.ssg-filter-popover .ssg-filter-input').fill('item-0001');
 await page.locator('.ssg-filter-btn-primary').click();
 await waitIdle(page, 200);
 let bottom = await page.locator('.ssg-bar--bottom').textContent();
-check('text filter applied (item-0001xx = 100 rows)', /Rows: 100 \//.test(bottom), bottom);
+check('text filter applied (item-0001xx = 100 rows)', /行 100 \//.test(bottom), bottom);
 check('header shows filtered mark', (await header(page, 'name').locator('.ssg-header-filtered-mark').count()) === 1);
 check('filter chip bar shows 1 chip', (await page.locator('.ssg-filter-chip, [class*="chip-bar"] [class*="chip"]').count()) >= 1, await page.evaluate(() => document.querySelector('[class*="filter-chip"]')?.textContent));
 // IME 変換中 Enter は適用しない
@@ -357,7 +357,7 @@ await inp.evaluate((el) => {
   el.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', keyCode: 229, isComposing: true, bubbles: true }));
 });
 await waitIdle(page, 100);
-check('IME composing Enter does not apply/close popover', (await page.locator('.ssg-filter-popover').count()) === 1 && /Rows: 100 \//.test(await page.locator('.ssg-bar--bottom').textContent()));
+check('IME composing Enter does not apply/close popover', (await page.locator('.ssg-filter-popover').count()) === 1 && /行 100 \//.test(await page.locator('.ssg-bar--bottom').textContent()));
 await closePopover();
 // set (category): A のみ
 await openFilter('category');
@@ -365,7 +365,7 @@ await page.locator('.ssg-filter-selectall input').click(); // 全解除
 await page.locator('.ssg-filter-option').filter({ hasText: /^A$/ }).locator('input').click();
 await waitIdle(page, 150);
 bottom = await page.locator('.ssg-bar--bottom').textContent();
-check('set filter A ∧ text filter → 25 rows', /Rows: 25 \//.test(bottom), bottom);
+check('set filter A ∧ text filter → 25 rows', /行 25 \//.test(bottom), bottom);
 st = await state(page);
 check('set filter state values=[A]', st.filters.columnFilters.category?.kind === 'set' && st.filters.columnFilters.category.values.join() === 'A', st.filters.columnFilters.category);
 await closePopover();

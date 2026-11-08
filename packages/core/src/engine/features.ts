@@ -18,6 +18,7 @@ import type { AutoHeightMeasurer, AutoHeightMeasureSnapshot } from '../controlle
 import type { buildRowHeightStore, createAutoHeightRowMetrics } from '../logic/rowHeightStore';
 import type { ColumnFilterStage } from './columnFilterStage';
 import type { DateRolloverStore } from '../controllers/dateRolloverStore';
+import type { resolveRelativeDateFilterKey } from '../logic/filtering';
 import type { SaveStatusController } from '../controllers/saveStatusController';
 import type { buildGroupTree, flattenGroupTree } from '../logic/grouping';
 import type {
@@ -55,16 +56,23 @@ export type GridCoreFeatures = {
     createChangeHighlightController: <T>() => ChangeHighlightController<T>;
   };
   // エクスポート(命令的 API の exportCsv / downloadCsv / getExportData)。
+  //   第 2 引数は機能セットの行グルーピング(小計の行を出力する行だけで組み直すときに使う。無ければ組み直さない)。
   export?: {
-    createExportCommands: <T>(getArgs: () => GridApiArgs<T> | null) => ExportCommands<T>;
+    createExportCommands: <T>(
+      getArgs: () => GridApiArgs<T> | null,
+      grouping?: GroupingFeature,
+    ) => ExportCommands<T>;
   };
   // 行の高さの実測(autoHeight): 描画済みセルの実測 + ResizeObserver のコントローラと、実測高さの行高ストア
   //   (縦レイアウトが prefix-sum の行メトリクスを作る)。
   autoHeight?: AutoHeightFeature;
   // フィルター: 行パイプラインの列フィルターの段と、相対日付プリセットの日付の変わり目の見張り(グローバルフィルターの
   //   適用は描画側の機能の hook が担う)。
+  //   resolveRelativeDateFilterKey は serverSide の最初の query のキーに相対日付プリセットの範囲を入れるため(initialState で
+  //   「今月」などを入れたときに、最初のブロックを取り直さない。無ければ入れない)。
   filtering?: ColumnFilteringFeature & {
     createDateRolloverStore: () => DateRolloverStore;
+    resolveRelativeDateFilterKey?: typeof resolveRelativeDateFilterKey;
   };
   // ラベル行(labelRow): 行パイプラインの配置 / 表示順 / 行モデル(clientSide)+ serverSide の行モデルのラッパ +
   //   縦スクロール固定の解決(描画側が使う)。

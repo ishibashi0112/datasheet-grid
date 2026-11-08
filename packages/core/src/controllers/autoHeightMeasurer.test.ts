@@ -35,6 +35,7 @@ const makeContainer = (heights: number[]) => {
   const container = document.createElement('div');
   let scrollTop = 0;
   Object.defineProperty(container, 'scrollTop', {
+    configurable: true,
     get: () => scrollTop,
     set: (value: number) => {
       scrollTop = value;
@@ -157,6 +158,95 @@ describe('createAutoHeightMeasurer', () => {
     measurer.dispose();
     runFrame();
     expect(measurer.getSnapshot()).toEqual({ version: 1, nonce: 1 });
+  });
+
+  // 追加(段階 2 DF-24): 短い表の下の方を見ているときに幅を狭めて行が伸びると、合わせたい位置がまだ古い全高の
+  //   スクロールの上限を超えていて、ブラウザが scrollTop を上限で止めていました(見ていた行がずれ、アクティブセルが画面外へ)。
+  //   止められたら、新しい全高で描き直した次の測定(ペイント前)で合わせ直します。
+  it('合わせたい位置が古いスクロールの上限で止められたら、描き直した後に合わせ直す', () => {
+    const measurer = createAutoHeightMeasurer<Row>();
+    const store = buildRowHeightStore(rows.length, 20, rowModel.getRowKey, measurer.measuredHeights);
+    const rowMetrics = createAutoHeightRowMetrics(store);
+    const container = makeContainer([50, 50, 50]);
+    // スクロールの上限 = 全高 - 見える高さ。全高は描き直しで変わる(初めは 3 行 × 20 = 60、見える高さ 30)。
+    let scrollHeight = 60;
+    let scrollTop = 0;
+    Object.defineProperty(container, 'scrollTop', {
+      get: () => scrollTop,
+      set: (value: number) => {
+        scrollTop = Math.max(0, Math.min(value, scrollHeight - 30));
+      },
+    });
+    // 行 1 の途中(25 = 行 1 top 20 + 5)を見ている。
+    container.scrollTop = 25;
+    const args: AutoHeightMeasureArgs<Row> = {
+      scrollContainerRef: { current: container },
+      autoHeightActive: true,
+      rowHeightStore: store,
+      rowMetrics,
+      rowModel,
+      virtualRows: [],
+      viewportHeight: 30,
+      version: 0,
+      nonce: 0,
+    };
+    measurer.update(args);
+    // 行 1 の top は 20 → 50 なので 55 へ合わせたいが、古い上限 30 で止められる。
+    expect(container.scrollTop).toBe(30);
+    // 新しい全高(150)で描き直した後の測定で合わせ直す(高さは収束しているので version は進まない)。
+    scrollHeight = 150;
+    measurer.update({ ...args, version: measurer.getSnapshot().version });
+    expect(container.scrollTop).toBe(55);
+    // 合わせ直しは 1 回だけ(その後に利用者がスクロールした位置は動かさない)。
+    container.scrollTop = 10;
+    measurer.update({ ...args, version: measurer.getSnapshot().version, nonce: 1 });
+    expect(container.scrollTop).toBe(10);
+    measurer.dispose();
+  });
+
+  // 追加(段階 2 DU-32): セルの箱は行の高さなので、中の器(data-autoheight-content)の高さ + セルの上下の枠線と余白を
+  //   測ります。下限は基準の行の高さ(minRowHeight)。ResizeObserver も器を見ます(セルの箱は行の高さで変わるため)。
+  it('器があれば器の高さ + セルの枠線と余白を測り、基準の行の高さを下限にし、器を見張る', () => {
+    const container = document.createElement('div');
+    const contents: HTMLElement[] = [];
+    [70, 12, 0].forEach((contentHeight, index) => {
+      const row = document.createElement('div');
+      row.dataset.rowIndex = String(index);
+      const cell = document.createElement('div');
+      cell.setAttribute('data-autoheight-cell', '');
+      cell.style.borderBottomWidth = '1px';
+      cell.style.paddingTop = '2px';
+      cell.style.paddingBottom = '3.5px';
+      // セルの箱は行の高さ(器より大きい)。器の高さで測ること。
+      cell.getBoundingClientRect = () => ({ height: contentHeight === 0 ? 0 : 200 }) as DOMRect;
+      const content = document.createElement('div');
+      content.setAttribute('data-autoheight-content', '');
+      content.getBoundingClientRect = () => ({ height: contentHeight }) as DOMRect;
+      cell.appendChild(content);
+      contents.push(content);
+      row.appendChild(cell);
+      container.appendChild(row);
+    });
+    const measurer = createAutoHeightMeasurer<Row>();
+    const store = buildRowHeightStore(rows.length, 20, rowModel.getRowKey, measurer.measuredHeights);
+    measurer.update({
+      scrollContainerRef: { current: container },
+      autoHeightActive: true,
+      minRowHeight: 30,
+      rowHeightStore: store,
+      rowMetrics: createAutoHeightRowMetrics(store),
+      rowModel,
+      virtualRows: [],
+      viewportHeight: 100,
+      version: 0,
+      nonce: 0,
+    });
+    // 70 + 1 + 2 + 3.5 = 76.5 → 77 / 12 + 6.5 = 18.5 → 下限の 30 / 隠れている(セルも器も 0)は記録しない。
+    expect(measurer.measuredHeights.get(1)).toBe(77);
+    expect(measurer.measuredHeights.get(2)).toBe(30);
+    expect(measurer.measuredHeights.has(3)).toBe(false);
+    expect(observe.mock.calls.map(([target]) => target)).toEqual(contents);
+    measurer.dispose();
   });
 
   it('無効化すると observer を破棄し、dispose でも破棄する', () => {

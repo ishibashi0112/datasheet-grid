@@ -7,6 +7,7 @@
 import { describe, it, expect, vi, beforeAll, afterEach } from 'vitest';
 import { render, cleanup, act, fireEvent } from '@testing-library/react';
 import { createRef } from 'react';
+import { createPortal } from 'react-dom';
 
 import { SpreadsheetGrid } from './SpreadsheetGrid';
 import { DETAIL_TOGGLE_COLUMN_KEY } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/detailRow';
@@ -36,6 +37,8 @@ beforeAll(() => {
     configurable: true,
     get: () => 1600,
   });
+  // @tanstack/virtual-core 3.19 から、列の仮想化は見える幅を clientWidth で読みます(3.17 までは offsetWidth)。
+  Object.defineProperty(HTMLElement.prototype, 'clientWidth', { configurable: true, get: () => 1600 });
   Object.defineProperty(HTMLElement.prototype, 'offsetHeight', {
     configurable: true,
     get: () => 900,
@@ -478,5 +481,325 @@ describe('展開行の操作(dogfood)', () => {
     fireEvent.keyDown(shell, { key: 'Enter' });
     expect(ref.current?.getExpandedDetailRowKeys()).toEqual([]);
     expect(container.querySelector('.ssg-cell-editor, [data-ssg-editor]')).not.toBeNull();
+  });
+});
+
+
+// 追加(段階 2 DF-25): 展開中の行を rows から消したら、そのキーを外して onExpandedDetailRowKeysChange で知らせます。
+//   これまでは getExpandedDetailRowKeys() にキーが残り、通知も来ませんでした(同じキーの行を足し直すと開いたまま出た)。
+describe('展開中の行を rows から消す(DF-25)', () => {
+  it('消した行のキーを外して通知する。残っている行と、まだ読み込んでいない行のキーは残す', () => {
+    const ref = createRef<SpreadsheetGridHandle<Row>>();
+    const onChange = vi.fn();
+    const view = (nextRows: Row[]) => (
+      <SpreadsheetGrid
+        ref={ref}
+        columns={columns}
+        rows={nextRows}
+        rowKeyGetter={rowKeyGetter}
+        detailRow={detailRow}
+        onExpandedDetailRowKeysChange={onChange}
+      />
+    );
+    const { rerender } = render(view(rows));
+    act(() => {
+      ref.current?.setDetailRowExpanded('a', true);
+      ref.current?.setDetailRowExpanded('c', true);
+      // まだ rows に無い行(後から読み込む行)のキー。
+      ref.current?.setDetailRowExpanded('z', true);
+    });
+    expect(onChange).toHaveBeenLastCalledWith(['a', 'c', 'z']);
+    onChange.mockClear();
+
+    // 編集(同じ位置の行の差し替え)では外さない。
+    rerender(view([rows[0], rows[1], { ...rows[2], qty: 31 }]));
+    expect(onChange).not.toHaveBeenCalled();
+
+    // c を消す。
+    rerender(view([rows[0], rows[1]]));
+    expect(ref.current?.getExpandedDetailRowKeys()).toEqual(['a', 'z']);
+    expect(onChange).toHaveBeenLastCalledWith(['a', 'z']);
+
+    // 同じキーの行を足し直しても、開いたままにはならない。
+    rerender(view(rows));
+    expect(ref.current?.getExpandedDetailRowKeys()).toEqual(['a', 'z']);
+  });
+});
+
+// 追加(段階 2 C-N2): 最終列の Tab は、その行のカードが開いていればカードの中へ、カードの最後でグリッドの外へ。Shift+Tab は逆順。
+//   これまではブラウザの既定(DOM の順)で、画面の上の方にある別の行のカードへ入っていました。jsdom はフォーカスの既定の
+//   移動をしないので、既定動作を止めたか(fireEvent の戻り値が false)と、既定動作の前にフォーカスをどこへ移したかを見ます
+//   (実際の移動は監査ハーネスで Chromium / Firefox / WebKit を確認)。
+describe('展開行のカードと Tab(C-N2)', () => {
+  // 列の並び: 0 = 展開トグル列, 1 = ID, 2 = 名称, 3 = 数量(最終列)。カードの中は「閉じる」ボタン → 入力欄。
+  const LAST_COL = 3;
+  const cardOf = (container: HTMLElement, rowIndex: number) =>
+    container.querySelector<HTMLElement>(`.ssg-detail-band[data-detail-row-index="${rowIndex}"] .ssg-detail-card`);
+  const renderGrid = (expanded: string[]) => {
+    const ref = createRef<SpreadsheetGridHandle<Row>>();
+    const view = render(
+      <div>
+        <SpreadsheetGrid ref={ref} columns={columns} rows={rows} rowKeyGetter={rowKeyGetter} detailRow={detailRow} />
+        <button type="button">表の後ろ</button>
+      </div>,
+    );
+    act(() => {
+      for (const key of expanded) ref.current?.setDetailRowExpanded(key, true);
+    });
+    return { ref, container: view.container, shell: getShell(view.container) };
+  };
+
+  it('最終列の Tab は、その行のカードが開いていればカードの最初の要素へ(既定動作を止める)', () => {
+    const { ref, container, shell } = renderGrid(['a', 'c']);
+    act(() => {
+      ref.current?.setActiveCell({ row: 2, col: LAST_COL });
+    });
+    shell.focus();
+    expect(fireEvent.keyDown(shell, { key: 'Tab' })).toBe(false);
+    expect(document.activeElement).toBe(cardOf(container, 2)?.querySelector('button'));
+  });
+
+  it('その行のカードが無ければ、別の行のカードを飛ばして表の直後の目印へ移し、既定動作で外へ出す', () => {
+    const { ref, container, shell } = renderGrid(['a']);
+    act(() => {
+      ref.current?.setActiveCell({ row: 2, col: LAST_COL });
+    });
+    shell.focus();
+    expect(fireEvent.keyDown(shell, { key: 'Tab' })).toBe(true);
+    expect(document.activeElement).toBe(container.querySelector('.ssg-tab-exit'));
+    // 最終列でなければこれまでどおり右のセルへ(既定動作を止める)。
+    act(() => {
+      ref.current?.setActiveCell({ row: 2, col: 1 });
+    });
+    shell.focus();
+    expect(fireEvent.keyDown(shell, { key: 'Tab' })).toBe(false);
+    expect(ref.current?.getActiveCell()).toEqual({ row: 2, col: 2 });
+    expect(document.activeElement).toBe(shell);
+  });
+
+  it('カードの最後の要素の Tab は表の外へ、最初の要素の Shift+Tab はその行の最終列のセルへ。途中の要素は既定のまま', () => {
+    const { ref, container, shell } = renderGrid(['a', 'c']);
+    act(() => {
+      ref.current?.setActiveCell({ row: 0, col: 1 });
+    });
+    const card = cardOf(container, 2);
+    const button = card?.querySelector<HTMLButtonElement>('button');
+    const input = card?.querySelector<HTMLInputElement>('input');
+    expect(button && input).toBeTruthy();
+    // 途中(ボタンの次に入力欄がある)は既定動作のまま。
+    button!.focus();
+    expect(fireEvent.keyDown(button!, { key: 'Tab' })).toBe(true);
+    expect(document.activeElement).toBe(button);
+    // 最後の要素: 表の直後の目印へ移して既定動作で外へ。
+    input!.focus();
+    expect(fireEvent.keyDown(input!, { key: 'Tab' })).toBe(true);
+    expect(document.activeElement).toBe(container.querySelector('.ssg-tab-exit'));
+    // 最初の要素の Shift+Tab: その行(2)の最終列のセルへ戻り、フォーカスはシェル。
+    button!.focus();
+    expect(fireEvent.keyDown(button!, { key: 'Tab', shiftKey: true })).toBe(false);
+    expect(ref.current?.getActiveCell()).toEqual({ row: 2, col: LAST_COL });
+    expect(document.activeElement).toBe(shell);
+    // 最後の要素の Shift+Tab は既定のまま(ボタンへ)。
+    input!.focus();
+    expect(fireEvent.keyDown(input!, { key: 'Tab', shiftKey: true })).toBe(true);
+  });
+
+  it('表の後ろから Shift+Tab で目印に来たら、アクティブセルの行のカードの最後の要素へ。カードが無い行・表の中から来たときはシェルへ', () => {
+    const { ref, container, shell } = renderGrid(['a', 'c']);
+    const exit = container.querySelector<HTMLElement>('.ssg-tab-exit');
+    const after = Array.from(container.querySelectorAll('button')).find((b) => b.textContent === '表の後ろ');
+    expect(exit?.tabIndex).toBe(0);
+    act(() => {
+      ref.current?.setActiveCell({ row: 2, col: 1 });
+    });
+    after!.focus();
+    act(() => {
+      exit!.focus();
+    });
+    expect(document.activeElement).toBe(cardOf(container, 2)?.querySelector('input'));
+    // カードが無い行(b)なら、シェルへ。
+    act(() => {
+      ref.current?.setActiveCell({ row: 1, col: 1 });
+    });
+    after!.focus();
+    act(() => {
+      exit!.focus();
+    });
+    expect(document.activeElement).toBe(shell);
+    // 表の中(シェル)から来たときもシェルへ(見えない目印にフォーカスを残さない)。
+    act(() => {
+      ref.current?.setActiveCell({ row: 2, col: 1 });
+    });
+    shell.focus();
+    act(() => {
+      exit!.focus();
+    });
+    expect(document.activeElement).toBe(shell);
+  });
+
+  // 修正(段階 2 の見直し): カードから portal で出した要素(ダイアログなど)のキーは数えない(DOM 上でカードの外)。
+  it('カードから portal で出したダイアログの中の Tab は既定のまま(表の外へ出さない)', () => {
+    const ref = createRef<SpreadsheetGridHandle<Row>>();
+    const portalDetail: DetailRowOptions<Row> = {
+      height: 120,
+      render: ({ rowKey }) => (
+        <div>
+          <button type="button">{`card-${rowKey}`}</button>
+          {createPortal(
+            <div role="dialog">
+              <input aria-label={`dialog-1-${rowKey}`} />
+              <input aria-label={`dialog-2-${rowKey}`} />
+            </div>,
+            document.body,
+          )}
+        </div>
+      ),
+    };
+    render(<SpreadsheetGrid ref={ref} columns={columns} rows={rows} rowKeyGetter={rowKeyGetter} detailRow={portalDetail} />);
+    act(() => {
+      ref.current?.setDetailRowExpanded('a', true);
+    });
+    const first = document.querySelector<HTMLInputElement>('input[aria-label="dialog-1-a"]');
+    expect(first).not.toBeNull();
+    first!.focus();
+    expect(fireEvent.keyDown(first!, { key: 'Tab' })).toBe(true);
+    expect(document.activeElement).toBe(first);
+    expect(fireEvent.keyDown(first!, { key: 'Tab', shiftKey: true })).toBe(true);
+    expect(document.activeElement).toBe(first);
+  });
+
+  // 修正(段階 2 の見直し): セルの中の消費側の要素(renderCell のボタン)の Tab で、表の中にもう止まる要素が無ければ表の外へ
+  //   (これまでは既定動作で目印に止まり、「表の中から来た」としてシェルへ戻していた = Tab で後ろへ戻ったように見えた)。
+  it('セルの中のボタンの Tab で表の中にもう止まる要素が無ければ、目印へ移して既定動作で表の外へ', () => {
+    const withButtons: GridColumn<Row>[] = [
+      ...columns,
+      {
+        key: 'act',
+        title: '操作',
+        width: 80,
+        pinned: 'right',
+        renderCell: ({ row }) => <button type="button">{`操作-${row.id}`}</button>,
+      },
+    ];
+    const ref = createRef<SpreadsheetGridHandle<Row>>();
+    const { container } = render(
+      <SpreadsheetGrid ref={ref} columns={withButtons} rows={rows} rowKeyGetter={rowKeyGetter} detailRow={detailRow} />,
+    );
+    act(() => {
+      ref.current?.setDetailRowExpanded('a', true);
+    });
+    const exit = container.querySelector<HTMLElement>('.ssg-tab-exit');
+    const scroll = container.querySelector<HTMLElement>('.ssg-tab-exit')?.previousElementSibling as HTMLElement;
+    // DOM の順で表の中の最後に止まる要素(右固定のペインのボタン)。
+    const tabbables = Array.from(scroll.querySelectorAll<HTMLElement>('button, input'));
+    const last = tabbables[tabbables.length - 1];
+    expect(last?.textContent).toBe('操作-c');
+    last!.focus();
+    expect(fireEvent.keyDown(last!, { key: 'Tab' })).toBe(true);
+    expect(document.activeElement).toBe(exit);
+    // 表の中にまだ止まる要素があるとき・Shift+Tab は既定のまま。
+    const firstButton = tabbables.find((element) => element.textContent === '操作-a');
+    firstButton!.focus();
+    expect(fireEvent.keyDown(firstButton!, { key: 'Tab' })).toBe(true);
+    expect(document.activeElement).toBe(firstButton);
+    last!.focus();
+    expect(fireEvent.keyDown(last!, { key: 'Tab', shiftKey: true })).toBe(true);
+    expect(document.activeElement).toBe(last);
+  });
+
+  it('カードが 1 枚も無いときは目印を Tab の順番に入れず、最終列の Tab は従来どおり既定動作(フォーカスを動かさない)', () => {
+    const { ref, container, shell } = renderGrid([]);
+    expect(container.querySelector<HTMLElement>('.ssg-tab-exit')?.tabIndex).toBe(-1);
+    act(() => {
+      ref.current?.setActiveCell({ row: 2, col: LAST_COL });
+    });
+    shell.focus();
+    expect(fireEvent.keyDown(shell, { key: 'Tab' })).toBe(true);
+    expect(document.activeElement).toBe(shell);
+  });
+
+  // 追加(段階 2 の確かめ直し): カードの中にフォーカスがあるまま閉じると(キーボードで「閉じる」を押す)、カードと一緒に
+  //   フォーカスが消えて body へ落ち、その後の ↓ も Tab も表に届かなかった。その行のセルへ戻す。
+  it('カードの中にフォーカスがあるまま閉じたら、その行のセル(アクティブセルの列)へ戻してフォーカスをシェルへ', () => {
+    const { ref, container, shell } = renderGrid(['a', 'c']);
+    act(() => {
+      ref.current?.setActiveCell({ row: 0, col: LAST_COL });
+    });
+    const button = cardOf(container, 2)?.querySelector<HTMLButtonElement>('button');
+    button!.focus();
+    act(() => {
+      button!.click();
+    });
+    expect(cardOf(container, 2)).toBeNull();
+    expect(ref.current?.getActiveCell()).toEqual({ row: 2, col: LAST_COL });
+    expect(document.activeElement).toBe(shell);
+    // フォーカスがカードの外(表の後ろのボタン)なら、閉じてもフォーカスとアクティブセルは動かさない。
+    const outside = container.querySelector<HTMLButtonElement>('div > button:last-of-type');
+    outside!.focus();
+    act(() => {
+      ref.current?.setDetailRowExpanded('a', false);
+    });
+    expect(document.activeElement).toBe(outside);
+    expect(ref.current?.getActiveCell()).toEqual({ row: 2, col: LAST_COL });
+  });
+
+  // 追加(段階 2 の 3 回目の確かめ直し C-N6 / C-N7): ハンドルの setDetailRowExpanded(key, false) / collapseAllDetailRows() で
+  //   閉じたときは、今もフォーカスが body へ落ちていた。戻したセルが見える範囲の外(背の高いカードを読み進めて行が見出しの裏)
+  //   でも表がスクロールせず、枠が見えなかった。どの閉じ方でも同じく戻し、次のフレームでそのセルを見える範囲へ。
+  it('ハンドルで閉じてもカードの中のフォーカスをその行のセルへ戻し、次のフレームでそのセルを見える範囲へ', async () => {
+    const manyRows: Row[] = [...rows, ...Array.from({ length: 60 }, (_, i) => ({ id: `r${i}`, name: `row${i}`, qty: 1 }))];
+    for (const close of [
+      (handle: SpreadsheetGridHandle<Row>) => handle.setDetailRowExpanded('c', false),
+      (handle: SpreadsheetGridHandle<Row>) => handle.collapseAllDetailRows(),
+    ]) {
+      const ref = createRef<SpreadsheetGridHandle<Row>>();
+      const { container } = render(
+        <SpreadsheetGrid ref={ref} columns={columns} rows={manyRows} rowKeyGetter={rowKeyGetter} detailRow={detailRow} />,
+      );
+      act(() => {
+        ref.current?.setDetailRowExpanded('c', true);
+        ref.current?.setActiveCell({ row: 2, col: 2 });
+      });
+      // カードを読み進めて、行 2 が見える範囲の上(見出しの裏)へ出た状態(jsdom の scrollTop は書いても 0 のままなので読む値を
+      //   固定する)。スクロールは scrollTo で見る。
+      const scroller = container.querySelector<HTMLElement>('.ssg-scroll-container')!;
+      Object.defineProperty(scroller, 'scrollTop', { configurable: true, get: () => 200, set: () => {} });
+      const scrollTo = vi.fn();
+      scroller.scrollTo = scrollTo as unknown as HTMLElement['scrollTo'];
+      cardOf(container, 2)?.querySelector<HTMLInputElement>('input')!.focus();
+      act(() => {
+        close(ref.current!);
+      });
+      expect(cardOf(container, 2)).toBeNull();
+      expect(ref.current?.getActiveCell()).toEqual({ row: 2, col: 2 });
+      expect(document.activeElement).toBe(getShell(container));
+      await act(async () => {
+        await new Promise((resolve) => requestAnimationFrame(() => resolve(null)));
+      });
+      const tops = scrollTo.mock.calls.map(([options]) => (options as ScrollToOptions).top ?? 200);
+      expect(tops.some((top) => top < 200)).toBe(true);
+      cleanup();
+    }
+  });
+
+  // 追加(段階 2 の 3 回目の確かめ直し S-N3): アクティブセルが無いときに行番号を押すと、アクティブセルの枠が先頭の展開トグル列に
+  //   乗り、バーの番地は次のデータ列の「A4」、→ で最初のデータ列へ移っても「A4」のままだった。最初のデータの列にする。
+  it('アクティブセルが無いときの行番号のクリックは、アクティブセルを最初のデータの列にする', () => {
+    const ref = createRef<SpreadsheetGridHandle<Row>>();
+    const { container } = render(
+      <SpreadsheetGrid ref={ref} columns={columns} rows={rows} rowKeyGetter={rowKeyGetter} detailRow={detailRow} />,
+    );
+    const rowHeader = container.querySelector<HTMLElement>('[data-pane="left"].ssg-body-row[data-row-index="1"] .ssg-row-header-cell');
+    act(() => {
+      fireEvent.pointerDown(rowHeader!, { button: 0, pointerType: 'mouse', pointerId: 1 });
+      fireEvent.pointerUp(window, { button: 0, pointerType: 'mouse', pointerId: 1 });
+    });
+    expect(ref.current?.getSelection()).toEqual({ type: 'row', startRow: 1, endRow: 1 });
+    expect(ref.current?.getActiveCell()).toEqual({ row: 1, col: 1 });
+  });
+
+  it('detailRow が無ければ目印を描かない', () => {
+    const { container } = render(<SpreadsheetGrid columns={columns} rows={rows} rowKeyGetter={rowKeyGetter} />);
+    expect(container.querySelector('.ssg-tab-exit')).toBeNull();
   });
 });

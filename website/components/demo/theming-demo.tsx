@@ -1,6 +1,6 @@
 'use client';
 
-// テーマ / 密度のデモ: theme(light / dark / auto)と density(standard / compact / comfortable)を
+// テーマ / 密度のデモ: theme(class / light / dark / auto。class はサイトのライト / ダークに付いてくる)と density(standard / compact / comfortable)を
 // その場で切り替えられる。
 import { useState } from 'react';
 import {
@@ -32,7 +32,7 @@ const selectClass =
 
 export function ThemingDemo() {
   const [rows, setRows] = useState<Row[]>(initialRows);
-  const [theme, setTheme] = useState<GridTheme>('auto');
+  const [theme, setTheme] = useState<GridTheme>('class');
   const [density, setDensity] = useState<GridDensity>('standard');
 
   return (
@@ -45,6 +45,7 @@ export function ThemingDemo() {
             value={theme}
             onChange={(e) => setTheme(e.target.value as GridTheme)}
           >
+            <option value="class">class</option>
             <option value="auto">auto</option>
             <option value="light">light</option>
             <option value="dark">dark</option>

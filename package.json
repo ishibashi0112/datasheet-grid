@@ -25,11 +25,11 @@
     "size:check": "node scripts/measure-size.mjs --check",
     "examples:check": "node scripts/check-examples.mjs",
     "audit:dev": "vp dev --config audit/harness/vite.config.ts audit/harness",
-    "audit:test": "node audit/harness/t-basic.mjs && node audit/harness/t-ssrm.mjs && node audit/harness/t-lifecycle.mjs && node audit/harness/t-features.mjs && node audit/harness/t-verify.mjs && node audit/harness/t-aggregates.mjs && node audit/harness/t-total.mjs && node audit/harness/t-fill.mjs && node audit/harness/t-big.mjs && node audit/harness/t-leftovers.mjs && node audit/harness/t-lazy.mjs && node audit/harness/t-priority.mjs && node audit/harness/t-final.mjs && node audit/harness/t-dogfood.mjs && node audit/harness/t-devbi.mjs"
+    "audit:test": "node audit/harness/t-basic.mjs && node audit/harness/t-ssrm.mjs && node audit/harness/t-lifecycle.mjs && node audit/harness/t-features.mjs && node audit/harness/t-verify.mjs && node audit/harness/t-aggregates.mjs && node audit/harness/t-total.mjs && node audit/harness/t-fill.mjs && node audit/harness/t-big.mjs && node audit/harness/t-leftovers.mjs && node audit/harness/t-lazy.mjs && node audit/harness/t-priority.mjs && node audit/harness/t-final.mjs && node audit/harness/t-dogfood.mjs && node audit/harness/t-devbi.mjs && node audit/harness/t-stage2.mjs"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
-    "@tanstack/virtual-core": "^3.17.0",
+    "@tanstack/virtual-core": "^3.19.11",
     "@testing-library/dom": "^10.4.1",
     "@testing-library/react": "^16.3.2",
     "@types/node": "^24.12.3",

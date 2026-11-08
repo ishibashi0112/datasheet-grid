@@ -3,6 +3,7 @@ import { selectGlobalFilter } from '@ishibashi0112/spreadsheet-grid-core/interna
 import type {
   GlobalFilterStatus,
   GridColumn,
+  GridLocaleText,
   GridSelectionAggregates,
   GridUiState,
   SpreadsheetGridSlotContext,
@@ -27,6 +28,8 @@ type GridSlotContextBase<T> = Omit<
 
 type UseGridBarContextArgs<T> = {
   rows: T[];
+  // 追加(段階 2 DU-18): 文言(既定と合わせたもの。中身が同じ間は同じ参照)。
+  localeTexts: Readonly<GridLocaleText>;
   // 変更(DS-3-7): filteredRows(配列)→ 件数(viewRowCount)+ 遅延 factory(getFilteredRows)。
   //   サマリは viewRowCount を使い、公開 slotContext.filteredRows は getFilteredRows() を
   //   遅延 getter で返します(外部スロットが読んだ時だけ materialize)。
@@ -58,6 +61,7 @@ const NO_COLUMN_FILTERS: Record<string, never> = {};
 // 追加: topBar / bottomBar へ渡す slot context と derived summary をまとめて構築します。
 export const useGridBarContext = <T,>({
   rows,
+  localeTexts,
   viewRowCount,
   totalRowCount,
   getFilteredRows,
@@ -126,8 +130,9 @@ export const useGridBarContext = <T,>({
         totalRowCount,
         columnNamer,
         rowNumberer,
+        localeTexts,
       ),
-    [slotContextBase, filtersApplied, viewRowCount, totalRowCount, columnNamer, rowNumberer],
+    [slotContextBase, filtersApplied, viewRowCount, totalRowCount, columnNamer, rowNumberer, localeTexts],
   );
 
   const slotContext = useMemo<SpreadsheetGridSlotContext<T>>(

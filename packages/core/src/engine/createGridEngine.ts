@@ -8,8 +8,17 @@
 //     担います。エンジンは「同じ入力なら同じ参照」を保証するリゾルバ群と、恒久安定なコマンド群を提供します。
 //   - dispose はエンジンが持つ全コントローラの後始末(タイマー / リスナー / observer)をまとめて行います。
 import { createGridStore, type GridStore } from '../model/gridStore';
-import { createInitialGridUiState } from '../model/gridReducer';
-import { createDetailIndexCacheHolder, type DetailIndexCacheHolder } from '../logic/detailRow';
+import { createInitialGridUiState, gridUiReducer } from '../model/gridReducer';
+import { gridActions } from '../model/gridActions';
+import type { GridUiState } from '../model/gridTypes.unbound';
+import { dropUnknownColumnKeys, migrateGridStatePatch } from '../logic/gridState';
+import type { GridColumnState } from '../model/gridTypes.core';
+import {
+  createDetailIndexCacheHolder,
+  createDetailKeysPruner,
+  type DetailIndexCacheHolder,
+  type DetailKeysPruner,
+} from '../logic/detailRow';
 import type { AutoHeightMeasurer } from '../controllers/autoHeightMeasurer';
 import { createScrollSyncController, type ScrollSyncController } from '../controllers/scrollSyncController';
 import { createRowEnterController, type RowEnterController } from '../controllers/rowEnterController';
@@ -72,6 +81,8 @@ export type GridEngineInit<T> = {
   features: GridCoreFeatures;
   // 初期 store 状態(初回の visibleColumns)を作るための列解決入力。
   columnInputs: ColumnResolutionInputs<T>;
+  // 追加(段階 2 DU-12): 状態の初期値(initialState prop。マウント時だけ使う)。
+  initialState?: unknown;
   // serverSide query の初期値(debounce ストアの seed。mount 時の queryKey と一致させる)。
   serverSide: {
     isServerSide: boolean;
@@ -124,7 +135,102 @@ export type GridEngine<T> = {
   imeInput: ImeInputController;
   // 展開行の rowKey → view index キャッシュ(SSRM の query 変化で reset)。
   detailIndexCache: DetailIndexCacheHolder;
+  // 追加(段階 2 DF-25): 展開中の行が rows から消えたら、そのキーを外す(clientSide)。
+  detailKeysPruner: DetailKeysPruner<T>;
   dispose: () => void;
+};
+
+// 型だけの宣言です(ブラウザに process は無く、利用側のバンドラが process.env.NODE_ENV を文字列へ置き換える)。
+declare const process: { env: { NODE_ENV?: string } };
+
+// 追加(段階 2 の確かめ直し N3-3): 列を表示の順(左の固定 → 固定なし → 右の固定。各ペインの中は配列の順)に並べます。
+const toDisplayOrder = <C extends { pinned?: 'left' | 'right' }>(list: readonly C[]): C[] => [
+  ...list.filter((column) => column.pinned === 'left'),
+  ...list.filter((column) => column.pinned !== 'left' && column.pinned !== 'right'),
+  ...list.filter((column) => column.pinned === 'right'),
+];
+
+// 追加(段階 2 DU-12): initialState から初期の UI 状態を作ります。applyState と同じ正規化(壊れた入力を捨てる + 今の列に
+//   無い列の幅 / フィルター / ソートを捨てる)を通し、reducer の同じ action で畳み込みます。列メタ(columns)は使いません。
+// 修正(段階 2 の見直し): initialState の columns(getState() の値をそのまま渡すと入っている)が columns prop と同じ並び / 表示 /
+//   固定かどうか(両方にある列だけで比べる)。同じなら警告しません(getState() の値をそのまま渡せる、のとおりにする)。
+const isSameColumnLayout = (
+  saved: readonly GridColumnState[],
+  columns: readonly { key: string; visible?: boolean; pinned?: 'left' | 'right' }[],
+): boolean => {
+  const byKey = new Map(columns.map((column) => [column.key, column]));
+  const savedKeys = new Set(saved.map((entry) => entry.key));
+  // 変更(段階 2 の確かめ直し N3-3): 並びは表示の順(左の固定 → 固定なし → 右の固定)で比べます。途中の列を固定した状態は、保存した
+  //   columns では元の並びのまま固定の印だけが付き、restoreColumnsFromState は固定した列を先に並べるので、配列の順のまま
+  //   比べると見た目が同じでも警告していました。
+  const savedShared = toDisplayOrder(saved.filter((entry) => byKey.has(entry.key)));
+  const currentShared = toDisplayOrder(columns.filter((column) => savedKeys.has(column.key)));
+  return (
+    savedShared.length === currentShared.length &&
+    savedShared.every((entry, index) => {
+      const column = currentShared[index];
+      return (
+        column !== undefined &&
+        column.key === entry.key &&
+        (column.visible !== false) === (entry.visible !== false) &&
+        (column.pinned ?? null) === (entry.pinned ?? null)
+      );
+    })
+  );
+};
+
+// 追加(段階 2 の確かめ直し N2-4): 警告を出した initialState の値です。同じ値への警告は 1 回だけにします(React の StrictMode =
+//   Next.js の開発時の既定では状態の初期化が 2 回呼ばれ、同じ警告が 2 回ずつ出ていた)。
+const warnedInitialStates = /* @__PURE__ */ new WeakSet<object>();
+
+const resolveInitialUiState = (
+  initialState: unknown,
+  columns: readonly { key: string; visible?: boolean; pinned?: 'left' | 'right' }[],
+): GridUiState => {
+  let state = createInitialGridUiState();
+  if (initialState === undefined || initialState === null) {
+    return state;
+  }
+  const { patch, dropped } = dropUnknownColumnKeys(
+    migrateGridStatePatch(initialState),
+    new Set(columns.map((column) => column.key)),
+  );
+  if (
+    process.env.NODE_ENV !== 'production' &&
+    !(typeof initialState === 'object' && warnedInitialStates.has(initialState))
+  ) {
+    if (typeof initialState === 'object') {
+      warnedInitialStates.add(initialState);
+    }
+    if (dropped.length > 0) {
+      console.warn(
+        `[spreadsheet-grid] initialState: 今の列定義(columns)に無い列 ${dropped.map((key) => `\`${key}\``).join(', ')} の` +
+          '列幅 / フィルター / 並べ替えを捨てました。',
+      );
+    }
+    if (patch.columns !== undefined && !isSameColumnLayout(patch.columns, columns)) {
+      console.warn(
+        '[spreadsheet-grid] initialState の columns(列の並び / 表示 / 固定)が columns prop と違いますが、使いません。' +
+          'columns prop で決めてください(マウントの後に変えるなら applyState)。',
+      );
+    }
+  }
+  if (patch.columnWidths) {
+    state = gridUiReducer(state, gridActions.resetColumnWidths(patch.columnWidths));
+  }
+  if (patch.filters) {
+    state = gridUiReducer(
+      state,
+      gridActions.setAllFilters({
+        globalText: patch.filters.globalText ?? '',
+        columnFilters: patch.filters.columnFilters ?? {},
+      }),
+    );
+  }
+  if (patch.sort) {
+    state = gridUiReducer(state, gridActions.setSort(patch.sort));
+  }
+  return state;
 };
 
 export const createGridEngine = <T,>(init: GridEngineInit<T>): GridEngine<T> => {
@@ -134,9 +240,18 @@ export const createGridEngine = <T,>(init: GridEngineInit<T>): GridEngine<T> => 
   const resolveVerticalLayout = createVerticalLayoutResolver<T>(init.features.autoHeight);
 
   // 変更(監査 RD-5 / M-03): 初期 state は列に依存しなくなりました(列幅 state は空で始まる)。
-  const store = createGridStore(createInitialGridUiState());
+  // 変更(段階 2 DU-12): initialState があればその値で始めます(SSRM の最初の query とサーバーの描画にも効く)。
+  const store = createGridStore(
+    resolveInitialUiState(init.initialState, init.columnInputs.columns),
+  );
 
   const initialUiState = store.getState();
+  // 変更(差し込み式 段階 5): 機能セットに filtering が無ければ代役(見張らない)。
+  const dateRollover = (init.features.filtering?.createDateRolloverStore ?? createInertDateRolloverStore)();
+  // 修正(段階 2 の見直し): 最初の query のキーにも相対日付プリセットの範囲を入れます(シェルが最初の描画で作る query と
+  //   同じキーにする。initialState に「今月」などを入れると、これまでは debounce の後にキーが変わって最初のブロックを
+  //   取り直していた)。
+  const resolveRelativeDateKey = init.features.filtering?.resolveRelativeDateFilterKey;
   const initialServerSideQuery = rowPipeline.resolveServerSideQuery({
     isServerSide: init.serverSide.isServerSide,
     globalFilterEnabled: init.serverSide.enableGlobalFilter,
@@ -145,10 +260,12 @@ export const createGridEngine = <T,>(init: GridEngineInit<T>): GridEngine<T> => 
     columnFilters: initialUiState.filters.columnFilters,
     sortingEnabled: init.serverSide.enableSorting,
     sort: initialUiState.sort,
+    relativeDateKey:
+      init.serverSide.isServerSide && init.serverSide.enableColumnFilter && resolveRelativeDateKey
+        ? resolveRelativeDateKey(init.columnInputs.columns, initialUiState.filters.columnFilters, dateRollover.getSnapshot())
+        : undefined,
   });
   const serverSideQueryStore = createDebouncedValueStore(initialServerSideQuery, SERVER_SIDE_QUERY_DEBOUNCE_MS);
-  // 変更(差し込み式 段階 5): 機能セットに filtering が無ければ代役(見張らない)。
-  const dateRollover = (init.features.filtering?.createDateRolloverStore ?? createInertDateRolloverStore)();
 
   // 変更(差し込み式 段階 4): 機能セットに autoHeight が無ければ代役(測らない)。
   const autoHeightMeasurer = (init.features.autoHeight?.createAutoHeightMeasurer ?? createInertAutoHeightMeasurer)<T>();
@@ -196,6 +313,7 @@ export const createGridEngine = <T,>(init: GridEngineInit<T>): GridEngine<T> => 
     autoSizeOnData,
     imeInput,
     detailIndexCache: createDetailIndexCacheHolder(),
+    detailKeysPruner: createDetailKeysPruner<T>(),
     dispose: () => {
       autoHeightMeasurer.dispose();
       scrollSync.dispose();

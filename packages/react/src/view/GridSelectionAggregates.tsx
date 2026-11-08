@@ -1,8 +1,9 @@
 // 追加(選択範囲の集計)/ 変更(差し込み式 段階 2): 既定の下部バー(DefaultGridBottomBar)に出す選択範囲の集計です。
 //   DefaultGridBottomBar から移しただけで中身は同じです(機能 features/selectionAggregates の部品)。
-import type { GridSelectionAggregates as GridSelectionAggregatesValue } from '../model/gridTypes';
+import type { GridLocaleText, GridSelectionAggregates as GridSelectionAggregatesValue } from '../model/gridTypes';
 import { cx } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/cx';
 import { formatSelectionAggregateNumber } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/selectionAggregates';
+import { DEFAULT_GRID_LOCALE_TEXT, formatLocaleText } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/localeText';
 
 // 追加(選択範囲の集計): Excel のステータスバーと同じ「平均 / データの個数 / 合計」を並べます。
 //   数値が 1 つも無い(文字だけ)ときは「データの個数」だけ、空のセルだけのときは何も出しません。
@@ -12,33 +13,39 @@ import { formatSelectionAggregateNumber } from '@ishibashi0112/spreadsheet-grid-
 export function GridSelectionAggregates({
   aggregates,
   trailing,
+  localeTexts = DEFAULT_GRID_LOCALE_TEXT,
 }: {
   aggregates: GridSelectionAggregatesValue | null | undefined;
   // 右グループの後ろ(件数なし)なら true: 区切り線を先頭に、中身を左寄せにします。
   trailing: boolean;
+  // 追加(段階 2 DU-18): 文言(未指定は既定の日本語)。
+  localeTexts?: Readonly<GridLocaleText>;
 }) {
   if (!aggregates) {
     return null;
   }
   const chips: { key: string; text: string; label?: string; value?: string; muted?: boolean }[] = [];
   if (aggregates.status === 'computing') {
-    chips.push({ key: 'computing', text: `集計中… ${Math.floor(aggregates.progress * 100)}%` });
+    chips.push({
+      key: 'computing',
+      text: formatLocaleText(localeTexts.aggregateComputing, { percent: Math.floor(aggregates.progress * 100) }),
+    });
   } else {
     if (aggregates.count === 0) {
       return null;
     }
     if (aggregates.average !== undefined) {
       const value = formatSelectionAggregateNumber(aggregates.average);
-      chips.push({ key: 'average', text: `平均: ${value}`, label: '平均:', value });
+      chips.push({ key: 'average', text: `${localeTexts.aggregateAverage}: ${value}`, label: `${localeTexts.aggregateAverage}:`, value });
     }
     const count = formatSelectionAggregateNumber(aggregates.count);
-    chips.push({ key: 'count', text: `データの個数: ${count}`, label: 'データの個数:', value: count });
+    chips.push({ key: 'count', text: `${localeTexts.aggregateCount}: ${count}`, label: `${localeTexts.aggregateCount}:`, value: count });
     if (aggregates.sum !== undefined) {
       const value = formatSelectionAggregateNumber(aggregates.sum);
-      chips.push({ key: 'sum', text: `合計: ${value}`, label: '合計:', value });
+      chips.push({ key: 'sum', text: `${localeTexts.aggregateSum}: ${value}`, label: `${localeTexts.aggregateSum}:`, value });
     }
     if (aggregates.partial) {
-      chips.push({ key: 'partial', text: '読み込み済みの行のみ', muted: true });
+      chips.push({ key: 'partial', text: localeTexts.aggregatePartial, muted: true });
     }
   }
   const separator = <span className="ssg-bar-sep" aria-hidden="true" />;

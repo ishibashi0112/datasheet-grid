@@ -73,7 +73,7 @@ export function ColumnDragDemo() {
         onColumnsChange={setColumns}
         rowKeyGetter={(row) => row.id}
         height={340}
-        theme="auto"
+        theme="class"
         columnDragMotion={dragMotion}
       />
       <p className="text-sm text-fd-muted-foreground">

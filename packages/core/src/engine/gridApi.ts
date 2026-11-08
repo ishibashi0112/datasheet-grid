@@ -26,6 +26,7 @@ import { normalizeCellRange, normalizeRowRange } from '../model/gridSelectors';
 import { computeSinglePaneColumnExtent, type GridPaneLayout } from '../logic/geometry';
 import { logicalToPhysicalScrollTop, physicalToLogicalScrollTop, type RowMetrics } from '../logic/verticalGeometry';
 import { findDetailRowIndex, findViewRowIndexByKey, type DetailIndexCache } from '../logic/detailRow';
+import { resolveDataRowNumber } from '../logic/labelRows';
 import {
   clearRowSelection,
   countSelectedRows,
@@ -42,7 +43,7 @@ import {
   migrateGridStatePatch,
 } from '../logic/gridState';
 import { markUrgentFilters } from '../logic/urgentFilters';
-import { computeHorizontalScrollTarget, computeVerticalScrollTarget } from '../logic/scrollTargets';
+import { computeHorizontalScrollTarget, computeVerticalScrollTarget, type StickyTopInset } from '../logic/scrollTargets';
 import {
   collectAllGroupKeys,
   collectAllGroupRows,
@@ -93,6 +94,9 @@ export type GridApiArgs<T> = {
   //   始めたら true。編集できないセルは false)。
   focusGrid?: () => void;
   startEditCell?: (cell: CellCoord) => boolean;
+  // 追加(段階 2 の確かめ直し C-N6): setDetailRowExpanded(key, false) / collapseAllDetailRows() で閉じる直前に、閉じる行の
+  //   view index を渡します(カードの中にフォーカスがあれば、その行のセルへ戻すのに使う。カードの DOM がまだあるうちに呼ぶ)。
+  beforeDetailRowsCollapse?: (viewRowIndexes: readonly number[]) => void;
   // 追加(dogfood DU-06): store の今の状態(レンダーを待たない)。applyState の「渡さないスライスは今のまま」と、直後の
   //   getState() が今の値を読むのに使います(続けて呼んだときに 1 つ前のレンダーの値で上書きしないため)。無ければ uiState。
   getUiState?: () => GridUiState;
@@ -106,6 +110,8 @@ export type GridApiArgs<T> = {
   physicalBodyHeight: number;
   // 追加(合計行 3A): 下端に固定する行(合計行)の高さ。末尾へのスクロール / 行を見せる位置に効きます。既定 0。
   footerHeight?: number;
+  // 追加(段階 2 の確かめ直し N4-1): ラベル行の縦スクロール固定の帯。行を上へ見せるときは帯の下に置きます。
+  stickyTopInset?: StickyTopInset;
   // 追加(監査 M-05): 行高を実測するモード(auto-height 列 / 展開行)か。scrollToBottom() 直後の計測で総高が
   //   伸びたとき、末尾へ再補正するかの判定に使います(固定行高では総高が計測で変わらないため補正しない)。
   measuredRowHeights?: boolean;
@@ -129,6 +135,9 @@ export type GridApiArgs<T> = {
         exportText: ((row: T) => string | LabelExportLine) | undefined;
       }
     | undefined;
+  // 追加(段階 2 N-4): 表示しているラベル行の view index(昇順。ラベル行が無ければ undefined)。getRowNumber が
+  //   行番号の列と同じ番号(ラベル行を数えない)を返すのに使います。
+  labelViewIndexes?: ArrayLike<number> | undefined;
   // 追加(合計行 3A): 合計行のエクスポート(includeTotalRow)の値と見出し(totalRow 無効時は undefined)。
   totalRowExport?: { cells: TotalRowCells; label: string } | undefined;
   // 統合ツールパネル(openFilterManager / closeFilterManager の委譲先)。
@@ -139,6 +148,8 @@ export type GridApiArgs<T> = {
   find: { open: (query?: string) => void; close: () => void; next: () => void; prev: () => void };
   // undo / redo(history controller)。
   undoRows: () => void;
+  // 追加(段階 2 DU-21): applyRows の委譲先(履歴に積んでから onRowsChange。onRowsChange 未指定 / serverSide は undefined)。
+  applyRowsChange?: ((nextRows: T[]) => void) | undefined;
   redoRows: () => void;
   canUndoRows: () => boolean;
   canRedoRows: () => boolean;
@@ -173,14 +184,17 @@ const BOTTOM_PIN_MS = 1000;
 
 // 変更(差し込み式 段階 2): エクスポート(exportCsv / downloadCsv / getExportData)は機能セットの export から
 //   (engine/exportCommands)。無ければ代役(空を返す)。
-export const createGridApi = <T,>(features: Pick<GridCoreFeatures, 'export'> = {}): GridApi<T> => {
+export const createGridApi = <T,>(features: Pick<GridCoreFeatures, 'export' | 'grouping'> = {}): GridApi<T> => {
   let args: GridApiArgs<T> | null = null;
   // 追加(別視点のレビュー): applyState で onColumnsChange に渡した列(次のレンダーで columns に入るまでの間、getState() と
   //   続けて呼んだ applyState はこちらを今の列として読む)。update(次のレンダー)で外します。
   let pendingColumns: { base: GridColumn<T>[]; next: GridColumn<T>[] } | null = null;
   const currentColumns = (s: GridApiArgs<T>): GridColumn<T>[] =>
     pendingColumns !== null && pendingColumns.base === s.columns ? pendingColumns.next : s.columns;
-  const exportCommands = (features.export?.createExportCommands ?? createInertExportCommands)<T>(() => args);
+  const exportCommands = (features.export?.createExportCommands ?? createInertExportCommands)<T>(
+    () => args,
+    features.grouping,
+  );
   // 追加(監査 M-05): 行高を実測するモードでは、scrollToBottom() で末尾へ飛んだ直後に新しく描画された行が
   //   計測されて総高が伸び、1 回では末尾に届きませんでした。呼び出し直後の BOTTOM_PIN_MS の間だけ「末尾固定」を
   //   覚えておき、update で総高が変わったら末尾へ合わせ直します。ユーザーが上へスクロールしたら(scrollTop が
@@ -242,6 +256,7 @@ export const createGridApi = <T,>(features: Pick<GridCoreFeatures, 'export'> = {
       viewportHeight: el.clientHeight - (s.footerHeight ?? 0),
       currentScrollTop: physicalToLogicalScrollTop(el.scrollTop, s.verticalScaleFactor),
       align,
+      stickyTopInset: s.stickyTopInset,
     });
   };
 
@@ -282,6 +297,24 @@ export const createGridApi = <T,>(features: Pick<GridCoreFeatures, 'export'> = {
       row: Math.min(Math.max(cell.row, 0), Math.max(s.viewRowCount - 1, 0)),
       col: Math.min(Math.max(cell.col, 0), Math.max(s.orderedColumns.length - 1, 0)),
     };
+  };
+
+  // 追加(段階 2 の確かめ直し N2-1): 選択 / アクティブセルの API でラベル行(セルを持たない)を指したときの行です。step の向き
+  //   (既定は下)のデータ行、無ければ逆の向きのデータ行へ寄せます(すべてラベル行ならそのまま)。これまではアクティブセルの枠が
+  //   ラベル行に乗り、バーの番地は次のデータ行の番号で、↓ を押しても同じ番地のままでした。
+  const toDataRow = (s: GridApiArgs<T>, row: number, step: 1 | -1 = 1): number => {
+    const isLabel = (index: number) => s.rowModel.getLabelRow?.(index) !== undefined;
+    if (!isLabel(row)) {
+      return row;
+    }
+    for (const direction of [step, -step]) {
+      for (let index = row + direction; index >= 0 && index < s.viewRowCount; index += direction) {
+        if (!isLabel(index)) {
+          return index;
+        }
+      }
+    }
+    return row;
   };
 
   // 追加(作り直しの確認 N-3): store の今の UI 状態(無ければ描画のときの値)。
@@ -359,7 +392,9 @@ export const createGridApi = <T,>(features: Pick<GridCoreFeatures, 'export'> = {
       }
       // 変更(audit B-05): 範囲外 index はビュー座標内へクランプする(API_REFERENCE「範囲外 index は内部で
       //   クランプ / 無視する」との整合。旧実装は reducer へそのまま入り getActiveCell が範囲外を返していた)。
-      const clamped = cell ? clampCellCoord(cell) : null;
+      const inView = cell ? clampCellCoord(cell) : null;
+      // 変更(N2-1): ラベル行を指したら下のデータ行(無ければ上)へ寄せます。
+      const clamped = inView ? { row: toDataRow(s, inView.row), col: inView.col } : null;
       s.dispatch(gridActions.activateCell(clamped));
       if (clamped && cellOptions?.scrollIntoView) {
         scrollToCellInternal(clamped.row, clamped.col, 'auto');
@@ -423,13 +458,24 @@ export const createGridApi = <T,>(features: Pick<GridCoreFeatures, 'export'> = {
       return findViewRowIndexByKey(s.rowModel, rowKey, rowKeyIndexCache.map);
     },
     getColIndex: (columnKey) => args?.orderedColumns.findIndex((column) => column.key === columnKey) ?? -1,
+    // 追加(段階 2 N-4): 行番号の列と同じ式(GridBodyLayer の rowNumber)。ラベル行のキーと表示に無い行は null。
+    getRowNumber: (rowKey) => {
+      const s = args;
+      const viewIndex = handle.getViewRowIndex(rowKey);
+      if (!s || viewIndex < 0 || s.rowModel.getLabelRow?.(viewIndex) !== undefined) {
+        return null;
+      }
+      return s.labelViewIndexes ? resolveDataRowNumber(s.labelViewIndexes, viewIndex) : viewIndex + 1;
+    },
 
     selectCell: (viewRowIndex, colIndex, cellOptions) => {
       const s = args;
       if (!s) {
         return;
       }
-      const cell = clampCellCoord({ row: viewRowIndex, col: colIndex });
+      const inView = clampCellCoord({ row: viewRowIndex, col: colIndex });
+      // 変更(N2-1): ラベル行を指したら下のデータ行(無ければ上)へ寄せます。
+      const cell = { row: toDataRow(s, inView.row), col: inView.col };
       // クリック相当: pointerdown(start)→ pointerup(end)。activeCell=cell / 単一セル選択 / dragState クリア。
       s.dispatch(gridActions.startSelection(cell));
       s.dispatch(gridActions.endSelection());
@@ -443,12 +489,24 @@ export const createGridApi = <T,>(features: Pick<GridCoreFeatures, 'export'> = {
       if (!s) {
         return;
       }
-      const start = clampCellCoord(range.start);
-      const end = clampCellCoord(range.end);
+      let start = clampCellCoord(range.start);
+      let end = clampCellCoord(range.end);
+      // 変更(N2-1): 範囲はそのまま、起点がラベル行ならアクティブセルだけを範囲の向き(無ければ逆)のデータ行へ寄せます
+      //   (全選択の後と同じ考え方)。
+      const activeRow = toDataRow(s, start.row, end.row < start.row ? -1 : 1);
+      // 変更(N3-1): ラベル行だけの範囲(寄せた先が範囲の外)は、寄せたデータ行の同じ列の範囲にします。これまでは 0 セルの範囲が
+      //   残り、アクティブセルは範囲の外、バーの番地は逆向き(「A11:B10」)、そこから Shift+↓ でラベル行に乗っていました。
+      if (activeRow < Math.min(start.row, end.row) || activeRow > Math.max(start.row, end.row)) {
+        start = { row: activeRow, col: start.col };
+        end = { row: activeRow, col: end.col };
+      }
       // ドラッグ選択相当: start(anchor)→ update(focus)→ end。
       s.dispatch(gridActions.startSelection(start));
       s.dispatch(gridActions.updateSelection(end));
       s.dispatch(gridActions.endSelection());
+      if (activeRow !== start.row) {
+        s.dispatch(gridActions.activateCell({ row: activeRow, col: start.col }));
+      }
       if (rangeOptions?.scrollIntoView) {
         scrollToCellInternal(end.row, end.col, 'auto');
       }
@@ -634,6 +692,22 @@ export const createGridApi = <T,>(features: Pick<GridCoreFeatures, 'export'> = {
     clearUndoHistory: () => {
       args?.clearUndoHistory();
     },
+    applyRows: (nextRows) => {
+      const s = args;
+      if (!s) {
+        return;
+      }
+      if (!s.applyRowsChange || s.isServerSide) {
+        if (process.env.NODE_ENV !== 'production') {
+          console.warn(
+            '[spreadsheet-grid] applyRows: onRowsChange が無いか serverSide なので、何もしません' +
+              '(serverSide の行はサーバーで変えて refreshServerSide() で取り直してください)。',
+          );
+        }
+        return;
+      }
+      s.applyRowsChange(nextRows);
+    },
 
     // ── 行グルーピング ──
     setGroupCollapsed: (groupKey, collapsed) => {
@@ -674,6 +748,12 @@ export const createGridApi = <T,>(features: Pick<GridCoreFeatures, 'export'> = {
           }
         }
       }
+      if (!expanded && s.beforeDetailRowsCollapse && currentUi(s).expandedDetailRowKeys.has(rowKey)) {
+        const index = findDetailRowIndex(s.rowModel, rowKey, s.detailIndexCacheRef.current, !s.isServerSide);
+        if (index >= 0) {
+          s.beforeDetailRowsCollapse([index]);
+        }
+      }
       s.dispatch(gridActions.setDetailRowExpanded(rowKey, expanded));
     },
     getExpandedDetailRowKeys: () => {
@@ -684,6 +764,14 @@ export const createGridApi = <T,>(features: Pick<GridCoreFeatures, 'export'> = {
       const s = args;
       if (!s || !s.detailRowEnabled) {
         return;
+      }
+      if (s.beforeDetailRowsCollapse) {
+        const indexes = Array.from(currentUi(s).expandedDetailRowKeys, (rowKey) =>
+          findDetailRowIndex(s.rowModel, rowKey, s.detailIndexCacheRef.current, !s.isServerSide),
+        ).filter((index) => index >= 0);
+        if (indexes.length > 0) {
+          s.beforeDetailRowsCollapse(indexes);
+        }
       }
       s.dispatch(gridActions.setExpandedDetailRowKeys(new Set()));
     },

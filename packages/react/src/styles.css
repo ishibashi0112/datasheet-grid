@@ -252,7 +252,9 @@
      寸法トークン(radius / padding / icon-btn-size)はテーマ対象外です。
      注記: --ssg-checkbox-checked-bg / --ssg-checkbox-hover-border / --ssg-panel-accent-text は
      既定が var() 参照(accent / accent-strong)のため、上書き不要で自動追従します。 */
-  :where(.ssg-theme-dark) {
+  /* 変更(段階 2 DU-13): theme="class" のグリッド(修飾子 .ssg-theme-class)は、祖先(<html> など)の class="dark" か
+     data-theme="dark" でダークになります(CSS だけなのでサーバーの描画から正しい色)。 */
+  :where(.ssg-theme-dark, .dark .ssg-theme-class, [data-theme='dark'] .ssg-theme-class) {
     color-scheme: dark;
     /* 色トークン */
     --ssg-accent: #4dabf7;
@@ -461,12 +463,25 @@
     outline: none;
   }
 
-  /* auto-height 駆動セル: 内容駆動高さ(下限はインライン min-height)で折り返し表示。 */
+  /* auto-height 駆動セル: 折り返し表示。変更(段階 2 DU-32): 箱は行の高さで、中身は器(.ssg-autoheight-content)に
+     入れて器の高さを測ります。縦の揃えはほかのセルと同じく真ん中で、背の高い行では --valign-top で上にそろえます。 */
   .ssg-body-cell--autoheight {
-    align-items: flex-start;
-    white-space: normal;
+    /* 変更(段階 2 DU-14): 値の改行どおりに折り返します(連続する空白は今までどおり 1 つに詰める)。 */
+    white-space: pre-line;
     word-break: break-word;
     overflow: visible;
+  }
+  /* 器はセルの幅いっぱいの横並び(中身の並び方と左右の寄せ = align は器が無かったときのセルと同じ)。高さは中身の高さ。 */
+  .ssg-autoheight-content {
+    display: flex;
+    flex: 1 1 auto;
+    min-width: 0;
+    justify-content: inherit;
+    align-items: flex-start;
+  }
+  /* 追加(段階 2 DU-32): 背の高い行で上にそろえるセル(verticalAlign。auto-height の列は既定で上)。 */
+  .ssg-body-cell--valign-top {
+    align-items: flex-start;
   }
 
   /* 追加(③): セル内容の水平寄せ(GridColumn.align)。基底に justify-content 未指定=左のため、
@@ -651,13 +666,17 @@
   }
   /* 合計以外の集計(平均 / 最小 / 最大 / 個数)の種類。値の前に小さく出します。 */
   /* 追加(見直し): 値が列幅に収まらないときは末尾を省略記号で切ります(寄せに関わらず。全文はツールチップ)。 */
-  .ssg-total-value {
+  /* 変更(段階 2 の確かめ直し): グループ行の集計値(.ssg-group-value)も同じく末尾で「…」にします。 */
+  .ssg-total-value,
+  .ssg-group-value {
     min-width: 0;
     max-width: 100%;
     overflow: hidden;
     text-overflow: ellipsis;
   }
-  .ssg-total-caption {
+  /* 変更(段階 2 DU-23): グループ行の集計の種類(.ssg-group-caption)も同じ見た目です。 */
+  .ssg-total-caption,
+  .ssg-group-caption {
     margin-right: 6px;
     font-size: 0.85em;
     font-weight: 500;
@@ -1426,9 +1445,41 @@
     pointer-events: auto;
   }
 
+  /* 追加(段階 2 DU-14): 複数行の text エディタ(editor: { type: 'text', multiline: true })。枠の左上から下へ伸びます
+     (高さと上下の余白はエディタが中身に合わせて書く。エラーの吹き出しはこの箱の下に出る)。 */
+  .ssg-cell-editor-multiline {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+  }
+  /* 変更(段階 2 の確かめ直し N2-2): 行の間隔はセルと同じくページから受け継ぎます(これまでは 20px 固定で、行の間隔が
+     24px のページでは開くと行が詰まり、折り返しの位置も変わって見えた)。列の wordBreak / lineBreak はエディタが書きます。 */
+  .ssg-cell-editor-input--multiline {
+    display: block;
+    resize: none;
+    overflow-y: auto;
+    font-family: inherit;
+    line-height: inherit;
+    white-space: pre-wrap;
+    overflow-wrap: break-word;
+  }
+
   /* 追加(G-2): IME オンのままの直接入力(imeDirectInput)の入力受け。待機中は透明で操作を受けず(フォーカスだけ持つ)、
      IME の変換中はアクティブセルの上にエディタ(.ssg-cell-editor-input)と同じ見た目で変換中の文字を表示する。
      位置 / 寸法 / 寄せはコントローラがインラインで指定(シェル = position: relative 基準)。 */
+  /* 追加(段階 2 C-N2): 表の直後の目印(展開行があるとき)。Tab で表の外へ出るときの起点と、後ろから Shift+Tab で戻るときの
+     入口です(フォーカスはすぐカード / シェルへ移す)。見えない 1px の要素で、ポインタも受けません。 */
+  .ssg-tab-exit {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    opacity: 0;
+    pointer-events: none;
+  }
   .ssg-ime-input {
     position: absolute;
     top: 0;
@@ -1612,22 +1663,12 @@
     font-size: 11.5px;
   }
 
-  /* 左側のタイトル + summary グループ(group に重ねる)。 */
+  /* 左側の summary グループ(group に重ねる)。変更(段階 2 DU-18): 「Toolbar」の見出しは消しました。 */
   .ssg-bar-leading {
     min-width: 0;
     flex: 1 1 auto;
     color: var(--ssg-header-text);
     font-size: 12px;
-  }
-
-  /* 変更(シャープ化): 控えめな小見出し風(uppercase + 字間 + グレー)。スペースを取りすぎない。 */
-  .ssg-bar-title {
-    font-size: 10px;
-    font-weight: 600;
-    letter-spacing: 0.06em;
-    text-transform: uppercase;
-    color: var(--ssg-glyph);
-    margin-right: 2px;
   }
 
   /* 件数 chip。変更(シャープ化): pill(9999px) → 角丸 5px・箱なしのテキスト主体・等幅数字で

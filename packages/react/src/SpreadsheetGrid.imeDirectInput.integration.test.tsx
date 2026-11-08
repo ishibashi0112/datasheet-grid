@@ -77,7 +77,7 @@ const renderGrid = (imeDirectInput?: boolean) => {
 };
 
 const getCell = (container: HTMLElement, rowIndex: number, colIndex: number): HTMLElement => {
-  const rowEl = container.querySelectorAll('.ssg-body-row')[rowIndex];
+  const rowEl = container.querySelectorAll('[data-pane="center"].ssg-body-row')[rowIndex];
   const cell = rowEl?.querySelectorAll<HTMLElement>('.ssg-body-cell')[colIndex];
   if (!cell) {
     throw new Error(`セル (${rowIndex}, ${colIndex}) が見つかりません`);

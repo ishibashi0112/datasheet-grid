@@ -6,7 +6,7 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi, beforeAll, afterEach } from 'vitest';
 import { render, cleanup, act, fireEvent, screen } from '@testing-library/react';
-import { createRef } from 'react';
+import { createRef, useState } from 'react';
 
 import { SpreadsheetGrid } from './SpreadsheetGrid';
 import { GROUP_AUTO_COLUMN_KEY } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/grouping';
@@ -37,6 +37,8 @@ beforeAll(() => {
     configurable: true,
     get: () => 1600,
   });
+  // @tanstack/virtual-core 3.19 から、列の仮想化は見える幅を clientWidth で読みます(3.17 までは offsetWidth)。
+  Object.defineProperty(HTMLElement.prototype, 'clientWidth', { configurable: true, get: () => 1600 });
   Object.defineProperty(HTMLElement.prototype, 'offsetHeight', {
     configurable: true,
     get: () => 900,
@@ -212,21 +214,178 @@ describe('行グルーピングの列面(結合)', () => {
     ).toBe('¥1,234,568');
   });
 
-  it('エクスポートは自動グループ列を除外し leaf 行のみを出力する', () => {
+  // 追加(段階 2 DU-23): グループ行の集計を合計行と同じ書式にしました(これまでは「4115.333333」「6220」と素の値)。
+  it('DU-23: グループ行の集計は合計行と同じ書式(桁区切り・小数 4 桁まで・平均 / 最小 / 最大 / 個数の見出し)', () => {
+    type Sale = { region: string; amount: number; price: number; orders: number; low: number; custom: number };
+    const saleColumns: GridColumn<Sale>[] = [
+      { key: 'region', title: '地域', width: 100, rowGroup: true },
+      { key: 'amount', title: '金額', width: 120, aggFunc: 'sum' },
+      { key: 'price', title: '単価', width: 120, aggFunc: 'avg' },
+      { key: 'orders', title: '注文', width: 120, aggFunc: 'count' },
+      { key: 'low', title: '最安', width: 120, aggFunc: 'min' },
+      { key: 'custom', title: '独自', width: 120, aggFunc: ({ values }) => values.length * 1000.5 },
+    ];
+    const sales: Sale[] = [
+      { region: '関東', amount: 1234500, price: 4120, orders: 1, low: 3, custom: 0 },
+      { region: '関東', amount: 1000, price: 4120, orders: 1, low: 7, custom: 0 },
+      { region: '関東', amount: 5, price: 4106, orders: 1, low: 5, custom: 0 },
+    ];
+    const { container } = render(<SpreadsheetGrid columns={saleColumns} rows={sales} />);
+    const group = centerGroupRows(container)[0] as HTMLElement;
+    const cell = (key: string) => group.querySelector(`[data-ssg-col-key="${key}"]`);
+    expect(cell('amount')?.textContent).toBe('1,235,505');
+    expect(cell('amount')?.querySelector('.ssg-group-caption')).toBeNull();
+    expect(cell('price')?.querySelector('.ssg-group-caption')?.textContent).toBe('平均');
+    expect(cell('price')?.textContent).toBe('平均4,115.3333');
+    expect(cell('orders')?.textContent).toBe('個数3');
+    expect(cell('low')?.textContent).toBe('最小3');
+    // カスタムの集計も数値なら同じ書式(見出しは付けない)。
+    expect(cell('custom')?.textContent).toBe('3,001.5');
+  });
+
+  // 追加(段階 2 の確かめ直し): 列幅が足りないとき、右寄せの集計値は左が「…」なしで切れ、別の数に読めていた(合計行は末尾が
+  //   「…」+ ツールチップ)。グループ行の件数も桁区切りが無く、同じ行の集計(個数 6,220)と書き方が違っていた。
+  it('グループ行の集計値は合計行と同じく末尾で「…」にし、切れたらツールチップで全文。件数は桁区切り', () => {
+    type Sale = { region: string; amount: number; price: number };
+    const saleColumns: GridColumn<Sale>[] = [
+      { key: 'region', title: '地域', width: 100, rowGroup: true },
+      { key: 'amount', title: '金額', width: 60, align: 'right', aggFunc: 'sum' },
+      { key: 'price', title: '単価', width: 60, align: 'right', aggFunc: 'avg' },
+    ];
+    const sales: Sale[] = Array.from({ length: 1234 }, (_, index) => ({ region: '関東', amount: 560000 + index, price: 100 }));
+    const { container } = render(<SpreadsheetGrid columns={saleColumns} rows={sales} />);
+    const group = centerGroupRows(container)[0] as HTMLElement;
+    const value = (key: string) => group.querySelector<HTMLElement>(`[data-ssg-col-key="${key}"] .ssg-group-value`);
+    expect(value('amount')?.textContent).toBe('691,800,761');
+    expect(value('amount')?.dataset.ssgTooltipOverflow).toBe('691,800,761');
+    expect(value('price')?.dataset.ssgTooltipOverflow).toBe('平均 100');
+    expect(container.querySelector('.ssg-group-count')?.textContent).toBe('(1,234件)');
+  });
+
+  // 変更(段階 2 DU-10): 表示から外れているグループ元の列(地域・担当)を先頭に入れます(これまでは「数量」だけの表で、
+  //   どの行がどのグループか分からなかった)。自動グループ列(合成列)は今までどおり出しません。
+  it('エクスポートは自動グループ列を除き、グループ元の列を先頭に入れて leaf 行を出力する', () => {
     const ref = createRef<SpreadsheetGridHandle<Row>>();
     render(<SpreadsheetGrid ref={ref} columns={groupedColumns} rows={rows} />);
 
     const csv = ref.current?.exportCsv({ includeHeaders: true }) ?? '';
-    const lines = csv.split('\r\n');
-    // ヘッダーに自動グループ列(地域 › 担当)は現れず、leaf 2 行のみが出力されます。
-    expect(lines[0]).toBe('数量');
-    expect(lines).toHaveLength(3);
-    expect(lines[1]).toBe('10');
-    expect(lines[2]).toBe('20');
+    expect(csv.split('\r\n')).toEqual(['地域,担当,数量', '関東,佐藤,10', '関西,田中,20']);
 
     const data = ref.current?.getExportData();
-    expect(data?.columns.map((c) => c.key)).toEqual(['qty']);
+    expect(data?.columns.map((c) => c.key)).toEqual(['region', 'rep', 'qty']);
     expect(data?.rows).toHaveLength(2);
+    expect(data?.rowKinds).toBeUndefined();
+    // scope 'raw'(全ソース行)も同じ列。
+    expect(ref.current?.exportCsv({ scope: 'raw' })).toBe('地域,担当,数量\r\n関東,佐藤,10\r\n関西,田中,20');
+  });
+
+  // 追加(段階 2 DU-10): includeGroupRows で各グループの先頭に小計の行(帳票向け)。
+  it('includeGroupRows: 各グループの先頭に小計の行を入れる(祖先の値 + 「<ラベル> 小計」 + 集計値)', () => {
+    const ref = createRef<SpreadsheetGridHandle<Row>>();
+    const twoPerRegion: Row[] = [
+      { region: '関東', rep: '佐藤', qty: 10 },
+      { region: '関西', rep: '田中', qty: 20 },
+      { region: '関東', rep: '鈴木', qty: 5 },
+    ];
+    render(<SpreadsheetGrid ref={ref} columns={groupedColumns} rows={twoPerRegion} />);
+    // 折りたたんでいても全部のグループを出す。
+    act(() => {
+      ref.current?.collapseAllGroups();
+    });
+    expect(ref.current?.exportCsv({ includeGroupRows: true }).split('\r\n')).toEqual([
+      '地域,担当,数量',
+      '関東 小計,,15',
+      '関東,佐藤 小計,10',
+      '関東,佐藤,10',
+      '関東,鈴木 小計,5',
+      '関東,鈴木,5',
+      '関西 小計,,20',
+      '関西,田中 小計,20',
+      '関西,田中,20',
+    ]);
+    const data = ref.current?.getExportData({ includeGroupRows: true });
+    expect(data?.rowKinds).toEqual(['group', 'group', 'data', 'group', 'data', 'group', 'group', 'data']);
+    // 集計値は生値(数値のまま)。
+    expect(data?.rows[0]?.map((cell) => cell.value)).toEqual(['関東 小計', null, 15]);
+    // 小計の行は scope 'view' だけ('raw' はフィルター / グループを無視するので入れない)。
+    expect(ref.current?.exportCsv({ scope: 'raw', includeGroupRows: true }).split('\r\n')).toHaveLength(4);
+  });
+
+  // 修正(段階 2 の見直し): 出力しない行(isRowExportable が false)は小計に数えず、行が残らないグループの小計の行も出さない。
+  it('includeGroupRows + isRowExportable: 小計は出力する行だけで数え、行が残らないグループは出さない', () => {
+    const ref = createRef<SpreadsheetGridHandle<Row>>();
+    const data3: Row[] = [
+      { region: '関東', rep: '佐藤', qty: 10 },
+      { region: '関西', rep: '田中', qty: 20 },
+      { region: '関東', rep: '鈴木', qty: 5 },
+    ];
+    const isRowExportable = vi.fn<(row: Row, ctx: { viewRowIndex: number }) => boolean>(
+      (row) => row.region === '関東' && row.rep === '佐藤',
+    );
+    render(
+      <SpreadsheetGrid
+        ref={ref}
+        columns={[
+          { key: 'region', title: '地域', width: 100, rowGroup: true },
+          { key: 'rep', title: '担当', width: 100 },
+          { key: 'qty', title: '数量', width: 80, aggFunc: 'sum' },
+        ]}
+        rows={data3}
+        isRowExportable={isRowExportable}
+      />,
+    );
+    expect(ref.current?.exportCsv({ includeGroupRows: true }).split('\r\n')).toEqual([
+      '地域,担当,数量',
+      '関東 小計,,10',
+      '関東,佐藤,10',
+    ]);
+    // isRowExportable は各行 1 回だけ、全展開時のビュー行 index で呼ぶ(これまでと同じ)。
+    expect(isRowExportable).toHaveBeenCalledTimes(3);
+    expect(isRowExportable.mock.calls.map(([row, ctx]) => [row.rep, ctx.viewRowIndex])).toEqual([
+      ['佐藤', 1],
+      ['鈴木', 2],
+      ['田中', 4],
+    ]);
+    const data = ref.current?.getExportData({ includeGroupRows: true });
+    expect(data?.rowKinds).toEqual(['group', 'data']);
+    expect(data?.rows[0]?.map((cell) => cell.value)).toEqual(['関東 小計', null, 10]);
+    // 小計の行を出さないときはこれまでどおり(出力しない行を除くだけ)。
+    expect(ref.current?.exportCsv().split('\r\n')).toEqual(['地域,担当,数量', '関東,佐藤,10']);
+  });
+
+  // 修正(段階 2 の見直し): 小計の行のグループ元の列もデータ行と同じ規則(formatClipboardValue)で書く。
+  it('includeGroupRows: グループ元の列の文字はデータ行と同じ formatClipboardValue で整える', () => {
+    type Sale = { month: number; kind: string; qty: number };
+    const ref = createRef<SpreadsheetGridHandle<Sale>>();
+    render(
+      <SpreadsheetGrid<Sale>
+        ref={ref}
+        columns={[
+          { key: 'month', title: '月', width: 80, rowGroup: true, formatClipboardValue: (value) => `${String(value)}月` },
+          { key: 'kind', title: '区分', width: 80, rowGroup: true, formatClipboardValue: (value) => `[${String(value)}]` },
+          { key: 'qty', title: '数量', width: 80, aggFunc: 'sum' },
+        ]}
+        rows={[
+          { month: 4, kind: 'A', qty: 1 },
+          { month: 4, kind: 'B', qty: 2 },
+        ]}
+      />,
+    );
+    expect(ref.current?.exportCsv({ includeGroupRows: true }).split('\r\n')).toEqual([
+      '月,区分,数量',
+      '4月 小計,,3',
+      '4月,[A] 小計,1',
+      '4月,[A],1',
+      '4月,[B] 小計,2',
+      '4月,[B],2',
+    ]);
+    const data = ref.current?.getExportData({ includeGroupRows: true });
+    // value は生の値(グループ元の列の祖先の値)、text は整えた文字。
+    expect(data?.rows[1]?.map((cell) => [cell.value, cell.text])).toEqual([
+      [4, '4月'],
+      ['[A] 小計', '[A] 小計'],
+      [1, '1'],
+    ]);
   });
 
   it('エクスポート(view)は折りたたみに関係なく全 leaf 行を出力する', () => {
@@ -245,7 +404,7 @@ describe('行グルーピングの列面(結合)', () => {
       ref.current?.collapseAllGroups();
     });
     // 折りたたみ後もグループ順(関東 → 関西)で leaf 2 行が出ます。
-    expect(ref.current?.exportCsv()).toBe('数量\r\n10\r\n20');
+    expect(ref.current?.exportCsv()).toBe('地域,担当,数量\r\n関東,佐藤,10\r\n関西,田中,20');
     expect(ref.current?.getExportData().rows).toHaveLength(2);
     // isRowExportable の viewRowIndex は全展開時のビュー行 index(グループ行 2 段の直下 = 2 / 5)。
     expect(isRowExportable.mock.calls.map((call) => (call as unknown[])[1])).toEqual([
@@ -339,8 +498,9 @@ describe('グルーピング中のグループ元列のソート / フィルタ�
     expect(groupLabels(ref)).toEqual(['b-関東']);
   });
 
-  // 追加(FC-08 の見直し): グループ元列のフィルターはチップバー / 管理パネルに非表示列として出る(外す手段を残す)。
-  it('グループ元列の列フィルターはチップバーに非表示列として出て、× で外せる', () => {
+  // 追加(FC-08 の見直し): グループ元列のフィルターはチップバー / 管理パネルに出る(外す手段を残す)。
+  // 変更(段階 2 DU-11): 非表示列ではなく「(グループ化中)」と出し、ラベルから編集できる。
+  it('グループ元列の列フィルターはチップバーに「グループ化中」として出て、× で外せる', () => {
     const ref = createRef<SpreadsheetGridHandle<SalesRow>>();
     render(<SpreadsheetGrid ref={ref} columns={salesColumns} rows={salesRows} showFilterChipBar />);
     act(() => {
@@ -350,10 +510,49 @@ describe('グルーピング中のグループ元列のソート / フィルタ�
       });
     });
     expect(groupLabels(ref)).toEqual(['b-関東']);
-    expect(screen.getByText('地域(非表示列)')).toBeTruthy();
+    expect(screen.getByText('地域(グループ化中)')).toBeTruthy();
+    expect(screen.getByLabelText<HTMLButtonElement>('地域 のフィルターを編集').disabled).toBe(false);
     fireEvent.click(screen.getByLabelText('地域 のフィルターをクリア'));
     expect(ref.current?.getState().filters.columnFilters).toEqual({});
     expect(groupLabels(ref)).toEqual(['b-関東', 'a-関西', 'c-北海道']);
+  });
+
+  // 追加(段階 2 DU-11): グループ元列の列フィルターを画面から足せる(これまでは applyState でしか掛けられなかった)。
+  it('DU-11: フィルターの管理の「フィルターを追加」にグループ元列が入り、選ぶと自動グループ列の見出しの下に開く', async () => {
+    const ref = createRef<SpreadsheetGridHandle<SalesRow>>();
+    const { container } = render(<SpreadsheetGrid ref={ref} columns={salesColumns} rows={salesRows} />);
+    act(() => {
+      ref.current?.openFilterManager();
+    });
+    const addSelect = screen.getByLabelText<HTMLSelectElement>('フィルターを追加する列を選択');
+    const option = Array.from(addSelect.options).find((candidate) => candidate.value === 'region');
+    expect(option?.textContent).toBe('地域(グループ化中)');
+    act(() => {
+      fireEvent.change(addSelect, { target: { value: 'region' } });
+    });
+    await act(async () => {
+      await new Promise((resolve) => requestAnimationFrame(() => resolve(undefined)));
+    });
+    // 地域の select フィルターのポップオーバーが開く(候補に地域の値)。
+    const popover = document.querySelector<HTMLElement>('.ssg-filter-popover');
+    expect(popover).not.toBeNull();
+    expect(popover?.textContent).toContain('b-関東');
+    expect(popover?.textContent).toContain('c-北海道');
+    // 位置の基準は自動グループ列の見出し(グループ元の列は見出しに無い)。
+    expect(headerCell(container, GROUP_AUTO_COLUMN_KEY)).not.toBeNull();
+    expect(headerCell(container, 'region')).toBeNull();
+  });
+
+  it('DU-11: グルーピングしていないときは「(グループ化中)」と出ない', () => {
+    const ref = createRef<SpreadsheetGridHandle<SalesRow>>();
+    const plainColumns = salesColumns.map((column) => ({ ...column, rowGroup: false }));
+    render(<SpreadsheetGrid ref={ref} columns={plainColumns} rows={salesRows} />);
+    act(() => {
+      ref.current?.openFilterManager();
+    });
+    const addSelect = screen.getByLabelText<HTMLSelectElement>('フィルターを追加する列を選択');
+    const option = Array.from(addSelect.options).find((candidate) => candidate.value === 'region');
+    expect(option?.textContent).toBe('地域');
   });
 
   it('並び替えの管理パネルの列の候補にグループ元列が入り、自動グループ列は入らない', () => {
@@ -385,6 +584,211 @@ describe('グルーピング中のグループ元列のソート / フィルタ�
   });
 });
 
+// 追加(段階 2 DU-24): 列メニューからのグループ化と、集計のある列の並べ替えでグループを集計値の順に並べること。
+describe('列メニューからのグループ化 / 集計値の順(DU-24)', () => {
+  type SalesRow = { id: number; region: string; rep: string; qty: number };
+  const salesRows: SalesRow[] = [
+    { id: 1, region: '関東', rep: '佐藤', qty: 10 },
+    { id: 2, region: '関西', rep: '田中', qty: 50 },
+    { id: 3, region: '関東', rep: '鈴木', qty: 30 },
+    { id: 4, region: '九州', rep: '伊藤', qty: 20 },
+  ];
+  const baseColumns: GridColumn<SalesRow>[] = [
+    { key: 'region', title: '地域', width: 100, rowGroup: false },
+    { key: 'rep', title: '担当', width: 100 },
+    { key: 'qty', title: '数量', width: 100, aggFunc: 'sum' },
+  ];
+  const Controlled = ({
+    initialColumns,
+    gridRef,
+    onColumns,
+  }: {
+    initialColumns: GridColumn<SalesRow>[];
+    gridRef?: { current: SpreadsheetGridHandle<SalesRow> | null };
+    onColumns?: (columns: GridColumn<SalesRow>[]) => void;
+  }) => {
+    const [columns, setColumns] = useState(initialColumns);
+    return (
+      <SpreadsheetGrid
+        ref={gridRef}
+        columns={columns}
+        rows={salesRows}
+        rowKeyGetter={(row) => row.id}
+        onColumnsChange={(next) => {
+          onColumns?.(next);
+          setColumns(next);
+        }}
+      />
+    );
+  };
+  const openMenu = (container: HTMLElement, key: string) => {
+    const button = container.querySelector<HTMLElement>(
+      `.ssg-header-row [data-ssg-col-key="${key}"] [data-ssg-tooltip="列メニュー"]`,
+    );
+    expect(button).not.toBeNull();
+    act(() => {
+      fireEvent.pointerDown(button as HTMLElement, { button: 0 });
+    });
+  };
+  const menuItem = (label: string) =>
+    Array.from(document.querySelectorAll<HTMLButtonElement>('.ssg-menu-item')).find(
+      (item) => item.querySelector('.ssg-menu-label')?.textContent === label,
+    );
+
+  it('「この列でグループ化」で rowGroup が付き、「グループ化を外す」ですべて外れる', () => {
+    const ref = createRef<SpreadsheetGridHandle<SalesRow>>();
+    const received: GridColumn<SalesRow>[][] = [];
+    const { container } = render(
+      <Controlled initialColumns={baseColumns} gridRef={ref} onColumns={(next) => received.push(next)} />,
+    );
+    openMenu(container, 'region');
+    expect(menuItem('グループ化を外す')).toBeUndefined();
+    act(() => {
+      fireEvent.click(menuItem('この列でグループ化') as HTMLButtonElement);
+    });
+    expect(received.at(-1)?.map((column) => [column.key, column.rowGroup])).toEqual([
+      ['region', true],
+      ['rep', undefined],
+      ['qty', undefined],
+    ]);
+    expect(headerCell(container, GROUP_AUTO_COLUMN_KEY)).not.toBeNull();
+    expect(headerCell(container, 'region')).toBeNull();
+    expect(ref.current?.getGroupRows().map((group) => group.label)).toEqual(['関東', '関西', '九州']);
+
+    openMenu(container, 'rep');
+    act(() => {
+      fireEvent.click(menuItem('グループ化を外す') as HTMLButtonElement);
+    });
+    expect(received.at(-1)?.map((column) => [column.key, column.rowGroup])).toEqual([
+      ['region', false],
+      ['rep', undefined],
+      ['qty', undefined],
+    ]);
+    expect(headerCell(container, GROUP_AUTO_COLUMN_KEY)).toBeNull();
+    expect(headerCell(container, 'region')).not.toBeNull();
+  });
+
+  it('前にある列でグループ化すると階層の一番下に足す(columns の中で最後のグループ元の列の後ろへ移す)', () => {
+    const ref = createRef<SpreadsheetGridHandle<SalesRow>>();
+    const received: GridColumn<SalesRow>[][] = [];
+    const { container } = render(
+      <Controlled
+        initialColumns={[
+          { key: 'rep', title: '担当', width: 100 },
+          { key: 'region', title: '地域', width: 100, rowGroup: true },
+          { key: 'qty', title: '数量', width: 100, aggFunc: 'sum' },
+        ]}
+        gridRef={ref}
+        onColumns={(next) => received.push(next)}
+      />,
+    );
+    openMenu(container, 'rep');
+    act(() => {
+      fireEvent.click(menuItem('この列でグループ化') as HTMLButtonElement);
+    });
+    expect(received.at(-1)?.map((column) => column.key)).toEqual(['region', 'rep', 'qty']);
+    const levels = ref.current?.getGroupRows().map((group) => `${group.level}:${group.label}`);
+    expect(levels?.slice(0, 3)).toEqual(['0:関東', '1:佐藤', '1:鈴木']);
+  });
+
+  it('集計のある列には出さない / rowGroup を書いていない表と onColumnsChange の無い表には出さない', () => {
+    const { container, unmount } = render(<Controlled initialColumns={baseColumns} />);
+    openMenu(container, 'qty');
+    expect(menuItem('この列でグループ化')).toBeUndefined();
+    expect(menuItem('昇順で並び替え')).toBeDefined();
+    unmount();
+
+    const plain: GridColumn<SalesRow>[] = baseColumns.map((column) => {
+      const copy = { ...column };
+      delete copy.rowGroup;
+      return copy;
+    });
+    const second = render(<Controlled initialColumns={plain} />);
+    openMenu(second.container, 'region');
+    expect(menuItem('この列でグループ化')).toBeUndefined();
+    second.unmount();
+
+    const third = render(<SpreadsheetGrid columns={baseColumns} rows={salesRows} />);
+    openMenu(third.container, 'region');
+    expect(menuItem('この列でグループ化')).toBeUndefined();
+  });
+
+  // 修正(段階 2 の見直し): 表に出ている最後のデータ列はグループ化に出さない(自動グループ列だけが残ると、列メニューが
+  //   無くなり「グループ化を外す」へ戻れなかった。列の表示 / 非表示の「最後の 1 列は外せない」と同じ)。
+  it('表に出ている最後のデータ列(集計の列を含む)には「この列でグループ化」を出さない', () => {
+    const { container } = render(
+      <Controlled
+        initialColumns={[
+          { key: 'region', title: '地域', width: 100, rowGroup: true },
+          { key: 'rep', title: '担当', width: 100 },
+          { key: 'qty', title: '数量', width: 100, visible: false },
+        ]}
+      />,
+    );
+    // 表に出ているデータ列は rep だけ(region はグループ元、qty は非表示)。
+    openMenu(container, 'rep');
+    expect(menuItem('昇順で並び替え')).toBeDefined();
+    expect(menuItem('この列でグループ化')).toBeUndefined();
+    expect(menuItem('グループ化を外す')).toBeDefined();
+    cleanup();
+
+    // 集計の列が残るなら出す(集計の列のメニューから外せる)。
+    const second = render(
+      <Controlled
+        initialColumns={[
+          { key: 'region', title: '地域', width: 100, rowGroup: true },
+          { key: 'rep', title: '担当', width: 100 },
+          { key: 'qty', title: '数量', width: 100, aggFunc: 'sum' },
+        ]}
+      />,
+    );
+    openMenu(second.container, 'rep');
+    expect(menuItem('この列でグループ化')).toBeDefined();
+  });
+
+  it('集計のある列で並べ替えると、グループもその集計値の順に並ぶ', () => {
+    const ref = createRef<SpreadsheetGridHandle<SalesRow>>();
+    const grouped = baseColumns.map((column) => (column.key === 'region' ? { ...column, rowGroup: true } : column));
+    render(<SpreadsheetGrid ref={ref} columns={grouped} rows={salesRows} />);
+    const labels = () => ref.current?.getGroupRows().map((group) => group.label);
+    expect(labels()).toEqual(['関東', '関西', '九州']);
+    act(() => {
+      ref.current?.applyState({ sort: [{ columnKey: 'qty', direction: 'desc' }] });
+    });
+    // 合計: 関西 50 / 関東 40 / 九州 20。
+    expect(labels()).toEqual(['関西', '関東', '九州']);
+    act(() => {
+      ref.current?.applyState({ sort: [{ columnKey: 'qty', direction: 'asc' }] });
+    });
+    expect(labels()).toEqual(['九州', '関東', '関西']);
+    // グループ元の列の並べ替えが先なら、その列の順(今までどおり。後ろの集計の条件では並べ替えない)。
+    act(() => {
+      ref.current?.applyState({ sort: [{ columnKey: 'region', direction: 'desc' }] });
+    });
+    const byRegion = labels();
+    act(() => {
+      ref.current?.applyState({
+        sort: [
+          { columnKey: 'region', direction: 'desc' },
+          { columnKey: 'qty', direction: 'desc' },
+        ],
+      });
+    });
+    expect(labels()).toEqual(byRegion);
+    expect(byRegion).not.toEqual(['関西', '関東', '九州']);
+  });
+
+  it('manualSorting では集計値の順に並べない(行も並べないため)', () => {
+    const ref = createRef<SpreadsheetGridHandle<SalesRow>>();
+    const grouped = baseColumns.map((column) => (column.key === 'region' ? { ...column, rowGroup: true } : column));
+    render(<SpreadsheetGrid ref={ref} columns={grouped} rows={salesRows} manualSorting />);
+    act(() => {
+      ref.current?.applyState({ sort: [{ columnKey: 'qty', direction: 'desc' }] });
+    });
+    expect(ref.current?.getGroupRows().map((group) => group.label)).toEqual(['関東', '関西', '九州']);
+  });
+});
+
 // 追加(dogfood DF-01 / DF-22 / DU-05): 実際にアプリを作って見つかったグルーピングの所見の回帰テストです。
 describe('グルーピングの操作(dogfood)', () => {
   it('DF-01: グループ行のセルを押すとアクティブセルになり、Enter はその行の開閉になる(直前の葉のセルを編集しない)', () => {
@@ -411,6 +815,25 @@ describe('グルーピングの操作(dogfood)', () => {
     expect(centerBodyRows(container)).toHaveLength(4);
     expect(container.querySelector('.ssg-cell-editor')).toBeNull();
     expect(onRowsChange).not.toHaveBeenCalled();
+  });
+
+  // 追加(段階 2 G1): 自動グループ列のセルの番地は、先頭のデータ列と同じ文字ではなく見出しの名前と行番号。
+  it('G1: 自動グループ列のセルの番地は「見出しの名前 行番号」', () => {
+    const ref = createRef<SpreadsheetGridHandle<Row>>();
+    const { container } = render(<SpreadsheetGrid ref={ref} columns={groupedColumns} rows={rows} />);
+    const kanto = centerGroupRows(container)[0] as HTMLElement;
+    const groupCell = kanto.querySelector<HTMLElement>(`[data-ssg-col-key="${GROUP_AUTO_COLUMN_KEY}"]`);
+    expect(groupCell).not.toBeNull();
+    act(() => {
+      fireEvent.pointerDown(groupCell!, { button: 0, pointerId: 1, pointerType: 'mouse' });
+      fireEvent.pointerUp(window, { button: 0, pointerId: 1, pointerType: 'mouse' });
+    });
+    const bottomBar = container.querySelector('.ssg-bar--bottom');
+    expect(bottomBar?.textContent).toContain('セル 地域 › 担当 1');
+    act(() => {
+      ref.current?.setActiveCell({ row: 0, col: 1 });
+    });
+    expect(container.querySelector('.ssg-bar--bottom')?.textContent).toContain('セル A1');
   });
 
   it('DU-05: グローバルフィルターはグループ元列の値でも探せる', () => {

@@ -1,5 +1,6 @@
-import type { GridSelectionAggregates, SpreadsheetGridDerivedSummary } from '../model/gridTypes';
+import type { GridLocaleText, GridSelectionAggregates, SpreadsheetGridDerivedSummary } from '../model/gridTypes';
 import { cx } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/cx';
+import { DEFAULT_GRID_LOCALE_TEXT, formatLocaleText } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/localeText';
 import type { GridResolvedSlot } from '../model/gridTypes';
 import type { GridSelectionAggregates as GridSelectionAggregatesView } from './GridSelectionAggregates';
 
@@ -14,6 +15,8 @@ type DefaultGridBottomBarProps = {
   slot?: GridResolvedSlot;
   // 変更(差し込み式 段階 2): 集計の表示部品(機能 features/selectionAggregates から。無ければ出さない)。
   SelectionAggregates?: typeof GridSelectionAggregatesView;
+  // 追加(段階 2 DU-18): 文言(未指定は既定の日本語)。
+  localeTexts?: Readonly<GridLocaleText>;
 };
 
 // 追加: Grid 下部の既定ステータスバーです。
@@ -32,9 +35,10 @@ export function DefaultGridBottomBar({
   showCounts = true,
   slot,
   SelectionAggregates,
+  localeTexts = DEFAULT_GRID_LOCALE_TEXT,
 }: DefaultGridBottomBarProps) {
   const aggregates = SelectionAggregates ? (
-    <SelectionAggregates aggregates={selectionAggregates} trailing={!showCounts} />
+    <SelectionAggregates aggregates={selectionAggregates} trailing={!showCounts} localeTexts={localeTexts} />
   ) : null;
 
   return (
@@ -51,18 +55,15 @@ export function DefaultGridBottomBar({
         {showCounts ? aggregates : null}
 
         <div className="ssg-bar-group">
+          {/* 変更(段階 2 DU-18): 文言を localeText から(既定は「セル B3」「範囲 B3:D5」「9 セル / 3 行」「3 列」)。 */}
           <span className="ssg-bar-chip">
-            Active: {derivedSummary.activeCellLabel}
+            {formatLocaleText(localeTexts.activeCell, { cell: derivedSummary.activeCellLabel })}
           </span>
           <span className="ssg-bar-chip">
-            Selection: {derivedSummary.selectionLabel}
+            {formatLocaleText(localeTexts.selection, { range: derivedSummary.selectionLabel })}
           </span>
-          <span className="ssg-bar-chip">
-            {derivedSummary.selectionStatsText}
-          </span>
-          <span className="ssg-bar-chip">
-            Cols: {derivedSummary.selectionStats.selectedColumnCount}
-          </span>
+          <span className="ssg-bar-chip">{derivedSummary.selectionStatsText}</span>
+          <span className="ssg-bar-chip">{derivedSummary.selectedColumnsText}</span>
         </div>
         {showCounts ? null : aggregates}
       </div>

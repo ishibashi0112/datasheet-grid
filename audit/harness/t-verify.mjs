@@ -511,7 +511,7 @@ for (const ime of [false, true]) {
 {
   const { page, close } = await open('ssrm');
   await page.evaluate(() => { window.__ssrm.server = window.__ssrm.server.slice(0, 150); window.__grid.refreshServerSide(); });
-  await page.waitForFunction(() => /Rows: 150\b/.test(document.querySelector('.ssg-bar--bottom')?.textContent ?? ''), null, { timeout: 5000 });
+  await page.waitForFunction(() => /行 150\b/.test(document.querySelector('.ssg-bar--bottom')?.textContent ?? ''), null, { timeout: 5000 });
   await page.evaluate(() => window.__grid.scrollToBottom());
   await waitIdle(page, 500);
   // 件数が 150 → 1000 に増える(サーバ側で追加。block 1 = 100..199 は 50 行だけキャッシュ済み)
@@ -527,7 +527,7 @@ for (const ime of [false, true]) {
   await waitIdle(page, 1000);
   const skel2 = await page.evaluate(() => [...document.querySelectorAll('.ssg-center-pane .ssg-body-row')].filter((r) => r.querySelector('.ssg-skeleton-bar')).map((r) => r.getAttribute('data-row-index')));
   console.log('B-03: bottom =', bottom, 'skeleton rows =', skel2, 'calls =', await page.evaluate(() => window.__ssrm.calls.slice(-6).map((c) => [c.startIndex, c.endIndex, c.outcome])));
-  check('B-03: rows 150..199 load after total grows (no stuck skeletons in visible window)', skel2.length === 0 || /Rows: 150\b/.test(bottom), { bottom, skel2 });
+  check('B-03: rows 150..199 load after total grows (no stuck skeletons in visible window)', skel2.length === 0 || /行 150\b/.test(bottom), { bottom, skel2 });
   await close();
 }
 
@@ -546,7 +546,7 @@ for (const ime of [false, true]) {
   await waitIdle(page, 300);
   const bottom = await page.locator('.ssg-bar--bottom').textContent();
   const popStill = await page.locator('.ssg-filter-popover').count();
-  check('V-02: Enter on focused 適用 button applies filter', /Rows: 10 \//.test(bottom) && popStill === 0, { bottom, popStill });
+  check('V-02: Enter on focused 適用 button applies filter', /行 10 \//.test(bottom) && popStill === 0, { bottom, popStill });
   await close();
 }
 
@@ -558,7 +558,7 @@ for (const ime of [false, true]) {
   const bottom = await page.locator('.ssg-bar--bottom').textContent();
   const dupKeyWarnings = (await errorsOf(page)).filter((e) => e.includes('same key'));
   check('B-04: no duplicate React key warnings in SSRM', dupKeyWarnings.length === 0, dupKeyWarnings.slice(0, 2));
-  check('SSRM bars: denominator should not be 0', !/Rows: \d+ \/ 0(?!\d)/.test(bottom) && !/Rows: \d+ \/ 0(?!\d)/.test(top), { top, bottom });
+  check('SSRM bars: denominator should not be 0', !/行 \d+ \/ 0(?!\d)/.test(bottom) && !/行 \d+ \/ 0(?!\d)/.test(top), { top, bottom });
   await close();
 }
 

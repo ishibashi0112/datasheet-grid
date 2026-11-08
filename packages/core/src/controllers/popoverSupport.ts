@@ -88,6 +88,11 @@ export type PopoverWindowHandlers = {
   onOutsidePointerDown: (target: Node) => void;
   // keydown(capture)。Escape の扱い(preventDefault して閉じる / 抑止して別処理)は呼び出し側が決めます。
   onKeyDown?: (event: KeyboardEvent) => void;
+  // 追加(段階 2 DF-23): 開いている間にグリッドが隠れた(display: none のタブへ切り替えた等で 0 × 0 になった)とき。
+  //   クリックで切り替えたときは pointerdown で閉じますが、element.click() やショートカットで隠すと、ポップオーバーが
+  //   別の画面の上に残っていました。グリッドの要素を ResizeObserver で見張ります(開いている間だけ)。
+  getGridRoot?: () => HTMLElement | null;
+  onGridHidden?: () => void;
 };
 
 export type PopoverWindowBindings = {
@@ -113,6 +118,26 @@ export const createPopoverWindowBindings = (
     handlers.onOutsidePointerDown(target);
   };
   const handleKeyDown = (event: KeyboardEvent) => handlers.onKeyDown?.(event);
+  let hiddenObserver: ResizeObserver | null = null;
+  const watchGridHidden = () => {
+    const root = handlers.getGridRoot?.() ?? null;
+    const onGridHidden = handlers.onGridHidden;
+    if (!root || !onGridHidden || typeof ResizeObserver === 'undefined') {
+      return;
+    }
+    hiddenObserver = new ResizeObserver((entries) => {
+      const entry = entries[entries.length - 1];
+      if (!attached || !entry || entry.contentRect.width !== 0 || entry.contentRect.height !== 0) {
+        return;
+      }
+      // 通知の大きさと今の矩形の両方が 0 × 0 のときだけ(大きさを差し替えるテスト用のスタブで誤って閉じないため)。
+      const rect = root.getBoundingClientRect();
+      if (rect.width === 0 && rect.height === 0) {
+        onGridHidden();
+      }
+    });
+    hiddenObserver.observe(root);
+  };
 
   return {
     attach: () => {
@@ -124,12 +149,15 @@ export const createPopoverWindowBindings = (
       window.addEventListener('scroll', handleScroll, true);
       window.addEventListener('pointerdown', handlePointerDown);
       window.addEventListener('keydown', handleKeyDown, true);
+      watchGridHidden();
     },
     detach: () => {
       if (!attached) {
         return;
       }
       attached = false;
+      hiddenObserver?.disconnect();
+      hiddenObserver = null;
       window.removeEventListener('resize', handleResize);
       window.removeEventListener('scroll', handleScroll, true);
       window.removeEventListener('pointerdown', handlePointerDown);

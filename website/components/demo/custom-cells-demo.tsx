@@ -130,7 +130,7 @@ export function CustomCellsDemo() {
       onRowsChange={setRows}
       rowKeyGetter={(row) => row.id}
       height={260}
-      theme="auto"
+      theme="class"
     />
   );
 }
