@@ -90,6 +90,7 @@
 | `showTopBarFilter` | `boolean` | `true` | 既定トップバーのグローバルフィルター入力欄の表示有無。`renderTopBar` 未指定時のみ有効。`enableGlobalFilter=false` のときは本値に関わらず非表示。 |
 | `globalFilterPlaceholder` | `string` | `'グローバルフィルター'` | 既定トップバーのグローバルフィルター入力の placeholder。`renderTopBar` 未指定時のみ有効。 |
 | `globalFilterIcon` | `ReactNode` | 組み込み検索アイコン | 既定トップバーのグローバルフィルター入力の左アイコン。`renderTopBar` 未指定時のみ有効。`undefined`=組み込みの検索(虫眼鏡)アイコン / `null`(など falsy)=アイコン無し / 任意 `ReactNode`=差し替え。クリアボタンは入力枠の内側右に `×` で表示され、入力が空のときは出ない。 |
+| `localeText` | `Partial<GridLocaleText>` | 日本語 | 文言(今は上部 / 下部バーの文言)。変えたいキーだけを渡す(`{ rowCount: 'Rows: {shown} / {total}' }`)。`{name}` の所は値に置き換わる。キーの一覧は「バーの文言(`localeText`)」節。 |
 | `showBottomBar` | `boolean` | `true` | 下部バー(ステータスバー)の表示有無。`false` で `renderBottomBar` に関わらず一切描画しない(表示のマスタースイッチ。矛盾指定時は `renderBottomBar` より優先)。 |
 | `showBottomBarCounts` | `boolean` | `true` | 既定ボトムバーの Rows / Columns 件数 chips(左側)の表示有無。`renderBottomBar` 未指定時のみ有効。右側の Active / Selection / 選択統計 / Cols は対象外。 |
 | `showSelectionAggregates` | `boolean` | `true` | 2 セル以上を選んだとき、選択範囲の集計(平均 / データの個数 / 合計)を既定ボトムバーの右側(Active / Selection の隣の空き)に出す。数えるのは表示中のデータ行 × データ列のセルで(フィルターで隠れた行・グループ行・ラベル行・合成列は対象外)、合計 / 平均は数値と数値の文字列だけ(グループ集計と同じ判定)、データの個数は空でないセル。大きな選択は時間分割で計算し、その間は「集計中…」。SSRM では読み込み済みの行だけで計算し「読み込み済みの行のみ」と添える。`false` では計算もせず `slotContext.selectionAggregates` は `null`(「選択範囲の集計」節)。 |
@@ -133,8 +134,8 @@
 | バーごと消す | `showTopBar={false}` |
 | summary だけ(フィルター入力なし) | `showTopBarFilter={false}` |
 | フィルター入力だけ(summary なし) | `showTopBarSummary={false}` |
-| トップの Rows/Columns 件数だけ消す | `showTopBarCounts={false}` |
-| ボトムの Rows/Columns 件数だけ消す | `showBottomBarCounts={false}` |
+| トップの行 / 列の件数だけ消す | `showTopBarCounts={false}` |
+| ボトムの行 / 列の件数だけ消す | `showBottomBarCounts={false}` |
 | 選択範囲の集計(平均 / データの個数 / 合計)を消す | `showSelectionAggregates={false}` |
 | 適用中の列フィルターをチップで常時表示 | `showFilterChipBar`(既定 OFF) |
 | フィルター機能ごと無効 + summary は残す | `enableGlobalFilter={false}` |
@@ -142,7 +143,64 @@
 
 `showTopBarSummary` と `showTopBarFilter`(実効は `showTopBarFilter && enableGlobalFilter`)がともに `false` の場合、既定トップバーは描画されない(空バーを出さない)。
 
-ボトムバーは Rows / Columns 件数を `showBottomBarCounts`、選択範囲の集計を `showSelectionAggregates` で出し分けできる(右側の Active / Selection / 選択統計 / Cols は対象外)。それ以外の内訳を変えたい場合は `renderBottomBar` を使う。
+ボトムバーは行 / 列の件数を `showBottomBarCounts`、選択範囲の集計を `showSelectionAggregates` で出し分けできる(右側のセル / 範囲 / 選択の大きさ / 列数は対象外)。それ以外の内訳を変えたい場合は `renderBottomBar` を使う。
+
+### バーの文言(`localeText`)
+
+既定バーの文言は日本語です(0.63.0 から。0.62.0 までは「Toolbar」「Rows: 120 / 120」「Active: B3」など英語でした)。`localeText` に変えたいキーだけを渡すと、その文言だけが置き換わります。`{name}` の所は値に置き換わります。`renderTopBar` / `renderBottomBar` の `ctx.derivedSummary` の文字(`rowSummaryText` など)も同じ文言で作られます。
+
+```tsx
+// 英語にする例
+<SpreadsheetGrid
+  localeText={{
+    rowCount: 'Rows: {shown} / {total}',
+    columnCount: 'Columns: {shown} / {total}',
+    filterSummary: 'Filter: {value}',
+    filterGlobal: '"{text}"',
+    filterColumns: '{count} columns',
+    sortSummary: 'Sort: {value}',
+    sortEntry: '{column} ({direction})',
+    sortAscending: 'asc',
+    sortDescending: 'desc',
+    activeCell: 'Cell {cell}',
+    selection: 'Range {range}',
+    selectionSize: '{cells} cells / {rows} rows',
+    selectedColumns: '{count} columns',
+    aggregateAverage: 'Average',
+    aggregateCount: 'Count',
+    aggregateSum: 'Sum',
+    aggregateComputing: 'Calculating… {percent}%',
+    aggregatePartial: 'Loaded rows only',
+    none: 'none',
+    listSeparator: ', ',
+  }}
+  …
+/>
+```
+
+| キー | 既定 | 中身 |
+| --- | --- | --- |
+| `rowCount` | `行 {shown} / {total}` | 行の件数(`{shown}` = 表示中、`{total}` = 全部。ラベル行は数えない) |
+| `columnCount` | `列 {shown} / {total}` | 列の件数 |
+| `filterSummary` | `絞り込み: {value}` | 絞り込みの要約(`{value}` は `none` / `filterGlobal` / `filterColumns`。両方なら ` + ` でつなぐ) |
+| `filterGlobal` | `「{text}」` | 検索欄の文字(16 文字を超えると切る) |
+| `filterColumns` | `{count} 列` | 列の絞り込みの数 |
+| `sortSummary` | `並び替え: {value}` | 並び替えの要約(`{value}` は `none` か、`sortEntry` を `listSeparator` でつないだもの) |
+| `sortEntry` | `{column}({direction})` | 並び替えの 1 列(`{direction}` は `sortAscending` / `sortDescending`) |
+| `sortAscending` / `sortDescending` | `昇順` / `降順` | 並び替えの向き |
+| `activeCell` | `セル {cell}` | アクティブセルの番地(無ければ `none`) |
+| `selection` | `範囲 {range}` | 選択範囲(`B3:D5`、1 セルなら `B3`、行は `3:5`、列は `B:D`。無ければ `none`) |
+| `selectionSize` | `{cells} セル / {rows} 行` | 選択範囲の大きさ |
+| `selectedColumns` | `{count} 列` | 選択範囲の列数 |
+| `aggregateAverage` / `aggregateCount` / `aggregateSum` | `平均` / `データの個数` / `合計` | 選択範囲の集計の見出し(後ろに `: 値`) |
+| `aggregateComputing` | `集計中… {percent}%` | 大きな選択範囲を集計している間 |
+| `aggregatePartial` | `読み込み済みの行のみ` | serverSide で読み込んでいない行を飛ばしたときの添え書き |
+| `none` | `なし` | 絞り込み / 並び替え / アクティブセル / 選択範囲が無いとき |
+| `listSeparator` | `、` | 並び替えの列の区切り |
+
+- 件数の数字は区切りを入れずにそのまま出します(`行 1000000 / 1000000`)。
+- `localeText={{ … }}` をその場で書いても、中身が同じ間は要約を作り直しません。
+- メニュー・フィルター画面・ツールチップなどの文言は、まだ日本語だけです(英語は後の版で文言のセットとして足す予定です)。
 
 ### 選択範囲の集計(`showSelectionAggregates`)
 
@@ -1144,7 +1202,7 @@ type Row = { id: string; kind?: 'label'; code: string; name: string; qty: number
 - **セクション**: ラベル行から次のラベル行の直前までを 1 区間とみなします。最初のラベル行より前の行は「ラベル無しの区間」です。
 - **ソート / フィルター(`sortMode`)**: `'section'`(既定)= 並べ替えは各セクションの中だけで行い、ラベル行の位置は動かない。フィルターで 0 件になったセクションはラベルごと消える(`keepEmptySections` で残せる)。`'follow'` = 全体を並べ替え、ラベル行は「元のセクションの先頭に来るデータ行」の直前に付いて移動する(元から中身の無いセクションのラベルは、続くセクションのラベルの直前に並ぶ。消えるのはフィルターで 0 件になったときだけで、`keepEmptySections` で残せる)。`'hide'` = ソート / フィルター中はラベル行を出さない。ソートもフィルターも無いときは 3 モードとも `rows` の並びそのものです。
 - **表示**: 帯は 3 ペインとも描き、中身(`getLabel` の文字列 / `render` の要素)は中央ペインに `position: sticky` で置かれ、横スクロールしてもビューポート左端(左固定ペインの右隣)に留まります(展開行カードと同じ機構)。行ヘッダー「#」は空欄で、データ行の行番号はラベル行を飛ばした通し番号になります。既定表示は左のアクセント線 + 太字(トークン `--ssg-label-row-bg` / `--ssg-label-row-text` / `--ssg-label-row-accent`)。
-- **操作の対象外**: ラベル行はセルを持たないため、セル選択 / 編集 / コピー / クリア / チェックボックス行選択 / ホバー / コンテキストメニューの対象になりません。矢印キー(↑ / ↓)はラベル行に止まらず読み飛ばし、貼り付けはラベル行を飛ばして次のデータ行へ続けます(行は落ちません)。件数表示(bar の `Rows: X / Y`・行選択件数)はデータ行のみを数えます。範囲選択の塗りはラベル行の上も通過して描かれます(グループ行と同じ)。
+- **操作の対象外**: ラベル行はセルを持たないため、セル選択 / 編集 / コピー / クリア / チェックボックス行選択 / ホバー / コンテキストメニューの対象になりません。矢印キー(↑ / ↓)はラベル行に止まらず読み飛ばし、貼り付けはラベル行を飛ばして次のデータ行へ続けます(行は落ちません)。件数表示(バーの「行 X / Y」・行選択件数)はデータ行のみを数えます。範囲選択の塗りはラベル行の上も通過して描かれます(グループ行と同じ)。
 - **行ドラッグ併用**: データ行はセクションを跨いで移動できます(移動先のセクションに所属が変わる)。ラベル行自体は掴めません。ソート / フィルター中に操作不可になる規則は従来どおりです。
 - **展開行併用**: 可。ラベル行は展開できません(データ行のみ)。
 - **serverSide(`dataSource`)**: サーバーが `getRows` の結果にラベル行を含めて返し(`totalRowCount` にも数える)、`isLabelRow` で識別します。セクションの並べ替え / `sectionRowCount` / 縦固定(`sticky`)/ ラベル行の `height` はサーバー行モデルでは適用されず、件数表示はサーバー総数のままです。
@@ -1660,7 +1718,7 @@ export const OrdersTable = () => <Grid columns={columns} dataSource={dataSource}
 - **全部入りで既定オンの機能は、差し込んだときだけ既定オン**: 列フィルター / グローバルフィルター(`filtering`)、列メニュー(`columnMenu`)、列のドラッグ並べ替え(`columnReorder`。`onColumnsChange` 指定時)、列境界のダブルクリックでの幅の自動調整(`columnAutosize`)、選択範囲の集計(`selectionAggregates`)、コピー範囲の点線(`motionExtras`)。これらは prop を書かずに効くので、入れなくても開発時の警告は出ない。全部入りと同じ既定の動きにするなら `{ ...standardFeatures, columnReorder: columnReorderFeature, selectionAggregates: selectionAggregatesFeature, motionExtras: motionExtrasFeature }`(`standardFeatures` に入っていないのは後ろの 3 つ)。
 - **機能なしで残るもの(本体)**: 表示(縦横の仮想スクロール・固定列)、セル / 範囲選択、キー操作、編集(6 種のエディタと検証)、コピー / 貼り付け / 削除、元に戻す / やり直し、列幅の変更、ソート、行選択(チェックボックス)、展開行(`detailRow`)、セルのメモ(`cellNote`)、`getState` / `applyState`、テーマ / 密度 / モーション、ツールチップ、上部 / 下部バー、ARIA。列見出しからソートする入口は列メニューにあり、`columnMenu` が無い構成で画面からソートできるのはツールパネル(`toolPanel`)の「並び替え」タブだけ(どちらも無ければ `applyState` 等の API から)。
 - **画面の入口は機能の組み合わせで決まる**: 列フィルターを画面から掛ける入口は列メニューの「フィルター…」と、適用中フィルターのチップ(ツールパネル)なので、`filtering` だけでは列フィルターを追加できない(グローバル検索欄は使える)。ツールパネルを開く入口は列メニューの項目、適用中フィルターのチップ、`openFilterManager` なので、`toolPanel` は `columnMenu` か `filtering` と一緒に使う(どちらも無いと代役になり、部品も読み込まない)。列メニューの「幅の自動調整」は `columnAutosize` があるときだけ出る。
-- **機能が無いときの扱い(注意が要るもの)**: `filtering` が無いとグローバル / 列フィルターは無効(`enableGlobalFilter` / `enableColumnFilter` を false として扱う)で、`applyState` で渡したフィルターは状態には残るが行には効かない(開発時に警告。上部 / 下部バーの「Filter: …」にも数えない)。`serverSide` が無いと `dataSource` を無視して clientSide で動く。`labelRow` が無いとラベル行の述語に当たる行もデータ行として並ぶ。`rowGroup` の列は `grouping` が無ければグループ化せずそのまま表示。`autoHeight` が無いと行の高さは一定(`rowHeight`)。`toolPanel` があっても `filtering` が無ければフィルタータブは出ず、`openFilterManager` は何もしない(全部入りで `enableColumnFilter={false}` にしたときと同じ。開発時に警告)。
+- **機能が無いときの扱い(注意が要るもの)**: `filtering` が無いとグローバル / 列フィルターは無効(`enableGlobalFilter` / `enableColumnFilter` を false として扱う)で、`applyState` で渡したフィルターは状態には残るが行には効かない(開発時に警告。上部 / 下部バーの「絞り込み: …」にも数えない)。`serverSide` が無いと `dataSource` を無視して clientSide で動く。`labelRow` が無いとラベル行の述語に当たる行もデータ行として並ぶ。`rowGroup` の列は `grouping` が無ければグループ化せずそのまま表示。`autoHeight` が無いと行の高さは一定(`rowHeight`)。`toolPanel` があっても `filtering` が無ければフィルタータブは出ず、`openFilterManager` は何もしない(全部入りで `enableColumnFilter={false}` にしたときと同じ。開発時に警告)。
 - Next.js(App Router)では、`createSpreadsheetGrid` を呼ぶファイルに `'use client'` を付ける。作ったコンポーネントや `standardFeatures` は関数なので、サーバーコンポーネントから props で渡せない(クライアントコンポーネントの中で import して使う)。
 - 全部入りの `SpreadsheetGrid` と同じアプリで混ぜることはできるが、`/lite` は機能ごとのファイルに分けた別のビルドなので共通部分を共有しない。同じページで両方を使うと共通部分が二重に入り、ページを分けても `/lite` だけのページが大きくなることがある(Next.js 16 の Turbopack の実測で、`standardFeatures` のページが約 85KB → 約 92KB)。どちらかの入口に揃える。
 

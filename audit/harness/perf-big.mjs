@@ -36,11 +36,11 @@ await measure('clear filters', new Function('return ' + F({}))());
 // グローバルフィルター(入力 → 完了まで)
 const t0 = Date.now();
 await page.fill('.ssg-bar-input', 'item-0999');
-await page.waitForFunction(() => /Rows: 100 \//.test(document.querySelector('.ssg-bar--bottom')?.textContent ?? ''), null, { timeout: 120000 });
+await page.waitForFunction(() => /行 100 \//.test(document.querySelector('.ssg-bar--bottom')?.textContent ?? ''), null, { timeout: 120000 });
 console.log('global filter typed→100 rows shown ms', Date.now() - t0);
 const t1 = Date.now();
 await page.fill('.ssg-bar-input', '');
-await page.waitForFunction(() => /Rows: 1000000 \//.test(document.querySelector('.ssg-bar--bottom')?.textContent ?? ''), null, { timeout: 120000 });
+await page.waitForFunction(() => /行 1000000 \//.test(document.querySelector('.ssg-bar--bottom')?.textContent ?? ''), null, { timeout: 120000 });
 console.log('global filter cleared→1M rows ms', Date.now() - t1);
 // 1M 行で Ctrl+A → コピー(TSV)の時間 / メモリ
 await page.locator('.ssg-shell').focus();

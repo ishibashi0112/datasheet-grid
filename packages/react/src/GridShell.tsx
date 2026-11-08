@@ -60,6 +60,7 @@ import CellEditorLayer from './CellEditorLayer';
 // 追加(13-A): 列メニュー(「⋮」+ 右クリック)の popover controller です。
 import { useGridClipboardController } from './hooks/useGridClipboardController';
 import { useGridBarContext } from './hooks/useGridBarContext';
+import { createLocaleTextResolver } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/localeText';
 // 追加(選択範囲の集計)
 import { useGridEditController } from './hooks/useGridEditController';
 import { useGridHistoryController } from './hooks/useGridHistoryController';
@@ -414,6 +415,8 @@ export function useGridShell<T extends object>({
   //   既定はバー側(DefaultGridTopBar)で解決します(placeholder='グローバルフィルター'・icon=検索)。
   globalFilterPlaceholder,
   globalFilterIcon,
+  // 追加(段階 2 DU-18): 文言(今は上部 / 下部バー)。既定は日本語。
+  localeText,
   // 追加: 各バーの Rows / Columns 件数 chips セットの表示有無です(既定 true)。
   //   トップは showTopBarSummary=true のとき内側で効き、ボトムは左側の件数グループを制御します。
   showTopBarCounts = true,
@@ -3456,8 +3459,13 @@ export function useGridShell<T extends object>({
     rowModel,
   });
 
+  // 追加(段階 2 DU-18): 文言を既定と合わせます(中身が同じなら同じ参照 = localeText={{ … }} をその場で書いても要約を作り直さない)。
+  const [resolveLocaleText] = useState(createLocaleTextResolver);
+  const localeTexts = useMemo(() => resolveLocaleText(localeText), [resolveLocaleText, localeText]);
+
   const { slotContext } = useGridBarContext({
     rows,
+    localeTexts,
     // 変更(DS-3-7): filteredRows(配列)→ viewRowCount(件数)+ getFilteredRows(遅延 factory)。
     //   bar summary は件数のみ、公開 slotContext.filteredRows は外部スロットが読んだ時だけ生成。
     // 変更(grouping ④): summary の件数はグループ行を除く leafRowCount です(slotContext.filteredRows
@@ -3803,6 +3811,7 @@ export function useGridShell<T extends object>({
           derivedSummary={slotContext.derivedSummary}
           selectionAggregates={slotContext.selectionAggregates}
           showCounts={showBottomBarCounts}
+          localeTexts={localeTexts}
           SelectionAggregates={features.selectionAggregates.SelectionAggregates}
         />,
       );

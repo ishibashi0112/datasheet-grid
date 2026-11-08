@@ -1497,6 +1497,55 @@ export type SpreadsheetGridSelectionStats = {
 };
 
 // 追加: topBar / bottomBar でそのまま使える派生 summary です。
+// 追加(段階 2 DU-18): グリッドの文言(`localeText` prop)。今は上部 / 下部バーの文言で、`{name}` の所は値に置き換えます。
+//   既定は日本語(英語などは後の版で文言のセットとして足す)。
+/**
+ * グリッドの文言です(`localeText` prop に変えたいキーだけを渡します)。`{name}` の所は値に置き換わります。
+ * 今は上部 / 下部バーの文言です。
+ */
+export type GridLocaleText = {
+  /** 行の件数。`{shown}` = 表示中の行数、`{total}` = 全部の行数(ラベル行は数えない)。既定 `'行 {shown} / {total}'`。 */
+  rowCount: string;
+  /** 列の件数。`{shown}` = 表示中の列数、`{total}` = 全部の列数。既定 `'列 {shown} / {total}'`。 */
+  columnCount: string;
+  /** 絞り込みの要約。`{value}` は `none` / `filterGlobal` / `filterColumns`(両方なら ` + ` でつなぐ)。既定 `'絞り込み: {value}'`。 */
+  filterSummary: string;
+  /** 検索欄の文字(`{text}`。長いと 16 文字で切る)。既定 `'「{text}」'`。 */
+  filterGlobal: string;
+  /** 列の絞り込みの数(`{count}`)。既定 `'{count} 列'`。 */
+  filterColumns: string;
+  /** 並び替えの要約。`{value}` は `none` か、`sortEntry` を `listSeparator` でつないだもの。既定 `'並び替え: {value}'`。 */
+  sortSummary: string;
+  /** 並び替えの 1 列。`{column}` = 列の見出し、`{direction}` = `sortAscending` / `sortDescending`。既定 `'{column}({direction})'`。 */
+  sortEntry: string;
+  /** 昇順。既定 `'昇順'`。 */
+  sortAscending: string;
+  /** 降順。既定 `'降順'`。 */
+  sortDescending: string;
+  /** アクティブセルの番地(`{cell}`。無ければ `none`)。既定 `'セル {cell}'`。 */
+  activeCell: string;
+  /** 選択範囲(`{range}`。`B3:D5` / 行 `3:5` / 列 `B:D`。無ければ `none`)。既定 `'範囲 {range}'`。 */
+  selection: string;
+  /** 選択範囲の大きさ。`{cells}` = セル数、`{rows}` = 行数。既定 `'{cells} セル / {rows} 行'`。 */
+  selectionSize: string;
+  /** 選択範囲の列数(`{count}`)。既定 `'{count} 列'`。 */
+  selectedColumns: string;
+  /** 選択範囲の集計の平均。既定 `'平均'`。 */
+  aggregateAverage: string;
+  /** 選択範囲の集計のデータの個数。既定 `'データの個数'`。 */
+  aggregateCount: string;
+  /** 選択範囲の集計の合計。既定 `'合計'`。 */
+  aggregateSum: string;
+  /** 大きな選択範囲を集計している間(`{percent}` = 進み具合)。既定 `'集計中… {percent}%'`。 */
+  aggregateComputing: string;
+  /** serverSide で読み込んでいない行を飛ばして集計したときの添え書き。既定 `'読み込み済みの行のみ'`。 */
+  aggregatePartial: string;
+  /** 「なし」(絞り込み / 並び替え / アクティブセル / 選択範囲が無いとき)。既定 `'なし'`。 */
+  none: string;
+  /** 並べた項目の区切り(並び替えの列)。既定 `'、'`。 */
+  listSeparator: string;
+};
+
 export type SpreadsheetGridDerivedSummary = {
   rowSummaryText: string;
   columnSummaryText: string;
@@ -1505,6 +1554,8 @@ export type SpreadsheetGridDerivedSummary = {
   activeCellLabel: string;
   selectionLabel: string;
   selectionStatsText: string;
+  // 追加(段階 2 DU-18): 選択範囲の列数の文言(既定の下部バーの「3 列」)。
+  selectedColumnsText: string;
   selectionStats: SpreadsheetGridSelectionStats;
   hasGlobalFilter: boolean;
   // 追加: グローバルフィルター入力値の短縮表示です。
@@ -3569,6 +3620,15 @@ export type SpreadsheetGridProps<T, F extends GridFrameworkTypes = GridFramework
    * @defaultValue 組み込み検索アイコン
    */
   globalFilterIcon?: F['node'];
+  // 追加(段階 2 DU-18): 文言(今は上部 / 下部バー)。変えたいキーだけを渡し、ほかは既定(日本語)のまま。
+  /**
+   * 文言(今は上部 / 下部バーの文言)。
+   * 変えたいキーだけを渡す(`{ rowCount: 'Rows: {shown} / {total}' }`)。`{name}`
+   * の所は値に置き換わる。キーの一覧は「バーの文言(`localeText`)」節。
+   *
+   * @defaultValue 日本語
+   */
+  localeText?: Partial<GridLocaleText>;
   // 追加: 下部バー(ステータスバー)を表示するかどうかです。既定 true。
   //   false にすると renderBottomBar に関わらず下部バーを一切描画しません
   //   (表示のマスタースイッチ。矛盾指定時は renderBottomBar より優先されます)。

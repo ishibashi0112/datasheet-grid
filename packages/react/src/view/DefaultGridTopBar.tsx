@@ -101,8 +101,7 @@ export function DefaultGridTopBar({
       <div className="ssg-bar-container">
         {showSummary ? (
           <div className="ssg-bar-group ssg-bar-leading">
-            <span className="ssg-bar-title">Toolbar</span>
-
+            {/* 変更(段階 2 DU-18): 何も表さない「Toolbar」の見出しを消しました。 */}
             {showCounts ? (
               <>
                 <span className="ssg-bar-chip ssg-bar-chip--emphasis">

@@ -184,7 +184,7 @@ describe('SpreadsheetGrid × ラベル行(描画)', () => {
       (row) => row.querySelector('.ssg-row-header-cell')?.textContent,
     );
     expect(numbers).toEqual(['1', '2', '3', '4', '5']);
-    expect(container.textContent).toContain('Rows: 5 / 5');
+    expect(container.textContent).toContain('行 5 / 5');
   });
 
   it('ソート(applyState)はセクション内に閉じ、ラベル行の位置は動かない', () => {
@@ -372,13 +372,13 @@ describe('SpreadsheetGrid × ラベル行(検査・下部バー・フィルタ�
     act(() => {
       ref.current!.selectCell(4, 1);
     });
-    expect(container.textContent).toContain('Active: B3');
+    expect(container.textContent).toContain('セル B3');
     // b(行番号 2)から d(行番号 4)まで、ラベル行 [S2] をまたいで 2 列。
     act(() => {
       ref.current!.selectRange({ start: { row: 2, col: 1 }, end: { row: 5, col: 2 } });
     });
-    expect(container.textContent).toContain('Selection: B2 - C4');
-    expect(container.textContent).toContain('Cells: 6 / Rows: 3');
+    expect(container.textContent).toContain('範囲 B2:C4');
+    expect(container.textContent).toContain('6 セル / 3 行');
   });
 
   it('DF-12: set の候補はデータ行の値だけ(ラベル行の値も、ラベル行の空の値の「(空白)」も出ない)', () => {
@@ -431,7 +431,7 @@ describe('SpreadsheetGrid × ラベル行(検査・下部バー・フィルタ�
 });
 
 describe('SpreadsheetGrid × 合成列の数え方(DF-11)', () => {
-  it('「Columns: N / M」は行ドラッグのハンドル列と展開トグル列を数えない', () => {
+  it('「列 N / M」は行ドラッグのハンドル列と展開トグル列を数えない', () => {
     const plain = rows.filter((row) => row.kind !== 'label');
     const { container } = render(
       <SpreadsheetGrid
@@ -443,6 +443,6 @@ describe('SpreadsheetGrid × 合成列の数え方(DF-11)', () => {
         detailRow={{ render: () => null }}
       />,
     );
-    expect(container.textContent).toContain('Columns: 3 / 3');
+    expect(container.textContent).toContain('列 3 / 3');
   });
 });

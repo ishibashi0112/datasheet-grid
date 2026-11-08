@@ -1612,22 +1612,12 @@
     font-size: 11.5px;
   }
 
-  /* 左側のタイトル + summary グループ(group に重ねる)。 */
+  /* 左側の summary グループ(group に重ねる)。変更(段階 2 DU-18): 「Toolbar」の見出しは消しました。 */
   .ssg-bar-leading {
     min-width: 0;
     flex: 1 1 auto;
     color: var(--ssg-header-text);
     font-size: 12px;
-  }
-
-  /* 変更(シャープ化): 控えめな小見出し風(uppercase + 字間 + グレー)。スペースを取りすぎない。 */
-  .ssg-bar-title {
-    font-size: 10px;
-    font-weight: 600;
-    letter-spacing: 0.06em;
-    text-transform: uppercase;
-    color: var(--ssg-glyph);
-    margin-right: 2px;
   }
 
   /* 件数 chip。変更(シャープ化): pill(9999px) → 角丸 5px・箱なしのテキスト主体・等幅数字で

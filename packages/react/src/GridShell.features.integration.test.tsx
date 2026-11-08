@@ -861,11 +861,11 @@ describe('差し込み式: filtering', () => {
     vi.spyOn(console, 'warn').mockImplementation(() => {});
     const ref = createRef<SpreadsheetGridHandle<Row>>();
     const { container } = render(<MinimalGrid ref={ref} rows={rows} columns={columns} rowKeyGetter={(r) => r.id} />);
-    expect(container.textContent).toContain('Filter: なし');
+    expect(container.textContent).toContain('絞り込み: なし');
     act(() => {
       ref.current?.applyState({ ...columnFilterState, filters: { globalText: 'al', columnFilters: columnFilterState.filters.columnFilters } });
     });
-    expect(container.textContent).toContain('Filter: なし');
+    expect(container.textContent).toContain('絞り込み: なし');
     expect(container.textContent).not.toContain('1列');
     // 追加(作り直しの確認 lite-1): 見出しの「フィルター適用中」の印(漏斗 / アクセント色)も出さない。
     expect(container.querySelector('.ssg-header-label--filtered')).toBeNull();

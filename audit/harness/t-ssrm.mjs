@@ -63,7 +63,7 @@ await page.fill('.ssg-bar-input', 'item-00001');
 await page.waitForFunction(() => window.__ssrm.calls.some((x) => x.query?.globalText === 'item-00001' && x.outcome === 'ok'), null, { timeout: 5000 });
 await waitIdle(page, 300);
 const bt = await page.locator('.ssg-bar--bottom').textContent();
-check('filtered total reflected (10 rows: item-000010..19)', /Rows: 10\b/.test(bt), bt);
+check('filtered total reflected (10 rows: item-000010..19)', /行 10\b/.test(bt), bt);
 c = await ctl();
 check('debounced: only few getRows for typed text', c.calls.filter((x) => x.query.globalText && x.query.globalText !== 'item-00001').length <= 2, c.calls.map((x) => x.query.globalText));
 await page.fill('.ssg-bar-input', '');
@@ -152,9 +152,9 @@ check('refreshServerSide keeps scroll position', stBefore === stAfter, { stBefor
 
 // 件数が減る refresh(total 10000 → 150)
 await page.evaluate(() => { window.__ssrm.server = window.__ssrm.server.slice(0, 150); window.__grid.refreshServerSide(); });
-await page.waitForFunction(() => /Rows: 150\b/.test(document.querySelector('.ssg-bar--bottom')?.textContent ?? ''), null, { timeout: 5000 }).catch(() => {});
+await page.waitForFunction(() => /行 150\b/.test(document.querySelector('.ssg-bar--bottom')?.textContent ?? ''), null, { timeout: 5000 }).catch(() => {});
 const bt2 = await page.locator('.ssg-bar--bottom').textContent();
-check('shrunk total reflected after refresh', /Rows: 150\b/.test(bt2), bt2);
+check('shrunk total reflected after refresh', /行 150\b/.test(bt2), bt2);
 await waitIdle(page, 300);
 const idx2 = await renderedRowIndexes(page);
 check('no rows rendered beyond new total', idx2.every((i) => i < 150), { max: idx2.at(-1) });

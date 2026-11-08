@@ -20,6 +20,7 @@ DevBI(このライブラリを使うアプリ)からの報告の対応です。�
 - 状態の初期値 `initialState`(列幅 / フィルター / ソート。`getState()` の値をそのまま渡せる)。最初の 1 回(マウント時)だけ使い、最初の描画・サーバーの描画・serverSide の最初の `getRows` から効きます。これまでは最初の描画の後に `applyState` を呼ぶしかなく、serverSide はまず条件なしで取りに行き、Next.js などでは URL から戻した絞り込みがサーバーの描画に載りませんでした。マウント時は `onStateChange` などを呼びません。列の並び / 表示 / 固定(`columns`)は使いません。
 - ハンドル `applyRows(nextRows)`: 外からの変更(行の削除ボタンなど)を「元に戻す」の履歴に積んでから `onRowsChange` へ渡します。`rows` を外から差し替えると履歴が消えるので、これまでは外の変更を元に戻せませんでした。
 - ハンドル `getRowNumber(rowKey)`: 行番号の列に出ている番号(1 始まり)を返します。ラベル行は数えないので、ラベル行があると `getViewRowIndex(rowKey) + 1` とは違います。ラベル行のキーと表示に無い行は `null` です。
+- 文言の prop `localeText`(型 `GridLocaleText`)。今は上部 / 下部バーの文言で、変えたいキーだけを渡します(`{ rowCount: 'Rows: {shown} / {total}' }`)。英語にする例とキーの一覧は API リファレンスの「バーの文言」にあります。`derivedSummary` に、下部バーの列数の文字 `selectedColumnsText` を足しました。
 - 開発時の警告: `/lite` の `createSpreadsheetGrid` をコンポーネントの中で呼び、描くたびにグリッドが作り直されている(選択・スクロール位置・編集中の値が毎回消える)ときに、`console.warn` で 1 回知らせます。本番のビルドには入りません。
 - `labelRow` の `isLabelRow` を型ガード(`(row): row is Month => row.kind === 'label'`)で書くと、`getLabel` / `render` / `height` / `className` / `exportText` の `row` がラベル行の型になります(行の型を `Sale | Month` のような union にしたとき、中でもう一度絞らなくてよい)。型 `SpreadsheetGridProps` と `LabelRowOptions` に、省略できる 2 つ目の型引数(ラベル行の型。既定は行の型)を足しました。
 
@@ -30,6 +31,7 @@ DevBI(このライブラリを使うアプリ)からの報告の対応です。�
 
 ### 挙動の変化
 
+- 上部 / 下部バーの文言を日本語にしました(メニューやツールチップは日本語なのに、バーだけ英語が混ざっていた)。「Rows: 120 / 120」→「行 120 / 120」、「Columns」→「列」、「Filter: Global("abc") + 2列」→「絞り込み: 「abc」 + 2 列」、「Sort: 金額 (降順)」→「並び替え: 金額(降順)」、「Active: B3」→「セル B3」、「Selection: B3 - D5」→「範囲 B3:D5」、「Cells: 9 / Rows: 3」→「9 セル / 3 行」、「Cols: 3」→「3 列」。範囲は Excel の参照の書き方(1 セルなら `B3`、行は `3:5`、列は `B:D`。これまでは `B3 - B3` / `Row 3 - 5` / `Col B - D`)です。何も表さない「Toolbar」の見出し(`.ssg-bar-title`)は消しました。`renderTopBar` / `renderBottomBar` の `ctx.derivedSummary` の文字も同じく変わります。前の英語のままにしたいときは `localeText` に英語の文言を渡してください(API リファレンスの「バーの文言」に例があります)。
 - `align: 'right'` / `align: 'center'` の列は、列見出しも右 / 中央に寄るようになりました(これまでは常に左)。前の見た目のままにしたい列には `headerAlign: 'left'` を書いてください。右寄せの見出しはホバーで出る grip と ⋮ が左端に出るので、ホバー中に見出しの左端を押すと列メニューが開きます(左寄せの列の右端と同じ)。
 - 列メニュー・列フィルター・右クリックメニュー・select エディタの候補・ツールパネル・ツールチップ・列 / 行のドラッグのゴースト・フィルハンドルのメニューなど、`document.body` の直下に出す部分に、表で決めた CSS トークン(`--ssg-*`)が届くようにしました。これまでは `.ssg-root { … }` や `className` のクラス、祖先のセレクタ(`.card .ssg-root { … }`)、祖先の変数(`var(--card-bg)`)で決めた色がこれらには届かず、既定の色で出ていました。開いたときに表の値を写し、メニューやパネルを開いている間は `<html>` / `<body>` の属性(ダークモードのクラスなど)や OS の配色が変わったときにも写し直します。ポップアップの側だけで変えている指定(`.ssg-menu-panel { … }` や `classNames.popover` の `style`)と、密度の寸法(ポップアップは `density` の対象外)は写しません。どの要素にも同じ値を書いている場合(テーマビルダーの出力など)は見た目は変わりません。
 

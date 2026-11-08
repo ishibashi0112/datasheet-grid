@@ -97,6 +97,8 @@ export type {
   SpreadsheetGridSlotContext,
   SpreadsheetGridDerivedSummary,
   SpreadsheetGridSelectionStats,
+  // 追加(段階 2 DU-18): 文言(localeText prop)の型。
+  GridLocaleText,
   // 追加(F-async): グローバルフィルタの適用状態(slotContext.globalFilterStatus の型)。
   GlobalFilterStatus,
   // 追加(選択範囲の集計): slotContext.selectionAggregates の型。

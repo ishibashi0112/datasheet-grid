@@ -1,6 +1,7 @@
 // B: gridBarHelpers の表示テキスト / 選択統計テスト(純関数・node)。
 //   本番コードは無改修。ツールバー / ステータスバーが見せる文字列(A1 整形・件数・
 //   フィルター/ソート要約)と getGridSelectionStats の cell/row/col 分岐を固定します。
+import { DEFAULT_GRID_LOCALE_TEXT } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/localeText';
 import { describe, it, expect } from 'vitest';
 import type { GridColumn, GridSelection } from '../model/gridTypes';
 import { DETAIL_TOGGLE_COLUMN_KEY } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/detailRow';
@@ -56,8 +57,8 @@ describe('formatGridSelectionLabel', () => {
       type: 'cell',
       range: { start: { row: 1, col: 1 }, end: { row: 0, col: 0 } },
     };
-    expect(formatGridSelectionLabel(normalized)).toBe('A1 - B2');
-    expect(formatGridSelectionLabel(reversed)).toBe('A1 - B2');
+    expect(formatGridSelectionLabel(normalized)).toBe('A1:B2');
+    expect(formatGridSelectionLabel(reversed)).toBe('A1:B2');
   });
 
   it('formats single-cell, row and col selections', () => {
@@ -66,13 +67,13 @@ describe('formatGridSelectionLabel', () => {
         type: 'cell',
         range: { start: { row: 2, col: 2 }, end: { row: 2, col: 2 } },
       }),
-    ).toBe('C3 - C3');
+    ).toBe('C3');
     expect(
       formatGridSelectionLabel({ type: 'row', startRow: 2, endRow: 0 }),
-    ).toBe('Row 1 - 3');
+    ).toBe('1:3');
     expect(
       formatGridSelectionLabel({ type: 'col', startCol: 2, endCol: 0 }),
-    ).toBe('Col A - C');
+    ).toBe('A:C');
   });
 });
 
@@ -80,7 +81,7 @@ describe('formatGridRowSummary / formatGridColumnSummary', () => {
   it('shows filtered / total counts', () => {
     expect(
       formatGridRowSummary({ rows: [{ id: 1 }, { id: 2 }, { id: 3 }] }, 2),
-    ).toBe('Rows: 2 / 3');
+    ).toBe('行 2 / 3');
   });
 
   it('shows visible / total columns', () => {
@@ -89,7 +90,7 @@ describe('formatGridRowSummary / formatGridColumnSummary', () => {
         columns: makeCols(5),
         visibleColumns: makeCols(3),
       }),
-    ).toBe('Columns: 3 / 5');
+    ).toBe('列 3 / 5');
   });
 });
 
@@ -195,7 +196,7 @@ describe('getGridSelectionStats (cell / row / col 分岐)', () => {
         },
         100,
       ),
-    ).toBe('Cells: 9 / Rows: 3');
+    ).toBe('9 セル / 3 行');
   });
 });
 
@@ -203,7 +204,7 @@ describe('formatGridFilterSummary (4 分岐 + 短縮)', () => {
   it('none', () => {
     expect(
       formatGridFilterSummary({ globalFilterText: '', columnFilterValues: {} }),
-    ).toBe('Filter: なし');
+    ).toBe('絞り込み: なし');
   });
 
   it('global only', () => {
@@ -212,7 +213,7 @@ describe('formatGridFilterSummary (4 分岐 + 短縮)', () => {
         globalFilterText: 'abc',
         columnFilterValues: {},
       }),
-    ).toBe('Filter: Global("abc")');
+    ).toBe('絞り込み: 「abc」');
   });
 
   it('column only (空文字の列は無効として数えない)', () => {
@@ -226,7 +227,7 @@ describe('formatGridFilterSummary (4 分岐 + 短縮)', () => {
           c2: { kind: 'text', value: 'y' },
         },
       }),
-    ).toBe('Filter: 2列');
+    ).toBe('絞り込み: 2 列');
   });
 
   it('both global and columns', () => {
@@ -239,7 +240,7 @@ describe('formatGridFilterSummary (4 分岐 + 短縮)', () => {
           c1: { kind: 'text', value: 'y' },
         },
       }),
-    ).toBe('Filter: Global("abc") + 2列');
+    ).toBe('絞り込み: 「abc」 + 2 列');
   });
 
   it('truncates a long global filter preview to 16 chars + …', () => {
@@ -248,7 +249,7 @@ describe('formatGridFilterSummary (4 分岐 + 短縮)', () => {
         globalFilterText: 'abcdefghijklmnopqrstuvwxyz',
         columnFilterValues: {},
       }),
-    ).toBe('Filter: Global("abcdefghijklmnop…")');
+    ).toBe('絞り込み: 「abcdefghijklmnop…」');
   });
 });
 
@@ -256,7 +257,7 @@ describe('formatGridSortSummary', () => {
   it('returns なし for empty sort state', () => {
     expect(
       formatGridSortSummary({ columns: makeCols(3), sortState: [] }),
-    ).toBe('Sort: なし');
+    ).toBe('並び替え: なし');
   });
 
   it('formats a single sort entry with title and direction', () => {
@@ -266,13 +267,13 @@ describe('formatGridSortSummary', () => {
         columns,
         sortState: [{ columnKey: 'amount', direction: 'asc' }],
       }),
-    ).toBe('Sort: 金額 (昇順)');
+    ).toBe('並び替え: 金額(昇順)');
     expect(
       formatGridSortSummary({
         columns,
         sortState: [{ columnKey: 'amount', direction: 'desc' }],
       }),
-    ).toBe('Sort: 金額 (降順)');
+    ).toBe('並び替え: 金額(降順)');
   });
 
   it('joins multiple entries in priority order', () => {
@@ -285,7 +286,7 @@ describe('formatGridSortSummary', () => {
           { columnKey: 'qty', direction: 'desc' },
         ],
       }),
-    ).toBe('Sort: 金額 (昇順), 数量 (降順)');
+    ).toBe('並び替え: 金額(昇順)、数量(降順)');
   });
 
   it('falls back to the column key when the column is missing', () => {
@@ -294,7 +295,7 @@ describe('formatGridSortSummary', () => {
         columns: [],
         sortState: [{ columnKey: 'missing', direction: 'asc' }],
       }),
-    ).toBe('Sort: missing (昇順)');
+    ).toBe('並び替え: missing(昇順)');
   });
 });
 
@@ -340,6 +341,50 @@ describe('buildGridDerivedSummary composes the individual helpers', () => {
   });
 });
 
+// 追加(段階 2 DU-18): 文言(localeText)を渡すと、要約の文字がその文言になります。
+describe('buildGridDerivedSummary with localeText (DU-18)', () => {
+  it('英語の文言に置き換えられる', () => {
+    const english = {
+      ...DEFAULT_GRID_LOCALE_TEXT,
+      rowCount: 'Rows: {shown} / {total}',
+      columnCount: 'Columns: {shown} / {total}',
+      filterSummary: 'Filter: {value}',
+      filterGlobal: '"{text}"',
+      filterColumns: '{count} columns',
+      sortSummary: 'Sort: {value}',
+      sortEntry: '{column} ({direction})',
+      sortAscending: 'asc',
+      sortDescending: 'desc',
+      selectionSize: '{cells} cells / {rows} rows',
+      selectedColumns: '{count} cols',
+      none: 'none',
+      listSeparator: ', ',
+    };
+    const context = {
+      rows: [{ id: 1 }, { id: 2 }] as Row[],
+      columns: [makeCol('amount', 'Amount'), makeCol('qty', 'Qty')],
+      visibleColumns: [makeCol('amount', 'Amount'), makeCol('qty', 'Qty')],
+      globalFilterText: 'foo',
+      columnFilterValues: { amount: { kind: 'text' as const, value: 'x' } },
+      sortState: [
+        { columnKey: 'amount', direction: 'asc' as const },
+        { columnKey: 'qty', direction: 'desc' as const },
+      ],
+      activeCell: null,
+      selection: { type: 'cell' as const, range: { start: { row: 0, col: 0 }, end: { row: 1, col: 1 } } },
+    };
+    const summary = buildGridDerivedSummary(context, 2, undefined, undefined, undefined, english);
+    expect(summary.rowSummaryText).toBe('Rows: 2 / 2');
+    expect(summary.columnSummaryText).toBe('Columns: 2 / 2');
+    expect(summary.filterSummaryText).toBe('Filter: "foo" + 1 columns');
+    expect(summary.sortSummaryText).toBe('Sort: Amount (asc), Qty (desc)');
+    expect(summary.activeCellLabel).toBe('none');
+    expect(summary.selectionLabel).toBe('A1:B2');
+    expect(summary.selectionStatsText).toBe('4 cells / 2 rows');
+    expect(summary.selectedColumnsText).toBe('2 cols');
+  });
+});
+
 // 追加(audit V-12): 合成列(行ドラッグハンドル / 展開トグル / 自動グループ列)は A1 の列名に数えません。
 describe('createDataColumnNamer (audit V-12)', () => {
   const synthetic = [{ key: ROW_DRAG_HANDLE_COLUMN_KEY }, { key: DETAIL_TOGGLE_COLUMN_KEY }];
@@ -358,10 +403,10 @@ describe('createDataColumnNamer (audit V-12)', () => {
         { type: 'cell', range: { start: { row: 0, col: 2 }, end: { row: 2, col: 3 } } },
         namer,
       ),
-    ).toBe('A1 - B3');
+    ).toBe('A1:B3');
     expect(
       formatGridSelectionLabel({ type: 'col', startCol: 2, endCol: 4 } satisfies GridSelection, namer),
-    ).toBe('Col A - C');
+    ).toBe('A:C');
   });
 
   it('合成列そのものは直後のデータ列と同じ列名になる(行全体の範囲が A から始まる)', () => {
