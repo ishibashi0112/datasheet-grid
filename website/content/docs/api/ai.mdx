@@ -124,7 +124,7 @@ export async function POST(req: Request) {
 
 ### AI バーの文言(`localeText`)
 
-`GridAskBar` / `useGridAsk` の `localeText` で、バーの文言(入力欄・ボタン・知らせ・反映した条件のチップ・「使えなかった部分」の理由)を変えられます。既定は日本語です。英語はグリッドと同じ入口 `@ishibashi0112/spreadsheet-grid/locales/en` の `gridAskLocaleTextEn` です。条件の要約(`conditionContains` など)はグリッドの `localeText` と同じキーです。AI に送る指示(`system` / `prompt`)は言語によらず英語です(利用者の文はそのまま送るので、どの言語で聞いてもよい)。
+`GridAskBar` / `useGridAsk` の `localeText` で、バーの文言(入力欄・ボタン・知らせ・反映した条件のチップ・「使えなかった部分」の理由)を変えられます。既定は日本語です。英語はグリッドと同じ入口 `@ishibashi0112/spreadsheet-grid/locales/en` の `gridAskLocaleTextEn` です。条件の要約(`conditionContains` など)はグリッドの `localeText` と同じキーです。AI に送る指示(`system` / `prompt`)は言語によらず英語です(利用者の文はそのまま送るので、どの言語で聞いてもよい)。 `localeText` を途中で変えたときは、出ている知らせ・エラー・反映した条件のチップは、次に頼んだときから新しい文言になります。
 
 ```tsx
 import { GridAskBar } from '@ishibashi0112/spreadsheet-grid/ai';

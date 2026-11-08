@@ -164,11 +164,12 @@ import { localeTextEn } from '@ishibashi0112/spreadsheet-grid/locales/en';
 <SpreadsheetGrid localeText={{ noRows: 'データがありません' }} … />
 ```
 
-- 値は文字列か関数です(型 `GridLocaleTextTemplate`)。文字列は `{name}` の所が値に置き換わり、関数は値を受け取って文字列を返します(数で言い方が変わる言語のため。例 ``filterColumns: ({ count }) => (count === 1 ? '1 column' : `${count} columns`)``)。
+- 値は文字列か関数です(型 `GridLocaleTextTemplate`)。文字列は `{name}` の所が値に置き換わり、関数は値を受け取って文字列を返します(数で言い方が変わる言語のため。例 ``filterColumns: ({ count }) => (count === 1 ? '1 column' : `${count} columns`)``)。関数を入れた表は、コンポーネントの外で作るか `useMemo` で包んでください(関数は参照で比べるので、描くたびに新しい関数を作ると、そのたびに文言を使う部分がすべて描き直されます)。
 - 曜日(`calendarWeekdays`)と月(`calendarMonths`)は配列(日曜から 7 つ / 1 月から 12)です。
 - 文言を渡す prop(`noRowsText` / `noMatchingRowsText` / `globalFilterPlaceholder` / `totalRow.label` / `GridAskBar` の `placeholder` / `label`)を渡したときは、そちらが優先です。
 - 英語でも、日付の書き方(`yyyy/mm/dd`)・数の書き方・件数の数字(区切りを入れない `行 1000000 / 1000000`)は変わりません。列の `valueFormatter` など利用側が渡す文字も変わりません。
-- `localeText={{ … }}` をその場で書いても、中身が同じ間は作り直しません。
+- `localeText={{ … }}` をその場で書いても、中身(文字列・配列・関数の参照)が同じ間は作り直しません。
+- `localeText` を途中で変えると(言語の切り替えなど)、グリッドの文言はすぐに変わります。ただし、出ている間に変えた serverSide の保存の失敗の吹き出し(数秒で消える)は前の文言のままです。
 - 開発時の console の警告は、言語によらず日本語の行と英語の行の 2 行です(本番では出ません)。
 - AI バー(`GridAskBar` / `useGridAsk`)の文言は、`GridAskBar` の `localeText` で別に渡します(「ことばで絞り込み」の「AI バーの文言(`localeText`)」)。
 
@@ -401,6 +402,7 @@ import { localeTextEn } from '@ishibashi0112/spreadsheet-grid/locales/en';
 | `filterValuePlaceholder` | `値` | `Value` | 条件の値の入力欄の placeholder。 |
 | `filterMin` | `下限` | `Min` | 範囲の下限。 |
 | `filterMax` | `上限` | `Max` | 範囲の上限。 |
+| `filterRangeSeparator` | `〜` | `–` | 範囲の下限と上限の間の印。 |
 | `filterNoValue` | `この演算子は値入力を使いません` | `This operator doesn't take a value` | 空白の演算子を選んだとき。 |
 | `filterDate` | `条件の日付` | `Date` | 日付の入力欄の読み上げの名前。 |
 | `filterStartDate` | `開始日` | `Start date` | 日付の範囲の始まり。 |
@@ -2174,7 +2176,7 @@ export async function POST(req: Request) {
 
 ### AI バーの文言(`localeText`)
 
-`GridAskBar` / `useGridAsk` の `localeText` で、バーの文言(入力欄・ボタン・知らせ・反映した条件のチップ・「使えなかった部分」の理由)を変えられます。既定は日本語です。英語はグリッドと同じ入口 `@ishibashi0112/spreadsheet-grid/locales/en` の `gridAskLocaleTextEn` です。条件の要約(`conditionContains` など)はグリッドの `localeText` と同じキーです。AI に送る指示(`system` / `prompt`)は言語によらず英語です(利用者の文はそのまま送るので、どの言語で聞いてもよい)。
+`GridAskBar` / `useGridAsk` の `localeText` で、バーの文言(入力欄・ボタン・知らせ・反映した条件のチップ・「使えなかった部分」の理由)を変えられます。既定は日本語です。英語はグリッドと同じ入口 `@ishibashi0112/spreadsheet-grid/locales/en` の `gridAskLocaleTextEn` です。条件の要約(`conditionContains` など)はグリッドの `localeText` と同じキーです。AI に送る指示(`system` / `prompt`)は言語によらず英語です(利用者の文はそのまま送るので、どの言語で聞いてもよい)。 `localeText` を途中で変えたときは、出ている知らせ・エラー・反映した条件のチップは、次に頼んだときから新しい文言になります。
 
 ```tsx
 import { GridAskBar } from '@ishibashi0112/spreadsheet-grid/ai';

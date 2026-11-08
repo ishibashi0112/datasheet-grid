@@ -4,7 +4,6 @@ import type { GridSelectionAggregates as GridSelectionAggregatesValue } from '..
 import { cx } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/cx';
 import { formatSelectionAggregateNumber } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/selectionAggregates';
 import {
-  DEFAULT_GRID_LOCALE_TEXT,
   formatLocaleText,
   type FeatureLocaleText,
   type ResolvedGridLocaleText,
@@ -20,13 +19,14 @@ import type { DEFAULT_AGGREGATES_LOCALE_TEXT } from '@ishibashi0112/spreadsheet-
 export function GridSelectionAggregates({
   aggregates,
   trailing,
-  localeTexts: localeTextsInput = DEFAULT_GRID_LOCALE_TEXT,
+  localeTexts: localeTextsInput,
 }: {
   aggregates: GridSelectionAggregatesValue | null | undefined;
   // 右グループの後ろ(件数なし)なら true: 区切り線を先頭に、中身を左寄せにします。
   trailing: boolean;
-  // 追加(段階 2 DU-18): 文言(未指定は既定の日本語)。
-  localeTexts?: ResolvedGridLocaleText;
+  // 追加(段階 2 DU-18): 文言。変更(英語対応の見直し): 必須に(集計の文言は機能の表にあり、本体の既定には無いため。
+  //   シェルが機能の文言を重ねたものを渡す)。
+  localeTexts: ResolvedGridLocaleText;
 }) {
   if (!aggregates) {
     return null;

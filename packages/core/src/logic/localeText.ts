@@ -103,11 +103,13 @@ export const createLocaleTextResolver = (defaults: ResolvedGridLocaleText = DEFA
 };
 
 // 値の無いキー(undefined)を除きます(既定を undefined で消さないため)。
+// 変更(英語対応の見直し): 文言として使えない値(null など。JS や型の変換で渡りうる)も除いて既定のままにします
+//   (`{name}` を置き換えるときに落ちないように)。文言は文字列・関数・配列(曜日 / 月)だけです。
 export const withoutUndefined = (input: Partial<GridLocaleText>): Partial<GridLocaleText> => {
   const result: Record<string, unknown> = {};
   for (const key of Object.keys(input) as (keyof GridLocaleText)[]) {
-    const value = input[key];
-    if (value !== undefined) {
+    const value: unknown = input[key];
+    if (typeof value === 'string' || typeof value === 'function' || Array.isArray(value)) {
       result[key] = value;
     }
   }

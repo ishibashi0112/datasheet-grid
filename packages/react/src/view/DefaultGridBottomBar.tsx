@@ -1,7 +1,6 @@
 import type { GridSelectionAggregates, SpreadsheetGridDerivedSummary } from '../model/gridTypes';
 import { cx } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/cx';
 import {
-  DEFAULT_GRID_LOCALE_TEXT,
   formatLocaleText,
   type ResolvedGridLocaleText,
 } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/localeText';
@@ -19,8 +18,9 @@ type DefaultGridBottomBarProps = {
   slot?: GridResolvedSlot;
   // 変更(差し込み式 段階 2): 集計の表示部品(機能 features/selectionAggregates から。無ければ出さない)。
   SelectionAggregates?: typeof GridSelectionAggregatesView;
-  // 追加(段階 2 DU-18): 文言(未指定は既定の日本語)。
-  localeTexts?: ResolvedGridLocaleText;
+  // 追加(段階 2 DU-18): 文言。変更(英語対応の見直し): 必須に(集計の部品へそのまま渡すため。シェルが機能の文言を
+  //   重ねたものを渡す)。
+  localeTexts: ResolvedGridLocaleText;
 };
 
 // 追加: Grid 下部の既定ステータスバーです。
@@ -39,7 +39,7 @@ export function DefaultGridBottomBar({
   showCounts = true,
   slot,
   SelectionAggregates,
-  localeTexts = DEFAULT_GRID_LOCALE_TEXT,
+  localeTexts,
 }: DefaultGridBottomBarProps) {
   const aggregates = SelectionAggregates ? (
     <SelectionAggregates aggregates={selectionAggregates} trailing={!showCounts} localeTexts={localeTexts} />

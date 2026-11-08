@@ -1918,6 +1918,8 @@ export type GridLocaleText = {
   filterMin: string;
   /** 範囲の上限。既定 `上限`、英語 `Max`。 */
   filterMax: string;
+  /** 範囲の下限と上限の間の印。既定 `〜`、英語 `–`。 */
+  filterRangeSeparator: string;
   /** 空白の演算子を選んだとき。既定 `この演算子は値入力を使いません`、英語 `This operator doesn't take a value`。 */
   filterNoValue: string;
   /** 日付の入力欄の読み上げの名前。既定 `条件の日付`、英語 `Date`。 */

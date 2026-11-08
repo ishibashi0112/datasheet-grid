@@ -13,6 +13,7 @@ import {
   type SpreadsheetGridProps,
   type GridContextMenuItem,
 } from '@ishibashi0112/spreadsheet-grid';
+import { localeTextEn } from '@ishibashi0112/spreadsheet-grid/locales/en';
 import '@ishibashi0112/spreadsheet-grid/style.css';
 
 // ---------- 計測: エラー / リスナー / rAF ----------
@@ -350,6 +351,8 @@ const params = new URLSearchParams(location.search);
 const scenario = params.get('s') ?? 'basic';
 const n = Number(params.get('n') ?? (scenario === 'big' ? 1_000_000 : scenario === 'autoheight' ? 3000 : 500));
 const strict = params.get('strict') === '1';
+// 追加(英語対応): ?lang=en で英語の文言(localeTextEn)。
+const lang = params.get('lang');
 
 function GridHost({ which, extra }: { which: 1 | 2; extra?: Partial<SpreadsheetGridProps<Row>> }) {
   const ref = useRef<SpreadsheetGridHandle<Row>>(null);
@@ -486,6 +489,7 @@ function GridHost({ which, extra }: { which: 1 | 2; extra?: Partial<SpreadsheetG
       onServerSideLoadError={(e, p) => log('onServerSideLoadError', { msg: String((e as Error)?.message ?? e), ...p })}
       onServerSideWriteError={(e, p) => log('onServerSideWriteError', { msg: String((e as Error)?.message ?? e), n: p.updates.length })}
       showCellOverflowTooltip
+      localeText={lang === 'en' ? localeTextEn : undefined}
       height={scenario === 'height' ? undefined : 420}
       {...scenarioProps}
       {...extra}

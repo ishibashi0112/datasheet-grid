@@ -203,6 +203,7 @@ export const localeTextEn: GridLocaleText = {
   filterValuePlaceholder: 'Value',
   filterMin: 'Min',
   filterMax: 'Max',
+  filterRangeSeparator: '–',
   filterNoValue: 'This operator doesn\'t take a value',
   filterDate: 'Date',
   filterStartDate: 'Start date',

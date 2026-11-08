@@ -216,6 +216,13 @@ const SET_FILTER_OPTION_ROW_HEIGHT = 24;
 const displayOptionLabel = (value: string, label: string, blank: string): string =>
   value === '' && label === DEFAULT_FILTER_LOCALE_TEXT.blank ? blank : label;
 
+// 追加(英語対応の見直し): 候補の検索は画面に出すラベルで見ます(英語の「(Blank)」を blank で見つけ、「空白」では見つけない)。
+//   既定の日本語のままなら同じ配列を返します。
+const withDisplayBlankLabel = (options: ColumnFilterPopoverOption[], blank: string): ColumnFilterPopoverOption[] =>
+  blank === DEFAULT_FILTER_LOCALE_TEXT.blank
+    ? options
+    : options.map((option) => (option.value === '' && option.label === DEFAULT_FILTER_LOCALE_TEXT.blank ? { ...option, label: blank } : option));
+
 // ── set フィルター本体 ──────────────────────────────────
 // 追加(12-A): set フィルターの検索 state / 仮想化は popover 全体とライフサイクルが
 //             異なる(開閉でリセットしたい・親 SpreadsheetGrid を再レンダーさせたくない)
@@ -264,9 +271,10 @@ function SetFilterBody({
 
   // 変更(SF-ENTER): 絞り込みを filterSetOptionsBySearch へ共通化します(Enter 確定の
   //   再マッチと一致基準を共有するため。挙動は従来と同一です)。
+  const searchOptions = useMemo(() => withDisplayBlankLabel(options, texts.blank), [options, texts.blank]);
   const visibleOptions = useMemo(
-    () => filterSetOptionsBySearch(options, deferredSearchText),
-    [options, deferredSearchText],
+    () => filterSetOptionsBySearch(searchOptions, deferredSearchText),
+    [searchOptions, deferredSearchText],
   );
 
   const isSearching = deferredSearchText.trim().length > 0;
@@ -360,7 +368,7 @@ function SetFilterBody({
             // 注記: visibleOptions は useDeferredValue 由来で高速タイプ直後は古い結果を
             //   指しうるため、確定は「現在の searchText」からの同期再マッチで行います
             //   (全候補走査は Enter 1 回きりのため、候補数が大きくても許容します)。
-            const action = resolveSetFilterEnterAction(options, searchText);
+            const action = resolveSetFilterEnterAction(searchOptions, searchText);
             if (action.kind === 'none') {
               return;
             }
@@ -547,7 +555,7 @@ function NumberConditionEditor({
           />
           {operandCount === 2 && (
             <>
-              <span className="ssg-filter-cond-tilde">〜</span>
+              <span className="ssg-filter-cond-tilde">{texts.filterRangeSeparator}</span>
               <input
                 type="text"
                 inputMode="decimal"
@@ -745,7 +753,7 @@ function DateConditionEditor({
           )}
           {operandCount === 2 && (
             <>
-              <span className="ssg-filter-cond-tilde">〜</span>
+              <span className="ssg-filter-cond-tilde">{texts.filterRangeSeparator}</span>
               {renderDateInput ? (
                 renderDateInput({
                   value: draft.value2,
@@ -851,9 +859,10 @@ function DateSetFilterBody({
   );
 
   const isSearching = deferredSearchText.trim().length > 0;
+  const searchOptions = useMemo(() => withDisplayBlankLabel(options, texts.blank), [options, texts.blank]);
   const flatMatches = useMemo(
-    () => filterSetOptionsBySearch(options, deferredSearchText),
-    [options, deferredSearchText],
+    () => filterSetOptionsBySearch(searchOptions, deferredSearchText),
+    [searchOptions, deferredSearchText],
   );
   const treeRows = useMemo(
     () => buildDateTreeRows(options, expandedKeys, texts),
@@ -1005,7 +1014,7 @@ function DateSetFilterBody({
               return;
             }
             event.preventDefault();
-            const action = resolveSetFilterEnterAction(options, searchText);
+            const action = resolveSetFilterEnterAction(searchOptions, searchText);
             if (action.kind === 'none') {
               return;
             }

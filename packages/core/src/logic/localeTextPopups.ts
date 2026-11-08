@@ -78,6 +78,7 @@ export const DEFAULT_POPUP_LOCALE_TEXT = {
   filterValuePlaceholder: '値',
   filterMin: '下限',
   filterMax: '上限',
+  filterRangeSeparator: '〜',
   filterNoValue: 'この演算子は値入力を使いません',
   filterDate: '条件の日付',
   filterStartDate: '開始日',

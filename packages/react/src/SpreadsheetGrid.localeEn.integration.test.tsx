@@ -30,7 +30,7 @@ const detailRow: DetailRowOptions<Row> = {
   render: ({ row }) => <div>{`details of ${row.name}`}</div>,
 };
 
-const JAPANESE = /[぀-ヿ㐀-鿿！-｠]/;
+const JAPANESE = /[\u3000-\u30ff\u3400-\u9fff\uff01-\uff60]/;
 const ATTRIBUTES = ['aria-label', 'aria-description', 'aria-roledescription', 'aria-valuetext', 'title', 'placeholder', 'data-ssg-tooltip'];
 
 // 画面(ポータルを含む body 全体)の文字と、読み上げ / ツールチップの属性のうち、日本語を含むもの。
@@ -208,5 +208,35 @@ describe('英語の文言(localeTextEn)', () => {
     );
     expect(document.querySelector('[data-ssg-group-row], .ssg-group-row')).not.toBeNull();
     expect(japaneseInDocument()).toEqual([]);
+  });
+
+  // 追加(見直し): 空白の候補は英語では「(Blank)」で、検索も出ているラベルで見る(「blank」で見つかり「空白」では見つからない)。
+  it('列フィルターの候補の検索は、英語の「(Blank)」を blank で見つける', () => {
+    const { container } = render(
+      <SpreadsheetGrid<Row>
+        rows={rows}
+        columns={columns.map((column) => (column.key === 'name' ? { ...column, filterType: 'set' as const } : column))}
+        rowKeyGetter={(row) => row.id}
+        height={400}
+        localeText={localeTextEn}
+        enableColumnFilter
+      />,
+    );
+    openColumnMenu(container, 'name');
+    clickMenuItem('Filter…');
+    const search = document.querySelector<HTMLInputElement>('.ssg-filter-popover input.ssg-filter-input');
+    expect(search).not.toBeNull();
+    const labels = () =>
+      Array.from(document.querySelectorAll('.ssg-filter-popover .ssg-filter-option-label')).map((element) => element.textContent);
+    expect(labels()).toContain('(Blank)');
+    act(() => {
+      fireEvent.change(search!, { target: { value: 'blank' } });
+    });
+    expect(labels()).toEqual(['(Blank)']);
+    act(() => {
+      fireEvent.change(search!, { target: { value: '空白' } });
+    });
+    expect(labels()).toEqual([]);
+    pressEscape();
   });
 });

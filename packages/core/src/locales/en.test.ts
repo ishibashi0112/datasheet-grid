@@ -16,7 +16,7 @@ import { DEFAULT_SCROLL_HINT_LOCALE_TEXT } from '../logic/localeTextFeatures';
 import { DEFAULT_SERVER_SIDE_LOCALE_TEXT } from '../logic/localeTextFeatures';
 import { gridAskLocaleTextEn, localeTextEn } from './en';
 
-const JAPANESE = /[぀-ヿ㐀-鿿！-｠]/;
+const JAPANESE = /[\u3000-\u30ff\u3400-\u9fff\uff01-\uff60]/;
 
 // どのキーを読んでも同じ値を返す値の入れ物(関数の文言に渡す)。
 const sampleValues = (value: string | number) =>

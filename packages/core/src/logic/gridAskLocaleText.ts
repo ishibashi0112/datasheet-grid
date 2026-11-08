@@ -271,13 +271,14 @@ export const DEFAULT_GRID_ASK_LOCALE_TEXT: GridAskLocaleText = {
 };
 
 // 渡された文言を既定と合わせます(値の無いキーは既定のまま)。
+// 変更(英語対応の見直し): null も既定のままにします(JS や型の変換で渡りうる。置き換えのときに落ちないように)。
 export const resolveGridAskLocaleText = (input: Partial<GridAskLocaleText> | undefined): GridAskLocaleText => {
   if (!input) {
     return DEFAULT_GRID_ASK_LOCALE_TEXT;
   }
   const result: Record<string, unknown> = { ...DEFAULT_GRID_ASK_LOCALE_TEXT };
   for (const key of Object.keys(input) as (keyof GridAskLocaleText)[]) {
-    if (input[key] !== undefined) {
+    if (input[key] != null) {
       result[key] = input[key];
     }
   }

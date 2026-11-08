@@ -34,9 +34,10 @@ import { localeTextEn } from '@ishibashi0112/spreadsheet-grid/locales/en';
 ## 文言の書き方
 
 - 文字列は `{name}` の所が値に置き換わります(`rowCount` の `{shown}` / `{total}` など。使える名前はキーの一覧の説明に書いてあります)。
-- 数で言い方が変わる言語のために、値を関数にもできます。関数は値を受け取って文字列を返します。
+- 数で言い方が変わる言語のために、値を関数にもできます。関数は値を受け取って文字列を返します。関数を入れた表は、コンポーネントの外で作るか `useMemo` で包みます(関数は参照で比べるので、描くたびに新しい関数を作ると、そのたびに文言を使う部分がすべて描き直されます)。
 
 ```tsx
+// コンポーネントの外で 1 回だけ作る
 const localeText = {
   ...localeTextEn,
   filterColumns: ({ count }: { count: number }) => (count === 1 ? '1 column' : `${count} columns`),
@@ -44,7 +45,7 @@ const localeText = {
 ```
 
 - 曜日(`calendarWeekdays`。日曜から 7 つ)と月(`calendarMonths`。1 月から 12)は配列です。
-- `localeText={{ … }}` をその場で書いても、中身が同じ間は作り直しません。
+- `localeText={{ … }}` をその場で書いても、中身(文字列・配列・関数の参照)が同じ間は作り直しません。
 
 ## 変わるものと変わらないもの
 
