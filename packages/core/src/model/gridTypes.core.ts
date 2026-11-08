@@ -731,7 +731,7 @@ export type TotalRowOptions<T, F extends GridFrameworkTypes = GridFrameworkTypes
    * 見出し。行ドラッグ /
    * 展開トグルの合成列を除いた先頭列に出す(その列に値があるときは行番号の欄へ)。
    *
-   * @defaultValue `'合計'`
+   * @defaultValue `localeText` の `totalRowLabel`(`'合計'`)
    */
   label?: string;
   // 列 key → 表示する値です。指定した列は計算せずこの値を出します(serverSide はこれだけ)。
@@ -1543,7 +1543,7 @@ export type GridLocaleText = {
   filterSummary: GridLocaleTextTemplate<{ value: string }>;
   /** 検索欄の文字(`{text}`。長いと 16 文字で切る)。既定 `「{text}」`、英語 `"{text}"`。 */
   filterGlobal: GridLocaleTextTemplate<{ text: string }>;
-  /** 列の絞り込みの数(`{count}`)。既定 `{count} 列`、英語 `(関数)`。 */
+  /** 列の絞り込みの数(`{count}`)。既定 `{count} 列`、英語は数で変わる(関数)。 */
   filterColumns: GridLocaleTextTemplate<{ count: number }>;
   /** 並び替えの要約。`{value}` は `none` か、`sortEntry` を `listSeparator` でつないだもの。既定 `並び替え: {value}`、英語 `Sort: {value}`。 */
   sortSummary: GridLocaleTextTemplate<{ value: string }>;
@@ -1557,9 +1557,9 @@ export type GridLocaleText = {
   activeCell: GridLocaleTextTemplate<{ cell: string }>;
   /** 選択範囲(`{range}`。`B3:D5` / 行 `3:5` / 列 `B:D`。無ければ `none`)。既定 `範囲 {range}`、英語 `Range {range}`。 */
   selection: GridLocaleTextTemplate<{ range: string }>;
-  /** 選択範囲の大きさ。`{cells}` = セル数、`{rows}` = 行数。既定 `{cells} セル / {rows} 行`、英語 `(関数)`。 */
+  /** 選択範囲の大きさ。`{cells}` = セル数、`{rows}` = 行数。既定 `{cells} セル / {rows} 行`、英語は数で変わる(関数)。 */
   selectionSize: GridLocaleTextTemplate<{ cells: number; rows: number }>;
-  /** 選択範囲の列数(`{count}`)。既定 `{count} 列`、英語 `(関数)`。 */
+  /** 選択範囲の列数(`{count}`)。既定 `{count} 列`、英語は数で変わる(関数)。 */
   selectedColumns: GridLocaleTextTemplate<{ count: number }>;
   /** 展開のボタンの列の名前(アクティブセルがこの列にあるときの番地「詳細 7」)。既定 `詳細`、英語 `Details`。 */
   detailColumnName: string;
@@ -1633,7 +1633,7 @@ export type GridLocaleText = {
   expandGroup: GridLocaleTextTemplate<{ group: string }>;
   /** グループ行の ▾ の読み上げの名前。既定 `{group} を折りたたみ`、英語 `Collapse {group}`。 */
   collapseGroup: GridLocaleTextTemplate<{ group: string }>;
-  /** グループ行の件数(`{count}` は桁区切りした文字)。既定 `({count}件)`、英語 `(関数)`。 */
+  /** グループ行の件数(`{count}` は桁区切りした文字)。既定 `({count}件)`、英語は数で変わる(関数)。 */
   groupRowCount: GridLocaleTextTemplate<{ count: string }>;
   /** セルのエディタの読み上げの名前。既定 `{column} を編集`、英語 `Edit {column}`。 */
   editCell: GridLocaleTextTemplate<{ column: string }>;
@@ -1896,7 +1896,7 @@ export type GridLocaleText = {
   filterSelectedCount: GridLocaleTextTemplate<{ selected: number; total: number }>;
   /** 値の一覧で検索しているときの表示中の数。既定 `（表示中 {count} 件）`、英語 ` ({count} shown)`。 */
   filterShownCount: GridLocaleTextTemplate<{ count: number }>;
-  /** 値の見出しの件数(検索しているとき)。既定 `一致 {count} 件`、英語 `(関数)`。 */
+  /** 値の見出しの件数(検索しているとき)。既定 `一致 {count} 件`、英語は数で変わる(関数)。 */
   filterMatchCount: GridLocaleTextTemplate<{ count: number }>;
   /** 値の見出しの件数。既定 `全 {count} 件`、英語 `{count} total`。 */
   filterTotalCount: GridLocaleTextTemplate<{ count: number }>;
@@ -1938,7 +1938,7 @@ export type GridLocaleText = {
   treeCollapse: string;
   /** 日付の値の一覧の年。既定 `{year} 年`、英語 `{year}`。 */
   dateTreeYear: GridLocaleTextTemplate<{ year: number }>;
-  /** 日付の値の一覧の月(`{month}` = 1〜12)。既定 `{month} 月`、英語 `(関数)`。 */
+  /** 日付の値の一覧の月(`{month}` = 1〜12)。既定 `{month} 月`、英語は数で変わる(関数)。 */
   dateTreeMonth: GridLocaleTextTemplate<{ month: number }>;
   /** 日付の値の一覧の日。既定 `{day} 日`、英語 `{day}`。 */
   dateTreeDay: GridLocaleTextTemplate<{ day: number }>;
@@ -1947,7 +1947,7 @@ export type GridLocaleText = {
   calendarWeekdays: readonly string[];
   /** 月を選ぶ画面の月(1 月から 12 個)。既定 `1月 2月 3月 4月 5月 6月 7月 8月 9月 10月 11月 12月`、英語 `Jan Feb Mar Apr May Jun Jul Aug Sep Oct Nov Dec`。 */
   calendarMonths: readonly string[];
-  /** 日を選ぶ画面の見出し(`{month}` = 1〜12)。既定 `{year}年 {month}月`、英語 `(関数)`。 */
+  /** 日を選ぶ画面の見出し(`{month}` = 1〜12)。既定 `{year}年 {month}月`、英語は数で変わる(関数)。 */
   calendarTitle: GridLocaleTextTemplate<{ year: number; month: number }>;
   /** 月を選ぶ画面の見出し。既定 `{year}年`、英語 `{year}`。 */
   calendarYear: GridLocaleTextTemplate<{ year: number }>;
@@ -2011,11 +2011,11 @@ export type GridLocaleText = {
   enterRange: GridLocaleTextTemplate<{ min: number; max: number }>;
   /** serverSide の保存に失敗したセルの印のツールチップ。既定 `保存に失敗しました。値を戻しました`、英語 `Couldn't save. The value was restored.`。 */
   saveFailedCell: string;
-  /** serverSide の読み込みに失敗したときのバー。既定 `行の取得に失敗しました({count} ブロック)`、英語 `(関数)`。 */
+  /** serverSide の読み込みに失敗したときのバー。既定 `行の取得に失敗しました({count} ブロック)`、英語は数で変わる(関数)。 */
   loadFailed: GridLocaleTextTemplate<{ count: number }>;
   /** 同上の × の読み上げの名前。既定 `エラー通知を閉じる`、英語 `Dismiss the error`。 */
   dismissLoadError: string;
-  /** serverSide の保存に失敗したときのバー。既定 `変更の保存に失敗しました({count} 行)。値を元に戻しました`、英語 `(関数)`。 */
+  /** serverSide の保存に失敗したときのバー。既定 `変更の保存に失敗しました({count} 行)。値を元に戻しました`、英語は数で変わる(関数)。 */
   saveFailed: GridLocaleTextTemplate<{ count: number }>;
   /** 同上の × の読み上げの名前。既定 `保存エラー通知を閉じる`、英語 `Dismiss the save error`。 */
   dismissSaveError: string;
@@ -4064,7 +4064,7 @@ export type SpreadsheetGridProps<T, F extends GridFrameworkTypes = GridFramework
    * グローバルフィルターが掛かった状態で 0 件のときにこちら、掛かっていなければ `noRowsText`
    * を出す。
    *
-   * @defaultValue `'一致する行がありません'`
+   * @defaultValue `localeText` の `noMatchingRows`(`'一致する行がありません'`)
    */
   noMatchingRowsText?: string;
   // 追加(12-B): rows 自体が 0 件のときに表示するテキストです
@@ -4072,7 +4072,7 @@ export type SpreadsheetGridProps<T, F extends GridFrameworkTypes = GridFramework
   /**
    * rows が 0 件のときの文言。
    *
-   * @defaultValue `'表示する行がありません'`
+   * @defaultValue `localeText` の `noRows`(`'表示する行がありません'`)
    */
   noRowsText?: string;
   // 追加(audit V-05): 表(role="grid" の要素)のアクセシブル名。スクリーンリーダーが表を読み上げるときの名前です。
@@ -4127,7 +4127,7 @@ export type SpreadsheetGridProps<T, F extends GridFrameworkTypes = GridFramework
   /**
    * 既定トップバーのグローバルフィルター入力の placeholder。`renderTopBar` 未指定時のみ有効。
    *
-   * @defaultValue `'グローバルフィルター'`
+   * @defaultValue `localeText` の `globalFilterPlaceholder`(`'グローバルフィルター'`)
    */
   globalFilterPlaceholder?: string;
   // 追加: 既定トップバーのグローバルフィルター入力欄の「左アイコン」です。
@@ -4143,9 +4143,10 @@ export type SpreadsheetGridProps<T, F extends GridFrameworkTypes = GridFramework
   globalFilterIcon?: F['node'];
   // 追加(段階 2 DU-18): 文言(今は上部 / 下部バー)。変えたいキーだけを渡し、ほかは既定(日本語)のまま。
   /**
-   * 文言(今は上部 / 下部バーの文言)。
-   * 変えたいキーだけを渡す(`{ rowCount: 'Rows: {shown} / {total}' }`)。`{name}`
-   * の所は値に置き換わる。キーの一覧は「バーの文言(`localeText`)」節。
+   * グリッドが自分で出す文言(バー・メニュー・列フィルター・ツールパネル・検索・読み上げの名前・検証のメッセージなど)。
+   * 変えたいキーだけを渡す(`{ noRows: 'データがありません' }`)。`{name}` の所は値に置き換わる。
+   * 英語は入口 `/locales/en` の `localeTextEn`(`localeText={localeTextEn}`)。
+   * キーの一覧は「文言(`localeText`)と英語」節。
    *
    * @defaultValue 日本語
    */

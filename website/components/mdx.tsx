@@ -24,6 +24,7 @@ import { SizingDemo } from '@/components/demo/sizing-demo';
 import { CellEventsDemo } from '@/components/demo/cell-events-demo';
 import { MotionDemo } from '@/components/demo/motion-demo';
 import { FindDemo } from '@/components/demo/find-demo';
+import { LocaleDemo } from '@/components/demo/locale-demo';
 import { ConditionalFormatDemo } from '@/components/demo/conditional-format-demo';
 import { LiteDemoLoader } from '@/components/demo/lite-demo-loader';
 import { AiFilterDemoLoader } from '@/components/demo/ai-filter-demo-loader';
@@ -57,6 +58,7 @@ export function getMDXComponents(components?: MDXComponents) {
     CellEventsDemo,
     MotionDemo,
     FindDemo,
+    LocaleDemo,
     ConditionalFormatDemo,
     LiteDemo: LiteDemoLoader,
     AiFilterDemo: AiFilterDemoLoader,

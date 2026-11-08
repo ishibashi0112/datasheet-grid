@@ -101,6 +101,8 @@ export type {
   SpreadsheetGridSelectionStats,
   // 追加(段階 2 DU-18): 文言(localeText prop)の型。
   GridLocaleText,
+  // 追加(英語対応): 値を埋める文言の型(文字列か、値を受け取って文字列を返す関数)。
+  GridLocaleTextTemplate,
   // 追加(段階 2 DU-32): 背の高い行での縦の揃え(verticalAlign prop / GridColumn.verticalAlign)。
   GridVerticalAlign,
   // 追加(段階 2 DU-14): 複数行の text エディタの Enter の動き(editor.enterKey)。

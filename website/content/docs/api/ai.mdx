@@ -5,7 +5,7 @@ description: GridAskBar / useGridAsk と、頼みの組み立て・答えの検�
 
 ## ことばで絞り込み(`/ai` サブパス)
 
-`@ishibashi0112/spreadsheet-grid/ai` の `GridAskBar` をグリッドの上に置くと、利用者が「東京の在庫が 10 個以下を高い順に」のように書いた文を AI に頼んで、グリッドのフィルター・並び・グローバル検索・列の表示へ反映できる(0.57.0 で追加)。グリッドは AI を呼ばない。利用側が渡す `ask`(自分のサーバー → 好きな AI)で聞くので、AI の種類は問わず、API キーはサーバーに置ける。全部入り・`/lite` とは別の入口で、使うときだけバンドルに入る(全部入り・`/lite` の JS の大きさは変わらない。`/ai` は約 12.4KB gzip)。
+`@ishibashi0112/spreadsheet-grid/ai` の `GridAskBar` をグリッドの上に置くと、利用者が「東京の在庫が 10 個以下を高い順に」のように書いた文を AI に頼んで、グリッドのフィルター・並び・グローバル検索・列の表示へ反映できる(0.57.0 で追加)。グリッドは AI を呼ばない。利用側が渡す `ask`(自分のサーバー → 好きな AI)で聞くので、AI の種類は問わず、API キーはサーバーに置ける。全部入り・`/lite` とは別の入口で、使うときだけバンドルに入る(全部入り・`/lite` の JS の大きさは変わらない。`/ai` は約 13.8KB gzip)。
 
 ```tsx
 import { useRef } from 'react';
@@ -88,7 +88,8 @@ export async function POST(req: Request) {
 | `allowColumnVisibility` | `boolean` | 列を隠す・見せるのを許す。既定 `false`(列の表示の反映にはグリッドの `onColumnsChange` が要るので、渡しているときに付ける)。 |
 | `onApply` | `(event: { text, state, dropped, unsupported }) => void` | 反映したあとに呼ぶ(ログなどに)。 |
 | `onError` | `(error: unknown) => void` | `ask` が失敗(throw / reject)したときに呼ぶ。止めたときは呼ばない。 |
-| `placeholder` / `label` | `string` | 入力欄のプレースホルダーと、読み上げ用のラベル(既定「ことばで絞り込み」)。 |
+| `placeholder` / `label` | `string` | 入力欄のプレースホルダーと、読み上げ用のラベル(既定は `localeText` の `placeholder` / `label` = 「ことばで絞り込み」)。 |
+| `localeText` | `Partial<GridAskLocaleText>` | バーの文言(既定は日本語)。変えたいキーだけを渡す。英語は入口 `/locales/en` の `gridAskLocaleTextEn`。キーは「AI バーの文言(`localeText`)」。 |
 | `className` | `string` | バーの root(`.ssg-ask`)に足すクラス。 |
 | `theme` | `'light' \| 'dark' \| 'auto' \| 'class'` | 配色。既定 `'light'`。グリッドの `theme` と同じ値を渡す。 |
 
@@ -116,10 +117,109 @@ export async function POST(req: Request) {
 ### 送るものと検査
 
 - **送るもの**: 列の `key` / `title` / 使える条件 / 列定義にある候補(最大 50 件を並べ、残りは件数だけ)/ `columnHints` / 今の条件(AI が変えられる列の分。値の選択は 1 列 500 件まで)/ 今日の日付 / 利用者の文。**行のデータは送らない**(列定義に候補が無い列の「値の選択」は、AI が文から書いた値をそのまま使う)。
-- **答えはすべて検査する**: 表への指示に見えない答え(サーバーのエラーの `{ error }` など。`mode` も `filters` も無い答え)は表を変えずに知らせる(`mode` があって `filters` だけが無い答えは条件なしとして読む)。無い列・その列で使えない条件・候補に無い値・数や日付として読めない値・長すぎる値(条件と検索の文字は 200 字、選ぶ値は 1 つ 1000 字・1 列 1000 件まで。切り詰めずに捨てる)は捨て、何を捨てたかを「使えなかった部分」に日本語で出す(20 件まで)。列は `key` で引き、無ければ見出し(同じ見出しが 1 列だけのとき)で引く。候補は値・表示名のどちらで答えても値へ直す(select の値 `''` は「すべて」と同じなので選ばない)。数は全角や 3 桁区切りも読み、日付は `YYYY-MM-DD` へ揃える。範囲の逆転は入れ替える。並びの向きは大文字や `ascending` / `descending` も読む(refine で書いてきた並びが 1 つも使えないときは今の並びのまま)。形の読めない条件・列の指定・検索の文字も、件数を「使えなかった部分」に出す。AI が「できなかった」と書いてきた文(`unsupported`)は「AI から: …」として出す。列が 100 を超える表では、`schema` で列を enum にしない(enum の数に上限がある AI があるため。無い列は検査で捨てる)。
+- **答えはすべて検査する**: 表への指示に見えない答え(サーバーのエラーの `{ error }` など。`mode` も `filters` も無い答え)は表を変えずに知らせる(`mode` があって `filters` だけが無い答えは条件なしとして読む)。無い列・その列で使えない条件・候補に無い値・数や日付として読めない値・長すぎる値(条件と検索の文字は 200 字、選ぶ値は 1 つ 1000 字・1 列 1000 件まで。切り詰めずに捨てる)は捨て、何を捨てたかを「使えなかった部分」に出す(20 件まで。文言は `localeText`、既定は日本語)。列は `key` で引き、無ければ見出し(同じ見出しが 1 列だけのとき)で引く。候補は値・表示名のどちらで答えても値へ直す(select の値 `''` は「すべて」と同じなので選ばない)。数は全角や 3 桁区切りも読み、日付は `YYYY-MM-DD` へ揃える。範囲の逆転は入れ替える。並びの向きは大文字や `ascending` / `descending` も読む(refine で書いてきた並びが 1 つも使えないときは今の並びのまま)。形の読めない条件・列の指定・検索の文字も、件数を「使えなかった部分」に出す。AI が「できなかった」と書いてきた文(`unsupported`)は「AI から: …」として出す。列が 100 を超える表では、`schema` で列を enum にしない(enum の数に上限がある AI があるため。無い列は検査で捨てる)。
 - **反映と元に戻す**: 答えはすぐ反映し、反映した状態の条件をチップ(列フィルター → 並び → 検索 → 隠した列)で見せる。チップの select / set の値は表示名(`filterOptions` / select エディタの選択肢。無ければ値のまま)で、数の条件は列の `valueFormatter` で書く(グリッドのチップバー・フィルターの管理と同じ)。チップの × でその条件だけ外せる。「元に戻す」で頼む前の見え方(フィルター・並び・検索・隠した列)へ戻す(列幅・列の順番・固定はそのまま)。反映したあとに表を手で変えたときは(チップバーの ×・グローバル検索・`applyState` など。クリック / キー操作の後と 1 秒ごとに `getState()` で確かめる)、チップと「元に戻す」を下げて「表の条件が変わったので…」と知らせる(押してから知らせるのではない。列の表示を AI に任せていないときは、手で隠した列は比べず、元に戻すでも変えない)。列の表示が変わらないときは `applyState` に `columns` を渡さない(列定義を `onColumnsChange` で書き直さない)。
 - **入力**: Enter で送る。日本語の変換を確定する Enter では送らない。答えを読めたら入力欄を空にする(考えている間に書き換えていれば残す。失敗したときは直して送れるよう残す)。考えている間は「止める」か Esc で取り消せる(届いた答えは捨てる)。Esc はフォーカスがバーの中か、どこにも無いときに効く(表やほかの部品の Esc は取らない。日本語の変換中の Esc では止めない。バーを shadow root の中に置いても効く)。「聞く」「止める」のダブルクリックの 2 回目は無視する(止めたつもりで送り直したり、送ってすぐ止めたりしない)。考えている間、例のボタンは `aria-disabled`。失敗したときは表を変えずに「もう一度」を出す(失敗した文を送り直す)。表(`grid` の ref)がまだ無いときは知らせる。聞いている間に props(列・`allow*`・`onApply` など)が変わったら、答えは変わったあとの設定で読む。押したボタン(チップの × / 元に戻す / 閉じる)が消えたら、フォーカスは次のチップか入力欄へ移す。チップと例は全文を `title` に持つ(狭い幅では省略表示)。
 - **見た目**: 色はグリッドと同じトークン(`--ssg-*`)で決まる。バーはグリッドの外にあるので、トークンを `.ssg-root { … }` で上書きしているときは `.ssg-root, .ssg-ask { … }` のように `.ssg-ask` も並べる。`themes/*.css` はバーにも効く。クラスは `.ssg-ask` / `.ssg-ask-form` / `.ssg-ask-input` / `.ssg-ask-examples` / `.ssg-ask-chips` / `.ssg-ask-chip` / `.ssg-ask-note`(公開契約。ほかの `ssg-ask-*` は内部)。
+
+### AI バーの文言(`localeText`)
+
+`GridAskBar` / `useGridAsk` の `localeText` で、バーの文言(入力欄・ボタン・知らせ・反映した条件のチップ・「使えなかった部分」の理由)を変えられます。既定は日本語です。英語はグリッドと同じ入口 `@ishibashi0112/spreadsheet-grid/locales/en` の `gridAskLocaleTextEn` です。条件の要約(`conditionContains` など)はグリッドの `localeText` と同じキーです。AI に送る指示(`system` / `prompt`)は言語によらず英語です(利用者の文はそのまま送るので、どの言語で聞いてもよい)。
+
+```tsx
+import { GridAskBar } from '@ishibashi0112/spreadsheet-grid/ai';
+import { gridAskLocaleTextEn, localeTextEn } from '@ishibashi0112/spreadsheet-grid/locales/en';
+
+<GridAskBar grid={gridRef} columns={columns} ask={ask} localeText={gridAskLocaleTextEn} />
+<SpreadsheetGrid ref={gridRef} columns={columns} rows={rows} localeText={localeTextEn} />
+```
+
+core の関数(`createGridAskRequest` / `readGridAskAnswer` / `describeGridAskView`)にも `options.localeText` で渡せます(「使えなかった部分」の理由とチップの文言)。
+
+
+**入力欄と結果**
+
+| キー | 既定(日本語) | 英語(`gridAskLocaleTextEn`) | 説明 |
+| --- | --- | --- | --- |
+| `placeholder` | `ことばで絞り込み・並べ替え(例: 今月の分を金額の高い順に)` | `Filter or sort in plain words (e.g. this month, largest amount first)` | 入力欄のプレースホルダー(`placeholder` を渡すとそちら)。 |
+| `label` | `ことばで絞り込み` | `Filter in plain words` | 入力欄の読み上げの名前(`label` を渡すとそちら)。 |
+| `submit` | `聞く` | `Ask` | 送るボタン。 |
+| `stop` | `止める` | `Stop` | 聞いている間のボタン。 |
+| `examples` | `例:` | `Try:` | 例の文の前。 |
+| `thinking` | `考えています…` | `Thinking…` | 聞いている間。 |
+| `escHint` | `Esc でも止まります` | `Press Esc to stop` | 聞いている間の補足。 |
+| `retry` | `もう一度` | `Try again` | 失敗したときのボタン。 |
+| `appliedTitle` | `反映した条件` | `Applied` | 反映した条件のチップの見出し。 |
+| `undo` | `元に戻す` | `Undo` | 元に戻すボタン。 |
+| `close` | `閉じる` | `Close` | 閉じるボタン。 |
+| `removeItem` | `{label} {text} を外す` | `Remove {label} {text}` | チップの × の読み上げの名前。 |
+| `allRemoved` | `条件はすべて外れています。` | `All conditions have been removed.` | チップをすべて外したとき。 |
+| `unchanged` | `変える条件はありませんでした。` | `Nothing to change.` | 答えで表が変わらなかったとき。 |
+| `undone` | `元に戻しました。` | `Undone.` | 元に戻したあと。 |
+| `droppedTitle` | `使えなかった部分` | `Couldn't use` | 使えなかった部分の見出し。 |
+| `fromAi` | `AI から: {text}` | `From the AI: {text}` | AI が「できなかった」と書いてきた文。 |
+| `askFailed` | `AI に聞けませんでした。もう一度試してください。` | `Couldn't reach the AI. Try again.` | `ask` が失敗したとき(`error`)。 |
+| `noGrid` | `表が見つかりませんでした。表が出てから、もう一度試してください。` | `The grid wasn't found. Try again once it's on the page.` | `grid` の ref が空のとき(`error`)。 |
+| `changedNotice` | `表の条件が変わったので、ここからは変えられません。表のフィルターや並びで直してください。` | `The grid has changed since, so this can't be changed here. Use the grid's filters and sorting.` | 反映したあと表を手で変えたとき(`notice`)。 |
+
+**反映した条件のチップ**
+
+| キー | 既定(日本語) | 英語(`gridAskLocaleTextEn`) | 説明 |
+| --- | --- | --- | --- |
+| `itemSort` | `並び` | `Sort` | 並びのチップの名前。 |
+| `itemSortEntry` | `{column} {direction}` | `{column} {direction}` | 並びのチップの中身(1 列ぶん)。 |
+| `ascending` | `昇順` | `ascending` | 昇順。 |
+| `descending` | `降順` | `descending` | 降順。 |
+| `itemSearch` | `検索` | `Search` | 検索の文字のチップの名前。 |
+| `itemHidden` | `隠した列` | `Hidden` | 隠した列のチップの名前。 |
+
+**使えなかった部分の理由**
+
+| キー | 既定(日本語) | 英語(`gridAskLocaleTextEn`) | 説明 |
+| --- | --- | --- | --- |
+| `quote` | `「{text}」` | `"{text}"` | 理由に引く答えの文字の囲み。 |
+| `quoteSeparator` | (空) | `, ` | 引いた文字を並べるときの区切り。 |
+| `emptyText` | `(空)` | `(empty)` | 引く文字が空のとき。 |
+| `unnamed` | `(名前なし)` | `(no name)` | 列の名前が空のとき。 |
+| `andMore` | `{items}ほか {count} 件` | `{items} and {count} more` | 引いた値が 6 つ以上のとき。 |
+| `moreReasons` | `ほか {count} 件` | `{count} more` | 理由が多いときの最後の行。 |
+| `columnReason` | `{column}: {reason}` | `{column}: {reason}` | 列についての理由。 |
+| `readError` | `AI の答えを読めませんでした。言い方を変えて、もう一度試してください。` | `Couldn't read the AI's answer. Try wording it differently.` | 答えを読めないとき(`error`)。 |
+| `shapeError` | `AI の答えが表への指示になっていませんでした。言い方を変えてください。` | `The AI's answer wasn't an instruction for the grid. Try wording it differently.` | 答えが表への指示でないとき(`error`)。 |
+| `filtersLocked` | `列の条件は変えない設定です` | `Column filters are locked` | `allowFilter: false` のとき。 |
+| `noSuchColumn` | `{column}という列はありません` | `There is no column {column}` | 無い列。 |
+| `notFilterable` | `この列では絞り込めません` | `This column can't be filtered` | 絞り込めない列。 |
+| `noOperator` | `条件の種類がありません` | `The condition has no type` | 条件の種類が無いとき。 |
+| `operatorUnavailable` | `この列では{operator}の条件は使えません` | `{operator} can't be used on this column` | その列で使えない条件。 |
+| `oneCondition` | `条件は 1 列に 1 つまでです` | `Only one condition per column` | 1 列に条件が 2 つ。 |
+| `oneSelection` | `値の選択は 1 列に 1 つまでです` | `Only one value choice per column` | 1 列に値の選択が 2 つ。 |
+| `unreadableFilters` | `読めない条件({count} 件)は使えません` | `Unreadable conditions ({count}) can't be used` | 読めない条件。 |
+| `noNumberRange` | `範囲の両端の数がありません` | `The range needs two numbers` | 数の範囲の両端が無い。 |
+| `notNumber` | `{value}は数として読めません` | `{value} is not a number` | 数として読めない。 |
+| `noText` | `探す文字がありません` | `No text to look for` | 文字の条件が空。 |
+| `textTooLong` | `探す文字は {limit} 字までです` | `Text to look for can be up to {limit} characters` | 文字の条件が長すぎる。 |
+| `unknownPeriod` | `{value}という期間は使えません` | `{value} is not an available period` | 無いプリセット。 |
+| `noDateRange` | `範囲の両端の日付がありません` | `The range needs two dates` | 日付の範囲の両端が無い。 |
+| `notDate` | `{value}は日付として読めません` | `{value} is not a date` | 日付として読めない。 |
+| `noValues` | `選ぶ値がありません` | `No values to choose` | 値の選択が空。 |
+| `noSelectableValues` | `選べる値がありません` | `None of the values can be chosen` | 選べる値が 1 つも無い。 |
+| `tooManyValues` | `選べる値は {limit} 件までです({count} 件は使いませんでした)` | `Up to {limit} values can be chosen ({count} not used)` | 選ぶ値が多すぎる。 |
+| `notInOptions` | `{values}は候補にありません` | `Not in the list: {values}` | 候補に無い値(いくつか)。 |
+| `notAnOption` | `{value}は候補にありません` | `{value} is not in the list` | 候補に無い値。 |
+| `cannotFilterBy` | `{value}では絞り込めません` | `Can't filter by {value}` | その値では絞り込めない。 |
+| `valueTooLong` | `{limit} 字を超える値は使えません` | `Values over {limit} characters can't be used` | 長すぎる値。 |
+| `valuesTooLong` | `{limit} 字を超える値({count} 件)は使えません` | `Values over {limit} characters ({count}) can't be used` | 長すぎる値(いくつか)。 |
+| `unreadableValues` | `値として読めないもの({count} 件)は使えません` | `Unreadable values ({count}) can't be used` | 値として読めないもの。 |
+| `sortLocked` | `並びは変えない設定です` | `Sorting is locked` | `allowSort: false` のとき。 |
+| `sortNoSuchColumn` | `並び: {column}という列はありません` | `Sort: there is no column {column}` | 並びの無い列。 |
+| `sortBadDirection` | `並び: {column} の向き{direction}は使えません` | `Sort: {direction} can't be used for {column}` | 並びの向きが読めない。 |
+| `searchUnreadable` | `検索の文字を読めませんでした` | `Couldn't read the search text` | 検索の文字が読めない。 |
+| `searchLocked` | `検索の文字は変えない設定です` | `The search text is locked` | `allowSearch: false` のとき。 |
+| `searchTooLong` | `検索の文字は {limit} 字までです` | `The search text can be up to {limit} characters` | 検索の文字が長すぎる。 |
+| `columnsLocked` | `列の表示は変えない設定です` | `Column visibility is locked` | `allowColumnVisibility` が無いとき。 |
+| `unreadableColumns` | `読めない列の指定({count} 件)は使えません` | `Unreadable column changes ({count}) can't be used` | 読めない列の指定。 |
+| `cannotHideAll` | `すべての列は隠せません` | `All columns can't be hidden` | すべての列を隠す答え。 |
+| `operatorLabels` | (条件ごと) | (条件ごと) | `operatorUnavailable` の `{operator}` に入る条件の名前(条件の記号ごと)。 |
 
 ### 自前の見た目で作る(`useGridAsk`)と core の関数
 
@@ -144,7 +244,7 @@ export async function POST(req: Request) {
 
 | 関数 | 説明 |
 | --- | --- |
-| `createGridAskRequest(text, state, options): GridAskRequest` | 利用者の文と今の状態(`getState()`)から頼み `{ system, prompt, schema, text }` を作る。`options` は `{ columns, columnHints?, allowFilter?, allowSort?, allowSearch?, allowColumnVisibility?, now? }`。 |
+| `createGridAskRequest(text, state, options): GridAskRequest` | 利用者の文と今の状態(`getState()`)から頼み `{ system, prompt, schema, text }` を作る。`options` は `{ columns, columnHints?, allowFilter?, allowSort?, allowSearch?, allowColumnVisibility?, now?, localeText? }`。 |
 | `readGridAskAnswer(answer, state, options): GridAskResult` | 答えを検査して `{ ok: true, state, changed, dropped, unsupported }`(`state` は `applyState` に渡せる状態)か `{ ok: false, message }` を返す。 |
 | `gridAskSystemPrompt` | `system` の文(いつも同じ)。 |
 | `describeGridAskView(state, options)` / `removeGridAskItem(state, id)` | 状態のチップの一覧 / チップ 1 件を外した状態。 |
