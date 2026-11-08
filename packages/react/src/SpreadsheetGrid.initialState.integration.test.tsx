@@ -4,7 +4,7 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi, beforeAll, afterAll, afterEach } from 'vitest';
 import { render, cleanup, act } from '@testing-library/react';
-import { createRef } from 'react';
+import { createRef, StrictMode } from 'react';
 
 import { SpreadsheetGrid } from './SpreadsheetGrid';
 import { installJsdomLayoutStubs } from './testing';
@@ -113,6 +113,30 @@ describe('initialState(DU-12)', () => {
     expect(warn.mock.calls.some(([message]) => String(message).includes('initialState') && String(message).includes('gone'))).toBe(
       true,
     );
+  });
+
+  // 追加(段階 2 の確かめ直し N2-4): StrictMode(Next.js の開発時の既定)では状態の初期化が 2 回呼ばれ、同じ警告が 2 回ずつ出ていた。
+  it('StrictMode でも、同じ initialState への開発時の警告は 1 回だけ', () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    // getState() の値と同じ形(columns 付き)。
+    const saved: Partial<GridState> = {
+      columns: [{ key: 'qty' }, { key: 'name' }],
+      sort: [{ columnKey: 'gone', direction: 'asc' }],
+    };
+    render(
+      <StrictMode>
+        <SpreadsheetGrid<Row>
+          rows={rows}
+          columns={columns}
+          rowKeyGetter={(row) => row.id}
+          height={300}
+          initialState={saved}
+        />
+      </StrictMode>,
+    );
+    const count = (text: string) => warn.mock.calls.filter(([message]) => String(message).includes(text)).length;
+    expect(count('`gone`')).toBe(1);
+    expect(count('initialState の columns')).toBe(1);
   });
 
   it('serverSide: 最初の取得から initialState の絞り込み / 並べ替えを載せる', async () => {

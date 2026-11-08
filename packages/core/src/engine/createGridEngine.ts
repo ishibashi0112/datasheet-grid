@@ -169,6 +169,10 @@ const isSameColumnLayout = (
   );
 };
 
+// 追加(段階 2 の確かめ直し N2-4): 警告を出した initialState の値です。同じ値への警告は 1 回だけにします(React の StrictMode =
+//   Next.js の開発時の既定では状態の初期化が 2 回呼ばれ、同じ警告が 2 回ずつ出ていた)。
+const warnedInitialStates = /* @__PURE__ */ new WeakSet<object>();
+
 const resolveInitialUiState = (
   initialState: unknown,
   columns: readonly { key: string; visible?: boolean; pinned?: 'left' | 'right' }[],
@@ -181,7 +185,13 @@ const resolveInitialUiState = (
     migrateGridStatePatch(initialState),
     new Set(columns.map((column) => column.key)),
   );
-  if (process.env.NODE_ENV !== 'production') {
+  if (
+    process.env.NODE_ENV !== 'production' &&
+    !(typeof initialState === 'object' && warnedInitialStates.has(initialState))
+  ) {
+    if (typeof initialState === 'object') {
+      warnedInitialStates.add(initialState);
+    }
     if (dropped.length > 0) {
       console.warn(
         `[spreadsheet-grid] initialState: 今の列定義(columns)に無い列 ${dropped.map((key) => `\`${key}\``).join(', ')} の` +
