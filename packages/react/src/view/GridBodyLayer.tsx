@@ -18,6 +18,7 @@ import type {
   // 追加(label-row ②): ラベル行の記述子型です(rowModel.getLabelRow が返す)。
   GridLabelRow,
   GridRowKey,
+  GridVerticalAlign,
   // 追加(DS-3-0): 行モデルのシーム契約型です(filteredRows/Keys props を置換)。
   RowModel,
   // 追加(行選択): チェックボックス行選択の状態型です。
@@ -139,6 +140,8 @@ type GridBodyRowProps<T> = {
   //   下限は実測に依存しない固定値(基準行高)にして shrink を可能にします。GridBodyLayer の基準
   //   rowHeight prop がそのまま入ります(uniform では未使用)。
   autoHeightMinHeight: number;
+  // 追加(段階 2 DU-32): 背の高い行での縦の揃え(グリッドの verticalAlign。列の verticalAlign が優先)。
+  verticalAlign: GridVerticalAlign | undefined;
   rowHeaderCellStyle: CSSProperties;
   // 注記: hoveredRowIndex そのものではなく「この行がホバー中か」を boolean で渡します。
   //       これによりホバー変化時に再レンダーされるのは該当 2 行だけで済みます。
@@ -219,6 +222,7 @@ function GridBodyRowInner<T>({
   conditionalFormatStats,
   conditionalFormatResolvers,
   autoHeightMinHeight,
+  verticalAlign,
   rowHeaderCellStyle,
   isRowHovered,
   isWholeGridSelected,
@@ -341,10 +345,17 @@ function GridBodyRowInner<T>({
         );
 
         // 追加(C1): auto-height モードかつ駆動列(column.autoHeight)のセルは内容駆動高さにします。
-        //   高さを固定せず min-height=解決済み行高を下限に、white-space:normal で折り返します。
-        //   data-autoheight-cell は C1-3 の ResizeObserver が実測対象を見つけるためのマーカーです。
+        //   white-space:normal で折り返し、data-autoheight-cell は測定の目印です。
         //   uniform(autoHeight=false)では常に false で、従来どおり固定高 + 中央寄せになります。
+        // 変更(段階 2 DU-32): セルの箱はほかのセルと同じく行の高さにし、中身を器(data-autoheight-content)に入れて
+        //   器の高さを測ります。これまではセルの箱を中身の高さにしていたので、1 行の行では文字が上に寄って隣のセルより
+        //   約 4px 上に見え、auto-height の列が 2 つある背の高い行では短い方の枠線が行の途中に出ていました。
         const isAutoHeightCell = autoHeight && column.autoHeight === true;
+        // 背の高い行(auto-height で伸びた行)での縦の揃え。1 行の行ではどれも真ん中です。未指定は auto-height の
+        //   列が上(折り返した文章の 1 行目を上にそろえる。これまでと同じ見え方)、ほかの列は真ん中。
+        const resolvedVerticalAlign =
+          column.verticalAlign ?? verticalAlign ?? (isAutoHeightCell ? 'top' : 'center');
+        const alignTop = autoHeight && rowHeight > autoHeightMinHeight && resolvedVerticalAlign === 'top';
 
         // 追加(UI CSS移行): セルの className を合成します。基底(.ssg-body-cell)+ 状態修飾子
         //   (autoheight / readonly / row-hovered)+ 条件付き(行=rowClassName / 列=cellClassName)
@@ -428,6 +439,7 @@ function GridBodyRowInner<T>({
           column.align === 'center' && 'ssg-body-cell--align-center',
           column.align === 'right' && 'ssg-body-cell--align-right',
           isAutoHeightCell && 'ssg-body-cell--autoheight',
+          alignTop && 'ssg-body-cell--valign-top',
           readOnlyCell && !isSelected && 'ssg-body-cell--readonly',
           invalidMessage !== null && 'ssg-body-cell--invalid',
           cellNote !== null && 'ssg-body-cell--has-note',
@@ -498,18 +510,13 @@ function GridBodyRowInner<T>({
               left,
               width: size,
               minWidth: size,
-              // auto-height セル: 内容駆動(下限=基準行高=estimate)。通常セル: 従来どおり固定高 + 中央寄せ。
+              // 変更(段階 2 DU-32): auto-height のセルもほかのセルと同じく行の高さです(測るのは中の器。器は
+              //   中身の高さなので、列幅を広げて中身が減れば行も縮みます = C1-6 の縮まない問題は起きない)。
               // 変更(C1-5): uniform セルは固定行高に対し長文だと既定の white-space:normal で折り返し、
               //   overflow 未指定のため溢れた分が隣行へ被って見えていました(autoHeight:true 列を
               //   uniform 側=gate 外/トグル OFF で表示したときに顕在化)。nowrap + overflow:hidden で
               //   1 行表示・セル境界クリップへ寄せ、隣行への被りを防ぎます(短文列は元から 1 行で不変)。
-              // 変更(C1-6): min-height を rowHeight(解決済み行高=実測由来)から autoHeightMinHeight
-              //   (基準行高=estimate・実測非依存)へ変更。旧実装は一度伸びた行の min-height が大きい実測値で
-              //   固定され、列幅拡大等で内容が減っても測定が min-height で下げ止まり行が縮みませんでした。
-              //   固定下限にすることでセルが内容まで縮み、再測定で小さい値が反映されて行が shrink します。
-              ...(isAutoHeightCell
-                ? { minHeight: autoHeightMinHeight }
-                : { height: rowHeight }),
+              height: rowHeight,
               ...wrapStyle,
               zIndex: isActive ? 3 : 1,
             }}
@@ -525,12 +532,23 @@ function GridBodyRowInner<T>({
                 aria-hidden="true"
               />
             )}
-            {renderCellContent(row, rowIndex, column, colIndex, {
-              isActive,
-              isSelected,
-              isEditing,
-              readOnly: readOnlyCell,
-            })}
+            {isAutoHeightCell ? (
+              <div className="ssg-autoheight-content" data-autoheight-content="">
+                {renderCellContent(row, rowIndex, column, colIndex, {
+                  isActive,
+                  isSelected,
+                  isEditing,
+                  readOnly: readOnlyCell,
+                })}
+              </div>
+            ) : (
+              renderCellContent(row, rowIndex, column, colIndex, {
+                isActive,
+                isSelected,
+                isEditing,
+                readOnly: readOnlyCell,
+              })
+            )}
           </div>
         );
       })}
@@ -739,6 +757,8 @@ type GridBodyLayerProps<T> = {
   rowHeight: number;
   // 追加(C1): auto-height 行モード。未指定時 false(供給側 C1-3 まで uniform 経路で不変)。
   autoHeight?: boolean;
+  // 追加(段階 2 DU-32): 背の高い行での縦の揃え(グリッドの verticalAlign)。
+  verticalAlign?: GridVerticalAlign;
   // 追加: 省略時ツールチップ(既定 false)。既定テキストセルの省略時にホバーで全文を表示します。
   showCellOverflowTooltip?: boolean;
   // 追加(validation 表示制御): invalid マークの表示可否です。未指定時 true(現行の常時表示)。
@@ -832,6 +852,7 @@ export function GridBodyLayer<T>({
   renderEntries,
   rowHeight,
   autoHeight = false,
+  verticalAlign,
   showCellOverflowTooltip = false,
   showValidationMarks = true,
   conditionalFormatStats = EMPTY_CONDITIONAL_FORMAT_STATS,
@@ -1060,6 +1081,7 @@ export function GridBodyLayer<T>({
             conditionalFormatStats={conditionalFormatStats}
             conditionalFormatResolvers={conditionalFormatResolvers}
             autoHeightMinHeight={rowHeight}
+            verticalAlign={verticalAlign}
             rowHeaderCellStyle={rowHeaderCellStyle}
             isRowHovered={hoveredRowIndex === rowIndex}
             isWholeGridSelected={isWholeGridSelected}

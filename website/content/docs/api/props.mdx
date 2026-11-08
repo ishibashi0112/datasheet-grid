@@ -21,6 +21,7 @@ description: SpreadsheetGridProps<T> の全 prop と既定値
 | `createOverflowColumn` | `(columnIndex: number) => GridColumn<T>` | — | 貼り付けが右端の列よりはみ出したとき、足りない列を作る列ファクトリ(`onColumnsChange` と一緒に使う)。 |
 | `rowHeight` | `number` | density 依存(standard: `36`) | uniform 行の行高(px)。未指定時は density プリセット(compact: `28` / comfortable: `44`)から解決。明示指定が常に優先。 |
 | `autoHeight` | `boolean` | `false` | auto-height 行(可変行高)を有効化する**大本のスイッチ**。これに加えて**少なくとも1列に `column.autoHeight: true`** が必要(その列が折り返して行高を駆動)。両方 true かつ**行数 ≤ 50,000**のとき有効(超過時は uniform `rowHeight` へフォールバック)。詳細は「auto-height 行」節。 |
+| `verticalAlign` | `'top' \| 'center'` | — | auto-height で伸びた行(基準の `rowHeight` より高い行)での、セルの中身の縦の揃え。書かなければ `autoHeight` の列は上(折り返した文章の 1 行目)、ほかの列は真ん中。`'top'` で全部の列を上に、`'center'` で全部の列を真ん中にそろえる(列ごとの指定は `GridColumn.verticalAlign` が優先)。1 行の行と、auto-height を使わないグリッドではどれも真ん中。詳細は「auto-height 行」節。 |
 | `estimateRowHeight` | `number` | `rowHeight` | 未測定行の推定行高(px)。 |
 | `headerHeight` | `number` | density 依存(standard: `40`) | ヘッダー行の高さ(px)。未指定時は density プリセット(compact: `32` / comfortable: `48`)から解決。明示指定が常に優先。 |
 | `density` | `'compact' \| 'standard' \| 'comfortable'` | `'standard'` | 密度プリセット。rowHeight / headerHeight の既定値と寸法トークン(セル横 padding / バー padding / アイコンボタン寸法 / セル文字の相対拡縮)を一括切替。`'standard'` は従来と同値。個別調整はトークン(`--ssg-cell-pad-x` 等)の上書きで可能。popover / menu 等のポータルは対象外。 |
@@ -885,7 +886,8 @@ function Grid(props: SpreadsheetGridProps<Row>) {
 | `.ssg-body-cell--cf-scale` | 条件付き書式のカラースケールで背景を染めたセル。 |
 | `.ssg-chip` | 条件付き書式の状態チップ(色味は `.ssg-chip--neutral` / `.ssg-chip--info` / `.ssg-chip--good` / `.ssg-chip--warning` / `.ssg-chip--critical`、任意色は `.ssg-chip--custom`。中身は `.ssg-chip-icon` / `.ssg-chip-label`)。 |
 | `.ssg-body-cell--row-hovered` | 行ホバー中のセル(`enableRowHover` 有効時)。 |
-| `.ssg-body-cell--autoheight` | auto-height 列のセル。 |
+| `.ssg-body-cell--autoheight` | auto-height 列のセル(箱は行の高さ。中身は子要素 `.ssg-autoheight-content` に入り、その高さで行の高さを測る)。 |
+| `.ssg-body-cell--valign-top` | auto-height で伸びた行で、中身を上にそろえたセル(`verticalAlign`。`autoHeight` の列は既定でこれ)。 |
 | `.ssg-body-cell--align-center` / `.ssg-body-cell--align-right` | `column.align` の水平寄せ。 |
 | `.ssg-header-cell--align-center` / `.ssg-header-cell--align-right` | 列見出しの水平寄せ(`column.headerAlign`。書かなければ `column.align`)。右寄せは並びが鏡写し(状態とホバーの操作が左)。 |
 | `.ssg-body-cell--row-drag-handle` | 行ドラッグ(`enableRowDrag`)のハンドル列のセル。 |

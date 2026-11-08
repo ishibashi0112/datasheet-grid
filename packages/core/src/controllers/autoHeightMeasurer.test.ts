@@ -204,6 +204,51 @@ describe('createAutoHeightMeasurer', () => {
     measurer.dispose();
   });
 
+  // 追加(段階 2 DU-32): セルの箱は行の高さなので、中の器(data-autoheight-content)の高さ + セルの上下の枠線と余白を
+  //   測ります。下限は基準の行の高さ(minRowHeight)。ResizeObserver も器を見ます(セルの箱は行の高さで変わるため)。
+  it('器があれば器の高さ + セルの枠線と余白を測り、基準の行の高さを下限にし、器を見張る', () => {
+    const container = document.createElement('div');
+    const contents: HTMLElement[] = [];
+    [70, 12, 0].forEach((contentHeight, index) => {
+      const row = document.createElement('div');
+      row.dataset.rowIndex = String(index);
+      const cell = document.createElement('div');
+      cell.setAttribute('data-autoheight-cell', '');
+      cell.style.borderBottomWidth = '1px';
+      cell.style.paddingTop = '2px';
+      cell.style.paddingBottom = '3.5px';
+      // セルの箱は行の高さ(器より大きい)。器の高さで測ること。
+      cell.getBoundingClientRect = () => ({ height: contentHeight === 0 ? 0 : 200 }) as DOMRect;
+      const content = document.createElement('div');
+      content.setAttribute('data-autoheight-content', '');
+      content.getBoundingClientRect = () => ({ height: contentHeight }) as DOMRect;
+      cell.appendChild(content);
+      contents.push(content);
+      row.appendChild(cell);
+      container.appendChild(row);
+    });
+    const measurer = createAutoHeightMeasurer<Row>();
+    const store = buildRowHeightStore(rows.length, 20, rowModel.getRowKey, measurer.measuredHeights);
+    measurer.update({
+      scrollContainerRef: { current: container },
+      autoHeightActive: true,
+      minRowHeight: 30,
+      rowHeightStore: store,
+      rowMetrics: createAutoHeightRowMetrics(store),
+      rowModel,
+      virtualRows: [],
+      viewportHeight: 100,
+      version: 0,
+      nonce: 0,
+    });
+    // 70 + 1 + 2 + 3.5 = 76.5 → 77 / 12 + 6.5 = 18.5 → 下限の 30 / 隠れている(セルも器も 0)は記録しない。
+    expect(measurer.measuredHeights.get(1)).toBe(77);
+    expect(measurer.measuredHeights.get(2)).toBe(30);
+    expect(measurer.measuredHeights.has(3)).toBe(false);
+    expect(observe.mock.calls.map(([target]) => target)).toEqual(contents);
+    measurer.dispose();
+  });
+
   it('無効化すると observer を破棄し、dispose でも破棄する', () => {
     const measurer = createAutoHeightMeasurer<Row>();
     const store = buildRowHeightStore(rows.length, 20, rowModel.getRowKey, measurer.measuredHeights);

@@ -22,6 +22,8 @@ export type AutoHeightMeasureArgs<T> = {
   // 共有スクロールコンテナ(update 時に読む。レンダー中に ref を読ませないため ref で受ける)。
   scrollContainerRef: ReadonlyRef<HTMLElement | null>;
   autoHeightActive: boolean;
+  // 追加(段階 2 DU-32): 測った高さの下限(基準の行の高さ)。器の中身が 1 行でも、行はこれより低くしません。
+  minRowHeight?: number;
   rowHeightStore: RowHeightStore | null;
   rowMetrics: RowMetrics;
   rowModel: RowModel<T>;
@@ -44,6 +46,7 @@ export type AutoHeightMeasurer<T> = {
 
 const sameDeps = <T,>(a: AutoHeightMeasureArgs<T>, b: AutoHeightMeasureArgs<T>): boolean =>
   a.autoHeightActive === b.autoHeightActive &&
+  a.minRowHeight === b.minRowHeight &&
   a.rowHeightStore === b.rowHeightStore &&
   a.rowMetrics === b.rowMetrics &&
   a.rowModel === b.rowModel &&
@@ -51,6 +54,27 @@ const sameDeps = <T,>(a: AutoHeightMeasureArgs<T>, b: AutoHeightMeasureArgs<T>):
   a.viewportHeight === b.viewportHeight &&
   a.version === b.version &&
   a.nonce === b.nonce;
+
+// 追加(段階 2 DU-32): auto-height のセル 1 つの高さです。セルの箱は行の高さなので、中の器(data-autoheight-content)の
+//   高さにセルの上下の枠線と余白を足します(器が無ければ従来どおりセルの箱)。下限は基準の行の高さ。
+//   隠れている間(器の高さ 0)は 0 を返します(記録しない。BR-1 見直し)。
+const measureAutoHeightCell = (cell: HTMLElement, minRowHeight: number): number => {
+  const content = cell.querySelector<HTMLElement>('[data-autoheight-content]');
+  if (!content) {
+    return Math.ceil(cell.getBoundingClientRect().height);
+  }
+  const contentHeight = content.getBoundingClientRect().height;
+  if (contentHeight === 0 && cell.getBoundingClientRect().height === 0) {
+    return 0;
+  }
+  const style = getComputedStyle(cell);
+  const chrome =
+    (parseFloat(style.borderTopWidth) || 0) +
+    (parseFloat(style.borderBottomWidth) || 0) +
+    (parseFloat(style.paddingTop) || 0) +
+    (parseFloat(style.paddingBottom) || 0);
+  return Math.max(Math.ceil(contentHeight + chrome), minRowHeight);
+};
 
 export const createAutoHeightMeasurer = <T,>(): AutoHeightMeasurer<T> => {
   const snapshot = createValueStore<AutoHeightMeasureSnapshot>({ version: 0, nonce: 0 });
@@ -124,7 +148,7 @@ export const createAutoHeightMeasurer = <T,>(): AutoHeightMeasurer<T> => {
         if (!Number.isFinite(idx)) {
           return;
         }
-        const height = Math.ceil(cell.getBoundingClientRect().height);
+        const height = measureAutoHeightCell(cell, args.minRowHeight ?? 0);
         const prev = perRow.get(idx);
         // 変更(BR-1 見直し 2026-10-28): 高さ 0(隠れている間)は記録しません。行の高さが 0 になると窓に入る行が増え、
         //   新しく描いた行もまた 0 で測られて、描き直しが止まらなくなる(Maximum update depth exceeded でグリッドが外れる)
@@ -174,10 +198,12 @@ export const createAutoHeightMeasurer = <T,>(): AutoHeightMeasurer<T> => {
     const active = observer;
     const current = new Set<HTMLElement>();
     cells.forEach((cell) => {
-      current.add(cell);
-      if (!observed.has(cell)) {
-        active.observe(cell);
-        observed.add(cell);
+      // 変更(段階 2 DU-32): セルの箱は行の高さなので、中身の変化は器で見ます(器が無ければセル)。
+      const target = cell.querySelector<HTMLElement>('[data-autoheight-content]') ?? cell;
+      current.add(target);
+      if (!observed.has(target)) {
+        active.observe(target);
+        observed.add(target);
       }
     });
     // 描画窓から外れた(= DOM から消えた)セルは監視解除して参照を手放します。

@@ -313,6 +313,8 @@ export function useGridShell<T extends object>({
   rowHeight: rowHeightProp,
   autoHeight = false,
   estimateRowHeight,
+  // 追加(段階 2 DU-32): 背の高い行での縦の揃え(列の verticalAlign が優先)。
+  verticalAlign,
   headerHeight: headerHeightProp,
   density = 'standard',
   theme = 'light',
@@ -1837,6 +1839,8 @@ export function useGridShell<T extends object>({
   useControllerLifecycle(autoHeightMeasurer, {
     scrollContainerRef,
     autoHeightActive,
+    // 追加(段階 2 DU-32): 測った高さの下限(基準の行の高さ。セルの器は中身の高さなので、1 行でもこれより低くしない)。
+    minRowHeight: rowHeight,
     rowHeightStore,
     rowMetrics,
     rowModel,
@@ -4218,6 +4222,7 @@ export function useGridShell<T extends object>({
                   renderEntries={leftRenderEntries}
                   rowHeight={rowHeight}
                   autoHeight={autoHeightActive}
+                  verticalAlign={verticalAlign}
                   showCellOverflowTooltip={showCellOverflowTooltip}
                   showValidationMarks={showValidationMarks}
                   conditionalFormatStats={conditionalFormatStats}
@@ -4438,6 +4443,7 @@ export function useGridShell<T extends object>({
                   renderEntries={centerRenderEntries}
                   rowHeight={rowHeight}
                   autoHeight={autoHeightActive}
+                  verticalAlign={verticalAlign}
                   showCellOverflowTooltip={showCellOverflowTooltip}
                   showValidationMarks={showValidationMarks}
                   conditionalFormatStats={conditionalFormatStats}
@@ -4658,6 +4664,7 @@ export function useGridShell<T extends object>({
                   renderEntries={rightRenderEntries}
                   rowHeight={rowHeight}
                   autoHeight={autoHeightActive}
+                  verticalAlign={verticalAlign}
                   showCellOverflowTooltip={showCellOverflowTooltip}
                   showValidationMarks={showValidationMarks}
                   conditionalFormatStats={conditionalFormatStats}

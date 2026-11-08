@@ -90,7 +90,8 @@ function mulberry32(seed: number) {
   };
 }
 
-function buildRows(count: number): Row[] {
+// longNames: auto-height を試すとき、3 行に 1 行の商品名を長くする(列幅 180px で折り返して行が伸びる)。
+function buildRows(count: number, longNames = false): Row[] {
   const rand = mulberry32(42);
   const rows: Row[] = new Array(count);
   for (let i = 0; i < count; i++) {
@@ -99,7 +100,10 @@ function buildRows(count: number): Row[] {
     const day = 1 + Math.floor(rand() * 28);
     rows[i] = {
       id: i + 1,
-      name: `${category} サンプル ${i + 1}`,
+      name:
+        longNames && i % 3 === 1
+          ? `${category} サンプル ${i + 1}(季節限定のまとめ買いセット。倉庫 B の棚 3 から出荷します)`
+          : `${category} サンプル ${i + 1}`,
       category,
       status: STATUSES[Math.floor(rand() * STATUSES.length)],
       qty: Math.floor(rand() * 500),
@@ -111,7 +115,6 @@ function buildRows(count: number): Row[] {
   return rows;
 }
 
-// ラベル行(見出し行)を 20 行ごとに差し込む。見出し行は rows に混在させ、labelRow.isLabelRow で識別する。
 // バーの文言を英語にするとき(localeText。API リファレンスの「バーの文言」の例と同じ)。
 const ENGLISH_BAR_TEXT: Partial<GridLocaleText> = {
   rowCount: 'Rows: {shown} / {total}',
@@ -136,6 +139,7 @@ const ENGLISH_BAR_TEXT: Partial<GridLocaleText> = {
   listSeparator: ', ',
 };
 
+// ラベル行(見出し行)を 20 行ごとに差し込む。見出し行は rows に混在させ、labelRow.isLabelRow で識別する。
 const LABEL_ROW_INTERVAL = 20;
 function insertLabelRows(rows: Row[]): Row[] {
   const out: Row[] = [];
@@ -233,6 +237,10 @@ type Settings = {
   fillHandle: boolean;
   // 列見出しの寄せ(GridColumn.headerAlign)。'follow' は未指定(列の align に合わせる = 既定)、ほかは全列へ書く。
   headerAlign: 'follow' | 'left' | 'center' | 'right';
+  // 行の高さを中身に合わせる(autoHeight)。ON で商品名の列が折り返し、3 行に 1 行の長い商品名で行が伸びる。
+  autoHeight: boolean;
+  // 伸びた行での縦の揃え(verticalAlign)。'unset' は未指定(auto-height の列は上、ほかは真ん中 = 既定)。
+  verticalAlign: 'unset' | 'top' | 'center';
 };
 
 const DEFAULTS: Settings = {
@@ -282,6 +290,8 @@ const DEFAULTS: Settings = {
   totalRow: false,
   fillHandle: false,
   headerAlign: 'follow',
+  autoHeight: false,
+  verticalAlign: 'unset',
 };
 
 function buildSnippet(s: Settings): string {
@@ -367,6 +377,13 @@ function buildSnippet(s: Settings): string {
   if (s.conditionalFormat) {
     lines.push("  // columns の数量列: conditionalFormat: { dataBar: {} } / 単価列: { colorScale: {} } / 状態列: { chips: { 受注: 'info', 出荷準備: 'warning', 出荷済: 'good', キャンセル: 'critical' } }");
   }
+  // autoHeight / verticalAlign は既定 OFF / 未指定のため、指定したときだけスニペットへ載せる。
+  if (s.autoHeight) {
+    lines.push('  autoHeight // columns の商品名列: autoHeight: true(折り返して行の高さを中身に合わせる)');
+    if (s.verticalAlign !== 'unset') {
+      lines.push(`  verticalAlign="${s.verticalAlign}"`);
+    }
+  }
   if (s.headerAlign !== 'follow') {
     lines.push(`  // columns の各列: headerAlign: '${s.headerAlign}'(未指定なら列の align に合わせる)`);
   }
@@ -433,11 +450,14 @@ const playgroundDetailRow: DetailRowOptions<Row> = {
   ),
 };
 
-// rowCount / labelRow 変更時は key で再マウントし、rows state・undo 履歴・内部状態をリセットする
+// rowCount / labelRow / autoHeight(長い商品名の行を混ぜる)変更時は key で再マウントし、rows state・undo 履歴・内部状態をリセットする
 function PlaygroundGrid({ settings }: { settings: Settings }) {
   const initialRows = useMemo(
-    () => (settings.labelRow ? insertLabelRows(buildRows(settings.rowCount)) : buildRows(settings.rowCount)),
-    [settings.rowCount, settings.labelRow],
+    () => {
+      const built = buildRows(settings.rowCount, settings.autoHeight);
+      return settings.labelRow ? insertLabelRows(built) : built;
+    },
+    [settings.rowCount, settings.labelRow, settings.autoHeight],
   );
   const [rows, setRows] = useState<Row[]>(initialRows);
   const [columns, setColumns] = useState<GridColumn<Row>[]>(initialColumns);
@@ -447,7 +467,7 @@ function PlaygroundGrid({ settings }: { settings: Settings }) {
     () =>
       columns.map((column): GridColumn<Row> => {
         if (column.key === 'name') {
-          return { ...column, aggFunc: settings.totalRow ? 'count' : undefined };
+          return { ...column, aggFunc: settings.totalRow ? 'count' : undefined, autoHeight: settings.autoHeight || undefined };
         }
         if (column.key === 'status') {
           return {
@@ -485,7 +505,7 @@ function PlaygroundGrid({ settings }: { settings: Settings }) {
       })
         // 列見出しの寄せ。'follow' は undefined(列の align に合わせる)。onColumnsChange で state へ戻った値も毎回上書きする。
         .map((column) => ({ ...column, headerAlign: settings.headerAlign === 'follow' ? undefined : settings.headerAlign })),
-    [columns, settings.cellNote, settings.conditionalFormat, settings.totalRow, settings.headerAlign],
+    [columns, settings.cellNote, settings.conditionalFormat, settings.totalRow, settings.headerAlign, settings.autoHeight],
   );
   // セル操作の通知のログ(新しい順に 5 件)。
   const [eventLog, setEventLog] = useState<string[]>([]);
@@ -570,6 +590,8 @@ function PlaygroundGrid({ settings }: { settings: Settings }) {
         showSelectionAggregates={settings.showSelectionAggregates}
         showFilterChipBar={settings.showFilterChipBar}
         localeText={settings.englishBarText ? ENGLISH_BAR_TEXT : undefined}
+        autoHeight={settings.autoHeight}
+        verticalAlign={settings.verticalAlign === 'unset' ? undefined : settings.verticalAlign}
         enableSorting={settings.enableSorting}
         enableColumnFilter={settings.enableColumnFilter}
         enableGlobalFilter={settings.enableGlobalFilter}
@@ -807,6 +829,20 @@ export function Playground() {
               <option value="live">live</option>
             </select>
           </label>
+          <Toggle label="autoHeight(商品名の列を折り返す)" checked={settings.autoHeight} onChange={(v) => set('autoHeight', v)} />
+          <label className={`flex items-center justify-between gap-2 text-sm ${settings.autoHeight ? '' : 'opacity-50'}`}>
+            <code className="text-xs">verticalAlign</code>
+            <select
+              className={selectClass}
+              value={settings.verticalAlign}
+              disabled={!settings.autoHeight}
+              onChange={(e) => set('verticalAlign', e.target.value as Settings['verticalAlign'])}
+            >
+              <option value="unset">未指定</option>
+              <option value="top">top</option>
+              <option value="center">center</option>
+            </select>
+          </label>
           <label className="flex items-center justify-between gap-2 text-sm">
             <code className="text-xs">headerAlign</code>
             <select
@@ -895,7 +931,7 @@ export function Playground() {
       {/* グリッド + スニペット */}
       <div className="flex min-w-0 flex-1 flex-col gap-4">
         <PlaygroundGrid
-          key={`${settings.rowCount}-${settings.labelRow}`}
+          key={`${settings.rowCount}-${settings.labelRow}-${settings.autoHeight}`}
           settings={settings}
         />
         <div className="rounded-lg border border-fd-border">

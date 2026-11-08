@@ -29,6 +29,7 @@
 | `createOverflowColumn` | `(columnIndex: number) => GridColumn<T>` | — | 貼り付けが右端の列よりはみ出したとき、足りない列を作る列ファクトリ(`onColumnsChange` と一緒に使う)。 |
 | `rowHeight` | `number` | density 依存(standard: `36`) | uniform 行の行高(px)。未指定時は density プリセット(compact: `28` / comfortable: `44`)から解決。明示指定が常に優先。 |
 | `autoHeight` | `boolean` | `false` | auto-height 行(可変行高)を有効化する**大本のスイッチ**。これに加えて**少なくとも1列に `column.autoHeight: true`** が必要(その列が折り返して行高を駆動)。両方 true かつ**行数 ≤ 50,000**のとき有効(超過時は uniform `rowHeight` へフォールバック)。詳細は「auto-height 行」節。 |
+| `verticalAlign` | `'top' \| 'center'` | — | auto-height で伸びた行(基準の `rowHeight` より高い行)での、セルの中身の縦の揃え。書かなければ `autoHeight` の列は上(折り返した文章の 1 行目)、ほかの列は真ん中。`'top'` で全部の列を上に、`'center'` で全部の列を真ん中にそろえる(列ごとの指定は `GridColumn.verticalAlign` が優先)。1 行の行と、auto-height を使わないグリッドではどれも真ん中。詳細は「auto-height 行」節。 |
 | `estimateRowHeight` | `number` | `rowHeight` | 未測定行の推定行高(px)。 |
 | `headerHeight` | `number` | density 依存(standard: `40`) | ヘッダー行の高さ(px)。未指定時は density プリセット(compact: `32` / comfortable: `48`)から解決。明示指定が常に優先。 |
 | `density` | `'compact' \| 'standard' \| 'comfortable'` | `'standard'` | 密度プリセット。rowHeight / headerHeight の既定値と寸法トークン(セル横 padding / バー padding / アイコンボタン寸法 / セル文字の相対拡縮)を一括切替。`'standard'` は従来と同値。個別調整はトークン(`--ssg-cell-pad-x` 等)の上書きで可能。popover / menu 等のポータルは対象外。 |
@@ -601,6 +602,7 @@ WAI-ARIA の grid パターンに沿って、表・行・セルに役割と状�
 | `suppressAutoSize` | `boolean` | `false` | `true` で autoSize の対象外(列メニュー / 境界ダブルクリック / すべての列の自動調整すべてでスキップ)。consumer 指定の `width` を維持(固定幅優先)。テキストで測れないカスタムUI列や固定で見せたい列向けの per-column opt-in。 |
 | `estimateCellWidth` | `(row, column) => number` | — | autoSize の幅見積もり。指定列は「セル内容の content 幅(px・セルの padding/border を除く)」をこの関数から得て、**全行の最大 + セル枠**で確定します(テキスト/候補/実 DOM 計測を使わず、React mount もしません)。テキスト長が実描画幅と相関しない renderCell カスタムUI列(横並びバッジ等)向けの opt-in。返す値は `renderCell` の実描画幅と一致させること。 |
 | `autoHeight` | `boolean` | — | この列が auto-height 行の高さを駆動(グリッドの `autoHeight` 有効時のみ)。**autoSize の対象外**(折り返し前提のため。下記「flex と autoSize」の制約を参照)。 |
+| `verticalAlign` | `'top' \| 'center'` | — | auto-height で伸びた行での、この列の中身の縦の揃え(グリッドの `verticalAlign` より優先)。書かなければグリッドの指定、それも無ければ `autoHeight` の列は上、ほかの列は真ん中。 |
 | `wordBreak` | `'normal' \| 'break-all' \| 'keep-all' \| 'break-word' \| 'auto-phrase'` | — | 折り返し時(= `autoHeight` 列)の CSS `word-break`。`'auto-phrase'` は Chromium(Chrome / Edge)で BudouX による文節折り返し(Firefox / 一部 Safari 未対応)。**nowrap(非 `autoHeight`)列では折り返し自体が起きないため効果なし**。既定(未指定)はブラウザ標準=禁則つき文字折り返し。詳細は「日本語テキストの折り返し」節。 |
 | `lineBreak` | `'auto' \| 'loose' \| 'normal' \| 'strict' \| 'anywhere'` | — | 折り返し時の CSS `line-break`(禁則処理の強さ)。`'strict'` で禁則を厳格化。`wordBreak` 同様、折り返す列でのみ効果あり。 |
 | `visible` | `boolean` | — | 列の表示/非表示。非表示にしても、その列に載った列フィルター / ソートは行の絞り込み / 並べ替えに効き続ける(クイックフィルター = グローバル検索は可視列のみが対象)。 |
@@ -1000,7 +1002,8 @@ flex 列を**手動リサイズ**すると、その列はドラッグした幅�
 
 - **行数 gate**: auto-height はビュー行数が **50,000 行以内**のときだけ有効です。超えると uniform 行高(`rowHeight`)へ自動フォールバックします(prefix-sum のコストとブラウザの要素高さ上限のため。開発時は console 警告あり)。
 - **`estimateRowHeight`**: 仮想化で画面外の未測定行に使う推定行高です(既定 `rowHeight`)。行が画面に入ると実測値へ置き換わります(**上限ではありません**)。
-- 行高は**実測**(描画セルの実際の高さ)で、上限/下限のクランプはありません。列幅を広げる等で内容が減れば行も縮みます。
+- 行高は**実測**(`autoHeight` の列のセルの中身の高さ。下限は基準の `rowHeight`)で、上限のクランプはありません。列幅を広げる等で内容が減れば行も縮みます。
+- **縦の揃え**: どのセルも箱は行の高さです。伸びた行では、`autoHeight` の列は中身を上(折り返した文章の 1 行目)に、ほかの列は真ん中にそろえます。グリッドの `verticalAlign`(`'top'` / `'center'`)で全部の列を、列の `verticalAlign` でその列だけを変えられます(列が優先)。1 行の行はどれも真ん中です。
 - **`autoHeight` 列は autoSize の対象外**です(折り返し前提のため。上記「flex と autoSize」の制約を参照)。
 - 折り返し位置の品質(日本語の文節折り返し等)は次節「日本語テキストの折り返し」を参照。
 
@@ -2094,7 +2097,8 @@ function Grid(props: SpreadsheetGridProps<Row>) {
 | `.ssg-body-cell--cf-scale` | 条件付き書式のカラースケールで背景を染めたセル。 |
 | `.ssg-chip` | 条件付き書式の状態チップ(色味は `.ssg-chip--neutral` / `.ssg-chip--info` / `.ssg-chip--good` / `.ssg-chip--warning` / `.ssg-chip--critical`、任意色は `.ssg-chip--custom`。中身は `.ssg-chip-icon` / `.ssg-chip-label`)。 |
 | `.ssg-body-cell--row-hovered` | 行ホバー中のセル(`enableRowHover` 有効時)。 |
-| `.ssg-body-cell--autoheight` | auto-height 列のセル。 |
+| `.ssg-body-cell--autoheight` | auto-height 列のセル(箱は行の高さ。中身は子要素 `.ssg-autoheight-content` に入り、その高さで行の高さを測る)。 |
+| `.ssg-body-cell--valign-top` | auto-height で伸びた行で、中身を上にそろえたセル(`verticalAlign`。`autoHeight` の列は既定でこれ)。 |
 | `.ssg-body-cell--align-center` / `.ssg-body-cell--align-right` | `column.align` の水平寄せ。 |
 | `.ssg-header-cell--align-center` / `.ssg-header-cell--align-right` | 列見出しの水平寄せ(`column.headerAlign`。書かなければ `column.align`)。右寄せは並びが鏡写し(状態とホバーの操作が左)。 |
 | `.ssg-body-cell--row-drag-handle` | 行ドラッグ(`enableRowDrag`)のハンドル列のセル。 |

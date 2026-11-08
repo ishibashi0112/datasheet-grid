@@ -1188,6 +1188,12 @@ export type GridColumn<T, F extends GridFrameworkTypes = GridFrameworkTypes> = {
    * の対象外**(折り返し前提のため。下記「flex と autoSize」の制約を参照)。
    */
   autoHeight?: boolean;
+  // 追加(段階 2 DU-32): auto-height で背の高くなった行での縦の揃え(グリッドの verticalAlign より優先)。
+  /**
+   * auto-height で伸びた行での、この列の中身の縦の揃え(グリッドの `verticalAlign` より優先)。
+   * 書かなければグリッドの指定、それも無ければ `autoHeight` の列は上、ほかの列は真ん中。
+   */
+  verticalAlign?: GridVerticalAlign;
   /**
    * 列の表示/非表示。非表示にしても、その列に載った列フィルター / ソートは行の絞り込み /
    * 並べ替えに効き続ける(クイックフィルター = グローバル検索は可視列のみが対象)。
@@ -1497,6 +1503,9 @@ export type SpreadsheetGridSelectionStats = {
 };
 
 // 追加: topBar / bottomBar でそのまま使える派生 summary です。
+// 追加(段階 2 DU-32): auto-height で背の高くなった行での縦の揃え(グリッドと列の verticalAlign)。
+export type GridVerticalAlign = 'top' | 'center';
+
 // 追加(段階 2 DU-18): グリッドの文言(`localeText` prop)。今は上部 / 下部バーの文言で、`{name}` の所は値に置き換えます。
 //   既定は日本語(英語などは後の版で文言のセットとして足す)。
 /**
@@ -2920,6 +2929,14 @@ export type SpreadsheetGridProps<T, F extends GridFrameworkTypes = GridFramework
    * @defaultValue `false`
    */
   autoHeight?: boolean;
+  // 追加(段階 2 DU-32): auto-height で背の高くなった行での縦の揃え(列の verticalAlign が優先)。
+  /**
+   * auto-height で伸びた行(基準の `rowHeight` より高い行)での、セルの中身の縦の揃え。書かなければ
+   * `autoHeight` の列は上(折り返した文章の 1 行目)、ほかの列は真ん中。`'top'` で全部の列を上に、
+   * `'center'` で全部の列を真ん中にそろえる(列ごとの指定は `GridColumn.verticalAlign` が優先)。1
+   * 行の行と、auto-height を使わないグリッドではどれも真ん中。詳細は「auto-height 行」節。
+   */
+  verticalAlign?: GridVerticalAlign;
   // 追加(C1): auto-height の未測定行に使う 1 行の推定高さ(px)。未指定時は rowHeight。
   /**
    * 未測定行の推定行高(px)。
