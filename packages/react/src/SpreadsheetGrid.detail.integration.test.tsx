@@ -7,6 +7,7 @@
 import { describe, it, expect, vi, beforeAll, afterEach } from 'vitest';
 import { render, cleanup, act, fireEvent } from '@testing-library/react';
 import { createRef } from 'react';
+import { createPortal } from 'react-dom';
 
 import { SpreadsheetGrid } from './SpreadsheetGrid';
 import { DETAIL_TOGGLE_COLUMN_KEY } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/detailRow';
@@ -634,6 +635,76 @@ describe('展開行のカードと Tab(C-N2)', () => {
       exit!.focus();
     });
     expect(document.activeElement).toBe(shell);
+  });
+
+  // 修正(段階 2 の見直し): カードから portal で出した要素(ダイアログなど)のキーは数えない(DOM 上でカードの外)。
+  it('カードから portal で出したダイアログの中の Tab は既定のまま(表の外へ出さない)', () => {
+    const ref = createRef<SpreadsheetGridHandle<Row>>();
+    const portalDetail: DetailRowOptions<Row> = {
+      height: 120,
+      render: ({ rowKey }) => (
+        <div>
+          <button type="button">{`card-${rowKey}`}</button>
+          {createPortal(
+            <div role="dialog">
+              <input aria-label={`dialog-1-${rowKey}`} />
+              <input aria-label={`dialog-2-${rowKey}`} />
+            </div>,
+            document.body,
+          )}
+        </div>
+      ),
+    };
+    render(<SpreadsheetGrid ref={ref} columns={columns} rows={rows} rowKeyGetter={rowKeyGetter} detailRow={portalDetail} />);
+    act(() => {
+      ref.current?.setDetailRowExpanded('a', true);
+    });
+    const first = document.querySelector<HTMLInputElement>('input[aria-label="dialog-1-a"]');
+    expect(first).not.toBeNull();
+    first!.focus();
+    expect(fireEvent.keyDown(first!, { key: 'Tab' })).toBe(true);
+    expect(document.activeElement).toBe(first);
+    expect(fireEvent.keyDown(first!, { key: 'Tab', shiftKey: true })).toBe(true);
+    expect(document.activeElement).toBe(first);
+  });
+
+  // 修正(段階 2 の見直し): セルの中の消費側の要素(renderCell のボタン)の Tab で、表の中にもう止まる要素が無ければ表の外へ
+  //   (これまでは既定動作で目印に止まり、「表の中から来た」としてシェルへ戻していた = Tab で後ろへ戻ったように見えた)。
+  it('セルの中のボタンの Tab で表の中にもう止まる要素が無ければ、目印へ移して既定動作で表の外へ', () => {
+    const withButtons: GridColumn<Row>[] = [
+      ...columns,
+      {
+        key: 'act',
+        title: '操作',
+        width: 80,
+        pinned: 'right',
+        renderCell: ({ row }) => <button type="button">{`操作-${row.id}`}</button>,
+      },
+    ];
+    const ref = createRef<SpreadsheetGridHandle<Row>>();
+    const { container } = render(
+      <SpreadsheetGrid ref={ref} columns={withButtons} rows={rows} rowKeyGetter={rowKeyGetter} detailRow={detailRow} />,
+    );
+    act(() => {
+      ref.current?.setDetailRowExpanded('a', true);
+    });
+    const exit = container.querySelector<HTMLElement>('.ssg-tab-exit');
+    const scroll = container.querySelector<HTMLElement>('.ssg-tab-exit')?.previousElementSibling as HTMLElement;
+    // DOM の順で表の中の最後に止まる要素(右固定のペインのボタン)。
+    const tabbables = Array.from(scroll.querySelectorAll<HTMLElement>('button, input'));
+    const last = tabbables[tabbables.length - 1];
+    expect(last?.textContent).toBe('操作-c');
+    last!.focus();
+    expect(fireEvent.keyDown(last!, { key: 'Tab' })).toBe(true);
+    expect(document.activeElement).toBe(exit);
+    // 表の中にまだ止まる要素があるとき・Shift+Tab は既定のまま。
+    const firstButton = tabbables.find((element) => element.textContent === '操作-a');
+    firstButton!.focus();
+    expect(fireEvent.keyDown(firstButton!, { key: 'Tab' })).toBe(true);
+    expect(document.activeElement).toBe(firstButton);
+    last!.focus();
+    expect(fireEvent.keyDown(last!, { key: 'Tab', shiftKey: true })).toBe(true);
+    expect(document.activeElement).toBe(last);
   });
 
   it('カードが 1 枚も無いときは目印を Tab の順番に入れず、最終列の Tab は従来どおり既定動作(フォーカスを動かさない)', () => {

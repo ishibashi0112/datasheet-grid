@@ -127,6 +127,7 @@ import {
 // 追加(detail ③): 展開行(Master/Detail)の純ロジック(トグル列キー / rowKey→view index 解決 / 選択帯分割)です。
 import {
   DEFAULT_DETAIL_ROW_HEIGHT,
+  isInsideDetailCardOf,
   isSyntheticColumnKey,
   seedDetailIndexCache,
 } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/detailRow';
@@ -2606,7 +2607,14 @@ export function useGridShell<T extends object>({
         return;
       }
       const target = event.target;
-      if (!(target instanceof Element) || !isTabEdgeOfCard(event.currentTarget, target, event.shiftKey ? 'backward' : 'forward')) {
+      // 修正(段階 2 の見直し): カードから portal で出した要素(ダイアログ / ポップオーバー)のキーも React のイベントでは
+      //   カードへ届きます。DOM 上でカードの外なので数えません(数えると、DOM の順ではカードの要素がすべて前にあるため
+      //   「カードの最後」と判定し、ダイアログの中の Tab で表の外へ出ていた)。
+      if (
+        !(target instanceof Element) ||
+        !event.currentTarget.contains(target) ||
+        !isTabEdgeOfCard(event.currentTarget, target, event.shiftKey ? 'backward' : 'forward')
+      ) {
         return;
       }
       if (!event.shiftKey) {
@@ -2726,6 +2734,41 @@ export function useGridShell<T extends object>({
     // 追加(段階 2 C-N2): 最終列の Tab をその行の展開行のカードへ。
     onTabPastLastColumn: detailRowEnabled ? handleTabPastLastColumn : undefined,
   });
+
+  // 修正(段階 2 の見直し): セルや見出しの中の消費側の要素(renderCell のボタンなど)で Tab を押し、表の中にもう止まる要素が
+  //   無いときは、既定動作の前にフォーカスを表の直後の目印へ移して表の外へ出します(何もしないと既定動作で目印に止まり、
+  //   「前から来た」としてシェルへ戻すので、Tab で後ろへ戻ったように見えていた)。グリッドのキー操作(keyboardController)と
+  //   エディタは Tab を自分で処理する(preventDefault)ので対象外、カードの中はカードの keydown が処理します。
+  const handleRootKeyDown = useCallback(
+    (event: ReactKeyboardEvent<HTMLDivElement>) => {
+      handleKeyDown(event);
+      if (
+        !hasDetailCards ||
+        event.key !== 'Tab' ||
+        event.shiftKey ||
+        event.defaultPrevented ||
+        event.altKey ||
+        event.ctrlKey ||
+        event.metaKey ||
+        isImeComposingKeyEvent(event.nativeEvent)
+      ) {
+        return;
+      }
+      const target = event.target;
+      const scroll = scrollContainerRef.current;
+      if (
+        !(target instanceof Element) ||
+        !scroll ||
+        !scroll.contains(target) ||
+        isInsideDetailCardOf(scroll, target) ||
+        !isTabEdgeOfCard(scroll, target, 'forward')
+      ) {
+        return;
+      }
+      moveFocusPastTable();
+    },
+    [handleKeyDown, hasDetailCards, moveFocusPastTable],
+  );
 
   // ── edit controller ───────────────────────────────────
   const { startEditWithValue, commitEdit, cancelEdit } = useGridEditController({
@@ -4150,7 +4193,7 @@ export function useGridShell<T extends object>({
         //   (styles.css の .ssg-shell:focus-visible。Tab で入った直後など)。
         data-ssg-has-active-cell={uiState.activeCell === null ? undefined : ''}
         // 追加: popup open 中は root の keyboard/paste handler 自体を外します。
-        onKeyDown={isAnyGridPopupOpen ? undefined : handleKeyDown}
+        onKeyDown={isAnyGridPopupOpen ? undefined : handleRootKeyDown}
         onPaste={isAnyGridPopupOpen ? undefined : handlePaste}
         // 追加(バッチ②): ボディ右クリックの委譲。未 opt-in / 対象外は素通しで標準メニューになります。
         onContextMenu={handleBodyContextMenu}
