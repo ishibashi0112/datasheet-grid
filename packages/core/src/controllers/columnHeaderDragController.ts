@@ -37,6 +37,7 @@ import {
   resolveAutoScrollAxisDirection,
   resolveScrollContentBox,
 } from '../logic/autoScrollGeometry';
+import { resolveElementScale } from '../logic/elementScale';
 import { isInsideDetailCardOf, isSyntheticColumnKey } from '../logic/detailRow';
 import { applySlotToElement } from '../logic/slotDom';
 import { syncPortalTokens } from '../utils/portalTokens';
@@ -997,6 +998,7 @@ export const createColumnHeaderDragController = <T,>(): ColumnHeaderDragControll
           clientTop: el.clientTop,
           clientWidth: el.clientWidth,
           clientHeight: el.clientHeight,
+          scale: resolveElementScale(el, rect),
         });
         const direction = resolveAutoScrollAxisDirection(
           pointer.x,

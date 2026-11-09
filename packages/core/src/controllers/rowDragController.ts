@@ -26,6 +26,7 @@ import {
   resolveAutoScrollAxisDirection,
   resolveScrollContentBox,
 } from '../logic/autoScrollGeometry';
+import { resolveElementScale } from '../logic/elementScale';
 import { isInsideDetailCardOf } from '../logic/detailRow';
 import { syncPortalTokens } from '../utils/portalTokens';
 import { applySlotToElement } from '../logic/slotDom';
@@ -501,6 +502,7 @@ export const createRowDragController = (): RowDragController => {
           clientTop: el.clientTop,
           clientWidth: el.clientWidth,
           clientHeight: el.clientHeight,
+          scale: resolveElementScale(el, rect),
         });
         const direction = resolveAutoScrollAxisDirection(
           pointer.y,

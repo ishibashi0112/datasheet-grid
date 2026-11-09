@@ -150,6 +150,44 @@ export const scrollCellIntoView = (
   }
 };
 
+// 追加(1.0.1 / 2026-11-09 実アプリの総点検 AP-24): 縮めたスクロール(論理全高が MAX_BODY_PX を超える表)で、行の数が
+//   変わって縮める率(verticalScaleFactor)が変わったときに、見ている行(論理の位置)を保ちます。物理の scrollTop が
+//   同じままだと論理の位置 = scrollTop × 率 が変わり、ログに行を足し続ける 100 万行の表では、上へ戻って読んでいる
+//   行が足すたびに流れていた(縮めない表では scrollTop = 論理の位置なので流れない。同じ動きにそろえる)。
+//   コミットの後(描く前)に呼び、物理の位置を直したら onAnchored(新しい scrollTop)で知らせます(view スライスへ書く)。
+export type ScrollScaleAnchor = {
+  update: (
+    scrollElement: HTMLElement | null,
+    verticalScaleFactor: number,
+    onAnchored: (scrollTop: number) => void,
+  ) => void;
+};
+
+export const createScrollScaleAnchor = (): ScrollScaleAnchor => {
+  let previousElement: HTMLElement | null = null;
+  let previousScale = 1;
+  return {
+    update: (scrollElement, verticalScaleFactor, onAnchored) => {
+      const element = previousElement;
+      const scale = previousScale;
+      previousElement = scrollElement;
+      previousScale = verticalScaleFactor;
+      if (scrollElement === null || scrollElement !== element || scale === verticalScaleFactor) {
+        return;
+      }
+      const before = scrollElement.scrollTop;
+      const target = logicalToPhysicalScrollTop(physicalToLogicalScrollTop(before, scale), verticalScaleFactor);
+      if (Math.abs(target - before) < 1) {
+        return;
+      }
+      scrollElement.scrollTop = target;
+      if (scrollElement.scrollTop !== before) {
+        onAnchored(scrollElement.scrollTop);
+      }
+    },
+  };
+};
+
 const changed = <A extends object>(
   prev: A | null,
   next: A,

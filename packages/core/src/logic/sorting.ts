@@ -506,13 +506,32 @@ const keyStringAt = (decorated: DecoratedSortKeys, c: number, pos: number): stri
   decorated.numeric ? '' : decorated.strings[c][pos];
 
 // 2 つの decorate 結果が「同じ並べ方」を表すか(列数と各列の方向が同じ)。違えば位置ごとの比較に意味が無い。
+// 変更(1.0.1 / AP-25): 末尾に足した order(前回の order が今回の先頭と同じ)も比べられるように、前回が今回より短くてもよい。
 const isSameSortShape = (a: DecoratedSortKeys, b: DecoratedSortKeys): boolean =>
-  a.length === b.length &&
+  a.length <= b.length &&
   a.multipliers.length === b.multipliers.length &&
   a.multipliers.every((multiplier, c) => multiplier === b.multipliers[c]);
 
+// 追加(1.0.1 / 2026-11-09 実アプリの総点検 AP-25): prev が next の先頭と同じか(行を末尾に足した / 列フィルターの段が
+//   足した行だけを通した)。差分ソートの前提(位置 = order の添字が前後で同じ行を指す)を確かめます。O(prev の長さ)。
+export const isOrderPrefix = (prev: RowOrder, next: RowOrder): boolean => {
+  if (prev === next) {
+    return true;
+  }
+  if (prev.length > next.length) {
+    return false;
+  }
+  for (let i = 0; i < prev.length; i += 1) {
+    if (prev[i] !== next[i]) {
+      return false;
+    }
+  }
+  return true;
+};
+
 // 追加(監査 B-10): キーが変わった位置を返します。並べ方が違う / limit 件を超えたら null(全件ソートへ)。
 //   同じ order に対して decorate した 2 つの結果を比べる前提です(位置 = order の添字)。
+// 変更(1.0.1 / AP-25): next が prev より長い(末尾に足した)ときは、足した位置をすべて「変わった位置」に数えます。
 export const diffSortKeys = (
   prev: DecoratedSortKeys,
   next: DecoratedSortKeys,
@@ -523,7 +542,17 @@ export const diffSortKeys = (
   }
   const changed: number[] = [];
   const columnCount = next.multipliers.length;
+  if (next.length - prev.length > limit) {
+    return null;
+  }
   for (let pos = 0; pos < next.length; pos += 1) {
+    if (pos >= prev.length) {
+      changed.push(pos);
+      if (changed.length > limit) {
+        return null;
+      }
+      continue;
+    }
     for (let c = 0; c < columnCount; c += 1) {
       const kind = keyKindAt(next, c, pos);
       let same = kind === keyKindAt(prev, c, pos);
@@ -580,16 +609,18 @@ const comparePositionsByKeys = (
 // 追加(監査 B-10): 前回の並べ替え結果(prevPositions)から、キーが変わった位置(changed)だけを抜いて
 //   新しいキーで差し込み直します。変わっていない位置どうしの順序は前後で同じ(キーが同じ = 比較結果が同じ)ため、
 //   結果は全件ソート(sortPositionsByKeys)と一致します。比較は O(k log n)、組み立ては O(n)。
+// 変更(1.0.1 / AP-25): 末尾に足した位置(prevPositions に無い位置 = prevPositions.length 以上)も changed に入れて
+//   差し込みます(結果の長さは decorated.length)。
 export const repositionSortedPositions = (
   prevPositions: readonly number[],
   changed: readonly number[],
   decorated: DecoratedSortKeys,
   order: RowOrder,
 ): number[] => {
-  if (changed.length === 0) {
+  if (changed.length === 0 && prevPositions.length === decorated.length) {
     return prevPositions.slice();
   }
-  const isChanged = new Uint8Array(prevPositions.length);
+  const isChanged = new Uint8Array(decorated.length);
   for (const pos of changed) {
     isChanged[pos] = 1;
   }
@@ -602,7 +633,7 @@ export const repositionSortedPositions = (
   const sortedChanged = changed
     .slice()
     .sort((a, b) => comparePositionsByKeys(decorated, order, a, b));
-  const result = new Array<number>(prevPositions.length);
+  const result = new Array<number>(decorated.length);
   let out = 0;
   let from = 0;
   for (const pos of sortedChanged) {

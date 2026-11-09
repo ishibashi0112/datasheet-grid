@@ -34,6 +34,8 @@ export type AutoScrollContentBox = {
 // getBoundingClientRect(外形)と client 系プロパティからコンテンツ領域を求めます。
 //   rect.left + clientLeft がコンテンツ左端、そこへ clientWidth を足した位置が
 //   (縦スクロールバーの内側の)コンテンツ右端です。縦も同様です。
+// 変更(1.0.1 / 2026-11-09 実アプリの総点検 AP-29): 祖先の transform: scale() の倍率(logic/elementScale)を渡すと、client 系の
+//   大きさ(レイアウトの px)を画面の px へ直します(倍率 0.8 では下端が 80px 下にずれ、下へ自動スクロールしなかった)。
 export const resolveScrollContentBox = ({
   rectLeft,
   rectTop,
@@ -41,6 +43,7 @@ export const resolveScrollContentBox = ({
   clientTop,
   clientWidth,
   clientHeight,
+  scale,
 }: {
   rectLeft: number;
   rectTop: number;
@@ -48,14 +51,17 @@ export const resolveScrollContentBox = ({
   clientTop: number;
   clientWidth: number;
   clientHeight: number;
+  scale?: { x: number; y: number };
 }): AutoScrollContentBox => {
-  const left = rectLeft + clientLeft;
-  const top = rectTop + clientTop;
+  const scaleX = scale?.x ?? 1;
+  const scaleY = scale?.y ?? 1;
+  const left = rectLeft + clientLeft * scaleX;
+  const top = rectTop + clientTop * scaleY;
   return {
     left,
     top,
-    right: left + clientWidth,
-    bottom: top + clientHeight,
+    right: left + clientWidth * scaleX,
+    bottom: top + clientHeight * scaleY,
   };
 };
 

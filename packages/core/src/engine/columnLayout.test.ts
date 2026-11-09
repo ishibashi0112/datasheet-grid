@@ -1,7 +1,7 @@
 // 追加(本体分解 E-1): 列解決 / 3 ペインレイアウトのリゾルバの単体テストです。旧 SpreadsheetGrid.tsx の
 //   useMemo 群と同じ結果・同じ参照安定性(11-B4: 幅が変わらないペインの geometry 参照は不変)を検証します。
 import { describe, it, expect } from 'vitest';
-import { createColumnResolver, createPaneLayoutResolver } from './columnLayout';
+import { createColumnResolver, createPaneLayoutResolver, resolvePinnedOverflowKey } from './columnLayout';
 import type { GridColumn } from '../model/gridTypes.unbound';
 import { DETAIL_TOGGLE_COLUMN_KEY } from '../logic/detailRow';
 import { ROW_DRAG_HANDLE_COLUMN_KEY } from '../logic/rowReorder';
@@ -199,5 +199,61 @@ describe('createPaneLayoutResolver', () => {
     expect(noHeader.hasLeftPane).toBe(false);
     expect(noHeader.leftPaneTotalWidth).toBe(0);
     expect(noHeader.totalScrollWidth).toBe(200);
+  });
+});
+
+// 追加(1.0.1 / 2026-11-09 実アプリの総点検 AP-23): 固定列が入りきらないときは表示の上だけ固定を外す。
+describe('入りきらない固定列(AP-23)', () => {
+  type R = { id: number };
+  const ordered: GridColumn<R>[] = [
+    { key: 'no', title: 'No.', width: 70, pinned: 'left' },
+    { key: 'customer', title: '顧客', width: 160, pinned: 'left' },
+    { key: 'date', title: '受注日', width: 120 },
+    { key: 'note', title: '備考', width: 200 },
+    { key: 'amount', title: '金額', width: 130, pinned: 'right' },
+  ];
+  const keys = (items: { column: GridColumn<R> }[]) => items.map(({ column }) => column.key);
+
+  it('広い表では何もしない(列ソースは分けただけ)', () => {
+    const resolve = createPaneLayoutResolver<R>();
+    const result = resolve({ orderedColumns: ordered, columnWidths: {}, viewportWidth: 1200, rowHeaderWidth: 56 });
+    expect(keys(result.paneSourceColumns.left)).toEqual(['no', 'customer']);
+    expect(keys(result.paneSourceColumns.right)).toEqual(['amount']);
+  });
+
+  it('幅 340px: 右の固定列、次に左の固定列の内側から中央へ回す(並びの index は変わらない)', () => {
+    const resolve = createPaneLayoutResolver<R>();
+    const result = resolve({ orderedColumns: ordered, columnWidths: {}, viewportWidth: 340, rowHeaderWidth: 56 });
+    expect(keys(result.paneSourceColumns.left)).toEqual(['no']);
+    expect(keys(result.paneSourceColumns.center)).toEqual(['customer', 'date', 'note', 'amount']);
+    expect(result.paneSourceColumns.center.map(({ logicalIndex }) => logicalIndex)).toEqual([1, 2, 3, 4]);
+    expect(result.paneSourceColumns.center.every(({ column }) => column.pinned === undefined)).toBe(true);
+    expect(result.hasRightPane).toBe(false);
+    expect(result.leftPaneTotalWidth).toBe(56 + 70);
+    // 列の定義(pinned)は変えない。
+    expect(ordered[1].pinned).toBe('left');
+  });
+
+  it('外す列が変わらない間は列ソースが同じ参照(列幅のドラッグ中に作り直さない)。幅が戻れば固定に戻る', () => {
+    const resolve = createPaneLayoutResolver<R>();
+    const a = resolve({ orderedColumns: ordered, columnWidths: {}, viewportWidth: 340, rowHeaderWidth: 56 });
+    const b = resolve({ orderedColumns: ordered, columnWidths: { date: 140 }, viewportWidth: 341, rowHeaderWidth: 56 });
+    expect(b.paneSourceColumns).toBe(a.paneSourceColumns);
+    const c = resolve({ orderedColumns: ordered, columnWidths: {}, viewportWidth: 900, rowHeaderWidth: 56 });
+    expect(keys(c.paneSourceColumns.left)).toEqual(['no', 'customer']);
+  });
+
+  it('列ソースの単位: 未計測(幅 0)は外さない、右が無ければ左の内側から、合成列の掴み手は外さない', () => {
+    const split = (columns: GridColumn<R>[]) => ({
+      left: columns.filter((c) => c.pinned === 'left').map((column, logicalIndex) => ({ column, logicalIndex })),
+      center: [],
+      right: columns.filter((c) => c.pinned === 'right').map((column, logicalIndex) => ({ column, logicalIndex })),
+    });
+    expect(resolvePinnedOverflowKey(split(ordered), {}, 0, 56)).toBe('');
+    const withHandle = split([
+      { key: ROW_DRAG_HANDLE_COLUMN_KEY, title: '', width: 28, pinned: 'left' },
+      { key: 'a', title: 'A', width: 300, pinned: 'left' },
+    ]);
+    expect(resolvePinnedOverflowKey(withHandle, {}, 200, 40)).toBe('a');
   });
 });

@@ -23,7 +23,7 @@ afterEach(() => {
   cleanup();
 });
 
-const layout: ToolPanelLayout = { top: 20, left: 40, width: 360 };
+const layout: ToolPanelLayout = { top: 20, left: 40, width: 360, maxHeight: 420 };
 
 const makeTabs = (): ToolPanelTabDescriptor[] => [
   { tab: 'filter', label: 'フィルター', badge: 2 },

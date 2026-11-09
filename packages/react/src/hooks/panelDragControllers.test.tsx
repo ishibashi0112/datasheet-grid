@@ -38,10 +38,12 @@ describe('UP-1: 統合ツールパネル(controller の move / clamp / リセッ
     act(() => {
       result.current.moveToolPanel(200, 300);
     });
+    // 変更(1.0.1 / AP-30): 下に残る高さ(画面の高さ - 余白 - top。最大 420)が高さの上限。
     expect(result.current.toolPanelLayout).toEqual({
       top: 200,
       left: 300,
       width: 360,
+      maxHeight: 420,
     });
     // 範囲外(右下遠方)は clamp されます(左右: vw - 幅 - 8 / 上下: vh - 40)。
     act(() => {
@@ -51,6 +53,7 @@ describe('UP-1: 統合ツールパネル(controller の move / clamp / リセッ
       top: window.innerHeight - 40,
       left: window.innerWidth - 360 - 8,
       width: 360,
+      maxHeight: 32,
     });
   });
 
@@ -65,7 +68,7 @@ describe('UP-1: 統合ツールパネル(controller の move / clamp / リセッ
       result.current.moveToolPanel(200, 300);
     });
     const moved = result.current.toolPanelLayout;
-    expect(moved).toEqual({ top: 200, left: 300, width: 360 });
+    expect(moved).toEqual({ top: 200, left: 300, width: 360, maxHeight: 420 });
     expect(moved).not.toEqual(initial);
     act(() => {
       result.current.closeToolPanel();
@@ -90,6 +93,7 @@ describe('UP-1: 統合ツールパネル(controller の move / clamp / リセッ
       top: 500,
       left: 600,
       width: 360,
+      maxHeight: window.innerHeight - 8 - 500,
     });
     const originalWidth = window.innerWidth;
     const originalHeight = window.innerHeight;
@@ -110,6 +114,7 @@ describe('UP-1: 統合ツールパネル(controller の move / clamp / リセッ
         top: 400 - 40,
         left: 500 - 360 - 8,
         width: 360,
+        maxHeight: 400 - 8 - 360,
       });
     } finally {
       Object.defineProperty(window, 'innerWidth', {

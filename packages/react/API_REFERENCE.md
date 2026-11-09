@@ -94,7 +94,7 @@
 | `localeText` | `Partial<GridLocaleText>` | 日本語 | グリッドが自分で出す文言(バー・メニュー・列フィルター・ツールパネル・検索・読み上げの名前・検証のメッセージなど)。変えたいキーだけを渡す(`{ noRows: 'データがありません' }`)。`{name}` の所は値に置き換わる。英語は入口 `/locales/en` の `localeTextEn`(`localeText={localeTextEn}`)。キーの一覧は「文言(`localeText`)と英語」節。 |
 | `showBottomBar` | `boolean` | `true` | 下部バー(ステータスバー)の表示有無。`false` で `renderBottomBar` に関わらず一切描画しない(表示のマスタースイッチ。矛盾指定時は `renderBottomBar` より優先)。 |
 | `showBottomBarCounts` | `boolean` | `true` | 既定ボトムバーの Rows / Columns 件数 chips(左側)の表示有無。`renderBottomBar` 未指定時のみ有効。右側の Active / Selection / 選択統計 / Cols は対象外。 |
-| `showSelectionAggregates` | `boolean` | `true` | 2 セル以上を選んだとき、選択範囲の集計(平均 / データの個数 / 合計)を既定ボトムバーの右側(Active / Selection の隣の空き)に出す。数えるのは表示中のデータ行 × データ列のセルで(フィルターで隠れた行・グループ行・ラベル行・合成列は対象外)、合計 / 平均は数値と数値の文字列だけ(グループ集計と同じ判定)、データの個数は空でないセル。大きな選択は時間分割で計算し、その間は「集計中…」。SSRM では読み込み済みの行だけで計算し「読み込み済みの行のみ」と添える。`false` では計算もせず `slotContext.selectionAggregates` は `null`(「選択範囲の集計」節)。 |
+| `showSelectionAggregates` | `boolean` | `true` | 2 セル以上を選んだとき、選択範囲の集計(平均 / データの個数 / 合計)を既定ボトムバーの右側(Active / Selection の隣の空き)に出す。数えるのは表示中のデータ行 × データ列のセルで(フィルターで隠れた行・グループ行・ラベル行・合成列は対象外)、合計 / 平均は数値と数値の文字列だけ(グループ集計と同じ判定)、データの個数は空でないセル。大きな選択は時間分割で計算し、その間は「集計中…」。SSRM では読み込み済みの行だけで計算し「読み込み済みの行のみ」と添える。`false` では計算もせず `slotContext.selectionAggregates` は `null`(「選択範囲の集計」節)。バーに入りきらない項目は、途中で切らずに丸ごと出さない(平均 → データの個数 → 合計の順に隠す。1.0.1 から)。 |
 | `showFilterChipBar` | `boolean` | `false` | フィルターチップバー(適用中の列フィルターをトップバー直下にチップで常時表示)の表示有無(opt-in)。有効フィルター 0 件時はバーごと非表示(空バーは出さない)。`showTopBar` とは独立。チップ本体クリックで対象列へジャンプしてフィルター popover を開き、× で個別クリア、「すべてクリア」は列フィルターのみ対象(グローバルフィルターは対象外)。 |
 | `renderTopBar` | `(ctx: SpreadsheetGridSlotContext<T>) => ReactNode` | 内蔵トップバー | 上部バーの差し替え。未指定時は内蔵トップバー(summary chips + フィルター入力。内訳は `showTopBarSummary` / `showTopBarFilter` で制御。フィルター入力は `enableGlobalFilter=true` が前提)。`showTopBar=false` 時は本指定に関わらず描画されない。 |
 | `renderBottomBar` | `(ctx: SpreadsheetGridSlotContext<T>) => ReactNode` | 内蔵ボトムバー | 下部バーの差し替え。未指定時は内蔵ステータスバー。`showBottomBar=false` 時は本指定に関わらず描画されない。 |
@@ -817,7 +817,7 @@ const gridRef = useRef<SpreadsheetGridHandle<Row>>(null);
 | `Home` / `End`(+ `Shift`) | 行の先頭 / 末尾の列へ。 |
 | `Ctrl/Cmd+Home` / `Ctrl/Cmd+End`(+ `Shift`) | 先頭のセル / 末尾のセルへ。 |
 | `PageUp` / `PageDown`(+ `Shift`) | 見えている本体の高さ 1 画面ぶん上 / 下の行へ(少なくとも 1 行)。 |
-| `Alt+↓`(Mac は `Option+↓`) | アクティブセルの列の列メニューを開く(`enableColumnMenu` のとき。見出しの下に開き、先頭の項目へフォーカスを移す)。メニューの中は `↓` / `↑` / `Home` / `End` で項目を移り、`Enter` / `Space` で実行、`Escape` / `Tab` で閉じてグリッドへ戻る(マウスで開いたときも同じ)。列メニューの無い合成列(自動グループ列など)ではふつうの `↓`。 |
+| `Alt+↓`(Mac は `Option+↓`) | アクティブセルの列の列メニューを開く(`enableColumnMenu` のとき。見出しの下に開き、先頭の項目へフォーカスを移す)。メニューの中は `↓` / `↑` / `Home` / `End` で項目を移り、`Enter` / `Space` で実行、`Escape` / `Tab` で閉じてグリッドへ戻る(マウスで開いたときも同じ)。「列の固定」は `→` / `Enter` / `Space` で小メニューを開いて先頭の項目へ移り、小メニューの中の `←` で閉じて「列の固定」へ戻る(タッチではタップで開く。1.0.1 から)。列メニューの無い合成列(自動グループ列など)ではふつうの `↓`。 |
 | `Enter` / `F2` / 印字キー直打ち | 編集開始(印字キーはその 1 文字を初期値に。select エディタではその文字で始まる候補を頭出しする)。編集可否は `readOnly` / 列 / `canEditCell` に従う。 |
 | `Enter` / `Space`(グループ行 / 展開トグル列のセル) | そのグループ / 展開行の開閉(編集は始めない)。 |
 | `Escape` | 選択解除(範囲を選んでいるとき。グリッドを入れたダイアログはこの `Escape` では閉じない。1 セルを選んでいるだけのときは見た目は変わらず、`Escape` はダイアログへ届く)。 |
@@ -885,7 +885,7 @@ WAI-ARIA の grid パターンに沿って、表・行・セルに役割と状�
 | `visible` | `boolean` | — | 列の表示/非表示。非表示にしても、その列に載った列フィルター / ソートは行の絞り込み / 並べ替えに効き続ける(クイックフィルター = グローバル検索は可視列のみが対象)。 |
 | `editable` | `boolean` | `true`(未指定 = 編集可) | この列の編集可否。**未指定の列は編集可**で、`false` または `readOnly: true` で編集不可になる(グリッド全体は `readOnly`、セル単位は `canEditCell`)。 |
 | `readOnly` | `boolean` | — | この列を読み取り専用にする。 |
-| `pinned` | `'left' \| 'right'` | undefined = 中央スクロール | 列固定の方向。 |
+| `pinned` | `'left' \| 'right'` | undefined = 中央スクロール | 列固定の方向。固定列(行番号の列を含む)の合計が広すぎて中央に `max(120px, グリッドの幅の 1/4)` を残せない間は、右の固定列の内側から、次に左の固定列の内側から順に、表示の上だけ固定を外して中央でスクロールさせる(`columns` の `pinned` は変えず、広くなれば固定に戻る。スマホの幅で右の固定列が左の固定列に重なり、中央が見えなかったため。1.0.1 から)。 |
 | `rowGroup` | `boolean` | — | `true` でこの列を行グルーピングの対象にする(複数指定時は `columns` 配列の出現順が階層順)。有効時はグループ元列が表示から外れ、先頭に自動グループ列(ツリー表示)が注入される。**clientSide 限定**(serverSide では無視 + 開発時警告)。列のどれかに `rowGroup` を書いている(`false` を含む)表では、列メニューに「この列でグループ化」/「グループ化を外す」が出る(`onColumnsChange` が要る。集計のある列には出ない)。詳細は「行グルーピング + 集計」節。 |
 | `aggFunc` | `'sum' \| 'min' \| 'max' \| 'avg' \| 'count' \| GridAggFunc<T>` | — | グルーピング時と合計行(`totalRow`)のこの列の集計。組み込みは数値と数値の文字列だけを数える集計(空値・空白だけの文字列・`true` / `false`・`Date`・配列などは対象外、`count` は配下 leaf 行数 / 合計行では対象の行数)。関数でカスタム集計可(返り値がグループ行 / 合計行に表示)。`rowGroup` 列も `totalRow` もないときは無視。 |
 | `getValue` | `(row: T) => unknown` | `row[key]` | 値アクセサ。`setValue` の無い列へ書き込むと値は `row[key]` へ入り、表示(`getValue`)は変わらない。計算列は `editable: false` にするか `setValue` を渡す(開発時は、行に無いプロパティを足した列ごとに 1 回 console.warn)。 |
@@ -1430,7 +1430,7 @@ const columns: GridColumn<Order>[] = [
 - **`renderCell` からの操作(`ctx.detail`)**: `detailRow` 有効時、`CellRenderContext` に `detail: { expanded, expandable, toggle(), setExpanded(bool) }` が入ります(無効時は `undefined`)。`showToggleColumn: false` と組み合わせて、商品名セルの横などにトグルを自前配置できます。
 - **選択 / アクティブセル**: 帯はセルではないため選択・アクティブセルの対象外です。帯を跨ぐ範囲選択のハイライトは帯を避けて分割描画されます。
 - **serverSide(`dataSource`)**: 使えますが、(1) クエリ(フィルター / ソート / グローバル)が変わると展開状態は**すべて閉じ**ます(結果セットが総入れ替えされ、未ロード行のキーを走査できないため)。(2) 未ロード行の帯は表示されません。
-- **上限**: 帯は auto-height 行と同じ可変行高ジオメトリで描画するため、`rows × rowHeight + 展開中の帯の合計` が 15,000,000px(36px 行で約 41 万行)を超える構成では帯を描画しません(開発時警告。展開状態は保持され、行数を絞ると表示されます)。
+- **上限**: 帯は auto-height 行と同じ可変行高ジオメトリで描画するため、`rows × rowHeight + 展開中の帯の合計` が 15,000,000px(36px 行で約 41 万行)を超える構成では帯を描画しません(開発時警告。展開状態は保持され、行数を絞ると表示されます)。行だけで 15,000,000px を超える間は、展開のトグル(▸)も出さず、`Enter` / `Space` でも開閉しません(`ctx.detail.expandable` も `false`。1.0.1 から)。
 - **行グルーピング併用**: 展開できるのは leaf 行のみ(グループ行は対象外)。
 
 ### ラベル行(見出し / 区切り行)(`labelRow`)

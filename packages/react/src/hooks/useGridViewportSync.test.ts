@@ -64,6 +64,7 @@ const setup = (initial: HookProps) => {
     ({ activeCell, activeCellRect }: HookProps) =>
       useGridViewportSync({
         scrollRef,
+        onScrollTopAnchored: () => {},
         columnVirtualizer,
         columnMeasurements: [],
         totalScrollWidth: 2000,

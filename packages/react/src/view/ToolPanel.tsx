@@ -117,6 +117,8 @@ export function ToolPanel({
     top: layout.top,
     left: layout.left,
     width: layout.width,
+    // 追加(1.0.1 / AP-30): 画面の中に収まる高さ(中の一覧が縮んでスクロールになる)。
+    maxHeight: layout.maxHeight,
   };
 
   const handlePointerDown = (event: PointerEvent<HTMLDivElement>) => {

@@ -7,6 +7,7 @@ import {
   createToolPanelController,
   resolveActiveToolPanelTab,
   resolveAvailableToolPanelTabs,
+  resolveToolPanelVerticalPlacement,
 } from './toolPanelController';
 
 beforeEach(() => {
@@ -51,5 +52,35 @@ describe('createToolPanelController', () => {
     document.body.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true }));
     expect(c.getSnapshot().requestedTab).toBeNull();
     expect(c.getSnapshot().layout).toBeNull();
+  });
+});
+
+describe('画面の中に収める(AP-30)', () => {
+  it('既定の位置: 上限が下に入らなければ上へずらし、低い画面では高さの上限を画面に合わせる', () => {
+    // 十分な高さ: そのまま、上限は 420px。
+    expect(resolveToolPanelVerticalPlacement(100, 900, false)).toEqual({ top: 100, maxHeight: 420 });
+    // 下に入らない: 上へずらす(900 - 8 - 420 = 472)。
+    expect(resolveToolPanelVerticalPlacement(600, 900, false)).toEqual({ top: 472, maxHeight: 420 });
+    // スマホの横向き(高さ 390px): 上端は余白、上限は 390 - 16 = 374px。
+    expect(resolveToolPanelVerticalPlacement(79, 390, false)).toEqual({ top: 8, maxHeight: 374 });
+  });
+
+  it('掴んで動かした位置: 位置はそのままで、下に残る高さを上限にする', () => {
+    expect(resolveToolPanelVerticalPlacement(300, 390, true)).toEqual({ top: 300, maxHeight: 82 });
+    expect(resolveToolPanelVerticalPlacement(20, 900, true)).toEqual({ top: 20, maxHeight: 420 });
+  });
+
+  it('開いたときの layout に maxHeight が入る', () => {
+    vi.stubGlobal('innerHeight', 390);
+    const root = document.createElement('div');
+    document.body.appendChild(root);
+    root.getBoundingClientRect = () => ({ top: 67, left: 0, right: 664, bottom: 380, width: 664, height: 313, x: 0, y: 67, toJSON: () => ({}) });
+    const c = createToolPanelController();
+    c.update({ canUseFilterTab: true, canUseColumnsTab: true, canUseSortTab: true, gridRootRef: { current: root } });
+    c.open('columns');
+    expect(c.getSnapshot().layout).toMatchObject({ top: 8, maxHeight: 374 });
+    c.move(200, 100);
+    expect(c.getSnapshot().layout).toMatchObject({ top: 200, maxHeight: 182 });
+    c.dispose();
   });
 });

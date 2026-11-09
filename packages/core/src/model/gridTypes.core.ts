@@ -1223,7 +1223,11 @@ export type GridColumn<T, F extends GridFrameworkTypes = GridFrameworkTypes> = {
   // 追加(10-A): AG Grid 互換の列固定指定です。
   //             未指定 or undefined → 中央スクロール領域に配置されます。
   /**
-   * 列固定の方向。
+   * 列固定の方向。固定列(行番号の列を含む)の合計が広すぎて中央に `max(120px, グリッドの幅の 1/4)`
+   * を残せない間は、右の固定列の内側から、次に左の固定列の内側から順に、
+   * 表示の上だけ固定を外して中央でスクロールさせる(`columns` の `pinned` は変えず、
+   * 広くなれば固定に戻る。スマホの幅で右の固定列が左の固定列に重なり、中央が見えなかったため。1.0.1
+   * から)。
    *
    * @defaultValue undefined = 中央スクロール
    */
@@ -4178,7 +4182,8 @@ export type SpreadsheetGridProps<T, F extends GridFrameworkTypes = GridFramework
    * 平均は数値と数値の文字列だけ(グループ集計と同じ判定)、データの個数は空でないセル。
    * 大きな選択は時間分割で計算し、その間は「集計中…」。SSRM
    * では読み込み済みの行だけで計算し「読み込み済みの行のみ」と添える。`false` では計算もせず
-   * `slotContext.selectionAggregates` は `null`(「選択範囲の集計」節)。
+   * `slotContext.selectionAggregates` は `null`(「選択範囲の集計」節)。バーに入りきらない項目は、
+   * 途中で切らずに丸ごと出さない(平均 → データの個数 → 合計の順に隠す。1.0.1 から)。
    *
    * @defaultValue `true`
    */

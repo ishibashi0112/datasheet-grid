@@ -5,6 +5,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import {
   clampScrollToContent,
+  createScrollScaleAnchor,
   createViewportSyncController,
   scrollCellIntoView,
   type ViewportSyncArgs,
@@ -201,5 +202,33 @@ describe('scrollCellIntoView の縦の位置', () => {
     expect(run(300, { top: 310, height: 30 }, { stickyTopInset })).toBe(280);
     // 帯より下なら動かさない。
     expect(run(300, { top: 330, height: 30 }, { stickyTopInset })).toBeUndefined();
+  });
+});
+
+// 追加(1.0.1 / 2026-11-09 実アプリの総点検 AP-24): 縮めたスクロールで率が変わったら見ている行(論理の位置)を保つ。
+describe('createScrollScaleAnchor(AP-24)', () => {
+  it('率が変わったら 物理 = 前の物理 × 前の率 ÷ 今の率 へ直して知らせる。率が同じ / 要素が変わったときは何もしない', () => {
+    const { element, raw } = createScrollElement();
+    const anchor = createScrollScaleAnchor();
+    const onAnchored = vi.fn();
+    raw.scrollTop = 10_000_000;
+    anchor.update(element, 2.4, onAnchored);
+    expect(onAnchored).not.toHaveBeenCalled();
+    // 行を足して率が 2.4 → 2.5(論理の位置 24,000,000 を保つ = 物理 9,600,000)。
+    anchor.update(element, 2.5, onAnchored);
+    expect(raw.scrollTop).toBe(9_600_000);
+    expect(onAnchored).toHaveBeenCalledWith(9_600_000);
+    // 同じ率では何もしない。
+    anchor.update(element, 2.5, onAnchored);
+    expect(onAnchored).toHaveBeenCalledTimes(1);
+    // 縮めない表へ戻る(率 1)ときも論理の位置を保つ。
+    anchor.update(element, 1, onAnchored);
+    expect(raw.scrollTop).toBe(24_000_000);
+    // 要素が変わったときは前の率の位置ではないので直さない。
+    const other = createScrollElement();
+    other.raw.scrollTop = 500;
+    anchor.update(other.element, 3, onAnchored);
+    expect(other.raw.scrollTop).toBe(500);
+    expect(onAnchored).toHaveBeenCalledTimes(2);
   });
 });

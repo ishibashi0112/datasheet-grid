@@ -1606,6 +1606,7 @@ export function useGridShell<T extends object>({
     hasAutoHeightColumn,
     autoHeightActive,
     rowHeightStore,
+    baseRowMetrics,
     detailExtras,
     detailActive,
     rowMetrics,
@@ -1664,6 +1665,11 @@ export function useGridShell<T extends object>({
       labelRowHeightOption,
     ],
   );
+
+  // 追加(1.0.1 / 2026-11-09 実アプリの総点検 AP-26): 行だけで論理全高の上限(MAX_BODY_PX)を超える表(約 50 万行〜)では
+  //   展開行を描けないので、トグル(▸)を出さず、Enter / Space でも開閉しません(ctx.detail.expandable も false)。
+  //   これまではトグルが出たままで、押すと ▾ になるだけでカードは出なかった。絞り込んで行が減れば出ます。
+  const detailDrawable = baseRowMetrics.totalBodyHeight <= MAX_BODY_PX;
 
   // 追加(motion-3 / M-4・M-5): 行の並び替えアニメの実効値。auto-height(行高の実測で transform が動く)と serverSide
   //   (ブロック到着で行が差し替わる)では自動 OFF。root 修飾子(ssg-root--animate-rows)で行要素の transform に
@@ -2067,6 +2073,12 @@ export function useGridShell<T extends object>({
 
   useGridViewportSync({
     scrollRef: scrollContainerRef,
+    // 追加(1.0.1 / 2026-11-09 実アプリの総点検 AP-24): 縮めたスクロールで行の数が変わったときに見ている行を保つ(物理の
+    //   位置を直したら view スライスへ書き、onScroll の source は 'api')。
+    onScrollTopAnchored: (scrollTop) => {
+      scrollSync.markApiScroll();
+      gridStore.setViewState({ scrollTop });
+    },
     columnVirtualizer,
     columnMeasurements,
     totalScrollWidth,
@@ -2639,7 +2651,7 @@ export function useGridShell<T extends object>({
   const toggleDetailRowFromKeyboard = useCallback(
     (cell: CellCoord): boolean => {
       const row = rowModel.getRow(cell.row);
-      if (row === undefined) {
+      if (row === undefined || !detailDrawable) {
         return false;
       }
       const rowKey = rowModel.getRowKey(cell.row) ?? cell.row;
@@ -2650,7 +2662,7 @@ export function useGridShell<T extends object>({
       toggleDetailRowAt(rowKey, cell.row);
       return true;
     },
-    [rowModel, detailIsExpandable, toggleDetailRowAt],
+    [rowModel, detailIsExpandable, toggleDetailRowAt, detailDrawable],
   );
 
   // 追加(段階 2 C-N2): 展開行のカードと Tab の順番です。最終列の Tab は、その行のカードが開いていればカードの最初の要素へ、
@@ -3566,9 +3578,9 @@ export function useGridShell<T extends object>({
         const detail: CellDetailContext | undefined = detailRowEnabled
           ? {
               expanded: expandedDetailRowKeys.has(rowKey),
-              expandable: detailIsExpandable
-                ? detailIsExpandable(row, { rowKey, sourceRowIndex })
-                : true,
+              // 変更(1.0.1 / AP-26): 行が多すぎて展開行を描けない間は false(トグルを出さない)。
+              expandable:
+                detailDrawable && (detailIsExpandable ? detailIsExpandable(row, { rowKey, sourceRowIndex }) : true),
               toggle: () => toggleDetailRowAt(rowKey, rowIndex),
               setExpanded: (expanded) =>
                 setDetailRowExpandedAt(rowKey, rowIndex, expanded),
@@ -3704,6 +3716,7 @@ export function useGridShell<T extends object>({
       detailRowEnabled,
       expandedDetailRowKeys,
       detailIsExpandable,
+      detailDrawable,
       toggleDetailRowAt,
       setDetailRowExpandedAt,
       renderRowDragHandleCell,

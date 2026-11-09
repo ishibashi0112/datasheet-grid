@@ -172,6 +172,20 @@ export function ColumnMenuPopover({
   // 列の固定のサブメニューも同じトークンの既定値を持つ要素(.ssg-menu-panel)なので、外側のメニューからは継承されません。
   const pinSubmenuRef = useRef<HTMLDivElement>(null);
   usePortalTokens(pinSubmenuRef, isOpen && layout !== null && openSubmenuKey === PIN_SUBMENU_KEY, themeClassName);
+  // 追加(1.0.1 / 2026-11-09 実アプリの総点検 AP-31): キーボード(→ / Enter / Space)で開いたときは小メニューの先頭の項目へ
+  //   フォーカスを移します(開いた後の描画で)。← で閉じて「列の固定」へ戻ります。
+  const pinButtonRef = useRef<HTMLButtonElement>(null);
+  const focusPinSubmenuOnOpen = useRef(false);
+  const focusFirstPinItem = () => {
+    pinSubmenuRef.current?.querySelector<HTMLElement>('.ssg-menu-item:not(:disabled)')?.focus();
+  };
+  useEffect(() => {
+    if (openSubmenuKey !== PIN_SUBMENU_KEY || !focusPinSubmenuOnOpen.current) {
+      return;
+    }
+    focusPinSubmenuOnOpen.current = false;
+    focusFirstPinItem();
+  }, [openSubmenuKey]);
 
   if (!isOpen || !layout) {
     return null;
@@ -453,17 +467,44 @@ export function ColumnMenuPopover({
           outside-pointerdown 判定(contains)にもそのまま含まれます。 */}
       <div className="ssg-menu-submenu-anchor">
         <button
+          ref={pinButtonRef}
           type="button"
-          onPointerEnter={() => {
+          aria-haspopup="menu"
+          aria-expanded={isPinSubmenuOpen}
+          onPointerEnter={(event) => {
             // 変更(13-B1): AG Grid と同様、hover でこの項目のサブメニューを開きます
             //             (他のサブメニューが開いていれば置き換わります)。
+            // 変更(1.0.1 / AP-31): マウスのときだけ。タッチでは押すと pointerenter が先に来て開き、続く click の
+            //   トグルで閉じていた(iPad)。スマホでは開いた小メニューが指の下に重なり、click がその項目を選んでいた。
+            if (event.pointerType === 'mouse') {
+              setOpenSubmenuKey(PIN_SUBMENU_KEY);
+            }
+          }}
+          onClick={(event) => {
+            // 変更(13-B1): クリックでも開けるようにします(タッチ環境向け)。
+            // 変更(1.0.1 / AP-31): トグルではなく開くだけにしました(マウスではホバーで開いた後のクリックで閉じ、紛らわしかった)。
+            //   閉じるのは別の項目へのホバー・← ・メニューを閉じたとき。キーボード(Enter / Space = detail 0)では先頭の項目へ。
+            if (event.detail === 0) {
+              if (isPinSubmenuOpen) {
+                focusFirstPinItem();
+              } else {
+                focusPinSubmenuOnOpen.current = true;
+              }
+            }
             setOpenSubmenuKey(PIN_SUBMENU_KEY);
           }}
-          onClick={() => {
-            // 変更(13-B1): クリックでもトグルできるようにします(タッチ環境向け)。
-            setOpenSubmenuKey((current) =>
-              current === PIN_SUBMENU_KEY ? null : PIN_SUBMENU_KEY,
-            );
+          onKeyDown={(event) => {
+            // 追加(1.0.1 / AP-31): → で小メニューを開いて先頭の項目へ。
+            if (event.key !== 'ArrowRight') {
+              return;
+            }
+            event.preventDefault();
+            if (isPinSubmenuOpen) {
+              focusFirstPinItem();
+            } else {
+              focusPinSubmenuOnOpen.current = true;
+              setOpenSubmenuKey(PIN_SUBMENU_KEY);
+            }
           }}
           className={cx(
             'ssg-menu-item',
@@ -488,6 +529,15 @@ export function ColumnMenuPopover({
               slots?.popover?.className,
             )}
             style={{ ...slots?.popover?.style, ...submenuStyle }}
+            onKeyDown={(event) => {
+              // 追加(1.0.1 / AP-31): ← で小メニューを閉じて「列の固定」へ戻ります。
+              if (event.key !== 'ArrowLeft') {
+                return;
+              }
+              event.preventDefault();
+              setOpenSubmenuKey(null);
+              pinButtonRef.current?.focus();
+            }}
           >
             {PINNED_ITEMS.map((item) => {
               const isSelected = pinned === item.value;

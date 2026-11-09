@@ -219,8 +219,74 @@ export type PaneLayoutResolution<T> = {
 const sumResolvedWidths = <T,>(items: PaneSourceColumn<T>[], columnWidths: Record<string, number>): number =>
   items.reduce((acc, { column }) => acc + (columnWidths[column.key] ?? column.width), 0);
 
+// 追加(1.0.1 / 2026-11-09 実アプリの総点検 AP-23): 固定列が入りきらないときに、表示の上だけ固定を外します。
+//   固定列(行番号の列を含む)の合計がグリッドより広いと、右の固定列が左の固定列に重なり、中央の列は横にスクロールしても
+//   見えなかった(スマホの幅など)。中央に min(幅, max(120px, 幅の 1/4)) を残せるまで、右の固定列の内側(左端)から、次に
+//   左の固定列の内側(右端)から順に中央へ回します。列の並び(orderedColumns の index)は変わりません(内側から外すので、
+//   左の末尾が中央の先頭へ、右の先頭が中央の末尾へ移るだけ)。columns の pinned は変えず、幅が戻れば固定に戻ります。
+//   行ドラッグの掴み手と展開行のトグルの列(幅の小さな合成列)は外しません。
+export const MIN_CENTER_PANE_WIDTH = 120;
+const MIN_CENTER_PANE_RATIO = 0.25;
+const PIN_OVERFLOW_KEY_SEPARATOR = '\u0000';
+
+export const resolvePinnedOverflowKey = <T,>(
+  source: PaneSourceColumns<T>,
+  columnWidths: Record<string, number>,
+  viewportWidth: number,
+  rowHeaderWidth: number,
+): string => {
+  if (viewportWidth <= 0 || (source.left.length === 0 && source.right.length === 0)) {
+    return '';
+  }
+  const widthOf = ({ column }: PaneSourceColumn<T>) => columnWidths[column.key] ?? column.width;
+  const budget = viewportWidth - Math.min(viewportWidth, Math.max(MIN_CENTER_PANE_WIDTH, viewportWidth * MIN_CENTER_PANE_RATIO));
+  let total = rowHeaderWidth + sumResolvedWidths(source.left, columnWidths) + sumResolvedWidths(source.right, columnWidths);
+  if (total <= budget) {
+    return '';
+  }
+  const demoted: string[] = [];
+  for (const item of source.right) {
+    if (total <= budget) {
+      break;
+    }
+    demoted.push(item.column.key);
+    total -= widthOf(item);
+  }
+  for (let index = source.left.length - 1; index >= 0 && total > budget; index -= 1) {
+    const item = source.left[index];
+    if (item.column.key === ROW_DRAG_HANDLE_COLUMN_KEY || item.column.key === DETAIL_TOGGLE_COLUMN_KEY) {
+      break;
+    }
+    demoted.push(item.column.key);
+    total -= widthOf(item);
+  }
+  return demoted.join(PIN_OVERFLOW_KEY_SEPARATOR);
+};
+
+const applyPinnedOverflow = <T,>(source: PaneSourceColumns<T>, overflowKey: string): PaneSourceColumns<T> => {
+  if (overflowKey === '') {
+    return source;
+  }
+  const demoted = new Set(overflowKey.split(PIN_OVERFLOW_KEY_SEPARATOR));
+  const unpin = ({ column, logicalIndex }: PaneSourceColumn<T>): PaneSourceColumn<T> => ({
+    column: { ...column, pinned: undefined },
+    logicalIndex,
+  });
+  return {
+    left: source.left.filter(({ column }) => !demoted.has(column.key)),
+    center: [
+      ...source.left.filter(({ column }) => demoted.has(column.key)).map(unpin),
+      ...source.center,
+      ...source.right.filter(({ column }) => demoted.has(column.key)).map(unpin),
+    ],
+    right: source.right.filter(({ column }) => !demoted.has(column.key)),
+  };
+};
+
 export const createPaneLayoutResolver = <T,>() => {
-  const memoSource = createMemo((orderedColumns: GridColumn<T>[]) => splitOrderedColumnsByPane(orderedColumns));
+  const memoSplit = createMemo((orderedColumns: GridColumn<T>[]) => splitOrderedColumnsByPane(orderedColumns));
+  // 追加(1.0.1 / AP-23): 入りきらない固定列を中央へ回した列ソース(外す列が変わらない限り同じ参照)。
+  const memoSource = createMemo(applyPinnedOverflow<T>);
   const memoCenterColumns = createMemo((center: PaneSourceColumn<T>[]) => center.map(({ column }) => column));
   const memoHasFlex = createMemo((centerColumns: GridColumn<T>[]) => centerColumns.some(isFlexingColumn));
   const memoFlexWidths = createMemo(
@@ -259,7 +325,11 @@ export const createPaneLayoutResolver = <T,>() => {
 
   return (inputs: PaneLayoutInputs<T>): PaneLayoutResolution<T> => {
     const { orderedColumns, columnWidths, viewportWidth, rowHeaderWidth } = inputs;
-    const paneSourceColumns = memoSource(orderedColumns);
+    const splitColumns = memoSplit(orderedColumns);
+    const paneSourceColumns = memoSource(
+      splitColumns,
+      resolvePinnedOverflowKey(splitColumns, columnWidths, viewportWidth, rowHeaderWidth),
+    );
 
     // center 列の flex: 「利用可能幅 − 固定列合計」を比率配分します。左右ペインは pinned(= flex 非対象)なので
     //   center 列幅に依存せず先に確定でき、循環しません。
