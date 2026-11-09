@@ -48,6 +48,11 @@ jobs:
       - name: Check examples
         run: pnpm run examples:check
 
+      # 追加(1.0 の準備): 公開型の型テスト。pack した d.ts を利用側の形で TypeScript の下限 / リポジトリの版 / 最新と
+      #   React 18 / 19 の型で tsc にかけ、d.ts を出すライブラリの形で core の内部のパスを指さないかも確かめる。
+      - name: Check public types
+        run: pnpm run types:check
+
       # 追加(audit P-6): CLAUDE.md のゲート表にあるデモ app のビルドも CI で確認する(website は対象外)。
       - name: Build demo app
         run: pnpm exec vp build

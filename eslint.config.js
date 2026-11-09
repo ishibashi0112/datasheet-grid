@@ -93,4 +93,24 @@ export default defineConfig([
       'no-restricted-imports': ['error', { patterns: [CORE_SUBPATH_PATTERN] }],
     },
   },
+  // 追加(1.0 の準備): 公開型の型テスト(types:check が pack した tarball に対して tsc にかける)。型を確かめるための値と
+  //   export だけのファイルなので、Fast Refresh の規則と「型でしか使わない変数」の規則は外します。import は公開の入口だけ。
+  {
+    files: ['type-tests/**/*.{ts,tsx}'],
+    rules: {
+      'react-refresh/only-export-components': 'off',
+      '@typescript-eslint/no-unused-vars': 'off',
+      'no-restricted-imports': [
+        'error',
+        {
+          patterns: [
+            {
+              group: ['@ishibashi0112/spreadsheet-grid-core/*', '!@ishibashi0112/spreadsheet-grid-core/testing', '@ishibashi0112/*/dist/*'],
+              message: '型テストは公開の入口(React 版の . / lite / ai / locales/en / testing と core の . / testing)だけを import します。',
+            },
+          ],
+        },
+      ],
+    },
+  },
 ])
