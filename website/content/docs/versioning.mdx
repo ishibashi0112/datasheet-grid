@@ -43,8 +43,8 @@ export const companyFeatures = { ...standardFeatures, find: findFeature };
 export const CompanyGrid = createSpreadsheetGrid({ features: companyFeatures });
 ```
 
-- 出した d.ts には、React 版と core の入口(`@ishibashi0112/spreadsheet-grid` / `@ishibashi0112/spreadsheet-grid-core` など)の名前だけが書かれ、core の内部のパスは書かれません。0.64.0 までで作った d.ts には内部のパスが書かれていることがあるので、0.65.0 以降で作り直してください。
-- 列定義のように core の型が推論に出るものを export するときは、core(`@ishibashi0112/spreadsheet-grid-core`)も React 版と同じ版で依存(`dependencies` か `peerDependencies`)に入れてください。pnpm では、直接の依存に無いと型の名前を書けずに TS2883 になることがあります。
+- 出した d.ts には、React 版と core の入口(`@ishibashi0112/spreadsheet-grid` / `@ishibashi0112/spreadsheet-grid-core` など)の名前だけが書かれ、core の内部のパスは書かれません。0.64.0 までで作った d.ts には内部のパスが書かれていることがあるので、0.65.0 以降で作り直してください。これは React 版の入口から使うときの話です。core を直接使う(`createGridEngine` など)ライブラリの d.ts には、core の内部のパスが出ることがあります。
+- React 版と core は、同じ版で `peerDependencies` に入れてください(アプリと同じものを使うように)。機能の部品の型 `GridFeature<K>` は、React 版が 2 つ入ると同じ部品でも互いに渡せません。列定義のように core の型が推論に出るものは、pnpm では core が直接の依存に無いと型の名前を書けずにエラー(TS2742 / TS2883。番号は TypeScript の版で違います)になることがあります。
 
 ## 壊す変更
 
@@ -65,7 +65,7 @@ export const CompanyGrid = createSpreadsheetGrid({ features: companyFeatures });
 
 1.0 からは、消すものは消す前の minor で非推奨にして、次の major で消します。0.x の間も、できるときはこの手順を使います。
 
-1. 型に `@deprecated` の JSDoc を付ける(エディタで取り消し線が出ます)
+1. 型に `@deprecated` の JSDoc を付ける(prop やメソッドはエディタで取り消し線が出ます。`scope` の `'all'` のような値には出ないので、値は 3 の警告で知らせます)
 2. [API リファレンス](/docs/api/props)の行に「**非推奨**」と、消す版を書く
 3. 開発ビルドでだけ、使われたときに 1 回、console に警告を出す(本番のビルドでは出しません)
 4. CHANGELOG の「非推奨」の節に、代わりに使うものと一緒に書く

@@ -1,7 +1,8 @@
 // 追加(1.0 の準備): 公開型の型テストです。利用者が実際に読む d.ts(pack した tarball)を、利用側の形で tsc にかけます。
 //   src ではなく公開物を見るので、d.ts の書き出し方・exports の型の対応・core の内部のパスの漏れが分かります。
 //   - type-tests/src: 正しい書き方が通り、間違いが型エラーになる(@ts-expect-error)ことの検査。
-//   - type-tests/library と、すべての入口の値を推論のまま再公開する生成ファイル: d.ts を出すライブラリの形。
+//   - type-tests/library と、すべての入口の値(関数は呼び出した結果も)と公開型のプロパティを推論のまま再公開する
+//     生成ファイル: d.ts を出すライブラリの形。
 //     tsc が型に名前を付けられる(TS2883 / TS2742 にならない)こと、出した d.ts が core の内部のパス(/internal/)や
 //     dist のパスを指さないことを確かめる。portable.tsx は React 版だけに依存する形(pnpm で core を直接入れない)でも通す。
 //   - type-tests/cjs: CommonJS のファイルから nodenext で読む形。
@@ -48,7 +49,7 @@ const findLeaks = (dir) => {
         walk(path);
       } else if (entry.name.endsWith('.d.ts') || entry.name.endsWith('.d.cts')) {
         const text = readFileSync(path, 'utf8');
-        for (const match of text.matchAll(/(?:import\(|from )["']([^"']+)["']/g)) {
+        for (const match of text.matchAll(/(?:import\(|from |\/\/\/ <reference (?:types|path)=)["']([^"']+)["']/g)) {
           const specifier = match[1];
           if (/\/internal\/|\/dist\/|node_modules|\.pnpm/.test(specifier)) {
             leaks.push(`${relative(dir, path)}: ${specifier}`);
@@ -81,10 +82,14 @@ const runTsc = async (name, cwd, tscPath, config, { emitDir } = {}) => {
 };
 
 // すべての入口の値の export を、推論のまま再公開するファイルを作る(d.ts を出すライブラリの形)。
+//   変更(レビュー): 関数の宣言は d.ts で `typeof e0.X` と書かれて中身が展開されないので、呼び出した結果も再公開する。
+//   公開している型(型の別名 / interface)は、型引数を any にしてプロパティを 1 段たどった値も再公開する
+//   (/ai の GridAskOptions の columns が内部の束縛で書かれていたのを、これで見つけた)。
 const writeExportsFile = (projectDir, file) => {
   const stub = join(projectDir, 'library', '__entries.ts');
   writeFileSync(stub, ENTRIES.map((entry, i) => `import * as e${i} from '${REACT_PACKAGE}${entry}';\nexport { e${i} };`).join('\n'));
   const program = ts.createProgram([stub], {
+    lib: ['lib.es2022.d.ts', 'lib.dom.d.ts', 'lib.dom.iterable.d.ts'],
     module: ts.ModuleKind.ESNext,
     moduleResolution: ts.ModuleResolutionKind.Bundler,
     jsx: ts.JsxEmit.ReactJSX,
@@ -92,7 +97,17 @@ const writeExportsFile = (projectDir, file) => {
   });
   const checker = program.getTypeChecker();
   const source = program.getSourceFile(stub);
-  const lines = ['// check-types.mjs が作るファイルです(すべての入口の値を推論のまま再公開する)。'];
+  const lines = ['// check-types.mjs が作るファイルです(すべての入口の値と型を推論のまま再公開する)。'];
+  const counts = { values: 0, calls: 0, types: 0, properties: 0 };
+  const IDENTIFIER = /^[A-Za-z_$][\w$]*$/;
+  // オブジェクトの形の型だけをたどる(文字列のリテラルの和などは String のメソッドが出るだけなので見ない)。
+  //   配列は Array のメソッドが出るだけなので見ない(要素の型は、その型を公開していればそちらでたどる)。
+  const isObjectLike = (type) =>
+    type.isUnion()
+      ? type.types.every(isObjectLike)
+      : (type.flags & (ts.TypeFlags.Object | ts.TypeFlags.Intersection)) !== 0 &&
+        !checker.isArrayType(type) &&
+        !checker.isTupleType(type);
   source.statements.forEach((statement, i) => {
     if (!ts.isImportDeclaration(statement)) return;
     const moduleSymbol = checker.getSymbolAtLocation(statement.moduleSpecifier);
@@ -100,16 +115,48 @@ const writeExportsFile = (projectDir, file) => {
     const specifier = statement.moduleSpecifier.text;
     const index = i / 2;
     lines.push(`import * as e${index} from '${specifier}';`);
+    let entryValues = 0;
     for (const symbol of checker.getExportsOfModule(moduleSymbol)) {
       const target = symbol.flags & ts.SymbolFlags.Alias ? checker.getAliasedSymbol(symbol) : symbol;
+      const id = `e${index}_${symbol.name.replace(/[^A-Za-z0-9_]/g, '_')}`;
       if (target.flags & ts.SymbolFlags.Value) {
-        lines.push(`export const e${index}_${symbol.name.replace(/[^A-Za-z0-9_]/g, '_')} = e${index}.${symbol.name};`);
+        lines.push(`export const ${id} = e${index}.${symbol.name};`);
+        counts.values += 1;
+        entryValues += 1;
+        if (target.flags & ts.SymbolFlags.Function) {
+          lines.push(`export const ${id}__call = (...args: Parameters<typeof e${index}.${symbol.name}>) => e${index}.${symbol.name}(...args);`);
+          counts.calls += 1;
+        }
+      }
+      const typeDeclaration = target.declarations?.find(
+        (declaration) => ts.isTypeAliasDeclaration(declaration) || ts.isInterfaceDeclaration(declaration),
+      );
+      if (typeDeclaration !== undefined) {
+        const typeArguments = typeDeclaration.typeParameters?.map(() => 'any') ?? [];
+        const reference = `e${index}.${symbol.name}${typeArguments.length > 0 ? `<${typeArguments.join(', ')}>` : ''}`;
+        const declaredType = checker.getDeclaredTypeOfSymbol(target);
+        const properties = isObjectLike(declaredType)
+          ? checker.getPropertiesOfType(declaredType).filter((property) => IDENTIFIER.test(property.name))
+          : [];
+        if (properties.length > 0) {
+          lines.push(`declare const t_${id}: ${reference};`);
+          for (const property of properties) {
+            lines.push(`export const ${id}__${property.name} = t_${id}.${property.name};`);
+          }
+          counts.types += 1;
+          counts.properties += properties.length;
+        }
       }
     }
+    if (entryValues === 0) throw new Error(`入口 ${specifier} から値を 1 つも読めません(解決を確かめる)`);
   });
   rmSync(stub);
+  // 何も見ていないのに通る、を防ぐ下限(入口の公開物が大きく減ったら見直す)。
+  if (counts.values < 40 || counts.properties < 1000) {
+    throw new Error(`再公開した数が少なすぎます(値 ${counts.values} / プロパティ ${counts.properties})`);
+  }
   writeFileSync(join(projectDir, 'library', file), lines.join('\n'));
-  return lines.length - 1;
+  return counts;
 };
 
 const baseOptions = {
@@ -192,7 +239,10 @@ try {
   ]);
   const generated = writeExportsFile(npmDir, 'generatedExports.ts');
   cpSync(join(npmDir, 'library', 'generatedExports.ts'), join(pnpmDir, 'library', 'generatedExports.ts'));
-  console.log(`check-types: 入口 ${ENTRIES.length} つの値 ${generated} 個を再公開して確かめます`);
+  console.log(
+    `check-types: 入口 ${ENTRIES.length} つの値 ${generated.values} 個(関数の呼び出し ${generated.calls} 個)と、` +
+      `型 ${generated.types} 個のプロパティ ${generated.properties} 個を再公開して確かめます`,
+  );
 
   const tsc = (dir, pkg) => join(dir, 'node_modules', pkg, 'bin', 'tsc');
   const bundler = { ...baseOptions, module: 'ESNext', moduleResolution: 'bundler' };

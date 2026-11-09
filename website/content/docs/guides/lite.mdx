@@ -56,7 +56,7 @@ const Grid = createSpreadsheetGrid({
 });
 ```
 
-機能の組み合わせは変数にして export できます。社内の共通部品のパッケージなどで `declaration: true` のときも、型を注釈しなくてかまいません(0.65.0 から。0.64.0 までは型 `GridFeatures` の注釈が要りました)。注釈するなら `GridFeatures` です。部品を違うキーへ入れると型エラーになります。
+機能の組み合わせは変数にして export できます。社内の共通部品のパッケージなどで `declaration: true` のときも、型を注釈しなくてかまいません(0.65.0 から。0.64.0 までは型 `GridFeatures` の注釈が要り、注釈しないと TS2742 / TS2883 になりました)。注釈するなら `GridFeatures` です。部品を違うキーへ入れると型エラーになります。
 
 ```tsx
 import type { GridFeatures } from '@ishibashi0112/spreadsheet-grid/lite';

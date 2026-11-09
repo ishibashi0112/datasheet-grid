@@ -1,8 +1,9 @@
 // 追加(1.0 の準備): 非推奨の表(deprecation.ts の DEPRECATIONS)と、利用者に届く 4 か所が食い違わないことを検査します。
 //   - API リファレンス(API_REFERENCE.md と website の api/*.mdx): 「**非推奨**」で始まる説明の行が、表の名前と同じ集合で、
 //     消す版を書いている。印は「**非推奨**」に統一(「**@deprecated**」は使わない)。
-//   - JSDoc: jsdoc に書いた型 / フィールドに @deprecated がある(エディタが取り消し線で出す)。
-//   - CHANGELOG: 名前と「非推奨」を書いた行がある。
+//   - JSDoc: jsdoc に書いた型 / フィールドに @deprecated がある(prop やメソッドならエディタが取り消し線で出す。
+//     scope の 'all' のような値には出ないので、値は開発時の警告が頼り)。
+//   - CHANGELOG: 「### 非推奨」の節に名前を書いた行がある。
 //   - 版: 非推奨にした版 ≦ 今の版 < 消す版(今の版が消す版に届いたら、消し忘れ。bump-version.mjs も止める)。
 //   失敗したら、deprecation.ts の冒頭の手順どおりにそろえる。
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -16,7 +17,7 @@ import {
   DEPRECATIONS,
   formatDeprecationWarning,
   resetDeprecationWarningsForTest,
-  warnDeprecated,
+  warnDeprecation,
   type Deprecation,
   type DeprecationId,
 } from './deprecation';
@@ -97,9 +98,21 @@ describe('非推奨の表と、API リファレンス / JSDoc / CHANGELOG / 版'
     expect(hasDeprecatedJsdoc(entry.jsdoc), entry.jsdoc).toBe(true);
   });
 
-  it.each(entries)('%s: CHANGELOG に名前と「非推奨」を書いた行がある', (_id, entry) => {
-    const lines = changelog.split('\n').filter((line) => line.includes(entry.name) && line.includes('非推奨'));
+  it.each(entries)('%s: CHANGELOG の「### 非推奨」の節に名前を書いた行がある', (_id, entry) => {
+    let section = '';
+    const lines: string[] = [];
+    for (const line of changelog.split('\n')) {
+      if (line.startsWith('## ')) section = '';
+      else if (line.startsWith('### ')) section = line.trim();
+      else if (section === '### 非推奨' && line.includes(entry.name)) lines.push(line);
+    }
     expect(lines.length, entry.name).toBeGreaterThan(0);
+  });
+
+  it.each(entries)('%s: 警告の文に消す版と代わりが入る', (_id, entry) => {
+    const [ja, en] = formatDeprecationWarning(entry).split('\n');
+    expect(ja).toBe(`[spreadsheet-grid] 非推奨: ${entry.what.ja} は ${entry.removeIn} で消します。${entry.instead.ja}`);
+    expect(en).toBe(`[spreadsheet-grid] Deprecated: ${entry.what.en} will be removed in ${entry.removeIn}. ${entry.instead.en}`);
   });
 
   it.each(entries)('%s: 非推奨にした版 ≦ 今の版 < 消す版(届いたら消す)', (_id, entry) => {
@@ -108,7 +121,17 @@ describe('非推奨の表と、API リファレンス / JSDoc / CHANGELOG / 版'
   });
 });
 
-describe('warnDeprecated', () => {
+// 表の項目に頼らない形で確かめます(1.0.0 で表が空になっても仕組みのテストは残る)。
+describe('非推奨の警告', () => {
+  const sample: Deprecation = {
+    name: '`sampleProp`',
+    since: '0.1.0',
+    removeIn: '9.0.0',
+    jsdoc: 'SampleType.sampleProp',
+    what: { ja: 'prop `sampleProp`', en: 'The prop `sampleProp`' },
+    instead: { ja: '`newProp` を使ってください。', en: 'Use `newProp` instead.' },
+  };
+
   afterEach(() => {
     vi.restoreAllMocks();
     vi.unstubAllEnvs();
@@ -116,25 +139,24 @@ describe('warnDeprecated', () => {
   });
 
   it('日本語の行と英語の行の 2 行で、消す版と代わりを書く', () => {
-    const lines = formatDeprecationWarning('exportScopeAll').split('\n');
-    expect(lines).toEqual([
-      "[spreadsheet-grid] 非推奨: エクスポートの scope `'all'` は 1.0.0 で消します。`'view'` を使ってください(挙動は同じです)。",
-      "[spreadsheet-grid] Deprecated: The export scope `'all'` will be removed in 1.0.0. Use `'view'` instead (same behavior).",
+    expect(formatDeprecationWarning(sample).split('\n')).toEqual([
+      '[spreadsheet-grid] 非推奨: prop `sampleProp` は 9.0.0 で消します。`newProp` を使ってください。',
+      '[spreadsheet-grid] Deprecated: The prop `sampleProp` will be removed in 9.0.0. Use `newProp` instead.',
     ]);
   });
 
   it('1 つにつき 1 回だけ警告する', () => {
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
-    warnDeprecated('exportScopeAll');
-    warnDeprecated('exportScopeAll');
-    warnDeprecated('exportScopeVisible');
+    warnDeprecation('a', sample);
+    warnDeprecation('a', sample);
+    warnDeprecation('b', sample);
     expect(warn).toHaveBeenCalledTimes(2);
   });
 
   it('本番では警告しない', () => {
     vi.stubEnv('NODE_ENV', 'production');
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
-    warnDeprecated('exportScopeAll');
+    warnDeprecation('a', sample);
     expect(warn).not.toHaveBeenCalled();
   });
 });

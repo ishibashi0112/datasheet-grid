@@ -186,7 +186,7 @@ PASS / 実行した確認の数(SKIP は数に入れない)。
 
 ### 1.0 の準備の残り(2026-11-09。ユーザー判断「すべて推奨で進める」)
 
-**1. d.ts が core の内部のパスを参照する件。** 公開版 0.64.0 で、React 版の上にライブラリを作って d.ts を出すと、次の 3 つの形で内部のパスが出るか tsc がエラー TS2883 になることを再現した(名前で書いた型 `GridColumn<Row>` などは問題なし)。tsc は推論した型を、その型を宣言したモジュールか、同じ型を再公開しているモジュールのうちパスの段の少ないものの名前で書く(プログラムに無いモジュールは候補にならない)。
+**1. d.ts が core の内部のパスを参照する件。** 公開版 0.64.0 で、React 版の上にライブラリを作って d.ts を出すと、次の 3 つの形で内部のパスが出るか tsc がエラー TS2883 になることを再現した(TypeScript 5.6 では同じ状況が TS2742)(名前で書いた型 `GridColumn<Row>` などは問題なし)。tsc は推論した型を、その型を宣言したモジュールか、同じ型を再公開しているモジュールのうちパスの段の少ないものの名前で書く(プログラムに無いモジュールは候補にならない)。
 
 | 形 | 例 | npm(core が上に置かれる) | pnpm(core を直接入れていない) | 直し方(0.65.0) |
 | --- | --- | --- | --- | --- |
@@ -194,9 +194,10 @@ PASS / 実行した確認の数(SKIP は数に入れない)。
 | b. core から再公開している関数の戻り値 | `export const yen = numberFormatter({ ... })` | `…-core/internal/model/gridTypes.unbound` を参照 | TS2883 | `numberFormatter` の多重定義を `CellValueFormatterParams<T, F>`(gridTypes.core)で書き直し、型引数なしは行の型を問わない関数に。`restoreColumnsFromState` は `readonly` の配列も受けて要素の型のまま返す |
 | c. 公開型のプロパティを推論のまま公開 | `p.columns` / `column.editor` / `column.renderCell` / `p.labelRow` / `onCellClick` / バーのスロット | `…-core/internal/model/gridTypes.core` を参照 | TS2883 | React 版の `model/gridTypes.ts` の別名を core の入口(`import type * as Core from '@ishibashi0112/spreadsheet-grid-core'`)から取る。npm では d.ts が `import("@ishibashi0112/spreadsheet-grid-core").GridColumn<Row, ReactGridTypes>` になる。pnpm で core を直接入れていないときは TS2883 のままなので、「推論した型を公開するライブラリは core も同じ版で依存に入れる」とドキュメント(docs/versioning)に書いた |
 
+- 別視点のレビューで、`/ai` の公開型 `GridAskOptions<T>` の `columns` が内部の束縛(gridTypes.unbound)で書かれていて、`options.columns` を推論のまま export すると同じく内部のパスが出ることが分かった。core の入口から公開している `GridColumn<T, any>` で書くよう直し、`types:check` の生成ファイルに「公開型のプロパティを 1 段たどる」「関数の宣言は呼び出した結果も」を足して検出できるようにした(直す前の dist で落ちることを確認)。
 - 見送った案: React 版の入口から F つきの core の型を別名(`GridColumnOf<T, F>` など約 25 個)で出す(pnpm でも通るが公開の名前が増え、同じ型が 2 つの名前を持つ)/ api-extractor などで d.ts を入口ごとに束ねる(ビルドが大きく変わり、core と同じ型が 2 つ入る)/ ドキュメントに書くだけ(a のエラーは理由が分かりにくい)。
 
-**2. 公開型の型テスト。** ゲート `types:check`(`scripts/check-types.mjs` + `type-tests/`。build:lib の後、CI でも実行。約 25 秒)。pack した tarball を一時ディレクトリへ入れて利用側の形で tsc を回す: `type-tests/src`(正しい書き方が通り、間違いが `@ts-expect-error` で型エラーになる: 列定義とエディタ / 書式 / ラベル行の型ガード / ハンドル / `/lite` / `localeText` / `/ai` / `/testing`)、`type-tests/library`(d.ts を出すライブラリの形。すべての入口の値 46 個を推論のまま再公開する生成ファイルも含め、出した d.ts に `/internal/`・`/dist/`・`node_modules`・`.pnpm` のパスが無いこと)、`type-tests/cjs`(CommonJS から nodenext)。組み合わせは TypeScript 5.8.3(下限)/ リポジトリの版 / 7.0.2 × bundler と nodenext(npm + React 19 の型)と、pnpm + React 18 の型(core を直接入れない形で `library/portable.tsx` の d.ts)の 11 通り。同じスクリプトを 0.64.0 の tarball に向けると a の TS2883 と `@ts-expect-error` の未使用で落ちることを確認。
+**2. 公開型の型テスト。** ゲート `types:check`(`scripts/check-types.mjs` + `type-tests/`。build:lib の後、CI でも実行。約 25 秒)。pack した tarball を一時ディレクトリへ入れて利用側の形で tsc を回す: `type-tests/src`(正しい書き方が通り、間違いが `@ts-expect-error` で型エラーになる: 列定義とエディタ / 書式 / ラベル行の型ガード / ハンドル / `/lite` / `localeText` / `/ai` / `/testing`)、`type-tests/library`(d.ts を出すライブラリの形。すべての入口の値 41 個(関数の宣言 6 個は呼び出した結果も)と公開型 219 個のプロパティ約 1,900 個を推論のまま再公開する生成ファイルも含め、出した d.ts に `/internal/`・`/dist/`・`node_modules`・`.pnpm` のパスが無いこと)、`type-tests/cjs`(CommonJS から nodenext)。組み合わせは TypeScript 5.8.3(下限)/ リポジトリの版 / 7.0.2 × bundler と nodenext(npm + React 19 の型)と、pnpm + React 18 の型(core を直接入れない形で `library/portable.tsx` の d.ts)の 11 通り。同じスクリプトを 0.64.0 の tarball に向けると a の TS2883 と `@ts-expect-error` の未使用で落ちることを確認。
 - 実測(0.64.0): TypeScript 5.0 / 5.4 / 5.5 / 5.8 / 5.9 / 7.0 と React の型 18 / 19 で bundler と nodenext(ESM)は通る。CommonJS のファイルから nodenext で読むと 5.4 / 5.5 は TS1479、5.8 以上は通る。node10(`moduleResolution: node`)は `/lite` などのサブパスを解決できない(TypeScript 6 で非推奨)。対応は **TypeScript 5.8 以上**(bundler / nodenext)とし、README と docs/versioning に書き、「TypeScript の下限を上げる」を壊す変更に足した。
 - arethetypeswrong は入れなかった(出るのは CommonJS + node16 の Masquerading as ESM と node10 で、どちらも対応範囲の外か 5.8 以上で通る形。exports と型の対応はすべての入口を bundler / nodenext で読む検査で見ている)。
 

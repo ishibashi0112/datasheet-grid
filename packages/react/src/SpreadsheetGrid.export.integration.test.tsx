@@ -39,6 +39,8 @@ beforeAll(() => {
 
 afterEach(() => {
   cleanup();
+  // 追加(1.0 の準備): console.warn を黙らせたテストが途中で落ちても、後のテストへ持ち越さない。
+  vi.restoreAllMocks();
 });
 
 type Row = { id: number; name: string; qty: number };
@@ -136,7 +138,7 @@ describe('SpreadsheetGrid エクスポート scope(結合)', () => {
     expect(handle.exportCsv({ scope: 'visible' })).toBe(
       handle.exportCsv({ scope: 'rendered' }),
     );
-    warn.mockRestore();
+    expect(warn).toHaveBeenCalled();
   });
 
   it("'rendered' は描画ウィンドウのみを対象にする(ビュー全体とは独立の範囲)", () => {

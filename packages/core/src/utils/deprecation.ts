@@ -8,7 +8,8 @@
 //     1. ここに 1 つ足す(since = 非推奨にした版、removeIn = 消す版。1.0 からは次の major)。
 //     2. API_REFERENCE.md と website の API リファレンスの、その名前の行に「**非推奨**(removeIn で消します)」と書く。
 //        表から JSDoc を作る型(sync-api-jsdoc.mjs の対象)のフィールドなら、JSDoc の @deprecated は再生成で付く。
-//        それ以外は jsdoc に書いた型 / フィールドへ @deprecated を手で書く。
+//        それ以外は jsdoc に書いた型 / フィールドへ @deprecated を手で書く。prop やメソッドはエディタで取り消し線が出るが、
+//        値(scope の 'all' のような文字列)には出ないので、値の非推奨は開発時の警告が頼り。
 //     3. CHANGELOG の「## 未リリース」の「### 非推奨」に書く。
 //   deprecation.test.ts がこの表と API リファレンス(両方)・JSDoc・CHANGELOG を照らし合わせ、
 //   bump-version.mjs は removeIn 以上の版へ上げるときに、ここに残っていれば止めます(消し忘れの防止)。
@@ -53,22 +54,23 @@ export const DEPRECATIONS = {
 
 export type DeprecationId = keyof typeof DEPRECATIONS;
 
-const warned = new Set<DeprecationId>();
+const warned = new Set<string>();
 
-export const formatDeprecationWarning = (id: DeprecationId): string => {
-  const entry: Deprecation = DEPRECATIONS[id];
-  return (
-    `[spreadsheet-grid] 非推奨: ${entry.what.ja} は ${entry.removeIn} で消します。${entry.instead.ja}` +
-    `\n[spreadsheet-grid] Deprecated: ${entry.what.en} will be removed in ${entry.removeIn}. ${entry.instead.en}`
-  );
+export const formatDeprecationWarning = (entry: Deprecation): string =>
+  `[spreadsheet-grid] 非推奨: ${entry.what.ja} は ${entry.removeIn} で消します。${entry.instead.ja}` +
+  `\n[spreadsheet-grid] Deprecated: ${entry.what.en} will be removed in ${entry.removeIn}. ${entry.instead.en}`;
+
+// key と項目を直接受ける形です(表が空のときもテストで仕組みを確かめられるように)。ふだんは warnDeprecated を使います。
+export const warnDeprecation = (key: string, entry: Deprecation): void => {
+  if (process.env.NODE_ENV === 'production' || warned.has(key)) {
+    return;
+  }
+  warned.add(key);
+  console.warn(formatDeprecationWarning(entry));
 };
 
 export const warnDeprecated = (id: DeprecationId): void => {
-  if (process.env.NODE_ENV === 'production' || warned.has(id)) {
-    return;
-  }
-  warned.add(id);
-  console.warn(formatDeprecationWarning(id));
+  warnDeprecation(id, DEPRECATIONS[id]);
 };
 
 // テスト用: 「1 回だけ」の記録を消します。
