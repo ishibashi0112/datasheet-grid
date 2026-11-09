@@ -30,27 +30,16 @@ export type Deprecation = {
   instead: { ja: string; en: string };
 };
 
-export const DEPRECATIONS = {
-  exportScopeAll: {
-    name: "`'all'`",
-    since: '0.9.0',
-    removeIn: '1.0.0',
-    jsdoc: 'DeprecatedCsvExportScope',
-    what: { ja: "エクスポートの scope `'all'`", en: "The export scope `'all'`" },
-    instead: { ja: "`'view'` を使ってください(挙動は同じです)。", en: "Use `'view'` instead (same behavior)." },
-  },
-  exportScopeVisible: {
-    name: "`'visible'`",
-    since: '0.9.0',
-    removeIn: '1.0.0',
-    jsdoc: 'DeprecatedCsvExportScope',
-    what: { ja: "エクスポートの scope `'visible'`", en: "The export scope `'visible'`" },
-    instead: {
-      ja: "`'rendered'` を使ってください(挙動は同じです。フィルターで見えている行全体なら `'view'`)。",
-      en: "Use `'rendered'` instead (same behavior; for all rows that pass the filters, use `'view'`).",
-    },
-  },
-} satisfies Record<string, Deprecation>;
+// 今は空です(1.0.0 で、0.9.0 から非推奨だったエクスポートの scope 'all' / 'visible' を消しました)。項目の書き方(架空の例):
+//   samplePropRename: {
+//     name: '`sampleProp`',
+//     since: '1.3.0',
+//     removeIn: '2.0.0',
+//     jsdoc: 'SpreadsheetGridProps.sampleProp',
+//     what: { ja: 'prop `sampleProp`', en: 'The prop `sampleProp`' },
+//     instead: { ja: '`newProp` を使ってください。', en: 'Use `newProp` instead.' },
+//   },
+export const DEPRECATIONS = {} satisfies Record<string, Deprecation>;
 
 export type DeprecationId = keyof typeof DEPRECATIONS;
 

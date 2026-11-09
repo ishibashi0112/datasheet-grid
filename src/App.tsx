@@ -1195,7 +1195,7 @@ function App() {
             type="button"
             onClick={() =>
               // 変更(export-scope 再編): 旧 'visible' は「描画中の行(仮想化ウィンドウ)」の意のため
-              //   'rendered' へ改名(旧名もエイリアスとして動作)。フィルター後の全行は 'view'。
+              //   'rendered' へ改名(旧名は 1.0.0 で削除)。フィルター後の全行は 'view'。
               gridRef.current?.downloadCsv('rendered.csv', { scope: 'rendered' })
             }
             style={modeButtonStyle(false)}

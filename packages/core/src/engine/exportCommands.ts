@@ -18,7 +18,6 @@ import { createGroupSubtotalLineGetter, type GroupSubtotalLine } from '../logic/
 import { serializeRowsToCsv, type LabelExportLine } from '../logic/exportCsv';
 import { buildGridExportData } from '../logic/exportData';
 import { buildTotalRowExportLine } from '../logic/totalRow';
-import { normalizeExportScope } from '../logic/exportScope';
 import type { GridApiArgs } from './gridApi';
 import type { GroupingFeature } from './features';
 
@@ -57,6 +56,21 @@ type ExportResolution<T> = {
 // エクスポート用の「全展開」開閉状態(行グルーピングの 'view' 出力で使用)。
 const NO_COLLAPSED_GROUPS: ReadonlySet<string> = new Set();
 
+// 追加(1.0.0): scope の値を 4 つに限ります。型を通さずに渡された値(JavaScript からの呼び出しや、保存した設定。
+//   1.0.0 で消した 'all' / 'visible' など)は、分岐ごとにばらばらに扱われないよう 'view' として扱い、開発時だけ警告します。
+const toKnownExportScope = (scope: CsvExportScope | undefined): CsvExportScope => {
+  if (scope === undefined || scope === 'view' || scope === 'raw' || scope === 'rendered' || scope === 'selection') {
+    return scope ?? 'view';
+  }
+  if (process.env.NODE_ENV !== 'production') {
+    console.warn(
+      `SpreadsheetGrid: エクスポートの scope '${String(scope)}' はありません。'view' として扱います('all' / 'visible' は 1.0.0 で消しました。'view' / 'rendered' を使ってください)。\n` +
+        `SpreadsheetGrid: The export scope '${String(scope)}' does not exist, so it is treated as 'view' ('all' / 'visible' were removed in 1.0.0; use 'view' / 'rendered').`,
+    );
+  }
+  return 'view';
+};
+
 export const createExportCommands = <T,>(
   getArgs: () => GridApiArgs<T> | null,
   // 機能セットの行グルーピング(小計の行を出力する行だけで組み直すときの buildGroupTree。/lite で行グルーピングの
@@ -64,7 +78,7 @@ export const createExportCommands = <T,>(
   //   使わない構成にも集計の処理が入るため、機能セットから受け取ります)。
   grouping?: GroupingFeature,
 ): ExportCommands<T> => {
-  // scope('view' / 'raw' / 'rendered' / 'selection' + 後方互換 'all' / 'visible')から、出力対象の行アクセサ /
+  // scope('view' / 'raw' / 'rendered' / 'selection')から、出力対象の行アクセサ /
   //   行レンジ [startRow, endRow) / 列集合を解決します(exportCsv と getExportData で共有)。
   //   scope='selection' で選択が無いときは null。
   const resolveExportScope = (
@@ -114,8 +128,7 @@ export const createExportCommands = <T,>(
     const groupColumns = s.groupTree ? collectGroupingColumns(s.columns).groupColumns : [];
     const withGroupColumns = (columns: GridColumn<T>[]): GridColumn<T>[] =>
       groupColumns.length > 0 ? [...groupColumns, ...columns.filter((column) => !groupColumns.includes(column))] : columns;
-    const normalized = normalizeExportScope(scope);
-    if (normalized === 'raw') {
+    if (scope === 'raw') {
       // serverSide はソース行配列を持たない(未ロード行が存在する)ため 'view' 相当へフォールバックし警告。
       if (s.isServerSide) {
         // 変更(英語対応): 開発時だけ警告します(本番の JS から文を除く)。
@@ -149,7 +162,7 @@ export const createExportCommands = <T,>(
             : undefined,
       };
     }
-    if (normalized === 'rendered') {
+    if (scope === 'rendered') {
       return {
         getRow: getViewRow,
         startRow: s.windowFirstRow,
@@ -159,7 +172,7 @@ export const createExportCommands = <T,>(
         getLabelLine: getViewLabelLine,
       };
     }
-    if (normalized === 'selection') {
+    if (scope === 'selection') {
       const sel = s.uiState.selection;
       if (!sel) {
         return null;
@@ -275,7 +288,7 @@ export const createExportCommands = <T,>(
   const stripSyntheticColumns = (exportColumns: GridColumn<T>[]): GridColumn<T>[] =>
     exportColumns.filter((column) => !isSyntheticColumnKey(column.key));
 
-  // 追加(合計行 3A): 合計行の出力行です。includeTotalRow かつ scope 'view'(後方互換 'all' を含む)で、合計行が
+  // 追加(合計行 3A): 合計行の出力行です。includeTotalRow かつ scope 'view' で、合計行が
   //   有効なときだけ。'raw'(フィルター無視)/ 'rendered' / 'selection' は合計の対象行と一致しないため出しません。
   const resolveTotalLine = (
     scope: CsvExportScope,
@@ -283,7 +296,7 @@ export const createExportCommands = <T,>(
     exportColumns: GridColumn<T>[],
   ): unknown[] | undefined => {
     const totalRowExport = getArgs()?.totalRowExport;
-    if (includeTotalRow !== true || !totalRowExport || normalizeExportScope(scope) !== 'view') {
+    if (includeTotalRow !== true || !totalRowExport || scope !== 'view') {
       return undefined;
     }
     return buildTotalRowExportLine(exportColumns, totalRowExport.cells, totalRowExport.label);
@@ -300,7 +313,7 @@ export const createExportCommands = <T,>(
       : undefined;
 
   const buildCsv = (options?: CsvExportOptions): string => {
-    const scope = options?.scope ?? 'view';
+    const scope = toKnownExportScope(options?.scope);
     const resolved = resolveExportScope(scope, options?.includeLabelRows === true, options?.includeGroupRows === true);
     if (!resolved) {
       return options?.bom ? '\uFEFF' : '';
@@ -323,7 +336,7 @@ export const createExportCommands = <T,>(
   };
 
   const buildExportData = (options?: GridExportOptions): GridExportData => {
-    const scope = options?.scope ?? 'view';
+    const scope = toKnownExportScope(options?.scope);
     const resolved = resolveExportScope(scope, options?.includeLabelRows === true, options?.includeGroupRows === true);
     if (!resolved) {
       return { columns: [], rows: [] };

@@ -7,7 +7,7 @@ import { createExportCommands } from './exportCommands';
 
 // 変更(差し込み式 段階 2): エクスポートは機能セットの export から(全部入りと同じ構成でテストする)。
 const withExport = { export: { createExportCommands } };
-import type { GridColumn, RowModel } from '../model/gridTypes.unbound';
+import type { CsvExportScope, GridColumn, RowModel } from '../model/gridTypes.unbound';
 import type { GridUiAction } from '../model/gridActions';
 import { createInitialGridUiState } from '../model/gridReducer';
 import { createUniformRowMetrics } from '../logic/verticalGeometry';
@@ -236,7 +236,28 @@ describe('createGridApi', () => {
     expect(api.handle.getExportData({ scope: 'rendered' }).rows).toHaveLength(3);
   });
 
-  // 追加(合計行 3A): includeTotalRow は scope 'view'(と後方互換 'all')で合計行が有効なときだけ末尾に 1 行出す。
+  // 追加(1.0.0): 4 つ以外の scope(型を通さずに渡された、1.0.0 で消した 'all' / 'visible' など)は、合計行も含めて
+  //   'view' と同じに扱い、開発時に警告する。
+  it("4 つ以外の scope は 'view' として扱い、開発時に警告する", () => {
+    const api = createGridApi<Row>(withExport);
+    const cells = new Map([['id', { value: 6, kind: 'sum' as const }]]);
+    const { args } = makeArgs({ totalRowExport: { cells, label: '合計' } });
+    api.update(args);
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    try {
+      for (const scope of ['all', 'visible'] as unknown as CsvExportScope[]) {
+        expect(api.handle.exportCsv({ scope, includeTotalRow: true })).toBe('ID,名前\r\n1,a\r\n2,b\r\n3,c\r\n6,');
+        expect(api.handle.getExportData({ scope })).toEqual(api.handle.getExportData({ scope: 'view' }));
+      }
+      expect(warn).toHaveBeenCalledTimes(4);
+      expect(warn.mock.calls[0]?.[0]).toContain("scope 'all' はありません。'view' として扱います");
+      expect(warn.mock.calls[2]?.[0]).toContain("The export scope 'visible' does not exist");
+    } finally {
+      warn.mockRestore();
+    }
+  });
+
+  // 追加(合計行 3A): includeTotalRow は scope 'view' で合計行が有効なときだけ末尾に 1 行出す。
   it('includeTotalRow: view のときだけ合計行を末尾に出し、rowKinds に total を付ける', () => {
     const api = createGridApi<Row>(withExport);
     const cells = new Map([['id', { value: 6, kind: 'sum' as const }]]);

@@ -145,7 +145,6 @@ import {
   moveArrayItem,
 } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/rowReorder';
 // 追加(imperative API #1): CSV エクスポート / スクロール先算出の純ロジックです。
-// 追加(export-scope 再編): 旧 'all' / 'visible' エイリアスの正規化に使います。
 // 追加(行選択): チェックボックス行選択の純ロジックです。
 import {
   getSelectAllState,

@@ -31,6 +31,11 @@ export function Inventory({ rows }: { rows: Row[] }) {
     assertType<Equal<typeof active, CellCoord | null>>();
     const data = handle.getExportData({ scope: 'view' });
     assertType<Equal<typeof data, GridExportData>>();
+    handle.exportCsv({ scope: 'rendered' });
+    // @ts-expect-error 1.0.0 で消した scope('view' を使う)
+    handle.exportCsv({ scope: 'all' });
+    // @ts-expect-error 1.0.0 で消した scope('rendered' を使う)
+    handle.getExportData({ scope: 'visible' });
     const rowsSelected = handle.getSelectedRowData();
     assertType<Equal<typeof rowsSelected, Row[]>>();
     handle.scrollToRow(0, { align: 'center' });

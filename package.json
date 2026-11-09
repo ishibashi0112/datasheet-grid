@@ -10,6 +10,7 @@
     "build": "tsc -b && vp build",
     "build:lib": "pnpm -r --filter \"./packages/*\" run build:lib",
     "build:types": "pnpm -r --filter \"./packages/*\" run build:types",
+    "version:major": "node scripts/bump-version.mjs major",
     "version:minor": "node scripts/bump-version.mjs minor",
     "version:patch": "node scripts/bump-version.mjs patch",
     "publish:all": "pnpm -r publish --access public",
