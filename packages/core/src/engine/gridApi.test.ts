@@ -236,7 +236,7 @@ describe('createGridApi', () => {
     expect(api.handle.getExportData({ scope: 'rendered' }).rows).toHaveLength(3);
   });
 
-  // 追加(合計行 3A): includeTotalRow は scope 'view'(と後方互換 'all')で合計行が有効なときだけ末尾に 1 行出す。
+  // 追加(合計行 3A): includeTotalRow は scope 'view' で合計行が有効なときだけ末尾に 1 行出す。
   it('includeTotalRow: view のときだけ合計行を末尾に出し、rowKinds に total を付ける', () => {
     const api = createGridApi<Row>(withExport);
     const cells = new Map([['id', { value: 6, kind: 'sum' as const }]]);

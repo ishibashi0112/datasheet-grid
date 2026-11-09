@@ -1,14 +1,13 @@
-// エクスポート scope('view' / 'raw' / 'rendered' / 'selection' + 後方互換 'all' / 'visible')の
-//   「配線」を実行検証する結合テストです。純ロジック(logic/exportScope.test.ts)は正規化のみを固定し、
-//   ここでは実コンポーネントを通して SS2603 のバグ報告(「'visible' が描画中の行だけを返し、出力が
+// エクスポート scope('view' / 'raw' / 'rendered' / 'selection')の
+//   「配線」を実行検証する結合テストです。
+//   実コンポーネントを通して SS2603 のバグ報告(旧 'visible'(1.0.0 で削除)が描画中の行だけを返し、出力が
 //   スクロール位置に依存して変わる」)の再発防止を確認します:
 //   - 'view'(既定)がフィルター/ソート適用後の「全」ビュー行を返す(描画ウィンドウ非依存。jsdom は
 //     viewport 実測 0 で描画ウィンドウが極小のため、全行が返ること自体がウィンドウ非依存の証明になる)。
 //   - 'raw' がフィルターもソートも無視した全ソース行を rows 配列順で返す。
-//   - 旧 'all' / 'visible' が新 'view' / 'rendered' と厳密に同一の結果を返す(後方互換)。
 //   既存の結合テストと同じく DOM を要するため、本ファイルは jsdom で回します。
 // @vitest-environment jsdom
-import { describe, it, expect, beforeAll, afterEach, vi } from 'vitest';
+import { describe, it, expect, beforeAll, afterEach } from 'vitest';
 import { render, cleanup, act } from '@testing-library/react';
 import { createRef } from 'react';
 
@@ -39,8 +38,6 @@ beforeAll(() => {
 
 afterEach(() => {
   cleanup();
-  // 追加(1.0 の準備): console.warn を黙らせたテストが途中で落ちても、後のテストへ持ち越さない。
-  vi.restoreAllMocks();
 });
 
 type Row = { id: number; name: string; qty: number };
@@ -118,27 +115,6 @@ describe('SpreadsheetGrid エクスポート scope(結合)', () => {
 
     // 列は可視列・固定順に従います(本テストでは宣言順 = ID / Name / Qty)。
     expect(raw.columns.map((c) => c.key)).toEqual(['id', 'name', 'qty']);
-  });
-
-  it("後方互換: 'all' は 'view' と、'visible' は 'rendered' と厳密に同一の結果を返す", () => {
-    const handle = setupFilteredSorted();
-
-    // deprecated エイリアスの実行時挙動は新名称と完全同一(既存利用者を壊さない)。
-    // 変更(1.0 の準備): 開発時の非推奨の警告(core の logic/exportScope.test.ts で検査)は黙らせます。
-    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
-    expect(handle.getExportData({ scope: 'all' })).toEqual(
-      handle.getExportData({ scope: 'view' }),
-    );
-    expect(handle.getExportData({ scope: 'visible' })).toEqual(
-      handle.getExportData({ scope: 'rendered' }),
-    );
-    expect(handle.exportCsv({ scope: 'all' })).toBe(
-      handle.exportCsv({ scope: 'view' }),
-    );
-    expect(handle.exportCsv({ scope: 'visible' })).toBe(
-      handle.exportCsv({ scope: 'rendered' }),
-    );
-    expect(warn).toHaveBeenCalled();
   });
 
   it("'rendered' は描画ウィンドウのみを対象にする(ビュー全体とは独立の範囲)", () => {

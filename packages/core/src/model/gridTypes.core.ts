@@ -2482,8 +2482,7 @@ export type GridScrollEventParams = {
 // 変更(export-scope 再編): エクスポートの対象範囲を「意味論ベース」の 4 値へ再編します。実利用で
 //   「'visible' = フィルターで見えている行」という誤読が発生した(実体は仮想化ウィンドウ = 描画中の
 //   行のため、出力行数がスクロール位置に依存して変わる)ことを受け、仮想化の内部事情が名前に漏れない
-//   語彙に改めました。旧 'all' / 'visible' は後方互換エイリアスとして受け付け続けます(実行時挙動は
-//   従来と完全同一)。正規化は logic/exportScope.ts の normalizeExportScope が担います。
+//   語彙に改めました。旧 'all' / 'visible' は 0.9.0 から非推奨の後方互換エイリアスで、1.0.0 で消しました。
 /**
  * エクスポートの対象範囲です(exportCsv / downloadCsv / getExportData で共通)。
  * - `'view'`     : ビュー行全体(フィルター/ソート/列可視・固定順を反映)。**既定値**。スクロール位置に依存しません。
@@ -2492,19 +2491,7 @@ export type GridScrollEventParams = {
  * - `'rendered'` : 仮想化ウィンドウ(いま描画中の行のみ・オーバースキャン込み)。結果はスクロール位置に依存します。
  * - `'selection'`: 現在の選択範囲(セル/行/列)。選択なしのときは空(CSV は空文字 / データは空配列)を返します。
  */
-export type CsvExportScope =
-  | 'view'
-  | 'raw'
-  | 'rendered'
-  | 'selection'
-  | DeprecatedCsvExportScope;
-
-/**
- * 後方互換エイリアスです(実行時挙動は新名称と完全同一): `'all'` → `'view'` / `'visible'` → `'rendered'`。
- * @deprecated `'visible'` は「フィルターで見えている行」ではなく「描画中の行(仮想化ウィンドウ)」を
- *   指すため誤読のもとになります。新規コードでは `'view'` / `'rendered'` を使用してください。
- */
-export type DeprecatedCsvExportScope = 'all' | 'visible';
+export type CsvExportScope = 'view' | 'raw' | 'rendered' | 'selection';
 
 // 追加(imperative API #1): CSV エクスポートのオプションです。
 export type CsvExportOptions = {

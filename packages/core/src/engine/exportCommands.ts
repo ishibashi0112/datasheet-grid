@@ -18,7 +18,6 @@ import { createGroupSubtotalLineGetter, type GroupSubtotalLine } from '../logic/
 import { serializeRowsToCsv, type LabelExportLine } from '../logic/exportCsv';
 import { buildGridExportData } from '../logic/exportData';
 import { buildTotalRowExportLine } from '../logic/totalRow';
-import { normalizeExportScope } from '../logic/exportScope';
 import type { GridApiArgs } from './gridApi';
 import type { GroupingFeature } from './features';
 
@@ -64,7 +63,7 @@ export const createExportCommands = <T,>(
   //   使わない構成にも集計の処理が入るため、機能セットから受け取ります)。
   grouping?: GroupingFeature,
 ): ExportCommands<T> => {
-  // scope('view' / 'raw' / 'rendered' / 'selection' + 後方互換 'all' / 'visible')から、出力対象の行アクセサ /
+  // scope('view' / 'raw' / 'rendered' / 'selection')から、出力対象の行アクセサ /
   //   行レンジ [startRow, endRow) / 列集合を解決します(exportCsv と getExportData で共有)。
   //   scope='selection' で選択が無いときは null。
   const resolveExportScope = (
@@ -114,8 +113,7 @@ export const createExportCommands = <T,>(
     const groupColumns = s.groupTree ? collectGroupingColumns(s.columns).groupColumns : [];
     const withGroupColumns = (columns: GridColumn<T>[]): GridColumn<T>[] =>
       groupColumns.length > 0 ? [...groupColumns, ...columns.filter((column) => !groupColumns.includes(column))] : columns;
-    const normalized = normalizeExportScope(scope);
-    if (normalized === 'raw') {
+    if (scope === 'raw') {
       // serverSide はソース行配列を持たない(未ロード行が存在する)ため 'view' 相当へフォールバックし警告。
       if (s.isServerSide) {
         // 変更(英語対応): 開発時だけ警告します(本番の JS から文を除く)。
@@ -149,7 +147,7 @@ export const createExportCommands = <T,>(
             : undefined,
       };
     }
-    if (normalized === 'rendered') {
+    if (scope === 'rendered') {
       return {
         getRow: getViewRow,
         startRow: s.windowFirstRow,
@@ -159,7 +157,7 @@ export const createExportCommands = <T,>(
         getLabelLine: getViewLabelLine,
       };
     }
-    if (normalized === 'selection') {
+    if (scope === 'selection') {
       const sel = s.uiState.selection;
       if (!sel) {
         return null;
@@ -275,7 +273,7 @@ export const createExportCommands = <T,>(
   const stripSyntheticColumns = (exportColumns: GridColumn<T>[]): GridColumn<T>[] =>
     exportColumns.filter((column) => !isSyntheticColumnKey(column.key));
 
-  // 追加(合計行 3A): 合計行の出力行です。includeTotalRow かつ scope 'view'(後方互換 'all' を含む)で、合計行が
+  // 追加(合計行 3A): 合計行の出力行です。includeTotalRow かつ scope 'view' で、合計行が
   //   有効なときだけ。'raw'(フィルター無視)/ 'rendered' / 'selection' は合計の対象行と一致しないため出しません。
   const resolveTotalLine = (
     scope: CsvExportScope,
@@ -283,7 +281,7 @@ export const createExportCommands = <T,>(
     exportColumns: GridColumn<T>[],
   ): unknown[] | undefined => {
     const totalRowExport = getArgs()?.totalRowExport;
-    if (includeTotalRow !== true || !totalRowExport || normalizeExportScope(scope) !== 'view') {
+    if (includeTotalRow !== true || !totalRowExport || scope !== 'view') {
       return undefined;
     }
     return buildTotalRowExportLine(exportColumns, totalRowExport.cells, totalRowExport.label);

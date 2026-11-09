@@ -5,13 +5,16 @@ description: 版の上げ方(semver)、公開範囲、壊す変更と非推奨�
 
 版は [Semantic Versioning](https://semver.org/lang/ja/) に沿って上げます。React 版 `@ishibashi0112/spreadsheet-grid` と core `@ishibashi0112/spreadsheet-grid-core` は、いつも同じ版で出します。各版の変更は [CHANGELOG](https://github.com/ishibashi0112/datasheet-grid/blob/main/CHANGELOG.md) と [GitHub の Releases](https://github.com/ishibashi0112/datasheet-grid/releases) にあります。
 
-## 今は 0.x
+## 版の上げ方
 
-- 0.x の間は、壊す変更も minor(0.**Y**.0)で出します。その変更は CHANGELOG の「挙動の変化」か「core の破壊的変更」に必ず書きます。
-- patch(0.Y.**Z**)は不具合の修正だけです。
-- npm の既定の書き方 `^0.Y.Z` は、同じ 0.Y の中の版だけを受け取ります。minor を上げるときは CHANGELOG を確かめてください。
+1.0.0 から、次のように上げます。
 
-1.0 からは、壊す変更は major でだけ出します。1.0 は、下の公開範囲・型の対応・非推奨の手順がそろった版にします。
+- major(**X**.0.0): [壊す変更](#壊す変更)。消すものは、その前の minor で[非推奨](#非推奨の手順)にしておきます。
+- minor(X.**Y**.0): 機能の追加と非推奨。今の書き方はそのまま動きます。
+- patch(X.Y.**Z**): 不具合の修正だけです。
+- npm の既定の書き方 `^X.Y.Z` は、同じ major の中の新しい版を受け取ります。major を上げるときは、CHANGELOG のその版の「削除」「挙動の変化」「core の破壊的変更」を確かめてください。
+
+1.0 より前(0.65.0 まで)は、壊す変更も minor で出していました。その変更は CHANGELOG の各版の「挙動の変化」と「core の破壊的変更」にあります。
 
 ## 公開範囲
 
@@ -48,7 +51,7 @@ export const CompanyGrid = createSpreadsheetGrid({ features: companyFeatures });
 
 ## 壊す変更
 
-1.0 からは、次の変更は major で出します(0.x の間は minor)。
+次の変更は major で出します。
 
 - 公開 API を消す・改名する、型を狭める
 - 既定値や、ドキュメントに書いた挙動を変える
@@ -63,18 +66,18 @@ export const CompanyGrid = createSpreadsheetGrid({ features: companyFeatures });
 
 ## 非推奨の手順
 
-1.0 からは、消すものは消す前の minor で非推奨にして、次の major で消します。0.x の間も、できるときはこの手順を使います。
+消すものは、消す前の minor で非推奨にして、次の major で消します。
 
-1. 型に `@deprecated` の JSDoc を付ける(prop やメソッドはエディタで取り消し線が出ます。`scope` の `'all'` のような値には出ないので、値は 3 の警告で知らせます)
+1. 型に `@deprecated` の JSDoc を付ける(prop やメソッドはエディタで取り消し線が出ます。選べる文字列の値には出ないので、値は 3 の警告で知らせます)
 2. [API リファレンス](/docs/api/props)の行に「**非推奨**」と、消す版を書く
 3. 開発ビルドでだけ、使われたときに 1 回、console に警告を出す(本番のビルドでは出しません)
 4. CHANGELOG の「非推奨」の節に、代わりに使うものと一緒に書く
 
-警告は日本語の行と英語の行の 2 行です。
+警告は日本語の行と英語の行の 2 行です(例は 0.65.0 で出していたもの)。
 
 ```text
 [spreadsheet-grid] 非推奨: エクスポートの scope `'all'` は 1.0.0 で消します。`'view'` を使ってください(挙動は同じです)。
 [spreadsheet-grid] Deprecated: The export scope `'all'` will be removed in 1.0.0. Use `'view'` instead (same behavior).
 ```
 
-今の非推奨は、エクスポートの scope `'all'`(代わりは `'view'`)と `'visible'`(代わりは `'rendered'`)の 2 つです(0.9.0 から非推奨。1.0.0 で消します)。
+今の非推奨はありません。0.9.0 から非推奨だったエクスポートの scope `'all'`(代わりは `'view'`)と `'visible'`(代わりは `'rendered'`)は、1.0.0 で消しました。
