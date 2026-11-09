@@ -209,4 +209,15 @@
 | アクセシビリティ | AP-32 / 34 / 35 | 列フィルターのポップオーバーは `role="dialog"` + 名前、`Tab` は中で回す(core `logic/focusCycle` の `resolveFocusWrapTarget`、中の部品がキーの伝播を止めるので capture 相)、検索欄と dateSet の木のチェックボックスに名前。組み込みのエディタの入力欄に「(列名) を編集」(`CellEditorLayer` が渡す)、select エディタは select-only combobox(`aria-controls` / `aria-activedescendant`、候補に id)。検査 NG のセルに `aria-invalid` と `aria-description`(ツールチップと同じ文)。キーボード / タップでアクティブセルになった検査 NG のセルはツールチップをすぐ出す(core `tooltipController` の `scheduleActiveCellTooltip` = 2 フレーム後に id で探す、タップの pointerout では閉じない、グリッドの外へフォーカスが移ったら閉じる)。編集中の axe の `aria-required-children` は aria-owns を数えない検査の側の制約(Chrome のアクセシビリティツリーではセルの子)としてドキュメントに記載 | 134.95 → 135.39KB(+0.44) |
 | 文書 | AP-13 / 36 / 37 / 38 + 低の文書 27 件(K-06 / L-13 / B-11 / L-16 / B-09 / A-10・F-05・L-17 / H-05・E-10 / L-15 / G-07 / G-09 / G-10 / D-04 / H-04 / H-06 / H-09 / B-06 / D-08 / L-08 の色 / C-08 / B-10・K-10 / K-03 / I-07 / I-09 / I-10 / `/lite` の +32KB) | テストのガイドを事実に(スタブは見える大きさを決めるだけで約 38 行・18 列、全部を描くにはスタブを大きくするかスクロール、`scrollToRow` は jsdom で何もしない、貼り付け / コピー / 範囲選択 / 確定の後のマイクロタスク / date / Jest、スタブは逆順に戻す。Testing Library で確かめた)。React 18 で包む部品の `forwardRef`(README / Skill / インストール)、Tailwind v4 の `classNames`、custom エディタのポップアップ、同梱の資料から保守者向けの文と古い数字を除く。検査のレシピを `getViewRowIndex` / `getColIndex` + `focus()` に。`Shift+F10` では右クリックメニューが開かないこと(Chromium で確かめた。開けるようにするのは 1.1.0 の AP-33)。Next.js 16 の戻るでスクロール位置を戻す書き方(D のアプリで、書かないと 0・書くと 6000 に戻るのを確かめた)。コントラストを上げるトークンの値(4.5:1 を計算で確かめた)。`themes/heroui.css` / `shadcn.css` のコメントを `theme="class"` に | 変わらない(JS は不変) |
 
+### 1.0.1 の確かめ(進み具合。2026-11-09)
+
+| 確かめること | 状況 |
+| --- | --- |
+| 全ゲート(tsc / eslint / `vp test` 249 ファイル 2,467 件 / build:lib / size:check / examples:check / types:check 11 通り)と website の `next build` | 済(docs のコミット 443422c の上で全部緑) |
+| ハーネス(`pnpm run audit:test`) | Chromium 791 / 791、Firefox 159(geckodriver)732 / 732。WebKitGTK はまだ |
+| 高の再現(`verify/` の `v1.cjs` を pack した直した版で) | 済: 日付は年の無い文字列とありえない日付を読まない、範囲 / 列の選択の左上から貼る、フィルター中の全選択は見えている行だけ、グループ行を飛ばして貼る、速い入力でキーが消えない、custom エディタは外を押すと閉じる。右クリックメニューからの `startEditing()` は、セルを押してから右クリックすると開く(`v1.cjs` の `ctxStartEditing` は先にセルを押していないのでアクティブセルが無く false。手順の側の違い) |
+| 別視点のレビュー 2 系統(貼り付け・フォーカス・日付 / フィルター・レイアウト・アクセシビリティ) | 週の使用量の上限で途中で止まった(結果なし)。上限が戻ったら(2026-11-14 07:00 UTC)やり直す |
+| 12 本のアプリで確かめ直し | まだ。手順は scratchpad の `dogfood/REVERIFY-BRIEF.md` と同じ形(pack した tarball を各アプリへ入れ、§3 の「1.0.1」の所見が直ったか・回帰・直したドキュメントを確かめる)。コンテナが消えていたら `audit/dogfood/2026-11-09/<アプリ>/` から作り直す |
+| サイズの上限を「実測 + 0.5KB」に確定、`docs/audits/README.md` に 1 行、PR | まだ |
+
 - 大きさの上限は、1.0.1 の途中は実測 + 0.5KB の仮の値(`scripts/size-budget.json` の注記)。1.0.1 の上限は「修正を入れ終えた後の実測 + 0.5KB」(2026-11-09 ユーザー判断)。
