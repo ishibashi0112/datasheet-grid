@@ -5,7 +5,10 @@
 //   エイリアス、それ以外は core からの再エクスポート)。将来の Solid 版は同じ core に別の束ね型を
 //   渡した束縛ファイルを持ちます。
 import type { CSSProperties, ReactNode, Ref } from 'react';
-import type * as Core from '@ishibashi0112/spreadsheet-grid-core/internal/model/gridTypes.core';
+// 変更(1.0 の準備): F つきの型は core の入口(semver の対象)から読みます。利用側が公開型のプロパティ(`columns` /
+//   `renderCell` など)を推論のまま export したとき、d.ts がその型を core の入口の名前で書く(core の内部のパスを
+//   指さない)ためです。tsc は型を、プログラムに読み込まれたモジュールのうち再公開している入口の名前で書きます。
+import type * as Core from '@ishibashi0112/spreadsheet-grid-core';
 
 // F に依存しない型はそのまま再エクスポートします(下の同名ローカル宣言が優先されます)。
 export type * from '@ishibashi0112/spreadsheet-grid-core/internal/model/gridTypes.core';

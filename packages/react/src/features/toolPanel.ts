@@ -6,7 +6,7 @@
 import { useToolPanelController } from '../hooks/useToolPanelController';
 import { toolPanelModule, useLazyModule } from '../view/lazyPopups';
 import type { UseLazyModuleOptions } from '../view/lazyPopups';
-import type { ReactGridFeatures, ToolPanelFeatureArgs, ToolPanelFeatureResult } from './types';
+import type { GridFeature, GridFeatureParts, ToolPanelFeatureArgs, ToolPanelFeatureResult } from './types';
 
 const useToolPanelFeature = (args: ToolPanelFeatureArgs): ToolPanelFeatureResult => ({
   available: true,
@@ -15,7 +15,7 @@ const useToolPanelFeature = (args: ToolPanelFeatureArgs): ToolPanelFeatureResult
 
 const useToolPanelViewsFeature = (options: UseLazyModuleOptions) => useLazyModule(toolPanelModule, options);
 
-export const toolPanelFeature: NonNullable<ReactGridFeatures['toolPanel']> = {
+export const toolPanelFeature = {
   useToolPanel: useToolPanelFeature,
   useToolPanelViews: useToolPanelViewsFeature,
-};
+} satisfies GridFeatureParts<'toolPanel'> as unknown as GridFeature<'toolPanel'>;

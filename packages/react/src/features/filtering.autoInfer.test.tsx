@@ -5,7 +5,11 @@ import { describe, it, expect } from 'vitest';
 import { act, renderHook } from '@testing-library/react';
 
 import { filteringFeature } from './filtering';
+import type { GridFeatureParts } from './types';
 import type { GridColumn } from '../model/gridTypes';
+
+// 公開型(中身の見えない GridFeature)の部品を、中身の型として読みます(型の付け替えだけ)。
+const filteringParts = filteringFeature as unknown as GridFeatureParts<'filtering'>;
 
 type Row = { id: string; kind?: 'label'; qty: number | string };
 
@@ -22,7 +26,7 @@ const openedType = (isLabelRow?: (row: Row, sourceIndex: number) => boolean) => 
   const root = document.createElement('div');
   document.body.appendChild(root);
   const { result, unmount } = renderHook(() =>
-    filteringFeature.useFilterPopover<Row>({
+    filteringParts.useFilterPopover<Row>({
       visibleColumns: [qty],
       columnFilters: {},
       columnFilterEnabled: true,

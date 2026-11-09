@@ -4,7 +4,7 @@
 //   代役(grip を出さない = onColumnsChange が無いときと同じ見出し、縦線も描かない)が受けます。
 import { useIsomorphicLayoutEffect } from '../hooks/useController';
 import { useColumnHeaderDragController } from '../hooks/useColumnHeaderDragController';
-import type { ColumnReorderFeatureArgs, ColumnReorderFeatureResult, ReactGridFeatures } from './types';
+import type { ColumnReorderFeatureArgs, ColumnReorderFeatureResult, GridFeature, GridFeatureParts } from './types';
 
 const useColumnReorderFeature = <T,>(args: ColumnReorderFeatureArgs<T>): ColumnReorderFeatureResult<T> => {
   // 追加(13-B3-2): ヘッダー D&D 並べ替え controller(ドロップインジケータ ref + 安定ハンドラ)。
@@ -42,6 +42,6 @@ const useColumnReorderFeature = <T,>(args: ColumnReorderFeatureArgs<T>): ColumnR
   };
 };
 
-export const columnReorderFeature: NonNullable<ReactGridFeatures['columnReorder']> = {
+export const columnReorderFeature = {
   useColumnReorder: useColumnReorderFeature,
-};
+} satisfies GridFeatureParts<'columnReorder'> as unknown as GridFeature<'columnReorder'>;

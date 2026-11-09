@@ -5,7 +5,7 @@
 //   - モジュールの読み込み時(コンポーネントの外)で 1 回だけ呼んでください。作ったコンポーネントの機能セットは固定です。
 import { useGridShell } from './GridShell';
 import { resolveGridShellFeatures } from './features/resolve';
-import type { ReactGridFeatures } from './features/types';
+import type { GridFeatureName, GridFeatures, ReactGridFeatures } from './features/types';
 import { traceGridFactory, useRecreatedGridWarning } from './hooks/useRecreatedGridWarning';
 import { useUnregisteredFeatureWarnings } from './hooks/useUnregisteredFeatureWarnings';
 import type { SpreadsheetGridProps } from './model/gridTypes';
@@ -13,11 +13,11 @@ import { withRefProp } from './withRefProp';
 
 export type CreateSpreadsheetGridOptions = {
   /** 差し込む機能(`{ filtering: filteringFeature, ... }`)。キーは機能の名前、値は `/lite` が公開する機能の部品です。 */
-  features: ReactGridFeatures;
+  features: GridFeatures;
 };
 
 // 機能が無いときに置き換える prop(シェルが機能の部品を呼ぶ前に、その prop で列や行の形を決めるもの)。
-const DISABLED_FEATURE_PROPS: { [K in keyof ReactGridFeatures]?: Partial<SpreadsheetGridProps<object>> } = {
+const DISABLED_FEATURE_PROPS: { [K in GridFeatureName]?: Partial<SpreadsheetGridProps<object>> } = {
   rowDrag: { enableRowDrag: false },
   // 行の高さの実測が無ければ autoHeight を切る(行数の上限超えなどの開発時の注意も出さない)。
   autoHeight: { autoHeight: false },
@@ -47,10 +47,12 @@ const DISABLED_FEATURE_PROPS: { [K in keyof ReactGridFeatures]?: Partial<Spreads
  *
  * const Grid = createSpreadsheetGrid({ features: { ...standardFeatures, serverSide: serverSideFeature } });
  */
-export function createSpreadsheetGrid({ features }: CreateSpreadsheetGridOptions) {
+export function createSpreadsheetGrid(options: CreateSpreadsheetGridOptions) {
+  // 変更(1.0 の準備): 機能の部品は公開型(中身の見えない GridFeature)で受け取り、中身の型として読みます(型の付け替えだけ)。
+  const features = options.features as unknown as ReactGridFeatures;
   const shellFeatures = resolveGridShellFeatures(features);
   const overrides: Partial<SpreadsheetGridProps<object>> = {};
-  for (const name of Object.keys(DISABLED_FEATURE_PROPS) as (keyof ReactGridFeatures)[]) {
+  for (const name of Object.keys(DISABLED_FEATURE_PROPS) as GridFeatureName[]) {
     if (features[name] === undefined) {
       Object.assign(overrides, DISABLED_FEATURE_PROPS[name]);
     }

@@ -3,13 +3,13 @@
 //   元の位置で useColumnAutosize を呼びます(中の hook の順番は従来どおり)。機能セットに無い構成では代役が受け、
 //   列メニューの 2 項目を出さず、境界のダブルクリックは通常のリサイズ、autoSizeColumns は false 扱いです。
 import { useColumnAutosizeRunner } from '../hooks/useColumnAutosizeRunner';
-import type { ColumnAutosizeFeatureArgs, ColumnAutosizeFeatureResult, ReactGridFeatures } from './types';
+import type { ColumnAutosizeFeatureArgs, ColumnAutosizeFeatureResult, GridFeature, GridFeatureParts } from './types';
 
 const useColumnAutosizeFeature = <T,>(args: ColumnAutosizeFeatureArgs<T>): ColumnAutosizeFeatureResult<T> => {
   const { isAutosizing, runAutosize } = useColumnAutosizeRunner<T>(args);
   return { available: true, isAutosizing, runAutosize };
 };
 
-export const columnAutosizeFeature: NonNullable<ReactGridFeatures['columnAutosize']> = {
+export const columnAutosizeFeature = {
   useColumnAutosize: useColumnAutosizeFeature,
-};
+} satisfies GridFeatureParts<'columnAutosize'> as unknown as GridFeature<'columnAutosize'>;

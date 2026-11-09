@@ -16,7 +16,7 @@ import type { FeatureLocaleText } from '@ishibashi0112/spreadsheet-grid-core/int
 type RowDragTexts = FeatureLocaleText<typeof DEFAULT_ROW_DRAG_LOCALE_TEXT>;
 import { getCellValue } from '@ishibashi0112/spreadsheet-grid-core/internal/utils/permissions';
 import { useRowDragController } from '../hooks/useRowDragController';
-import type { ReactGridFeatures, RowDragFeatureArgs, RowDragFeatureResult } from './types';
+import type { GridFeature, GridFeatureParts, RowDragFeatureArgs, RowDragFeatureResult } from './types';
 
 type DragRowToken = { row: unknown; rowKey: unknown; rowCount: number };
 
@@ -162,8 +162,8 @@ const useRowDragFeature = <T,>({
   };
 };
 
-export const rowDragFeature: NonNullable<ReactGridFeatures['rowDrag']> = {
+export const rowDragFeature = {
   useRowDrag: useRowDragFeature,
   // 追加(英語対応): この機能だけが使う文言の既定(シェルが本体の既定に重ねる)。
   localeText: DEFAULT_ROW_DRAG_LOCALE_TEXT,
-};
+} satisfies GridFeatureParts<'rowDrag'> as unknown as GridFeature<'rowDrag'>;

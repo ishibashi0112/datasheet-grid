@@ -9,12 +9,12 @@ import {
   resolveDataBar,
 } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/conditionalFormat';
 import { GridChip } from '../view/GridChip';
-import type { ReactGridFeatures } from './types';
+import type { GridFeature, GridFeatureParts } from './types';
 
-export const conditionalFormatFeature: NonNullable<ReactGridFeatures['conditionalFormat']> = {
+export const conditionalFormatFeature = {
   createConditionalFormatStatsResolver,
   resolveDataBar,
   resolveColorScaleBackground,
   resolveChipSpec,
   GridChip,
-};
+} satisfies GridFeatureParts<'conditionalFormat'> as unknown as GridFeature<'conditionalFormat'>;

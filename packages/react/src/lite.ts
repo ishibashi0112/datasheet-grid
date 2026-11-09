@@ -5,7 +5,9 @@
 //   preloadGridPopups は /lite のグリッドの部品だけを読み込みます(同じ名前の別の関数)。
 export { createSpreadsheetGrid } from './createSpreadsheetGrid';
 export type { CreateSpreadsheetGridOptions } from './createSpreadsheetGrid';
-export type { ReactGridFeatures as GridFeatures } from './features/types';
+// 変更(1.0 の準備): 機能の部品の型は中身の見えない GridFeature<キー>(GridFeatures はその表)。利用側が推論のまま
+//   export しても d.ts が内部の型を指さないようにするためです。
+export type { GridFeature, GridFeatureName, GridFeatures } from './features/types';
 // よく使う機能の組み合わせ(プリセット)。
 export { standardFeatures } from './features/standard';
 // 機能の部品(機能セットのキーの順は features/full.ts と同じ)。

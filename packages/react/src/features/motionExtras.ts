@@ -6,10 +6,10 @@
 import { createChangeHighlightController } from '@ishibashi0112/spreadsheet-grid-core/internal/controllers/changeHighlightController';
 import { CopyRangeOverlay } from '../CopyRangeOverlay';
 import { ColumnHoverOverlay } from '../ColumnHoverOverlay';
-import type { ReactGridFeatures } from './types';
+import type { GridFeature, GridFeatureParts } from './types';
 
-export const motionExtrasFeature: NonNullable<ReactGridFeatures['motionExtras']> = {
+export const motionExtrasFeature = {
   createChangeHighlightController,
   CopyRangeOverlay,
   ColumnHoverOverlay,
-};
+} satisfies GridFeatureParts<'motionExtras'> as unknown as GridFeature<'motionExtras'>;

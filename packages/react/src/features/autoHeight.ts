@@ -3,10 +3,10 @@
 //   機能セットに無い構成では autoHeight を false として扱い(createSpreadsheetGrid)、行の高さは固定のままです。
 import { createAutoHeightMeasurer } from '@ishibashi0112/spreadsheet-grid-core/internal/controllers/autoHeightMeasurer';
 import { buildRowHeightStore, createAutoHeightRowMetrics } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/rowHeightStore';
-import type { ReactGridFeatures } from './types';
+import type { GridFeature, GridFeatureParts } from './types';
 
-export const autoHeightFeature: NonNullable<ReactGridFeatures['autoHeight']> = {
+export const autoHeightFeature = {
   createAutoHeightMeasurer,
   buildRowHeightStore,
   createAutoHeightRowMetrics,
-};
+} satisfies GridFeatureParts<'autoHeight'> as unknown as GridFeature<'autoHeight'>;

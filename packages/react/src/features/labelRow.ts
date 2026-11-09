@@ -12,9 +12,9 @@ import {
 } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/labelRows';
 import { GridBodyLabelRow } from '../view/GridBodyLabelRow';
 import { GridStickyLabelLayer } from '../view/GridStickyLabelLayer';
-import type { ReactGridFeatures } from './types';
+import type { GridFeature, GridFeatureParts } from './types';
 
-export const labelRowFeature: NonNullable<ReactGridFeatures['labelRow']> = {
+export const labelRowFeature = {
   resolveLabelRowLayout,
   createLabelFreeOrder,
   buildLabelDisplay,
@@ -23,4 +23,4 @@ export const labelRowFeature: NonNullable<ReactGridFeatures['labelRow']> = {
   resolveStickyLabel,
   BodyLabelRow: GridBodyLabelRow,
   StickyLabelLayer: GridStickyLabelLayer,
-};
+} satisfies GridFeatureParts<'labelRow'> as unknown as GridFeature<'labelRow'>;
