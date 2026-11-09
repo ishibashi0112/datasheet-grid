@@ -1,4 +1,5 @@
 import { createPortal } from 'react-dom';
+import { isEscapePreventedInside } from '@ishibashi0112/spreadsheet-grid-core/internal/controllers/escapeClaimController';
 import { cx } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/cx';
 // 追加(filter-ext E): 'auto' を解決した後の実効フィルター種別です。
 // 追加(date-input): FilterDateInputContext は日付入力スロットの公開契約です(columnKey の
@@ -1341,7 +1342,9 @@ export function ColumnFilterPopover({
     // 追加(dogfood DF-05): パネルのどこにフォーカスがあっても Escape で閉じます(これまでは入力欄だけが Escape を扱い、
     //   一覧のチェックボックスやボタンにフォーカスがあると閉じませんでした)。中の部品が先に扱った Escape(日付の
     //   カレンダーを閉じる等。preventDefault 済み)と、IME の変換中の Escape は除きます。
-    if (event.key === 'Escape' && !event.defaultPrevented && !isImeComposingKeyEvent(event.nativeEvent)) {
+    // 変更(1.0.1 / AP-17): グリッドが使う Escape はダイアログが閉じないよう先に preventDefault しているので、中の部品が扱ったかは
+    //   isEscapePreventedInside で見ます。
+    if (event.key === 'Escape' && !isEscapePreventedInside(event.nativeEvent) && !isImeComposingKeyEvent(event.nativeEvent)) {
       event.preventDefault();
       onRequestClose();
     }

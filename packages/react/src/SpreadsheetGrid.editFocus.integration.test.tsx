@@ -7,7 +7,7 @@
 //   を imeDirectInput の有無それぞれで検証します(有効時は「グリッドへ戻る」= 入力受けへ回る)。
 //   実ブラウザでの追試は audit/harness の t-verify。
 // @vitest-environment jsdom
-import { describe, it, expect, beforeAll, afterAll, afterEach } from 'vitest';
+import { describe, it, expect, beforeAll, afterAll, afterEach, vi } from 'vitest';
 import { render, cleanup, fireEvent, act } from '@testing-library/react';
 import { StrictMode, createRef, useEffect, useState } from 'react';
 import type { RefObject } from 'react';
@@ -164,6 +164,38 @@ describe.each([
     expect(document.activeElement).toBe(gridFocusTarget(container));
   });
 
+  // 追加(1.0.1 / 実アプリの総点検 AP-05): 次のフレームを待たずに、確定の直後からグリッドがキーを受ける(速い入力の
+  //   確定直後のキーが body に落ちて捨てられていた)。
+  it('Enter / Tab で確定した直後(次のフレームの前)からグリッドがフォーカスを持ち、移動も済んでいる', async () => {
+    const { container, ref } = renderGrid(imeDirectInput);
+    const editor = startEditing(container, 0, 0, 'fast');
+    // 次のフレーム(rAF)が来ない間に、マイクロタスクだけを進めて確かめます。
+    vi.useFakeTimers({ toFake: ['requestAnimationFrame', 'cancelAnimationFrame'] });
+    try {
+      fireEvent.keyDown(editor, { key: 'Enter' });
+      await Promise.resolve();
+      expect(currentRows[0]?.name).toBe('fast');
+      expect(document.activeElement).toBe(gridFocusTarget(container));
+      expect(ref.current?.getActiveCell()).toEqual({ row: 1, col: 0 });
+
+      if (!imeDirectInput) {
+        // 続けて打った文字は移動先のセルの編集になる(前のセルを書き換えない)。
+        fireEvent.keyDown(document.activeElement!, { key: 'x' });
+        const next = container.querySelector<HTMLInputElement>('.ssg-cell-editor-input');
+        expect(next).not.toBeNull();
+        fireEvent.change(next!, { target: { value: 'next' } });
+        fireEvent.keyDown(next!, { key: 'Tab' });
+        await Promise.resolve();
+        expect(currentRows[1]?.name).toBe('next');
+        expect(currentRows[0]?.name).toBe('fast');
+        expect(ref.current?.getActiveCell()).toEqual({ row: 1, col: 1 });
+        expect(document.activeElement).toBe(gridFocusTarget(container));
+      }
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it('Tab で確定するとグリッドへ戻り、右へ移動する', async () => {
     const { container, ref } = renderGrid(imeDirectInput);
     const editor = startEditing(container, 0, 0, 'tab');
@@ -229,5 +261,183 @@ describe.each([
     expect(ref.current?.getSelection()).toEqual({ type: 'row', startRow: 1, endRow: 1 });
     expect(ref.current?.getActiveCell()).toEqual({ row: 1, col: 0 });
     expect(document.activeElement).toBe(gridFocusTarget(container));
+  });
+});
+
+// 追加(1.0.1 / 実アプリの総点検 AP-11): blur を扱わない custom エディタを開いたまま別のセルを押すと、エディタが残り
+//   キー操作がすべて効かなくなっていた。押したときに編集を終える(値は書かない)。
+describe('blur で確定しない custom エディタ(AP-11)', () => {
+  const customColumns: GridColumn<Row>[] = [
+    {
+      key: 'name',
+      title: '名前',
+      width: 160,
+      editor: {
+        type: 'custom',
+        render: (ctx) => (
+          <input
+            className="custom-editor"
+            autoFocus
+            defaultValue={ctx.initialText}
+            onKeyDown={(event) => {
+              if (event.key === 'Enter') ctx.commit(event.currentTarget.value, 'down');
+              if (event.key === 'Escape') ctx.cancel();
+            }}
+          />
+        ),
+      },
+    },
+    { key: 'memo', title: 'メモ', width: 160 },
+  ];
+
+  function CustomHarness({ gridRef }: { gridRef: RefObject<SpreadsheetGridHandle<Row> | null> }) {
+    const [rows, setRows] = useState(initialRows);
+    useEffect(() => {
+      currentRows = rows;
+    }, [rows]);
+    return (
+      <SpreadsheetGrid<Row>
+        ref={gridRef}
+        rows={rows}
+        onRowsChange={setRows}
+        columns={customColumns}
+        rowKeyGetter={(row) => row.id}
+      />
+    );
+  }
+
+  it('別のセルを押すと編集が終わり、押したセルから矢印で動ける', async () => {
+    const ref = createRef<SpreadsheetGridHandle<Row>>();
+    const { container } = render(
+      <StrictMode>
+        <CustomHarness gridRef={ref} />
+      </StrictMode>,
+    );
+    clickCell(getCell(container, 0, 0));
+    fireEvent.keyDown(document.activeElement!, { key: 'F2' });
+    const editor = container.querySelector<HTMLInputElement>('.custom-editor');
+    expect(editor).not.toBeNull();
+    fireEvent.change(editor!, { target: { value: 'draft' } });
+
+    await act(async () => {
+      clickCell(getCell(container, 2, 1));
+      await nextFrame();
+    });
+    expect(container.querySelector('.custom-editor')).toBeNull();
+    expect(ref.current?.getActiveCell()).toEqual({ row: 2, col: 1 });
+    // 値は書かない(エディタが確定しなかった)。
+    expect(currentRows[0]?.name).toBe('alpha');
+
+    await act(async () => {
+      fireEvent.keyDown(document.activeElement!, { key: 'ArrowUp' });
+      await nextFrame();
+    });
+    expect(ref.current?.getActiveCell()).toEqual({ row: 1, col: 1 });
+  });
+});
+
+
+// 追加(1.0.1 / 実アプリの総点検 AP-12): 編集中にグリッドごとアンマウントされると(キーボードのショートカットでタブを
+//   切り替えた等)、打っていた値が黙って捨てられていた。フォーカスを持ったまま外れたエディタは確定する。
+describe('編集中のアンマウント(AP-12)', () => {
+  let hideGrid: () => void = () => {};
+  function TogglingHarness({ gridRef }: { gridRef: RefObject<SpreadsheetGridHandle<Row> | null> }) {
+    const [rows, setRows] = useState(initialRows);
+    const [shown, setShown] = useState(true);
+    useEffect(() => {
+      currentRows = rows;
+    }, [rows]);
+    useEffect(() => {
+      hideGrid = () => setShown(false);
+    }, []);
+    return shown ? (
+      <SpreadsheetGrid<Row>
+        ref={gridRef}
+        rows={rows}
+        onRowsChange={setRows}
+        columns={columns}
+        rowKeyGetter={(row) => row.id}
+      />
+    ) : null;
+  }
+
+  it('エディタにフォーカスがあるままアンマウントすると、打っていた値を確定する(StrictMode でも開いた直後に閉じない)', async () => {
+    const ref = createRef<SpreadsheetGridHandle<Row>>();
+    const { container } = render(
+      <StrictMode>
+        <TogglingHarness gridRef={ref} />
+      </StrictMode>,
+    );
+    const editor = startEditing(container, 1, 0, 'draft');
+    // StrictMode の付け直しで確定・終了していない。
+    await act(async () => {
+      await Promise.resolve();
+    });
+    expect(container.querySelector('.ssg-cell-editor-input')).toBe(editor);
+    expect(currentRows[1]?.name).toBe('beta');
+
+    await act(async () => {
+      hideGrid();
+      await Promise.resolve();
+    });
+    expect(container.querySelector('.ssg-shell')).toBeNull();
+    expect(currentRows[1]?.name).toBe('draft');
+  });
+
+  it('Escape で取り消した後のアンマウントでは書かない', async () => {
+    const ref = createRef<SpreadsheetGridHandle<Row>>();
+    const { container } = render(<TogglingHarness gridRef={ref} />);
+    const editor = startEditing(container, 2, 0, 'nope');
+    await act(async () => {
+      fireEvent.keyDown(editor, { key: 'Escape' });
+      await Promise.resolve();
+    });
+    await act(async () => {
+      hideGrid();
+      await Promise.resolve();
+    });
+    expect(currentRows[2]?.name).toBe('gamma');
+  });
+});
+
+// 追加(1.0.1 / 実アプリの総点検 AP-10): 右クリックメニューの onSelect で startEditing() を呼ぶと、メニューを閉じたときの
+//   フォーカスの戻しが開いたエディタを閉じていた(setTimeout で後へずらすと開いた)。
+describe('右クリックメニューから編集を始める(AP-10)', () => {
+  it('onSelect の startEditing() で開いたエディタは、メニューを閉じた後も開いたまま', async () => {
+    const gridRef = createRef<SpreadsheetGridHandle<Row>>();
+    const { container } = render(
+      <StrictMode>
+        <SpreadsheetGrid<Row>
+          ref={gridRef}
+          rows={initialRows}
+          onRowsChange={() => {}}
+          columns={columns}
+          rowKeyGetter={(row) => row.id}
+          enableContextMenu
+          getContextMenuItems={() => [
+            { kind: 'action', key: 'edit', label: 'このセルを編集', onSelect: () => void gridRef.current?.startEditing() },
+          ]}
+        />
+      </StrictMode>,
+    );
+    const cell = container.querySelector('[data-row-index="1"] [data-ssg-col-key="name"]') as HTMLElement;
+    fireEvent.pointerDown(cell, { button: 0, pointerType: 'mouse', pointerId: 1 });
+    fireEvent.pointerUp(window, { button: 0, pointerType: 'mouse', pointerId: 1 });
+    fireEvent.contextMenu(cell, { clientX: 10, clientY: 10 });
+    const item = Array.from(document.querySelectorAll<HTMLElement>('.ssg-menu-item')).find((element) =>
+      element.textContent?.includes('このセルを編集'),
+    );
+    expect(item).toBeDefined();
+    act(() => {
+      fireEvent.click(item!);
+    });
+    await act(async () => {
+      await new Promise((resolve) => requestAnimationFrame(() => resolve(undefined)));
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+    const editor = container.querySelector<HTMLInputElement>('.ssg-cell-editor-input');
+    expect(editor).not.toBeNull();
+    expect(editor?.value).toBe('beta');
+    expect(document.activeElement).toBe(editor);
   });
 });

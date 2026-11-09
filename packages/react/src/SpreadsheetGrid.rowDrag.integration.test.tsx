@@ -292,9 +292,15 @@ describe('行ドラッグ並び替え(結合)', () => {
     const handle = handleAt(container, 0);
     expect(handle).not.toBeNull();
 
+    // 追加(1.0.1 / AP-15): 外の入力欄にフォーカスがあっても、ハンドルを押すとグリッドへ移る(直後の Ctrl+Z で行の移動を戻せる)。
+    const outside = document.createElement('input');
+    document.body.appendChild(outside);
+    outside.focus();
     act(() => {
       pressHandle(handle as HTMLElement, 1, upperHalfY(0));
     });
+    expect(document.activeElement).toBe(container.querySelector('.ssg-shell'));
+    outside.remove();
     expect(document.body.style.cursor).toBe('grabbing');
     // ゴースト(body 直下)にラベル(先頭の表示列 = id の値)が出ます。
     const ghost = document.querySelector<HTMLElement>('[data-grid-drag-ghost]');

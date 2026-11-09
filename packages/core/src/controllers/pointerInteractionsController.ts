@@ -98,6 +98,9 @@ export type PointerInteractionsArgs<T> = {
   // 変更(G-1): ダブルクリック元のイベント(mouse = dblclick / touch = ダブルタップを離した pointerup)も渡します
   //   (onCellDoubleClick の params.event)。
   onCellDoubleClickRef: ReadonlyRef<(cell: CellCoord, event: MouseEvent) => void>;
+  // 追加(1.0.1 / 2026-11-09 実アプリの総点検 AP-11): 確定・取消の直後の再入抑止(editController と共有)。立っていなければ、
+  //   押した時点で開いたままのエディタ(blur で確定しない custom エディタ)の編集を終えます。省略時は終えない(従来どおり)。
+  editorActionGuardRef?: ReadonlyRef<boolean>;
 };
 
 export type PointerInteractionsController<T> = {
@@ -249,6 +252,7 @@ export const createPointerInteractionsController = <T,>(): PointerInteractionsCo
       resolveFirstDataCell,
     } = args;
     gridRootRef.current?.focus({ preventScroll: true });
+    endEditLeftOpen();
     const { target } = pending;
     if (target.kind === 'cell') {
       const last = lastTouchTap;
@@ -479,6 +483,18 @@ export const createPointerInteractionsController = <T,>(): PointerInteractionsCo
     gutterAutoScrollFrame = requestAnimationFrame(tick);
   };
 
+  // 追加(AP-11): グリッドの中を押してフォーカスをルートへ移した後も編集が開いたまま(エディタが blur で確定・取消しなかった =
+  //   onBlur を扱わない custom エディタ)なら、編集を終えます(値は書かない)。これまではエディタが残り、アクティブセルだけが
+  //   移って、矢印・文字・Esc のどれも効かなくなっていた。組み込みのエディタは blur で確定して再入抑止が立つので何もしない。
+  const endEditLeftOpen = () => {
+    if (args === null || args.uiState.editingCell === null || args.editorActionGuardRef === undefined) {
+      return;
+    }
+    if (!args.editorActionGuardRef.current) {
+      args.dispatch(gridActions.stopEdit());
+    }
+  };
+
   // pointerdown 共通の前処理(主ボタンのみ / タッチはタップ保留 / フォーカスとポインタ位置の記録)。
   //   戻り値 false = 以降の処理を行わない。
   const beginPointerDown = (event: GridPointerEventLike, target: PendingTouchTap['target']): boolean => {
@@ -492,6 +508,7 @@ export const createPointerInteractionsController = <T,>(): PointerInteractionsCo
       return false;
     }
     args.gridRootRef.current?.focus({ preventScroll: true });
+    endEditLeftOpen();
     args.pointerClientRef.current = { x: event.clientX, y: event.clientY };
     autoScrollOrigin = { x: event.clientX, y: event.clientY };
     autoScrollArmed = false;

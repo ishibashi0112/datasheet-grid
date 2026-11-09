@@ -69,6 +69,9 @@ export type RowDragArgs = {
   //   掴んだときの index のまま(従来どおり)。
   getDragRow?: (viewIndex: number) => unknown;
   locateDragRow?: (dragRow: unknown, hint: number) => number | null;
+  // 追加(1.0.1 / 2026-11-09 実アプリの総点検 AP-15): ハンドルを押したときにフォーカスを移すグリッドのルート。pointerdown の
+  //   既定の動作を止めるのでフォーカスが外の入力欄に残り、直後の Ctrl+Z が外の入力欄の文字を戻していた。省略時は移さない。
+  gridRootRef?: ReadonlyRef<HTMLElement | null>;
 };
 
 // ハンドルの pointerdown イベント(構造的型。React の合成 PointerEvent をそのまま渡せます)。
@@ -721,6 +724,8 @@ export const createRowDragController = (): RowDragController => {
     // セルの pointerdown(範囲選択 / アクティブ化)へ伝播させません(掴み手方式)。
     event.stopPropagation();
     event.preventDefault();
+    // 追加(AP-15): セルを押したときと同じくグリッドへフォーカスを移します(行の移動を Ctrl+Z で戻せるように)。
+    args.gridRootRef?.current?.focus({ preventScroll: true });
 
     // 修正(audit C-9): ドラッグ中に別のポインタ(2 本目の指 / ペン)でハンドルを押しても始めません(前のドラッグの
     //   rAF が止められなくなり、前のポインタを離したときに新しいドラッグの行で確定してしまうため)。同じポインタ

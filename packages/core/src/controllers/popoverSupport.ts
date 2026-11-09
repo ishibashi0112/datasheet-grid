@@ -22,11 +22,19 @@ export const blurForPopover = (gridRoot: HTMLElement | null): void => {
   gridRoot?.blur();
 };
 
+// 変更(1.0.1 / 2026-11-09 実アプリの総点検 AP-10): セルのエディタにフォーカスがあるときも奪いません。右クリックメニューの
+//   onSelect で startEditing() を呼ぶと、開いたエディタがこの復帰で blur して確定され、すぐ閉じていた。
 export const restoreGridFocus = (gridRootRef: ReadonlyElementRef): void => {
   requestAnimationFrame(() => {
-    if (!isFocusInsideDetailCard()) {
-      gridRootRef.current?.focus();
+    const root = gridRootRef.current;
+    if (root === null || isFocusInsideDetailCard()) {
+      return;
     }
+    const active = root.ownerDocument.activeElement;
+    if (active !== null && active !== root && root.contains(active) && active.closest('.ssg-cell-editor') !== null) {
+      return;
+    }
+    root.focus();
   });
 };
 

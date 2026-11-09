@@ -39,7 +39,7 @@ const columns: GridColumn<Row>[] = [
 
 `number` / `date` / `checkbox` には既定の「文字列 → 値」パーサが付き、**貼り付け / Delete クリア / エディタ確定で共通**に効きます(例: number 列を Delete でクリアすると `null` になる)。number 列は全角の数字・符号・小数点と 3 桁区切りも数値として読みます(`１，２３４` や Excel の `1,234` を貼り付けると `1234`)。セルを選んで `-5` や `.5` のようにマイナス / 小数点から打ち始めても、そのまま数値(`-5` / `0.5`)になります。明示の `parseClipboardValue` は常に優先されます。
 
-独自 UI で編集したい場合は `{ type: 'custom', render: (ctx) => <MyEditor ... /> }` を使います。返した要素は編集中のセルと同じ大きさの透明な枠の中に描くので、根の要素に `width: 100%` / `height: 100%` と背景色を付けてください([列の API の注意点](/docs/api/column))。`ctx.commit(value)` / `ctx.cancel()` で確定・キャンセルします。編集が終わった後(確定 / 取消 / 別のセルの編集が始まった後)に呼んだ前の編集の `ctx.commit` / `ctx.cancel` は何もしません(`ctx.commit` は `{ status: 'noop' }` を返します)。
+独自 UI で編集したい場合は `{ type: 'custom', render: (ctx) => <MyEditor ... /> }` を使います。返した要素は編集中のセルと同じ大きさの透明な枠の中に描くので、根の要素に `width: 100%` / `height: 100%` と背景色を付けてください([列の API の注意点](/docs/api/column))。`ctx.commit(value)` / `ctx.cancel()` で確定・キャンセルします。編集が終わった後(確定 / 取消 / 別のセルの編集が始まった後)に呼んだ前の編集の `ctx.commit` / `ctx.cancel` は何もしません(`ctx.commit` は `{ status: 'noop' }` を返します)。エディタを開いたままグリッドの中の別のセルや見出しを押すと、確定しなかった編集は終わります(値は書きません)。押したときに打った値を残したいときは、組み込みのエディタと同じく入力欄の `onBlur` で `ctx.commit(value)` を呼んでください。
 
 ## 改行を含む値(`multiline`)
 

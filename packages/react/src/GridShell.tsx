@@ -38,6 +38,12 @@ import { useVirtualizerCore } from './hooks/useVirtualizerCore';
 // 追加(本体分解 E-7): グリッドエンジン(リゾルバ / コマンド / 通知 / DOM コントローラ / store の束ね。React 非依存)。
 import { createGridEngine } from '@ishibashi0112/spreadsheet-grid-core/internal/engine/createGridEngine';
 import { useControllerLifecycle } from './hooks/useController';
+import {
+  GRID_POPUP_SELECTOR,
+  createEscapeClaimController,
+  isClearableSelection,
+  isEscapeClaimedByGrid,
+} from '@ishibashi0112/spreadsheet-grid-core/internal/controllers/escapeClaimController';
 // 追加(G-2): IME オンのままの直接入力(imeDirectInput)の入力受けの属性名です。
 // 変更(差し込み式 段階 2): 入力してよいセルの判定 / 編集の初期値の決定は機能セット(features.imeDirectInput)から。
 import { IME_INPUT_ATTRIBUTE, isImeComposingKeyEvent } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/domGuards';
@@ -2203,6 +2209,8 @@ export function useGridShell<T extends object>({
     // 追加(touch): セルのダブルクリック処理(handleCellDoubleClickWithController)は本フックより
     //   後ろで定義されるため、useEffect 同期の latest-ref(RS-AS 方式)で渡します。
     onCellDoubleClickRef: cellDoubleClickRef,
+    // 追加(1.0.1 / AP-11): 押したときに開いたままのエディタ(blur で確定しない custom エディタ)の編集を終えるため。
+    editorActionGuardRef,
     // 追加(10-G): 自動スクロールは共有スクロールコンテナを動かします。
     scrollContainerRef,
     // 追加(10-E): 固定ペインの ref を渡し、clientX のペイン判定に使います。
@@ -2853,7 +2861,7 @@ export function useGridShell<T extends object>({
   );
 
   // ── edit controller ───────────────────────────────────
-  const { startEditWithValue, commitEdit, cancelEdit } = useGridEditController({
+  const { startEditWithValue, commitEdit, cancelEdit, commitEditAt } = useGridEditController({
     uiState,
     rows,
     // 変更(10-E): editingCell.col は論理 index 空間のため orderedColumns で indexing します。
@@ -3450,6 +3458,8 @@ export function useGridShell<T extends object>({
       windowBaseOffsetPx: overlayBaseOffset,
       scrollContainerRef,
       bodyScrollRef,
+      // 追加(1.0.1 / AP-15): ハンドルを押したらグリッドへフォーカスを移す。
+      gridRootRef,
       commitRowMove: commitRowMoveFromDrag,
       hasRowKeys: rowKeyGetter !== undefined,
       ghostSlot: slots.dragGhost,
@@ -4040,6 +4050,38 @@ export function useGridShell<T extends object>({
     // 追加(バッチ②): コンテキストメニュー表示中も grid の tab/keyboard/paste を止めます。
     isContextMenuOpen;
 
+  // 追加(1.0.1 / 2026-11-09 実アプリの総点検 AP-17): グリッドが使う Escape(編集の取り消し・検索バーやポップアップを閉じる・
+  //   範囲の選択を外す)で、グリッドを入れたダイアログまで閉じないようにします(window の capture で印を付ける)。
+  const [escapeClaim] = useState(createEscapeClaimController);
+  useControllerLifecycle(escapeClaim, {
+    gridRootRef,
+    isClaimedTarget: (target: Element, root: HTMLElement) => {
+      const state = gridStore.getState();
+      if (!root.contains(target)) {
+        return (isAnyGridPopupOpen || state.editingCell !== null) && target.closest(GRID_POPUP_SELECTOR) !== null;
+      }
+      if (target.closest('.ssg-cell-editor, [data-ssg-find-bar]') !== null) {
+        return true;
+      }
+      if (target === root || target.hasAttribute('data-ssg-ime-input')) {
+        return state.editingCell !== null || isClearableSelection(state.selection);
+      }
+      return false;
+    },
+  });
+  const handleShellKeyDown = useCallback(
+    (event: ReactKeyboardEvent<HTMLDivElement>) => {
+      if (!isAnyGridPopupOpen) {
+        handleRootKeyDown(event);
+      }
+      // 印の付いた Escape は外へ伝えません(React のイベントで Escape を聞くモーダル = React Aria / HeroUI が閉じないように)。
+      if (isEscapeClaimedByGrid(event.nativeEvent)) {
+        event.stopPropagation();
+      }
+    },
+    [isAnyGridPopupOpen, handleRootKeyDown],
+  );
+
   // ── slot bars ─────────────────────────────────────────
   // 追加: slot helper を使って top/bottom の描画を解決します。
   // 変更: showTopBar / showBottomBar(既定 true)を最優先のマスタースイッチにします。
@@ -4292,7 +4334,7 @@ export function useGridShell<T extends object>({
         //   (styles.css の .ssg-shell:focus-visible。Tab で入った直後など)。
         data-ssg-has-active-cell={uiState.activeCell === null ? undefined : ''}
         // 追加: popup open 中は root の keyboard/paste handler 自体を外します。
-        onKeyDown={isAnyGridPopupOpen ? undefined : handleRootKeyDown}
+        onKeyDown={handleShellKeyDown}
         onPaste={isAnyGridPopupOpen ? undefined : handlePaste}
         // 追加(バッチ②): ボディ右クリックの委譲。未 opt-in / 対象外は素通しで標準メニューになります。
         onContextMenu={handleBodyContextMenu}
@@ -4487,6 +4529,7 @@ export function useGridShell<T extends object>({
                   themeClassName={portalClassName}
                   onCommit={commitEdit}
                   onCancel={cancelEdit}
+                  onCommitAt={commitEditAt}
                   align={editingColumn?.align}
                   enterMove={editorEnterMove}
                   domId={cellEditorDomId}
@@ -4709,6 +4752,7 @@ export function useGridShell<T extends object>({
                   themeClassName={portalClassName}
                   onCommit={commitEdit}
                   onCancel={cancelEdit}
+                  onCommitAt={commitEditAt}
                   align={editingColumn?.align}
                   enterMove={editorEnterMove}
                   domId={cellEditorDomId}
@@ -4932,6 +4976,7 @@ export function useGridShell<T extends object>({
                   themeClassName={portalClassName}
                   onCommit={commitEdit}
                   onCancel={cancelEdit}
+                  onCommitAt={commitEditAt}
                   align={editingColumn?.align}
                   enterMove={editorEnterMove}
                   domId={cellEditorDomId}

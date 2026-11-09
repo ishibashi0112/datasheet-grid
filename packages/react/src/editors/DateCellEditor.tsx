@@ -12,6 +12,7 @@ import type {
   EditorEnterMove,
 } from '../model/gridTypes';
 import { createEditorKeyDownHandler } from './editorKeyBindings';
+import { useCommitIfRemovedWhileFocused } from './useCommitIfRemovedWhileFocused';
 import { CellEditorErrorBubble } from './CellEditorErrorBubble';
 import { cx } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/cx';
 
@@ -26,6 +27,8 @@ type DateCellEditorProps = {
   align?: 'left' | 'center' | 'right';
   // 追加(enter-move ②): Enter 確定後の移動先です(未指定 = 'down')。
   enterMove?: EditorEnterMove;
+  // 追加(1.0.1 / AP-12): フォーカスを持ったまま外れたとき(グリッドごとアンマウント)に、打っていた値で呼びます。
+  onRemovedWhileFocused?: (value: unknown) => void;
 };
 
 export function DateCellEditor({
@@ -34,10 +37,14 @@ export function DateCellEditor({
   onCancel,
   align,
   enterMove,
+  onRemovedWhileFocused,
 }: DateCellEditorProps) {
   const inputRef = useRef<HTMLInputElement | null>(null);
   const [draftValue, setDraftValue] = useState(initialValue);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+
+  // 追加(1.0.1 / AP-12): フォーカスを持ったまま外れたら(グリッドごとアンマウント)打っていた値を確定します。
+  useCommitIfRemovedWhileFocused([inputRef], draftValue, onRemovedWhileFocused);
 
   // マウント時(= 編集セッション開始時)に自動フォーカスします。
   //   ※ type="date" は setSelectionRange 非対応(例外を投げるブラウザあり)のため focus のみ。
