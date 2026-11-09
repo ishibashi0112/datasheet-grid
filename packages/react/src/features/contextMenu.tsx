@@ -12,7 +12,13 @@ import {
 } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/contextMenuTarget';
 import { getCellValue } from '@ishibashi0112/spreadsheet-grid-core/internal/utils/permissions';
 import type { GridContextMenuItem, GridContextMenuParams, GridContextMenuTarget } from '../model/gridTypes';
-import type { BodyContextMenuInput, CellContextMenuFeatureArgs, CellContextMenuFeatureResult, ReactGridFeatures } from './types';
+import type {
+  BodyContextMenuInput,
+  CellContextMenuFeatureArgs,
+  CellContextMenuFeatureResult,
+  GridFeature,
+  GridFeatureParts,
+} from './types';
 
 const EMPTY_CONTEXT_MENU_ITEMS: GridContextMenuItem[] = [];
 
@@ -115,7 +121,7 @@ const buildBodyContextMenuParams = <T,>({
   };
 };
 
-export const contextMenuFeature: NonNullable<ReactGridFeatures['contextMenu']> = {
+export const contextMenuFeature = {
   useCellContextMenu: useCellContextMenuFeature,
   buildBodyContextMenuParams,
-};
+} satisfies GridFeatureParts<'contextMenu'> as unknown as GridFeature<'contextMenu'>;

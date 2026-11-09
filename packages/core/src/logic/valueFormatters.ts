@@ -2,7 +2,7 @@
 //   - 返り値は表示文字列。元の値・編集・コピー・ソート・フィルターには一切影響しません。
 //   - 各フォーマッタは CellValueFormatter<T> を返すファクタです。将来パターン(日付/％/通貨等)は
 //     本ファイルへファクタを足し、index.ts でバレル公開すれば拡張できます。
-import type { CellValueFormatter, CellValueFormatterParams } from '../model/gridTypes.unbound';
+import type { CellValueFormatterParams, GridFrameworkTypes } from '../model/gridTypes.core';
 
 // 追加(③): numberFormatter のオプションです。
 export type NumberFormatterOptions = {
@@ -24,11 +24,16 @@ export type NumberFormatterOptions = {
 //     (Intl 既定の 3 桁丸めで表示精度が変わるのを避けるため)。
 // 変更(dogfood DU-28): 型引数なしで呼んだときは、どの行の型の列にも渡せる総称的な関数を返します(これまでは
 //   `const f = numberFormatter()` が CellValueFormatter<unknown> になり、GridColumn<Row> へ渡すと型エラーでした)。
-//   型引数を付けた `numberFormatter<Row>()` はこれまでどおり CellValueFormatter<Row> です。
+//   型引数を付けた `numberFormatter<Row>()` は Row の列の CellValueFormatter として渡せます。
+// 変更(1.0 の準備): 型は公開型(gridTypes.core)で書き、描画の束ね型 F も総称にします(React 版 / 将来の Solid 版の
+//   どちらの列にも渡せる)。内部用の束縛(gridTypes.unbound)で書くと、利用側が推論のまま export したときの d.ts が
+//   core の内部のパスを指すためです。実行時は不変です。
 export function numberFormatter(
   options?: NumberFormatterOptions,
-): <T>(params: CellValueFormatterParams<T>) => string;
-export function numberFormatter<T>(options?: NumberFormatterOptions): CellValueFormatter<T>;
+): <T, F extends GridFrameworkTypes = GridFrameworkTypes>(params: CellValueFormatterParams<T, F>) => string;
+export function numberFormatter<T>(
+  options?: NumberFormatterOptions,
+): <F extends GridFrameworkTypes = GridFrameworkTypes>(params: CellValueFormatterParams<T, F>) => string;
 export function numberFormatter(
   options: NumberFormatterOptions = {},
 ): (params: { value: unknown }) => string {

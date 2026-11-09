@@ -7,7 +7,7 @@ import { columnMenuFeature } from './columnMenu';
 import { exportFeature } from './export';
 import { filteringFeature } from './filtering';
 import { toolPanelFeature } from './toolPanel';
-import type { ReactGridFeatures } from './types';
+import type { GridFeatures } from './types';
 
 // 副作用なしの印を付けた関数呼び出しで作ります。オブジェクトリテラルのまま置くと、使わない構成(standardFeatures を
 //   import しない)でも webpack が中の 5 機能を「使用中」と見なしてバンドルに残すためです(webpack はオブジェクト
@@ -19,7 +19,7 @@ const createStandardFeatures = (
   toolPanel: typeof toolPanelFeature,
   columnAutosize: typeof columnAutosizeFeature,
   exportParts: typeof exportFeature,
-) => ({ filtering, columnMenu, toolPanel, columnAutosize, export: exportParts }) satisfies ReactGridFeatures;
+) => ({ filtering, columnMenu, toolPanel, columnAutosize, export: exportParts }) satisfies GridFeatures;
 
 export const standardFeatures = /* @__PURE__ */ createStandardFeatures(
   filteringFeature,

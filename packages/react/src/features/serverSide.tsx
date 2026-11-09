@@ -22,7 +22,7 @@ import {
   type ServerSideWriteErrorState,
 } from '../hooks/useServerSideRowModel';
 import type { GridResolvedSlots } from '../model/gridTypes';
-import type { ReactGridFeatures, ServerSideFeatureArgs, ServerSideFeatureResult } from './types';
+import type { GridFeature, GridFeatureParts, ServerSideFeatureArgs, ServerSideFeatureResult } from './types';
 
 const useServerSide = <T,>(args: ServerSideFeatureArgs<T>): ServerSideFeatureResult<T> => {
   const result = useServerSideRowModel<T>(args);
@@ -108,9 +108,9 @@ const useServerSide = <T,>(args: ServerSideFeatureArgs<T>): ServerSideFeatureRes
   return { ...result, renderErrorBars };
 };
 
-export const serverSideFeature: NonNullable<ReactGridFeatures['serverSide']> = {
+export const serverSideFeature = {
   createSaveStatusController,
   useServerSide,
   // 追加(英語対応): この機能だけが使う文言の既定(シェルが本体の既定に重ねる)。
   localeText: DEFAULT_SERVER_SIDE_LOCALE_TEXT,
-};
+} satisfies GridFeatureParts<'serverSide'> as unknown as GridFeature<'serverSide'>;

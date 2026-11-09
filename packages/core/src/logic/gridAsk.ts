@@ -9,6 +9,8 @@ import type {
   ParsedNumberFilter,
   ParsedTextFilter,
 } from '../model/gridTypes.unbound';
+// 追加(1.0 の準備): 公開型 GridAskOptions の列の型は、core の入口から公開している GridColumn<T, F> で書きます(下)。
+import type { GridColumn as PublicGridColumn } from '../model/gridTypes.core';
 import { normalizeDateFilterPresets, type NormalizedDateFilterPreset } from './dateFilterPresets';
 import { parseNumberText } from './editorValues';
 import { createColumnFilterDescribeOptions, describeColumnFilterValue } from './filterSummary';
@@ -70,7 +72,12 @@ export type GridAskRequest = {
 export type GridAskOptions<T> = {
   // グリッドと同じ列定義です。AI に見せるのは key / title / filterType / 候補(filterOptions / select エディタの
   //   選択肢)/ dateSet のプリセットだけです。
-  columns: readonly GridColumn<T>[];
+  // 変更(1.0 の準備): 内部の束縛(gridTypes.unbound の GridColumn<T>)で書くと、利用側が options.columns を推論のまま
+  //   export したときの d.ts に core の内部のパスが書かれていたので、core の入口から公開している GridColumn<T, F> を
+  //   F = any で書きます(中身は今までと同じ。描画ノード / style は見ないので、React / ほかのフレームワークの列をそのまま
+  //   受ける。gridTypes.unbound の冒頭と同じ理由)。
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- 描画ノード / style は素通し(上のコメント)
+  columns: readonly PublicGridColumn<T, any>[];
   // 列ごとの補足(単位や値の書き方)。false でその列を AI に見せません(その列の条件も変えません)。
   columnHints?: Readonly<Record<string, string | false>>;
   // 列の条件(フィルター)を変えてよいか(既定 true)。グリッドの enableColumnFilter を false にしているときは

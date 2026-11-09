@@ -57,14 +57,15 @@ import GridFilterChipBar from '../view/GridFilterChipBar';
 import type { FilterManagementAddableColumn, FilterManagementEntry } from '../view/FilterManagementPanel';
 import type { ColumnFilterUiType, GridColumn } from '../model/gridTypes';
 import type {
+  FilterManagementFeatureArgs,
+  FilterManagementFeatureResult,
   FilterOrderFeatureArgs,
   FilterOrderFeatureResult,
   FilterPopoverContentFeatureArgs,
   FilterPopoverFeatureArgs,
   FilterPopoverFeatureResult,
-  FilterManagementFeatureArgs,
-  FilterManagementFeatureResult,
-  ReactGridFeatures,
+  GridFeature,
+  GridFeatureParts,
 } from './types';
 
 const useFilterOrder = <T,>({
@@ -647,7 +648,7 @@ const useFilterManagement = <T,>({
   return { filterManagerEntries, filterManagerAddableColumns, jumpToColumnFilter };
 };
 
-export const filteringFeature: NonNullable<ReactGridFeatures['filtering']> = {
+export const filteringFeature = {
   createColumnFilterStage,
   createDateRolloverStore,
   resolveRelativeDateFilterKey,
@@ -659,4 +660,4 @@ export const filteringFeature: NonNullable<ReactGridFeatures['filtering']> = {
   // 追加(英語対応): この機能だけが使う文言の既定(シェルが本体の既定に重ねる)。
   localeText: DEFAULT_FILTERING_LOCALE_TEXT,
   FilterChipBar: GridFilterChipBar,
-};
+} satisfies GridFeatureParts<'filtering'> as unknown as GridFeature<'filtering'>;

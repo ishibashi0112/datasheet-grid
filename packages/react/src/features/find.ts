@@ -3,12 +3,12 @@ import { createFindController } from '@ishibashi0112/spreadsheet-grid-core/inter
 import { splitTextByFindRanges } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/find';
 import { DEFAULT_FIND_LOCALE_TEXT } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/localeTextFeatures';
 import { GridFindBar } from '../view/GridFindBar';
-import type { ReactGridFeatures } from './types';
+import type { GridFeature, GridFeatureParts } from './types';
 
-export const findFeature: NonNullable<ReactGridFeatures['find']> = {
+export const findFeature = {
   createFindController,
   FindBar: GridFindBar,
   splitTextByFindRanges,
   // 追加(英語対応): この機能だけが使う文言の既定(シェルが本体の既定に重ねる)。
   localeText: DEFAULT_FIND_LOCALE_TEXT,
-};
+} satisfies GridFeatureParts<'find'> as unknown as GridFeature<'find'>;

@@ -179,10 +179,34 @@ PASS / 実行した確認の数(SKIP は数に入れない)。
 ### 1.0 の前に残っていること
 
 - ~~core のサブパスを `./internal/*` などへ移し、React 版の core への依存を同じ版の固定にする(上記)。今のサブパスを直接使っている人がいれば、1 版は旧パスを残して非推奨にする。~~ → 対応済み(下記「core の部品の移動」)。0.61.0 で旧 `./*` を exports から消す。
-- 大きな未実装(多段の列見出し、ピン留め行)を、今の API を壊さずに足せるかの見通し。
-- React 版の上に作ったライブラリが出す d.ts は、型の推論で core の `internal/…` を参照することがある(tsc は型を定義したファイルのパスから exports を引くため。0.59.0 までは旧サブパス。2026-10-31 の 3 回目のレビューで確認)。0.61.0 で壊れることはないが、利用側の d.ts が semver の対象外のパスに頼る形は残るので、1.0 までに React 版の入口から型をどう出すかを決める。
-- 公開型の型テスト(d.ts を利用側の形で検査する)。
-- 非推奨の手順を実際に使うときの仕組み(開発ビルドだけの console.warn の共通の関数など。CHANGELOG の「非推奨」の見出しと bump-version / release.yml はそのまま使える)。
+- ~~大きな未実装(多段の列見出し、ピン留め行)を、今の API を壊さずに足せるかの見通し。~~ → 見通しを下記「1.0 の準備の残り」に記録(コードは変えない)。
+- ~~React 版の上に作ったライブラリが出す d.ts は、型の推論で core の `internal/…` を参照することがある(tsc は型を定義したファイルのパスから exports を引くため。0.59.0 までは旧サブパス。2026-10-31 の 3 回目のレビューで確認)。0.61.0 で壊れることはないが、利用側の d.ts が semver の対象外のパスに頼る形は残るので、1.0 までに React 版の入口から型をどう出すかを決める。~~ → 0.65.0 で対応(下記)。
+- ~~公開型の型テスト(d.ts を利用側の形で検査する)。~~ → 0.65.0 でゲート `types:check` を追加(下記)。
+- ~~非推奨の手順を実際に使うときの仕組み(開発ビルドだけの console.warn の共通の関数など。CHANGELOG の「非推奨」の見出しと bump-version / release.yml はそのまま使える)。~~ → 0.65.0 で core `utils/deprecation.ts` を追加(下記)。
+
+### 1.0 の準備の残り(2026-11-09。ユーザー判断「すべて推奨で進める」)
+
+**1. d.ts が core の内部のパスを参照する件。** 公開版 0.64.0 で、React 版の上にライブラリを作って d.ts を出すと、次の 3 つの形で内部のパスが出るか tsc がエラー TS2883 になることを再現した(TypeScript 5.6 では同じ状況が TS2742)(名前で書いた型 `GridColumn<Row>` などは問題なし)。tsc は推論した型を、その型を宣言したモジュールか、同じ型を再公開しているモジュールのうちパスの段の少ないものの名前で書く(プログラムに無いモジュールは候補にならない)。
+
+| 形 | 例 | npm(core が上に置かれる) | pnpm(core を直接入れていない) | 直し方(0.65.0) |
+| --- | --- | --- | --- | --- |
+| a. 機能の部品を推論のまま公開 | `export const features = { ...standardFeatures, find: findFeature }` | TS2883(React 版の内部の部品の型) | 同じ | 部品の型を中身の見えない `GridFeature<K>`(`unique symbol` の印だけ。`/lite` から公開)にし、`GridFeatures` を `{ [K in GridFeatureName]?: GridFeature<K> }` に。部品は `satisfies GridFeatureParts<K> as unknown as GridFeature<K>`、`createSpreadsheetGrid` の中で内部の型へ戻す。実行時は不変 |
+| b. core から再公開している関数の戻り値 | `export const yen = numberFormatter({ ... })` | `…-core/internal/model/gridTypes.unbound` を参照 | TS2883 | `numberFormatter` の多重定義を `CellValueFormatterParams<T, F>`(gridTypes.core)で書き直し、型引数なしは行の型を問わない関数に。`restoreColumnsFromState` は `readonly` の配列も受けて要素の型のまま返す |
+| c. 公開型のプロパティを推論のまま公開 | `p.columns` / `column.editor` / `column.renderCell` / `p.labelRow` / `onCellClick` / バーのスロット | `…-core/internal/model/gridTypes.core` を参照 | TS2883 | React 版の `model/gridTypes.ts` の別名を core の入口(`import type * as Core from '@ishibashi0112/spreadsheet-grid-core'`)から取る。npm では d.ts が `import("@ishibashi0112/spreadsheet-grid-core").GridColumn<Row, ReactGridTypes>` になる。pnpm で core を直接入れていないときは TS2883 のままなので、「推論した型を公開するライブラリは core も同じ版で依存に入れる」とドキュメント(docs/versioning)に書いた |
+
+- 別視点のレビューで、`/ai` の公開型 `GridAskOptions<T>` の `columns` が内部の束縛(gridTypes.unbound)で書かれていて、`options.columns` を推論のまま export すると同じく内部のパスが出ることが分かった。core の入口から公開している `GridColumn<T, any>` で書くよう直し、`types:check` の生成ファイルに「公開型のプロパティを 1 段たどる」「関数の宣言は呼び出した結果も」を足して検出できるようにした(直す前の dist で落ちることを確認)。
+- 見送った案: React 版の入口から F つきの core の型を別名(`GridColumnOf<T, F>` など約 25 個)で出す(pnpm でも通るが公開の名前が増え、同じ型が 2 つの名前を持つ)/ api-extractor などで d.ts を入口ごとに束ねる(ビルドが大きく変わり、core と同じ型が 2 つ入る)/ ドキュメントに書くだけ(a のエラーは理由が分かりにくい)。
+
+**2. 公開型の型テスト。** ゲート `types:check`(`scripts/check-types.mjs` + `type-tests/`。build:lib の後、CI でも実行。約 25 秒)。pack した tarball を一時ディレクトリへ入れて利用側の形で tsc を回す: `type-tests/src`(正しい書き方が通り、間違いが `@ts-expect-error` で型エラーになる: 列定義とエディタ / 書式 / ラベル行の型ガード / ハンドル / `/lite` / `localeText` / `/ai` / `/testing`)、`type-tests/library`(d.ts を出すライブラリの形。すべての入口の値 41 個(関数の宣言 6 個は呼び出した結果も)と公開型 219 個のプロパティ約 1,900 個を推論のまま再公開する生成ファイルも含め、出した d.ts に `/internal/`・`/dist/`・`node_modules`・`.pnpm` のパスが無いこと)、`type-tests/cjs`(CommonJS から nodenext)。組み合わせは TypeScript 5.8.3(下限)/ リポジトリの版 / 7.0.2 × bundler と nodenext(npm + React 19 の型)と、pnpm + React 18 の型(core を直接入れない形で `library/portable.tsx` の d.ts)の 11 通り。同じスクリプトを 0.64.0 の tarball に向けると a の TS2883 と `@ts-expect-error` の未使用で落ちることを確認。
+- 実測(0.64.0): TypeScript 5.0 / 5.4 / 5.5 / 5.8 / 5.9 / 7.0 と React の型 18 / 19 で bundler と nodenext(ESM)は通る。CommonJS のファイルから nodenext で読むと 5.4 / 5.5 は TS1479、5.8 以上は通る。node10(`moduleResolution: node`)は `/lite` などのサブパスを解決できない(TypeScript 6 で非推奨)。対応は **TypeScript 5.8 以上**(bundler / nodenext)とし、README と docs/versioning に書き、「TypeScript の下限を上げる」を壊す変更に足した。
+- arethetypeswrong は入れなかった(出るのは CommonJS + node16 の Masquerading as ESM と node10 で、どちらも対応範囲の外か 5.8 以上で通る形。exports と型の対応はすべての入口を bundler / nodenext で読む検査で見ている)。
+
+**3. 非推奨を知らせる仕組み。** core `utils/deprecation.ts`(非推奨の表 `DEPRECATIONS` = 名前 / 非推奨にした版 / 消す版 / JSDoc を持つ型 / 文と、`warnDeprecated(id)` = 開発時だけ・1 つにつき 1 回・日本語の行と英語の行の 2 行。呼ぶ側も `process.env.NODE_ENV !== 'production'` で包み、本番のバンドルから表ごと消える)。API リファレンスの表の説明が「**非推奨**」で始まる行は `docs:jsdoc` が JSDoc に `@deprecated` を付ける。`deprecation.test.ts` が表と API リファレンス(API_REFERENCE.md と website)・JSDoc・CHANGELOG・版(非推奨にした版 ≦ 今の版 < 消す版)を照らし合わせ、`bump-version.mjs` は消す版以上へ上げるときに表に残っていれば止める。最初の使い道はエクスポートの scope `'all'` / `'visible'`(0.9.0 から非推奨。0.65.0 で開発時の警告、1.0.0 で消す)。
+
+**4. 多段の列見出しとピン留め行の見通し。** どちらも今の API を壊さずに後から足せる。今コードは変えない。
+- 多段の列見出し: `columns` の中へ入れ子にせず、別の prop(例 `columnGroups`。列の key でまとめる。MUI X の columnGroupingModel と同じ形)で足す。入れ子にすると `columns` と `onColumnsChange` の型が変わり壊す変更になる。段の高さは新しい prop にし、`headerHeight` は今の 1 段の意味のまま。エクスポートの見出しの段は省略できるオプションで足す。
+- ピン留め行: `rows` とは別の配列(例 `pinnedTopRows` / `pinnedBottomRows`)で足し、合計行と同じく選択の座標の外に置く。コールバックにはどの帯の行かを新しいフィールドで渡し、本体の行の `rowIndex` の意味は変えない。合計行(下端)や固定したラベル行の帯(上端)と並べて置ける。
+- 1.0 で守ること: `columns` を `GridColumn<T>[]` のままにする。`rowIndex` と `CellCoord` の意味を本体の行に限る(今どおり)。
 
 ### core の部品の移動(2026-10-29。ユーザー判断「移す・旧パスは 1 版残す」)
 

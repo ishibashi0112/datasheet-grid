@@ -15,6 +15,7 @@
 //     StackBlitz で開いたサンプルのインストールが失敗する(その版がまだ無い)ので、push の後は早めに publish します。
 import { execSync } from 'node:child_process';
 import { existsSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
+import ts from 'typescript';
 
 const kind = process.argv[2];
 const EXPLICIT = /^\d+\.\d+\.\d+$/;
@@ -54,6 +55,57 @@ const hasOldSubpaths = (exportsMap) => typeof exportsMap === 'object' && exports
 if (compareVersions(next, '0.61.0') >= 0 && (hasOldSubpaths(coreManifest.exports) || hasOldSubpaths(coreManifest.publishConfig?.exports))) {
   console.error(
     'bump-version: core の旧サブパス(exports の `./*`)は 0.61.0 で消す約束です。packages/core/package.json の exports と publishConfig.exports から `./*` を消し、「0.61.0 で消す」と書いたドキュメントとコメント(`git grep -n 0.61.0` で出るもの)を直し、CHANGELOG の「core の破壊的変更」に書いてから版を上げてください。',
+  );
+  process.exit(1);
+}
+
+// 追加(1.0 の準備): 非推奨の表(packages/core/src/utils/deprecation.ts の DEPRECATIONS)に、消す版(removeIn)が
+//   次の版以下のものが残っていれば止めます(非推奨にしたものの消し忘れ)。消すときは表から外し、警告の呼び出しと
+//   API リファレンス(両方)の行と JSDoc を消し、CHANGELOG の「## 未リリース」に書いてから版を上げます。
+//   表は TypeScript の構文木で読みます(空の `{}`、引用符の違い、キーの書き方に左右されないように。読めない書き方なら止める)。
+const DEPRECATIONS_PATH = 'packages/core/src/utils/deprecation.ts';
+const readDeprecations = () => {
+  const sourceFile = ts.createSourceFile(DEPRECATIONS_PATH, readFileSync(DEPRECATIONS_PATH, 'utf8'), ts.ScriptTarget.Latest, true);
+  const fail = (reason) => {
+    console.error(`bump-version: ${DEPRECATIONS_PATH} の DEPRECATIONS を読めません(${reason})`);
+    process.exit(1);
+  };
+  let table;
+  for (const statement of sourceFile.statements) {
+    if (!ts.isVariableStatement(statement)) continue;
+    for (const declaration of statement.declarationList.declarations) {
+      if (!ts.isIdentifier(declaration.name) || declaration.name.text !== 'DEPRECATIONS') continue;
+      let initializer = declaration.initializer;
+      while (
+        initializer !== undefined &&
+        (ts.isSatisfiesExpression(initializer) || ts.isAsExpression(initializer) || ts.isParenthesizedExpression(initializer))
+      ) {
+        initializer = initializer.expression;
+      }
+      if (initializer !== undefined && ts.isObjectLiteralExpression(initializer)) table = initializer;
+    }
+  }
+  if (table === undefined) fail('オブジェクトのリテラルが見つからない');
+  return table.properties.map((property) => {
+    if (!ts.isPropertyAssignment(property) || !ts.isObjectLiteralExpression(property.initializer)) {
+      fail(`項目 ${property.getText(sourceFile).slice(0, 40)} がオブジェクトのリテラルではない`);
+    }
+    const id = ts.isIdentifier(property.name) || ts.isStringLiteralLike(property.name) ? property.name.text : property.name.getText(sourceFile);
+    const removeIn = property.initializer.properties.find(
+      (field) => ts.isPropertyAssignment(field) && field.name.getText(sourceFile).replace(/['"]/g, '') === 'removeIn',
+    );
+    if (removeIn === undefined || !ts.isStringLiteralLike(removeIn.initializer) || !/^\d+\.\d+\.\d+$/.test(removeIn.initializer.text)) {
+      fail(`項目 ${id} の removeIn が 'X.Y.Z' の文字列ではない`);
+    }
+    return { id, removeIn: removeIn.initializer.text };
+  });
+};
+const dueDeprecations = readDeprecations()
+  .filter((entry) => compareVersions(next, entry.removeIn) >= 0)
+  .map((entry) => `${entry.id}(${entry.removeIn} で消す)`);
+if (dueDeprecations.length > 0) {
+  console.error(
+    `bump-version: ${next} で消す約束の非推奨が残っています: ${dueDeprecations.join(' / ')}。${DEPRECATIONS_PATH} の冒頭の手順どおりに消してから版を上げてください。`,
   );
   process.exit(1);
 }

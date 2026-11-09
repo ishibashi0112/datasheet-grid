@@ -4,11 +4,11 @@
 import { resolveScrollHintOptions } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/scrollHint';
 import { DEFAULT_SCROLL_HINT_LOCALE_TEXT } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/localeTextFeatures';
 import { GridScrollHint } from '../view/GridScrollHint';
-import type { ReactGridFeatures } from './types';
+import type { GridFeature, GridFeatureParts } from './types';
 
-export const scrollHintFeature: NonNullable<ReactGridFeatures['scrollHint']> = {
+export const scrollHintFeature = {
   resolveScrollHintOptions,
   ScrollHint: GridScrollHint,
   // 追加(英語対応): この機能だけが使う文言の既定(シェルが本体の既定に重ねる)。
   localeText: DEFAULT_SCROLL_HINT_LOCALE_TEXT,
-};
+} satisfies GridFeatureParts<'scrollHint'> as unknown as GridFeature<'scrollHint'>;

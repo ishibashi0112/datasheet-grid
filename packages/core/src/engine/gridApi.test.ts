@@ -246,7 +246,7 @@ describe('createGridApi', () => {
     expect(api.handle.exportCsv()).toBe('ID,名前\r\n1,a\r\n2,b\r\n3,c');
     // 先頭列(ID)に値があるので見出しは置かない。
     expect(api.handle.exportCsv({ includeTotalRow: true })).toBe('ID,名前\r\n1,a\r\n2,b\r\n3,c\r\n6,');
-    expect(api.handle.exportCsv({ includeTotalRow: true, scope: 'all' })).toBe('ID,名前\r\n1,a\r\n2,b\r\n3,c\r\n6,');
+    expect(api.handle.exportCsv({ includeTotalRow: true, scope: 'view' })).toBe('ID,名前\r\n1,a\r\n2,b\r\n3,c\r\n6,');
     expect(api.handle.exportCsv({ includeTotalRow: true, scope: 'raw', includeHeaders: false })).toBe('1,a\r\n2,b\r\n3,c');
     expect(api.handle.exportCsv({ includeTotalRow: true, scope: 'rendered', includeHeaders: false })).toBe('1,a\r\n2,b\r\n3,c');
     const data = api.handle.getExportData({ includeTotalRow: true });

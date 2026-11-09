@@ -4,12 +4,12 @@
 import { buildGroupTree, flattenGroupTree } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/grouping';
 import { DEFAULT_GROUPING_LOCALE_TEXT } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/localeTextFeatures';
 import { GridBodyGroupRow } from '../view/GridBodyGroupRow';
-import type { ReactGridFeatures } from './types';
+import type { GridFeature, GridFeatureParts } from './types';
 
-export const groupingFeature: NonNullable<ReactGridFeatures['grouping']> = {
+export const groupingFeature = {
   buildGroupTree,
   flattenGroupTree,
   BodyGroupRow: GridBodyGroupRow,
   // 追加(英語対応): この機能だけが使う文言の既定(シェルが本体の既定に重ねる)。
   localeText: DEFAULT_GROUPING_LOCALE_TEXT,
-};
+} satisfies GridFeatureParts<'grouping'> as unknown as GridFeature<'grouping'>;

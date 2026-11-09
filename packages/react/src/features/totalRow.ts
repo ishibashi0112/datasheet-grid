@@ -7,12 +7,12 @@ import {
   resolveTotalRowLabelColumnKey,
 } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/totalRow';
 import { GridTotalRow } from '../view/GridTotalRow';
-import type { ReactGridFeatures } from './types';
+import type { GridFeature, GridFeatureParts } from './types';
 
-export const totalRowFeature: NonNullable<ReactGridFeatures['totalRow']> = {
+export const totalRowFeature = {
   createTotalRowCellsResolver,
   TotalRow: GridTotalRow,
   formatTotalRowCellText,
   resolveTotalRowCaption,
   resolveTotalRowLabelColumnKey,
-};
+} satisfies GridFeatureParts<'totalRow'> as unknown as GridFeature<'totalRow'>;

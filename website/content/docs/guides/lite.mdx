@@ -56,13 +56,17 @@ const Grid = createSpreadsheetGrid({
 });
 ```
 
-機能の組み合わせを変数にして export するとき(社内の共通部品のパッケージなどで `declaration: true` のとき)は、型 `GridFeatures` を注釈してください。注釈しないと推論された型が公開していない内部の型を指し、型の宣言(d.ts)を出すときに TS2742 になります。
+機能の組み合わせは変数にして export できます。社内の共通部品のパッケージなどで `declaration: true` のときも、型を注釈しなくてかまいません(0.65.0 から。0.64.0 までは型 `GridFeatures` の注釈が要り、注釈しないと TS2742 / TS2883 になりました)。注釈するなら `GridFeatures` です。部品を違うキーへ入れると型エラーになります。
 
 ```tsx
 import type { GridFeatures } from '@ishibashi0112/spreadsheet-grid/lite';
 
-export const companyFeatures: GridFeatures = { ...standardFeatures, find: findFeature };
+export const companyFeatures = { ...standardFeatures, find: findFeature };
+// 注釈してもよい
+export const searchOnlyFeatures: GridFeatures = { find: findFeature };
 ```
+
+ライブラリとして配るときの注意は[バージョンと互換性](/docs/versioning#react-版の上にライブラリを作るとき)にあります。
 
 - `standardFeatures` は、列フィルター / グローバルフィルター(`filtering`)、列メニュー(`columnMenu`)、ツールパネル(`toolPanel`)、列幅の自動調整(`columnAutosize`)、エクスポート(`export`)です。
 - 列見出しからソートする入口は列メニューです。列メニューが無いときに画面からソートできるのは、ツールパネル(`toolPanel`)の「並び替え」タブだけです(どちらも無いと `applyState` 等の API からになります)。

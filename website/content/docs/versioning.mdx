@@ -11,13 +11,13 @@ description: 版の上げ方(semver)、公開範囲、壊す変更と非推奨�
 - patch(0.Y.**Z**)は不具合の修正だけです。
 - npm の既定の書き方 `^0.Y.Z` は、同じ 0.Y の中の版だけを受け取ります。minor を上げるときは CHANGELOG を確かめてください。
 
-1.0 からは、壊す変更は major でだけ出します。1.0 は、下の公開範囲と非推奨の手順がそろった版にします(時期は未定です)。
+1.0 からは、壊す変更は major でだけ出します。1.0 は、下の公開範囲・型の対応・非推奨の手順がそろった版にします。
 
 ## 公開範囲
 
 semver の対象は次のものです。
 
-- **React 版**: 入口(`@ishibashi0112/spreadsheet-grid` / `/lite` / `/ai` / `/testing`)から import できるもの、CSS ファイル(`style.css` / `style.layer.css` / `themes/*.css`)、[API リファレンス](/docs/api/props)に書いた props・列定義・命令的 API・型とその意味。
+- **React 版**: 入口(`@ishibashi0112/spreadsheet-grid` / `/lite` / `/ai` / `/locales/en` / `/testing`)から import できるもの、CSS ファイル(`style.css` / `style.layer.css` / `themes/*.css`)、[API リファレンス](/docs/api/props)に書いた props・列定義・命令的 API・型とその意味。
 - **CSS**: トークン(`--ssg-*`)と、API リファレンスの[スタイリング用の状態クラス(公開契約)](/docs/api/props#スタイリング用の状態クラス公開契約)に載せたクラスと属性。
 - **core**: 入口 `@ishibashi0112/spreadsheet-grid-core` と `/testing` から import できるもの。React 版は同じ版の core に依存するので、core も直接使うときは React 版と同じ版にそろえてください(違う版だと core が 2 つ入ります)。
 
@@ -26,6 +26,26 @@ semver の対象は次のものです。
 - core の部品(`@ishibashi0112/spreadsheet-grid-core/internal/<dir>/<module>`)。React 版が使う部品で、React 版は同じ版の core に固定で依存します。`internal/` の無い旧サブパス(`@ishibashi0112/spreadsheet-grid-core/<dir>/<module>`)は 0.60.0 で非推奨にし、0.61.0 で消しました。
 - 表に載っていない `ssg-*` クラス、DOM の入れ子の形、グリッドが付けるインライン style。
 
+## TypeScript
+
+- 対応するのは TypeScript 5.8 以上です。`moduleResolution` は `bundler`(Vite / Next.js などのバンドラ)か `nodenext`(ESM と CommonJS)。古い `node`(`node10`)は `/lite` などの入口のパスを解決できないので対象外です。
+- 公開した型は、公開する前にこの組み合わせ(TypeScript の下限・最新、React 18 / 19 の型、npm / pnpm)で型の検査をしています。
+
+### React 版の上にライブラリを作るとき
+
+社内の共通部品のように、このパッケージの上に作ったものを `declaration: true` で配るときは、列定義や機能の組み合わせを推論のまま export できます(0.65.0 から。型を注釈してもかまいません)。
+
+```tsx
+import { createSpreadsheetGrid, findFeature, standardFeatures } from '@ishibashi0112/spreadsheet-grid/lite';
+
+// 注釈しなくても d.ts を出せる(d.ts には公開の入口の名前だけが書かれる)
+export const companyFeatures = { ...standardFeatures, find: findFeature };
+export const CompanyGrid = createSpreadsheetGrid({ features: companyFeatures });
+```
+
+- 出した d.ts には、React 版と core の入口(`@ishibashi0112/spreadsheet-grid` / `@ishibashi0112/spreadsheet-grid-core` など)の名前だけが書かれ、core の内部のパスは書かれません。0.64.0 までで作った d.ts には内部のパスが書かれていることがあるので、0.65.0 以降で作り直してください。これは React 版の入口から使うときの話です。core を直接使う(`createGridEngine` など)ライブラリの d.ts には、core の内部のパスが出ることがあります。
+- React 版と core は、同じ版で `peerDependencies` に入れてください(アプリと同じものを使うように)。機能の部品の型 `GridFeature<K>` は、React 版が 2 つ入ると同じ部品でも互いに渡せません。列定義のように core の型が推論に出るものは、pnpm では core が直接の依存に無いと型の名前を書けずにエラー(TS2742 / TS2883。番号は TypeScript の版で違います)になることがあります。
+
 ## 壊す変更
 
 1.0 からは、次の変更は major で出します(0.x の間は minor)。
@@ -33,7 +53,7 @@ semver の対象は次のものです。
 - 公開 API を消す・改名する、型を狭める
 - 既定値や、ドキュメントに書いた挙動を変える
 - 公開したトークン・クラス・属性を消す・改名する、付く要素や条件を変える
-- 対応ブラウザや React の下限を上げる
+- 対応ブラウザ・React・TypeScript の下限を上げる
 
 次の変更は壊す変更に入れません(minor か patch)。
 
@@ -45,6 +65,16 @@ semver の対象は次のものです。
 
 1.0 からは、消すものは消す前の minor で非推奨にして、次の major で消します。0.x の間も、できるときはこの手順を使います。
 
-1. 型に `@deprecated` の JSDoc を付ける(エディタで取り消し線が出ます)
-2. 開発ビルドでだけ、使われたときに console に警告を出す
-3. CHANGELOG の「非推奨」の節に、代わりに使うものと一緒に書く
+1. 型に `@deprecated` の JSDoc を付ける(prop やメソッドはエディタで取り消し線が出ます。`scope` の `'all'` のような値には出ないので、値は 3 の警告で知らせます)
+2. [API リファレンス](/docs/api/props)の行に「**非推奨**」と、消す版を書く
+3. 開発ビルドでだけ、使われたときに 1 回、console に警告を出す(本番のビルドでは出しません)
+4. CHANGELOG の「非推奨」の節に、代わりに使うものと一緒に書く
+
+警告は日本語の行と英語の行の 2 行です。
+
+```text
+[spreadsheet-grid] 非推奨: エクスポートの scope `'all'` は 1.0.0 で消します。`'view'` を使ってください(挙動は同じです)。
+[spreadsheet-grid] Deprecated: The export scope `'all'` will be removed in 1.0.0. Use `'view'` instead (same behavior).
+```
+
+今の非推奨は、エクスポートの scope `'all'`(代わりは `'view'`)と `'visible'`(代わりは `'rendered'`)の 2 つです(0.9.0 から非推奨。1.0.0 で消します)。

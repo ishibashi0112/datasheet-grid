@@ -2,8 +2,8 @@
 //   中身は core の engine/exportCommands(gridApi から移したもの)で、描画の部品はありません。機能セットに無い構成では
 //   3 つのメソッドは空を返す / 何もしない代役になり、呼ばれたら開発時に 1 回だけ警告します。
 import { createExportCommands } from '@ishibashi0112/spreadsheet-grid-core/internal/engine/exportCommands';
-import type { ReactGridFeatures } from './types';
+import type { GridFeature, GridFeatureParts } from './types';
 
-export const exportFeature: NonNullable<ReactGridFeatures['export']> = {
+export const exportFeature = {
   createExportCommands,
-};
+} satisfies GridFeatureParts<'export'> as unknown as GridFeature<'export'>;

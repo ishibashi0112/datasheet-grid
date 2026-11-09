@@ -1,10 +1,16 @@
-import { describe, it, expect } from 'vitest';
+import { afterEach, describe, it, expect, vi } from 'vitest';
 
 import { normalizeExportScope } from './exportScope';
+import { resetDeprecationWarningsForTest } from '../utils/deprecation';
 import type { NormalizedCsvExportScope } from './exportScope';
 import type { CsvExportScope } from '../model/gridTypes.unbound';
 
 describe('normalizeExportScope', () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+    resetDeprecationWarningsForTest();
+  });
+
   it('新 4 値はそのまま返す', () => {
     const passthrough: NormalizedCsvExportScope[] = [
       'view',
@@ -36,5 +42,19 @@ describe('normalizeExportScope', () => {
     ];
     const normalized = new Set(all.map(normalizeExportScope));
     expect(normalized).toEqual(new Set(['view', 'raw', 'rendered', 'selection']));
+  });
+
+  // 追加(1.0 の準備): 旧エイリアスは 1.0.0 で消すので、開発時に 1 回だけ警告する(新 4 値は警告しない)。
+  it("'all' / 'visible' は開発時にそれぞれ 1 回だけ非推奨の警告を出す", () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    normalizeExportScope('view');
+    normalizeExportScope('rendered');
+    expect(warn).not.toHaveBeenCalled();
+    normalizeExportScope('all');
+    normalizeExportScope('all');
+    normalizeExportScope('visible');
+    expect(warn).toHaveBeenCalledTimes(2);
+    expect(warn.mock.calls[0]?.[0]).toContain("scope `'all'` は 1.0.0 で消します。`'view'` を使ってください");
+    expect(warn.mock.calls[1]?.[0]).toContain("Use `'rendered'` instead");
   });
 });

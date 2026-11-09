@@ -382,6 +382,25 @@ export type ReactGridFeatures = {
   };
 };
 
+// 追加(1.0 の準備): /lite が公開する機能の部品の型です。部品の中身(上の ReactGridFeatures の各機能)は内部の実装で、
+//   版によって変わります。中身の型のまま公開すると、利用側が機能の部品や standardFeatures を推論のまま export したとき
+//   d.ts に名前を付けられない内部の型が出て TS2883 になるため、部品は中身の見えないこの型で公開します。
+//   実行時の値は部品そのものです(各 features/<名前> が satisfies で中身を検査し、型だけを付け替える)。
+declare const gridFeatureBrand: unique symbol;
+/** 機能セットのキー(`createSpreadsheetGrid` の `features` のキー。`find` / `filtering` など)。 */
+export type GridFeatureName = keyof ReactGridFeatures;
+/**
+ * `/lite` が公開する機能の部品(`findFeature` / `filteringFeature` など)の型。
+ * 中身は内部の実装で、型からは見えません。`K` はその部品を入れる機能セットのキーです。
+ */
+export interface GridFeature<K extends GridFeatureName> {
+  readonly [gridFeatureBrand]: K;
+}
+/** `createSpreadsheetGrid` の `features` の型(機能セットのキー → その機能の部品)。どの機能も省略できます。 */
+export type GridFeatures = { [K in GridFeatureName]?: GridFeature<K> };
+// 機能の部品の中身の型(内部)。features/<名前> が satisfies で使います。
+export type GridFeatureParts<K extends GridFeatureName> = NonNullable<ReactGridFeatures[K]>;
+
 // シェルが受け取る機能セット: hook の部品を持つ機能は必ずある(無い機能は代役)。それ以外の機能は省略のまま
 //   (シェルが ?. で見て、無ければ何もしない)。
 type HookFeatureName =

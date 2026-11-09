@@ -3,10 +3,10 @@
 //   渡しても無効(入力受けを描画しない = 従来の既定と同じ)、開発時に警告します。
 import { createImeInputController } from '@ishibashi0112/spreadsheet-grid-core/internal/controllers/imeInputController';
 import { canStartImeEdit, resolveImeEditText } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/imeInput';
-import type { ReactGridFeatures } from './types';
+import type { GridFeature, GridFeatureParts } from './types';
 
-export const imeDirectInputFeature: NonNullable<ReactGridFeatures['imeDirectInput']> = {
+export const imeDirectInputFeature = {
   createImeInputController,
   canStartImeEdit,
   resolveImeEditText,
-};
+} satisfies GridFeatureParts<'imeDirectInput'> as unknown as GridFeature<'imeDirectInput'>;

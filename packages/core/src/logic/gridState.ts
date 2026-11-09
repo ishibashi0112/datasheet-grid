@@ -1,6 +1,7 @@
 import type {
   ColumnFilterValue,
   GridColumn,
+  GridColumnPinned,
   GridColumnState,
   GridFilterState,
   GridSortState,
@@ -494,7 +495,9 @@ export const applyColumnState = <T,>(
 //   無い / 読めないときは渡した配列をそのまま返します。
 // 変更(段階 2 の確かめ直し): readonly の配列(as const の列定義など)も受けます。そのまま返すときも columns prop へ渡せるよう
 //   型は C[] にします(グリッドは columns を書き換えない)。
-export const restoreColumnsFromState = <C extends { key: string; visible?: boolean; pinned?: GridColumn<unknown>['pinned'] }>(
+// 変更(1.0 の準備): pinned の型は公開型の GridColumnPinned で書きます(内部用の束縛の GridColumn から引くと、利用側が
+//   推論のまま export したときの d.ts が core の内部のパスを指すため)。
+export const restoreColumnsFromState = <C extends { key: string; visible?: boolean; pinned?: GridColumnPinned }>(
   columns: readonly C[],
   state: unknown,
 ): C[] => {

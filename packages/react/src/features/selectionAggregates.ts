@@ -4,11 +4,11 @@
 import { useSelectionAggregates } from '../hooks/useSelectionAggregates';
 import { DEFAULT_AGGREGATES_LOCALE_TEXT } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/localeTextFeatures';
 import { GridSelectionAggregates } from '../view/GridSelectionAggregates';
-import type { ReactGridFeatures } from './types';
+import type { GridFeature, GridFeatureParts } from './types';
 
-export const selectionAggregatesFeature: NonNullable<ReactGridFeatures['selectionAggregates']> = {
+export const selectionAggregatesFeature = {
   useSelectionAggregates,
   SelectionAggregates: GridSelectionAggregates,
   // 追加(英語対応): この機能だけが使う文言の既定(シェルが本体の既定に重ねる)。
   localeText: DEFAULT_AGGREGATES_LOCALE_TEXT,
-};
+} satisfies GridFeatureParts<'selectionAggregates'> as unknown as GridFeature<'selectionAggregates'>;
