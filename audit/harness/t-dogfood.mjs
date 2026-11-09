@@ -225,8 +225,9 @@ for (const key of ['category', 'date', 'name']) {
     const el = document.querySelector('.ssg-center-pane .ssg-body-row[data-row-index="0"]');
     return el && !el.querySelector('.ssg-skeleton-bar') && (el.textContent ?? '').trim() !== '';
   });
-  // DF-07: 保存中(800ms)に refreshServerSide() → 決着の後に取り直すので、直前の編集が古い値に戻らない
-  await page.evaluate(() => { window.__ssrm.updateLatency = 800; window.__ssrm.calls.length = 0; });
+  // DF-07: 保存中(2,000ms)に refreshServerSide() → 決着の後に取り直すので、直前の編集が古い値に戻らない
+  //   (800ms では、WebDriver の WebKit で取り直しから読むまでに 600ms 以上かかり、読む前に保存が決着していた)。
+  await page.evaluate(() => { window.__ssrm.updateLatency = 2000; window.__ssrm.calls.length = 0; });
   await cell(page, 3, 'name').dblclick();
   await page.keyboard.press('Control+A');
   await page.keyboard.type('saved-before-refresh');
