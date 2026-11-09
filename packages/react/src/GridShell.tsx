@@ -84,6 +84,10 @@ import { useGridPointerInteractions } from './hooks/useGridPointerInteractions';
 import { useGridViewportSync } from './hooks/useGridViewportSync';
 // 追加(TT-1): title 属性置き換えのカスタムツールチップ(data-ssg-tooltip 委譲)です。
 import { useGridTooltip } from './hooks/useGridTooltip';
+import {
+  hideActiveCellTooltip,
+  scheduleActiveCellTooltip,
+} from '@ishibashi0112/spreadsheet-grid-core/internal/controllers/tooltipController';
 // 追加(TH-DK-2): theme prop('light' | 'dark' | 'auto')の実効テーマ解決フックです。
 import { useResolvedGridTheme } from './hooks/useResolvedGridTheme';
 import { useResolvedGridMotion } from './hooks/useResolvedGridMotion';
@@ -2070,6 +2074,18 @@ export function useGridShell<T extends object>({
   // 追加(TT-1): カスタムツールチップの表示制御です(body 直下シングルトン + window 委譲。
   //   複数グリッド同居時はフック内の refCount で共有されます)。
   useGridTooltip(slots.tooltip);
+  // 追加(1.0.1 / 2026-11-09 実アプリの総点検 AP-35): キーボード / タップでアクティブセルになったセルが検査 NG なら、メッセージの
+  //   ツールチップをすぐ出します(これまではマウスのホバーでしか出なかった)。編集中は出しません。
+  const tooltipActiveRow = uiState.activeCell?.row;
+  const tooltipActiveCol = uiState.activeCell?.col;
+  const tooltipEditing = uiState.editingCell !== null;
+  useEffect(() => {
+    if (tooltipActiveRow === undefined || tooltipActiveCol === undefined || tooltipEditing) {
+      hideActiveCellTooltip(gridRootRef.current);
+      return undefined;
+    }
+    return scheduleActiveCellTooltip(activeCellDomId, gridRootRef.current);
+  }, [tooltipActiveRow, tooltipActiveCol, tooltipEditing, activeCellDomId]);
 
   useGridViewportSync({
     scrollRef: scrollContainerRef,

@@ -479,6 +479,10 @@ function GridBodyRowInner<T>({
             aria-colindex={colIndex + 2}
             aria-selected={isSelected}
             aria-readonly={readOnlyCell || undefined}
+            // 追加(1.0.1 / 2026-11-09 実アプリの総点検 AP-35): 検査 NG のセルは aria-invalid、メッセージ(とメモ)は説明として
+            //   読ませます(これまではマウスのホバーのツールチップでしか分からなかった)。
+            aria-invalid={invalidMessage !== null || undefined}
+            aria-description={tooltipText ?? undefined}
             id={isActive ? activeCellDomId : undefined}
             aria-owns={colIndex === editingColInRow ? cellEditorDomId : undefined}
             data-ssg-col-key={column.key}

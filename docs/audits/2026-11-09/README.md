@@ -84,10 +84,10 @@
 | AP-29 | J-07 | `transform: scale()` の中でドラッグ系がずれる | 直す | 1.0.1 | 済(レイアウト) |
 | AP-30 | L-04 | スマホの横向きでツールパネルがはみ出す | 直す | 1.0.1 | 済(レイアウト) |
 | AP-31 | L-02 | 「列の固定」の小メニューがタッチで開けない | 直す | 1.0.1 | 済(レイアウト) |
-| AP-32 | L-03 / K-04 | フィルターのポップオーバーから Tab で外へ出て開いたまま。role が無い | 直す | 1.0.1 | 未着手 |
+| AP-32 | L-03 / K-04 | フィルターのポップオーバーから Tab で外へ出て開いたまま。role が無い | 直す | 1.0.1 | 済(アクセシビリティ) |
 | AP-33 | F-09 / L-05 / E-11 / I-12 | 右クリックメニューをキーボードで開けない。列メニューに role="menu" が無い | キーで開く + role | 1.1.0 | 未着手 |
-| AP-34 | L-06 / K-05 | エディタの入力欄に読み上げの名前が無い(文書は「(列名)を編集」) | 直す | 1.0.1 | 未着手 |
-| AP-35 | L-01 / D-07 | 検査 NG のメッセージがホバーでしか読めない、`aria-invalid` が無い | 直す | 1.0.1 | 未着手 |
+| AP-34 | L-06 / K-05 | エディタの入力欄に読み上げの名前が無い(文書は「(列名)を編集」) | 直す | 1.0.1 | 済(アクセシビリティ) |
+| AP-35 | L-01 / D-07 | 検査 NG のメッセージがホバーでしか読めない、`aria-invalid` が無い | 直す | 1.0.1 | 済(アクセシビリティ) |
 | AP-36 | J-09 | style.css + Tailwind v4 では `classNames` の Tailwind のクラスが効かない | 文書 | 1.0.1 | 未着手 |
 | AP-37 | K-02 | テストのガイドの「全行 / 全列を描画」が事実と違う | 文書 | 1.0.1 | 未着手 |
 | AP-38 | K-07 | React 18 で包む部品に ref を素通しすると型は通るのに null | 文書 | 1.0.1 | 未着手 |
@@ -206,5 +206,6 @@
 | 日付の境目 | AP-06 | 描画中に現在時刻を読まない(core `createDateRolloverStore` は見張りを始めたときに初めて読む、`filterOrderByColumns` は日付の条件があるときだけ)。Next.js 16 + cacheComponents の最小のページで `next build` が通り静的になるのを確かめた。`renderToString` で現在時刻を読まないテスト(`SpreadsheetGrid.ssrCurrentTime.ssr.test.tsx`)。クイックスタートと URL から戻す例に注記 | 132.98 → 132.99KB |
 | フィルター・検索・列 | AP-18 / 19 / 20 / 21 / 22 | numberSet の候補は数の順(core `logic/selectOptions` の `numeric`)。rows がよく変わる 5 万行超の表: 検索(`findController`)とグローバルフィルター(`globalFilteredOrder`)は行のオブジェクトごとの結果を WeakMap に控え、やり直しの間も前の結果を出す(グローバルフィルターは先頭と末尾の行が同じ位置のとき)、打った直後の移動を忘れない。候補の収集(`selectOptionsCollector`)は同じ列なら止めずに最後まで集めて出し、それから集め直す(`sourceKey`)。同期の経路を通ったら前の完了結果を忘れる(AP-20)。列のリセットは `rowGroup` も戻す(`logic/columnReset`)。`autoSizeColumns` は display: none の中では待つ(`isElementHidden`) | 132.99 → 133.93KB(+0.94) |
 | レイアウト | AP-23 / 24 / 25 / 26 / 27 / 28 / 29 / 30 / 31 | 固定列の合計が広すぎるときは中央に max(120px, 幅の 25%) を残すまで右固定(先頭から)→ 左固定(末尾から)を中央へ移して描く(列の `pinned` は変えない。core `engine/columnLayout` の `resolvePinnedOverflowKey` / `applyPinnedOverflow`)。縮めたスクロールの率が変わったら物理の位置を直して見ている行を保つ(`createScrollScaleAnchor`)。並べ替え中の末尾への追加は前の並びの続きとして差分で並べ直す(`logic/sorting` の `isOrderPrefix`)。描けない高さ(約 1,500 万 px 超)ではトグルを出さず Enter も何もしない(`detailDrawable`)。ポップアップの文字色を `--ssg-panel-text` に。集計は項目を丸ごと隠す(幅 0 の目印 + 折り返し)。`transform: scale()` の中の座標を見た目 / レイアウトの比で直す(core `logic/elementScale`)。ツールパネルの高さを画面に収める(`maxHeight`)。「列の固定」の小メニューはタップ / → で開き ← で戻る | 133.93 → 134.95KB(+1.02) |
+| アクセシビリティ | AP-32 / 34 / 35 | 列フィルターのポップオーバーは `role="dialog"` + 名前、`Tab` は中で回す(core `logic/focusCycle` の `resolveFocusWrapTarget`、中の部品がキーの伝播を止めるので capture 相)、検索欄と dateSet の木のチェックボックスに名前。組み込みのエディタの入力欄に「(列名) を編集」(`CellEditorLayer` が渡す)、select エディタは select-only combobox(`aria-controls` / `aria-activedescendant`、候補に id)。検査 NG のセルに `aria-invalid` と `aria-description`(ツールチップと同じ文)。キーボード / タップでアクティブセルになった検査 NG のセルはツールチップをすぐ出す(core `tooltipController` の `scheduleActiveCellTooltip` = 2 フレーム後に id で探す、タップの pointerout では閉じない、グリッドの外へフォーカスが移ったら閉じる)。編集中の axe の `aria-required-children` は aria-owns を数えない検査の側の制約(Chrome のアクセシビリティツリーではセルの子)としてドキュメントに記載 | 134.95 → 135.39KB(+0.44) |
 
 - 大きさの上限は、1.0.1 の途中は実測 + 0.5KB の仮の値(`scripts/size-budget.json` の注記)。1.0.1 の上限は「修正を入れ終えた後の実測 + 0.5KB」(2026-11-09 ユーザー判断)。

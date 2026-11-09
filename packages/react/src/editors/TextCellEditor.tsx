@@ -22,6 +22,8 @@ import { CellEditorErrorBubble } from './CellEditorErrorBubble';
 import { cx } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/cx';
 
 type TextCellEditorProps = {
+  // 追加(1.0.1 / 2026-11-09 実アプリの総点検 AP-34): 入力欄の読み上げの名前(「(列名) を編集」。枠の group と同じ)。
+  ariaLabel?: string;
   initialValue: string;
   onCommit: (
     value: unknown,
@@ -82,6 +84,7 @@ const fitMultilineEditor = (textarea: HTMLTextAreaElement, cellHeight: number, p
 };
 
 export function TextCellEditor({
+  ariaLabel,
   initialValue,
   onCommit,
   onCancel,
@@ -190,6 +193,8 @@ export function TextCellEditor({
             })(event)
           }
           onBlur={handleCommitOnBlur}
+          aria-label={ariaLabel}
+          aria-invalid={errorMessage !== null || undefined}
           className={cx(
             'ssg-cell-editor-input',
             'ssg-cell-editor-input--multiline',
@@ -221,6 +226,8 @@ export function TextCellEditor({
           enterMove,
         })}
         onBlur={handleCommitOnBlur}
+        aria-label={ariaLabel}
+        aria-invalid={errorMessage !== null || undefined}
         className={cx(
           'ssg-cell-editor-input',
           errorMessage !== null && 'ssg-cell-editor-input--invalid',

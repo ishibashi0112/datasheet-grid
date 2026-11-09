@@ -23,6 +23,8 @@ import {
 } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/editorValues';
 
 type NumberCellEditorProps = {
+  // 追加(1.0.1 / 2026-11-09 実アプリの総点検 AP-34): 入力欄の読み上げの名前(「(列名) を編集」。枠の group と同じ)。
+  ariaLabel?: string;
   initialValue: string;
   min?: number;
   max?: number;
@@ -40,6 +42,7 @@ type NumberCellEditorProps = {
 };
 
 export function NumberCellEditor({
+  ariaLabel,
   initialValue,
   min,
   max,
@@ -119,6 +122,8 @@ export function NumberCellEditor({
             onCancel();
           }
         }}
+        aria-label={ariaLabel}
+        aria-invalid={errorMessage !== null || undefined}
         className={cx(
           'ssg-cell-editor-input',
           errorMessage !== null && 'ssg-cell-editor-input--invalid',

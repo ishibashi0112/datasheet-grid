@@ -73,7 +73,7 @@
 | `enableColumnResize` | `boolean` | `true` | 列幅の手動リサイズ可否のグリッド既定。各列 `resizable` 未指定時に継承(`column.resizable ?? enableColumnResize`)。 |
 | `autoSizeColumns` | `'onMount' \| 'onDataChange' \| false` | `false` | データ投入時に全列幅を内容へ自動フィット。`'onMount'`=初回にデータが載った一度きり / `'onDataChange'`=`rows`(参照)が変わるたび(= データ差し替えのたび。手動リサイズは上書き) / `false`=無効。計測は列メニュー「すべての列の幅を自動調整」と同一エンジン(`suppressAutoSize` / `autoHeight` 列は除外)。フィルター / ソート / 列並べ替えでは再フィットしません。グリッドが描かれていない間(`display: none` の中。隠したタブなど)は測らずに待ち、描かれたときに測ります(1.0.1 から。1.0.0 は幅 0 のまま測って列を縮めていました)。serverSide(`dataSource`)では無効。詳細は「flex と autoSize」節。 |
 | `showCellOverflowTooltip` | `boolean` | `false` | セル内容が省略(…)される列で、ホバー時に全文ツールチップを表示。対象は既定テキストセルのみ(`renderCell` 列 / `autoHeight` 折り返し列は対象外)。表示はホバー時に `scrollWidth > clientWidth` を判定し、実際にクリップされているセルのみ。既存のカスタムツールチップ(`data-ssg-tooltip`)を共有。詳細は「ツールチップ」節。 |
-| `showValidationMarks` | `boolean` | `true` | invalid マーク(背景 + 右上マーカー + ホバーツールチップ)の表示可否。`false` で非表示 + 可視セルの検査(`validate` と number の `min` / `max` / `integer`)の評価スキップ。`getInvalidCells()` と `validationMode: 'reject'` の書き込み拒否には影響しない(独立経路)。「送信時にだけマークを出す」UX は利用側 state で本 prop を切り替えて実現(「バリデーション」節のレシピ参照)。 |
+| `showValidationMarks` | `boolean` | `true` | invalid マーク(背景 + 右上マーカー + メッセージのツールチップ + セルの `aria-invalid` / `aria-description`)の表示可否。`false` で非表示 + 可視セルの検査(`validate` と number の `min` / `max` / `integer`)の評価スキップ。`getInvalidCells()` と `validationMode: 'reject'` の書き込み拒否には影響しない(独立経路)。「送信時にだけマークを出す」UX は利用側 state で本 prop を切り替えて実現(「バリデーション」節のレシピ参照)。 |
 | `enableColumnMenu` | `boolean` | `true` | 列メニュー(⋮ + ヘッダー右クリック)。 |
 | `enableRowHover` | `boolean` | `true` | 行ホバー時に行全体を薄くハイライト。 |
 | `hoveredRowIndex` | `number \| null` | — | 行ホバーの controlled 値(ビュー行 index / `null` = ホバーなし)。指定時は内部 state を使わずこの値でハイライトし、pointer 由来の変化は `onHoveredRowChange` で通知のみ(optionally controlled)。`enableRowHover: false` のときは無視(ハイライトも通知もしない)。一時的な UI 状態のため `GridState` / ハンドルには載らない。 |
@@ -855,15 +855,17 @@ WAI-ARIA の grid パターンに沿って、表・行・セルに役割と状�
 | 列見出し | `role="columnheader"`。`aria-colindex`(行番号列が 1)。ソートの第 1 キーの列だけ `aria-sort`(`ascending` / `descending`)。 |
 | 行番号 / 左上の角 | `role="rowheader"` / `role="columnheader"`。 |
 | 列見出しの `⋮` / グループ行の開閉ボタン / 展開トグル | `tabindex="-1"`(`Tab` の順番に入れない。グリッドのキー操作はフォーカスを受ける要素で行い、`Tab` 1 回でグリッドを出入りする)。`⋮` の `aria-label` は「`<列名> の列メニュー`」(列名の後ろに半角の空白。例: `数量 の列メニュー`。ツールチップは「列メニュー」)。キーボードでは、アクティブセルで `Alt+↓` を押すとその列の列メニューが開く。開閉ボタン / トグルは `aria-expanded` と `aria-label` を持ち、キーボードではアクティブセルでの `Enter` / `Space` で開閉する。 |
-| セル | `role="gridcell"`。`aria-colindex` / `aria-selected`(選択範囲内)/ `aria-readonly`(編集できないセル)。 |
+| セル | `role="gridcell"`。`aria-colindex` / `aria-selected`(選択範囲内)/ `aria-readonly`(編集できないセル)/ `aria-invalid`(検査 NG のセル。`showValidationMarks={false}` のときは付けない)/ `aria-description`(検査 NG のメッセージとメモ(`cellNote`)。ツールチップと同じ文。1.0.1)。 |
 | 行選択のチェックボックス | `role="checkbox"`。`aria-checked`(一部選択は `mixed`)/ `aria-label`(「すべての行を選択」「行 N を選択」)。 |
 | `editor: { type: 'checkbox' }` のセル | `role="checkbox"`。`aria-label` は列の `title`(無ければ `key`)。 |
-| 編集中のエディタ | `role="group"`、`aria-label` は「(列名)を編集」。行の外に重ねて描画するため、編集中のセルが `aria-owns` でエディタを子に持つ(支援技術ではエディタがセルの中に入る)。 |
+| 編集中のエディタ | `role="group"`、`aria-label` は「`<列名> を編集`」(列名の後ろに半角の空白。例: `数量 を編集`)。組み込みのエディタの入力欄にも同じ `aria-label`(1.0.1)。行の外に重ねて描画するため、編集中のセルが `aria-owns` でエディタを子に持つ(支援技術ではエディタがセルの中に入る)。`select` エディタの入力欄は `role="combobox"`(選ぶだけ。`aria-expanded` / `aria-controls` / `aria-activedescendant` でハイライト中の候補を指す)、候補の一覧は `role="listbox"`(名前は同じ)、候補は `role="option"` + `aria-selected`(1.0.1)。確定できない値(`validationMode: 'reject'`)のときは入力欄に `aria-invalid`、メッセージは `role="alert"`。 |
+| 列フィルターのポップオーバー | `role="dialog"`(モーダルではない)、`aria-label` は「`列フィルター: <列名>`」。検索欄にも `aria-label`。`Tab` / `Shift+Tab` は中で回り(最後の次は先頭)、`Escape` で閉じてグリッドへ戻る(1.0.1)。 |
 | 合計行(`totalRow`) | `role="row"`(表の最後の行。`aria-rowindex` = 表示行数 + 2)。見出しの欄は `role="rowheader"`、セルは `role="gridcell"`。 |
 | フィルハンドル(`fillHandle`) | ハンドルは `aria-hidden`(ポインタ操作。キーボードではコピー / 貼り付け)。埋めたあとのボタンは `aria-haspopup="menu"` / `aria-expanded` / `aria-label`(「オートフィル オプション(連続データ)」等)、メニューは `role="menu"`、項目は `role="menuitemradio"` + `aria-checked`。 |
 
 - 仮想化で描画していない行・列は DOM に無いため、表全体の中の位置は `aria-rowindex` / `aria-colindex` / `aria-rowcount` / `aria-colcount` で伝える。
 - 制約: 固定列(`pinned`)があると、1 つの行が左 / 中央 / 右のペインごとの `role="row"` に分かれる(どれも同じ `aria-rowindex`。読み上げの順は DOM 順でペインごと)。展開行(`detailRow`)の帯は `aria-rowindex` を持たない(データ行の番号をずらさないため)。縦固定で複製したラベル行(`labelRow.sticky`)は `aria-hidden` で、中のボタン等は `tabindex="-1"`(Tab で止まらない。マウスでは押せる。本物のラベル行はそのまま)。
+- 編集中は、axe などの検査ツールが表(`role="grid"`)に `aria-required-children` を出すことがある。エディタは行の外に描いて編集中のセルから `aria-owns` でつないでおり、ブラウザのアクセシビリティツリーではセルの子(Chrome で確認)だが、検査ツールは `aria-owns` で移した要素を元の親の子としても数えるため。
 
 ## GridColumn props (`GridColumn<T>`)
 
@@ -1096,7 +1098,7 @@ const columns = [
 
 動作モード(`validationMode`、既定 `'mark'`):
 
-- **`'mark'`(既定)** — 値は書き込み、セルに invalid 表示(背景 + 右上マーカー)+ ホバーでメッセージのツールチップを出します。invalid 判定は**表示時導出**(state 非保持)のため、貼り付け・クリア・初期データ・undo/redo・外部からの `rows` 差し替え後も常に `rows` と整合します。
+- **`'mark'`(既定)** — 値は書き込み、セルに invalid 表示(背景 + 右上マーカー)+ メッセージのツールチップを出します(マウスを乗せたときと、キーボード / タップでそのセルをアクティブセルにしたとき。セルには `aria-invalid` と、メッセージの `aria-description` も付く。1.0.1)。invalid 判定は**表示時導出**(state 非保持)のため、貼り付け・クリア・初期データ・undo/redo・外部からの `rows` 差し替え後も常に `rows` と整合します。
 - **`'reject'`** — 検証 NG の書き込み自体を拒否します。経路ごとの挙動:
   - エディタ確定(Enter / Tab): **確定拒否・編集継続**。エディタ枠が赤くなり、即時のエラーバブルでメッセージを表示します。blur(フォーカスが外れた)の場合は cancel(値不変でエディタを閉じる)へフォールバックします。
   - 貼り付け: 検証 NG の**セルだけスキップ**します(他のセルは書き込まれる。readonly セルのスキップと同じ意味論)。
@@ -1205,7 +1207,7 @@ const columns: GridColumn<Part>[] = [
 - **戻り値**: 文字列ならメモあり(`\n` で改行)。`undefined` / `null` / 空文字(空白だけを含む)ならメモなし。`ctx` は `cellClassName` の関数版と同じ `CellStyleContext<T>`(`row` / `rowIndex` / `sourceRowIndex` / `rowKey` / `colIndex` / `value` / `column` / `isActive` / `isSelected` / `isEditing` / `readOnly`)。
 - **印**: セルの右上に 10px の三角(既定色はライト `#f59e0b` / ダーク `#fbbf24`)。色はトークン `--ssg-note-indicator` で変えられる。メモのあるセルには公開契約のクラス `.ssg-body-cell--has-note` が付く(印は `::before`。形を変えたいときは `.ssg-body-cell.ssg-body-cell--has-note::before` を上書きする)。
 - **入力エラーと同じセル**: エラーの 6px の赤い三角(`::after`)がメモの三角の上に重なり、二重の三角で両方見える。ツールチップは「エラーのメッセージ → 改行 → メモ」の順。`showValidationMarks={false}` のあいだはメモだけを表示する。
-- **ツールチップ**: グリッドの既存のカスタムツールチップ(`data-ssg-tooltip`。「ツールチップ」節)で表示する。表示はマウスを乗せたとき(既存と同じ遅延)。メモのあるセルでは、省略時の全文ツールチップ(`showCellOverflowTooltip`)よりメモを優先する。
+- **ツールチップ**: グリッドの既存のカスタムツールチップ(`data-ssg-tooltip`。「ツールチップ」節)で表示する。表示はマウスを乗せたとき(既存と同じ遅延)。メモはセルの `aria-description` にも入り、支援技術はアクティブセルの説明として読み上げる(1.0.1)。メモのあるセルでは、省略時の全文ツールチップ(`showCellOverflowTooltip`)よりメモを優先する。
 - **出力には含めない**: CSV / TSV(コピー)/ `getExportData` には出力されない(表示だけの情報)。
 - **評価のタイミング**: 描画中のセルだけ、行の再描画のたびに評価する(`cellClassName` 関数と同じコスト階級。純粋・軽量に保つこと)。行は行データ・列定義などが変わったときに再描画されるため、メモの内容を `rows` 以外の state(取込結果の Map など)から引く場合は、その state を `useMemo` の依存に入れて `columns` を作り直す。
 

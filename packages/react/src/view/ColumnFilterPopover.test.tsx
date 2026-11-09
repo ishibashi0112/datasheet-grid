@@ -709,3 +709,36 @@ describe('ColumnFilterPopover の Escape と表示(dogfood)', () => {
     }
   });
 });
+
+// 追加(1.0.1 / 2026-11-09 実アプリの総点検 AP-32): Tab でポップオーバーの外へ出ない。role="dialog" と名前を持つ。
+describe('ColumnFilterPopover の Tab と役割(AP-32)', () => {
+  it('role="dialog" と「列フィルター: 列名」の名前を持ち、検索欄にも名前がある', () => {
+    render(<ColumnFilterPopover {...makeProps()} />);
+    const dialog = screen.getByRole('dialog', { name: '列フィルター: 品番' });
+    expect(dialog.getAttribute('aria-modal')).toBeNull();
+    expect(screen.getByRole('textbox', { name: '検索（Enter で確定）' })).toBe(getSearchInput());
+  });
+
+  it('最後の要素で Tab なら先頭へ、先頭で Shift+Tab なら最後へ回る(途中は既定の移動)', () => {
+    render(<ColumnFilterPopover {...makeProps()} />);
+    const dialog = screen.getByRole('dialog');
+    const tabbable = Array.from(
+      dialog.querySelectorAll<HTMLElement>('input:not([disabled]), button:not([disabled]), select:not([disabled])'),
+    ).filter((element) => element.tabIndex >= 0);
+    const first = tabbable[0]!;
+    const last = tabbable[tabbable.length - 1]!;
+    expect(first).toBe(getSearchInput());
+
+    last.focus();
+    const forward = fireEvent.keyDown(last, { key: 'Tab' });
+    expect(forward).toBe(false);
+    expect(document.activeElement).toBe(first);
+
+    const backward = fireEvent.keyDown(first, { key: 'Tab', shiftKey: true });
+    expect(backward).toBe(false);
+    expect(document.activeElement).toBe(last);
+
+    // 途中の要素ではブラウザに任せる(preventDefault しない)。
+    expect(fireEvent.keyDown(first, { key: 'Tab' })).toBe(true);
+  });
+});

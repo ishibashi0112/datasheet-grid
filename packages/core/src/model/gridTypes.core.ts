@@ -3966,11 +3966,11 @@ export type SpreadsheetGridProps<T, F extends GridFrameworkTypes = GridFramework
   //   注意: getInvalidCells() は表示状態と無関係に常に全走査で動作します。validationMode 'reject'
   //   の書き込み拒否(エディタのエラーバブル含む)は write 時ゲートであり本 prop の影響を受けません。
   /**
-   * invalid マーク(背景 + 右上マーカー + ホバーツールチップ)の表示可否。`false` で非表示 +
-   * 可視セルの検査(`validate` と number の `min` / `max` / `integer`)の評価スキップ。
-   * `getInvalidCells()` と `validationMode: 'reject'` の書き込み拒否には影響しない(独立経路)。
-   * 「送信時にだけマークを出す」UX は利用側 state で本 prop を切り替えて実現(「バリデーション」
-   * 節のレシピ参照)。
+   * invalid マーク(背景 + 右上マーカー + メッセージのツールチップ + セルの `aria-invalid` /
+   * `aria-description`)の表示可否。`false` で非表示 + 可視セルの検査(`validate` と number の `min`
+   * / `max` / `integer`)の評価スキップ。`getInvalidCells()` と `validationMode: 'reject'`
+   * の書き込み拒否には影響しない(独立経路)。「送信時にだけマークを出す」UX は利用側 state で本 prop
+   * を切り替えて実現(「バリデーション」節のレシピ参照)。
    *
    * @defaultValue `true`
    */

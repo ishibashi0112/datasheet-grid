@@ -5,7 +5,7 @@
 //   セレクタリストで供給 / z-index 1000)。
 //   確定規則: 選択 = 即 commit(ドラフト概念なし)。そのため blur / Escape は cancel(値不変)
 //   です(text エディタの blur=commit と非対称。API_REFERENCE に明記)。
-import { useCallback, useEffect, useRef, useState, type KeyboardEvent } from 'react';
+import { useCallback, useEffect, useId, useRef, useState, type KeyboardEvent } from 'react';
 import { createPortal } from 'react-dom';
 import type {
   EditorCommitDirection,
@@ -33,6 +33,8 @@ import { useGridLocaleText } from '../hooks/useGridLocaleText';
 const SELECT_PAGE_STEP = 8;
 
 type SelectCellEditorProps = {
+  // 追加(1.0.1 / 2026-11-09 実アプリの総点検 AP-34): 入力欄の読み上げの名前(「(列名) を編集」。枠の group と同じ)。
+  ariaLabel?: string;
   options: GridSelectEditorOption[];
   // 編集開始時のセル生値です(初期ハイライトの解決に使用)。
   value: unknown;
@@ -54,6 +56,7 @@ type SelectCellEditorProps = {
 };
 
 export function SelectCellEditor({
+  ariaLabel,
   options,
   value,
   onCommit,
@@ -68,6 +71,8 @@ export function SelectCellEditor({
   const texts = useGridLocaleText();
   const inputRef = useRef<HTMLInputElement | null>(null);
   const listRef = useRef<HTMLDivElement | null>(null);
+  // 追加(1.0.1 / AP-34): 候補の一覧と候補の id(aria-controls / aria-activedescendant)。
+  const listId = useId();
   // 修正(audit RD-9): 開始文字列があればタイプアヘッドを 1 回適用した状態から始めます(続けて打つと前方一致を
   //   伸ばせるよう、タイプアヘッドのバッファも引き継ぎます)。
   const [initialState] = useState(() => {
@@ -243,6 +248,15 @@ export function SelectCellEditor({
         value={highlightedOption?.label ?? String(value ?? '')}
         onKeyDown={handleKeyDown}
         onBlur={() => onCancel()}
+        // 追加(1.0.1 / 2026-11-09 実アプリの総点検 AP-34): 選ぶだけの combobox(WAI-ARIA の select-only combobox)として伝えます。
+        //   候補の一覧(body 直下)を aria-controls で指し、ハイライト中の候補を aria-activedescendant で読ませます
+        //   (これまでは入力欄の値が変わるだけで、名前も無かった)。
+        role="combobox"
+        aria-label={ariaLabel}
+        aria-expanded={placement !== null}
+        aria-controls={placement !== null ? listId : undefined}
+        aria-activedescendant={placement !== null && highlightedOption ? `${listId}-${highlight}` : undefined}
+        aria-invalid={errorMessage !== null || undefined}
         className={cx(
           'ssg-cell-editor-input ssg-cell-editor-input--select',
           errorMessage !== null && 'ssg-cell-editor-input--invalid',
@@ -257,6 +271,8 @@ export function SelectCellEditor({
             <div
               ref={listRef}
               role="listbox"
+              id={listId}
+              aria-label={ariaLabel}
               className={cx(
                 'ssg-select-editor-popover',
                 themeClassName,
@@ -280,6 +296,7 @@ export function SelectCellEditor({
                 options.map((option, index) => (
                   <div
                     key={`${option.value}-${index}`}
+                    id={`${listId}-${index}`}
                     role="option"
                     aria-selected={index === highlight}
                     className={cx(

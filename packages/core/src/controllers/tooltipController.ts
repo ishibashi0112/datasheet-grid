@@ -52,6 +52,11 @@ let warmupUntil = 0;
 let currentTarget: Element | null = null;
 let tooltipSlot: GridResolvedSlot | undefined;
 let appliedTooltipSlot: AppliedSlot | undefined;
+// 追加(1.0.1 / 2026-11-09 実アプリの総点検 AP-35): キーボード / タップでアクティブセルになった検査 NG のセルに出したツールチップの
+//   対象と、そのグリッドのフォーカスを持つ要素です(タップの指を離したときの pointerout では閉じず、グリッドの外へフォーカスが
+//   移ったら閉じる)。
+let activatedTarget: Element | null = null;
+let activatedFocusRoot: Element | null = null;
 
 function syncTooltipSlot(el: HTMLDivElement) {
   appliedTooltipSlot = applySlotToElement(el, tooltipSlot, appliedTooltipSlot);
@@ -117,6 +122,8 @@ function hideTooltip() {
     warmupUntil = Date.now() + WARMUP_MS;
   }
   currentTarget = null;
+  activatedTarget = null;
+  activatedFocusRoot = null;
   if (tooltipEl !== null) {
     tooltipEl.classList.remove('ssg-tooltip--visible');
   }
@@ -213,8 +220,26 @@ function handlePointerOutOrFocusOut(event: Event) {
   if (!(node instanceof Element)) {
     return;
   }
+  // 追加(1.0.1 / AP-35): アクティブセルのツールチップは、そのグリッドの外へフォーカスが移ったら閉じます。
+  if (event.type === 'focusout' && activatedFocusRoot !== null && activatedFocusRoot.contains(node)) {
+    const related = (event as FocusEvent).relatedTarget;
+    if (!(related instanceof Node && activatedFocusRoot.contains(related))) {
+      hideTooltip();
+      return;
+    }
+  }
   const target = node.closest(TOOLTIP_SELECTOR);
   if (target === null) {
+    return;
+  }
+  // 追加(1.0.1 / AP-35): タップで出したツールチップは、指を離したときの pointerout では閉じません(次に押す / スクロール /
+  //   Esc で閉じる)。マウスは従来どおり外へ出たら閉じます。
+  if (
+    target === activatedTarget &&
+    typeof PointerEvent !== 'undefined' &&
+    event instanceof PointerEvent &&
+    event.pointerType !== 'mouse'
+  ) {
     return;
   }
   // 対象内部への移動(子要素間)では閉じません。
@@ -255,6 +280,58 @@ function uninstallListeners() {
   window.removeEventListener('keydown', handleKeyDown, true);
 }
 
+// 追加(1.0.1 / 2026-11-09 実アプリの総点検 AP-35): アクティブセルが検査 NG のセルなら、そのツールチップ(メッセージ)をすぐ出します。
+//   これまではマウスのホバーでしか出ず、タップやキーボードで選んだときはメッセージが分からなかった。
+//   アクティブセルが変わった後、スクロールと描き直しが済む 2 フレーム後に、id でセルを探します(スクロールで閉じるため)。
+//   グリッドがフォーカスを持っているときだけ出します。戻り値は予約の取り消しです。
+export function scheduleActiveCellTooltip(cellId: string, focusRoot: Element | null): () => void {
+  if (typeof requestAnimationFrame !== 'function' || refCount === 0) {
+    return () => {};
+  }
+  let frameId = requestAnimationFrame(() => {
+    frameId = requestAnimationFrame(() => {
+      frameId = 0;
+      const cell = document.getElementById(cellId);
+      const show =
+        cell !== null &&
+        focusRoot !== null &&
+        focusRoot.contains(document.activeElement) &&
+        cell.classList.contains('ssg-body-cell--invalid') &&
+        (cell.getAttribute(TOOLTIP_ATTRIBUTE) ?? '') !== '';
+      if (!show) {
+        hideActiveCellTooltip(focusRoot);
+        return;
+      }
+      if (currentTarget !== cell) {
+        hideTooltip();
+        showTooltipFor(cell);
+      }
+      if (currentTarget === cell) {
+        activatedTarget = cell;
+        activatedFocusRoot = focusRoot;
+      }
+    });
+  });
+  return () => {
+    if (frameId !== 0) {
+      cancelAnimationFrame(frameId);
+    }
+  };
+}
+
+// 追加(1.0.1 / AP-35): アクティブセルのために出したツールチップを閉じます(編集を始めた / 検査 NG でないセルへ移った)。
+//   ホバーで出したツールチップはそのままです。focusRoot を渡したら、そのグリッドのために出したものだけを閉じます。
+export function hideActiveCellTooltip(focusRoot?: Element | null): void {
+  if (activatedTarget === null || (focusRoot !== undefined && focusRoot !== activatedFocusRoot)) {
+    return;
+  }
+  if (currentTarget === activatedTarget) {
+    hideTooltip();
+  }
+  activatedTarget = null;
+  activatedFocusRoot = null;
+}
+
 export function acquireTooltipController(
   slot?: GridResolvedSlot,
 ): TooltipController {
@@ -281,6 +358,8 @@ export function acquireTooltipController(
       clearShowTimer();
       stopWatchingTarget();
       currentTarget = null;
+      activatedTarget = null;
+      activatedFocusRoot = null;
       if (tooltipEl !== null) {
         tooltipEl.remove();
         tooltipEl = null;

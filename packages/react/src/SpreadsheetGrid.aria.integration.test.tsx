@@ -267,6 +267,102 @@ describe('ARIA(audit V-05 / RD-10 / V-14)', () => {
     expect(document.querySelectorAll('[aria-owns]').length).toBe(0);
   });
 
+  // 追加(1.0.1 / 2026-11-09 実アプリの総点検 AP-34): 組み込みのエディタの入力欄にも同じ名前。
+  it('組み込みのエディタの入力欄は「(列名) を編集」の名前を持つ(text / number / date)', async () => {
+    type ERow = { id: number; name: string; qty: number; day: string };
+    const editorColumns: GridColumn<ERow>[] = [
+      { key: 'name', title: 'Name', width: 160, editable: true },
+      { key: 'qty', title: 'Qty', width: 100, editable: true, editor: { type: 'number' } },
+      { key: 'day', title: 'Day', width: 120, editable: true, editor: { type: 'date' } },
+    ];
+    const ref = createRef<SpreadsheetGridHandle<ERow>>();
+    const view = render(
+      <SpreadsheetGrid<ERow>
+        ref={ref}
+        rows={[{ id: 1, name: 'alpha', qty: 1, day: '2026-11-09' }]}
+        columns={editorColumns}
+        rowKeyGetter={(row) => row.id}
+      />,
+    );
+    const shell = view.container.querySelector<HTMLElement>('.ssg-shell')!;
+    for (const [col, name] of [[0, 'Name'], [1, 'Qty'], [2, 'Day']] as const) {
+      act(() => {
+        ref.current?.setActiveCell({ row: 0, col });
+      });
+      fireEvent.keyDown(shell, { key: 'F2' });
+      const input = document.activeElement as HTMLElement;
+      expect(input.tagName).toBe('INPUT');
+      expect(input.getAttribute('aria-label')).toBe(`${name} を編集`);
+      fireEvent.keyDown(input, { key: 'Escape' });
+      // 取り消しの後処理(再入の抑止を解く)はマイクロタスクで済むので、次の編集の前に待ちます。
+      await act(async () => {});
+    }
+  });
+
+  it('select エディタは名前付きの combobox で、ハイライト中の候補を aria-activedescendant で指す', () => {
+    type SRow = { id: number; kind: string };
+    const selectColumns: GridColumn<SRow>[] = [
+      {
+        key: 'kind',
+        title: 'Kind',
+        width: 160,
+        editable: true,
+        editor: { type: 'select', options: [{ value: 'a', label: 'A' }, { value: 'b', label: 'B' }] },
+      },
+    ];
+    const ref = createRef<SpreadsheetGridHandle<SRow>>();
+    const view = render(
+      <SpreadsheetGrid<SRow> ref={ref} rows={[{ id: 1, kind: 'a' }]} columns={selectColumns} rowKeyGetter={(row) => row.id} />,
+    );
+    const shell = view.container.querySelector<HTMLElement>('.ssg-shell')!;
+    act(() => {
+      ref.current?.setActiveCell({ row: 0, col: 0 });
+    });
+    fireEvent.keyDown(shell, { key: 'F2' });
+    const input = document.activeElement as HTMLElement;
+    expect(input.getAttribute('role')).toBe('combobox');
+    expect(input.getAttribute('aria-label')).toBe('Kind を編集');
+    expect(input.getAttribute('aria-expanded')).toBe('true');
+    const listbox = document.getElementById(input.getAttribute('aria-controls') ?? '');
+    expect(listbox?.getAttribute('role')).toBe('listbox');
+    expect(listbox?.getAttribute('aria-label')).toBe('Kind を編集');
+    const active = () => document.getElementById(input.getAttribute('aria-activedescendant') ?? '');
+    expect(active()?.textContent).toBe('A');
+    fireEvent.keyDown(input, { key: 'ArrowDown' });
+    expect(active()?.textContent).toBe('B');
+    expect(active()?.getAttribute('aria-selected')).toBe('true');
+    fireEvent.keyDown(input, { key: 'Escape' });
+  });
+
+  // 追加(1.0.1 / 2026-11-09 実アプリの総点検 AP-35): 検査 NG のセルは aria-invalid とメッセージの説明を持つ。
+  it('検査 NG のセルは aria-invalid と、メッセージ(とメモ)の aria-description を持つ', () => {
+    const { grid } = setup({
+      columns: [
+        { key: 'name', title: 'Name', width: 160 },
+        {
+          key: 'qty',
+          title: 'Qty',
+          width: 100,
+          validate: ({ value }) => (typeof value === 'number' && value >= 20) || '20 以上',
+          cellNote: ({ row }) => (row.id === 1 ? '仮の値' : null),
+        },
+      ],
+    });
+    const invalid = cellAt(grid, 2, 3);
+    expect(invalid.getAttribute('aria-invalid')).toBe('true');
+    expect(invalid.getAttribute('aria-description')).toBe('20 以上\n仮の値');
+    const valid = cellAt(grid, 3, 3);
+    expect(valid.hasAttribute('aria-invalid')).toBe(false);
+    expect(valid.hasAttribute('aria-description')).toBe(false);
+    cleanup();
+    // showValidationMarks={false} では印と同じく付けない。
+    const hidden = setup({
+      showValidationMarks: false,
+      columns: [{ key: 'qty', title: 'Qty', width: 100, validate: () => 'NG' }],
+    }).grid;
+    expect(cellAt(hidden, 2, 2).hasAttribute('aria-invalid')).toBe(false);
+  });
+
   it('縦固定で複製したラベル行(aria-hidden)の中のボタンは Tab で止まらない', () => {
     type LRow = { id: string; kind?: 'label'; name: string };
     const labelRows: LRow[] = [

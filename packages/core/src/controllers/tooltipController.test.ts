@@ -3,7 +3,11 @@
 //   ライフサイクル(refCount / 二重 dispose)とスロット反映を固定します。
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { acquireTooltipController } from './tooltipController';
+import {
+  acquireTooltipController,
+  hideActiveCellTooltip,
+  scheduleActiveCellTooltip,
+} from './tooltipController';
 
 const findTooltip = () => document.querySelector<HTMLElement>('.ssg-tooltip');
 const isVisible = () =>
@@ -164,5 +168,94 @@ describe('tooltipController', () => {
     expect(findTooltip()?.textContent).toBe('平均 482.125');
     cell.remove();
     controller.dispose();
+  });
+});
+
+// 追加(1.0.1 / 2026-11-09 実アプリの総点検 AP-35): アクティブセルが検査 NG のセルならメッセージをすぐ出す。
+describe('アクティブセルのツールチップ(AP-35)', () => {
+  let root: HTMLDivElement;
+  let cell: HTMLDivElement;
+  let outside: HTMLButtonElement;
+
+  beforeEach(() => {
+    vi.useFakeTimers();
+    root = document.createElement('div');
+    root.tabIndex = 0;
+    cell = document.createElement('div');
+    cell.id = 'active-cell';
+    cell.className = 'ssg-body-cell ssg-body-cell--invalid';
+    cell.setAttribute('data-ssg-tooltip', '20 以上');
+    root.appendChild(cell);
+    outside = document.createElement('button');
+    document.body.append(root, outside);
+    root.focus();
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+    root.remove();
+    outside.remove();
+  });
+
+  it('グリッドがフォーカスを持つとき、2 フレーム後にすぐ出す。タップの指を離しても閉じず、マウスで外へ出たら閉じる', () => {
+    const controller = acquireTooltipController();
+    scheduleActiveCellTooltip('active-cell', root);
+    expect(isVisible()).toBe(false);
+    vi.advanceTimersByTime(100);
+    expect(isVisible()).toBe(true);
+    expect(findTooltip()?.textContent).toBe('20 以上');
+    cell.dispatchEvent(new PointerEvent('pointerout', { bubbles: true, pointerType: 'touch' }));
+    expect(isVisible()).toBe(true);
+    cell.dispatchEvent(new PointerEvent('pointerout', { bubbles: true, pointerType: 'mouse' }));
+    expect(isVisible()).toBe(false);
+    controller.dispose();
+  });
+
+  it('グリッドの外へフォーカスが移ったら閉じる', () => {
+    const controller = acquireTooltipController();
+    scheduleActiveCellTooltip('active-cell', root);
+    vi.advanceTimersByTime(100);
+    expect(isVisible()).toBe(true);
+    outside.focus();
+    expect(isVisible()).toBe(false);
+    controller.dispose();
+  });
+
+  it('検査 NG でないセル・フォーカスが無いとき・取り消したときは出さない', () => {
+    const controller = acquireTooltipController();
+    cell.classList.remove('ssg-body-cell--invalid');
+    scheduleActiveCellTooltip('active-cell', root);
+    vi.advanceTimersByTime(100);
+    expect(isVisible()).toBe(false);
+
+    cell.classList.add('ssg-body-cell--invalid');
+    outside.focus();
+    scheduleActiveCellTooltip('active-cell', root);
+    vi.advanceTimersByTime(100);
+    expect(isVisible()).toBe(false);
+
+    root.focus();
+    const cancel = scheduleActiveCellTooltip('active-cell', root);
+    cancel();
+    vi.advanceTimersByTime(100);
+    expect(isVisible()).toBe(false);
+    controller.dispose();
+  });
+
+  it('hideActiveCellTooltip は自分のグリッドのために出したものだけを閉じる', () => {
+    const controller = acquireTooltipController();
+    scheduleActiveCellTooltip('active-cell', root);
+    vi.advanceTimersByTime(100);
+    hideActiveCellTooltip(document.createElement('div'));
+    expect(isVisible()).toBe(true);
+    hideActiveCellTooltip(root);
+    expect(isVisible()).toBe(false);
+    controller.dispose();
+  });
+
+  it('コントローラが無い(どのグリッドもマウントしていない)ときは何もしない', () => {
+    scheduleActiveCellTooltip('active-cell', root);
+    vi.advanceTimersByTime(100);
+    expect(findTooltip()).toBeNull();
   });
 });

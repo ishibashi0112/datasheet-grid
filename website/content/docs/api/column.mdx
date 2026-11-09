@@ -105,7 +105,7 @@ const columns = [
 
 動作モード(`validationMode`、既定 `'mark'`):
 
-- **`'mark'`(既定)** — 値は書き込み、セルに invalid 表示(背景 + 右上マーカー)+ ホバーでメッセージのツールチップを出します。invalid 判定は**表示時導出**(state 非保持)のため、貼り付け・クリア・初期データ・undo/redo・外部からの `rows` 差し替え後も常に `rows` と整合します。
+- **`'mark'`(既定)** — 値は書き込み、セルに invalid 表示(背景 + 右上マーカー)+ メッセージのツールチップを出します(マウスを乗せたときと、キーボード / タップでそのセルをアクティブセルにしたとき。セルには `aria-invalid` と、メッセージの `aria-description` も付く。1.0.1)。invalid 判定は**表示時導出**(state 非保持)のため、貼り付け・クリア・初期データ・undo/redo・外部からの `rows` 差し替え後も常に `rows` と整合します。
 - **`'reject'`** — 検証 NG の書き込み自体を拒否します。経路ごとの挙動:
   - エディタ確定(Enter / Tab): **確定拒否・編集継続**。エディタ枠が赤くなり、即時のエラーバブルでメッセージを表示します。blur(フォーカスが外れた)の場合は cancel(値不変でエディタを閉じる)へフォールバックします。
   - 貼り付け: 検証 NG の**セルだけスキップ**します(他のセルは書き込まれる。readonly セルのスキップと同じ意味論)。
@@ -214,7 +214,7 @@ const columns: GridColumn<Part>[] = [
 - **戻り値**: 文字列ならメモあり(`\n` で改行)。`undefined` / `null` / 空文字(空白だけを含む)ならメモなし。`ctx` は `cellClassName` の関数版と同じ `CellStyleContext<T>`(`row` / `rowIndex` / `sourceRowIndex` / `rowKey` / `colIndex` / `value` / `column` / `isActive` / `isSelected` / `isEditing` / `readOnly`)。
 - **印**: セルの右上に 10px の三角(既定色はライト `#f59e0b` / ダーク `#fbbf24`)。色はトークン `--ssg-note-indicator` で変えられる。メモのあるセルには公開契約のクラス `.ssg-body-cell--has-note` が付く(印は `::before`。形を変えたいときは `.ssg-body-cell.ssg-body-cell--has-note::before` を上書きする)。
 - **入力エラーと同じセル**: エラーの 6px の赤い三角(`::after`)がメモの三角の上に重なり、二重の三角で両方見える。ツールチップは「エラーのメッセージ → 改行 → メモ」の順。`showValidationMarks={false}` のあいだはメモだけを表示する。
-- **ツールチップ**: グリッドの既存のカスタムツールチップ(`data-ssg-tooltip`。「ツールチップ」節)で表示する。表示はマウスを乗せたとき(既存と同じ遅延)。メモのあるセルでは、省略時の全文ツールチップ(`showCellOverflowTooltip`)よりメモを優先する。
+- **ツールチップ**: グリッドの既存のカスタムツールチップ(`data-ssg-tooltip`。「ツールチップ」節)で表示する。表示はマウスを乗せたとき(既存と同じ遅延)。メモはセルの `aria-description` にも入り、支援技術はアクティブセルの説明として読み上げる(1.0.1)。メモのあるセルでは、省略時の全文ツールチップ(`showCellOverflowTooltip`)よりメモを優先する。
 - **出力には含めない**: CSV / TSV(コピー)/ `getExportData` には出力されない(表示だけの情報)。
 - **評価のタイミング**: 描画中のセルだけ、行の再描画のたびに評価する(`cellClassName` 関数と同じコスト階級。純粋・軽量に保つこと)。行は行データ・列定義などが変わったときに再描画されるため、メモの内容を `rows` 以外の state(取込結果の Map など)から引く場合は、その state を `useMemo` の依存に入れて `columns` を作り直す。
 
