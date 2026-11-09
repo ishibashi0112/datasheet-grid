@@ -56,6 +56,21 @@ type ExportResolution<T> = {
 // エクスポート用の「全展開」開閉状態(行グルーピングの 'view' 出力で使用)。
 const NO_COLLAPSED_GROUPS: ReadonlySet<string> = new Set();
 
+// 追加(1.0.0): scope の値を 4 つに限ります。型を通さずに渡された値(JavaScript からの呼び出しや、保存した設定。
+//   1.0.0 で消した 'all' / 'visible' など)は、分岐ごとにばらばらに扱われないよう 'view' として扱い、開発時だけ警告します。
+const toKnownExportScope = (scope: CsvExportScope | undefined): CsvExportScope => {
+  if (scope === undefined || scope === 'view' || scope === 'raw' || scope === 'rendered' || scope === 'selection') {
+    return scope ?? 'view';
+  }
+  if (process.env.NODE_ENV !== 'production') {
+    console.warn(
+      `SpreadsheetGrid: エクスポートの scope '${String(scope)}' はありません。'view' として扱います('all' / 'visible' は 1.0.0 で消しました。'view' / 'rendered' を使ってください)。\n` +
+        `SpreadsheetGrid: The export scope '${String(scope)}' does not exist, so it is treated as 'view' ('all' / 'visible' were removed in 1.0.0; use 'view' / 'rendered').`,
+    );
+  }
+  return 'view';
+};
+
 export const createExportCommands = <T,>(
   getArgs: () => GridApiArgs<T> | null,
   // 機能セットの行グルーピング(小計の行を出力する行だけで組み直すときの buildGroupTree。/lite で行グルーピングの
@@ -298,7 +313,7 @@ export const createExportCommands = <T,>(
       : undefined;
 
   const buildCsv = (options?: CsvExportOptions): string => {
-    const scope = options?.scope ?? 'view';
+    const scope = toKnownExportScope(options?.scope);
     const resolved = resolveExportScope(scope, options?.includeLabelRows === true, options?.includeGroupRows === true);
     if (!resolved) {
       return options?.bom ? '\uFEFF' : '';
@@ -321,7 +336,7 @@ export const createExportCommands = <T,>(
   };
 
   const buildExportData = (options?: GridExportOptions): GridExportData => {
-    const scope = options?.scope ?? 'view';
+    const scope = toKnownExportScope(options?.scope);
     const resolved = resolveExportScope(scope, options?.includeLabelRows === true, options?.includeGroupRows === true);
     if (!resolved) {
       return { columns: [], rows: [] };

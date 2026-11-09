@@ -30,14 +30,14 @@ export type Deprecation = {
   instead: { ja: string; en: string };
 };
 
-// 今は空です(1.0.0 で、0.9.0 から非推奨だったエクスポートの scope 'all' / 'visible' を消しました)。項目の書き方:
-//   exportScopeAll: {
-//     name: "`'all'`",
-//     since: '0.9.0',
-//     removeIn: '1.0.0',
-//     jsdoc: 'DeprecatedCsvExportScope',
-//     what: { ja: "エクスポートの scope `'all'`", en: "The export scope `'all'`" },
-//     instead: { ja: "`'view'` を使ってください(挙動は同じです)。", en: "Use `'view'` instead (same behavior)." },
+// 今は空です(1.0.0 で、0.9.0 から非推奨だったエクスポートの scope 'all' / 'visible' を消しました)。項目の書き方(架空の例):
+//   samplePropRename: {
+//     name: '`sampleProp`',
+//     since: '1.3.0',
+//     removeIn: '2.0.0',
+//     jsdoc: 'SpreadsheetGridProps.sampleProp',
+//     what: { ja: 'prop `sampleProp`', en: 'The prop `sampleProp`' },
+//     instead: { ja: '`newProp` を使ってください。', en: 'Use `newProp` instead.' },
 //   },
 export const DEPRECATIONS = {} satisfies Record<string, Deprecation>;
 
