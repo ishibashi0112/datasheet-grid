@@ -3810,7 +3810,8 @@ export type SpreadsheetGridProps<T, F extends GridFrameworkTypes = GridFramework
   // ヘッダの全選択チェック(tri-state)の有効化です。
   //   既定は enableRowSelection && rowSelectionMode==='multiple'。
   /**
-   * ヘッダ左上コーナーの全選択チェック(tri-state: none/some/all)の有効化。
+   * ヘッダ左上コーナーの全選択チェック(tri-state: none/some/all)の有効化。clientSide
+   * のフィルターで行が隠れている間は、見えている行だけを選ぶ / 外す(印も見えている行だけで決める)。
    *
    * @defaultValue `enableRowSelection && multiple`
    */

@@ -89,4 +89,33 @@ describe('createRowSelectionCommands', () => {
     commands.update({ ...args, controlledRowSelectionModel: { type: 'include', rowKeys: [1] } });
     expect(actions.map((action) => action.type)).toEqual(['rowSelect/set']);
   });
+
+  // 追加(1.0.1 / 実アプリの総点検 AP-03): フィルターで隠れている行があるときは、見えている行だけを選ぶ / 外す。
+  it('フィルター中の全選択トグル: 見えている行だけを選び、選択済みなら見えている行だけ外す(AP-03)', () => {
+    const data = [{ id: 1 }, { id: 2 }, { id: 3 }, { id: 4 }];
+    const filteredDataRows = {
+      rows: data,
+      order: Int32Array.from([0, 2]),
+      rowKeyGetter: (row: { id: number }) => row.id,
+    };
+    // 見えない行 4 が既に選ばれている。
+    const { commands, args, actions, onRowSelectionChange } = setup({
+      rowSelectionState: rowSelectionFromModel({ type: 'include', rowKeys: [4] }),
+      filteredDataRows: filteredDataRows as unknown as RowSelectionCommandsArgs<Row>['filteredDataRows'],
+    });
+    commands.handleToggleSelectAllRows();
+    expect(onRowSelectionChange).toHaveBeenLastCalledWith({ type: 'include', rowKeys: [4, 1, 3] });
+    commands.update({ ...args, rowSelectionState: lastState(actions)! });
+    commands.handleToggleSelectAllRows();
+    expect(onRowSelectionChange).toHaveBeenLastCalledWith({ type: 'include', rowKeys: [4] });
+
+    // フィルターの前に全選択していた(exclude)ときに外すと、見えない行の選択は残る。
+    const all = setup({
+      rowSelectionState: rowSelectionFromModel({ type: 'exclude', rowKeys: [] }),
+      filteredDataRows: filteredDataRows as unknown as RowSelectionCommandsArgs<Row>['filteredDataRows'],
+    });
+    all.commands.handleToggleSelectAllRows();
+    expect(all.onRowSelectionChange).toHaveBeenLastCalledWith({ type: 'exclude', rowKeys: [1, 3] });
+  });
+
 });

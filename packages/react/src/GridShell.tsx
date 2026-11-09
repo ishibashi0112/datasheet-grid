@@ -147,7 +147,9 @@ import {
 // 追加(imperative API #1): CSV エクスポート / スクロール先算出の純ロジックです。
 // 追加(行選択): チェックボックス行選択の純ロジックです。
 import {
+  countSelectedRowsInOrder,
   getSelectAllState,
+  resolveSelectAllState,
 } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/rowSelection';
 // 追加(state #1): 列状態 get/apply の純ロジックです(snapshot 組み立て / 外部入力の正規化)。
 // 追加(state #2): onStateChange の発火可否判定(decideStateChangeEmit)も同モジュールから読みます。
@@ -2110,7 +2112,30 @@ export function useGridShell<T extends object>({
   const rowSelectionState = uiState.rowSelection;
   // ヘッダ全選択チェックの 3 状態(none/some/all)。件数は O(1) で求まります。
   // 変更(grouping ④): 総数は leafRowCount(グループ行を除くデータ行数)です。
-  const selectAllRowsState = getSelectAllState(rowSelectionState, leafRowCount);
+  // 追加(1.0.1 / 実アプリの総点検 AP-03): clientSide のフィルターで隠れている行があるときは、見出しのチェックボックスは
+  //   見えている行だけを選ぶ / 外し(rowSelectionCommands)、3 状態も見えている行だけで数えます。
+  const filteredDataRows = useMemo(
+    () =>
+      !isServerSide && order.length < baseOrder.length
+        ? { rows, order, rowKeyGetter: resolvedRowKeyGetter }
+        : null,
+    [isServerSide, order, baseOrder.length, rows, resolvedRowKeyGetter],
+  );
+  const selectAllRowsState = useMemo(
+    () =>
+      filteredDataRows && enableRowSelection
+        ? resolveSelectAllState(
+            countSelectedRowsInOrder(
+              rowSelectionState,
+              filteredDataRows.rows,
+              filteredDataRows.order,
+              filteredDataRows.rowKeyGetter,
+            ),
+            filteredDataRows.order.length,
+          )
+        : getSelectAllState(rowSelectionState, leafRowCount),
+    [filteredDataRows, enableRowSelection, rowSelectionState, leafRowCount],
+  );
 
   // 変更(本体分解 E-4c): 選択コミット / ガター選択 / ドラッグ範囲 / 全選択トグル / controlled 同期は
   //   engine/rowSelectionCommands.ts(React 非依存)へ移設しました(旧 latest-ref 4 本 + アンカー ref を解消)。
@@ -2124,6 +2149,7 @@ export function useGridShell<T extends object>({
       onRowSelectionChange,
       controlledRowSelectionModel,
       leafRowCount,
+      filteredDataRows,
       dispatch,
     },
   );

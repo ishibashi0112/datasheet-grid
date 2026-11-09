@@ -51,7 +51,7 @@ description: SpreadsheetGridProps<T> の全 prop と既定値
 | `enableRangeSelection` | `boolean` | `true` | 複数セル範囲選択。 |
 | `enableRowSelection` | `boolean` | `false` | チェックボックス行選択の有効化(マスタースイッチ)。`true` で行ヘッダ(行NO)ガターが行選択のヒット領域になり、Excel 風のガター起点セル範囲選択は off(ボディ側セルのドラッグ範囲選択は不変)。判定は O(1)・全選択は除外集合でキーを列挙しない(1M 行でも一定コスト)。 |
 | `rowSelectionMode` | `'single' \| 'multiple'` | `'multiple'` | 単一/複数の選択モード。single は常に 1 行。multiple はクリックでトグル、shift+クリック/ガタードラッグで範囲選択。 |
-| `enableSelectAllRows` | `boolean` | `enableRowSelection && multiple` | ヘッダ左上コーナーの全選択チェック(tri-state: none/some/all)の有効化。 |
+| `enableSelectAllRows` | `boolean` | `enableRowSelection && multiple` | ヘッダ左上コーナーの全選択チェック(tri-state: none/some/all)の有効化。clientSide のフィルターで行が隠れている間は、見えている行だけを選ぶ / 外す(印も見えている行だけで決める)。 |
 | `rowSelection` | `RowSelectionModel` | — | **controlled** の行選択記述子。`{ type:'include', rowKeys }`=これらを選択 / `{ type:'exclude', rowKeys }`=全選択のうち除外。全選択をキー列挙せず表現できる。指定時は controlled(内部 state を使わない)。 |
 | `selectedRowKeys` | `GridRowKey[]` | — | controlled 簡易版(`{ type:'include', rowKeys }` の糖衣)。`rowSelection` と併用時は `rowSelection` を優先。全選択(exclude)は表現不可。 |
 | `onRowSelectionChange` | `(model: RowSelectionModel) => void` | — | 行選択変化の通知(controlled/uncontrolled いずれでも発火)。 |
@@ -980,7 +980,7 @@ const [rows, setRows] = useState(initialRows);
 | `Enter` / `F2` / 印字キー直打ち | 編集開始(印字キーはその 1 文字を初期値に。select エディタではその文字で始まる候補を頭出しする)。編集可否は `readOnly` / 列 / `canEditCell` に従う。 |
 | `Enter` / `Space`(グループ行 / 展開トグル列のセル) | そのグループ / 展開行の開閉(編集は始めない)。 |
 | `Escape` | 選択解除。 |
-| `Ctrl/Cmd+C` / ペースト(`Ctrl/Cmd+V`) | 選択範囲の TSV コピー(`isRowExportable` 指定時は `false` の行を除く)/ アクティブセル起点の貼り付け(readOnly では no-op)。TSV は Excel / Google スプレッドシート互換(改行・タブ・`"` を含むセルは `"…"` で囲み `"` は `""`。貼り付けはこの引用符を解釈し、途中の空行も行として保持する)。合成列(行ドラッグのハンドル列・展開トグル列・自動グループ列)はコピーの列に数えず(TSV に空の列を作らない)、貼り付けでも飛ばす(合成列のセルから貼るとその右のデータ列から書く)。 |
+| `Ctrl/Cmd+C` / ペースト(`Ctrl/Cmd+V`) | 選択範囲の TSV コピー(`isRowExportable` 指定時は `false` の行を除く)/ 貼り付け(readOnly では no-op)。貼り付けは選択範囲の左上から(列の選択は列の先頭のデータ行、行の選択は行の先頭から。選択の外にアクティブセルがあるときはアクティブセルから)。ラベル行・グループ行は飛ばして次のデータ行へ貼る。TSV は Excel / Google スプレッドシート互換(改行・タブ・`"` を含むセルは `"…"` で囲み `"` は `""`。貼り付けはこの引用符を解釈し、途中の空行も行として保持する)。合成列(行ドラッグのハンドル列・展開トグル列・自動グループ列)はコピーの列に数えず(TSV に空の列を作らない)、貼り付けでも飛ばす(合成列のセルから貼るとその右のデータ列から書く)。 |
 | `Ctrl/Cmd+F` | セル内検索バーを開く(`find` が有効なとき。無効ならブラウザ標準の検索)。 |
 | `Ctrl/Cmd+A` | 全体選択(2 回目で解除)。 |
 | `Delete` / `Backspace` | 選択セル(なければアクティブセル)の値クリア。編集不可セルは対象外。クリア値は「空文字のペースト」と同じ規則(`parseClipboardValue('')` 経由、未定義なら `''`)。変更が無ければ no-op(undo 履歴にも積まれない)。 |

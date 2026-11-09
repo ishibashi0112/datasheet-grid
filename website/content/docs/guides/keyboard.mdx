@@ -18,7 +18,7 @@ description: グリッド本体・編集エディタのキーバインド一覧�
 | `Enter` / `F2` / 印字キー直打ち | 編集開始(印字キーはその 1 文字を初期値に) |
 | `Escape` | 選択解除 |
 | `Ctrl/Cmd+C` | 選択範囲を TSV でコピー(`isRowExportable` 指定時は `false` の行を除く。改行入りセルは Excel と同じく `"…"` で囲む。行ドラッグのハンドル列・展開トグル列・自動グループ列は含めない) |
-| `Ctrl/Cmd+V` | アクティブセル起点で貼り付け(readOnly では no-op。Excel / スプレッドシートのセル内改行や空行を含む範囲もそのまま貼れる) |
+| `Ctrl/Cmd+V` | 選択範囲の左上から貼り付け(範囲が無ければアクティブセルから。列の選択は列の先頭のデータ行から。readOnly では no-op。Excel / スプレッドシートのセル内改行や空行を含む範囲もそのまま貼れる) |
 | `Ctrl/Cmd+A` | 全体選択(2 回目で解除) |
 | `Delete` / `Backspace` | 選択セルの値クリア(編集不可セルは対象外) |
 | `Ctrl/Cmd+Z` / `Ctrl/Cmd+Shift+Z` / `Ctrl/Cmd+Y` | undo / redo |

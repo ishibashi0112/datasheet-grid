@@ -171,6 +171,34 @@ describe('toDateInputValue', () => {
     expect(toDateInputValue(12345)).toBe('');
     expect(toDateInputValue(new Date('invalid'))).toBe('');
   });
+
+  // 1.0.1(実アプリの総点検 AP-01): 年の無い文字列を 2001 年に、ありえない日付を翌月へ繰り越して読んでいた。
+  it('年が書かれていない文字列は読まない(Date.parse の 2001 年にしない)', () => {
+    expect(toDateInputValue('11/2')).toBe('');
+    expect(toDateInputValue('1/15')).toBe('');
+    expect(toDateInputValue('Nov 1')).toBe('');
+    expect(toDateInputValue('2026-11')).toBe('');
+  });
+
+  it('ありえない日付は繰り越さずに読まない', () => {
+    expect(toDateInputValue('2026/2/30')).toBe('');
+    expect(toDateInputValue('2026-02-30')).toBe('');
+    expect(toDateInputValue('2026-13-01')).toBe('');
+    expect(toDateInputValue('2/30/2026')).toBe('');
+    expect(toDateInputValue('Feb 30 2026')).toBe('');
+    expect(toDateInputValue('2027/2/29')).toBe('');
+  });
+
+  it('年 / 月 / 日と月 / 日 / 年の数字の日付、月の名前の日付は今までどおり読む', () => {
+    expect(toDateInputValue('2026/11/1')).toBe('2026-11-01');
+    expect(toDateInputValue('2026.11.01')).toBe('2026-11-01');
+    expect(toDateInputValue('2026-7-4 10:30')).toBe('2026-07-04');
+    expect(toDateInputValue('2028/2/29')).toBe('2028-02-29');
+    expect(toDateInputValue('11/02/2026')).toBe('2026-11-02');
+    expect(toDateInputValue('Nov 1, 2026')).toBe('2026-11-01');
+    expect(toDateInputValue('November 30 2026')).toBe('2026-11-30');
+    expect(toDateInputValue(new Date(2026, 10, 5).toString())).toBe('2026-11-05');
+  });
 });
 
 describe('parseCommittedValue', () => {

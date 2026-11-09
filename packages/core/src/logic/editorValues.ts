@@ -87,23 +87,69 @@ const DIGITS_ONLY = /^\s*[+-]?\d+\s*$/;
 //   Date インスタンス / 'YYYY-MM-DD' 先頭の文字列(ISO 日時含む)/ Date.parse 可能な文字列を
 //   受け付け、解釈できない値は ''(未入力扱い)を返します。
 //   変更(dogfood DF-19): 数字だけの文字列と、Date.parse で年が 4 桁にならない文字列(「45678/1/2」等)は読めない値です。
+//   変更(1.0.1 / 2026-11-09 実アプリの総点検 AP-01): 年が書かれていない文字列(「11/2」「Nov 1」)と、ありえない日付
+//   (「2026/2/30」「2026-13-01」)も読めない値にします。Date.parse は年の無い文字列を 2001 年として、ありえない日付を
+//   翌月へ繰り越して読むため(「11/2」が 2001-11-02、「2026/2/30」が 2026-03-02 になり、黙って違う日付が入っていた)。
+//   数字で書いた日付(年 / 月 / 日、月 / 日 / 年)は自前で読み、それ以外(「Nov 1 2026」など)は Date.parse の結果の年が
+//   4 桁の数として書かれていて、日の数も書かれているときだけ受け取ります。
+const isValidDateParts = (year: number, month: number, day: number): boolean =>
+  year >= 1000 &&
+  year <= 9999 &&
+  month >= 1 &&
+  month <= 12 &&
+  day >= 1 &&
+  day <= new Date(year, month, 0).getDate();
+
+const formatYmd = (year: number, month: number, day: number): string =>
+  `${String(year).padStart(4, '0')}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+
+// 年 / 月 / 日(区切りは - / .)。後ろに時刻などが続いてもよい。
+const YMD_PREFIX = /^\s*(\d{4})[-/.](\d{1,2})[-/.](\d{1,2})(?![\d])/;
+// 月 / 日 / 年(Date.parse と同じく月が先)。
+const MDY_PREFIX = /^\s*(\d{1,2})[-/.](\d{1,2})[-/.](\d{4})(?![\d])/;
+
+const readNumericDate = (text: string): string | undefined => {
+  const ymd = YMD_PREFIX.exec(text);
+  if (ymd) {
+    const [year, month, day] = [Number(ymd[1]), Number(ymd[2]), Number(ymd[3])];
+    return isValidDateParts(year, month, day) ? formatYmd(year, month, day) : '';
+  }
+  const mdy = MDY_PREFIX.exec(text);
+  if (mdy) {
+    const [month, day, year] = [Number(mdy[1]), Number(mdy[2]), Number(mdy[3])];
+    return isValidDateParts(year, month, day) ? formatYmd(year, month, day) : '';
+  }
+  return undefined;
+};
+
 export const toDateInputValue = (value: unknown): string => {
   if (value instanceof Date) {
     return Number.isNaN(value.getTime()) ? '' : formatDateParts(value);
   }
   if (typeof value === 'string' && value.trim() !== '') {
-    const isoPrefix = /^(\d{4}-\d{2}-\d{2})/.exec(value);
-    if (isoPrefix) {
-      return isoPrefix[1];
-    }
     if (DIGITS_ONLY.test(value)) {
       return '';
     }
-    const parsed = new Date(value);
-    const year = parsed.getFullYear();
-    if (!Number.isNaN(parsed.getTime()) && year >= 1000 && year <= 9999) {
-      return formatDateParts(parsed);
+    const numeric = readNumericDate(value);
+    if (numeric !== undefined) {
+      return numeric;
     }
+    const parsed = new Date(value);
+    if (Number.isNaN(parsed.getTime())) {
+      return '';
+    }
+    const year = parsed.getFullYear();
+    // 年は 4 桁の数として書かれていること(書かれていないと Date.parse は 2001 年などにする)。
+    if (year < 1000 || year > 9999 || !new RegExp(`(^|\\D)${year}(\\D|$)`).test(value)) {
+      return '';
+    }
+    // 日の数が書かれていること(「Feb 30 2026」は 3 月 2 日に繰り越されるので、書かれた数に 2 が無い)。
+    const numbers = value.match(/\d+/g) ?? [];
+    const day = parsed.getDate();
+    if (!numbers.some((part) => part.length <= 2 && Number(part) === day)) {
+      return '';
+    }
+    return formatDateParts(parsed);
   }
   return '';
 };

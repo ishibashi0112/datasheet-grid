@@ -59,7 +59,7 @@
 | `enableRangeSelection` | `boolean` | `true` | 複数セル範囲選択。 |
 | `enableRowSelection` | `boolean` | `false` | チェックボックス行選択の有効化(マスタースイッチ)。`true` で行ヘッダ(行NO)ガターが行選択のヒット領域になり、Excel 風のガター起点セル範囲選択は off(ボディ側セルのドラッグ範囲選択は不変)。判定は O(1)・全選択は除外集合でキーを列挙しない(1M 行でも一定コスト)。 |
 | `rowSelectionMode` | `'single' \| 'multiple'` | `'multiple'` | 単一/複数の選択モード。single は常に 1 行。multiple はクリックでトグル、shift+クリック/ガタードラッグで範囲選択。 |
-| `enableSelectAllRows` | `boolean` | `enableRowSelection && multiple` | ヘッダ左上コーナーの全選択チェック(tri-state: none/some/all)の有効化。 |
+| `enableSelectAllRows` | `boolean` | `enableRowSelection && multiple` | ヘッダ左上コーナーの全選択チェック(tri-state: none/some/all)の有効化。clientSide のフィルターで行が隠れている間は、見えている行だけを選ぶ / 外す(印も見えている行だけで決める)。 |
 | `rowSelection` | `RowSelectionModel` | — | **controlled** の行選択記述子。`{ type:'include', rowKeys }`=これらを選択 / `{ type:'exclude', rowKeys }`=全選択のうち除外。全選択をキー列挙せず表現できる。指定時は controlled(内部 state を使わない)。 |
 | `selectedRowKeys` | `GridRowKey[]` | — | controlled 簡易版(`{ type:'include', rowKeys }` の糖衣)。`rowSelection` と併用時は `rowSelection` を優先。全選択(exclude)は表現不可。 |
 | `onRowSelectionChange` | `(model: RowSelectionModel) => void` | — | 行選択変化の通知(controlled/uncontrolled いずれでも発火)。 |
@@ -821,7 +821,7 @@ const gridRef = useRef<SpreadsheetGridHandle<Row>>(null);
 | `Enter` / `F2` / 印字キー直打ち | 編集開始(印字キーはその 1 文字を初期値に。select エディタではその文字で始まる候補を頭出しする)。編集可否は `readOnly` / 列 / `canEditCell` に従う。 |
 | `Enter` / `Space`(グループ行 / 展開トグル列のセル) | そのグループ / 展開行の開閉(編集は始めない)。 |
 | `Escape` | 選択解除。 |
-| `Ctrl/Cmd+C` / ペースト(`Ctrl/Cmd+V`) | 選択範囲の TSV コピー(`isRowExportable` 指定時は `false` の行を除く)/ アクティブセル起点の貼り付け(readOnly では no-op)。TSV は Excel / Google スプレッドシート互換(改行・タブ・`"` を含むセルは `"…"` で囲み `"` は `""`。貼り付けはこの引用符を解釈し、途中の空行も行として保持する)。合成列(行ドラッグのハンドル列・展開トグル列・自動グループ列)はコピーの列に数えず(TSV に空の列を作らない)、貼り付けでも飛ばす(合成列のセルから貼るとその右のデータ列から書く)。 |
+| `Ctrl/Cmd+C` / ペースト(`Ctrl/Cmd+V`) | 選択範囲の TSV コピー(`isRowExportable` 指定時は `false` の行を除く)/ 貼り付け(readOnly では no-op)。貼り付けは選択範囲の左上から(列の選択は列の先頭のデータ行、行の選択は行の先頭から。選択の外にアクティブセルがあるときはアクティブセルから)。ラベル行・グループ行は飛ばして次のデータ行へ貼る。TSV は Excel / Google スプレッドシート互換(改行・タブ・`"` を含むセルは `"…"` で囲み `"` は `""`。貼り付けはこの引用符を解釈し、途中の空行も行として保持する)。合成列(行ドラッグのハンドル列・展開トグル列・自動グループ列)はコピーの列に数えず(TSV に空の列を作らない)、貼り付けでも飛ばす(合成列のセルから貼るとその右のデータ列から書く)。 |
 | `Ctrl/Cmd+F` | セル内検索バーを開く(`find` が有効なとき。無効ならブラウザ標準の検索)。 |
 | `Ctrl/Cmd+A` | 全体選択(2 回目で解除)。 |
 | `Delete` / `Backspace` | 選択セル(なければアクティブセル)の値クリア。編集不可セルは対象外。クリア値は「空文字のペースト」と同じ規則(`parseClipboardValue('')` 経由、未定義なら `''`)。変更が無ければ no-op(undo 履歴にも積まれない)。 |
@@ -1060,7 +1060,7 @@ const columns = [
 | `'text'` | 従来のテキスト input(既定)。`multiline: true` で複数行の入力欄(textarea。中身に合わせて下へ伸び、表の見える範囲の下端で止まって中でスクロール。行の間隔、1 行目の位置と折り返し = 列の `wordBreak` / `lineBreak` はセルと同じ) | `multiline` / `enterKey`(`multiline` のときの `Enter`。`'commit'`(既定。Excel と同じ)= `Enter` で確定、`Alt+Enter` と `Ctrl` / `⌘+Enter` で改行 / `'newline'`(メモ帳やチャットに近い)= `Enter`(`Shift` / `Alt` 付きも)で改行、`Ctrl` / `⌘+Enter` で確定) | パススルー(生文字列のまま) |
 | `'number'` | `<input type="number">`(スピナー / ↑↓ステップ / 不正文字抑止)。セルを選んで `-` / `+` / `.` から打ち始めたときは、その文字を消さないよう文字の入力欄(`inputmode="decimal"`)で開き、確定した文字列を列のパーサで数値に直す(`-5`→`-5`、`.5`→`0.5`、`-` だけなら空。数値として読めない文字列は貼り付けと同じくそのまま)。英字など数値にならない文字から打ち始めたとき・数値でない文字列の値を開いたときも文字の入力欄で開き、その文字をそのまま見せる。数値の文字列の値(`'1,234'` / `'１２'`)は半角の数値(`1234` / `12`)で開く | `min` / `max` / `step` / `integer`(`min` / `max` / `integer` は値の検査にも使う。「バリデーション」節) | `''`・空白だけ→`null` / 有限数値文字列→`number`(全角の数字・符号・小数点と 3 桁区切りも読む: `'１，２３４'`→`1234`、`'ー５'`→`-5`)/ 非数値→生文字列のまま(mark が拾う) |
 | `'select'` | 候補ドロップダウン(body 直下ポータル)。↑↓=ハイライト移動 / Enter=確定(下へ)/ Tab=確定(左右へ)/ クリック=確定 / 印字キー=label 前方一致のタイプアヘッド(約 700ms でリセット) | `options: GridSelectEditorOption[] \| (row) => GridSelectEditorOption[]`(静的 or 行依存。関数はレンダー中に呼ばれるため純粋であること) | パススルー(`option.value` は string。型変換したい場合は `parseClipboardValue` を併用) |
-| `'date'` | ネイティブ `<input type="date">`。ドラフトは `'YYYY-MM-DD' \| ''` | — | `''`→`null` / 解釈可能→`'YYYY-MM-DD'` へ正規化 / 解釈不可→生文字列のまま(数字だけの文字列 = Excel の日付のシリアル値「45678」や「5」と、年が 4 桁にならない文字列も解釈不可) |
+| `'date'` | ネイティブ `<input type="date">`。ドラフトは `'YYYY-MM-DD' \| ''` | — | `''`→`null` / 解釈可能→`'YYYY-MM-DD'` へ正規化 / 解釈不可→生文字列のまま(数字だけの文字列 = Excel の日付のシリアル値「45678」や「5」と、年が 4 桁にならない文字列、年の無い文字列(「11/2」「Nov 1」)、ありえない日付(「2026/2/30」)も解釈不可。翌月へ繰り越さない) |
 | `'checkbox'` | **直接トグル**(編集セッションなし)。クリック / Space で即トグル。Enter / F2 / ダブルクリックではエディタが開かない | `checkedValue`(既定 `true`)/ `uncheckedValue`(既定 `false`)。checked 判定は `Object.is(value, checkedValue)` のみ | `''`→unchecked / checked・unchecked の文字列表現→対応値 / `'true'`・`'1'`→checked / その他→unchecked |
 | `'custom'` | `render(ctx)` の返り値を編集オーバーレイ内に描画。**フォーカス管理・キーバインドは利用側の責務** | `render: (ctx: CellEditorContext<T>) => ReactNode` | パススルー |
 
@@ -1607,7 +1607,7 @@ const addRow = () => {
 | `selectAllRows()` | 全行を選択(exclude モード=キーを列挙しない)。 |
 | `clearRowSelection()` | 行選択をすべて解除。 |
 
-**操作(有効時)**: 行ヘッダ(行NO)ガター全体が選択のヒット領域。multiple はクリックでトグル・shift+クリック/ガタードラッグで範囲、single は常に 1 行。ヘッダ左上コーナーは tri-state の全選択チェック(`enableSelectAllRows`)。参照性能維持のため判定は Set の O(1)、全選択は除外集合でキーを materialize しません。
+**操作(有効時)**: 行ヘッダ(行NO)ガター全体が選択のヒット領域。multiple はクリックでトグル・shift+クリック/ガタードラッグで範囲、single は常に 1 行。ヘッダ左上コーナーは tri-state の全選択チェック(`enableSelectAllRows`。フィルターで行が隠れている間は見えている行だけを選ぶ / 外す)。参照性能維持のため判定は Set の O(1)、全選択は除外集合でキーを materialize しません(フィルター中の見出しのチェックボックスは見えている行のキーを並べる)。
 
 **controlled**: `rowSelection`(記述子)または `selectedRowKeys`(include 糖衣)を渡すと controlled。`onRowSelectionChange` で変化を受け、親が prop を更新して反映します。
 

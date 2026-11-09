@@ -88,7 +88,7 @@ const addRow = () => {
 | `selectAllRows()` | 全行を選択(exclude モード=キーを列挙しない)。 |
 | `clearRowSelection()` | 行選択をすべて解除。 |
 
-**操作(有効時)**: 行ヘッダ(行NO)ガター全体が選択のヒット領域。multiple はクリックでトグル・shift+クリック/ガタードラッグで範囲、single は常に 1 行。ヘッダ左上コーナーは tri-state の全選択チェック(`enableSelectAllRows`)。参照性能維持のため判定は Set の O(1)、全選択は除外集合でキーを materialize しません。
+**操作(有効時)**: 行ヘッダ(行NO)ガター全体が選択のヒット領域。multiple はクリックでトグル・shift+クリック/ガタードラッグで範囲、single は常に 1 行。ヘッダ左上コーナーは tri-state の全選択チェック(`enableSelectAllRows`。フィルターで行が隠れている間は見えている行だけを選ぶ / 外す)。参照性能維持のため判定は Set の O(1)、全選択は除外集合でキーを materialize しません(フィルター中の見出しのチェックボックスは見えている行のキーを並べる)。
 
 **controlled**: `rowSelection`(記述子)または `selectedRowKeys`(include 糖衣)を渡すと controlled。`onRowSelectionChange` で変化を受け、親が prop を更新して反映します。
 
