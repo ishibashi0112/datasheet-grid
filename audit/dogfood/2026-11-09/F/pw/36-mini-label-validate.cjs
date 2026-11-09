@@ -1,0 +1,15 @@
+const { chromium } = require('playwright')
+;(async () => {
+  const browser = await chromium.launch()
+  const page = await browser.newPage({ deviceScaleFactor: 1 })
+  const logs = []
+  page.on('console', (m) => { if (['error', 'warning'].includes(m.type())) logs.push(m.text().slice(0, 300)) })
+  await page.goto('http://127.0.0.1:5406/mini.html?case=label-validate')
+  await page.waitForSelector('.ssg-body-cell')
+  await page.waitForTimeout(300)
+  const r = await page.evaluate(() => { const g = window.__mini.ref.current; return g.getInvalidCells().map((c) => `${c.rowKey}:${c.columnKey}:${c.message}:rowNo=${g.getRowNumber(c.rowKey)}`) })
+  console.log(JSON.stringify(r, null, 1))
+  console.log('marks on screen', await page.locator('.ssg-body-cell--invalid').count())
+  console.log(logs)
+  await browser.close()
+})()

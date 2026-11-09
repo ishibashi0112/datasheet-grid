@@ -1,0 +1,34 @@
+{
+  "plain": {
+    "messages": [],
+    "centerCellsAfter": 152
+  },
+  "themeClass": {
+    "messages": [],
+    "centerCellsAfter": 152
+  },
+  "themeAuto": {
+    "messages": [],
+    "centerCellsAfter": 152
+  },
+  "totalRow": {
+    "messages": [],
+    "centerCellsAfter": 148
+  },
+  "rowSelection": {
+    "messages": [],
+    "centerCellsAfter": 152
+  },
+  "initialState": {
+    "messages": [],
+    "centerCellsAfter": 152
+  },
+  "find": {
+    "messages": [],
+    "centerCellsAfter": 152
+  },
+  "noPinned": {
+    "messages": [],
+    "centerCellsAfter": 228
+  }
+}

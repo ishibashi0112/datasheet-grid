@@ -1,0 +1,22 @@
+const { open, handle, clickCell } = require('./lib.cjs')
+const log = (...a) => console.log(...a)
+const act = (page) => handle(page, 'return JSON.stringify(g.getActiveCell())')
+;(async () => {
+  const { browser, page, logs } = await open('')
+  await clickCell(page, 2, '品名')
+  log('start', await act(page))
+  await page.keyboard.press('Home'); log('Home', await act(page))
+  await page.keyboard.press('ArrowLeft'); log('ArrowLeft', await act(page), await page.locator('.ssg-bar--bottom').innerText().then(t => t.replace(/\n/g, ' ')))
+  await page.keyboard.press('ArrowRight'); log('ArrowRight', await act(page))
+  await page.keyboard.press('Shift+Tab'); log('Shift+Tab', await act(page), 'focus', await page.evaluate(() => document.activeElement?.className))
+  await page.keyboard.press('Shift+Tab'); log('Shift+Tab 2', await act(page), 'focus', await page.evaluate(() => document.activeElement?.className || document.activeElement?.tagName))
+  // Tab でグリッドへ入る
+  await page.getByRole('button', { name: '印刷' }).focus()
+  await page.keyboard.press('Tab'); log('Tab into grid focus', await page.evaluate(() => document.activeElement?.className), await act(page))
+  await page.keyboard.press('Tab'); log('Tab 2', await act(page))
+  // End → 最終列で Tab → グリッドの外
+  await page.keyboard.press('End'); log('End', await act(page))
+  await page.keyboard.press('Tab'); log('Tab at last col focus', await page.evaluate(() => document.activeElement?.className || document.activeElement?.tagName), await act(page))
+  log('LOGS', logs)
+  await browser.close()
+})()

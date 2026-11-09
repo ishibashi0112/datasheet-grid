@@ -1,0 +1,47 @@
+/* シフト表の見た目(グリッドの基底クラスにつないで特異度で勝たせる) */
+.day-head {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  line-height: 1.1;
+  width: 100%;
+}
+.day-head__num {
+  font-weight: 600;
+}
+.day-head__wd {
+  font-size: 11px;
+}
+.day-head__wd.is-sat {
+  color: #2563eb;
+}
+.day-head__wd.is-sun {
+  color: #dc2626;
+}
+
+.ssg-body-cell.shift-sat {
+  background-color: color-mix(in srgb, #3b82f6 7%, var(--ssg-cell-bg));
+}
+.ssg-body-cell.shift-sun {
+  background-color: color-mix(in srgb, #ef4444 7%, var(--ssg-cell-bg));
+}
+
+.ssg-body-cell.night-over {
+  color: var(--danger);
+  font-weight: 700;
+}
+
+/* パートの職員の行は氏名を斜体に */
+.ssg-body-cell.row-part {
+  font-style: italic;
+}
+
+.dept-label {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 8px;
+}
+.dept-label__count {
+  font-size: 12px;
+  color: var(--muted);
+}

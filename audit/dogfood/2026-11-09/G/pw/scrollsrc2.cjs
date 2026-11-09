@@ -1,0 +1,12 @@
+const { open, shot, wait } = require('./lib.cjs')
+;(async () => {
+  const { browser, page, logs } = await open('http://localhost:5407/?live=1')
+  await wait(2000)
+  await page.evaluate(() => { window.__scrollEvents = [] })
+  await page.evaluate(() => window.__grid.applyState({ filters: { columnFilters: { level: { kind: 'set', mode: 'include', values: ['WARN', 'ERROR', 'FATAL'] }, service: { kind: 'set', mode: 'include', values: ['checkout', 'billing'] } } } }))
+  await wait(4000)
+  const e = await page.evaluate(() => window.__scrollEvents)
+  console.log('follow=', await page.locator('.toolbar input[type=checkbox]').nth(1).isChecked())
+  console.log(JSON.stringify(e.slice(0, 30)))
+  await browser.close()
+})()

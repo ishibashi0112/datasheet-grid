@@ -1,0 +1,11 @@
+const { open, shot, handle } = require('./lib.cjs')
+;(async () => {
+  const { browser, page, logs } = await open('')
+  await handle(page, `g.applyState({ filters: { globalText: 'クロス', columnFilters: {} } })`)
+  await page.waitForTimeout(400)
+  console.log(await page.locator('[data-pane="center"][data-ssg-label-row]').allInnerTexts())
+  console.log(await page.locator('.ssg-total-row[data-pane="center"]').innerText())
+  await shot(page, '23-filter-subtotal', { clip: { x: 56, y: 130, width: 1170, height: 200 } })
+  console.log(logs)
+  await browser.close()
+})()

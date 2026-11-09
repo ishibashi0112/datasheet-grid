@@ -1,0 +1,21 @@
+const { chromium } = require('playwright');
+(async () => {
+  const browser = await chromium.launch();
+  const ctx = await browser.newContext({ viewport: { width: 700, height: 500 }, deviceScaleFactor: 1 });
+  await ctx.grantPermissions(['clipboard-read', 'clipboard-write'], { origin: 'http://127.0.0.1:5403' });
+  const page = await ctx.newPage();
+  await page.goto(process.env.URL || 'http://127.0.0.1:5403/min2.html'); await page.waitForSelector('.ssg-root'); await page.waitForTimeout(400);
+  const cell = async (rk, ck) => page.evaluate(([rk, ck]) => { const r = document.querySelector(`.ssg-body-row[data-row-key="${rk}"] [data-ssg-col-key="${ck}"]`).getBoundingClientRect(); return { x: r.x + r.width / 2, y: r.y + r.height / 2 }; }, [rk, ck]);
+  const rh = async (rk) => page.evaluate((rk) => { const r = document.querySelector(`.ssg-body-row[data-row-key="${rk}"] [role="rowheader"]`).getBoundingClientRect(); return { x: r.x + r.width / 2, y: r.y + r.height / 2 }; }, rk);
+  const st = () => page.evaluate(() => { const g = window.__g.current; return JSON.stringify({ a: g.getActiveCell(), s: g.getSelection() }); });
+  let p = await cell(2, 'c'); await page.mouse.click(p.x, p.y);
+  p = await rh(0); await page.mouse.click(p.x, p.y); await page.waitForTimeout(100);
+  console.log('after row header 1 click:', await st());
+  await page.keyboard.press('Control+c'); await page.waitForTimeout(100);
+  console.log('clipboard:', JSON.stringify(await page.evaluate(() => navigator.clipboard.readText())));
+  p = await rh(5); await page.mouse.click(p.x, p.y); await page.waitForTimeout(100);
+  console.log('after row header 6 click:', await st());
+  await page.keyboard.press('Control+v'); await page.waitForTimeout(200);
+  console.log('row 5 now:', JSON.stringify(await page.evaluate(() => window.__rows[5])));
+  await browser.close();
+})();

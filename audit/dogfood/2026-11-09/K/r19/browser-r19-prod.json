@@ -1,0 +1,50 @@
+{
+  "editorLabel": "在庫数 を編集",
+  "amount": "2,400",
+  "name": "Pen",
+  "selectListbox": 1,
+  "category": "電子機器",
+  "invalid": "ssg-body-cell ssg-body-cell--align-right ssg-body-cell--invalid ssg-body-cell--row-hovered",
+  "saveMsg": "3 行目の qty: 0 以上で入力してください",
+  "k1": "2:category",
+  "kTab": "2:warehouse",
+  "kEnd": "2:note",
+  "kHome": "2:sku",
+  "kCtrlEnd": "1999:note",
+  "kCtrlHome": "0:sku",
+  "copy": "Pen\telectronics\nノート 1\tstationery",
+  "paste": [
+    "3",
+    "1,200",
+    "4",
+    "900"
+  ],
+  "menuRole": null,
+  "menuButtonNames": [
+    "フィルター…",
+    "↑昇順で並び替え",
+    "↓降順で並び替え",
+    "並び替えを管理…",
+    "フィルターを管理…",
+    "列の固定›",
+    "この列の幅を自動調整",
+    "すべての列の幅を自動調整",
+    "列の表示",
+    "列のリセット",
+    "閉じる"
+  ],
+  "sort": "qty:desc",
+  "firstQty": "49",
+  "filterPopoverRole": null,
+  "filterSearchLabel": null,
+  "filterSummary": "列: warehouse",
+  "rowCountChip": "行 1333 / 2000",
+  "addEditor": 1,
+  "addEditorVisible": true,
+  "count": "2001 件",
+  "csvHead": [
+    "SKU,品名,カテゴリ,倉庫,在庫数,単価,在庫金額,入荷日,廃番,備考\r",
+    "SKU-0058,ノート 8,stationery,東京,49,400,19600,2026-10-02,false,\r"
+  ],
+  "logs": []
+}

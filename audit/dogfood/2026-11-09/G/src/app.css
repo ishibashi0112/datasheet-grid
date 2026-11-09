@@ -1,0 +1,19 @@
+* { box-sizing: border-box; }
+html, body, #root { height: 100%; margin: 0; }
+body { font-family: system-ui, -apple-system, 'Segoe UI', 'Noto Sans JP', sans-serif; background: #f8fafc; color: #0f172a; }
+.app { display: flex; flex-direction: column; height: 100%; }
+.toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; padding: 8px 16px; border-bottom: 1px solid #e2e8f0; background: #fff; }
+.toolbar h1 { font-size: 16px; margin: 0 8px 0 0; }
+.toolbar button { font: inherit; font-size: 13px; padding: 4px 10px; border: 1px solid #cbd5e1; border-radius: 6px; background: #fff; cursor: pointer; }
+.toolbar label { font-size: 13px; display: inline-flex; align-items: center; gap: 4px; }
+.muted { color: #64748b; font-size: 13px; }
+.grid-wrap { flex: 1; min-height: 0; padding: 8px 16px 16px; }
+.detail { display: flex; flex-direction: column; height: 100%; font-size: 12px; }
+.detail-head { display: flex; gap: 8px; align-items: center; padding: 6px 8px; border-bottom: 1px solid #e2e8f0; }
+.detail-head button { font-size: 12px; }
+.detail-body { display: flex; gap: 12px; flex: 1; min-height: 0; overflow: auto; padding: 8px; }
+.detail-body pre { margin: 0; font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 12px; white-space: pre; }
+.stack { color: #b91c1c; }
+
+/* 折り返した行の上下に余白(回避策の確認) */
+.pad-fix .ssg-body-cell--autoheight .ssg-autoheight-content { padding: 6px 0; }

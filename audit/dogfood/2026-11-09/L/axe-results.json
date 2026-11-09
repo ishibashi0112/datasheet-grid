@@ -1,0 +1,1285 @@
+{
+ "desktop-initial": {
+  "violations": [
+   {
+    "id": "color-contrast",
+    "impact": "serious",
+    "help": "Elements must meet minimum color contrast ratio thresholds",
+    "n": 1,
+    "nodes": [
+     {
+      "target": "div[data-row-index=\"11\"][aria-rowindex=\"13\"][data-row-key=\"INS-0012\"] > .ssg-body-cell[aria-colindex=\"4\"][data-ssg-col-key=\"result\"] > .ssg-chip--critical.ssg-chip > .ssg-chip-label",
+      "html": "<span class=\"ssg-chip-label\">不良</span>",
+      "why": "Element has insufficient color contrast of 3.95 (foreground color: #dc2626, background color: #fee2e2, font size: 11.0pt (14.72px), font weight: normal). Expected contrast ratio of 4.5:1"
+     }
+    ]
+   },
+   {
+    "id": "label-content-name-mismatch",
+    "impact": "serious",
+    "help": "Elements must have their visible text as part of their accessible name",
+    "n": 1,
+    "nodes": [
+     {
+      "target": ".ssg-bar-chip--action",
+      "html": "<button type=\"button\" class=\"ssg-bar-chip ssg-bar-chip--emphasis ssg-bar-chip--action\" data-ssg-tooltip=\"フィルター管理パネルを開閉\" aria-label=\"フィルター管理パネルを開閉\">絞り込み: なし</but",
+      "why": "Text inside the element is not included in the accessible name"
+     }
+    ]
+   },
+   {
+    "id": "region",
+    "impact": "moderate",
+    "help": "All page content should be contained by landmarks",
+    "n": 1,
+    "nodes": [
+     {
+      "target": "label",
+      "html": "<label>点検者<input name=\"inspector\" value=\"佐藤\"></label>",
+      "why": "Some page content is not contained by landmarks"
+     }
+    ]
+   }
+  ],
+  "incomplete": [
+   {
+    "id": "color-contrast",
+    "n": 4
+   },
+   {
+    "id": "scrollable-region-focusable",
+    "n": 1
+   }
+  ]
+ },
+ "desktop-active-cell": {
+  "violations": [
+   {
+    "id": "color-contrast",
+    "impact": "serious",
+    "help": "Elements must meet minimum color contrast ratio thresholds",
+    "n": 1,
+    "nodes": [
+     {
+      "target": "div[data-row-index=\"11\"][aria-rowindex=\"13\"][data-row-key=\"INS-0012\"] > .ssg-body-cell[aria-colindex=\"4\"][data-ssg-col-key=\"result\"] > .ssg-chip--critical.ssg-chip > .ssg-chip-label",
+      "html": "<span class=\"ssg-chip-label\">不良</span>",
+      "why": "Element has insufficient color contrast of 3.95 (foreground color: #dc2626, background color: #fee2e2, font size: 11.0pt (14.72px), font weight: normal). Expected contrast ratio of 4.5:1"
+     }
+    ]
+   },
+   {
+    "id": "label-content-name-mismatch",
+    "impact": "serious",
+    "help": "Elements must have their visible text as part of their accessible name",
+    "n": 1,
+    "nodes": [
+     {
+      "target": ".ssg-bar-chip--action",
+      "html": "<button type=\"button\" class=\"ssg-bar-chip ssg-bar-chip--emphasis ssg-bar-chip--action\" data-ssg-tooltip=\"フィルター管理パネルを開閉\" aria-label=\"フィルター管理パネルを開閉\">絞り込み: なし</but",
+      "why": "Text inside the element is not included in the accessible name"
+     }
+    ]
+   },
+   {
+    "id": "region",
+    "impact": "moderate",
+    "help": "All page content should be contained by landmarks",
+    "n": 1,
+    "nodes": [
+     {
+      "target": "label",
+      "html": "<label>点検者<input name=\"inspector\" value=\"佐藤\"></label>",
+      "why": "Some page content is not contained by landmarks"
+     }
+    ]
+   }
+  ],
+  "incomplete": [
+   {
+    "id": "color-contrast",
+    "n": 5
+   },
+   {
+    "id": "scrollable-region-focusable",
+    "n": 1
+   }
+  ]
+ },
+ "column-menu": {
+  "violations": [
+   {
+    "id": "color-contrast",
+    "impact": "serious",
+    "help": "Elements must meet minimum color contrast ratio thresholds",
+    "n": 1,
+    "nodes": [
+     {
+      "target": "div[data-row-index=\"11\"][aria-rowindex=\"13\"][data-row-key=\"INS-0012\"] > .ssg-body-cell[aria-colindex=\"4\"][data-ssg-col-key=\"result\"] > .ssg-chip--critical.ssg-chip > .ssg-chip-label",
+      "html": "<span class=\"ssg-chip-label\">不良</span>",
+      "why": "Element has insufficient color contrast of 3.95 (foreground color: #dc2626, background color: #fee2e2, font size: 11.0pt (14.72px), font weight: normal). Expected contrast ratio of 4.5:1"
+     }
+    ]
+   },
+   {
+    "id": "label-content-name-mismatch",
+    "impact": "serious",
+    "help": "Elements must have their visible text as part of their accessible name",
+    "n": 1,
+    "nodes": [
+     {
+      "target": ".ssg-bar-chip--action",
+      "html": "<button type=\"button\" class=\"ssg-bar-chip ssg-bar-chip--emphasis ssg-bar-chip--action\" data-ssg-tooltip=\"フィルター管理パネルを開閉\" aria-label=\"フィルター管理パネルを開閉\">絞り込み: なし</but",
+      "why": "Text inside the element is not included in the accessible name"
+     }
+    ]
+   },
+   {
+    "id": "region",
+    "impact": "moderate",
+    "help": "All page content should be contained by landmarks",
+    "n": 2,
+    "nodes": [
+     {
+      "target": "label",
+      "html": "<label>点検者<input name=\"inspector\" value=\"佐藤\"></label>",
+      "why": "Some page content is not contained by landmarks"
+     },
+     {
+      "target": ".ssg-menu-title",
+      "html": "<div class=\"ssg-menu-title\">結果</div>",
+      "why": "Some page content is not contained by landmarks"
+     }
+    ]
+   }
+  ],
+  "incomplete": [
+   {
+    "id": "color-contrast",
+    "n": 8
+   },
+   {
+    "id": "label-content-name-mismatch",
+    "n": 1
+   },
+   {
+    "id": "scrollable-region-focusable",
+    "n": 1
+   }
+  ]
+ },
+ "set-filter-popover": {
+  "violations": [
+   {
+    "id": "color-contrast",
+    "impact": "serious",
+    "help": "Elements must meet minimum color contrast ratio thresholds",
+    "n": 1,
+    "nodes": [
+     {
+      "target": "div[data-row-index=\"11\"][aria-rowindex=\"13\"][data-row-key=\"INS-0012\"] > .ssg-body-cell[aria-colindex=\"4\"][data-ssg-col-key=\"result\"] > .ssg-chip--critical.ssg-chip > .ssg-chip-label",
+      "html": "<span class=\"ssg-chip-label\">不良</span>",
+      "why": "Element has insufficient color contrast of 3.95 (foreground color: #dc2626, background color: #fee2e2, font size: 11.0pt (14.72px), font weight: normal). Expected contrast ratio of 4.5:1"
+     }
+    ]
+   },
+   {
+    "id": "label-content-name-mismatch",
+    "impact": "serious",
+    "help": "Elements must have their visible text as part of their accessible name",
+    "n": 1,
+    "nodes": [
+     {
+      "target": ".ssg-bar-chip--action",
+      "html": "<button type=\"button\" class=\"ssg-bar-chip ssg-bar-chip--emphasis ssg-bar-chip--action\" data-ssg-tooltip=\"フィルター管理パネルを開閉\" aria-label=\"フィルター管理パネルを開閉\">絞り込み: なし</but",
+      "why": "Text inside the element is not included in the accessible name"
+     }
+    ]
+   },
+   {
+    "id": "region",
+    "impact": "moderate",
+    "help": "All page content should be contained by landmarks",
+    "n": 6,
+    "nodes": [
+     {
+      "target": "form > label",
+      "html": "<label>点検者<input name=\"inspector\" value=\"佐藤\"></label>",
+      "why": "Some page content is not contained by landmarks"
+     },
+     {
+      "target": ".ssg-filter-title",
+      "html": "<div class=\"ssg-filter-title\">列フィルター: 結果</div>",
+      "why": "Some page content is not contained by landmarks"
+     },
+     {
+      "target": ".ssg-filter-input",
+      "html": "<input type=\"text\" placeholder=\"検索（Enter で確定）\" class=\"ssg-filter-input\" value=\"\">",
+      "why": "Some page content is not contained by landmarks"
+     },
+     {
+      "target": ".ssg-filter-selectall",
+      "html": "<label class=\"ssg-filter-selectall\"><input type=\"checkbox\" checked=\"\"><span class=\"ssg-filter-selectall-label\">（すべて選択）</span></label>",
+      "why": "Some page content is not contained by landmarks"
+     }
+    ]
+   }
+  ],
+  "incomplete": [
+   {
+    "id": "color-contrast",
+    "n": 5
+   },
+   {
+    "id": "scrollable-region-focusable",
+    "n": 1
+   }
+  ]
+ },
+ "numberSet-filter-popover": {
+  "violations": [
+   {
+    "id": "color-contrast",
+    "impact": "serious",
+    "help": "Elements must meet minimum color contrast ratio thresholds",
+    "n": 2,
+    "nodes": [
+     {
+      "target": "div[data-row-index=\"11\"][aria-rowindex=\"13\"][data-row-key=\"INS-0012\"] > .ssg-body-cell[aria-colindex=\"4\"][data-ssg-col-key=\"result\"] > .ssg-chip--critical.ssg-chip > .ssg-chip-label",
+      "html": "<span class=\"ssg-chip-label\">不良</span>",
+      "why": "Element has insufficient color contrast of 3.95 (foreground color: #dc2626, background color: #fee2e2, font size: 11.0pt (14.72px), font weight: normal). Expected contrast ratio of 4.5:1"
+     },
+     {
+      "target": ".ssg-filter-sec-meta",
+      "html": "<span class=\"ssg-filter-sec-meta\">全 219 件</span>",
+      "why": "Element has insufficient color contrast of 2.56 (foreground color: #94a3b8, background color: #ffffff, font size: 7.9pt (10.5px), font weight: normal). Expected contrast ratio of 4.5:1"
+     }
+    ]
+   },
+   {
+    "id": "label-content-name-mismatch",
+    "impact": "serious",
+    "help": "Elements must have their visible text as part of their accessible name",
+    "n": 1,
+    "nodes": [
+     {
+      "target": ".ssg-bar-chip--action",
+      "html": "<button type=\"button\" class=\"ssg-bar-chip ssg-bar-chip--emphasis ssg-bar-chip--action\" data-ssg-tooltip=\"フィルター管理パネルを開閉\" aria-label=\"フィルター管理パネルを開閉\">絞り込み: なし</but",
+      "why": "Text inside the element is not included in the accessible name"
+     }
+    ]
+   },
+   {
+    "id": "region",
+    "impact": "moderate",
+    "help": "All page content should be contained by landmarks",
+    "n": 12,
+    "nodes": [
+     {
+      "target": "form > label",
+      "html": "<label>点検者<input name=\"inspector\" value=\"佐藤\"></label>",
+      "why": "Some page content is not contained by landmarks"
+     },
+     {
+      "target": ".ssg-filter-title",
+      "html": "<div class=\"ssg-filter-title\">列フィルター: 測定値</div>",
+      "why": "Some page content is not contained by landmarks"
+     },
+     {
+      "target": ".ssg-filter-sec-head:nth-child(2) > .ssg-filter-sec-label",
+      "html": "<span class=\"ssg-filter-sec-label\">条件</span>",
+      "why": "Some page content is not contained by landmarks"
+     },
+     {
+      "target": "select",
+      "html": "<select class=\"ssg-filter-select\" aria-label=\"条件の演算子\">",
+      "why": "Some page content is not contained by landmarks"
+     }
+    ]
+   }
+  ],
+  "incomplete": [
+   {
+    "id": "color-contrast",
+    "n": 11
+   },
+   {
+    "id": "scrollable-region-focusable",
+    "n": 1
+   }
+  ]
+ },
+ "dateSet-filter-popover": {
+  "violations": [
+   {
+    "id": "color-contrast",
+    "impact": "serious",
+    "help": "Elements must meet minimum color contrast ratio thresholds",
+    "n": 2,
+    "nodes": [
+     {
+      "target": "div[data-row-index=\"11\"][aria-rowindex=\"13\"][data-row-key=\"INS-0012\"] > .ssg-body-cell[aria-colindex=\"4\"][data-ssg-col-key=\"result\"] > .ssg-chip--critical.ssg-chip > .ssg-chip-label",
+      "html": "<span class=\"ssg-chip-label\">不良</span>",
+      "why": "Element has insufficient color contrast of 3.95 (foreground color: #dc2626, background color: #fee2e2, font size: 11.0pt (14.72px), font weight: normal). Expected contrast ratio of 4.5:1"
+     },
+     {
+      "target": ".ssg-filter-sec-meta",
+      "html": "<span class=\"ssg-filter-sec-meta\">全 9 件</span>",
+      "why": "Element has insufficient color contrast of 2.56 (foreground color: #94a3b8, background color: #ffffff, font size: 7.9pt (10.5px), font weight: normal). Expected contrast ratio of 4.5:1"
+     }
+    ]
+   },
+   {
+    "id": "label-content-name-mismatch",
+    "impact": "serious",
+    "help": "Elements must have their visible text as part of their accessible name",
+    "n": 1,
+    "nodes": [
+     {
+      "target": ".ssg-bar-chip--action",
+      "html": "<button type=\"button\" class=\"ssg-bar-chip ssg-bar-chip--emphasis ssg-bar-chip--action\" data-ssg-tooltip=\"フィルター管理パネルを開閉\" aria-label=\"フィルター管理パネルを開閉\">絞り込み: なし</but",
+      "why": "Text inside the element is not included in the accessible name"
+     }
+    ]
+   },
+   {
+    "id": "label",
+    "impact": "critical",
+    "help": "Form elements must have labels",
+    "n": 2,
+    "nodes": [
+     {
+      "target": ".ssg-filter-option:nth-child(1) > input[type=\"checkbox\"]",
+      "html": "<input type=\"checkbox\" checked=\"\">",
+      "why": "Element does not have an implicit (wrapped) <label> | Element does not have an explicit <label> | aria-label attribute does not exist or is empty | aria-labelledby attribute does not exist, references elements that do no"
+     },
+     {
+      "target": ".ssg-filter-option:nth-child(2) > input[type=\"checkbox\"]",
+      "html": "<input type=\"checkbox\" checked=\"\">",
+      "why": "Element does not have an implicit (wrapped) <label> | Element does not have an explicit <label> | aria-label attribute does not exist or is empty | aria-labelledby attribute does not exist, references elements that do no"
+     }
+    ]
+   },
+   {
+    "id": "region",
+    "impact": "moderate",
+    "help": "All page content should be contained by landmarks",
+    "n": 17,
+    "nodes": [
+     {
+      "target": "form > label",
+      "html": "<label>点検者<input name=\"inspector\" value=\"佐藤\" style=\"\"></label>",
+      "why": "Some page content is not contained by landmarks"
+     },
+     {
+      "target": ".ssg-filter-title",
+      "html": "<div class=\"ssg-filter-title\">列フィルター: 点検日</div>",
+      "why": "Some page content is not contained by landmarks"
+     },
+     {
+      "target": ".ssg-filter-sec-head:nth-child(2) > .ssg-filter-sec-label",
+      "html": "<span class=\"ssg-filter-sec-label\">条件</span>",
+      "why": "Some page content is not contained by landmarks"
+     },
+     {
+      "target": "select",
+      "html": "<select class=\"ssg-filter-select\" aria-label=\"条件の演算子\">",
+      "why": "Some page content is not contained by landmarks"
+     }
+    ]
+   }
+  ],
+  "incomplete": [
+   {
+    "id": "color-contrast",
+    "n": 6
+   },
+   {
+    "id": "label-content-name-mismatch",
+    "n": 1
+   },
+   {
+    "id": "scrollable-region-focusable",
+    "n": 1
+   }
+  ]
+ },
+ "textSet-filter-popover": {
+  "violations": [
+   {
+    "id": "color-contrast",
+    "impact": "serious",
+    "help": "Elements must meet minimum color contrast ratio thresholds",
+    "n": 2,
+    "nodes": [
+     {
+      "target": "div[data-row-index=\"11\"][aria-rowindex=\"13\"][data-row-key=\"INS-0012\"] > .ssg-body-cell[aria-colindex=\"4\"][data-ssg-col-key=\"result\"] > .ssg-chip--critical.ssg-chip > .ssg-chip-label",
+      "html": "<span class=\"ssg-chip-label\">不良</span>",
+      "why": "Element has insufficient color contrast of 3.95 (foreground color: #dc2626, background color: #fee2e2, font size: 11.0pt (14.72px), font weight: normal). Expected contrast ratio of 4.5:1"
+     },
+     {
+      "target": ".ssg-filter-sec-meta",
+      "html": "<span class=\"ssg-filter-sec-meta\">全 8 件</span>",
+      "why": "Element has insufficient color contrast of 2.56 (foreground color: #94a3b8, background color: #ffffff, font size: 7.9pt (10.5px), font weight: normal). Expected contrast ratio of 4.5:1"
+     }
+    ]
+   },
+   {
+    "id": "label-content-name-mismatch",
+    "impact": "serious",
+    "help": "Elements must have their visible text as part of their accessible name",
+    "n": 1,
+    "nodes": [
+     {
+      "target": ".ssg-bar-chip--action",
+      "html": "<button type=\"button\" class=\"ssg-bar-chip ssg-bar-chip--emphasis ssg-bar-chip--action\" data-ssg-tooltip=\"フィルター管理パネルを開閉\" aria-label=\"フィルター管理パネルを開閉\">絞り込み: なし</but",
+      "why": "Text inside the element is not included in the accessible name"
+     }
+    ]
+   },
+   {
+    "id": "region",
+    "impact": "moderate",
+    "help": "All page content should be contained by landmarks",
+    "n": 12,
+    "nodes": [
+     {
+      "target": "form > label",
+      "html": "<label>点検者<input name=\"inspector\" value=\"佐藤\" style=\"\"></label>",
+      "why": "Some page content is not contained by landmarks"
+     },
+     {
+      "target": ".ssg-filter-title",
+      "html": "<div class=\"ssg-filter-title\">列フィルター: 項目</div>",
+      "why": "Some page content is not contained by landmarks"
+     },
+     {
+      "target": ".ssg-filter-sec-head:nth-child(2) > .ssg-filter-sec-label",
+      "html": "<span class=\"ssg-filter-sec-label\">条件</span>",
+      "why": "Some page content is not contained by landmarks"
+     },
+     {
+      "target": "select",
+      "html": "<select class=\"ssg-filter-select\" aria-label=\"条件の演算子\"><option value=\"contains\">を含む</option><option value=\"equals\">に等しい</option><option value=\"startsWith\">で始まる</",
+      "why": "Some page content is not contained by landmarks"
+     }
+    ]
+   }
+  ],
+  "incomplete": [
+   {
+    "id": "color-contrast",
+    "n": 5
+   },
+   {
+    "id": "scrollable-region-focusable",
+    "n": 1
+   }
+  ]
+ },
+ "sort-panel": {
+  "violations": [
+   {
+    "id": "color-contrast",
+    "impact": "serious",
+    "help": "Elements must meet minimum color contrast ratio thresholds",
+    "n": 3,
+    "nodes": [
+     {
+      "target": "div[data-row-index=\"11\"][aria-rowindex=\"13\"][data-row-key=\"INS-0012\"] > .ssg-body-cell[aria-colindex=\"4\"][data-ssg-col-key=\"result\"] > .ssg-chip--critical.ssg-chip > .ssg-chip-label",
+      "html": "<span class=\"ssg-chip-label\">不良</span>",
+      "why": "Element has insufficient color contrast of 3.95 (foreground color: #dc2626, background color: #fee2e2, font size: 11.0pt (14.72px), font weight: normal). Expected contrast ratio of 4.5:1"
+     },
+     {
+      "target": "#\\:r3\\:-tab-filter",
+      "html": "<button type=\"button\" role=\"tab\" id=\":r3:-tab-filter\" aria-selected=\"false\" class=\"ssg-toolpanel-seg-btn\">フィルター</button>",
+      "why": "Element has insufficient color contrast of 4.27 (foreground color: #64748b, background color: #f1f3f5, font size: 9.4pt (12.5px), font weight: normal). Expected contrast ratio of 4.5:1"
+     },
+     {
+      "target": ".ssg-sort-empty",
+      "html": "<div class=\"ssg-sort-empty\">並び替えは設定されていません</div>",
+      "why": "Element has insufficient color contrast of 2.56 (foreground color: #94a3b8, background color: #ffffff, font size: 9.0pt (12px), font weight: normal). Expected contrast ratio of 4.5:1"
+     }
+    ]
+   },
+   {
+    "id": "label-content-name-mismatch",
+    "impact": "serious",
+    "help": "Elements must have their visible text as part of their accessible name",
+    "n": 1,
+    "nodes": [
+     {
+      "target": ".ssg-bar-chip--action",
+      "html": "<button type=\"button\" class=\"ssg-bar-chip ssg-bar-chip--emphasis ssg-bar-chip--action\" data-ssg-tooltip=\"フィルター管理パネルを開閉\" aria-label=\"フィルター管理パネルを開閉\">絞り込み: なし</but",
+      "why": "Text inside the element is not included in the accessible name"
+     }
+    ]
+   },
+   {
+    "id": "region",
+    "impact": "moderate",
+    "help": "All page content should be contained by landmarks",
+    "n": 5,
+    "nodes": [
+     {
+      "target": "label",
+      "html": "<label>点検者<input name=\"inspector\" value=\"佐藤\" style=\"\"></label>",
+      "why": "Some page content is not contained by landmarks"
+     },
+     {
+      "target": "#\\:r3\\:-tab-filter",
+      "html": "<button type=\"button\" role=\"tab\" id=\":r3:-tab-filter\" aria-selected=\"false\" class=\"ssg-toolpanel-seg-btn\">フィルター</button>",
+      "why": "Some page content is not contained by landmarks"
+     },
+     {
+      "target": "#\\:r3\\:-tab-columns",
+      "html": "<button type=\"button\" role=\"tab\" id=\":r3:-tab-columns\" aria-selected=\"false\" class=\"ssg-toolpanel-seg-btn\">列</button>",
+      "why": "Some page content is not contained by landmarks"
+     },
+     {
+      "target": "#\\:r3\\:-tab-sort",
+      "html": "<button type=\"button\" role=\"tab\" id=\":r3:-tab-sort\" aria-controls=\":r3:-panel\" aria-selected=\"true\" class=\"ssg-toolpanel-seg-btn ssg-toolpanel-seg-btn--active\">",
+      "why": "Some page content is not contained by landmarks"
+     }
+    ]
+   }
+  ],
+  "incomplete": [
+   {
+    "id": "color-contrast",
+    "n": 6
+   },
+   {
+    "id": "label-content-name-mismatch",
+    "n": 1
+   },
+   {
+    "id": "scrollable-region-focusable",
+    "n": 1
+   }
+  ]
+ },
+ "columns-panel": {
+  "violations": [
+   {
+    "id": "color-contrast",
+    "impact": "serious",
+    "help": "Elements must meet minimum color contrast ratio thresholds",
+    "n": 6,
+    "nodes": [
+     {
+      "target": "div[data-row-index=\"11\"][aria-rowindex=\"13\"][data-row-key=\"INS-0012\"] > .ssg-body-cell[aria-colindex=\"4\"][data-ssg-col-key=\"result\"] > .ssg-chip--critical.ssg-chip > .ssg-chip-label",
+      "html": "<span class=\"ssg-chip-label\">不良</span>",
+      "why": "Element has insufficient color contrast of 3.95 (foreground color: #dc2626, background color: #fee2e2, font size: 11.0pt (14.72px), font weight: normal). Expected contrast ratio of 4.5:1"
+     },
+     {
+      "target": "#\\:r3\\:-tab-filter",
+      "html": "<button type=\"button\" role=\"tab\" id=\":r3:-tab-filter\" aria-selected=\"false\" class=\"ssg-toolpanel-seg-btn\">フィルター</button>",
+      "why": "Element has insufficient color contrast of 4.27 (foreground color: #64748b, background color: #f1f3f5, font size: 9.4pt (12.5px), font weight: normal). Expected contrast ratio of 4.5:1"
+     },
+     {
+      "target": "#\\:r3\\:-tab-sort",
+      "html": "<button type=\"button\" role=\"tab\" id=\":r3:-tab-sort\" aria-selected=\"false\" class=\"ssg-toolpanel-seg-btn\">並び替え</button>",
+      "why": "Element has insufficient color contrast of 4.27 (foreground color: #64748b, background color: #f1f3f5, font size: 9.4pt (12.5px), font weight: normal). Expected contrast ratio of 4.5:1"
+     },
+     {
+      "target": "div[data-chooser-section=\"left\"] > .ssg-chooser-section-heading",
+      "html": "<div class=\"ssg-chooser-section-heading\">左固定</div>",
+      "why": "Element has insufficient color contrast of 2.56 (foreground color: #94a3b8, background color: #ffffff, font size: 8.3pt (11px), font weight: bold). Expected contrast ratio of 4.5:1"
+     }
+    ]
+   },
+   {
+    "id": "label-content-name-mismatch",
+    "impact": "serious",
+    "help": "Elements must have their visible text as part of their accessible name",
+    "n": 1,
+    "nodes": [
+     {
+      "target": ".ssg-bar-chip--action",
+      "html": "<button type=\"button\" class=\"ssg-bar-chip ssg-bar-chip--emphasis ssg-bar-chip--action\" data-ssg-tooltip=\"フィルター管理パネルを開閉\" aria-label=\"フィルター管理パネルを開閉\">絞り込み: なし</but",
+      "why": "Text inside the element is not included in the accessible name"
+     }
+    ]
+   },
+   {
+    "id": "region",
+    "impact": "moderate",
+    "help": "All page content should be contained by landmarks",
+    "n": 5,
+    "nodes": [
+     {
+      "target": "label",
+      "html": "<label>点検者<input name=\"inspector\" value=\"佐藤\" style=\"\"></label>",
+      "why": "Some page content is not contained by landmarks"
+     },
+     {
+      "target": "#\\:r3\\:-tab-filter",
+      "html": "<button type=\"button\" role=\"tab\" id=\":r3:-tab-filter\" aria-selected=\"false\" class=\"ssg-toolpanel-seg-btn\">フィルター</button>",
+      "why": "Some page content is not contained by landmarks"
+     },
+     {
+      "target": "#\\:r3\\:-tab-columns",
+      "html": "<button type=\"button\" role=\"tab\" id=\":r3:-tab-columns\" aria-controls=\":r3:-panel\" aria-selected=\"true\" class=\"ssg-toolpanel-seg-btn ssg-toolpanel-seg-btn--activ",
+      "why": "Some page content is not contained by landmarks"
+     },
+     {
+      "target": "#\\:r3\\:-tab-sort",
+      "html": "<button type=\"button\" role=\"tab\" id=\":r3:-tab-sort\" aria-selected=\"false\" class=\"ssg-toolpanel-seg-btn\">並び替え</button>",
+      "why": "Some page content is not contained by landmarks"
+     }
+    ]
+   },
+   {
+    "id": "scrollable-region-focusable",
+    "impact": "serious",
+    "help": "Scrollable region must have keyboard access",
+    "n": 1,
+    "nodes": [
+     {
+      "target": ".ssg-chooser-list",
+      "html": "<div class=\"ssg-chooser-list\">",
+      "why": "Element should have focusable content | Element should be focusable"
+     }
+    ]
+   }
+  ],
+  "incomplete": [
+   {
+    "id": "color-contrast",
+    "n": 6
+   },
+   {
+    "id": "label-content-name-mismatch",
+    "n": 1
+   },
+   {
+    "id": "scrollable-region-focusable",
+    "n": 1
+   }
+  ]
+ },
+ "editor-result": {
+  "violations": [
+   {
+    "id": "aria-input-field-name",
+    "impact": "serious",
+    "help": "ARIA input fields must have an accessible name",
+    "n": 1,
+    "nodes": [
+     {
+      "target": ".ssg-select-editor-popover",
+      "html": "<div role=\"listbox\" class=\"ssg-select-editor-popover\" style=\"left: 335px; top: 293.188px; width: 180px; max-height: 120px;\">",
+      "why": "aria-label attribute does not exist or is empty | aria-labelledby attribute does not exist, references elements that do not exist or references elements that are empty | Element has no title attribute"
+     }
+    ]
+   },
+   {
+    "id": "aria-required-children",
+    "impact": "critical",
+    "help": "Certain ARIA roles must contain particular children",
+    "n": 1,
+    "nodes": [
+     {
+      "target": ".ssg-scroll-container",
+      "html": "<div tabindex=\"-1\" role=\"grid\" aria-label=\"点検項目\" aria-rowcount=\"641\" aria-colcount=\"10\" aria-multiselectable=\"true\" class=\"ssg-scroll-container\" style=\"max-heig",
+      "why": "Element has children which are not allowed: [role=group]"
+     }
+    ]
+   },
+   {
+    "id": "color-contrast",
+    "impact": "serious",
+    "help": "Elements must meet minimum color contrast ratio thresholds",
+    "n": 1,
+    "nodes": [
+     {
+      "target": "div[data-row-index=\"11\"][aria-rowindex=\"13\"][data-row-key=\"INS-0012\"] > .ssg-body-cell[aria-colindex=\"4\"][data-ssg-col-key=\"result\"] > .ssg-chip--critical.ssg-chip > .ssg-chip-label",
+      "html": "<span class=\"ssg-chip-label\">不良</span>",
+      "why": "Element has insufficient color contrast of 3.95 (foreground color: #dc2626, background color: #fee2e2, font size: 11.0pt (14.72px), font weight: normal). Expected contrast ratio of 4.5:1"
+     }
+    ]
+   },
+   {
+    "id": "label-content-name-mismatch",
+    "impact": "serious",
+    "help": "Elements must have their visible text as part of their accessible name",
+    "n": 1,
+    "nodes": [
+     {
+      "target": ".ssg-bar-chip--action",
+      "html": "<button type=\"button\" class=\"ssg-bar-chip ssg-bar-chip--emphasis ssg-bar-chip--action\" data-ssg-tooltip=\"フィルター管理パネルを開閉\" aria-label=\"フィルター管理パネルを開閉\">絞り込み: なし</but",
+      "why": "Text inside the element is not included in the accessible name"
+     }
+    ]
+   },
+   {
+    "id": "label",
+    "impact": "critical",
+    "help": "Form elements must have labels",
+    "n": 1,
+    "nodes": [
+     {
+      "target": ".ssg-cell-editor-input",
+      "html": "<input type=\"text\" readonly=\"\" class=\"ssg-cell-editor-input ssg-cell-editor-input--select\" value=\"良\">",
+      "why": "Element does not have an implicit (wrapped) <label> | Element does not have an explicit <label> | aria-label attribute does not exist or is empty | aria-labelledby attribute does not exist, references elements that do no"
+     }
+    ]
+   },
+   {
+    "id": "region",
+    "impact": "moderate",
+    "help": "All page content should be contained by landmarks",
+    "n": 2,
+    "nodes": [
+     {
+      "target": "label",
+      "html": "<label>点検者<input name=\"inspector\" value=\"佐藤\" style=\"\"></label>",
+      "why": "Some page content is not contained by landmarks"
+     },
+     {
+      "target": ".ssg-select-editor-popover",
+      "html": "<div role=\"listbox\" class=\"ssg-select-editor-popover\" style=\"left: 335px; top: 293.188px; width: 180px; max-height: 120px;\">",
+      "why": "Some page content is not contained by landmarks"
+     }
+    ]
+   }
+  ],
+  "incomplete": [
+   {
+    "id": "color-contrast",
+    "n": 5
+   }
+  ]
+ },
+ "editor-value": {
+  "violations": [
+   {
+    "id": "aria-required-children",
+    "impact": "critical",
+    "help": "Certain ARIA roles must contain particular children",
+    "n": 1,
+    "nodes": [
+     {
+      "target": ".ssg-scroll-container",
+      "html": "<div tabindex=\"-1\" role=\"grid\" aria-label=\"点検項目\" aria-rowcount=\"641\" aria-colcount=\"10\" aria-multiselectable=\"true\" class=\"ssg-scroll-container\" style=\"max-heig",
+      "why": "Element has children which are not allowed: [role=group]"
+     }
+    ]
+   },
+   {
+    "id": "color-contrast",
+    "impact": "serious",
+    "help": "Elements must meet minimum color contrast ratio thresholds",
+    "n": 1,
+    "nodes": [
+     {
+      "target": "div[data-row-index=\"11\"][aria-rowindex=\"13\"][data-row-key=\"INS-0012\"] > .ssg-body-cell[aria-colindex=\"4\"][data-ssg-col-key=\"result\"] > .ssg-chip--critical.ssg-chip > .ssg-chip-label",
+      "html": "<span class=\"ssg-chip-label\">不良</span>",
+      "why": "Element has insufficient color contrast of 3.95 (foreground color: #dc2626, background color: #fee2e2, font size: 11.0pt (14.72px), font weight: normal). Expected contrast ratio of 4.5:1"
+     }
+    ]
+   },
+   {
+    "id": "label-content-name-mismatch",
+    "impact": "serious",
+    "help": "Elements must have their visible text as part of their accessible name",
+    "n": 1,
+    "nodes": [
+     {
+      "target": ".ssg-bar-chip--action",
+      "html": "<button type=\"button\" class=\"ssg-bar-chip ssg-bar-chip--emphasis ssg-bar-chip--action\" data-ssg-tooltip=\"フィルター管理パネルを開閉\" aria-label=\"フィルター管理パネルを開閉\">絞り込み: なし</but",
+      "why": "Text inside the element is not included in the accessible name"
+     }
+    ]
+   },
+   {
+    "id": "label",
+    "impact": "critical",
+    "help": "Form elements must have labels",
+    "n": 1,
+    "nodes": [
+     {
+      "target": ".ssg-cell-editor-input",
+      "html": "<input type=\"number\" min=\"0\" class=\"ssg-cell-editor-input\" value=\"327.6\" style=\"text-align: right;\">",
+      "why": "Element does not have an implicit (wrapped) <label> | Element does not have an explicit <label> | aria-label attribute does not exist or is empty | aria-labelledby attribute does not exist, references elements that do no"
+     }
+    ]
+   },
+   {
+    "id": "region",
+    "impact": "moderate",
+    "help": "All page content should be contained by landmarks",
+    "n": 1,
+    "nodes": [
+     {
+      "target": "label",
+      "html": "<label>点検者<input name=\"inspector\" value=\"佐藤\" style=\"\"></label>",
+      "why": "Some page content is not contained by landmarks"
+     }
+    ]
+   }
+  ],
+  "incomplete": [
+   {
+    "id": "color-contrast",
+    "n": 5
+   }
+  ]
+ },
+ "editor-memo": {
+  "violations": [
+   {
+    "id": "aria-required-children",
+    "impact": "critical",
+    "help": "Certain ARIA roles must contain particular children",
+    "n": 1,
+    "nodes": [
+     {
+      "target": ".ssg-scroll-container",
+      "html": "<div tabindex=\"-1\" role=\"grid\" aria-label=\"点検項目\" aria-rowcount=\"641\" aria-colcount=\"10\" aria-multiselectable=\"true\" class=\"ssg-scroll-container\" style=\"max-heig",
+      "why": "Element has children which are not allowed: [role=group]"
+     }
+    ]
+   },
+   {
+    "id": "color-contrast",
+    "impact": "serious",
+    "help": "Elements must meet minimum color contrast ratio thresholds",
+    "n": 1,
+    "nodes": [
+     {
+      "target": "div[data-row-index=\"11\"][aria-rowindex=\"13\"][data-row-key=\"INS-0012\"] > .ssg-body-cell[aria-colindex=\"4\"][data-ssg-col-key=\"result\"] > .ssg-chip--critical.ssg-chip > .ssg-chip-label",
+      "html": "<span class=\"ssg-chip-label\">不良</span>",
+      "why": "Element has insufficient color contrast of 3.95 (foreground color: #dc2626, background color: #fee2e2, font size: 11.0pt (14.72px), font weight: normal). Expected contrast ratio of 4.5:1"
+     }
+    ]
+   },
+   {
+    "id": "label-content-name-mismatch",
+    "impact": "serious",
+    "help": "Elements must have their visible text as part of their accessible name",
+    "n": 1,
+    "nodes": [
+     {
+      "target": ".ssg-bar-chip--action",
+      "html": "<button type=\"button\" class=\"ssg-bar-chip ssg-bar-chip--emphasis ssg-bar-chip--action\" data-ssg-tooltip=\"フィルター管理パネルを開閉\" aria-label=\"フィルター管理パネルを開閉\">絞り込み: なし</but",
+      "why": "Text inside the element is not included in the accessible name"
+     }
+    ]
+   },
+   {
+    "id": "label",
+    "impact": "critical",
+    "help": "Form elements must have labels",
+    "n": 1,
+    "nodes": [
+     {
+      "target": "textarea",
+      "html": "<textarea rows=\"1\" class=\"ssg-cell-editor-input ssg-cell-editor-input--multiline\" style=\"padding-top: 6px; padding-bottom: 6px; height: 36px;\"></textarea>",
+      "why": "Element does not have an implicit (wrapped) <label> | Element does not have an explicit <label> | aria-label attribute does not exist or is empty | aria-labelledby attribute does not exist, references elements that do no"
+     }
+    ]
+   },
+   {
+    "id": "region",
+    "impact": "moderate",
+    "help": "All page content should be contained by landmarks",
+    "n": 1,
+    "nodes": [
+     {
+      "target": "label",
+      "html": "<label>点検者<input name=\"inspector\" value=\"佐藤\" style=\"\"></label>",
+      "why": "Some page content is not contained by landmarks"
+     }
+    ]
+   }
+  ],
+  "incomplete": [
+   {
+    "id": "color-contrast",
+    "n": 4
+   }
+  ]
+ },
+ "editor-inspectedAt": {
+  "violations": [
+   {
+    "id": "aria-required-children",
+    "impact": "critical",
+    "help": "Certain ARIA roles must contain particular children",
+    "n": 1,
+    "nodes": [
+     {
+      "target": ".ssg-scroll-container",
+      "html": "<div tabindex=\"-1\" role=\"grid\" aria-label=\"点検項目\" aria-rowcount=\"641\" aria-colcount=\"10\" aria-multiselectable=\"true\" class=\"ssg-scroll-container\" style=\"max-heig",
+      "why": "Element has children which are not allowed: [role=group]"
+     }
+    ]
+   },
+   {
+    "id": "color-contrast",
+    "impact": "serious",
+    "help": "Elements must meet minimum color contrast ratio thresholds",
+    "n": 1,
+    "nodes": [
+     {
+      "target": "div[data-row-index=\"11\"][aria-rowindex=\"13\"][data-row-key=\"INS-0012\"] > .ssg-body-cell[aria-colindex=\"4\"][data-ssg-col-key=\"result\"] > .ssg-chip--critical.ssg-chip > .ssg-chip-label",
+      "html": "<span class=\"ssg-chip-label\">不良</span>",
+      "why": "Element has insufficient color contrast of 3.95 (foreground color: #dc2626, background color: #fee2e2, font size: 11.0pt (14.72px), font weight: normal). Expected contrast ratio of 4.5:1"
+     }
+    ]
+   },
+   {
+    "id": "label-content-name-mismatch",
+    "impact": "serious",
+    "help": "Elements must have their visible text as part of their accessible name",
+    "n": 1,
+    "nodes": [
+     {
+      "target": ".ssg-bar-chip--action",
+      "html": "<button type=\"button\" class=\"ssg-bar-chip ssg-bar-chip--emphasis ssg-bar-chip--action\" data-ssg-tooltip=\"フィルター管理パネルを開閉\" aria-label=\"フィルター管理パネルを開閉\">絞り込み: なし</but",
+      "why": "Text inside the element is not included in the accessible name"
+     }
+    ]
+   },
+   {
+    "id": "label",
+    "impact": "critical",
+    "help": "Form elements must have labels",
+    "n": 1,
+    "nodes": [
+     {
+      "target": ".ssg-cell-editor-input",
+      "html": "<input type=\"date\" class=\"ssg-cell-editor-input\" value=\"2026-11-05\">",
+      "why": "Element does not have an implicit (wrapped) <label> | Element does not have an explicit <label> | aria-label attribute does not exist or is empty | aria-labelledby attribute does not exist, references elements that do no"
+     }
+    ]
+   },
+   {
+    "id": "region",
+    "impact": "moderate",
+    "help": "All page content should be contained by landmarks",
+    "n": 1,
+    "nodes": [
+     {
+      "target": "label",
+      "html": "<label>点検者<input name=\"inspector\" value=\"佐藤\" style=\"\"></label>",
+      "why": "Some page content is not contained by landmarks"
+     }
+    ]
+   }
+  ],
+  "incomplete": [
+   {
+    "id": "color-contrast",
+    "n": 5
+   }
+  ]
+ },
+ "editor-inspector": {
+  "violations": [
+   {
+    "id": "aria-required-children",
+    "impact": "critical",
+    "help": "Certain ARIA roles must contain particular children",
+    "n": 1,
+    "nodes": [
+     {
+      "target": ".ssg-scroll-container",
+      "html": "<div tabindex=\"-1\" role=\"grid\" aria-label=\"点検項目\" aria-rowcount=\"641\" aria-colcount=\"10\" aria-multiselectable=\"true\" class=\"ssg-scroll-container\" style=\"max-heig",
+      "why": "Element has children which are not allowed: [role=group]"
+     }
+    ]
+   },
+   {
+    "id": "color-contrast",
+    "impact": "serious",
+    "help": "Elements must meet minimum color contrast ratio thresholds",
+    "n": 1,
+    "nodes": [
+     {
+      "target": "div[data-row-index=\"11\"][aria-rowindex=\"13\"][data-row-key=\"INS-0012\"] > .ssg-body-cell[aria-colindex=\"4\"][data-ssg-col-key=\"result\"] > .ssg-chip--critical.ssg-chip > .ssg-chip-label",
+      "html": "<span class=\"ssg-chip-label\">不良</span>",
+      "why": "Element has insufficient color contrast of 3.95 (foreground color: #dc2626, background color: #fee2e2, font size: 11.0pt (14.72px), font weight: normal). Expected contrast ratio of 4.5:1"
+     }
+    ]
+   },
+   {
+    "id": "label-content-name-mismatch",
+    "impact": "serious",
+    "help": "Elements must have their visible text as part of their accessible name",
+    "n": 1,
+    "nodes": [
+     {
+      "target": ".ssg-bar-chip--action",
+      "html": "<button type=\"button\" class=\"ssg-bar-chip ssg-bar-chip--emphasis ssg-bar-chip--action\" data-ssg-tooltip=\"フィルター管理パネルを開閉\" aria-label=\"フィルター管理パネルを開閉\">絞り込み: なし</but",
+      "why": "Text inside the element is not included in the accessible name"
+     }
+    ]
+   },
+   {
+    "id": "label",
+    "impact": "critical",
+    "help": "Form elements must have labels",
+    "n": 1,
+    "nodes": [
+     {
+      "target": ".ssg-cell-editor-input",
+      "html": "<input type=\"text\" class=\"ssg-cell-editor-input\" value=\"伊藤\">",
+      "why": "Element does not have an implicit (wrapped) <label> | Element does not have an explicit <label> | aria-label attribute does not exist or is empty | aria-labelledby attribute does not exist, references elements that do no"
+     }
+    ]
+   },
+   {
+    "id": "region",
+    "impact": "moderate",
+    "help": "All page content should be contained by landmarks",
+    "n": 1,
+    "nodes": [
+     {
+      "target": "label",
+      "html": "<label>点検者<input name=\"inspector\" value=\"佐藤\" style=\"\"></label>",
+      "why": "Some page content is not contained by landmarks"
+     }
+    ]
+   }
+  ],
+  "incomplete": [
+   {
+    "id": "color-contrast",
+    "n": 5
+   }
+  ]
+ },
+ "invalid-tooltip": {
+  "violations": [
+   {
+    "id": "color-contrast",
+    "impact": "serious",
+    "help": "Elements must meet minimum color contrast ratio thresholds",
+    "n": 1,
+    "nodes": [
+     {
+      "target": ".ssg-body-cell--row-hovered[aria-colindex=\"4\"][data-ssg-col-key=\"result\"] > .ssg-chip--critical.ssg-chip > .ssg-chip-label",
+      "html": "<span class=\"ssg-chip-label\">不良</span>",
+      "why": "Element has insufficient color contrast of 3.95 (foreground color: #dc2626, background color: #fee2e2, font size: 11.0pt (14.72px), font weight: normal). Expected contrast ratio of 4.5:1"
+     }
+    ]
+   },
+   {
+    "id": "label-content-name-mismatch",
+    "impact": "serious",
+    "help": "Elements must have their visible text as part of their accessible name",
+    "n": 1,
+    "nodes": [
+     {
+      "target": ".ssg-bar-chip--action",
+      "html": "<button type=\"button\" class=\"ssg-bar-chip ssg-bar-chip--emphasis ssg-bar-chip--action\" data-ssg-tooltip=\"フィルター管理パネルを開閉\" aria-label=\"フィルター管理パネルを開閉\">絞り込み: なし</but",
+      "why": "Text inside the element is not included in the accessible name"
+     }
+    ]
+   },
+   {
+    "id": "region",
+    "impact": "moderate",
+    "help": "All page content should be contained by landmarks",
+    "n": 1,
+    "nodes": [
+     {
+      "target": "label",
+      "html": "<label>点検者<input name=\"inspector\" value=\"佐藤\" style=\"\"></label>",
+      "why": "Some page content is not contained by landmarks"
+     }
+    ]
+   }
+  ],
+  "incomplete": [
+   {
+    "id": "color-contrast",
+    "n": 4
+   },
+   {
+    "id": "scrollable-region-focusable",
+    "n": 1
+   }
+  ]
+ },
+ "find-bar": {
+  "violations": [
+   {
+    "id": "color-contrast",
+    "impact": "serious",
+    "help": "Elements must meet minimum color contrast ratio thresholds",
+    "n": 1,
+    "nodes": [
+     {
+      "target": "div[data-row-index=\"11\"][aria-rowindex=\"13\"][data-row-key=\"INS-0012\"] > .ssg-body-cell[aria-colindex=\"4\"][data-ssg-col-key=\"result\"] > .ssg-chip--critical.ssg-chip > .ssg-chip-label",
+      "html": "<span class=\"ssg-chip-label\">不良</span>",
+      "why": "Element has insufficient color contrast of 3.95 (foreground color: #dc2626, background color: #fee2e2, font size: 11.0pt (14.72px), font weight: normal). Expected contrast ratio of 4.5:1"
+     }
+    ]
+   },
+   {
+    "id": "label-content-name-mismatch",
+    "impact": "serious",
+    "help": "Elements must have their visible text as part of their accessible name",
+    "n": 1,
+    "nodes": [
+     {
+      "target": ".ssg-bar-chip--action",
+      "html": "<button type=\"button\" class=\"ssg-bar-chip ssg-bar-chip--emphasis ssg-bar-chip--action\" data-ssg-tooltip=\"フィルター管理パネルを開閉\" aria-label=\"フィルター管理パネルを開閉\">絞り込み: なし</but",
+      "why": "Text inside the element is not included in the accessible name"
+     }
+    ]
+   },
+   {
+    "id": "region",
+    "impact": "moderate",
+    "help": "All page content should be contained by landmarks",
+    "n": 1,
+    "nodes": [
+     {
+      "target": "label",
+      "html": "<label>点検者<input name=\"inspector\" value=\"佐藤\" style=\"\"></label>",
+      "why": "Some page content is not contained by landmarks"
+     }
+    ]
+   }
+  ],
+  "incomplete": [
+   {
+    "id": "color-contrast",
+    "n": 7
+   },
+   {
+    "id": "label-content-name-mismatch",
+    "n": 3
+   },
+   {
+    "id": "scrollable-region-focusable",
+    "n": 1
+   }
+  ]
+ },
+ "chip-bar": {
+  "violations": [
+   {
+    "id": "color-contrast",
+    "impact": "serious",
+    "help": "Elements must meet minimum color contrast ratio thresholds",
+    "n": 16,
+    "nodes": [
+     {
+      "target": "div[data-row-index=\"1\"][aria-rowindex=\"3\"][data-row-key=\"INS-0023\"] > .ssg-body-cell[aria-colindex=\"4\"][data-ssg-col-key=\"result\"] > .ssg-chip.ssg-chip--critical > .ssg-chip-label",
+      "html": "<span class=\"ssg-chip-label\">不良</span>",
+      "why": "Element has insufficient color contrast of 3.95 (foreground color: #dc2626, background color: #fee2e2, font size: 11.0pt (14.72px), font weight: normal). Expected contrast ratio of 4.5:1"
+     },
+     {
+      "target": "div[data-row-index=\"2\"][aria-rowindex=\"4\"][data-row-key=\"INS-0031\"] > .ssg-body-cell[aria-colindex=\"4\"][data-ssg-col-key=\"result\"] > .ssg-chip.ssg-chip--critical > .ssg-chip-label",
+      "html": "<span class=\"ssg-chip-label\">不良</span>",
+      "why": "Element has insufficient color contrast of 3.95 (foreground color: #dc2626, background color: #fee2e2, font size: 11.0pt (14.72px), font weight: normal). Expected contrast ratio of 4.5:1"
+     },
+     {
+      "target": "div[data-row-index=\"3\"][aria-rowindex=\"5\"][data-row-key=\"INS-0032\"] > .ssg-body-cell[aria-colindex=\"4\"][data-ssg-col-key=\"result\"] > .ssg-chip.ssg-chip--critical > .ssg-chip-label",
+      "html": "<span class=\"ssg-chip-label\">不良</span>",
+      "why": "Element has insufficient color contrast of 3.95 (foreground color: #dc2626, background color: #fee2e2, font size: 11.0pt (14.72px), font weight: normal). Expected contrast ratio of 4.5:1"
+     },
+     {
+      "target": "div[data-row-index=\"4\"][aria-rowindex=\"6\"][data-row-key=\"INS-0081\"] > .ssg-body-cell[aria-colindex=\"4\"][data-ssg-col-key=\"result\"] > .ssg-chip.ssg-chip--critical > .ssg-chip-label",
+      "html": "<span class=\"ssg-chip-label\">不良</span>",
+      "why": "Element has insufficient color contrast of 3.95 (foreground color: #dc2626, background color: #fee2e2, font size: 11.0pt (14.72px), font weight: normal). Expected contrast ratio of 4.5:1"
+     }
+    ]
+   },
+   {
+    "id": "label-content-name-mismatch",
+    "impact": "serious",
+    "help": "Elements must have their visible text as part of their accessible name",
+    "n": 2,
+    "nodes": [
+     {
+      "target": ".ssg-bar-chip--action",
+      "html": "<button type=\"button\" class=\"ssg-bar-chip ssg-bar-chip--emphasis ssg-bar-chip--action\" data-ssg-tooltip=\"フィルター管理パネルを開閉\" aria-label=\"フィルター管理パネルを開閉\">絞り込み: 1 列</bu",
+      "why": "Text inside the element is not included in the accessible name"
+     },
+     {
+      "target": ".ssg-filter-chip-label",
+      "html": "<button type=\"button\" class=\"ssg-filter-chip-label\" data-ssg-tooltip=\"この列へジャンプして編集\" aria-label=\"結果 のフィルターを編集\"><span class=\"ssg-filter-chip-name\">結果</span><span ",
+      "why": "Text inside the element is not included in the accessible name"
+     }
+    ]
+   },
+   {
+    "id": "region",
+    "impact": "moderate",
+    "help": "All page content should be contained by landmarks",
+    "n": 1,
+    "nodes": [
+     {
+      "target": "label",
+      "html": "<label>点検者<input name=\"inspector\" value=\"佐藤\" style=\"\"></label>",
+      "why": "Some page content is not contained by landmarks"
+     }
+    ]
+   }
+  ],
+  "incomplete": [
+   {
+    "id": "color-contrast",
+    "n": 3
+   },
+   {
+    "id": "label-content-name-mismatch",
+    "n": 1
+   },
+   {
+    "id": "scrollable-region-focusable",
+    "n": 1
+   }
+  ]
+ },
+ "mobile-initial": {
+  "violations": [
+   {
+    "id": "label-content-name-mismatch",
+    "impact": "serious",
+    "help": "Elements must have their visible text as part of their accessible name",
+    "n": 1,
+    "nodes": [
+     {
+      "target": ".ssg-bar-chip--action",
+      "html": "<button type=\"button\" class=\"ssg-bar-chip ssg-bar-chip--emphasis ssg-bar-chip--action\" data-ssg-tooltip=\"フィルター管理パネルを開閉\" aria-label=\"フィルター管理パネルを開閉\">絞り込み: なし</but",
+      "why": "Text inside the element is not included in the accessible name"
+     }
+    ]
+   },
+   {
+    "id": "region",
+    "impact": "moderate",
+    "help": "All page content should be contained by landmarks",
+    "n": 1,
+    "nodes": [
+     {
+      "target": "label",
+      "html": "<label>点検者<input name=\"inspector\" value=\"佐藤\"></label>",
+      "why": "Some page content is not contained by landmarks"
+     }
+    ]
+   }
+  ],
+  "incomplete": [
+   {
+    "id": "color-contrast",
+    "n": 2
+   },
+   {
+    "id": "label-content-name-mismatch",
+    "n": 2
+   },
+   {
+    "id": "scrollable-region-focusable",
+    "n": 1
+   }
+  ]
+ }
+}

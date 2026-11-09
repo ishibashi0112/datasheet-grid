@@ -1,0 +1,27 @@
+{
+  "name": "wbs-tasks",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite --port 5408 --strictPort",
+    "build": "tsc -b && vite build",
+    "preview": "vite preview --port 5408 --strictPort",
+    "typecheck": "tsc -b"
+  },
+  "dependencies": {
+    "@ishibashi0112/spreadsheet-grid": "^1.0.0",
+    "@mantine/core": "^8.3.18",
+    "@mantine/hooks": "^8.3.18",
+    "react": "^19.3.1",
+    "react-dom": "^19.3.1"
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.6",
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.3.0",
+    "@vitejs/plugin-react": "^6.2.1",
+    "typescript": "5.9",
+    "vite": "^8.3.6"
+  }
+}

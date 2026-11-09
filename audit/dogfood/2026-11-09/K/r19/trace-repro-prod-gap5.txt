@@ -1,0 +1,33 @@
+2.1 keydown 1 tgt=ssg-shell act=ssg-shell prevented=false
+8.5 focusout  tgt=ssg-shell act=body prevented=false
+9.8 focusin  tgt=ssg-cell-editor-input act=ssg-cell-editor-input prevented=false
+12.9 keyup 1 tgt=ssg-cell-editor-input act=ssg-cell-editor-input prevented=false
+13.2 keydown 2 tgt=ssg-cell-editor-input act=ssg-cell-editor-input prevented=false
+13.9 input 2 tgt=ssg-cell-editor-input act=ssg-cell-editor-input prevented=false
+19.0 keyup 2 tgt=ssg-cell-editor-input act=ssg-cell-editor-input prevented=false
+21.1 keydown Enter tgt=ssg-cell-editor-input act=ssg-cell-editor-input prevented=false
+26.9 focusout  tgt=ssg-cell-editor-input act=body prevented=false
+32.8 keyup Enter tgt=body act=body prevented=false
+33.0 keydown 3 tgt=body act=body prevented=false
+33.1 keyup 3 tgt=body act=body prevented=false
+34.2 focusin  tgt=ssg-shell act=ssg-shell prevented=false
+43.7 keydown 4 tgt=ssg-shell act=ssg-shell prevented=false
+46.1 focusout  tgt=ssg-shell act=body prevented=false
+47.9 focusin  tgt=ssg-cell-editor-input act=ssg-cell-editor-input prevented=false
+48.3 keyup 4 tgt=ssg-cell-editor-input act=ssg-cell-editor-input prevented=false
+48.5 keydown Enter tgt=ssg-cell-editor-input act=ssg-cell-editor-input prevented=false
+50.8 focusout  tgt=ssg-cell-editor-input act=body prevented=false
+52.6 keyup Enter tgt=body act=body prevented=false
+53.6 focusin  tgt=ssg-shell act=ssg-shell prevented=false
+59.1 keydown 5 tgt=ssg-shell act=ssg-shell prevented=false
+61.1 focusout  tgt=ssg-shell act=body prevented=false
+61.4 focusin  tgt=ssg-cell-editor-input act=ssg-cell-editor-input prevented=false
+61.7 keyup 5 tgt=ssg-cell-editor-input act=ssg-cell-editor-input prevented=false
+61.7 keydown 6 tgt=ssg-cell-editor-input act=ssg-cell-editor-input prevented=false
+62.1 input 6 tgt=ssg-cell-editor-input act=ssg-cell-editor-input prevented=false
+62.3 keyup 6 tgt=ssg-cell-editor-input act=ssg-cell-editor-input prevented=false
+62.5 keydown Enter tgt=ssg-cell-editor-input act=ssg-cell-editor-input prevented=false
+66.3 focusout  tgt=ssg-cell-editor-input act=body prevented=false
+67.3 keyup Enter tgt=body act=body prevented=false
+67.8 focusin  tgt=ssg-shell act=ssg-shell prevented=false
+GOT ["12","4","56",""]

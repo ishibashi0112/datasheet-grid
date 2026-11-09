@@ -1,0 +1,3 @@
+body { margin: 0; font-family: system-ui, sans-serif; }
+main { padding: 16px; }
+.dark body, html.dark { background: #111; color: #eee; }

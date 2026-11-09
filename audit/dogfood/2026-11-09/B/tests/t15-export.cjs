@@ -1,0 +1,36 @@
+const { open, shot, center, cellHandle } = require('./lib.cjs');
+const fs = require('fs');
+const path = require('path');
+const base = process.argv[2] ?? 'http://127.0.0.1:5402/';
+(async () => {
+  const { browser, page, logs } = await open(`${base}?mode=replace`);
+  await page.waitForTimeout(1000);
+  const btn = page.locator('button', { hasText: 'Export CSV' });
+  const bb = await btn.boundingBox();
+  const [dl] = await Promise.all([page.waitForEvent('download'), page.mouse.click(bb.x + 10, bb.y + 10)]);
+  const file = path.join(__dirname, 'out', 'quotes.csv');
+  await dl.saveAs(file);
+  const buf = fs.readFileSync(file);
+  console.log('bom:', buf[0] === 0xef && buf[1] === 0xbb && buf[2] === 0xbf, 'name:', dl.suggestedFilename());
+  const txt = buf.toString('utf8').replace(/^﻿/, '');
+  const lines = txt.split('\r\n');
+  console.log('lines', lines.length);
+  console.log(lines.slice(0, 3).join('\n'));
+  console.log('...');
+  console.log(lines.slice(-3).join('\n'));
+  // context menu: set target
+  const p = await center(page, await cellHandle(page, 4, 'symbol'));
+  await page.mouse.click(p.x, p.y, { button: 'right' });
+  await page.waitForTimeout(300);
+  const item = page.locator('.ssg-menu-item', { hasText: 'Set target to last price' });
+  const ib = await item.boundingBox();
+  const sym = await page.evaluate(() => document.querySelector('.ssg-menu-panel')?.innerText.split('\n')[0]);
+  await page.mouse.click(ib.x + 10, ib.y + ib.height / 2);
+  await page.waitForTimeout(100);
+  const r = await page.evaluate((sym) => { const q = window.__app.getRows().find((x) => x.symbol === sym); return { sym, target: q.target, last: q.last, canUndo: window.__app.grid().canUndo() }; }, sym);
+  console.log('ctx set target', JSON.stringify(r));
+  await page.waitForTimeout(600);
+  console.log('canUndo after a few ticks', await page.evaluate(() => window.__app.grid().canUndo()));
+  console.log('LOGS', logs);
+  await browser.close();
+})();

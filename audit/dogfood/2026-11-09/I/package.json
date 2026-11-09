@@ -1,0 +1,26 @@
+{
+  "name": "ai-sales",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite --port 5409 --strictPort",
+    "build": "tsc -b && vite build",
+    "preview": "vite preview --port 5409 --strictPort",
+    "typecheck": "tsc -b"
+  },
+  "dependencies": {
+    "@ishibashi0112/spreadsheet-grid": "^1.0.0",
+    "react": "^19.3.1",
+    "react-dom": "^19.3.1"
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.6",
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.3.0",
+    "@vitejs/plugin-react": "^6.2.1",
+    "ajv": "^8.20.0",
+    "typescript": "^7.0.2",
+    "vite": "^8.3.6"
+  }
+}

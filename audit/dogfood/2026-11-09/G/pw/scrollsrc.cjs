@@ -1,0 +1,30 @@
+const { open, shot, wait } = require('./lib.cjs')
+;(async () => {
+  const url = (process.argv[2] ?? 'http://localhost:5407/')
+  const { browser, page, logs } = await open(url)
+  await wait(1000)
+  const ev = async (label, fn, ms = 1500) => {
+    await page.evaluate(() => { window.__scrollEvents = [] })
+    await fn()
+    await wait(ms)
+    const e = await page.evaluate(() => window.__scrollEvents)
+    const follow = await page.locator('.toolbar input[type=checkbox]').nth(1).isChecked()
+    console.log(label, 'follow=', follow, JSON.stringify(e.slice(0, 12)))
+  }
+  // A) 末尾にいる状態で絞り込み(内容が縮む)
+  await page.evaluate(() => window.__grid.scrollToBottom())
+  await wait(800)
+  await page.locator('.toolbar input[type=checkbox]').nth(1).check()
+  await ev('A: filter while at bottom', () => page.evaluate(() => window.__grid.applyState({ filters: { columnFilters: { level: { kind: 'set', mode: 'include', values: ['ERROR', 'FATAL'] } } } })))
+  // B) 行の高さが変わる表(50,000 行以下)で scrollToBottom
+  await page.evaluate(() => window.__grid.applyState({ filters: { columnFilters: { level: { kind: 'set', mode: 'include', values: ['WARN', 'ERROR', 'FATAL'] }, service: { kind: 'set', mode: 'include', values: ['checkout', 'billing'] } } } }))
+  await wait(1500)
+  await page.evaluate(() => window.__grid.scrollToTop())
+  await wait(800)
+  await page.locator('.toolbar input[type=checkbox]').nth(1).check() // ここで app が scrollToBottom を呼ぶ
+  await wait(1500)
+  await ev('B: autoHeight, follow checkbox then idle', async () => {}, 500)
+  await ev('C: autoHeight, api scrollToBottom', () => page.evaluate(() => window.__grid.scrollToBottom()), 2000)
+  console.log(logs.filter((l) => !l.includes('[vite]') && !l.includes('DevTools') && !l.includes('auto-height')).slice(0, 30).join('\n'))
+  await browser.close()
+})()

@@ -1,0 +1,17 @@
+const { open } = require('./lib.cjs')
+const { cellPos, cellText, openDialog } = require('./dlib.cjs')
+;(async () => {
+  const { browser, page } = await open('?dlg=w1')
+  await openDialog(page)
+  const p = await cellPos(page, 3, '地域')
+  await page.mouse.dblclick(p.x, p.y)
+  await page.waitForTimeout(400)
+  console.log(await page.evaluate(() => { const e = document.querySelector('.ssg-select-editor-popover'); return e && { pe: getComputedStyle(e).pointerEvents, style: e.getAttribute('style')?.slice(0, 200), cls: e.className } }))
+  // 右クリックメニュー
+  await page.keyboard.press('Escape')
+  const q = await cellPos(page, 2, '顧客名')
+  await page.mouse.click(q.x, q.y, { button: 'right' })
+  await page.waitForTimeout(300)
+  console.log(await page.evaluate(() => { const e = document.querySelector('.ssg-menu-panel'); return e && { pe: getComputedStyle(e).pointerEvents, style: e.getAttribute('style')?.slice(0, 200) } }))
+  await browser.close()
+})()

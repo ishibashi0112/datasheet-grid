@@ -1,0 +1,26 @@
+const { launch, iphone, cdpTap, BASE } = require('./lib.cjs')
+const { cellCenter, revealColumn } = require('./helpers.cjs')
+;(async () => {
+  const { browser, context, page } = await launch({ ...iphone(), locale: 'ja-JP' })
+  const cdp = await context.newCDPSession(page)
+  await page.goto(BASE); await page.waitForSelector('.ssg-body-row'); await page.waitForTimeout(800)
+  const fs = (sel) => page.evaluate((sel) => [...document.querySelectorAll(sel)].map((e) => `${sel} ${getComputedStyle(e).fontSize} type=${e.type}`), sel)
+  console.log(await fs('.ssg-bar-input'))
+  console.log('root touch-action', await page.evaluate(() => [getComputedStyle(document.querySelector('.ssg-root')).touchAction, getComputedStyle(document.querySelector('.ssg-scroll-container')).touchAction, getComputedStyle(document.querySelector('.ssg-body-cell')).touchAction]))
+  for (const key of ['item', 'value', 'memo', 'inspectedAt']) {
+    await revealColumn(page, key, 1)
+    const c = await cellCenter(page, 1, key)
+    await cdpTap(page, cdp, c.x, c.y); await page.waitForTimeout(120); await cdpTap(page, cdp, c.x, c.y); await page.waitForTimeout(400)
+    console.log(key, await fs('.ssg-cell-editor-input'))
+    await page.keyboard.press('Escape'); await page.waitForTimeout(200)
+  }
+  // フィルターの入力欄
+  await revealColumn(page, 'value', 1)
+  const k = await page.evaluate(() => { const h = [...document.querySelectorAll('[role=columnheader]')].find((e) => e.textContent.includes('測定値')); const r = h.querySelector('button').getBoundingClientRect(); return { x: r.x + r.width / 2, y: r.y + r.height / 2 } })
+  await cdpTap(page, cdp, k.x, k.y); await page.waitForTimeout(400)
+  const f = await page.evaluate(() => { const e = [...document.querySelectorAll('.ssg-menu-item')].find((m) => m.textContent.includes('フィルター…')); const r = e.getBoundingClientRect(); return { x: r.x + r.width / 2, y: r.y + r.height / 2 } })
+  await cdpTap(page, cdp, f.x, f.y); await page.waitForTimeout(1000)
+  console.log(await page.evaluate(() => [...document.querySelectorAll('.ssg-filter-popover input, .ssg-filter-popover select')].map((e) => `${e.tagName}.${e.className} ${getComputedStyle(e).fontSize} type=${e.type}`)))
+  console.log('focused after open', await page.evaluate(() => document.activeElement.outerHTML.slice(0, 120)))
+  await browser.close()
+})()

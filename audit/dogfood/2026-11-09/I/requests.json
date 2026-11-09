@@ -1,0 +1,709 @@
+[
+  {
+    "at": 1794201165121,
+    "text": "関東の 10 万円以上",
+    "system": "You set how a data table is viewed, from one request by its user. You choose filters (which rows to show), the sort order, a quick text search and hidden columns. You never see or change the data.\n- Use only the listed columns (by key) and, for each column, only its listed ops. A column without ops cannot be filtered.\n- A filter is {column, op, value, values, to}. Comparison ops (=, !=, >, >=, <, <=) and contains, equals, startsWith, endsWith, onOrAfter, onOrBefore, notEquals use \"value\". \"between\" uses \"value\" (from) and \"to\"; both ends are included. \"in\" (show only these values) and \"notIn\" (hide these values) use \"values\"; pick from the column's listed values when it has them (a list ending in \"more (not listed)\" is cut short). \"\" in values stands for blank cells. \"preset\" puts one of the column's preset ids in \"value\". blank, notBlank and clear use none of them. Unused fields are null.\n- \"values\" is always the whole list after the change: in refine mode, repeat the current values you keep. A current list with \"more\": N shows only part of its values; in refine mode the rest stay while the column keeps the same op (in or notIn). To replace such a list, put op \"clear\" for the column before the new in or notIn.\n- Write numbers as plain digits without units or separators (for example \"10000\"), and dates as YYYY-MM-DD, except in columns of type \"date written as text\", where value is text to find as the cells write it.\n- Read amounts by their meaning: 「X しない」「X 未満」「X を切る」「under X」 are < X; 「X 以下」 is <= X; 「X 以上」 is >= X; 「X を超える」「X より多い」「over X」 are > X. Use != only for \"not equal to\" (〜ではない, 〜以外).\n- Use at most one filter per column, except that a column whose ops include in/notIn may have one in/notIn and one other op.\n- mode \"replace\" starts from an empty view (no filters, sort or search; hidden columns stay). mode \"refine\" keeps the current view and changes only what the request mentions; op \"clear\" removes a column's filter. Use refine only when the request clearly builds on what is shown now (for example: also, too, さらに, それと, そのうえで, その中で, 〜も). A request that describes on its own the rows it wants uses replace, even when it is short.\n- sort lists columns in priority order; null keeps the current sort in refine mode. search is a word to find in any column; use it only when no column fits. In refine mode null keeps the current search; \"\" clears it.\n- Change filters, the sort, the search and hidden columns only when the prompt says it is allowed. hide and show list column keys.\n- If any part of the request cannot be done with these columns and ops, do the rest and say briefly what you could not do in \"unsupported\", in the language of the request. Otherwise unsupported is null. Never invent a column.",
+    "prompt": "Today: 2026-11-09 (Mon)\nColumns:\n- date \"日付\": date. ops: between, onOrAfter, onOrBefore, equals, notEquals, preset (today = 今日, thisMonth = 今月, last30days = 過去 30 日), blank, notBlank, in, notIn, clear\n- region \"地域\": choice. values: \"hokkaido\" (北海道), \"tohoku\" (東北), \"kanto\" (関東), \"chubu\" (中部), \"kinki\" (近畿), \"chugoku\" (中国), \"shikoku\" (四国), \"kyushu\" (九州). ops: in, notIn, clear\n- rep \"担当\": text. ops: contains, equals, startsWith, endsWith, blank, notBlank, in, notIn, clear\n- product \"商品\": choice. values: \"pen\" (ボールペン), \"note\" (ノート), \"file\" (クリアファイル), \"stapler\" (ホッチキス), \"chair\" (オフィスチェア), \"desk\" (デスク), \"monitor\" (モニター), \"keyboard\" (キーボード), \"mouse\" (マウス), \"printer\" (プリンター), \"paper\" (コピー用紙), \"toner\" (トナー). ops: in, notIn, clear\n- qty \"数量\" (個): number. ops: =, !=, >, >=, <, <=, between, blank, notBlank, clear\n- amount \"金額\" (円・税込): number. ops: =, !=, >, >=, <, <=, between, blank, notBlank, in, notIn, clear\n- status \"状態\": choice (one value). values: \"paid\" (入金済), \"unpaid\" (未入金), \"cancelled\" (キャンセル). ops: equals, clear\n- customer \"顧客\" (顧客コードは C-10001 の形): text. ops: contains, clear\n- memo \"メモ\": no ops.\nFilters: allowed (by each column's ops).\nSort: allowed (any column above).\nSearch: allowed.\nHide or show columns: not allowed.\nCurrent view: {\"filters\":[],\"sort\":[],\"search\":null}\nRequest: 関東の 10 万円以上",
+    "schema": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "mode",
+        "filters",
+        "sort",
+        "search",
+        "hide",
+        "show",
+        "unsupported"
+      ],
+      "properties": {
+        "mode": {
+          "type": "string",
+          "enum": [
+            "replace",
+            "refine"
+          ]
+        },
+        "filters": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "column",
+              "op",
+              "value",
+              "values",
+              "to"
+            ],
+            "properties": {
+              "column": {
+                "type": "string",
+                "enum": [
+                  "date",
+                  "region",
+                  "rep",
+                  "product",
+                  "qty",
+                  "amount",
+                  "status",
+                  "customer",
+                  "memo"
+                ]
+              },
+              "op": {
+                "type": "string",
+                "enum": [
+                  "=",
+                  "!=",
+                  ">",
+                  ">=",
+                  "<",
+                  "<=",
+                  "between",
+                  "contains",
+                  "equals",
+                  "startsWith",
+                  "endsWith",
+                  "onOrAfter",
+                  "onOrBefore",
+                  "notEquals",
+                  "preset",
+                  "blank",
+                  "notBlank",
+                  "in",
+                  "notIn",
+                  "clear"
+                ]
+              },
+              "value": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "values": {
+                "anyOf": [
+                  {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "to": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              }
+            }
+          }
+        },
+        "sort": {
+          "anyOf": [
+            {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "column",
+                  "direction"
+                ],
+                "properties": {
+                  "column": {
+                    "type": "string",
+                    "enum": [
+                      "date",
+                      "region",
+                      "rep",
+                      "product",
+                      "qty",
+                      "amount",
+                      "status",
+                      "customer",
+                      "memo"
+                    ]
+                  },
+                  "direction": {
+                    "type": "string",
+                    "enum": [
+                      "asc",
+                      "desc"
+                    ]
+                  }
+                }
+              }
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "search": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "hide": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "enum": [
+              "date",
+              "region",
+              "rep",
+              "product",
+              "qty",
+              "amount",
+              "status",
+              "customer",
+              "memo"
+            ]
+          }
+        },
+        "show": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "enum": [
+              "date",
+              "region",
+              "rep",
+              "product",
+              "qty",
+              "amount",
+              "status",
+              "customer",
+              "memo"
+            ]
+          }
+        },
+        "unsupported": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      }
+    },
+    "bodyBytes": 6175,
+    "outcome": "answered",
+    "answer": {
+      "mode": "replace",
+      "filters": [
+        {
+          "column": "region",
+          "op": "in",
+          "value": null,
+          "values": [
+            "関東"
+          ],
+          "to": null
+        },
+        {
+          "column": "amount",
+          "op": ">=",
+          "value": "100000",
+          "values": null,
+          "to": null
+        }
+      ],
+      "sort": null,
+      "search": null,
+      "hide": [],
+      "show": [],
+      "unsupported": null
+    }
+  },
+  {
+    "at": 1794201166305,
+    "text": "さらに数量 10 以上だけ",
+    "system": "You set how a data table is viewed, from one request by its user. You choose filters (which rows to show), the sort order, a quick text search and hidden columns. You never see or change the data.\n- Use only the listed columns (by key) and, for each column, only its listed ops. A column without ops cannot be filtered.\n- A filter is {column, op, value, values, to}. Comparison ops (=, !=, >, >=, <, <=) and contains, equals, startsWith, endsWith, onOrAfter, onOrBefore, notEquals use \"value\". \"between\" uses \"value\" (from) and \"to\"; both ends are included. \"in\" (show only these values) and \"notIn\" (hide these values) use \"values\"; pick from the column's listed values when it has them (a list ending in \"more (not listed)\" is cut short). \"\" in values stands for blank cells. \"preset\" puts one of the column's preset ids in \"value\". blank, notBlank and clear use none of them. Unused fields are null.\n- \"values\" is always the whole list after the change: in refine mode, repeat the current values you keep. A current list with \"more\": N shows only part of its values; in refine mode the rest stay while the column keeps the same op (in or notIn). To replace such a list, put op \"clear\" for the column before the new in or notIn.\n- Write numbers as plain digits without units or separators (for example \"10000\"), and dates as YYYY-MM-DD, except in columns of type \"date written as text\", where value is text to find as the cells write it.\n- Read amounts by their meaning: 「X しない」「X 未満」「X を切る」「under X」 are < X; 「X 以下」 is <= X; 「X 以上」 is >= X; 「X を超える」「X より多い」「over X」 are > X. Use != only for \"not equal to\" (〜ではない, 〜以外).\n- Use at most one filter per column, except that a column whose ops include in/notIn may have one in/notIn and one other op.\n- mode \"replace\" starts from an empty view (no filters, sort or search; hidden columns stay). mode \"refine\" keeps the current view and changes only what the request mentions; op \"clear\" removes a column's filter. Use refine only when the request clearly builds on what is shown now (for example: also, too, さらに, それと, そのうえで, その中で, 〜も). A request that describes on its own the rows it wants uses replace, even when it is short.\n- sort lists columns in priority order; null keeps the current sort in refine mode. search is a word to find in any column; use it only when no column fits. In refine mode null keeps the current search; \"\" clears it.\n- Change filters, the sort, the search and hidden columns only when the prompt says it is allowed. hide and show list column keys.\n- If any part of the request cannot be done with these columns and ops, do the rest and say briefly what you could not do in \"unsupported\", in the language of the request. Otherwise unsupported is null. Never invent a column.",
+    "prompt": "Today: 2026-11-09 (Mon)\nColumns:\n- date \"日付\": date. ops: between, onOrAfter, onOrBefore, equals, notEquals, preset (today = 今日, thisMonth = 今月, last30days = 過去 30 日), blank, notBlank, in, notIn, clear\n- region \"地域\": choice. values: \"hokkaido\" (北海道), \"tohoku\" (東北), \"kanto\" (関東), \"chubu\" (中部), \"kinki\" (近畿), \"chugoku\" (中国), \"shikoku\" (四国), \"kyushu\" (九州). ops: in, notIn, clear\n- rep \"担当\": text. ops: contains, equals, startsWith, endsWith, blank, notBlank, in, notIn, clear\n- product \"商品\": choice. values: \"pen\" (ボールペン), \"note\" (ノート), \"file\" (クリアファイル), \"stapler\" (ホッチキス), \"chair\" (オフィスチェア), \"desk\" (デスク), \"monitor\" (モニター), \"keyboard\" (キーボード), \"mouse\" (マウス), \"printer\" (プリンター), \"paper\" (コピー用紙), \"toner\" (トナー). ops: in, notIn, clear\n- qty \"数量\" (個): number. ops: =, !=, >, >=, <, <=, between, blank, notBlank, clear\n- amount \"金額\" (円・税込): number. ops: =, !=, >, >=, <, <=, between, blank, notBlank, in, notIn, clear\n- status \"状態\": choice (one value). values: \"paid\" (入金済), \"unpaid\" (未入金), \"cancelled\" (キャンセル). ops: equals, clear\n- customer \"顧客\" (顧客コードは C-10001 の形): text. ops: contains, clear\n- memo \"メモ\": no ops.\nFilters: allowed (by each column's ops).\nSort: allowed (any column above).\nSearch: allowed.\nHide or show columns: not allowed.\nCurrent view: {\"filters\":[{\"column\":\"region\",\"op\":\"in\",\"value\":null,\"values\":[\"kanto\"],\"to\":null},{\"column\":\"amount\",\"op\":\">=\",\"value\":\"100000\",\"values\":null,\"to\":null}],\"sort\":[],\"search\":null}\nRequest: さらに数量 10 以上だけ",
+    "schema": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "mode",
+        "filters",
+        "sort",
+        "search",
+        "hide",
+        "show",
+        "unsupported"
+      ],
+      "properties": {
+        "mode": {
+          "type": "string",
+          "enum": [
+            "replace",
+            "refine"
+          ]
+        },
+        "filters": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "column",
+              "op",
+              "value",
+              "values",
+              "to"
+            ],
+            "properties": {
+              "column": {
+                "type": "string",
+                "enum": [
+                  "date",
+                  "region",
+                  "rep",
+                  "product",
+                  "qty",
+                  "amount",
+                  "status",
+                  "customer",
+                  "memo"
+                ]
+              },
+              "op": {
+                "type": "string",
+                "enum": [
+                  "=",
+                  "!=",
+                  ">",
+                  ">=",
+                  "<",
+                  "<=",
+                  "between",
+                  "contains",
+                  "equals",
+                  "startsWith",
+                  "endsWith",
+                  "onOrAfter",
+                  "onOrBefore",
+                  "notEquals",
+                  "preset",
+                  "blank",
+                  "notBlank",
+                  "in",
+                  "notIn",
+                  "clear"
+                ]
+              },
+              "value": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "values": {
+                "anyOf": [
+                  {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "to": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              }
+            }
+          }
+        },
+        "sort": {
+          "anyOf": [
+            {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "column",
+                  "direction"
+                ],
+                "properties": {
+                  "column": {
+                    "type": "string",
+                    "enum": [
+                      "date",
+                      "region",
+                      "rep",
+                      "product",
+                      "qty",
+                      "amount",
+                      "status",
+                      "customer",
+                      "memo"
+                    ]
+                  },
+                  "direction": {
+                    "type": "string",
+                    "enum": [
+                      "asc",
+                      "desc"
+                    ]
+                  }
+                }
+              }
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "search": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "hide": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "enum": [
+              "date",
+              "region",
+              "rep",
+              "product",
+              "qty",
+              "amount",
+              "status",
+              "customer",
+              "memo"
+            ]
+          }
+        },
+        "show": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "enum": [
+              "date",
+              "region",
+              "rep",
+              "product",
+              "qty",
+              "amount",
+              "status",
+              "customer",
+              "memo"
+            ]
+          }
+        },
+        "unsupported": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      }
+    },
+    "bodyBytes": 6361,
+    "outcome": "answered",
+    "answer": {
+      "mode": "refine",
+      "filters": [
+        {
+          "column": "qty",
+          "op": ">=",
+          "value": "10",
+          "values": null,
+          "to": null
+        }
+      ],
+      "sort": null,
+      "search": null,
+      "hide": [],
+      "show": [],
+      "unsupported": null
+    }
+  },
+  {
+    "at": 1794201167057,
+    "text": "ノートかボールペン",
+    "system": "You set how a data table is viewed, from one request by its user. You choose filters (which rows to show), the sort order, a quick text search and hidden columns. You never see or change the data.\n- Use only the listed columns (by key) and, for each column, only its listed ops. A column without ops cannot be filtered.\n- A filter is {column, op, value, values, to}. Comparison ops (=, !=, >, >=, <, <=) and contains, equals, startsWith, endsWith, onOrAfter, onOrBefore, notEquals use \"value\". \"between\" uses \"value\" (from) and \"to\"; both ends are included. \"in\" (show only these values) and \"notIn\" (hide these values) use \"values\"; pick from the column's listed values when it has them (a list ending in \"more (not listed)\" is cut short). \"\" in values stands for blank cells. \"preset\" puts one of the column's preset ids in \"value\". blank, notBlank and clear use none of them. Unused fields are null.\n- \"values\" is always the whole list after the change: in refine mode, repeat the current values you keep. A current list with \"more\": N shows only part of its values; in refine mode the rest stay while the column keeps the same op (in or notIn). To replace such a list, put op \"clear\" for the column before the new in or notIn.\n- Write numbers as plain digits without units or separators (for example \"10000\"), and dates as YYYY-MM-DD, except in columns of type \"date written as text\", where value is text to find as the cells write it.\n- Read amounts by their meaning: 「X しない」「X 未満」「X を切る」「under X」 are < X; 「X 以下」 is <= X; 「X 以上」 is >= X; 「X を超える」「X より多い」「over X」 are > X. Use != only for \"not equal to\" (〜ではない, 〜以外).\n- Use at most one filter per column, except that a column whose ops include in/notIn may have one in/notIn and one other op.\n- mode \"replace\" starts from an empty view (no filters, sort or search; hidden columns stay). mode \"refine\" keeps the current view and changes only what the request mentions; op \"clear\" removes a column's filter. Use refine only when the request clearly builds on what is shown now (for example: also, too, さらに, それと, そのうえで, その中で, 〜も). A request that describes on its own the rows it wants uses replace, even when it is short.\n- sort lists columns in priority order; null keeps the current sort in refine mode. search is a word to find in any column; use it only when no column fits. In refine mode null keeps the current search; \"\" clears it.\n- Change filters, the sort, the search and hidden columns only when the prompt says it is allowed. hide and show list column keys.\n- If any part of the request cannot be done with these columns and ops, do the rest and say briefly what you could not do in \"unsupported\", in the language of the request. Otherwise unsupported is null. Never invent a column.",
+    "prompt": "Today: 2026-11-09 (Mon)\nColumns:\n- date \"日付\": date. ops: between, onOrAfter, onOrBefore, equals, notEquals, preset (today = 今日, thisMonth = 今月, last30days = 過去 30 日), blank, notBlank, in, notIn, clear\n- region \"地域\": choice. values: \"hokkaido\" (北海道), \"tohoku\" (東北), \"kanto\" (関東), \"chubu\" (中部), \"kinki\" (近畿), \"chugoku\" (中国), \"shikoku\" (四国), \"kyushu\" (九州). ops: in, notIn, clear\n- rep \"担当\": text. ops: contains, equals, startsWith, endsWith, blank, notBlank, in, notIn, clear\n- product \"商品\": choice. values: \"pen\" (ボールペン), \"note\" (ノート), \"file\" (クリアファイル), \"stapler\" (ホッチキス), \"chair\" (オフィスチェア), \"desk\" (デスク), \"monitor\" (モニター), \"keyboard\" (キーボード), \"mouse\" (マウス), \"printer\" (プリンター), \"paper\" (コピー用紙), \"toner\" (トナー). ops: in, notIn, clear\n- qty \"数量\" (個): number. ops: =, !=, >, >=, <, <=, between, blank, notBlank, clear\n- amount \"金額\" (円・税込): number. ops: =, !=, >, >=, <, <=, between, blank, notBlank, in, notIn, clear\n- status \"状態\": choice (one value). values: \"paid\" (入金済), \"unpaid\" (未入金), \"cancelled\" (キャンセル). ops: equals, clear\n- customer \"顧客\" (顧客コードは C-10001 の形): text. ops: contains, clear\n- memo \"メモ\": no ops.\nFilters: allowed (by each column's ops).\nSort: allowed (any column above).\nSearch: allowed.\nHide or show columns: not allowed.\nCurrent view: {\"filters\":[{\"column\":\"region\",\"op\":\"in\",\"value\":null,\"values\":[\"kanto\"],\"to\":null},{\"column\":\"amount\",\"op\":\">=\",\"value\":\"100000\",\"values\":null,\"to\":null},{\"column\":\"qty\",\"op\":\">=\",\"value\":\"10\",\"values\":null,\"to\":null}],\"sort\":[],\"search\":null}\nRequest: ノートかボールペン",
+    "schema": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "mode",
+        "filters",
+        "sort",
+        "search",
+        "hide",
+        "show",
+        "unsupported"
+      ],
+      "properties": {
+        "mode": {
+          "type": "string",
+          "enum": [
+            "replace",
+            "refine"
+          ]
+        },
+        "filters": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "column",
+              "op",
+              "value",
+              "values",
+              "to"
+            ],
+            "properties": {
+              "column": {
+                "type": "string",
+                "enum": [
+                  "date",
+                  "region",
+                  "rep",
+                  "product",
+                  "qty",
+                  "amount",
+                  "status",
+                  "customer",
+                  "memo"
+                ]
+              },
+              "op": {
+                "type": "string",
+                "enum": [
+                  "=",
+                  "!=",
+                  ">",
+                  ">=",
+                  "<",
+                  "<=",
+                  "between",
+                  "contains",
+                  "equals",
+                  "startsWith",
+                  "endsWith",
+                  "onOrAfter",
+                  "onOrBefore",
+                  "notEquals",
+                  "preset",
+                  "blank",
+                  "notBlank",
+                  "in",
+                  "notIn",
+                  "clear"
+                ]
+              },
+              "value": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "values": {
+                "anyOf": [
+                  {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "to": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              }
+            }
+          }
+        },
+        "sort": {
+          "anyOf": [
+            {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "column",
+                  "direction"
+                ],
+                "properties": {
+                  "column": {
+                    "type": "string",
+                    "enum": [
+                      "date",
+                      "region",
+                      "rep",
+                      "product",
+                      "qty",
+                      "amount",
+                      "status",
+                      "customer",
+                      "memo"
+                    ]
+                  },
+                  "direction": {
+                    "type": "string",
+                    "enum": [
+                      "asc",
+                      "desc"
+                    ]
+                  }
+                }
+              }
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "search": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "hide": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "enum": [
+              "date",
+              "region",
+              "rep",
+              "product",
+              "qty",
+              "amount",
+              "status",
+              "customer",
+              "memo"
+            ]
+          }
+        },
+        "show": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "enum": [
+              "date",
+              "region",
+              "rep",
+              "product",
+              "qty",
+              "amount",
+              "status",
+              "customer",
+              "memo"
+            ]
+          }
+        },
+        "unsupported": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      }
+    },
+    "bodyBytes": 6433,
+    "outcome": "answered",
+    "answer": {
+      "mode": "replace",
+      "filters": [
+        {
+          "column": "product",
+          "op": "in",
+          "value": null,
+          "values": [
+            "note",
+            "pen"
+          ],
+          "to": null
+        }
+      ],
+      "sort": [
+        {
+          "column": "date",
+          "direction": "desc"
+        }
+      ],
+      "search": null,
+      "hide": [],
+      "show": [],
+      "unsupported": null
+    }
+  }
+]

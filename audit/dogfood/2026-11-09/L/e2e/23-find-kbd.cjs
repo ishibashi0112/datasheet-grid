@@ -1,0 +1,33 @@
+const { launch, shot, BASE } = require('./lib.cjs')
+const fs = require('fs')
+const axeSrc = fs.readFileSync(require.resolve('axe-core/axe.min.js'), 'utf8')
+;(async () => {
+  const { browser, page, logs } = await launch({ viewport: { width: 1280, height: 800 }, locale: 'ja-JP' })
+  await page.goto(BASE); await page.waitForSelector('.ssg-body-row'); await page.waitForTimeout(800)
+  const ae = () => page.evaluate(() => { const a = document.activeElement; return a.tagName + '.' + (a.className || '') + (a.getAttribute('aria-label') ? '[' + a.getAttribute('aria-label') + ']' : '') })
+  const act = () => page.evaluate(() => { const s = document.querySelector('.ssg-shell'); const id = s.getAttribute('aria-activedescendant'); const c = id && document.getElementById(id); return c ? c.closest('[aria-rowindex]').getAttribute('aria-rowindex') + ':' + c.getAttribute('data-ssg-col-key') + ' ' + c.textContent.trim() : null })
+  // キーボードだけでグリッドへ入る
+  await page.keyboard.press('Tab'); for (let i = 0; i < 12; i++) { const a = await ae(); if (a.includes('ssg-shell')) break; await page.keyboard.press('Tab') }
+  console.log('focus', await ae())
+  await page.keyboard.press('ArrowDown')
+  await page.keyboard.press('Control+f'); await page.waitForTimeout(300)
+  console.log('after Ctrl+F', await ae(), 'bar', await page.evaluate(() => { const b = document.querySelector('.ssg-find-bar'); return b ? b.outerHTML.slice(0, 600) : null }))
+  await page.keyboard.type('照度'); await page.waitForTimeout(600)
+  console.log('count', await page.evaluate(() => document.querySelector('.ssg-find-bar')?.textContent))
+  await page.keyboard.press('Enter'); await page.waitForTimeout(300)
+  console.log('active after Enter', await act(), 'focus', await ae())
+  await page.keyboard.press('Enter'); await page.waitForTimeout(300)
+  console.log('active after Enter2', await act())
+  // 結果をスクリーンリーダーに知らせる live region があるか
+  console.log('live', await page.evaluate(() => [...document.querySelectorAll('[aria-live],[role=status]')].map((e) => e.className + ':' + e.textContent.trim().slice(0, 40)).join(' | ')))
+  console.log(await shot(page, '23-find-bar'))
+  await page.addScriptTag({ content: axeSrc })
+  const r = await page.evaluate(async () => { const res = await axe.run(document.querySelector('.ssg-find-bar') || document, { resultTypes: ['violations'] }); return res.violations.map((v) => v.id + '(' + v.impact + ') ' + v.nodes.map((n) => n.target.join(' ')).join(', ')) })
+  console.log('axe find bar', r)
+  // Tab で検索バーの中を回る
+  await page.keyboard.press('Tab'); console.log('tab', await ae()); await page.keyboard.press('Shift+Tab'); console.log('shift-tab', await ae())
+  await page.keyboard.press('Escape'); await page.waitForTimeout(300)
+  console.log('after Esc focus', await ae(), 'bar', await page.evaluate(() => !!document.querySelector('.ssg-find-bar')), 'active', await act())
+  console.log('LOGS\n' + logs.join('\n'))
+  await browser.close()
+})()

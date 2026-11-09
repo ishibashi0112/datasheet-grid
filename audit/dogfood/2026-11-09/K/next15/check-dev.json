@@ -1,0 +1,73 @@
+{
+  "ssrHtml": {
+    "hasGrid": true,
+    "centerRowsInHtml": 21,
+    "leftRows": 21,
+    "gridcells": 22,
+    "hasStyleLink": false,
+    "themeClass": true
+  },
+  "index": {
+    "logs": []
+  },
+  "edit": "Pen",
+  "amount": "2,400",
+  "totalRowText": "合計",
+  "clipboard": "Pen\t東京\nノート 1\t大阪",
+  "paste": [
+    "7",
+    "1,500"
+  ],
+  "undo": [
+    "21",
+    "400"
+  ],
+  "urlAfterSort": "http://localhost:3411/?sort=qty.desc",
+  "firstRowQty": "49",
+  "addLog": "add: view=500 col=1 started=true",
+  "editorOpen": 1,
+  "activeElement": "ssg-cell-editor-input",
+  "count": "501 件",
+  "afterScrollToEnd": {
+    "top": 17705,
+    "max": 17705
+  },
+  "focusAfterButton": "ssg-shell",
+  "afterCtrlHome": {
+    "top": 0,
+    "active": "SKU-0008",
+    "key": "sku"
+  },
+  "afterCtrlEnd": {
+    "active": "",
+    "key": "discontinued",
+    "bar": "行 501 / 501列 8 / 8セル H501範囲 H5011 セル / 1 行1 列"
+  },
+  "state": "{\"version\":2,\"columnWidths\":{},\"filters\":{\"globalText\":\"\",\"columnFilters\":{}},\"sort\":[{\"columnKey\":\"qty\",\"direction\":\"desc\"}],\"columns\":[{\"key\":\"sku\",\"pinned\":\"left\"},{\"key\":\"name\"},{\"key\":\"warehouse\"},{\"key\":\"qty\"},{\"key\":\"price\"},{\"key\":\"amount\"},{\"key\":\"arrivedAt\"},{\"key\":\"discontinued\"}]}",
+  "afterOps": [],
+  "ssrSorted": {
+    "firstSsrRowSku": "item-9"
+  },
+  "sortedPage": {
+    "firstPrice": "900",
+    "logs": []
+  },
+  "afterBack": {
+    "url": "http://localhost:3411/?sort=qty.desc",
+    "logs": []
+  },
+  "en": {
+    "bar": "Rows 200 of 200\nColumns 8 of 8\nFilter: —\nSort: —",
+    "logs": []
+  },
+  "dark": {
+    "cellBg": "rgb(26, 27, 30)",
+    "logs": []
+  },
+  "wrapper": {
+    "out": "plain=null forward=set",
+    "logs": [
+      "[error] Warning: Function components cannot be given refs. Attempts to access this ref will fail. Did you mean to use React.forwardRef()?%s%s \n\nCheck the render method of `Page`. \n    at PlainWrapper\n    at div\n    at main\n    at Page (webpack-internal:///(pages-dir-browser)/./pages/wrapper.tsx:44:67)\n    at App (webpack-internal:///(pages-dir-browser)/./pages/_app.tsx:15:11)\n    at PathnameContextProviderAdapter (webpack-internal:///(pages-dir-browser)/./node_modules/next/dist/shared/lib/router/adapters.js:81:11)\n    at PagesDevOverlayErrorBoundary (webpack-internal:///(pages-dir-browser)/./node_modules/next/dist/next-devtools/userspace/pages/pages-dev-overlay-error-boundary.js:25:9)\n    at PagesDevOverlayBridge (webpack-internal:///(pages-dir-browser)/./node_modules/next/dist/next-devtools/userspace/pages/pages-dev-overlay-setup.js:45:11)\n    at Container (webpack-internal:///(pages-dir-browser)/./node_modules/next/dist/client/index.js:80:1)\n    at AppContainer (webpack-internal:///(pages-dir-browser)/./node_modules/next/dist/client/index.js:188:11)\n    at Root (webpack-internal:///(pages-dir-browser)/./node_modules/next/dist/client/index.js:417:11)"
+    ]
+  }
+}

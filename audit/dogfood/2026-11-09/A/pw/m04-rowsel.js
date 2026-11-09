@@ -1,0 +1,21 @@
+const { chromium } = require('playwright');
+(async () => {
+  const browser = await chromium.launch();
+  const page = await browser.newPage({ deviceScaleFactor: 1 });
+  const logs = []; page.on('console', (m) => logs.push(m.type() + ' ' + m.text())); page.on('pageerror', (e) => logs.push('pageerror ' + e.message));
+  await page.goto('http://localhost:5401/min/rowsel.html');
+  await page.waitForSelector('.ssg-body-cell');
+  const keys = () => page.evaluate(() => window.__app.grid.getSelectedRowKeys());
+  await page.fill('input[placeholder="グローバルフィルター"]', 'taxi');
+  await page.waitForTimeout(400);
+  await page.click('[role="columnheader"] [role="checkbox"]');
+  await page.waitForTimeout(200);
+  console.log('1) 絞り込み中に全選択:', JSON.stringify(await keys()));
+  await page.fill('input[placeholder="グローバルフィルター"]', '');
+  await page.waitForTimeout(400);
+  console.log('2) 絞り込みを解除:', JSON.stringify(await keys()));
+  await page.click('#add'); await page.waitForTimeout(300);
+  console.log('3) 行を追加:', JSON.stringify(await keys()));
+  console.log(logs.filter((l) => !l.includes('vite') && !l.includes('DevTools')).join('\n'));
+  await browser.close();
+})();

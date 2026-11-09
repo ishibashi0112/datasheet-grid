@@ -1,0 +1,38 @@
+const { open, shot, sleep, cellBox, reveal } = require('./lib.cjs');
+(async () => {
+  const { browser, page, logs } = await open(process.argv[2]);
+  await page.waitForSelector('.ssg-root');
+  await sleep(800);
+  const can = () => page.evaluate(() => ({ undo: window.__grid.current.canUndo(), redo: window.__grid.current.canRedo(), focus: document.activeElement?.className?.toString().slice(0, 30) }));
+  const name3 = async () => (await cellBox(page, 3, 5))?.text;
+  await page.evaluate((t) => navigator.clipboard.writeText(t), 'A\t4900000000016');
+  const c = await cellBox(page, 3, 5);
+  await page.mouse.click(c.x, c.y); await sleep(100);
+  await page.keyboard.press('Control+v'); await sleep(400);
+  console.log('paste1', await name3(), await can());
+  await page.evaluate((t) => navigator.clipboard.writeText(t), 'B');
+  await page.keyboard.press('Control+v'); await sleep(400);
+  console.log('paste2', await name3(), await can());
+  await page.keyboard.press('Control+c'); await sleep(300);
+  console.log('after copy', await name3(), await can());
+  await page.keyboard.press('Control+z'); await sleep(400);
+  console.log('undo1', await name3(), await can());
+  await page.keyboard.press('Control+z'); await sleep(400);
+  console.log('undo2', await name3(), await can());
+  // 遠くへスクロールしてから
+  await page.evaluate((t) => navigator.clipboard.writeText(t), 'C');
+  await page.keyboard.press('Control+v'); await sleep(400);
+  await reveal(page, 417, 5);
+  const e = await cellBox(page, 417, 5);
+  await page.mouse.click(e.x, e.y); await sleep(100);
+  await page.evaluate((t) => navigator.clipboard.writeText(t), 'X1\nX2\nX3');
+  await page.keyboard.press('Control+v'); await sleep(400);
+  console.log('paste far', (await cellBox(page, 417, 5))?.text, await can());
+  await page.keyboard.press('Control+z'); await sleep(400);
+  console.log('undo far', (await cellBox(page, 417, 5))?.text, await can());
+  await page.keyboard.press('Control+z'); await sleep(600);
+  await reveal(page, 3, 5);
+  console.log('undo C (should scroll back)', await name3(), await can());
+  console.log('LOGS:\n' + logs.filter(l => !l.includes('[vite]') && !l.includes('DevTools')).join('\n'));
+  await browser.close();
+})();

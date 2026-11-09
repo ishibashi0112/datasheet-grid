@@ -1,0 +1,3 @@
+@layer theme, base, ssg-base, components, utilities;
+@import 'tailwindcss';
+@import '@ishibashi0112/spreadsheet-grid/style.layer.css';

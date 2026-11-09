@@ -1,0 +1,41 @@
+const { open, G, cell, bars } = require('./lib.cjs');
+const log = (...a) => console.log(...a);
+const IG = '[aria-label="T-00001 のサブタスク"]';
+(async () => {
+  const { browser, page, logs } = await open();
+  const oc = await cell(page, 'T-00001', 'note');
+  await oc.click();
+  await page.keyboard.type('A1');
+  await page.keyboard.press('Enter');
+  await page.waitForTimeout(300);
+  await page.locator(`${G} [data-row-key="T-00001"] button.ssg-detail-toggle`).first().click();
+  await page.waitForTimeout(600);
+  await (await cell(page, 'T-00118', 'title')).click();
+  await page.keyboard.press('Control+z');
+  await page.waitForTimeout(300);
+  log('case1 (open detail only) note after undo:', JSON.stringify(await oc.innerText()));
+  await page.keyboard.press('Control+y');
+  await page.waitForTimeout(300);
+  log('redo:', JSON.stringify(await oc.innerText()));
+  // inner edit
+  const ic = page.locator(`${IG} [data-row-key="T-00001-1"] [data-ssg-col-key="title"]`).first();
+  await ic.click();
+  await page.keyboard.type('X');
+  await page.keyboard.press('Enter');
+  await page.waitForTimeout(300);
+  await (await cell(page, 'T-00118', 'title')).click();
+  await page.keyboard.press('Control+z');
+  await page.waitForTimeout(300);
+  log('case2 (after inner edit) note after outer undo:', JSON.stringify(await oc.innerText()));
+  // outer edit after inner edit, then inner undo
+  await oc.click();
+  await page.keyboard.type('B2');
+  await page.keyboard.press('Enter');
+  await page.waitForTimeout(300);
+  await ic.click();
+  await page.keyboard.press('Control+z');
+  await page.waitForTimeout(300);
+  log('case3 inner undo after outer edit: inner title', await ic.innerText().catch(() => 'n/a'));
+  log(logs.join('\n'));
+  await browser.close();
+})();
