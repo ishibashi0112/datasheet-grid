@@ -72,7 +72,20 @@ const sameKey = <T,>(a: GlobalFilterKey<T>, b: GlobalFilterKey<T>): boolean =>
   a.columns === b.columns &&
   a.needle === b.needle;
 
+// 前の rows の行が今の rows の同じ位置にあるらしいか(末尾に足した / その場で書き換えた。先頭と末尾の行で見る)。
+const isSameRowsPrefix = <T,>(ready: ReadyState<T>, key: GlobalFilterKey<T>): boolean => {
+  const length = ready.rowsLength;
+  if (length === 0 || length > key.rows.length) {
+    return false;
+  }
+  return ready.rows[0] === key.rows[0] && ready.rows[length - 1] === key.rows[length - 1];
+};
+
 // 結果の合成(旧 hook の render 末尾と同じ規則)。
+// 変更(1.0.1 / 2026-11-09 実アプリの総点検 AP-19): 検索語と列が同じで行だけが変わった(rows がよく変わる表)ときは、
+//   直前の完了結果をそのまま「済み」として出します(末尾に足した / その場で書き換えただけなら元の行の位置は変わらない。
+//   先頭と末尾の行が同じ位置に無いときはこれまでどおり)。これまでは行数が変わると全行(baseOrder)の「適用中」になり、毎秒行を足す 100 万行の表では
+//   絞り込まれた表がいつまでも出なかった。やり直しは行ごとの結果の控え(下の runner)で短く済みます。
 export const selectGlobalFilteredOrderResult = <T,>(
   syncResult: GlobalFilteredOrderResult | null,
   snapshot: GlobalFilteredOrderSnapshot<T>,
@@ -83,6 +96,9 @@ export const selectGlobalFilteredOrderResult = <T,>(
   }
   const { ready, progress } = snapshot;
   if (ready !== null && sameKey(ready, key)) {
+    return { order: ready.order, status: 'ready', progress: 1 };
+  }
+  if (ready !== null && ready.needle === key.needle && ready.columns === key.columns && isSameRowsPrefix(ready, key)) {
     return { order: ready.order, status: 'ready', progress: 1 };
   }
   const fallbackOrder =
@@ -103,6 +119,15 @@ export const createGlobalFilteredOrderRunner = <T,>(): GlobalFilteredOrderRunner
   const store = createValueStore<GlobalFilteredOrderSnapshot<T>>({ ready: null, progress: null });
   let current: GlobalFilteredOrderArgs<T> | null = null;
   let cancelCurrent: (() => void) | null = null;
+  // 追加(1.0.1 / AP-19): 行(オブジェクト)ごとの判定の控えです(検索語と列が同じ間だけ)。rows が差し替わっても同じ行の
+  //   オブジェクトは判定し直さないので、行を足しただけのやり直しは足した行の判定だけで済みます。
+  let matchCache: { columns: GridColumn<T>[]; needle: string; byRow: WeakMap<object, boolean> } | null = null;
+  const cacheFor = (columns: GridColumn<T>[], needle: string): WeakMap<object, boolean> => {
+    if (matchCache === null || matchCache.columns !== columns || matchCache.needle !== needle) {
+      matchCache = { columns, needle, byRow: new WeakMap() };
+    }
+    return matchCache.byRow;
+  };
 
   const start = (args: GlobalFilteredOrderArgs<T>) => {
     const key: GlobalFilterKey<T> = {
@@ -113,6 +138,7 @@ export const createGlobalFilteredOrderRunner = <T,>(): GlobalFilteredOrderRunner
     };
     const length = key.baseOrder.length;
     const buffer = new Int32Array(length);
+    const byRow = cacheFor(key.columns, key.needle);
     let count = 0;
     let cancelled = false;
     const cancel = () => {
@@ -123,7 +149,18 @@ export const createGlobalFilteredOrderRunner = <T,>(): GlobalFilteredOrderRunner
       length,
       (pos) => {
         const sourceIndex = key.baseOrder[pos];
-        if (rowMatchesGlobalText(key.rows[sourceIndex], key.columns, key.needle)) {
+        const row = key.rows[sourceIndex];
+        let matched: boolean | undefined;
+        if (typeof row === 'object' && row !== null) {
+          matched = byRow.get(row);
+          if (matched === undefined) {
+            matched = rowMatchesGlobalText(row, key.columns, key.needle);
+            byRow.set(row, matched);
+          }
+        } else {
+          matched = rowMatchesGlobalText(row, key.columns, key.needle);
+        }
+        if (matched) {
           buffer[count] = sourceIndex;
           count += 1;
         }
@@ -166,6 +203,14 @@ export const createGlobalFilteredOrderRunner = <T,>(): GlobalFilteredOrderRunner
     cancelCurrent = null;
     if (args.needsAsync) {
       start(args);
+      return;
+    }
+    // 追加(1.0.1 / 2026-11-09 実アプリの総点検 AP-20): 同期の経路(検索語を消した / 閾値以下)の結果を出している間は、
+    //   前の完了結果を忘れます。「A → 消す → B」で B の計算中に、消した A の結果が出ていた(計算中は直前の結果を出すため)。
+    matchCache = null;
+    const snapshot = store.getSnapshot();
+    if (snapshot.ready !== null) {
+      store.setSnapshot({ ...snapshot, ready: null });
     }
   };
 

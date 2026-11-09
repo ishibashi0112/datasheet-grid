@@ -63,12 +63,29 @@ export type FindController<T> = {
 };
 
 export const MAX_FIND_MATCHES = 10000;
+// 行ごとのヒットを控える表の大きさ(グローバルフィルターの時間分割と同じ 5 万行)。
+export const FIND_HIT_CACHE_ROW_THRESHOLD = 50_000;
 
 const EMPTY_INDEX: FindIndex = new Map();
+
+// 行ごとのヒット(行の中の列と位置)。
+type RowFindHit = { colIndex: number; columnKey: string; start: number; length: number };
+const NO_ROW_HITS: readonly RowFindHit[] = [];
 
 export const createFindController = <T,>(): FindController<T> => {
   let args: FindArgs<T> | null = null;
   let generation = 0;
+  // 追加(1.0.1 / 2026-11-09 実アプリの総点検 AP-19): 行(オブジェクト)ごとのヒットの控えです(クエリ・大文字小文字・列が
+  //   同じ間だけ)。rows がよく変わる表(毎秒行を足すログなど)では、行が変わるたびに最初から走査し直して 100 万行では
+  //   終わらず、「検索中…」のままだった。同じ行のオブジェクトは読み直さないので、やり直しは足した / 変えた行だけで済みます。
+  let hitCache: {
+    columns: readonly GridColumn<T>[];
+    query: string;
+    caseSensitive: boolean;
+    byRow: WeakMap<object, readonly RowFindHit[]>;
+  } | null = null;
+  // 追加(1.0.1 / AP-19): 打った直後の走査(最初のヒットへ移る)が、行の変化によるやり直しで取り消されても移動を忘れない。
+  let pendingNavigate = false;
   let scanned: { rowModel: RowModel<T>; columns: readonly GridColumn<T>[]; query: string; caseSensitive: boolean } | null =
     null;
   const store = createValueStore<FindSnapshot>({
@@ -119,6 +136,8 @@ export const createFindController = <T,>(): FindController<T> => {
   const clearResults = () => {
     generation += 1;
     scanned = null;
+    hitCache = null;
+    pendingNavigate = false;
     patch({ matches: [], index: EMPTY_INDEX, currentIndex: null, scanning: false, truncated: false });
   };
 
@@ -135,12 +154,38 @@ export const createFindController = <T,>(): FindController<T> => {
     const myGeneration = generation;
     const { rowModel, columns, caseSensitive } = current;
     const query = s.query;
+    // 変更(1.0.1 / AP-19): 同じクエリのやり直し(行・列の変化)では、走査の間も前の結果と件数を出したままにします
+    //   (「検索中…」へ戻さない)。
+    const sameQueryAsShown = scanned !== null && scanned.query === query && scanned.caseSensitive === caseSensitive;
     scanned = { rowModel, columns, query, caseSensitive };
+    if (hitCache === null || hitCache.columns !== columns || hitCache.query !== query || hitCache.caseSensitive !== caseSensitive) {
+      hitCache = { columns, query, caseSensitive, byRow: new WeakMap() };
+    }
+    const byRow = hitCache.byRow;
+    const shouldNavigate = navigate || pendingNavigate;
+    pendingNavigate = shouldNavigate;
     const previousCurrent = s.currentIndex === null ? null : (s.matches[s.currentIndex] ?? null);
     const matches: FindMatch[] = [];
     let truncated = false;
     const total = rowModel.getRowCount();
-    patch({ scanning: true });
+    // 控えは大きな表だけで使います(小さな表は毎回読み直す。列の getValue / valueFormatter が行の外の値を読んでも古くならない)。
+    const useCache = total > FIND_HIT_CACHE_ROW_THRESHOLD;
+    const hitsOf = (row: T): readonly RowFindHit[] => {
+      const hits: RowFindHit[] = [];
+      columns.forEach((column, colIndex) => {
+        if (isSyntheticColumnKey(column.key) || !isFindableColumn(column)) {
+          return;
+        }
+        const text = resolveFindCellText(column, row);
+        for (const range of findRangesInText(text, query, caseSensitive)) {
+          hits.push({ colIndex, columnKey: String(column.key), start: range.start, length: range.length });
+        }
+      });
+      return hits.length === 0 ? NO_ROW_HITS : hits;
+    };
+    if (!sameQueryAsShown && !s.scanning) {
+      patch({ scanning: true });
+    }
     void runChunked(
       total,
       (rowIndex) => {
@@ -151,29 +196,34 @@ export const createFindController = <T,>(): FindController<T> => {
         if (row === undefined) {
           return;
         }
-        columns.forEach((column, colIndex) => {
-          if (truncated || isSyntheticColumnKey(column.key) || !isFindableColumn(column)) {
+        let hits: readonly RowFindHit[] | undefined;
+        if (useCache && typeof row === 'object' && row !== null) {
+          hits = byRow.get(row);
+          if (hits === undefined) {
+            hits = hitsOf(row);
+            byRow.set(row, hits);
+          }
+        } else {
+          hits = hitsOf(row);
+        }
+        for (const hit of hits) {
+          if (matches.length >= MAX_FIND_MATCHES) {
+            truncated = true;
             return;
           }
-          const text = resolveFindCellText(column, row);
-          for (const range of findRangesInText(text, query, caseSensitive)) {
-            if (matches.length >= MAX_FIND_MATCHES) {
-              truncated = true;
-              return;
-            }
-            matches.push({ rowIndex, colIndex, columnKey: String(column.key), start: range.start, length: range.length });
-          }
-        });
+          matches.push({ rowIndex, colIndex: hit.colIndex, columnKey: hit.columnKey, start: hit.start, length: hit.length });
+        }
       },
       { isCancelled: () => generation !== myGeneration },
     ).then((completed) => {
       if (!completed || generation !== myGeneration) {
         return;
       }
+      pendingNavigate = false;
       const currentIndex = resolveCurrentAfterRescan(matches, previousCurrent);
       patch({ matches, index: buildFindIndex(matches), currentIndex, scanning: false, truncated });
       notify();
-      if (navigate) {
+      if (shouldNavigate) {
         navigateToCurrent();
       }
     });

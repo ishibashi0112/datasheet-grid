@@ -23,7 +23,14 @@ export type InitialColumnState = {
   width: number;
   pinned: GridColumnPinned | undefined;
   visible: boolean | undefined;
+  // 追加(1.0.1 / 2026-11-09 実アプリの総点検 AP-21): グループ化(rowGroup)も初期へ戻します。列メニューでグループ化した
+  //   後に「列のリセット」をすると、列の順だけが初期へ戻り、グループの指定は残っていた(階層が別の順になった)。
+  rowGroup?: boolean;
 };
+
+// リセット後の rowGroup(初期がグループ元なら true、そうでなければ外す。書いていなかった列は書かないまま)。
+const resetRowGroup = (current: boolean | undefined, initial: boolean | undefined): boolean | undefined =>
+  initial === true ? true : current === undefined ? initial : current === true ? false : current;
 
 // 追加(13-B2-5): リセット後の columns 配列を組み立てます。差分がなければ null(no-op)。
 export const buildResetColumns = <T,>(
@@ -51,8 +58,10 @@ export const buildResetColumns = <T,>(
     const pinnedDiff = (column.pinned ?? undefined) !== initialPinned;
     const visibleDiff =
       (column.visible !== false) !== (initial.visible !== false);
+    const nextRowGroup = resetRowGroup(column.rowGroup, initial.rowGroup);
+    const rowGroupDiff = (column.rowGroup === true) !== (nextRowGroup === true);
 
-    if (widthDiff || pinnedDiff || visibleDiff) {
+    if (widthDiff || pinnedDiff || visibleDiff || rowGroupDiff) {
       changed = true;
     }
 
@@ -60,12 +69,16 @@ export const buildResetColumns = <T,>(
     //       リセットコマンドが resetColumnWidths({}) で捨て(監査 RD-5 / M-03)、以後は初期幅で描画されます。
     //       差分なしの列も同じ正規化を行い、column.width と初期幅の不整合
     //       (過去の書き戻しで def 幅がずれているケース)による幅ジャンプを防ぎます。
-    return {
+    const next = {
       ...column,
       width: initial.width,
       pinned: initial.pinned,
       visible: initial.visible,
     };
+    if (nextRowGroup !== column.rowGroup) {
+      next.rowGroup = nextRowGroup;
+    }
+    return next;
   });
 
   // ② 並び順を初期順へ戻します。スナップショット挿入順 = 初期順を正とし、現在の

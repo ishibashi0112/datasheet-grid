@@ -8,9 +8,29 @@ import { STRING_COLLATOR } from './sorting';
 //   logic -> view の依存を作らないため別定義にします。
 export type SelectOptionEntry = { label: string; value: string };
 
+// 追加(1.0.1 / 2026-11-09 実アプリの総点検 AP-18): 数の列(numberSet)の候補の並びです。数は値の順、数でない文字は
+//   数の後ろ(文字の順)、空白は最後(Excel と同じ)。これまでは文字の順で、小数と負の数の並びが崩れ、空白が途中に入っていた。
+const toOptionNumber = (value: string): number => (value.trim() === '' ? Number.NaN : Number(value));
+const compareNumericOptions = (left: SelectOptionEntry, right: SelectOptionEntry): number => {
+  if (left.value === '' || right.value === '') {
+    return left.value === right.value ? 0 : left.value === '' ? 1 : -1;
+  }
+  const leftNumber = toOptionNumber(left.value);
+  const rightNumber = toOptionNumber(right.value);
+  const leftIsNumber = !Number.isNaN(leftNumber);
+  const rightIsNumber = !Number.isNaN(rightNumber);
+  if (leftIsNumber && rightIsNumber && leftNumber !== rightNumber) {
+    return leftNumber < rightNumber ? -1 : 1;
+  }
+  if (leftIsNumber !== rightIsNumber) {
+    return leftIsNumber ? -1 : 1;
+  }
+  return STRING_COLLATOR.compare(left.label, right.label);
+};
+
 // 候補収集アキュムレータです。raw セル値を 1 件ずつ collect し、最後に finalize でソート確定します。
-//   String 化・空白ラベル・ソート規則はいずれも旧 getColumnSelectOptions と同一です。
-export const createSelectOptionsAccumulator = () => {
+//   String 化・空白ラベル・ソート規則はいずれも旧 getColumnSelectOptions と同一です(numeric = 数の列は数の順)。
+export const createSelectOptionsAccumulator = (numeric = false) => {
   const seen = new Set<string>();
   const options: SelectOptionEntry[] = [];
   return {
@@ -26,8 +46,8 @@ export const createSelectOptionsAccumulator = () => {
     },
     // 収集済み候補をソート確定します(label の STRING_COLLATOR 比較。旧実装と同一)。
     finalize(): SelectOptionEntry[] {
-      return options.sort((left, right) =>
-        STRING_COLLATOR.compare(left.label, right.label),
+      return options.sort(
+        numeric ? compareNumericOptions : (left, right) => STRING_COLLATOR.compare(left.label, right.label),
       );
     },
   };
@@ -38,8 +58,9 @@ export const createSelectOptionsAccumulator = () => {
 export const collectSelectOptions = (
   rowCount: number,
   getRawValueAt: (index: number) => unknown,
+  numeric = false,
 ): SelectOptionEntry[] => {
-  const accumulator = createSelectOptionsAccumulator();
+  const accumulator = createSelectOptionsAccumulator(numeric);
   for (let index = 0; index < rowCount; index += 1) {
     accumulator.collect(getRawValueAt(index));
   }

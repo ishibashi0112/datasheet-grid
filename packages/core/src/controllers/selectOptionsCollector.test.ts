@@ -134,4 +134,39 @@ describe('createSelectOptionsCollector', () => {
     expect(collector.getSnapshot()).toBe(snapshot);
     expect(pendingYields).toHaveLength(0);
   });
+
+  // 追加(1.0.1 / 実アプリの総点検 AP-19): 同じ列のまま行だけが変わったら、走っている収集を止めずに最後まで走らせて
+  //   候補を出し、それから今の行で集め直す(集め直しの間も前の候補を出したまま)。
+  it('同じ列で行だけが変わっても収集を止めず、候補を出したまま集め直す(AP-19)', async () => {
+    const collector = createSelectOptionsCollector();
+    const first = ['a', 'b', 'a', 'c'];
+    const firstAccessor = (index: number) => first[index];
+    collector.update({ needsAsync: true, rowCount: first.length, getRawValueAt: firstAccessor, sourceKey: 'k' });
+    await flushYields();
+    // 走っている間に行が変わった(末尾に 'd')。
+    const second = [...first, 'd'];
+    const secondAccessor = (index: number) => second[index];
+    collector.update({ needsAsync: true, rowCount: second.length, getRawValueAt: secondAccessor, sourceKey: 'k' });
+    for (let i = 0; i < 4; i += 1) {
+      await flushYields();
+    }
+    // 最初の収集が最後まで走り、前の行の候補が出る(今の行の accessor でも同じ列なら出す)。
+    const shown = selectCollectorResult(collector.getSnapshot(), second.length, secondAccessor, 'k');
+    expect(shown.status).toBe('ready');
+    expect(shown.options.map((o) => o.value)).toContain('a');
+    for (let i = 0; i < 8; i += 1) {
+      await flushYields();
+      // 集め直しの間も候補を出したまま。
+      expect(selectCollectorResult(collector.getSnapshot(), second.length, secondAccessor, 'k').status).toBe('ready');
+    }
+    expect(selectCollectorResult(collector.getSnapshot(), second.length, secondAccessor, 'k').options.map((o) => o.value)).toEqual([
+      'a',
+      'b',
+      'c',
+      'd',
+    ]);
+    // 別の列の結果は出さない。
+    expect(selectCollectorResult(collector.getSnapshot(), 1, () => 'x', 'other').status).toBe('collecting');
+    collector.dispose();
+  });
 });

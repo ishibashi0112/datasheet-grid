@@ -136,6 +136,32 @@ export type AutoSizeOnDataArgs<T> = {
   rows: T[];
   visibleColumns: GridColumn<T>[];
   runAutosize: (columns: GridColumn<T>[]) => Promise<void>;
+  // 追加(1.0.1 / 2026-11-09 実アプリの総点検 AP-22): グリッドが描かれていない(display: none の中)か。描かれていない間は
+  //   測らずに待ち、描かれた後の update(描き直し)で測ります。隠したタブの中で作ったグリッドの 'onMount' が、
+  //   幅 0 のまま測って列を約 71px に縮めていた。省略すると待ちません(従来どおり)。
+  gridRootRef?: ReadonlyRef<HTMLElement | null>;
+};
+
+// 追加(1.0.1 / AP-22): 要素が描かれていないか(自分か祖先が display: none)。checkVisibility の無いブラウザは祖先の
+//   display を見ます(React 非依存)。
+export const isElementHidden = (element: HTMLElement | null): boolean => {
+  if (element === null || !element.isConnected) {
+    return true;
+  }
+  const withCheck = element as HTMLElement & { checkVisibility?: () => boolean };
+  if (typeof withCheck.checkVisibility === 'function') {
+    return !withCheck.checkVisibility();
+  }
+  const view = element.ownerDocument.defaultView;
+  if (view === null) {
+    return false;
+  }
+  for (let node: Element | null = element; node !== null; node = node.parentElement) {
+    if (view.getComputedStyle(node).display === 'none') {
+      return true;
+    }
+  }
+  return false;
 };
 
 export type AutoSizeOnDataTrigger<T> = {
@@ -152,14 +178,37 @@ export const createAutoSizeOnDataTrigger = <T,>(): AutoSizeOnDataTrigger<T> => {
   //   世代(token)は打ち切られた計測の後始末が新しい計測のフラグを下ろさないためのものです。
   let mountRunPending = false;
   let mountRunToken = 0;
+  // 追加(1.0.1 / AP-22): 描かれていなかったので待っている計測があるか。
+  let deferred = false;
+
+  const run = (next: AutoSizeOnDataArgs<T>) => {
+    if (next.gridRootRef !== undefined && isElementHidden(next.gridRootRef.current)) {
+      deferred = true;
+      return;
+    }
+    deferred = false;
+    if (next.mode !== 'onMount') {
+      void next.runAutosize(next.visibleColumns);
+      return;
+    }
+    mountRunPending = true;
+    const token = mountRunToken;
+    void next.runAutosize(next.visibleColumns).finally(() => {
+      if (token === mountRunToken) {
+        mountRunPending = false;
+      }
+    });
+  };
+
   return {
     dispose: () => {
       last = null;
       mountRunToken += 1;
-      if (mountRunPending) {
+      if (mountRunPending || (deferred && hasAutoSizedOnMount)) {
         mountRunPending = false;
         hasAutoSizedOnMount = false;
       }
+      deferred = false;
     },
     update: (next) => {
       if (
@@ -170,6 +219,10 @@ export const createAutoSizeOnDataTrigger = <T,>(): AutoSizeOnDataTrigger<T> => {
         last.runAutosize === next.runAutosize
       ) {
         last = next;
+        // 待っていた計測は、描かれたら測ります(描かれると本体の幅が書かれて描き直され、ここへ来る)。
+        if (deferred && next.mode !== false && !next.isServerSide) {
+          run(next);
+        }
         return;
       }
       last = next;
@@ -181,17 +234,9 @@ export const createAutoSizeOnDataTrigger = <T,>(): AutoSizeOnDataTrigger<T> => {
       });
       hasAutoSizedOnMount = nextHasAutoSizedOnMount;
       if (shouldRun) {
-        if (next.mode !== 'onMount') {
-          void next.runAutosize(next.visibleColumns);
-          return;
-        }
-        mountRunPending = true;
-        const token = mountRunToken;
-        void next.runAutosize(next.visibleColumns).finally(() => {
-          if (token === mountRunToken) {
-            mountRunPending = false;
-          }
-        });
+        run(next);
+      } else if (next.mode === false || next.isServerSide || next.rows.length === 0) {
+        deferred = false;
       }
     },
   };

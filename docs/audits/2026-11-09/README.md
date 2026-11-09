@@ -70,11 +70,11 @@
 | AP-15 | F-02 / E-05 | 行ドラッグの後にフォーカスが入らず Ctrl+Z が外へ | 直す | 1.0.1 | 済(フォーカスとキー操作) |
 | AP-16 | J-06 | 編集できないセルで Space を押すとページがスクロール | 直す | 1.0.1 | 済(フォーカスとキー操作) |
 | AP-17 | E-02 / J-02 | Modal / Dialog の中で Esc を押すと外の Dialog まで閉じる | 直す | 1.0.1 | 済(フォーカスとキー操作) |
-| AP-18 | B-01 | numberSet の値の一覧が文字の順 | 直す | 1.0.1 | 未着手 |
-| AP-19 | G-02 / B-02 | rows がよく変わると検索・全体フィルター・候補の収集が終わらない / 最初のヒットを飛ばす | 直す | 1.0.1 | 未着手 |
-| AP-20 | G-03 | 全体フィルター A → 消す → B で、B の適用中に A の結果 | 直す | 1.0.1 | 未着手 |
-| AP-21 | H-03 | グループ化の後の「列のリセット」でグループが残る | 直す | 1.0.1 | 未着手 |
-| AP-22 | J-03 | display:none の中の `autoSizeColumns="onMount"` が約 71px に縮める | 直す | 1.0.1 | 未着手 |
+| AP-18 | B-01 | numberSet の値の一覧が文字の順 | 直す | 1.0.1 | 済(フィルター・検索・列) |
+| AP-19 | G-02 / B-02 | rows がよく変わると検索・全体フィルター・候補の収集が終わらない / 最初のヒットを飛ばす | 直す | 1.0.1 | 済(フィルター・検索・列) |
+| AP-20 | G-03 | 全体フィルター A → 消す → B で、B の適用中に A の結果 | 直す | 1.0.1 | 済(フィルター・検索・列) |
+| AP-21 | H-03 | グループ化の後の「列のリセット」でグループが残る | 直す | 1.0.1 | 済(フィルター・検索・列) |
+| AP-22 | J-03 | display:none の中の `autoSizeColumns="onMount"` が約 71px に縮める | 直す | 1.0.1 | 済(フィルター・検索・列) |
 | AP-23 | J-08 | 固定列の合計がグリッドより広いと重なり、中央が見えない | 直す + 文書 | 1.0.1 | 未着手 |
 | AP-24 | G-01 | 約 1,500 万 px 超の表で末尾に足すと見ている行が流れる | 直す | 1.0.1 | 未着手 |
 | AP-25 | G-04 | 並べ替え中に末尾へ足すと毎回全件を並べ直す | 直す | 1.0.1 | 未着手 |
@@ -204,5 +204,6 @@
 | 貼り付けと選択 | AP-01 / 02 / 03 / 04 | 日付は年の無い文字列とありえない日付を読まない(core `toDateInputValue` が数字の日付を自分で読む)。貼り付けは選択範囲の左上から(core `resolvePasteAnchor`、列 / 行の選択は先頭のデータ行)。グループ行もラベル行と同じく飛ばす(`isPasteSkippedRow`)。フィルターで行が隠れている間の見出しのチェックボックスは見えている行だけを選ぶ / 外し、印も見えている行で数える(`rowSelectionCommands` の `filteredDataRows`、シェルが order と baseOrder の長さで判定。serverSide と隠れている行が無いときは従来どおり exclude) | 131.36 → 132.01KB(+0.65) |
 | フォーカスとキー操作 | AP-05 / 10 / 11 / 12 / 15 / 16 / 17 | 確定・取消の直後にフォーカスをグリッドへ移す(core `editController` の `moveFocusToRootFromEditor`、後処理はマイクロタスクで先に済ませ、次のフレームは保険)。メニューを閉じたときの戻しは開いたエディタから奪わない(`restoreGridFocus`)。custom エディタを開いたまま押したら値を書かずに終える(`pointerInteractionsController` の `endEditLeftOpen`)。組み込みのエディタがフォーカスを持ったまま外れたら確定(React `editors/useCommitIfRemovedWhileFocused` + `commitEditAt`。StrictMode の付け直しでは確定しない)。行ドラッグのハンドルでグリッドへフォーカス。`Space` の既定の動作を止める。グリッドが使う Escape に印(core `controllers/escapeClaimController` = window の capture で preventDefault + Mantine の属性、シェルで伝播を止める。1 セルだけの選択の Escape は preventDefault しない) | 132.01 → 132.98KB(+0.97) |
 | 日付の境目 | AP-06 | 描画中に現在時刻を読まない(core `createDateRolloverStore` は見張りを始めたときに初めて読む、`filterOrderByColumns` は日付の条件があるときだけ)。Next.js 16 + cacheComponents の最小のページで `next build` が通り静的になるのを確かめた。`renderToString` で現在時刻を読まないテスト(`SpreadsheetGrid.ssrCurrentTime.ssr.test.tsx`)。クイックスタートと URL から戻す例に注記 | 132.98 → 132.99KB |
+| フィルター・検索・列 | AP-18 / 19 / 20 / 21 / 22 | numberSet の候補は数の順(core `logic/selectOptions` の `numeric`)。rows がよく変わる 5 万行超の表: 検索(`findController`)とグローバルフィルター(`globalFilteredOrder`)は行のオブジェクトごとの結果を WeakMap に控え、やり直しの間も前の結果を出す(グローバルフィルターは先頭と末尾の行が同じ位置のとき)、打った直後の移動を忘れない。候補の収集(`selectOptionsCollector`)は同じ列なら止めずに最後まで集めて出し、それから集め直す(`sourceKey`)。同期の経路を通ったら前の完了結果を忘れる(AP-20)。列のリセットは `rowGroup` も戻す(`logic/columnReset`)。`autoSizeColumns` は display: none の中では待つ(`isElementHidden`) | 132.99 → 133.93KB(+0.94) |
 
 - 大きさの上限は、1.0.1 の途中は実測 + 0.5KB の仮の値(`scripts/size-budget.json` の注記)。入れ終えた後の実測から決める(ユーザーに判断を頼んだ)。

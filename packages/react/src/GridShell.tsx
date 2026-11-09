@@ -1462,6 +1462,8 @@ export function useGridShell<T extends object>({
       rows,
       visibleColumns,
       runAutosize,
+      // 追加(1.0.1 / AP-22): display: none の中では測らずに待ち、描かれたら測る。
+      gridRootRef,
     },
     'passive',
   );

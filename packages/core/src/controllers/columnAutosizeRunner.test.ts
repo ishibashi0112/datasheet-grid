@@ -148,4 +148,29 @@ describe('createAutoSizeOnDataTrigger', () => {
     trigger.update(args);
     expect(runAutosize).toHaveBeenCalledTimes(2);
   });
+
+  // 追加(1.0.1 / 実アプリの総点検 AP-22): display: none の中では測らずに待ち、描かれた後の update で測る。
+  it("描かれていない(display: none の中)間は測らずに待ち、描かれた後の update で測る(AP-22)", () => {
+    const runAutosize = vi.fn(async () => {});
+    const trigger = createAutoSizeOnDataTrigger<Row>();
+    const box = document.createElement('div');
+    const root = document.createElement('div');
+    box.appendChild(root);
+    document.body.appendChild(box);
+    box.style.display = 'none';
+    const rows1 = [{ id: 1 }];
+    const base = { mode: 'onMount' as const, isServerSide: false, rows: rows1, visibleColumns: columns, runAutosize, gridRootRef: { current: root } };
+    trigger.update(base);
+    expect(runAutosize).not.toHaveBeenCalled();
+    trigger.update({ ...base });
+    expect(runAutosize).not.toHaveBeenCalled();
+    box.style.display = '';
+    trigger.update({ ...base });
+    expect(runAutosize).toHaveBeenCalledTimes(1);
+    // 'onMount' は一度きり。
+    trigger.update({ ...base });
+    trigger.update({ ...base, rows: [{ id: 2 }] });
+    expect(runAutosize).toHaveBeenCalledTimes(1);
+    box.remove();
+  });
 });

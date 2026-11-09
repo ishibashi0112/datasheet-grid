@@ -186,4 +186,45 @@ describe('findController', () => {
     expect(onChange).toHaveBeenCalledTimes(3);
     controller.dispose();
   });
+
+  // 追加(1.0.1 / 実アプリの総点検 AP-19): rows がよく変わる表で、打った直後の走査が行の変化でやり直しになっても
+  //   最初のヒットへ移る(移動を忘れていた)。
+  it('打った直後の走査が rowModel の変化でやり直しになっても、最初のヒットへ移る(AP-19)', async () => {
+    const controller = createFindController<Row>();
+    const onNavigate = vi.fn();
+    const base = { enabled: true, columns, caseSensitive: false, onNavigate };
+    controller.update({ ...base, rowModel: makeRowModel(rows) });
+    controller.open('gamma');
+    controller.update({ ...base, rowModel: makeRowModel([...rows, { id: 4, name: 'delta', qty: 1 }]) });
+    await flush();
+    expect(onNavigate).toHaveBeenCalledWith(2, 0);
+    controller.dispose();
+  });
+
+  // 追加(1.0.1 / AP-19): 大きな表では行ごとのヒットを控え、行を足したやり直しは足した行だけを読む。やり直しの間も
+  //   前の件数を出したまま(「検索中…」へ戻さない)。
+  it('大きな表のやり直しは足した行だけを読み、走査の間も前の結果を出したまま(AP-19)', async () => {
+    let reads = 0;
+    const countingColumns: GridColumn<Row>[] = [{ key: 'name', title: 'Name', width: 120, getValue: (row) => ((reads += 1), row.name) }];
+    const many: Row[] = Array.from({ length: 60_000 }, (_, i) => ({ id: i, name: i === 5 ? 'needle' : `r${i}`, qty: i }));
+    const controller = createFindController<Row>();
+    const base = { enabled: true, columns: countingColumns, caseSensitive: false, onNavigate: vi.fn() };
+    controller.update({ ...base, rowModel: makeRowModel(many) });
+    controller.open('needle');
+    for (let i = 0; i < 200 && controller.getSnapshot().scanning; i += 1) {
+      await flush();
+    }
+    expect(controller.getSnapshot().matches).toHaveLength(1);
+    expect(reads).toBe(many.length);
+    const appended = [...many, { id: 60_000, name: 'needle too', qty: 0 }];
+    controller.update({ ...base, rowModel: makeRowModel(appended) });
+    expect(controller.getSnapshot()).toMatchObject({ scanning: false });
+    expect(controller.getSnapshot().matches).toHaveLength(1);
+    for (let i = 0; i < 200 && controller.getSnapshot().matches.length < 2; i += 1) {
+      await flush();
+    }
+    expect(controller.getSnapshot().matches.map((m) => m.rowIndex)).toEqual([5, 60_000]);
+    expect(reads).toBe(many.length + 1);
+    controller.dispose();
+  });
 });

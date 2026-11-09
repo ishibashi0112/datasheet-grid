@@ -53,7 +53,7 @@ export const DEFAULT_GRID_LOCALE_TEXT = {
   cellInput: 'セルへの入力',
   sizingColumns: '列幅を計算中…',
   applyingFilter: '適用中 {percent}%',
-  resetColumnsHint: 'すべての列の幅・固定・表示・並び順を初期状態に戻します',
+  resetColumnsHint: 'すべての列の幅・固定・表示・並び順・グループ化を初期状態に戻します',
   toolPanelFilters: 'フィルター',
   toolPanelSort: '並び替え',
   toolPanelColumns: '列',

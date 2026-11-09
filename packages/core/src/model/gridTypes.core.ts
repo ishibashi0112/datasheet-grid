@@ -1368,12 +1368,13 @@ export type GridColumn<T, F extends GridFrameworkTypes = GridFrameworkTypes> = {
    * opt-in(下記「filterType: 'auto'(自動判定)」節)。`'numberSet'` / `'textSet'` / `'dateSet'`
    * は条件(演算子 + 値)と Set 一覧を 1 つの popover に縦に並べて **AND
    * 結合**する複合フィルター(条件を適用すると Set 候補が連動して絞られる。
-   * 候補外になった値の選択は破棄せず保持)。numberSet の演算子は 以上 / より大きい / 以下 / 未満 /
-   * に等しい / に等しくない / 範囲 / 空白 / 空白でない、textSet は を含む / に等しい / で始まる /
-   * で終わる / 空白 / 空白でない(判定は大文字小文字無視)。dateSet は 範囲 / 以降 / 以前 / に等しい
-   * / に等しくない / 空白 / 空白でない + 相対プリセット(今日 / 今月 / 過去 30
-   * 日。**相対のまま保存され評価のたびに解決**)で、Set 部分は年 / 月 / 日の 3 階層ツリー(親は 3
-   * 状態チェック)になる。
+   * 候補外になった値の選択は破棄せず保持)。numberSet の一覧は数の順(数でない値はその後ろ、
+   * 空白は最後。`filterOptions` / `getFilterOptions` で渡した候補は渡した順)。numberSet の演算子は
+   * 以上 / より大きい / 以下 / 未満 / に等しい / に等しくない / 範囲 / 空白 / 空白でない、textSet
+   * は を含む / に等しい / で始まる / で終わる / 空白 / 空白でない(判定は大文字小文字無視)。dateSet
+   * は 範囲 / 以降 / 以前 / に等しい / に等しくない / 空白 / 空白でない + 相対プリセット(今日 /
+   * 今月 / 過去 30 日。**相対のまま保存され評価のたびに解決**)で、Set 部分は年 / 月 / 日の 3
+   * 階層ツリー(親は 3 状態チェック)になる。
    */
   filterType?: ColumnFilterTypeOption;
   // 追加: select / set フィルター時の候補です。未指定時は rows から自動収集します。
@@ -1690,7 +1691,7 @@ export type GridLocaleText = {
   menuColumns: string;
   /** 列メニューの列のリセット。既定 `列のリセット`、英語 `Reset columns`。 */
   menuResetColumns: string;
-  /** 列のリセットのツールチップ(列メニューとツールパネル)。既定 `すべての列の幅・固定・表示・並び順を初期状態に戻します`、英語 `Restores the width, pinning, visibility and order of all columns.`。 */
+  /** 列のリセットのツールチップ(列メニューとツールパネル)。既定 `すべての列の幅・固定・表示・並び順・グループ化を初期状態に戻します`、英語 `Restores the width, pinning, visibility, order and grouping of all columns.`。 */
   resetColumnsHint: string;
   /** `onColumnsChange` が無いときの列のリセットのツールチップ。既定 `onColumnsChange 未指定のため列をリセットできません`、英語 `Resetting columns needs onColumnsChange.`。 */
   menuResetUnavailable: string;
@@ -3933,6 +3934,8 @@ export type SpreadsheetGridProps<T, F extends GridFrameworkTypes = GridFramework
    * `'onDataChange'`=`rows`(参照)が変わるたび(= データ差し替えのたび。手動リサイズは上書き) /
    * `false`=無効。計測は列メニュー「すべての列の幅を自動調整」と同一エンジン(`suppressAutoSize` /
    * `autoHeight` 列は除外)。フィルター / ソート / 列並べ替えでは再フィットしません。
+   * グリッドが描かれていない間(`display: none` の中。隠したタブなど)は測らずに待ち、
+   * 描かれたときに測ります(1.0.1 から。1.0.0 は幅 0 のまま測って列を縮めていました)。
    * serverSide(`dataSource`)では無効。詳細は「flex と autoSize」節。
    *
    * @defaultValue `false`

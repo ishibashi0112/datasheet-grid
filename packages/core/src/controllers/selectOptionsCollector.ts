@@ -75,10 +75,12 @@ const isSelectLikeColumn = <T,>(column: GridColumn<T> | null): boolean => {
 };
 
 // 同期経路の解決。null = 非同期収集が必要(閾値超で候補未指定)。
+// 変更(1.0.1 / AP-18): numeric = 数の列(解決済みの種別が numberSet)の候補を数の順に並べる。
 export const resolveSyncSelectOptions = <T,>(
   column: GridColumn<T> | null,
   rowCount: number,
   getRawValueAt: RawValueAccessor,
+  numeric = false,
 ): ColumnSelectOptionsResult | null => {
   if (!column || !isSelectLikeColumn(column)) {
     return IDLE_SELECT_OPTIONS_RESULT;
@@ -96,7 +98,7 @@ export const resolveSyncSelectOptions = <T,>(
     };
   }
   if (rowCount <= ASYNC_SELECT_COLLECT_ROW_THRESHOLD) {
-    const options = collectSelectOptions(rowCount, getRawValueAt);
+    const options = collectSelectOptions(rowCount, getRawValueAt, numeric);
     return {
       status: 'ready',
       options,
@@ -112,11 +114,19 @@ export type SelectOptionsCollectorArgs = {
   needsAsync: boolean;
   rowCount: number;
   getRawValueAt: RawValueAccessor;
+  // 追加(1.0.1 / AP-18): 数の列の候補を数の順に並べる。
+  numeric?: boolean;
+  // 追加(1.0.1 / 2026-11-09 実アプリの総点検 AP-19): どの列の候補か(列のキーなど)。同じ列のまま行だけが変わった
+  //   (rows がよく変わる表)ときは、走っている収集を最後まで走らせて結果を出し、終わってから今の行で集め直します。
+  //   集め直している間も前の候補を出したままにします。これまでは行が変わるたびに最初から集め直し、100 万行の表では
+  //   候補が出たり消えたりし、dateSet は条件欄も出なかった。
+  sourceKey?: string;
 };
 
 export type SelectOptionsCollectSnapshot = {
   source: RawValueAccessor | null;
   rowCount: number;
+  sourceKey?: string;
   result: ColumnSelectOptionsResult;
 };
 
@@ -127,14 +137,21 @@ const IDLE_SNAPSHOT: SelectOptionsCollectSnapshot = {
 };
 
 // 現在のキーに一致するスナップショットだけを表面化します(不一致 = 収集開始前 / 別列の結果)。
+//   変更(1.0.1 / AP-19): 同じ列(sourceKey)の集め終えた候補は、行が変わった後も出します(集め直しが終わるまで)。
 export const selectCollectorResult = (
   snapshot: SelectOptionsCollectSnapshot,
   rowCount: number,
   getRawValueAt: RawValueAccessor,
-): ColumnSelectOptionsResult =>
-  snapshot.source === getRawValueAt && snapshot.rowCount === rowCount
-    ? snapshot.result
-    : COLLECTING_INITIAL;
+  sourceKey?: string,
+): ColumnSelectOptionsResult => {
+  if (snapshot.source === getRawValueAt && snapshot.rowCount === rowCount) {
+    return snapshot.result;
+  }
+  if (sourceKey !== undefined && snapshot.sourceKey === sourceKey && snapshot.result.status === 'ready') {
+    return snapshot.result;
+  }
+  return COLLECTING_INITIAL;
+};
 
 export type SelectOptionsCollector = {
   update: (args: SelectOptionsCollectorArgs) => void;
@@ -148,20 +165,30 @@ export const createSelectOptionsCollector = (): SelectOptionsCollector => {
   let current: SelectOptionsCollectorArgs | null = null;
   let cancelCurrent: (() => void) | null = null;
 
+  // 走っている収集の args(同じ列で行だけ変わったときに、止めずに最後まで走らせるのに使う)。
+  let running: SelectOptionsCollectorArgs | null = null;
+
   const start = (args: SelectOptionsCollectorArgs) => {
-    const { getRawValueAt, rowCount } = args;
-    const accumulator = createSelectOptionsAccumulator();
+    const { getRawValueAt, rowCount, sourceKey } = args;
+    const accumulator = createSelectOptionsAccumulator(args.numeric === true);
     let cancelled = false;
     const cancel = () => {
       cancelled = true;
     };
     cancelCurrent = cancel;
+    running = args;
     void runChunked(rowCount, (index) => accumulator.collect(getRawValueAt(index)), {
       isCancelled: () => cancelled,
       onYield: (done, total) => {
+        const shown = store.getSnapshot();
+        if (sourceKey !== undefined && shown.sourceKey === sourceKey && shown.result.status === 'ready') {
+          // 同じ列の前の候補を出している間は、集め直しの進み具合を出さない(候補を消さない)。
+          return;
+        }
         store.setSnapshot({
           source: getRawValueAt,
           rowCount,
+          sourceKey,
           result: {
             status: 'collecting',
             options: EMPTY_OPTIONS,
@@ -174,6 +201,7 @@ export const createSelectOptionsCollector = (): SelectOptionsCollector => {
       // 追加(audit C-11): 走り切った run は「走っている run」から外します(dispose で current を忘れる判定に使う)。
       if (cancelCurrent === cancel) {
         cancelCurrent = null;
+        running = null;
       }
       if (!completed) {
         return;
@@ -182,6 +210,7 @@ export const createSelectOptionsCollector = (): SelectOptionsCollector => {
       store.setSnapshot({
         source: getRawValueAt,
         rowCount,
+        sourceKey,
         result: {
           status: 'ready',
           options,
@@ -189,22 +218,42 @@ export const createSelectOptionsCollector = (): SelectOptionsCollector => {
           progress: 1,
         },
       });
+      // 走っている間に行が変わっていたら、今の行で集め直します(前の候補は出したまま)。
+      if (current !== null && current !== args && current.needsAsync && isDifferentSource(current, args)) {
+        start(current);
+      }
     });
   };
+
+  const isDifferentSource = (a: SelectOptionsCollectorArgs, b: SelectOptionsCollectorArgs): boolean =>
+    a.rowCount !== b.rowCount || a.getRawValueAt !== b.getRawValueAt || a.numeric !== b.numeric;
 
   const update = (args: SelectOptionsCollectorArgs) => {
     const keyChanged =
       current === null ||
       current.needsAsync !== args.needsAsync ||
       current.rowCount !== args.rowCount ||
-      current.getRawValueAt !== args.getRawValueAt;
+      current.getRawValueAt !== args.getRawValueAt ||
+      current.numeric !== args.numeric;
     current = args;
     if (!keyChanged) {
+      return;
+    }
+    // 変更(1.0.1 / AP-19): 同じ列のまま行だけが変わったときは、走っている収集を止めない(終わったら集め直す)。
+    if (
+      args.needsAsync &&
+      running !== null &&
+      cancelCurrent !== null &&
+      args.sourceKey !== undefined &&
+      running.sourceKey === args.sourceKey &&
+      running.numeric === args.numeric
+    ) {
       return;
     }
     // キーが変わった: 旧 effect の cleanup に相当(in-flight を中断)。必要なら新しい run を開始。
     cancelCurrent?.();
     cancelCurrent = null;
+    running = null;
     if (args.needsAsync) {
       start(args);
     }
@@ -221,6 +270,7 @@ export const createSelectOptionsCollector = (): SelectOptionsCollector => {
       if (cancelCurrent !== null) {
         cancelCurrent();
         cancelCurrent = null;
+        running = null;
         current = null;
       }
     },
