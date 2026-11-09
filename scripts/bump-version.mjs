@@ -58,6 +58,26 @@ if (compareVersions(next, '0.61.0') >= 0 && (hasOldSubpaths(coreManifest.exports
   process.exit(1);
 }
 
+// 追加(1.0 の準備): 非推奨の表(packages/core/src/utils/deprecation.ts の DEPRECATIONS)に、消す版(removeIn)が
+//   次の版以下のものが残っていれば止めます(非推奨にしたものの消し忘れ)。消すときは表から外し、警告の呼び出しと
+//   API リファレンス(両方)の行と JSDoc を消し、CHANGELOG の「## 未リリース」に書いてから版を上げます。
+const DEPRECATIONS_PATH = 'packages/core/src/utils/deprecation.ts';
+const deprecationsSource = readFileSync(DEPRECATIONS_PATH, 'utf8');
+const deprecationsTable = /^export const DEPRECATIONS = \{\n([\s\S]*?)^\} satisfies/m.exec(deprecationsSource)?.[1];
+if (deprecationsTable === undefined) {
+  console.error(`bump-version: ${DEPRECATIONS_PATH} の DEPRECATIONS を読めません`);
+  process.exit(1);
+}
+const dueDeprecations = [...deprecationsTable.matchAll(/^ {2}(\w+): \{[\s\S]*?removeIn: '(\d+\.\d+\.\d+)'/gm)]
+  .filter((match) => compareVersions(next, match[2]) >= 0)
+  .map((match) => `${match[1]}(${match[2]} で消す)`);
+if (dueDeprecations.length > 0) {
+  console.error(
+    `bump-version: ${next} で消す約束の非推奨が残っています: ${dueDeprecations.join(' / ')}。${DEPRECATIONS_PATH} の冒頭の手順どおりに消してから版を上げてください。`,
+  );
+  process.exit(1);
+}
+
 for (const file of packages) {
   const pkg = JSON.parse(readFileSync(file, 'utf8'));
   pkg.version = next;

@@ -8,7 +8,7 @@
 //   - 旧 'all' / 'visible' が新 'view' / 'rendered' と厳密に同一の結果を返す(後方互換)。
 //   既存の結合テストと同じく DOM を要するため、本ファイルは jsdom で回します。
 // @vitest-environment jsdom
-import { describe, it, expect, beforeAll, afterEach } from 'vitest';
+import { describe, it, expect, beforeAll, afterEach, vi } from 'vitest';
 import { render, cleanup, act } from '@testing-library/react';
 import { createRef } from 'react';
 
@@ -122,6 +122,8 @@ describe('SpreadsheetGrid エクスポート scope(結合)', () => {
     const handle = setupFilteredSorted();
 
     // deprecated エイリアスの実行時挙動は新名称と完全同一(既存利用者を壊さない)。
+    // 変更(1.0 の準備): 開発時の非推奨の警告(core の logic/exportScope.test.ts で検査)は黙らせます。
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
     expect(handle.getExportData({ scope: 'all' })).toEqual(
       handle.getExportData({ scope: 'view' }),
     );
@@ -134,6 +136,7 @@ describe('SpreadsheetGrid エクスポート scope(結合)', () => {
     expect(handle.exportCsv({ scope: 'visible' })).toBe(
       handle.exportCsv({ scope: 'rendered' }),
     );
+    warn.mockRestore();
   });
 
   it("'rendered' は描画ウィンドウのみを対象にする(ビュー全体とは独立の範囲)", () => {

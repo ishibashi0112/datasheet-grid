@@ -10,6 +10,26 @@
 
 詳しい使い方は[ドキュメントサイト](https://datasheet-grid.vercel.app)と [API リファレンス](./packages/react/API_REFERENCE.md)を参照してください。
 
+## 未リリース
+
+1.0 の準備です。公開する型を利用側の形で確かめるようにし、非推奨を知らせる仕組みを足しました。本番の JS はほぼ変わりません。
+
+### 追加
+
+- `/lite` の型 `GridFeature<K>`(機能の部品の型。`K` はその部品を入れる機能セットのキー)と `GridFeatureName`(機能セットのキー)。
+
+### 変更
+
+- `/lite` の機能の部品(`findFeature` など)の型を、中身の見えない `GridFeature<K>` にしました。`GridFeatures` は `{ [K in GridFeatureName]?: GridFeature<K> }` です。機能の組み合わせを注釈せずに export しても、`declaration: true` で d.ts を出せます(これまではエラー TS2883 になり、`GridFeatures` の注釈が要りました)。部品を違うキーへ入れると型エラーになります。部品の中身(内部の関数)は型から見えなくなりました(内部の実装で、公開範囲の外です)。
+- React 版の上に作ったライブラリが、推論した型をそのまま export して d.ts を出したとき、core の内部のパス(`@ishibashi0112/spreadsheet-grid-core/internal/…`)が書かれないようにしました。列定義などの core の型は、core の入口 `@ishibashi0112/spreadsheet-grid-core` の名前で書かれます。そうしたライブラリは core も React 版と同じ版で依存に入れてください(pnpm では、直接の依存に無いと TS2883 になることがあります)。0.64.0 までで作った d.ts は作り直してください。
+- `numberFormatter` の型: 型引数なしで作ったものは、行の型の違う列で使い回せます。`restoreColumnsFromState` は読み取り専用の配列(`as const`)も受け、渡した要素の型のまま返します。
+- 対応する TypeScript を 5.8 以上(`moduleResolution` は `bundler` か `nodenext`)と、README とドキュメント([バージョンと互換性](https://datasheet-grid.vercel.app/docs/versioning))に書きました。公開する型は、TypeScript の下限と最新、React 18 / 19 の型で検査してから出します。
+- 公開範囲の入口に、0.64.0 で足した `/locales/en` を書き足しました。
+
+### 非推奨
+
+- エクスポートの scope `'all'`(代わりは `'view'`)と `'visible'`(代わりは `'rendered'`)を 1.0.0 で消します(0.9.0 から非推奨)。使うと、開発ビルドでだけ console に 1 回警告を出します。挙動は今までどおりです。
+
 ## 0.64.0 — 2026-11-08
 
 英語の UI に対応しました。既定は日本語のままです。

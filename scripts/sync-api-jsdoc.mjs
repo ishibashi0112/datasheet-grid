@@ -77,6 +77,9 @@ const EXTRA_DOCS = {
 };
 
 const DESCRIPTION_HEADERS = ['Description', '説明', '付与先'];
+// 追加(1.0 の準備): 非推奨の行の印です。説明のセルがこれで始まる行は、JSDoc に @deprecated を付けます
+//   (エディタが取り消し線で出す)。非推奨の表は core の utils/deprecation.ts(deprecation.test.ts が照らし合わせる)。
+export const DEPRECATED_MARK = '**非推奨**';
 const DEFAULT_HEADERS = ['Default', '既定'];
 const NO_DEFAULT = new Set(['', '—', '-', '(required)']);
 
@@ -156,13 +159,15 @@ export function collectDocs(markdown) {
         const rawDefault = defaultIndex >= 0 ? (row.cells[defaultIndex] ?? '') : '';
         // `—` のようにコード表記された「既定なし」も既定なしとして扱います。
         const defaultValue = NO_DEFAULT.has(rawDefault.replace(/`/g, '')) ? undefined : rawDefault;
+        const deprecated = (row.cells[descIndex] ?? '').startsWith(DEPRECATED_MARK);
+        if (deprecated) description = description.replace(DEPRECATED_MARK, '非推奨').trim();
         for (const name of names) {
           const key = `${mapping.type}.${name}`;
           if (docs.has(key)) {
             errors.push(`${REFERENCE_PATH}:${row.lineNumber}: ${key} が複数の行にあります`);
             continue;
           }
-          docs.set(key, { description, defaultValue });
+          docs.set(key, deprecated ? { description, defaultValue, deprecated } : { description, defaultValue });
         }
       }
     }
@@ -233,10 +238,10 @@ export function wrapText(text, maxWidth) {
 
 const escapeComment = (text) => text.replace(/\*\//g, '*\\/');
 
-export function renderJsdoc(indent, { description, defaultValue }) {
+export function renderJsdoc(indent, { description, defaultValue, deprecated = false }) {
   const body = escapeComment(description);
   const single = `${indent}/** ${body} */`;
-  if (defaultValue === undefined && displayWidth(single) <= WRAP_WIDTH) {
+  if (defaultValue === undefined && !deprecated && displayWidth(single) <= WRAP_WIDTH) {
     return single;
   }
   const prefix = `${indent} * `;
@@ -244,8 +249,14 @@ export function renderJsdoc(indent, { description, defaultValue }) {
   for (const line of wrapText(body, WRAP_WIDTH - displayWidth(prefix))) {
     lines.push(`${prefix}${line}`);
   }
+  if (defaultValue !== undefined || deprecated) {
+    lines.push(`${indent} *`);
+  }
+  if (deprecated) {
+    lines.push(`${prefix}@deprecated`);
+  }
   if (defaultValue !== undefined) {
-    lines.push(`${indent} *`, `${prefix}@defaultValue ${escapeComment(defaultValue)}`);
+    lines.push(`${prefix}@defaultValue ${escapeComment(defaultValue)}`);
   }
   lines.push(`${indent} */`);
   return lines.join('\n');

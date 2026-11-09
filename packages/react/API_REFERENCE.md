@@ -1688,8 +1688,8 @@ const addRow = () => {
 | `'raw'` | 全ソース行(`rows` 配列順)。**フィルターもソートも無視**(列は可視列・固定順に従う) | 非依存 |
 | `'rendered'` | 仮想化ウィンドウ(いま**描画中**の行のみ・オーバースキャン込み) | **依存** |
 | `'selection'` | 現在の選択範囲(セル/行/列)。選択なしは空 | — |
-| `'all'` | **@deprecated** `'view'` のエイリアス(挙動同一) | 非依存 |
-| `'visible'` | **@deprecated** `'rendered'` のエイリアス(挙動同一)。「フィルターで見えている行」では**ない**点に注意 | **依存** |
+| `'all'` | **非推奨**(1.0.0 で消します)。`'view'` のエイリアス(挙動同一)。開発時に 1 回だけ警告を出す | 非依存 |
+| `'visible'` | **非推奨**(1.0.0 で消します)。`'rendered'` のエイリアス(挙動同一)。「フィルターで見えている行」では**ない**点に注意。開発時に 1 回だけ警告を出す | **依存** |
 
 serverSide(SSRM)の注意: `'view'` は未ロード行をスキップ(= ロード済みビュー行のみ)。`'raw'` はソース行配列を持たないため `'view'` 相当へフォールバックし `console.warn` を出す。**全件エクスポートはサーバ側での実施を推奨**。
 
@@ -1996,7 +1996,7 @@ export const OrdersTable = () => <Grid columns={columns} dataSource={dataSource}
 | `createSpreadsheetGrid({ features }): <T extends object>(props: SpreadsheetGridProps<T>) => JSX.Element` | 機能セットを差し込んだグリッドのコンポーネントを作る。`features` は `{ キー: 機能の部品 }`(下の表)。機能の組み合わせは作ったときに固定される。モジュールの先頭で 1 回だけ呼ぶ(コンポーネントの中で呼ぶと描画のたびに作り直されてグリッドの状態が消える。そうなっていれば開発時に `console.warn` で知らせる。モジュールの先頭で呼んでいても、そのファイルを書き換えた直後(HMR)に 1 回だけ出ることがある)。 |
 | `standardFeatures` | よく使う組み合わせ(プリセット): `filtering` / `columnMenu` / `toolPanel` / `columnAutosize` / `export`。ほかの機能は `{ ...standardFeatures, find: findFeature }` のように広げて足す。 |
 | `xxxFeature`(20 個) | 機能の部品。名前は「キー + `Feature`」(下の表)。中身は内部の部品なので、そのまま `features` に渡す(自分で作ったり書き換えたりしない)。 |
-| 型 `GridFeatures` / `CreateSpreadsheetGridOptions` | `features` の型と、`createSpreadsheetGrid` の引数の型。機能の組み合わせを変数にして export するときは `GridFeatures` を注釈する(`export const companyFeatures: GridFeatures = { ...standardFeatures, find: findFeature }`。注釈しないと推論された型が内部の型を指し、`declaration: true` で TS2742 になる)。 |
+| 型 `GridFeatures` / `GridFeature<K>` / `GridFeatureName` / `CreateSpreadsheetGridOptions` | `GridFeatures` は `features` の型(`{ [K in GridFeatureName]?: GridFeature<K> }`)。`GridFeature<K>` は機能の部品の型で、中身は型からは見えない(`K` はその部品を入れるキーで、違うキーへ入れると型エラー)。`GridFeatureName` は機能セットのキー(`'find'` / `'filtering'` など)。`CreateSpreadsheetGridOptions` は `createSpreadsheetGrid` の引数の型。機能の組み合わせを変数にして export するときは、`GridFeatures` を注釈してもしなくてもよい(0.65.0 から。注釈しなくても `declaration: true` の d.ts が書ける)。 |
 | `numberFormatter` / `preloadGridPopups` / `restoreColumnsFromState` と公開型すべて | 全部入りの入口と同じ名前・使い方。`preloadGridPopups` は同じ入口のグリッドの部品を読み込むので、`/lite` のグリッドには `/lite` から import したものを使う。 |
 
 - **props・ref ハンドル・型は全部入りと共通**。差し込んでいない機能の prop を渡したり、その機能のメソッドを呼んだりしても何もしない(落ちない)。開発ビルドでだけ、prop ごとに 1 回 `console.warn` で「`features` に `fillHandle: fillHandleFeature` を入れてください」のように足すべき機能を知らせる(本番ビルドでは出さない)。prop を持たない機能のメソッド(`exportCsv` / `downloadCsv` / `getExportData` と、`toolPanel` か `filtering` が無いときの `openFilterManager`)は、呼ばれた時点で同じように知らせる。ほかの機能のメソッド(`openFind` など)は全部入りでもその機能の prop が無いと動かないので、prop の警告で知らせる。列定義を機能違いのグリッドで共有するときは、`filtering` の無い方に `enableColumnFilter={false}` を書けば列の `filterType` の警告は出ない。

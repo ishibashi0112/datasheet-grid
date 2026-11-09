@@ -422,8 +422,9 @@ AI coding assistants rarely know this new library and tend to guess from other g
 Releases follow [semver](https://semver.org). The React package and the core always share one version.
 
 - **0.x today.** Breaking changes ship in minor releases (0.**Y**.0) and are always listed in the [changelog](./CHANGELOG.md) under 「挙動の変化」 (behavior changes) or 「core の破壊的変更」 (core breaking changes). Patch releases (0.Y.**Z**) only fix bugs. The default `^0.Y.Z` range stays within 0.Y, so read the changelog before moving to the next minor.
-- **From 1.0**, breaking changes ship only in major releases, and anything to be removed is deprecated in a minor release first (`@deprecated` in the types, a console warning in development builds, a 「非推奨」 (deprecated) section in the changelog).
-- **Public surface:** what you can import from the React package's entry points (`.` / `/lite` / `/ai` / `/testing`), its CSS files, the props, column options, handle methods and types in `API_REFERENCE.md`, the CSS tokens (`--ssg-*`) and the classes and attributes listed under 「スタイリング用の状態クラス(公開契約)」 there, and the core entry points (`@ishibashi0112/spreadsheet-grid-core` and `/testing`).
+- **From 1.0**, breaking changes ship only in major releases, and anything to be removed is deprecated in a minor release first (`@deprecated` in the types, a one-time console warning in development builds, a 「非推奨」 (deprecated) section in the changelog).
+- **TypeScript:** 5.8 or later, with `moduleResolution` `bundler` or `nodenext` (ESM and CommonJS). Raising this minimum counts as a breaking change. Libraries built on this package can export inferred types (column definitions, feature sets) with `declaration: true`; the emitted `.d.ts` refers only to the public entry points. Such a library should also depend on the core at the same version as the React package.
+- **Public surface:** what you can import from the React package's entry points (`.` / `/lite` / `/ai` / `/locales/en` / `/testing`), its CSS files, the props, column options, handle methods and types in `API_REFERENCE.md`, the CSS tokens (`--ssg-*`) and the classes and attributes listed under 「スタイリング用の状態クラス(公開契約)」 there, and the core entry points (`@ishibashi0112/spreadsheet-grid-core` and `/testing`).
 - **Internal:** the core's building blocks under `@ishibashi0112/spreadsheet-grid-core/internal/<dir>/<module>` (the React package uses them and depends on the core of exactly the same version; the old subpaths without `internal/` were deprecated in 0.60.0 and removed in 0.61.0), other `ssg-*` classes, the DOM structure and inline styles.
 
 Details: [Versioning](https://datasheet-grid.vercel.app/docs/versioning) (Japanese).
@@ -848,8 +849,9 @@ AI コーディングツールは新しいこのライブラリをまだほと�
 版は [Semantic Versioning](https://semver.org/lang/ja/) に沿って上げます。React 版と core はいつも同じ版で出します。
 
 - **今は 0.x です。** 壊す変更も minor(0.**Y**.0)で出し、[CHANGELOG](./CHANGELOG.md) の「挙動の変化」か「core の破壊的変更」に必ず書きます。patch(0.Y.**Z**)は不具合の修正だけです。npm の既定の `^0.Y.Z` は同じ 0.Y の中だけを受け取るので、minor を上げるときは CHANGELOG を確かめてください。
-- **1.0 から**は、壊す変更は major でだけ出します。消すものは、その前の minor で非推奨にします(型に `@deprecated`、開発ビルドだけ console の警告、CHANGELOG の「非推奨」の節)。
-- **公開範囲:** React 版の入口(`.` / `/lite` / `/ai` / `/testing`)から import できるもの、CSS ファイル、`API_REFERENCE.md` に書いた props・列定義・命令的 API・型、CSS トークン(`--ssg-*`)と同書の「スタイリング用の状態クラス(公開契約)」に載せたクラスと属性、core の入口(`@ishibashi0112/spreadsheet-grid-core` と `/testing`)。
+- **1.0 から**は、壊す変更は major でだけ出します。消すものは、その前の minor で非推奨にします(型に `@deprecated`、開発ビルドだけ console の警告を 1 回、CHANGELOG の「非推奨」の節)。
+- **TypeScript:** 5.8 以上で、`moduleResolution` は `bundler` か `nodenext`(ESM と CommonJS)。この下限を上げるのは壊す変更です。このパッケージの上に作ったライブラリは、推論した型(列定義・機能の組み合わせ)をそのまま export して `declaration: true` で d.ts を出せます(d.ts には公開の入口の名前だけが書かれます)。そのときは core も React 版と同じ版で依存に入れてください。
+- **公開範囲:** React 版の入口(`.` / `/lite` / `/ai` / `/locales/en` / `/testing`)から import できるもの、CSS ファイル、`API_REFERENCE.md` に書いた props・列定義・命令的 API・型、CSS トークン(`--ssg-*`)と同書の「スタイリング用の状態クラス(公開契約)」に載せたクラスと属性、core の入口(`@ishibashi0112/spreadsheet-grid-core` と `/testing`)。
 - **内部:** core の部品(`@ishibashi0112/spreadsheet-grid-core/internal/<dir>/<module>`。React 版が使い、同じ版の core に固定で依存します。`internal/` の無い旧サブパスは 0.60.0 で非推奨にし、0.61.0 で消しました)、表に無い `ssg-*` クラス、DOM の形、インライン style。
 
 詳しくは[バージョンと互換性](https://datasheet-grid.vercel.app/docs/versioning)。

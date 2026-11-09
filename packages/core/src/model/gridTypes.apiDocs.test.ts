@@ -22,4 +22,19 @@ describe('公開型の JSDoc(API_REFERENCE.md の表から生成)', () => {
   it('API_REFERENCE.md の表から主要な型のフィールドへ JSDoc が付いている', () => {
     expect(source).toMatch(/\/\*\*\n {3}\* グリッドの明示高さ。[\s\S]*?\*\/\n {2}height\?: number \| string;/);
   });
+
+  // 追加(1.0 の準備): 説明が「**非推奨**」で始まる行は、JSDoc に @deprecated が付く。
+  it('「**非推奨**」の行は JSDoc に @deprecated が付く', () => {
+    const marked = reference.replace(
+      '| `height` | `number \\| string` | `—` | グリッドの明示高さ。',
+      '| `height` | `number \\| string` | `—` | **非推奨**(9.0.0 で消します)。グリッドの明示高さ。',
+    );
+    expect(marked).not.toBe(reference);
+    const { output, changedMembers } = syncApiJsdoc(marked, source);
+    expect(changedMembers).toEqual(['SpreadsheetGridProps.height']);
+    const end = output.indexOf('\n  height?: number | string;');
+    const block = output.slice(output.lastIndexOf('/**', end), end);
+    expect(block.startsWith('/**\n   * 非推奨(9.0.0 で消します)。グリッドの明示高さ。')).toBe(true);
+    expect(block.endsWith('\n   *\n   * @deprecated\n   */')).toBe(true);
+  });
 });

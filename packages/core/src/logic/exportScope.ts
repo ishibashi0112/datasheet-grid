@@ -1,4 +1,8 @@
 import type { CsvExportScope } from '../model/gridTypes.unbound';
+import { warnDeprecated } from '../utils/deprecation';
+
+// 型だけの宣言です(利用側のバンドラが process.env.NODE_ENV を文字列へ置き換える)。
+declare const process: { env: { NODE_ENV?: string } };
 
 // 追加(export-scope 再編): エクスポート scope の正規化純関数です。
 //   実利用(SS2603)で「'visible' = フィルターで見えている行」という誤読が発生した(実体は仮想化
@@ -12,13 +16,20 @@ import type { CsvExportScope } from '../model/gridTypes.unbound';
 export type NormalizedCsvExportScope = 'view' | 'raw' | 'rendered' | 'selection';
 
 // 旧エイリアスを新 scope へ写します: 'all' → 'view'、'visible' → 'rendered'。新 4 値はそのまま返します。
+// 変更(1.0 の準備): 旧エイリアスは 1.0.0 で消すので、使われたら開発時だけ警告します(utils/deprecation.ts)。
 export const normalizeExportScope = (
   scope: CsvExportScope,
 ): NormalizedCsvExportScope => {
   if (scope === 'all') {
+    if (process.env.NODE_ENV !== 'production') {
+      warnDeprecated('exportScopeAll');
+    }
     return 'view';
   }
   if (scope === 'visible') {
+    if (process.env.NODE_ENV !== 'production') {
+      warnDeprecated('exportScopeVisible');
+    }
     return 'rendered';
   }
   return scope;
