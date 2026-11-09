@@ -31,6 +31,8 @@ const restore = installJsdomLayoutStubs({ width: 800, height: 400 });
 afterAll(restore);
 ```
 
+スタブを 2 回入れたとき(スイートの `beforeAll` と個々のテストなど)は、入れたのと**逆の順**に戻してください。同じ順に戻すと、先に入れたスタブの値が残ります。
+
 インストールされるスタブ:
 
 | 対象 | 内容 |
@@ -40,21 +42,59 @@ afterAll(restore);
 | `globalThis.ResizeObserver` | `observe()` 時に**即時コールバック**するスタブ |
 | `Element.prototype.scrollTo` | 未定義のときのみ no-op を補う |
 
-## 検証できること
+## 描かれる範囲
 
-スタブ適用後は実グリッドが本体行 / 全列を描画するため、DOM で次を検証できます。
+スタブは「見えている大きさ」を決めるだけで、仮想化はそのまま効きます。既定の 1200×600 なら、描かれるのは高さ 600px に入る行と幅 1200px に入る列(それぞれ先読みの分を足した数)です。既定の行の高さ(36px)と幅 120px の列なら、約 38 行・約 18 列です。グリッドの `height` を変えても、描かれる量はスタブの大きさで決まります。
 
 ```tsx
 const { container } = render(<SpreadsheetGrid rows={rows} columns={columns} />);
 
 // 行・セルの描画(行は固定ペインにも描かれ、行番号は左のペインの行にあるので、中央のペインの行で数える)
-expect(container.querySelectorAll('[data-pane="center"].ssg-body-row')).toHaveLength(rows.length);
+expect(container.querySelectorAll('[data-pane="center"].ssg-body-row')).toHaveLength(rows.length); // 行が少ないとき
 
 // getRowClassName / cellClassName で付与したクラス
 expect(container.querySelectorAll('.ssg-body-cell.my-warn-cell')).toHaveLength(2);
 ```
 
+全行・全列を描きたいとき、または先の行を確かめたいときは、次のどちらかにします。
+
+- **スタブを大きくする**: `installJsdomLayoutStubs({ width: 3000, height: 4000 })` のように、表の全体が入る大きさにします(100 行 × 120px の列 20 本ならこれで全部描かれます)。
+- **スクロールする**: 表本体(`.ssg-scroll-container`)の `scrollTop` / `scrollLeft` を書いてから `fireEvent.scroll` を出します。
+
+```tsx
+const scroller = container.querySelector<HTMLElement>('.ssg-scroll-container')!;
+scroller.scrollTop = 80 * 36; // 行の高さ 36px で 80 行目あたりへ
+fireEvent.scroll(scroller);
+```
+
+ハンドルの `scrollToRow` / `scrollToCell` は jsdom では何もしません(スタブの `scrollTo` は何もしないため)。
+
+セルを引くときは、中央のペインの行の中で `aria-colindex` を使えます(行番号の列が 1、最初のデータ列が 2)。読み上げの名前や役割(`role="gridcell"` / `role="columnheader"` など)は [アクセシビリティの表](/docs/api/props#アクセシビリティ)にあります。
+
 状態クラスの一覧(公開契約)は [SpreadsheetGrid props の「スタイリング用の状態クラス」](/docs/api/props#スタイリング用の状態クラス公開契約)を参照してください。
+
+## よく書く操作
+
+| 操作 | 書き方 |
+| --- | --- |
+| 貼り付け | グリッドは paste イベントの `clipboardData` を読みます。user-event なら、セルを押してから `await user.paste('a\tb\nc\td')`(`user.keyboard('{Control>}v{/Control}')` では貼り付きません)。fireEvent なら `fireEvent.paste(shell, { clipboardData: { getData: () => 'a\tb' } })`(`shell` は `.ssg-shell`)。 |
+| コピー | グリッドは `navigator.clipboard.writeText` で書きます。user-event の `userEvent.setup()` はクリップボードを差し替えるので、`Ctrl+C` の後に `await navigator.clipboard.readText()` で中身を確かめられます。user-event を使わないときは `navigator.clipboard` を `{ writeText: vi.fn() }` などに差し替えます。 |
+| 範囲選択 | jsdom には座標が無いので、ポインタのドラッグでは正しい範囲になりません。`Shift+矢印` / `Shift+クリック`、またはハンドルの `selectRange` を使います。 |
+| 確定・取り消しの後 | 確定(`Enter` / `Tab`)の後のアクティブセルの移動と、次の編集を受け付けるようになるのは、その後のマイクロタスクです。fireEvent で同期に続けて書くときは、間に `await act(async () => {})` を挟みます(結果を確かめるだけなら `waitFor` でも構いません)。 |
+| date エディタ | ネイティブの `<input type="date">` なので、`fireEvent.change(input, { target: { value: '2026-11-09' } })` で値を入れます(jsdom の一般的な制約)。 |
+| ハンドルでセルを選んだ後のキー操作 | `selectCell` / `setActiveCell` はフォーカスを移しません。続けてキーを送るときは、ハンドルの `focus()` を呼ぶか、セルを押します。 |
+
+## Jest で使うとき
+
+React 版は CommonJS の入口も持つので、Jest でもそのまま読み込めます。CSS の import は Jest が読めないため、`moduleNameMapper` で読み替えます。
+
+```js
+// jest.config.js
+module.exports = {
+  testEnvironment: 'jsdom',
+  moduleNameMapper: { '\\.css$': 'identity-obj-proxy' },
+};
+```
 
 ## ポップオーバーを開くテスト
 

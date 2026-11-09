@@ -9,7 +9,8 @@
   - shadcn/ui の変数には目印の属性が無いため、読み込んだページのすべてのグリッドに効きます(shadcn/ui の変数が
     無いページで読み込むと色が抜けます)。
   - shadcn/ui には成功 / 注意の色の変数が無いため、保存できた印とメモの印は Tailwind の green-600 / amber-500 です。
-  - ライト / ダーク: <html> の .dark(next-themes の resolvedTheme など)に合わせて、グリッドの theme prop に 'light' / 'dark' を渡します。
+  - ライト / ダーク: グリッドの theme prop に 'class' を渡します(<html> の .dark を CSS で見るので、サーバーの描画から
+    正しい色になります)。next-themes の resolvedTheme などに合わせて 'light' / 'dark' を渡しても動きます。
   - 確認した版: shadcn 4.22(Tailwind CSS v4)。
   - 色を決めるのは下の「入力」(--ssg-ds-*。このファイルの中だけで使う中継の変数)だけで、そこからグリッドの
     トークン(--ssg-*)を決める「配分」はどのデザインシステムのテーマでも同じです(themes/*.css で共通)。

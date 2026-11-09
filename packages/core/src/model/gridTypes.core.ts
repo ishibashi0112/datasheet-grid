@@ -1154,8 +1154,9 @@ export type GridColumn<T, F extends GridFrameworkTypes = GridFrameworkTypes> = {
    * 固定列の合計)を flex 比で配分し `minWidth`/`maxWidth` でクランプ。配分した幅は整数
    * px(端数は切り捨てて次の列へ回すため、合計が利用可能幅をはみ出さない)。
    * コンテナ追従でリアクティブに伸縮。手動リサイズで固定 px へ変化(その列の `flex` / `pinned` /
-   * `width` 指定が変わるか列のリセットまで固定 → 以後 flex 復帰)。pinned 列では無視。
-   * 詳細は下記「flex と autoSize」節。
+   * `width` 指定が変わるか列のリセットまで固定 → 以後 flex 復帰)。pinned 列では無視。`flex`
+   * の列では `width` は使わない(最小の幅にもならず、余り幅が無いと既定の下限 50px まで縮む)。
+   * 縮ませたくない幅は `minWidth` で書く。詳細は下記「flex と autoSize」節。
    */
   flex?: number;
   // 追加(①): この列のリサイズ可否です。未指定時はグリッドの enableColumnResize を継承します
@@ -1241,7 +1242,8 @@ export type GridColumn<T, F extends GridFrameworkTypes = GridFrameworkTypes> = {
    * 有効時はグループ元列が表示から外れ、先頭に自動グループ列(ツリー表示)が注入される。**clientSide
    * 限定**(serverSide では無視 + 開発時警告)。列のどれかに `rowGroup` を書いている(`false` を含む)
    * 表では、列メニューに「この列でグループ化」/「グループ化を外す」が出る(`onColumnsChange`
-   * が要る。集計のある列には出ない)。詳細は「行グルーピング + 集計」節。
+   * が要る。`rowGroup` を書いた列だけでなく、集計のある列と最後のデータ列を除くすべての列に出る)。
+   * 詳細は「行グルーピング + 集計」節。
    */
   rowGroup?: boolean;
   // 追加(grouping ①): グルーピング時のこの列の集計です。組み込み(GridAggFuncName)または
@@ -1407,7 +1409,14 @@ export type GridColumn<T, F extends GridFrameworkTypes = GridFrameworkTypes> = {
    * @defaultValue ビルトイン 3 種
    */
   dateFilterPresets?: false | readonly DateFilterPresetOption[];
-  /** カスタムフィルター述語。 */
+  /**
+   * カスタムフィルター述語。`filterValue` は入力した値そのものではなく、
+   * その列のフィルターの記述子(`ColumnFilterValue`)。`filterType: 'custom'` なら
+   * `{ kind: 'custom', value: 入力した文字列 }`、ほかの種別ならその種別の形(「列フィルターの wire
+   * format」と同じ)。指定するとどの `filterType` でも組み込みの判定より優先する。
+   * `filterType: 'custom'` のフィルター画面は文字の入力欄 1 つ(text と同じ画面で、
+   * 文言も「部分一致で絞り込み」のまま)で、`filterFn` が無ければ部分一致で絞る。
+   */
   filterFn?: (row: T, filterValue: unknown) => boolean;
   // 追加(editor 基盤): セルエディタ種別です。未指定は text(プレーンテキスト編集)。
   //   編集可否は従来どおり editable / readOnly / canEditCell で判定されます(editor は種別のみ)。
@@ -2695,6 +2704,7 @@ export type SpreadsheetGridHandle<T> = {
    * で可視化も行う(固定列のセルでも縦方向へスクロールする)。中央ペイン(固定でない列)のセルは、
    * 指定が無くてもアクティブセルの位置が変わると見える位置までスクロールされる(クリック /
    * キー操作と同じ動き)。ラベル行(`labelRow`)を指したときは、下のデータ行(無ければ上)へ寄せる。
+   * フォーカスは移さない(続けてキー操作や入力を受けたいときは `focus()` も呼ぶ)。
    */
   setActiveCell: (
     cell: CellCoord | null,
@@ -2706,7 +2716,8 @@ export type SpreadsheetGridHandle<T> = {
   // 単一セルを選択(クリック相当)。scrollIntoView:true で可視化も行います。
   /**
    * 単一セル選択(クリック相当)。スクロールの扱いと、ラベル行を指したときの扱いは `setActiveCell`
-   * と同じ。
+   * と同じ。クリックと違ってフォーカスは移さない(続けてキー操作や入力を受けたいときは `focus()`
+   * も呼ぶ)。
    */
   selectCell: (
     viewRowIndex: number,
@@ -3540,7 +3551,9 @@ export type SpreadsheetGridProps<T, F extends GridFrameworkTypes = GridFramework
    * 表示は `valueFormatter` で整形)。セル編集 / 貼り付け / クリア / undo・redo / 外部からの `rows`
    * 差し替えのすべてが対象。clientSide 専用(SSRM では無効)。描画中のセルだけが対象で、
    * 変わったセルが 200 を超えるとフラッシュのみ、2,000 を超える・行の挿入 / 削除 /
-   * 並べ替えを伴う・参照の変わった行が 5,000 を超える(データの読み直し)ときは何もしない。
+   * 並べ替えを伴う・参照の変わった行が 5,000 を超える(データの読み直し)ときは何もしない。1
+   * 秒に何度も `rows` を差し替える画面では主スレッドの負荷が大きい(250ms
+   * ごとに多くのセルが変わる表で付けないときの約 2 倍)ので、付けないことを勧める。
    *
    * @defaultValue `false`
    */
@@ -4242,6 +4255,10 @@ export type SpreadsheetGridProps<T, F extends GridFrameworkTypes = GridFramework
    * レンダー毎に新しいオブジェクトを渡してもよい(内容の署名で memo)。基底 class
    * は未レイヤー・特異度 (0,1,0)
    * のため同特異度のクラスは読み込み順で決まる(確実な上書きは連結セレクタか `style.layer.css`)。
+   * Tailwind CSS v4 のユーティリティはレイヤー(`@layer utilities`)の中にあるので、
+   * 読み込み順に関係なく `style.css`(未レイヤー)に負けて効かない。`style.layer.css` +
+   * レイヤー順の宣言(`@layer theme, base, ssg-base, components, utilities;`)にするか、`!`
+   * を付ける。
    */
   classNames?: GridClassNames<F>;
   // 追加(UI CSS移行): 行ごとの追加 className を返すコールバック(条件付き行スタイル)。

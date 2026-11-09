@@ -30,7 +30,7 @@ description: SpreadsheetGridProps<T> の全 prop と既定値
 | `animateRows` | `boolean` | `true` | 行の並び替えアニメ。ソート / フィルター / グループ開閉 / `rows` の差し替えで、描画中の行が新しい位置へ滑り(`--ssg-motion-base`)、スクロールなしで現れた行は上から順にフェードインする。スクロール中の仮想化による出入りは対象外。auto-height 行と serverSide(SSRM)では自動で無効。`motion` の実効値が `'off'` なら動かない。詳細は「モーション」節。 |
 | `showCopyRange` | `boolean` | `true` | `Ctrl/Cmd+C` のあと、コピー元の範囲に Excel と同じ「動く点線」を残す(`.ssg-copy-range-overlay`。`motion` が `'off'` なら静的な点線)。`Esc` と編集開始で消え、ソート / フィルター / グループ開閉 / 行数 / 列の変化で描画しなくなる(貼り付けでは残る)。`false` で点線を出さない(コピー自体は従来どおり)。 |
 | `hoverHighlight` | `'row' \| 'cross'` | `'row'` | ホバーの強調範囲。`'row'` はポインタの行だけ(従来)。`'cross'` はその行に加えて、ポインタの列(列ヘッダー + 同じ列の他セルに薄い帯 `.ssg-col-hover-overlay`)と行番号も染めるクロスヘア表示。色はトークン `--ssg-col-hover-bg`(帯)/ `--ssg-select-bg`(ヘッダー・行番号)。横に長い表で「この値はどの列か」を視線移動なしで答えるため。 |
-| `highlightChanges` | `boolean` | `false` | `rows` が変わったとき、値が変わったセルを一瞬アクセント色で光らせ(`.ssg-body-cell--changed`、`--ssg-motion-slow`)、数値の既定セルは旧値から新値へカウントアップする(`--ssg-motion-base`。表示は `valueFormatter` で整形)。セル編集 / 貼り付け / クリア / undo・redo / 外部からの `rows` 差し替えのすべてが対象。clientSide 専用(SSRM では無効)。描画中のセルだけが対象で、変わったセルが 200 を超えるとフラッシュのみ、2,000 を超える・行の挿入 / 削除 / 並べ替えを伴う・参照の変わった行が 5,000 を超える(データの読み直し)ときは何もしない。 |
+| `highlightChanges` | `boolean` | `false` | `rows` が変わったとき、値が変わったセルを一瞬アクセント色で光らせ(`.ssg-body-cell--changed`、`--ssg-motion-slow`)、数値の既定セルは旧値から新値へカウントアップする(`--ssg-motion-base`。表示は `valueFormatter` で整形)。セル編集 / 貼り付け / クリア / undo・redo / 外部からの `rows` 差し替えのすべてが対象。clientSide 専用(SSRM では無効)。描画中のセルだけが対象で、変わったセルが 200 を超えるとフラッシュのみ、2,000 を超える・行の挿入 / 削除 / 並べ替えを伴う・参照の変わった行が 5,000 を超える(データの読み直し)ときは何もしない。1 秒に何度も `rows` を差し替える画面では主スレッドの負荷が大きい(250ms ごとに多くのセルが変わる表で付けないときの約 2 倍)ので、付けないことを勧める。 |
 | `showSaveStatus` | `boolean` | `true` | serverSide の書き戻し(`dataSource.updateRows`)で、確定したセルに保存状態の印を出す。保存中は斜線 + 小さなスピナー(`[data-ssg-save="pending"]`)、成功は ✓ バッジを 1.3 秒(`"ok"`)、失敗は揺れ + 赤いフラッシュ + ✕ バッジ(`"failed"`)とセル下のチップ(文言は `localeText` の `saveFailedCell`。既定「保存に失敗しました。値を戻しました」。4 秒 / スクロールで消える)。既存の保存失敗バー(`onServerSideWriteError`)とは独立に出る。描画中のセルだけが対象(保存中の印は、スクロールで外れて戻ったセルにも付き直す)。clientSide では何も出ない。 |
 | `rowDragMotion` | `'ghost' \| 'live'` | `'ghost'` | 行ドラッグ並べ替え(`enableRowDrag`)の表示方式。`'ghost'` は従来(ゴースト + ガイド線、ドロップ後に新しい位置へスライド)。`'live'` は掴んだ行がポインタに追従し、通る先の行がその場で上下へ退避する(ドロップ先が「隙間」として見える。枠外で離しても直前の位置へ確定、`Esc` で元へ戻る。ウィンドウからフォーカスが外れたときも元へ戻る)。`motion` が `'off'` のときは `'ghost'` と同じ。 |
 | `columnDragMotion` | `'ghost' \| 'live'` | `'ghost'` | 列ヘッダーのドラッグ並べ替え(`onColumnsChange` 指定時)の表示方式。`'ghost'` は従来(ゴースト + 縦線、ドロップ後に新しい位置へスライド)。`'live'` は同じペイン内では掴んだ列(ヘッダー + 描画中のセル)がポインタに追従し、通る先の列がその場で左右へ退避する(ドロップ先が「隙間」として見える。枠外で離しても直前の位置へ確定、`Esc` で元へ戻る。ウィンドウからフォーカスが外れたときも元へ戻る)。固定列のペインをまたいで移す(固定の変更)ときは、掴んだ列の複製(浮かぶ列)がポインタに付いてきて元のペインは列が抜けた分だけ詰まり、移動先は縦線で示す(浮かぶ列の見出しに、固定ペインへはピン / 中央へは移動の矢印のアイコン。浮かぶ列は表の枠の内側に収まり、離すと新しい位置へ滑り込む)。`motion` が `'off'` のときは `'ghost'` と同じ。 |
@@ -92,7 +92,7 @@ description: SpreadsheetGridProps<T> の全 prop と既定値
 | `renderBottomBar` | `(ctx: SpreadsheetGridSlotContext<T>) => ReactNode` | 内蔵ボトムバー | 下部バーの差し替え。未指定時は内蔵ステータスバー。`showBottomBar=false` 時は本指定に関わらず描画されない。 |
 | `className` | `string` | — | ルート要素の class。 |
 | `style` | `CSSProperties` | — | ルート要素(`.ssg-root`)のインライン style。`classNames.root` の style とマージされ、こちらが後勝ち。 |
-| `classNames` | `GridClassNames` | — | パーツ別の追加スロット。各値は `GridSlotProps`(`string \| { className?, style? }`)で、StyleX の `stylex.props(...)` の戻り値をそのまま渡せる。全 25 スロット配線済み(一覧と規則は「パーツ別スロット」節)。レンダー毎に新しいオブジェクトを渡してもよい(内容の署名で memo)。基底 class は未レイヤー・特異度 (0,1,0)のため同特異度のクラスは読み込み順で決まる(確実な上書きは連結セレクタか `style.layer.css`)。 |
+| `classNames` | `GridClassNames` | — | パーツ別の追加スロット。各値は `GridSlotProps`(`string \| { className?, style? }`)で、StyleX の `stylex.props(...)` の戻り値をそのまま渡せる。全 25 スロット配線済み(一覧と規則は「パーツ別スロット」節)。レンダー毎に新しいオブジェクトを渡してもよい(内容の署名で memo)。基底 class は未レイヤー・特異度 (0,1,0)のため同特異度のクラスは読み込み順で決まる(確実な上書きは連結セレクタか `style.layer.css`)。Tailwind CSS v4 のユーティリティはレイヤー(`@layer utilities`)の中にあるので、読み込み順に関係なく `style.css`(未レイヤー)に負けて効かない。`style.layer.css` + レイヤー順の宣言(`@layer theme, base, ssg-base, components, utilities;`)にするか、`!` を付ける。 |
 | `getRowClassName` | `(row: T, rowIndex: number, ctx: RowStyleContext<T>) => GridSlotProps \| undefined` | — | 行ごとの追加 class(または `{ className, style }`)。行コンテナ + 行ヘッダー「#」セル + 各データセルに付与され、Tailwind / StyleX での行ハイライトに使える。`style` はインラインで付与され、座標 / 寸法はグリッドが後勝ち(返した style は内容比較で memo される)。第 3 引数 `ctx` は `{ row, rowIndex, sourceRowIndex, rowKey, isSelected }`(「補助型」節参照)。既存の 2 引数関数もそのまま動く(後方互換)。グループ行は対象外。class と style は行と各セルの両方に付くので、`opacity` / `filter` のように重なる指定は style で返さず、class を返して `.ssg-body-row.<class>` で行だけに当てる(style の `opacity: 0.5` は 0.25 になる)。 |
 | `onStateChange` | `(state: GridState) => void` | — | 永続スライス(手動リサイズ幅 / フィルター / ソート)が**実際に変化したとき**に最新 `GridState` を渡して呼ばれる。保存タイミングの signal(例: localStorage 自動保存)。発火規約は「状態の保存 / 復元」節を参照。 |
 | `initialState` | `Omit<GridStatePatch, 'columns'>` | — | 状態(列幅 / フィルター / ソート)の初期値。**最初の 1 回(マウント時)だけ**使い、後から変えても今の状態は変わらない(変えるときは `applyState`)。最初の描画・サーバーの描画(SSR)・serverSide の最初の `getRows` から効き(clientSide で 5 万行を超える表のグローバルフィルター `filters.globalText` だけは、時間を分けて評価するので最初の描画の少し後に効く)、`getState()` もその値を返す。マウント時は `onStateChange` / `onFiltersChange` / `onSortChange` を呼ばない。`getState()` の値をそのまま渡せる(列メタの `columns` は使わない。列の並び / 表示 / 固定は `columns` prop で決める。保存した値から戻すときは `restoreColumnsFromState(columns, saved)` で作った配列を渡す。並び / 表示 / 固定が `columns` prop と見た目で違うときだけ開発時に警告)。今の `columns` に無い列の幅 / フィルター / ソートは捨てる(開発時に警告)。URL のクエリや保存した状態から戻すときに使う。 |
@@ -555,7 +555,7 @@ renderBottomBar={(ctx) => {
 
 データセルのクリック / ダブルクリック / アクティブセルの変化を受け取る通知口。3 つとも省略可で、指定しなければ従来どおり(グリッドの既定の動作は変わらない)。
 
-- **渡るもの**: `GridCellRef<T> = { row, rowKey, rowIndex, sourceRowIndex, column, columnKey, colIndex, value }`。行は index ではなく**行データ `row` と `rowKey` を主に使う**(`rowIndex` はフィルター / ソート後の表示位置 = `handle.selectCell` と同じ空間、`sourceRowIndex` は元 `rows` の index、`colIndex` は画面の列の並び = `handle.selectCell` と同じ空間で、行ドラッグのハンドル列・展開トグル列・自動グループ列も数える。列は `columnKey` で見分け、位置が要るときは `handle.getColIndex(columnKey)`)。`value` はセルの生値(`getValue` 指定列はその戻り値。`valueFormatter` 適用前)。クリック / ダブルクリックには `event`(DOM 標準の `MouseEvent`。React の合成イベントではない)が付く。修飾キー(`ctrlKey` / `shiftKey` / `metaKey` / `altKey`)はここから読む。
+- **渡るもの**: `GridCellRef<T> = { row, rowKey, rowIndex, sourceRowIndex, column, columnKey, colIndex, value }`。行は index ではなく**行データ `row` と `rowKey` を主に使う**(`rowIndex` はフィルター / ソート後の表示位置 = `handle.selectCell` と同じ空間、`sourceRowIndex` は元 `rows` の index、`colIndex` は画面の列の並び = `handle.selectCell` と同じ空間で、行ドラッグのハンドル列・展開トグル列・自動グループ列も数える。列は `columnKey` で見分け、位置が要るときは `handle.getColIndex(columnKey)`)。`value` はセルの生値(`getValue` 指定列はその戻り値。`valueFormatter` 適用前)。クリック / ダブルクリックには `event`(DOM 標準の `MouseEvent`。React の合成イベントではない)が付く。修飾キー(`ctrlKey` / `shiftKey` / `metaKey` / `altKey`)はここから読む。`row` / `value` は通知した時点の写しで、同じセルのまま編集しても `onActiveCellChange` は呼ばれない(下の「同じセル」)。編集後の値を出し続けるパネルは、`rowKey` を覚えておき今の `rows` から引き直す。
 - **対象**: データ行 × 利用側の列のセルだけ。列ヘッダー / 行番号「#」/ グループ行 / ラベル行 / 展開行の帯 / SSRM の未ロード行(スケルトン)/ 合成列(展開トグル列・行ドラッグハンドル列・自動グループ列)ではクリック / ダブルクリックを通知せず、アクティブセルがこれらへ移ったときの `onActiveCellChange` は `null`。
 - **クリックの判定**: ブラウザの `click` イベントに従う。左ボタンのみで、押したセルと離したセルが違う(範囲選択のドラッグ)ときは呼ばれない。セル内に置いた自前の要素のクリックもそのセルのクリックとして届くため、セルの通知に含めたくない要素は自分で `event.stopPropagation()` する。
 - **順番**: マウスで別のセルをクリックすると `onActiveCellChange`(pointerdown でアクティブセルが移った分)→ `onCellClick` の順。ダブルクリックはブラウザの仕様どおり `onCellClick` × 2 → `onCellDoubleClick` の順。
@@ -587,8 +587,10 @@ renderBottomBar={(ctx) => {
   }}
 />
 
-// キー操作での移動も含めて、アクティブセルの行を詳細パネルへ出す。
-<SpreadsheetGrid<Row> rows={rows} columns={columns} onActiveCellChange={(cell) => setDetail(cell?.row ?? null)} />
+// キー操作での移動も含めて、アクティブセルの行を詳細パネルへ出す(編集後の値も出すので rowKey で引き直す)。
+const [currentKey, setCurrentKey] = useState<GridRowKey | null>(null);
+const current = rows.find((row) => row.id === currentKey) ?? null;
+<SpreadsheetGrid<Row> rows={rows} columns={columns} rowKeyGetter={(row) => row.id} onActiveCellChange={(cell) => setCurrentKey(cell?.rowKey ?? null)} />
 ```
 
 ### コンテキストメニュー(`enableContextMenu` / `getContextMenuItems`)
@@ -605,6 +607,7 @@ renderBottomBar={(ctx) => {
 
 - **ヘッダー右クリックは対象外**(列メニュー `enableColumnMenu` が担当)。本メニューはボディの **データセル**と **行NO ガター**専用。
 - **SSRM 未ロード行**(まだ取得できていない行)の上では開かない(標準メニューになる)。
+- キーボードの `Shift+F10` / コンテキストメニューキーでは開かない(フォーカスはセルではなくグリッドにあるため、ブラウザ標準のメニューになる)。キーボードだけで使えるようにしたい操作は、ツールバーのボタンや自前のショートカットからも呼べるようにする。
 - uncontrolled のみ。右クリックしても**セル選択は変化しない**(対象セル/行の情報は `params` で受け取る)。
 - close 契機: 項目選択 / 外側クリック / Escape / Tab / スクロール。
 - キーボード: 開いている間、`↓` / `↑` で項目の間を移る(使えない項目は飛ばし、端で反対側へ回る。開いた直後は `↓` で先頭、`↑` で末尾)。`Home` / `End` で先頭 / 末尾、`Enter` / `Space` で実行。開いている間は後ろのグリッドをキーでスクロールしない。`custom` 項目の中の入力欄にフォーカスがあるときは、矢印キーなどはその入力欄のまま。
@@ -766,6 +769,7 @@ const gridRef = useRef<SpreadsheetGridHandle<Row>>(null);
 - **状態**: 展開状態は `rowKeyGetter` の行キーで保持されるため、ソート / フィルター / 行の追加削除を跨いで同じ行に追従します(フィルターで除外中の行は帯が出ず、復帰すると再表示)。展開中の行を `rows` から消すと、そのキーは展開中から外れて `onExpandedDetailRowKeysChange` が呼ばれる(同じキーの行を足し直しても閉じたまま。serverSide は対象外)。`rows` を読み込む前に `setDetailRowExpanded()` で戻したキーは、その行が来るまで残る。UI 状態で undo/redo・`getState()` の対象外。永続化は `onExpandedDetailRowKeysChange` + `setDetailRowExpanded()` で行います。
 - **マウント**: カードは仮想化の描画窓に載っている間だけマウントされます(スクロールアウトでアンマウント、戻ると再マウント)。カード内で保持したい状態は消費側で `rowKey` をキーに持ってください。
 - **イベント境界**: カード内のキーボード / クリップボード / 右クリック / ダブルクリック / ドラッグ開始はグリッド本体へ伝播しません(カード内の input で矢印キーを押してもアクティブセルは動かない)。カード内にフォーカスがある間は、グリッド側のフォーカス復帰(編集確定・popover close 後)がフォーカスを奪いません。**カード内に別の `SpreadsheetGrid` をネスト**しても、外側の自動高さ実測 / 列ヘッダー検索は内側のセルを対象にしません。
+- **入れ子のグリッドから親の行へ書き戻す**: カードの中のグリッドの編集を外側の `rows` へ反映するとき、親の `setRows` で直接差し替えると、外側のグリッドは外からの差し替えとして「元に戻す」の履歴を消します。外側の履歴を残したいときは、外側のハンドルの `applyRows(next)` で渡します(外側の履歴に積まれ、外側の `Ctrl/Cmd+Z` でその書き戻しも戻せる)。内側のグリッドの履歴は内側の編集だけを持ちます。
 - **開閉の操作**: トグル列の ▸ / ▾ を押すと開閉します(押してもアクティブセルと選択は動かず、`onActiveCellChange` も呼ばれません)。キーボードでは、アクティブセルをトグル列へ移して(行の先頭のデータ列から `←`)`Enter` / `Space` で開閉します(開閉できない行では何もしない)。命令的 API(`setDetailRowExpanded` ほか)からも操作できます。
 - **`renderCell` からの操作(`ctx.detail`)**: `detailRow` 有効時、`CellRenderContext` に `detail: { expanded, expandable, toggle(), setExpanded(bool) }` が入ります(無効時は `undefined`)。`showToggleColumn: false` と組み合わせて、商品名セルの横などにトグルを自前配置できます。
 - **選択 / アクティブセル**: 帯はセルではないため選択・アクティブセルの対象外です。帯を跨ぐ範囲選択のハイライトは帯を避けて分割描画されます。
@@ -958,13 +962,13 @@ const [rows, setRows] = useState(initialRows);
 // find={{ shortcut: false, caseSensitive: true }}
 ```
 
-- **対象**: ビュー行(フィルター / ソート適用後)× 可視列の**表示文字列**(`valueFormatter` 適用後 = 画面に見えている文字)。`renderCell` の列も表示文字列(`valueFormatter` または `String(value)`)で検索されるが、`<mark>` の強調は既定セルだけ(カレントへの移動は同じ)。`renderCell` の無い列のうち、チェックボックスのエディタの列と、データバーの `showValue: false` の列(画面に文字が出ない列)は対象外。
-- **走査**: 時間分割(`logic/chunkedLoop`。1 チャンク 10ms)で入力・描画を止めない。走査中は件数が「検索中…」になる。クエリ / 大文字小文字 / `rows`(編集・差し替え)/ ソート / フィルター / 列が変わると再走査し、同じヒットが残っていればカレントを保つ(移動はしない)。
+- **対象**: ビュー行(フィルター / ソート適用後)× 可視列の**表示文字列**(`valueFormatter` 適用後 = 画面に見えている文字)。`renderCell` の列も表示文字列(`valueFormatter` または `String(value)`)で検索されるが、`<mark>` の強調は既定セルだけ(カレントへの移動は同じ)。`renderCell` の無い列のうち、チェックボックスのエディタの列と、データバーの `showValue: false` の列(画面に文字が出ない列)は対象外。折りたたんだグループの中の行、グループ化で隠れたグループ元の列(グループ行のラベルにだけ出る値)、ラベル行(`labelRow`)の文字も探さない(行を表示しているときだけ探す。グループ元の列の値はグローバルフィルターなら絞り込める)。
+- **走査**: 時間分割(1 チャンク 10ms)で入力・描画を止めない。走査中は件数が「検索中…」になる。クエリ / 大文字小文字 / `rows`(編集・差し替え)/ ソート / フィルター / 列が変わると再走査し、同じヒットが残っていればカレントを保つ(移動はしない)。
 - **順送り**: `Enter` / `↓` で次、`Shift+Enter` / `↑` で前(循環)。カレントのヒットへはクリック相当の単一選択 + 可視化スクロール(`selectCell(row, col, { scrollIntoView: true })` と同じ)。クエリを打ち直すと先頭のヒットへ移動する。
 - **閉じる**: `Esc` / × でクエリとヒットが消え、フォーカスはグリッド本体へ戻る。`find` を `false` にすると開いていても閉じる。
 - **ヒット数の上限**: 10,000 件で打ち切り(件数表示に `+`)。SSRM は**ロード済み範囲だけ**が対象(未ロード行は読み飛ばす)。
 - **スタイル**: ヒットは `.ssg-find-mark`、カレントは `.ssg-find-mark--current`(トークン `--ssg-find-mark-bg` / `--ssg-find-mark-current-bg`)。バーは `classNames.findBar`。
-- **ショートカット**: `Ctrl/Cmd+F` の横取りはグリッド本体にフォーカスがあるときだけ(フィルター入力 / エディタ内では効かない)。`shortcut: false` でブラウザ標準の検索に譲り、`handle.openFind()` だけで開く運用もできる。
+- **ショートカット**: `Ctrl/Cmd+F` の横取りはグリッド本体にフォーカスがあるときだけ(フィルター入力 / エディタ内では効かない)。`shortcut: false` でブラウザ標準の検索に譲り、`handle.openFind()` だけで開く運用もできる。スマートフォンなど `Ctrl/Cmd+F` を押せない環境では検索バーを開く手段が無いので、ツールバーなどに `handle.openFind()` を呼ぶボタンを置く。
 
 ### キーボード操作
 
@@ -1215,6 +1219,7 @@ function Grid(props: SpreadsheetGridProps<Row>) {
 
 - 下の表の名前が公開契約で、消す・改名する・意味を変えるのは破壊的変更。既定値(色・寸法)の調整は minor で行うことがある(CHANGELOG に書く)。
 - 表に無い `--ssg-*`(要素ごとに内部で使う変数や、`themes/*.css` の中継の `--ssg-ds-*`)は内部。
+- 既定の色のうち、パネルの補足の文字(`--ssg-panel-text-faint` / `--ssg-panel-text-muted`)と条件付き書式のチップの `--ssg-cf-critical` は WCAG AA の 4.5:1 に届かない。基準に合わせるときはライトで `--ssg-panel-text-muted: #475569` / `--ssg-panel-text-faint: #64748b` / `--ssg-cf-critical: #b91c1c`、ダーク(`.ssg-theme-dark`)で `--ssg-panel-text-faint: #909296` に上書きする(既定の色は見た目が変わるので変えていない)。
 - `style.css` にトークンを足したらこの表にも足す(`packages/react/src/cssContract.test.ts` が検査する)。
 
 | 部分 | トークン |

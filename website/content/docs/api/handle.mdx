@@ -40,9 +40,9 @@ const gridRef = useRef<SpreadsheetGridHandle<Row>>(null);
 | メソッド | 説明 |
 | --- | --- |
 | `getActiveCell()` | 現在のアクティブセル `{ row, col }`(なければ `null`)。`selectCell` / `setActiveCell` / `applyState` の直後に同じ処理の中で読んでも、変えた後の値を返す(選択・行選択・展開行の読み取りも同じ)。 |
-| `setActiveCell(cell \| null, { scrollIntoView? })` | アクティブセル設定(`null` で解除)。`scrollIntoView: true` で可視化も行う(固定列のセルでも縦方向へスクロールする)。中央ペイン(固定でない列)のセルは、指定が無くてもアクティブセルの位置が変わると見える位置までスクロールされる(クリック / キー操作と同じ動き)。ラベル行(`labelRow`)を指したときは、下のデータ行(無ければ上)へ寄せる。 |
+| `setActiveCell(cell \| null, { scrollIntoView? })` | アクティブセル設定(`null` で解除)。`scrollIntoView: true` で可視化も行う(固定列のセルでも縦方向へスクロールする)。中央ペイン(固定でない列)のセルは、指定が無くてもアクティブセルの位置が変わると見える位置までスクロールされる(クリック / キー操作と同じ動き)。ラベル行(`labelRow`)を指したときは、下のデータ行(無ければ上)へ寄せる。フォーカスは移さない(続けてキー操作や入力を受けたいときは `focus()` も呼ぶ)。 |
 | `getSelection()` | 現在の選択状態(`GridSelection`)。 |
-| `selectCell(viewRowIndex, colIndex, { scrollIntoView? })` | 単一セル選択(クリック相当)。スクロールの扱いと、ラベル行を指したときの扱いは `setActiveCell` と同じ。 |
+| `selectCell(viewRowIndex, colIndex, { scrollIntoView? })` | 単一セル選択(クリック相当)。スクロールの扱いと、ラベル行を指したときの扱いは `setActiveCell` と同じ。クリックと違ってフォーカスは移さない(続けてキー操作や入力を受けたいときは `focus()` も呼ぶ)。 |
 | `selectRange(range, { scrollIntoView? })` | セル範囲選択(ドラッグ相当)。アンカーは `range.start`。`range.start` がラベル行のときは、範囲はそのままで、アクティブセルだけを範囲の向き(無ければ逆)のデータ行へ寄せる。範囲がラベル行だけのときは、寄せたデータ行の同じ列の範囲にする。 |
 | `clearSelection()` | 選択解除。 |
 | `getSelectedRows()` | 選択に交差する行(distinct)を返す。serverSide はロード済み行のみ。 |
@@ -308,6 +308,8 @@ const buffer = await writeXlsx({
 マウントの時点で戻す状態が分かっているときは、`applyState` の代わりに prop の `initialState` に渡す(最初の描画・サーバーの描画・serverSide の最初の `getRows` から効く。`columns` は使わない)。列の並び / 表示 / 固定(`columns`)も戻すときは、`restoreColumnsFromState(columns, saved)` で保存した列メタを列定義へ当てた配列を作り、`columns` prop に渡す(下の例。`applyState` と同じ規則で、保存に無い列は末尾、今の列に無い保存の列は捨てる。幅は `initialState` の `columnWidths` で戻すので列定義へは焼き込まない。保存した `columns` が無い / 読めないときは渡した配列をそのまま返す。readonly の配列も渡せる)。今の列に無い列の幅 / フィルター / ソートは捨てるが、マウント時は `onStateChange` を呼ばないので保存した値には残り、開くたびに開発時の警告が出る。消すときは、マウントの後に `getState()` の値で保存し直す。
 
 `GridState`: `{ version, columnWidths, filters, sort, columns? }`。`applyState` の引数の `GridStatePatch` は、その各フィールドを省略できる形(`filters` は `{ globalText?, columnFilters? }`)で、`getState()` の値はそのまま渡せる(全部のフィールドがあるので全部置き換わる)。`version` はマイグレーション用(現行 `2`)。`columns` は **列メタ(可視 / 順序 / ピン)のスナップショット**(`GridColumnState[]` = `{ key, visible?, pinned? }`。配列順 = 列順)で、`getState()` は常に出力し、`applyState()` は **`onColumnsChange` が指定されているときだけ** `columns` prop へ反映する(列順 / ピン / 可視も復元される点に注意。v1 形式 = `columns` 無しの保存値は列メタを触らない後方互換)。復元した `columns` 配列は固定列ごと(左固定 → 中央 → 右固定)の順に並べ直される(画面上の列順は同じ。列のドラッグ並べ替えと同じ規則で、2 回目以降の `applyState` では順序は変わらない)。`flex` / 列定義そのものは含めない。`activeCell` / `selection` などの一時 UI も含めない。`columnWidths` は**手動リサイズ / autoSize / `applyState` で幅が決まった列だけ**を持つ(それ以外の列は `width` / `flex` で描画され、エントリを持たない)。`columns` を同じ内容の別参照で渡し直しても消えず、列が削除されたとき・その列の `flex` / `pinned` 指定が変わったとき・`width` がエントリと異なる値に指定し直されたとき・列のリセット時にだけ捨てられる。そのため `applyState(getState())` は冪等で、保存値に既定幅が焼き込まれることもない(後からコードで `width` を変えれば、手動リサイズしていない列には反映される)。`custom` フィルターの `value`(`unknown`)は深いコピーをしないため、シリアライズ可能性は consumer 責務。`applyState` は壊れた / 部分的な入力にも耐える(非数値の幅・`kind` 無し / 未知 `kind` / 配列であるべき `values` が欠けた列フィルター・不正な `direction` は捨てる。`columns` に同じ `key` が重なっていたら最初の 1 つだけ使う)。
+
+行のグループ化(列の `rowGroup`)とグループの開閉は `GridState` に入らない(`getState()` / `initialState` / `restoreColumnsFromState` では戻らない)。画面からのグループ化も保存したいときは、`onColumnsChange` で受け取った列定義の `rowGroup` を自分で保存し、次に開くときの `columns` に書く(例: `rowGroup` が `true` の列キーの配列を保存し、`defaultColumns.map((c) => ({ ...c, rowGroup: keys.includes(c.key) }))`)。開閉はマウントのたびに既定(すべて開く)へ戻る。
 
 ```ts
 // 保存(任意の永続先へ)。
