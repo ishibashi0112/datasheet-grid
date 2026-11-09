@@ -11,7 +11,7 @@
 
 詳しい使い方は[ドキュメントサイト](https://datasheet-grid.vercel.app)と [API リファレンス](./packages/react/API_REFERENCE.md)を参照してください。
 
-## 未リリース
+## 1.0.0 — 2026-11-09
 
 最初の安定版です。ここからは、壊す変更を major でだけ出します。消すものは、その前の minor で非推奨にしてから消します。版の上げ方と公開範囲は[バージョンと互換性](https://datasheet-grid.vercel.app/docs/versioning)にあります。
 
