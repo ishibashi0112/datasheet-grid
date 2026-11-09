@@ -14,9 +14,9 @@ describe('createDateRolloverStore(監査 L-15)', () => {
 
   it('見張り中は深夜 0 時を過ぎたら基準日を差し替えて通知する', () => {
     const store = createDateRolloverStore();
+    store.update({ active: true });
     const listener = vi.fn();
     store.subscribe(listener);
-    store.update({ active: true });
     expect(store.getSnapshot()).toBe('2026-10-12');
     vi.advanceTimersByTime(60_000);
     expect(listener).not.toHaveBeenCalled();
@@ -35,7 +35,8 @@ describe('createDateRolloverStore(監査 L-15)', () => {
     store.update({ active: false });
     expect(vi.getTimerCount()).toBe(0);
     vi.advanceTimersByTime(2 * 24 * 60 * 60 * 1000);
-    expect(store.getSnapshot()).toBe('2026-10-12');
+    // 一度も見張っていない間は今日の日付を読まない(AP-06)。
+    expect(store.getSnapshot()).toBe('');
     store.update({ active: true });
     expect(store.getSnapshot()).toBe('2026-10-14');
     expect(vi.getTimerCount()).toBe(1);
@@ -83,6 +84,20 @@ describe('createDateRolloverStore(監査 L-15)', () => {
     expect(vi.getTimerCount()).toBe(1);
     vi.advanceTimersByTime(3 * 60 * 1000);
     expect(store.getSnapshot()).toBe('2026-10-13');
+    store.dispose();
+  });
+
+  // 追加(1.0.1 / 実アプリの総点検 AP-06): 作っただけでは現在時刻を読まない(描画中に作られるため。Next.js 16 の
+  //   cacheComponents では描画中の new Date() で `next build` が止まっていた)。
+  it('作っただけでは現在時刻を読まず、見張りを始めたときに初めて読む(AP-06)', () => {
+    const now = vi.fn(() => new Date(2026, 9, 12, 9, 0));
+    const store = createDateRolloverStore({ now });
+    expect(store.getSnapshot()).toBe('');
+    store.update({ active: false });
+    expect(now).not.toHaveBeenCalled();
+    store.update({ active: true });
+    expect(now).toHaveBeenCalled();
+    expect(store.getSnapshot()).toBe('2026-10-12');
     store.dispose();
   });
 });

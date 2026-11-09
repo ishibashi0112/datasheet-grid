@@ -948,11 +948,17 @@ export const filterOrderByColumns = <T,>(
   now?: Date,
 ): RowOrder => {
   const predicates: CompiledColumnFilterPredicate<T>[] = [];
-  const resolveNow = now ?? new Date();
+  // 変更(1.0.1 / 2026-11-09 実アプリの総点検 AP-06): 現在時刻は日付の条件があるときだけ読みます(全列で同じ時刻)。
+  //   フィルターが無くても描画中に new Date() を読み、Next.js 16 の既定(cacheComponents)で `next build` が止まっていた。
+  let resolveNow = now;
   for (const column of columns) {
+    const filterValue = columnFilters[column.key];
+    if (resolveNow === undefined && filterValue?.kind === 'dateSet' && filterValue.condition) {
+      resolveNow = new Date();
+    }
     const predicate = compileSingleColumnFilter(
       column,
-      columnFilters[column.key],
+      filterValue,
       numericKeys?.get(column.key),
       resolveNow,
     );

@@ -1877,6 +1877,7 @@ const [columns, setColumns] = useState(() => restoreColumnsFromState(defaultColu
 ```tsx
 // URL のクエリ(?sort=qty.desc)から戻す。Next.js の App Router なら、サーバーの描画から並べ替えが効く。
 // app/orders/page.tsx(サーバーコンポーネント。OrdersGrid は 'use client' で SpreadsheetGrid を描く)
+// Next.js 16 の cacheComponents では、searchParams を読むページは <Suspense> の中に置く(Next.js の決まり。layout か呼び出し側で包む)。
 export default async function Page({ searchParams }: { searchParams: Promise<{ sort?: string }> }) {
   const [columnKey, direction] = ((await searchParams).sort ?? '').split('.');
   const initialState = columnKey

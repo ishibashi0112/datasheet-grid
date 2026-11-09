@@ -19,7 +19,7 @@ export type DateRolloverArgs = {
 
 export type DateRolloverStore = {
   update: (args: DateRolloverArgs) => void;
-  // 現在の基準日('YYYY-MM-DD')。active=false の間は更新しません(使う側も active のときだけ読む)。
+  // 現在の基準日('YYYY-MM-DD')。active=false の間は更新しません(使う側も active のときだけ読む)。一度も見張っていない間は ''。
   getSnapshot: () => string;
   subscribe: (listener: () => void) => () => void;
   dispose: () => void;
@@ -42,9 +42,13 @@ const msUntilNextCheck = (current: Date): number => {
   return Math.min(Math.max(delay, MIDNIGHT_MARGIN_MS), MAX_TIMER_DELAY_MS);
 };
 
+// 変更(1.0.1 / 2026-11-09 実アプリの総点検 AP-06): 作ったときには今日の日付を読みません(基準日は空文字のまま)。
+//   見張りを始めたとき(update で active=true。レイアウトの effect の中)に初めて読みます。シェルは描画中にこのストアを
+//   作るので、Next.js 16 の既定(cacheComponents)では相対日付のフィルターを使っていなくても「描画中の new Date()」で
+//   `next build` が止まっていた。空の基準日では resolveRelativeDateFilterKey が今の日付で解決します。
 export const createDateRolloverStore = (options: DateRolloverStoreOptions = {}): DateRolloverStore => {
   const now = options.now ?? (() => new Date());
-  const store = createValueStore(formatDateKey(now()));
+  const store = createValueStore('');
   let active = false;
   let timer: ReturnType<typeof setTimeout> | null = null;
   let listening = false;

@@ -53,7 +53,7 @@
 | AP-03 | H-01 / A-05 | フィルター中に見出しで全選択すると、外した後は全行(exclude のモデル)。一括削除で見えない行も消える | 1.0.1 | 済(貼り付けと選択) |
 | AP-04 | H-02 | グループ行をまたいで貼ると値が落ちてずれる(ラベル行だけ飛ばしている) | 1.0.1 | 済(貼り付けと選択) |
 | AP-05 | K-01 | 速い入力で Enter / Tab の直後のキーが消える(次のフレームまでフォーカスが body) | 1.0.1 | 済(フォーカスとキー操作) |
-| AP-06 | D-01 / D-05 | Next.js 16 の既定(cacheComponents)で Suspense の外だと `next build` が止まる(`createDateRolloverStore` の `new Date()`) | 1.0.1 | 未着手 |
+| AP-06 | D-01 / D-05 | Next.js 16 の既定(cacheComponents)で Suspense の外だと `next build` が止まる(`createDateRolloverStore` の `new Date()`) | 1.0.1 | 済(日付の境目) |
 | AP-07 | J-01 | モーダルの Dialog の中でポップアップを押せない / 後ろに隠れる | 1.1.0 | 未着手 |
 
 ### 中(31 件)
@@ -203,5 +203,6 @@
 | --- | --- | --- | --- |
 | 貼り付けと選択 | AP-01 / 02 / 03 / 04 | 日付は年の無い文字列とありえない日付を読まない(core `toDateInputValue` が数字の日付を自分で読む)。貼り付けは選択範囲の左上から(core `resolvePasteAnchor`、列 / 行の選択は先頭のデータ行)。グループ行もラベル行と同じく飛ばす(`isPasteSkippedRow`)。フィルターで行が隠れている間の見出しのチェックボックスは見えている行だけを選ぶ / 外し、印も見えている行で数える(`rowSelectionCommands` の `filteredDataRows`、シェルが order と baseOrder の長さで判定。serverSide と隠れている行が無いときは従来どおり exclude) | 131.36 → 132.01KB(+0.65) |
 | フォーカスとキー操作 | AP-05 / 10 / 11 / 12 / 15 / 16 / 17 | 確定・取消の直後にフォーカスをグリッドへ移す(core `editController` の `moveFocusToRootFromEditor`、後処理はマイクロタスクで先に済ませ、次のフレームは保険)。メニューを閉じたときの戻しは開いたエディタから奪わない(`restoreGridFocus`)。custom エディタを開いたまま押したら値を書かずに終える(`pointerInteractionsController` の `endEditLeftOpen`)。組み込みのエディタがフォーカスを持ったまま外れたら確定(React `editors/useCommitIfRemovedWhileFocused` + `commitEditAt`。StrictMode の付け直しでは確定しない)。行ドラッグのハンドルでグリッドへフォーカス。`Space` の既定の動作を止める。グリッドが使う Escape に印(core `controllers/escapeClaimController` = window の capture で preventDefault + Mantine の属性、シェルで伝播を止める。1 セルだけの選択の Escape は preventDefault しない) | 132.01 → 132.98KB(+0.97) |
+| 日付の境目 | AP-06 | 描画中に現在時刻を読まない(core `createDateRolloverStore` は見張りを始めたときに初めて読む、`filterOrderByColumns` は日付の条件があるときだけ)。Next.js 16 + cacheComponents の最小のページで `next build` が通り静的になるのを確かめた。`renderToString` で現在時刻を読まないテスト(`SpreadsheetGrid.ssrCurrentTime.ssr.test.tsx`)。クイックスタートと URL から戻す例に注記 | 132.98 → 132.99KB |
 
 - 大きさの上限は、1.0.1 の途中は実測 + 0.5KB の仮の値(`scripts/size-budget.json` の注記)。入れ終えた後の実測から決める(ユーザーに判断を頼んだ)。
