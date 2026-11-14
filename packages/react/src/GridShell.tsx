@@ -2239,8 +2239,6 @@ export function useGridShell<T extends object>({
     // 追加(touch): セルのダブルクリック処理(handleCellDoubleClickWithController)は本フックより
     //   後ろで定義されるため、useEffect 同期の latest-ref(RS-AS 方式)で渡します。
     onCellDoubleClickRef: cellDoubleClickRef,
-    // 追加(1.0.1 / AP-11): 押したときに開いたままのエディタ(blur で確定しない custom エディタ)の編集を終えるため。
-    editorActionGuardRef,
     // 追加(10-G): 自動スクロールは共有スクロールコンテナを動かします。
     scrollContainerRef,
     // 追加(10-E): 固定ペインの ref を渡し、clientX のペイン判定に使います。

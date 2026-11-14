@@ -264,9 +264,10 @@ describe.each([
   });
 });
 
-// 追加(1.0.1 / 実アプリの総点検 AP-11): blur を扱わない custom エディタを開いたまま別のセルを押すと、エディタが残り
-//   キー操作がすべて効かなくなっていた。押したときに編集を終える(値は書かない)。
-describe('blur で確定しない custom エディタ(AP-11)', () => {
+// 変更(1.0.1 のレビュー RA-3): 開いたままの custom エディタの編集を押したときに終える修正(AP-11)は戻した。onBlur で
+//   非同期の検査を待ってから ctx.commit する作りの値が消えていたため。onBlur で確定する作りなら、押した後に届いた値も
+//   編集していたセルに書かれる(1.0.0 と同じ)。
+describe('onBlur で遅れて確定する custom エディタ(AP-11 / RA-3)', () => {
   const customColumns: GridColumn<Row>[] = [
     {
       key: 'name',
@@ -279,9 +280,10 @@ describe('blur で確定しない custom エディタ(AP-11)', () => {
             className="custom-editor"
             autoFocus
             defaultValue={ctx.initialText}
-            onKeyDown={(event) => {
-              if (event.key === 'Enter') ctx.commit(event.currentTarget.value, 'down');
-              if (event.key === 'Escape') ctx.cancel();
+            onBlur={(event) => {
+              const value = event.currentTarget.value;
+              // サーバーの検査を待ってから確定する作り
+              setTimeout(() => ctx.commit(value), 10);
             }}
           />
         ),
@@ -306,7 +308,7 @@ describe('blur で確定しない custom エディタ(AP-11)', () => {
     );
   }
 
-  it('別のセルを押すと編集が終わり、押したセルから矢印で動ける', async () => {
+  it('別のセルを押した後に届いた ctx.commit の値を、編集していたセルに書く', async () => {
     const ref = createRef<SpreadsheetGridHandle<Row>>();
     const { container } = render(
       <StrictMode>
@@ -321,18 +323,11 @@ describe('blur で確定しない custom エディタ(AP-11)', () => {
 
     await act(async () => {
       clickCell(getCell(container, 2, 1));
+      await new Promise((resolve) => setTimeout(resolve, 30));
       await nextFrame();
     });
+    expect(currentRows[0]?.name).toBe('draft');
     expect(container.querySelector('.custom-editor')).toBeNull();
-    expect(ref.current?.getActiveCell()).toEqual({ row: 2, col: 1 });
-    // 値は書かない(エディタが確定しなかった)。
-    expect(currentRows[0]?.name).toBe('alpha');
-
-    await act(async () => {
-      fireEvent.keyDown(document.activeElement!, { key: 'ArrowUp' });
-      await nextFrame();
-    });
-    expect(ref.current?.getActiveCell()).toEqual({ row: 1, col: 1 });
   });
 });
 
