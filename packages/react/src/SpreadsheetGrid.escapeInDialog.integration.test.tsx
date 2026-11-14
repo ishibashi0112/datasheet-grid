@@ -50,6 +50,8 @@ const setup = () => {
         columns={columns}
         rowKeyGetter={(row) => row.id}
         enableColumnFilter
+        enableContextMenu
+        getContextMenuItems={() => [{ kind: 'action', key: 'a', label: 'A', onSelect: () => {} }]}
       />
     </div>,
   );
@@ -152,6 +154,43 @@ describe('ダイアログの中の Escape(AP-17)', () => {
       fireEvent.keyDown(checkbox, { key: 'Escape' });
       expect(document.querySelector('.ssg-filter-popover')).toBeNull();
       expect(dialogClosed()).toEqual({ radix: 0, mantine: 0, react: 0 });
+    } finally {
+      detach();
+    }
+  });
+
+  // 1.0.1 のレビュー RA-6: 右クリックメニューとマウスで開いた列メニューは開くときにフォーカスを外すので、Escape の対象が
+  //   body になり、印が付かずに Mantine の Modal が閉じていた。
+  it('右クリックメニューとマウスで開いた列メニューの Escape はメニューだけを閉じる(フォーカスが body のとき)', async () => {
+    const { container, detach, dialogClosed } = setup();
+    try {
+      fireEvent.contextMenu(cellAt(container, 1, 0)!, { clientX: 10, clientY: 10 });
+      expect(document.querySelector('.ssg-menu-panel')).not.toBeNull();
+      expect(document.activeElement).toBe(document.body);
+      fireEvent.keyDown(document.body, { key: 'Escape' });
+      expect(document.querySelector('.ssg-menu-panel')).toBeNull();
+      expect(dialogClosed()).toEqual({ radix: 0, mantine: 0, react: 0 });
+
+      const menuButton = container.querySelector<HTMLButtonElement>(
+        '.ssg-header-row [data-ssg-col-key="name"] [data-ssg-tooltip="列メニュー"]',
+      )!;
+      act(() => {
+        fireEvent.pointerDown(menuButton, { button: 0 });
+        fireEvent.click(menuButton);
+      });
+      expect(document.querySelector('.ssg-menu-panel')).not.toBeNull();
+      (document.activeElement as HTMLElement | null)?.blur();
+      fireEvent.keyDown(document.body, { key: 'Escape' });
+      expect(document.querySelector('.ssg-menu-panel')).toBeNull();
+      expect(dialogClosed()).toEqual({ radix: 0, mantine: 0, react: 0 });
+
+      // メニューが開いていないときの body の Escape には何もしない(ダイアログが閉じる)。Mantine 向けの印は次のタスクで外れる。
+      await act(async () => {
+        await new Promise((resolve) => setTimeout(resolve, 0));
+      });
+      expect(document.body.hasAttribute('data-mantine-stop-propagation')).toBe(false);
+      fireEvent.keyDown(document.body, { key: 'Escape' });
+      expect(dialogClosed()).toEqual({ radix: 1, mantine: 1, react: 0 });
     } finally {
       detach();
     }

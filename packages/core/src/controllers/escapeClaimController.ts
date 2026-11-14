@@ -56,7 +56,9 @@ export const createEscapeClaimController = (): EscapeClaimController => {
   let listening = false;
 
   const handleKeyDown = (event: KeyboardEvent) => {
-    if (event.key !== 'Escape' || event.isComposing || event.keyCode === 229 || args === null) {
+    // 変更(1.0.1 のレビュー RA-6): 同じ Escape に印を付けるのは 1 回だけ(グリッドが複数あるとき、2 つ目のグリッドの
+    //   preventDefault を「中の部品が扱った」と数えないように)。
+    if (event.key !== 'Escape' || event.isComposing || event.keyCode === 229 || args === null || claimedEvents.has(event)) {
       return;
     }
     const root = args.gridRootRef.current;

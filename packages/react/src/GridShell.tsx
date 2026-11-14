@@ -4087,7 +4087,13 @@ export function useGridShell<T extends object>({
     isClaimedTarget: (target: Element, root: HTMLElement) => {
       const state = gridStore.getState();
       if (!root.contains(target)) {
-        return (isAnyGridPopupOpen || state.editingCell !== null) && target.closest(GRID_POPUP_SELECTOR) !== null;
+        if (target.closest(GRID_POPUP_SELECTOR) !== null) {
+          return isAnyGridPopupOpen || state.editingCell !== null;
+        }
+        // 追加(1.0.1 のレビュー RA-6): 右クリックメニューやマウスで開いた列メニューは、開くときにフォーカスを外す
+        //   (blurForPopover)ので、Escape の対象は body になる。その Escape はメニューを閉じるのに使う。
+        const ownerDocument = target.ownerDocument;
+        return isAnyGridPopupOpen && (target === ownerDocument.body || target === ownerDocument.documentElement);
       }
       if (target.closest('.ssg-cell-editor, [data-ssg-find-bar]') !== null) {
         return true;
