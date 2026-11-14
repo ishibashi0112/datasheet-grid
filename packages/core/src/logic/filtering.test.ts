@@ -1203,7 +1203,8 @@ describe('resolveRelativeDateFilterKey(監査 L-15)', () => {
     vi.useFakeTimers();
     try {
       vi.setSystemTime(new Date(2026, 10, 14, 9, 30));
-      for (const filters of [{ d: preset('unknownId') }, { d: preset('today') }, { e: preset('broken') }]) {
+      const cases: Record<string, ColumnFilterValue>[] = [{ d: preset('unknownId') }, { d: preset('today') }, { e: preset('broken') }];
+      for (const filters of cases) {
         expect(resolveRelativeDateFilterKey(dateColumns, filters, '')).toBe(
           resolveRelativeDateFilterKey(dateColumns, filters, '2026-11-14'),
         );
