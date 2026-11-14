@@ -4101,7 +4101,8 @@ export function useGridShell<T extends object>({
         return true;
       }
       if (target === root || target.hasAttribute('data-ssg-ime-input')) {
-        return state.editingCell !== null || isClearableSelection(state.selection);
+        // 変更(1.0.1 の確かめ直し J): コピー範囲の点線を出している間の Escape も、点線を消すのに使う(1 セルのコピーでも)。
+        return state.editingCell !== null || isClearableSelection(state.selection) || copiedSelection !== null;
       }
       return false;
     },

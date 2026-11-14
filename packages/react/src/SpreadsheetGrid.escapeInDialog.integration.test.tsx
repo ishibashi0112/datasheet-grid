@@ -159,6 +159,34 @@ describe('ダイアログの中の Escape(AP-17)', () => {
     }
   });
 
+  // 1.0.1 の確かめ直し(J): 1 セルをコピーして点線が出ているときの Escape は点線を消すだけで、ダイアログまで閉じていた。
+  it('コピー範囲の点線を出しているときの Escape は点線を消すだけ(1 セルのコピーでも)', async () => {
+    const writeText = vi.fn(() => Promise.resolve());
+    Object.defineProperty(navigator, 'clipboard', { value: { writeText }, configurable: true });
+    const { container, detach, dialogClosed } = setup();
+    try {
+      clickCell(cellAt(container, 0, 0)!);
+      const shellElement = container.querySelector<HTMLElement>('.ssg-shell')!;
+      await act(async () => {
+        fireEvent.keyDown(shellElement, { key: 'c', ctrlKey: true });
+        await Promise.resolve();
+        await Promise.resolve();
+      });
+      expect(document.querySelectorAll('.ssg-copy-range-overlay').length).toBeGreaterThan(0);
+      fireEvent.keyDown(shellElement, { key: 'Escape' });
+      expect(document.querySelectorAll('.ssg-copy-range-overlay')).toHaveLength(0);
+      expect(dialogClosed()).toEqual({ radix: 0, mantine: 0, react: 0 });
+      await act(async () => {
+        await new Promise((resolve) => setTimeout(resolve, 0));
+      });
+      // 点線が消えた後の Escape はダイアログが閉じる(1 セルを選んでいるだけ)。
+      fireEvent.keyDown(shellElement, { key: 'Escape' });
+      expect(dialogClosed()).toEqual({ radix: 1, mantine: 1, react: 1 });
+    } finally {
+      detach();
+    }
+  });
+
   // 1.0.1 のレビュー RA-6: 右クリックメニューとマウスで開いた列メニューは開くときにフォーカスを外すので、Escape の対象が
   //   body になり、印が付かずに Mantine の Modal が閉じていた。
   it('右クリックメニューとマウスで開いた列メニューの Escape はメニューだけを閉じる(フォーカスが body のとき)', async () => {
