@@ -248,6 +248,7 @@ const GRID_LOCALE_TEXT_EN = {
   enterMin: 'Enter {min} or more',
   enterMax: 'Enter {max} or less',
   enterRange: 'Enter a number from {min} to {max}',
+  enterDate: 'Enter a date (e.g. 2026-03-15)',
   saveFailedCell: 'Couldn\'t save. The value was restored.',
   loadFailed: ({ count }) => `Couldn't load rows (${count} ${count === 1 ? 'block' : 'blocks'})`,
   dismissLoadError: 'Dismiss the error',

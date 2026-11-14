@@ -2,6 +2,7 @@
 import { describe, expect, it } from 'vitest';
 import type { GridSelectEditorOption } from '../model/gridTypes.unbound';
 import {
+  findOptionByComposedText,
   SELECT_TYPEAHEAD_RESET_MS,
   computeSelectPopoverPlacement,
   createTypeaheadState,
@@ -117,5 +118,23 @@ describe('computeSelectPopoverPlacement', () => {
   it('候補が多い場合は最大表示件数(8)で高さを打ち切る', () => {
     const placement = computeSelectPopoverPlacement(anchor, 50, 1024, 768);
     expect(placement.maxHeight).toBe(8 * 28 + 8);
+  });
+});
+
+// 追加(1.0.2 / 2026-11-09 実アプリの総点検 E-08): IME で確定した文字で候補を探す。
+describe('findOptionByComposedText', () => {
+  const makers = [
+    { value: 'a', label: '東京電機' },
+    { value: 'b', label: '大阪製作所' },
+    { value: 'c', label: '名古屋工業' },
+  ];
+  it('label がその文字で始まる最初の候補、無ければ含む最初の候補', () => {
+    expect(findOptionByComposedText(makers, '名古')).toBe(2);
+    expect(findOptionByComposedText(makers, '製作')).toBe(1);
+    expect(findOptionByComposedText(makers, '電機')).toBe(0);
+  });
+  it('一致しない / 空白だけは null', () => {
+    expect(findOptionByComposedText(makers, '福岡')).toBeNull();
+    expect(findOptionByComposedText(makers, '  ')).toBeNull();
   });
 });

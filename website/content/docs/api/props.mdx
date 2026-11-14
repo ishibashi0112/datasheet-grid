@@ -458,6 +458,7 @@ import { localeTextEn } from '@ishibashi0112/spreadsheet-grid/locales/en';
 | `enterMin` | `{min} 以上で入力してください` | `Enter {min} or more` | number エディタの検査(`min` だけ)。 |
 | `enterMax` | `{max} 以下で入力してください` | `Enter {max} or less` | number エディタの検査(`max` だけ)。 |
 | `enterRange` | `{min}〜{max} で入力してください` | `Enter a number from {min} to {max}` | number エディタの検査(`min` と `max`)。 |
+| `enterDate` | `日付で入力してください(例: 2026/3/15)` | `Enter a date (e.g. 2026-03-15)` | date エディタで文字から打ち始めた入力が日付として読めないとき。 |
 | `saveFailedCell` | `保存に失敗しました。値を戻しました` | `Couldn't save. The value was restored.` | serverSide の保存に失敗したセルの下に出るチップ(`showSaveStatus`)。 |
 | `loadFailed` | `行の取得に失敗しました({count} ブロック)` | (数で変わる) | serverSide の読み込みに失敗したときのバー。 |
 | `dismissLoadError` | `エラー通知を閉じる` | `Dismiss the error` | 同上の × の読み上げの名前。 |
@@ -981,7 +982,7 @@ const [rows, setRows] = useState(initialRows);
 | `Home` / `End`(+ `Shift`) | 行の先頭 / 末尾の列へ。 |
 | `Ctrl/Cmd+Home` / `Ctrl/Cmd+End`(+ `Shift`) | 先頭のセル / 末尾のセルへ。 |
 | `PageUp` / `PageDown`(+ `Shift`) | 見えている本体の高さ 1 画面ぶん上 / 下の行へ(少なくとも 1 行)。 |
-| `Enter` / `F2` / 印字キー直打ち | 編集開始(印字キーはその 1 文字を初期値に。select エディタではその文字で始まる候補を頭出しする)。編集可否は `readOnly` / 列 / `canEditCell` に従う。 |
+| `Enter` / `F2` / 印字キー直打ち | 編集開始(印字キーはその 1 文字を初期値に。select エディタではその文字で始まる候補を頭出しする。date エディタは文字の入力欄で開く)。編集可否は `readOnly` / 列 / `canEditCell` に従う。 |
 | `Enter` / `Space`(グループ行 / 展開トグル列のセル) | そのグループ / 展開行の開閉(編集は始めない)。 |
 | `Escape` | 選択解除(範囲を選んでいるとき。グリッドを入れたダイアログはこの `Escape` では閉じない。1 セルを選んでいるだけのときは見た目は変わらず、`Escape` はダイアログへ届く)。 |
 | `Ctrl/Cmd+C` / ペースト(`Ctrl/Cmd+V`) | 選択範囲の TSV コピー(`isRowExportable` 指定時は `false` の行を除く)/ 貼り付け(readOnly では no-op)。貼り付けは選択範囲の左上から(列の選択は列の先頭のデータ行、行の選択は行の先頭から。選択の外にアクティブセルがあるときはアクティブセルから)。ラベル行・グループ行は飛ばして次のデータ行へ貼る。TSV は Excel / Google スプレッドシート互換(改行・タブ・`"` を含むセルは `"…"` で囲み `"` は `""`。貼り付けはこの引用符を解釈し、途中の空行も行として保持する)。合成列(行ドラッグのハンドル列・展開トグル列・自動グループ列)はコピーの列に数えず(TSV に空の列を作らない)、貼り付けでも飛ばす(合成列のセルから貼るとその右のデータ列から書く)。 |

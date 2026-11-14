@@ -458,6 +458,7 @@ import { localeTextEn } from '@ishibashi0112/spreadsheet-grid/locales/en';
 | `enterMin` | `{min} 以上で入力してください` | `Enter {min} or more` | number エディタの検査(`min` だけ)。 |
 | `enterMax` | `{max} 以下で入力してください` | `Enter {max} or less` | number エディタの検査(`max` だけ)。 |
 | `enterRange` | `{min}〜{max} で入力してください` | `Enter a number from {min} to {max}` | number エディタの検査(`min` と `max`)。 |
+| `enterDate` | `日付で入力してください(例: 2026/3/15)` | `Enter a date (e.g. 2026-03-15)` | date エディタで文字から打ち始めた入力が日付として読めないとき。 |
 | `saveFailedCell` | `保存に失敗しました。値を戻しました` | `Couldn't save. The value was restored.` | serverSide の保存に失敗したセルの下に出るチップ(`showSaveStatus`)。 |
 | `loadFailed` | `行の取得に失敗しました({count} ブロック)` | (数で変わる) | serverSide の読み込みに失敗したときのバー。 |
 | `dismissLoadError` | `エラー通知を閉じる` | `Dismiss the error` | 同上の × の読み上げの名前。 |
@@ -813,7 +814,7 @@ const gridRef = useRef<SpreadsheetGridHandle<Row>>(null);
 | `Ctrl/Cmd+Home` / `Ctrl/Cmd+End`(+ `Shift`) | 先頭のセル / 末尾のセルへ。 |
 | `PageUp` / `PageDown`(+ `Shift`) | 見えている本体の高さ 1 画面ぶん上 / 下の行へ(少なくとも 1 行)。 |
 | `Alt+↓`(Mac は `Option+↓`) | アクティブセルの列の列メニューを開く(`enableColumnMenu` のとき。見出しの下に開き、先頭の項目へフォーカスを移す)。メニューの中は `↓` / `↑` / `Home` / `End` で項目を移り、`Enter` / `Space` で実行、`Escape` / `Tab` で閉じてグリッドへ戻る(マウスで開いたときも同じ)。「列の固定」は `→` / `Enter` / `Space` で小メニューを開いて先頭の項目へ移り、小メニューの中の `←` で閉じて「列の固定」へ戻る(タッチではタップで開く。1.0.1 から)。列メニューの無い合成列(自動グループ列など)ではふつうの `↓`。 |
-| `Enter` / `F2` / 印字キー直打ち | 編集開始(印字キーはその 1 文字を初期値に。select エディタではその文字で始まる候補を頭出しする)。編集可否は `readOnly` / 列 / `canEditCell` に従う。 |
+| `Enter` / `F2` / 印字キー直打ち | 編集開始(印字キーはその 1 文字を初期値に。select エディタではその文字で始まる候補を頭出しする。date エディタは文字の入力欄で開く)。編集可否は `readOnly` / 列 / `canEditCell` に従う。 |
 | `Enter` / `Space`(グループ行 / 展開トグル列のセル) | そのグループ / 展開行の開閉(編集は始めない)。 |
 | `Escape` | 選択解除(範囲を選んでいるとき。グリッドを入れたダイアログはこの `Escape` では閉じない。1 セルを選んでいるだけのときは見た目は変わらず、`Escape` はダイアログへ届く)。 |
 | `Ctrl/Cmd+C` / ペースト(`Ctrl/Cmd+V`) | 選択範囲の TSV コピー(`isRowExportable` 指定時は `false` の行を除く)/ 貼り付け(readOnly では no-op)。貼り付けは選択範囲の左上から(列の選択は列の先頭のデータ行、行の選択は行の先頭から。選択の外にアクティブセルがあるときはアクティブセルから)。ラベル行・グループ行は飛ばして次のデータ行へ貼る。TSV は Excel / Google スプレッドシート互換(改行・タブ・`"` を含むセルは `"…"` で囲み `"` は `""`。貼り付けはこの引用符を解釈し、途中の空行も行として保持する)。合成列(行ドラッグのハンドル列・展開トグル列・自動グループ列)はコピーの列に数えず(TSV に空の列を作らない)、貼り付けでも飛ばす(合成列のセルから貼るとその右のデータ列から書く)。 |
@@ -1058,8 +1059,8 @@ const columns = [
 | --- | --- | --- | --- |
 | `'text'` | 従来のテキスト input(既定)。`multiline: true` で複数行の入力欄(textarea。中身に合わせて下へ伸び、表の見える範囲の下端で止まって中でスクロール。行の間隔、1 行目の位置と折り返し = 列の `wordBreak` / `lineBreak` はセルと同じ) | `multiline` / `enterKey`(`multiline` のときの `Enter`。`'commit'`(既定。Excel と同じ)= `Enter` で確定、`Alt+Enter` と `Ctrl` / `⌘+Enter` で改行 / `'newline'`(メモ帳やチャットに近い)= `Enter`(`Shift` / `Alt` 付きも)で改行、`Ctrl` / `⌘+Enter` で確定。スマートフォンのソフトキーボードでは `Alt` / `Ctrl` を押せないので、モバイルで改行させたい列は `'newline'`(確定はフォーカスアウト)) | パススルー(生文字列のまま) |
 | `'number'` | `<input type="number">`(スピナー / ↑↓ステップ / 不正文字抑止)。セルを選んで `-` / `+` / `.` から打ち始めたときは、その文字を消さないよう文字の入力欄(`inputmode="decimal"`)で開き、確定した文字列を列のパーサで数値に直す(`-5`→`-5`、`.5`→`0.5`、`-` だけなら空。数値として読めない文字列は貼り付けと同じくそのまま)。英字など数値にならない文字から打ち始めたとき・数値でない文字列の値を開いたときも文字の入力欄で開き、その文字をそのまま見せる。数値の文字列の値(`'1,234'` / `'１２'`)は半角の数値(`1234` / `12`)で開く | `min` / `max` / `step` / `integer`(`min` / `max` / `integer` は値の検査にも使う。「バリデーション」節) | `''`・空白だけ→`null` / 有限数値文字列→`number`(全角の数字・符号・小数点と 3 桁区切りも読む: `'１，２３４'`→`1234`、`'ー５'`→`-5`)/ 非数値→生文字列のまま(mark が拾う) |
-| `'select'` | 候補ドロップダウン(body 直下ポータル)。↑↓=ハイライト移動 / Enter=確定(下へ)/ Tab=確定(左右へ)/ クリック=確定 / 印字キー=label 前方一致のタイプアヘッド(約 700ms でリセット) | `options: GridSelectEditorOption[] \| (row) => GridSelectEditorOption[]`(静的 or 行依存。関数はレンダー中に呼ばれるため純粋であること) | パススルー(`option.value` は string。型変換したい場合は `parseClipboardValue` を併用) |
-| `'date'` | ネイティブ `<input type="date">`。ドラフトは `'YYYY-MM-DD' \| ''` | — | `''`→`null` / 解釈可能→`'YYYY-MM-DD'` へ正規化 / 解釈不可→生文字列のまま(数字だけの文字列 = Excel の日付のシリアル値「45678」や「5」と、年が 4 桁にならない文字列、年の無い文字列(「11/2」「Nov 1」)、ありえない日付(「2026/2/30」)も解釈不可。翌月へ繰り越さない) |
+| `'select'` | 候補ドロップダウン(body 直下ポータル)。↑↓=ハイライト移動 / Enter=確定(下へ)/ Tab=確定(左右へ)/ クリック=確定 / 印字キー=label 前方一致のタイプアヘッド(約 700ms でリセット)/ IME で確定した文字(日本語の名前など)= その文字で始まる候補、無ければ含む候補へ(1.0.2) | `options: GridSelectEditorOption[] \| (row) => GridSelectEditorOption[]`(静的 or 行依存。関数はレンダー中に呼ばれるため純粋であること) | パススルー(`option.value` は string。型変換したい場合は `parseClipboardValue` を併用) |
+| `'date'` | ネイティブ `<input type="date">`。ドラフトは `'YYYY-MM-DD' \| ''`。入力欄は中身(年 / 月 / 日)より狭くせず、細い列ではセルからはみ出して開く。セルを選んで文字から打ち始めたときは、その文字を消さないよう文字の入力欄で開き、確定するときに日付として読む(`2026/3/15`・`2026-03-15` など。読み方は既定パーサと同じ)。読めなければ「日付で入力してください」を出して編集を続ける(フォーカスが外れたら取り消し。1.0.2) | — | `''`→`null` / 解釈可能→`'YYYY-MM-DD'` へ正規化 / 解釈不可→生文字列のまま(数字だけの文字列 = Excel の日付のシリアル値「45678」や「5」と、年が 4 桁にならない文字列、年の無い文字列(「11/2」「Nov 1」)、ありえない日付(「2026/2/30」)も解釈不可。翌月へ繰り越さない) |
 | `'checkbox'` | **直接トグル**(編集セッションなし)。チェックボックスそのものを押すか、アクティブセルで Space を押すと即トグル(セルのチェックボックスの外を押したときはアクティブセルになるだけ。ダブルクリックでも切り替わらない)。Enter / F2 / ダブルクリックではエディタが開かない | `checkedValue`(既定 `true`)/ `uncheckedValue`(既定 `false`)。checked 判定は `Object.is(value, checkedValue)` のみ | `''`→unchecked / checked・unchecked の文字列表現→対応値 / `'true'`・`'1'`→checked / その他→unchecked |
 | `'custom'` | `render(ctx)` の返り値を編集オーバーレイ内に描画。**フォーカス管理・キーバインドは利用側の責務**(開いたままグリッドの中の別のセルを押したときに値を残す / エディタを閉じるには、入力欄の `onBlur` で `ctx.commit` か `ctx.cancel` を呼ぶ。呼ばないとエディタが開いたまま残り、グリッドのキー操作が効かない) | `render: (ctx: CellEditorContext<T>) => ReactNode` | パススルー |
 

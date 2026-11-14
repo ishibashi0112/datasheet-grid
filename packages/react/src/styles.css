@@ -1444,10 +1444,24 @@
     /* 変更(THEME-2): セル本体と同じ横 padding トークン(編集中も文字位置が揃う)。 */
     padding: 0 var(--ssg-cell-pad-x);
     margin: 0;
-    font-size: 16px;
+    /* 変更(1.0.2 / 2026-11-09 実アプリの総点検 H-08): 文字の大きさはセルと同じ(グリッドから受け継ぎ、密度で拡縮)。これまでは
+       16px の固定で、compact や小さい文字のページ(入れ子のグリッドなど)では開いた瞬間に文字が大きくなっていた。タッチの
+       端末は下の (pointer: coarse) で 16px 以上(iOS は 16px 未満の入力欄にフォーカスするとページを拡大するため)。 */
+    font-size: inherit;
     color: var(--ssg-cell-text);
     background-color: var(--ssg-cell-bg);
     pointer-events: auto;
+  }
+  :where(.ssg-root--density-compact) :is(.ssg-cell-editor-input, .ssg-ime-input--composing) {
+    font-size: 0.85em;
+  }
+  :where(.ssg-root--density-comfortable) :is(.ssg-cell-editor-input, .ssg-ime-input--composing) {
+    font-size: 1.1em;
+  }
+  /* 追加(1.0.2 / A-09): 日付の入力欄は中身(年 / 月 / 日とカレンダーの印)より狭くしません(細い列で年が切れていた)。
+     右のペインの下や表の外へはみ出すときはエディタが左へずらします。 */
+  .ssg-cell-editor-input[type='date'] {
+    min-width: max-content;
   }
 
   /* 追加(段階 2 DU-14): 複数行の text エディタ(editor: { type: 'text', multiline: true })。枠の左上から下へ伸びます
@@ -1508,10 +1522,23 @@
     z-index: 6;
     border: 2px solid var(--ssg-accent);
     padding: 0 var(--ssg-cell-pad-x);
-    font-size: 16px;
+    /* 変更(1.0.2 / H-08): エディタと同じくセルの文字の大きさ(密度の拡縮は上のエディタと同じ規則)。 */
+    font-size: inherit;
     color: var(--ssg-cell-text);
     caret-color: auto;
     background-color: var(--ssg-cell-bg);
+  }
+  @media (pointer: coarse) {
+    .ssg-cell-editor-input,
+    .ssg-ime-input--composing {
+      font-size: max(16px, 1em);
+    }
+    :where(.ssg-root--density-compact) :is(.ssg-cell-editor-input, .ssg-ime-input--composing) {
+      font-size: max(16px, 0.85em);
+    }
+    :where(.ssg-root--density-comfortable) :is(.ssg-cell-editor-input, .ssg-ime-input--composing) {
+      font-size: max(16px, 1.1em);
+    }
   }
 
   /* ── select エディタ(editor: select) ── */

@@ -2029,6 +2029,8 @@ export type GridLocaleText = {
   enterMax: GridLocaleTextTemplate<{ max: number }>;
   /** number エディタの検査(`min` と `max`)。既定 `{min}〜{max} で入力してください`、英語 `Enter a number from {min} to {max}`。 */
   enterRange: GridLocaleTextTemplate<{ min: number; max: number }>;
+  /** date エディタで文字から打ち始めた入力が日付として読めないとき。既定 `日付で入力してください(例: 2026/3/15)`、英語 `Enter a date (e.g. 2026-03-15)`。 */
+  enterDate: string;
   /** serverSide の保存に失敗したセルの下に出るチップ(`showSaveStatus`)。既定 `保存に失敗しました。値を戻しました`、英語 `Couldn't save. The value was restored.`。 */
   saveFailedCell: string;
   /** serverSide の読み込みに失敗したときのバー。既定 `行の取得に失敗しました({count} ブロック)`、英語は数で変わる(関数)。 */

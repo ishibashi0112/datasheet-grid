@@ -5,6 +5,12 @@
 //   セレクタリストで供給 / z-index 1000)。
 //   確定規則: 選択 = 即 commit(ドラフト概念なし)。そのため blur / Escape は cancel(値不変)
 //   です(text エディタの blur=commit と非対称。API_REFERENCE に明記)。
+// 変更(1.0.2 / 2026-11-09 実アプリの総点検 E-08): IME で確定した文字(日本語の名前など)でも候補を探します。インセルの
+//   input は readOnly をやめ(readOnly では IME の変換が始まらない)、印字キーはこれまでどおりタイプアヘッドで止め、
+//   変換が始まるときだけ表示中の名前を選んで変換の文字に置き換えさせ、確定したら(compositionend)その文字で始まる
+//   (無ければ含む)候補へ移ります。スマホのソフトキーボードは inputMode="none" で出しません(readOnly と同じ)。
+// 変更(1.0.2 / C-05): 細い列でインセルの名前の末尾が見えて先頭が欠けていた(入力欄が末尾までスクロール)ので、
+//   ハイライトが変わるたびに先頭を見せます。
 import { useCallback, useEffect, useId, useRef, useState, type KeyboardEvent } from 'react';
 import { createPortal } from 'react-dom';
 import type {
@@ -16,9 +22,11 @@ import type {
 import { resolveEnterDirection } from './editorKeyBindings';
 import { CellEditorErrorBubble } from './CellEditorErrorBubble';
 import { usePortalTokens } from '../hooks/usePortalTokens';
+import { useIsomorphicLayoutEffect } from '../hooks/useController';
 import {
   computeSelectPopoverPlacement,
   createTypeaheadState,
+  findOptionByComposedText,
   moveHighlight,
   resolveInitialHighlight,
   typeaheadJump,
@@ -90,6 +98,8 @@ export function SelectCellEditor({
   usePortalTokens(listRef, placement !== null, themeClassName);
   // 追加(validation): reject 列の検証 NG メッセージです(表示中も選択操作は継続できます)。
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  // 追加(1.0.2 / E-08): IME の変換中の入力欄の文字(変換中でなければ null = ハイライト中の名前を出す)。
+  const [composingText, setComposingText] = useState<string | null>(null);
 
   // アンカー(インセル input)の callback ref です。マウント時にフォーカスし初期配置を計測します
   //   (effect 冒頭 setState の lint 制約を避けるため、計測は ref callback とイベントリスナ内
@@ -167,6 +177,10 @@ export function SelectCellEditor({
   const handleKeyDown = (event: KeyboardEvent<HTMLInputElement>) => {
     // IME 変換中の操作は無視します(editorKeyBindings と同じガード)。
     if (isImeComposingKeyEvent(event.nativeEvent)) {
+      // 追加(1.0.2 / E-08): 変換が始まる前に表示中の名前を選び、変換の文字で置き換えさせます。
+      if (composingText === null) {
+        event.currentTarget.select();
+      }
       return;
     }
 
@@ -238,14 +252,42 @@ export function SelectCellEditor({
   };
 
   const highlightedOption = options[highlight];
+  const shownText = highlightedOption?.label ?? String(value ?? '');
+
+  // 追加(1.0.2 / C-05): 名前の先頭を見せます(細い列で入力欄が末尾までスクロールしていた)。変換中は触りません。
+  useIsomorphicLayoutEffect(() => {
+    const input = inputRef.current;
+    if (!input || composingText !== null) {
+      return;
+    }
+    input.setSelectionRange(0, 0);
+    input.scrollLeft = 0;
+  }, [shownText, composingText]);
 
   return (
     <>
       <input
         ref={anchorRefCallback}
         type="text"
-        readOnly
-        value={highlightedOption?.label ?? String(value ?? '')}
+        inputMode="none"
+        value={composingText ?? shownText}
+        onChange={(event) => {
+          // 変換中だけ文字を受けます(それ以外の変更 = Backspace など は受けず、名前のまま)。
+          if ((event.nativeEvent as InputEvent).isComposing) {
+            setComposingText(event.target.value);
+          }
+        }}
+        // 変換の始まりでは入力欄の文字を変えません(変えると変換が止まるブラウザがある)。
+        onCompositionStart={(event) => setComposingText(event.currentTarget.value)}
+        onCompositionEnd={(event) => {
+          setComposingText(null);
+          const index = findOptionByComposedText(options, event.data);
+          typeaheadRef.current = createTypeaheadState();
+          if (index !== null) {
+            setHighlight(index);
+            setErrorMessage(null);
+          }
+        }}
         onKeyDown={handleKeyDown}
         onBlur={() => onCancel()}
         // 追加(1.0.1 / 2026-11-09 実アプリの総点検 AP-34): 選ぶだけの combobox(WAI-ARIA の select-only combobox)として伝えます。

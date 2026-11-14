@@ -103,3 +103,22 @@ export const computeSelectPopoverPlacement = (
     : Math.max(VIEWPORT_MARGIN, anchorRect.top - OFFSET_Y - listHeight);
   return { left, top, width, maxHeight: listHeight };
 };
+// 追加(1.0.2 / 2026-11-09 実アプリの総点検 E-08): IME で確定した文字(日本語の名前など)で候補を探します。label がその文字で
+//   始まる最初の候補、無ければ label にその文字を含む最初の候補(一致なしは null)。印字キーのタイプアヘッド(前方一致だけ)と
+//   違い、確定した 1 つの語で引くので途中に含む候補も探します。
+export const findOptionByComposedText = (
+  options: GridSelectEditorOption[],
+  text: string,
+): number | null => {
+  const query = text.trim().toLocaleLowerCase();
+  if (query === '') {
+    return null;
+  }
+  const labels = options.map((option) => option.label.toLocaleLowerCase());
+  const prefix = labels.findIndex((label) => label.startsWith(query));
+  if (prefix >= 0) {
+    return prefix;
+  }
+  const contains = labels.findIndex((label) => label.includes(query));
+  return contains >= 0 ? contains : null;
+};
