@@ -169,4 +169,40 @@ describe('createSelectOptionsCollector', () => {
     expect(selectCollectorResult(collector.getSnapshot(), 1, () => 'x', 'other').status).toBe('collecting');
     collector.dispose();
   });
+
+  // 1.0.1 のレビュー RB-4: 閉じて(収集しなくなって)から行が変わり、同じ列を開き直すと、前のデータの候補が「済み」で出ていた。
+  it('閉じてから行が変わって開き直したら、前の候補を出さずに集め直す(RB-4)', async () => {
+    const collector = createSelectOptionsCollector();
+    const first = ['old-0', 'old-1'];
+    const firstAccessor = (index: number) => first[index];
+    collector.update({ needsAsync: true, rowCount: first.length, getRawValueAt: firstAccessor, sourceKey: 'v' });
+    for (let i = 0; i < 4; i += 1) {
+      await flushYields();
+    }
+    expect(selectCollectorResult(collector.getSnapshot(), first.length, firstAccessor, 'v').status).toBe('ready');
+    // 閉じる(列が無い = 同期の経路で idle)。
+    collector.update({ needsAsync: false, rowCount: first.length, getRawValueAt: firstAccessor });
+    // 同じ行のまま開き直したら、前の候補をそのまま出す(集め直しの間も)。
+    expect(selectCollectorResult(collector.getSnapshot(), first.length, firstAccessor, 'v').status).toBe('ready');
+    collector.update({ needsAsync: true, rowCount: first.length, getRawValueAt: firstAccessor, sourceKey: 'v' });
+    for (let i = 0; i < 4; i += 1) {
+      await flushYields();
+      expect(selectCollectorResult(collector.getSnapshot(), first.length, firstAccessor, 'v').status).toBe('ready');
+    }
+    collector.update({ needsAsync: false, rowCount: first.length, getRawValueAt: firstAccessor });
+    // 行が変わってから開き直したら、集め直しの間は前の候補を出さない。
+    const second = ['new-0', 'new-1', 'new-2'];
+    const secondAccessor = (index: number) => second[index];
+    collector.update({ needsAsync: true, rowCount: second.length, getRawValueAt: secondAccessor, sourceKey: 'v' });
+    expect(selectCollectorResult(collector.getSnapshot(), second.length, secondAccessor, 'v').status).toBe('collecting');
+    for (let i = 0; i < 6; i += 1) {
+      await flushYields();
+    }
+    expect(selectCollectorResult(collector.getSnapshot(), second.length, secondAccessor, 'v').options.map((o) => o.value)).toEqual([
+      'new-0',
+      'new-1',
+      'new-2',
+    ]);
+    collector.dispose();
+  });
 });

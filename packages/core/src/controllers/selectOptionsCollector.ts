@@ -185,6 +185,10 @@ export const createSelectOptionsCollector = (): SelectOptionsCollector => {
           // 同じ列の前の候補を出している間は、集め直しの進み具合を出さない(候補を消さない)。
           return;
         }
+        // 追加(1.0.1 のレビュー RB-4): 同じ行の候補を出している間(閉じて同じ行のまま開き直した)も消さない。
+        if (shown.source === getRawValueAt && shown.rowCount === rowCount && shown.result.status === 'ready') {
+          return;
+        }
         store.setSnapshot({
           source: getRawValueAt,
           rowCount,
@@ -256,6 +260,14 @@ export const createSelectOptionsCollector = (): SelectOptionsCollector => {
     running = null;
     if (args.needsAsync) {
       start(args);
+      return;
+    }
+    // 修正(1.0.1 のレビュー RB-4): 収集しなくなった(ポップオーバーを閉じた等)ら、前の候補を「同じ列の候補」として出すのを
+    //   やめます(行が変わった後に開き直すと、前のデータの候補が「済み」で出て、選ぶと無い値で絞り込んでいた)。行が同じ
+    //   (accessor と行数が同じ)なら、これまでどおりそのまま出します。
+    const snapshot = store.getSnapshot();
+    if (snapshot.sourceKey !== undefined) {
+      store.setSnapshot({ ...snapshot, sourceKey: undefined });
     }
   };
 
