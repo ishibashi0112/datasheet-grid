@@ -389,6 +389,10 @@ export const createColumnHeaderDragController = <T,>(): ColumnHeaderDragControll
   let pointer = { x: 0, y: 0 };
   // 端 autoscroll の armed 管理。掴んだ座標を起点に AUTO_SCROLL_ACTIVATION_DISTANCE 以上動くまで発動しません。
   let dragOrigin: { x: number; y: number } | null = null;
+  // 追加(1.0.2 / RB-7): 祖先の transform: scale() の倍率(ドラッグの開始で表の枠から測る)。ポインタや矩形の画面の px を、
+  //   列の位置(レイアウトの px)と比べる前にこれで割ります(倍率 0.8 の箱の中で落とし先の縦線と確定する位置が 1/0.8 倍
+  //   右へずれていた。AP-29 の範囲選択 / フィルハンドル / 列幅と同じ)。倍率 1 では何も変わりません。
+  let dragScale = 1;
   let autoScrollArmed = false;
   // 進行中ドラッグの window リスナー解除関数(pointerdown 内で登録。dispose の最終後始末ネットからも呼ぶ)。
   let activeDragDispose: (() => void) | null = null;
@@ -562,7 +566,7 @@ export const createColumnHeaderDragController = <T,>(): ColumnHeaderDragControll
     // 変更(段階 2 DU-22): 行ヘッダーだけの左ペイン(左固定列なし)では、行ヘッダーの上もドロップ帯にし、縦線は行ヘッダーの右端に出します。
     if (leftEl && paneLayout.left.entries.length === 0) {
       const rect = leftEl.getBoundingClientRect();
-      if (clientX <= rect.left + Math.max(leftLeadingWidth, EMPTY_PANE_DROP_BAND)) {
+      if (clientX <= rect.left + Math.max(leftLeadingWidth, EMPTY_PANE_DROP_BAND) * dragScale) {
         return { pane: 'left', slot: 0, leftPx: leftLeadingWidth > 0 ? leftLeadingWidth : EMPTY_PANE_INDICATOR_INSET };
       }
     }
@@ -570,7 +574,7 @@ export const createColumnHeaderDragController = <T,>(): ColumnHeaderDragControll
     if (leftEl && paneLayout.left.entries.length > 0) {
       const rect = leftEl.getBoundingClientRect();
       if (clientX < rect.right) {
-        const localX = clientX - rect.left - leftLeadingWidth;
+        const localX = (clientX - rect.left) / dragScale - leftLeadingWidth;
         const slot = Math.max(findPaneDropSlot(paneLayout.left, localX), countLeadingSyntheticEntries(paneLayout.left));
         return {
           pane: 'left',
@@ -582,7 +586,7 @@ export const createColumnHeaderDragController = <T,>(): ColumnHeaderDragControll
     // 空の右固定ペインへのドロップ帯(right wrapper は sticky;right:0・width:0 なので rect.left === ビューポート右端)。
     if (rightEl && paneLayout.right.entries.length === 0) {
       const rect = rightEl.getBoundingClientRect();
-      if (clientX >= rect.left - EMPTY_PANE_DROP_BAND) {
+      if (clientX >= rect.left - EMPTY_PANE_DROP_BAND * dragScale) {
         return { pane: 'right', slot: 0, leftPx: -EMPTY_PANE_INDICATOR_INSET };
       }
     }
@@ -590,7 +594,7 @@ export const createColumnHeaderDragController = <T,>(): ColumnHeaderDragControll
     if (rightEl && paneLayout.right.entries.length > 0) {
       const rect = rightEl.getBoundingClientRect();
       if (clientX >= rect.left) {
-        const localX = clientX - rect.left - rightLeadingWidth;
+        const localX = (clientX - rect.left) / dragScale - rightLeadingWidth;
         const slot = Math.max(findPaneDropSlot(paneLayout.right, localX), countLeadingSyntheticEntries(paneLayout.right));
         return {
           pane: 'right',
@@ -603,7 +607,7 @@ export const createColumnHeaderDragController = <T,>(): ColumnHeaderDragControll
     const centerEl = bodyScrollRef.current;
     if (centerEl && paneLayout.center.entries.length > 0) {
       const rect = centerEl.getBoundingClientRect();
-      const localX = centerEl.scrollLeft + clientX - rect.left - centerLeadingWidth;
+      const localX = centerEl.scrollLeft + (clientX - rect.left) / dragScale - centerLeadingWidth;
       // 変更(1.0.1 のレビュー RB-2): 先頭の合成列に加えて、中央へ回した固定列の間にも置かない。
       const range = resolveCenterDropSlotRange(args.columns, paneLayout.center);
       const slot = Math.min(Math.max(findPaneDropSlot(paneLayout.center, Math.max(localX, 0)), range.min), range.max);
@@ -671,7 +675,7 @@ export const createColumnHeaderDragController = <T,>(): ColumnHeaderDragControll
       shiftByKey.set(entries[i].column.key, i > from ? -width : width);
     }
     const scrollDelta = pane === 'center' ? container.scrollLeft - liveStartScrollLeft : 0;
-    const dragDelta = (dragOrigin ? pointer.x - dragOrigin.x : 0) + scrollDelta;
+    const dragDelta = (dragOrigin ? (pointer.x - dragOrigin.x) / dragScale : 0) + scrollDelta;
 
     const previous = seenCells;
     const seen = new WeakSet<HTMLElement>();
@@ -776,12 +780,12 @@ export const createColumnHeaderDragController = <T,>(): ColumnHeaderDragControll
     }
     const hostRect = host.getBoundingClientRect();
     const containerRect = container.getBoundingClientRect();
-    const layerLeft = containerRect.left + container.clientLeft;
-    const layerTop = containerRect.top + container.clientTop;
+    const layerLeft = containerRect.left + container.clientLeft * dragScale;
+    const layerTop = containerRect.top + container.clientTop * dragScale;
     current.layer.style.cssText = [
       'position:absolute',
-      `left:${layerLeft - hostRect.left - host.clientLeft + host.scrollLeft}px`,
-      `top:${layerTop - hostRect.top - host.clientTop + host.scrollTop}px`,
+      `left:${(layerLeft - hostRect.left) / dragScale - host.clientLeft + host.scrollLeft}px`,
+      `top:${(layerTop - hostRect.top) / dragScale - host.clientTop + host.scrollTop}px`,
       `width:${container.clientWidth}px`,
       `height:${container.clientHeight}px`,
       'overflow:hidden',
@@ -793,14 +797,19 @@ export const createColumnHeaderDragController = <T,>(): ColumnHeaderDragControll
     const headerClones: HTMLElement[] = [];
     let width = 0;
     for (const cell of cells) {
-      const rect = cell.getBoundingClientRect();
+      const screenRect = cell.getBoundingClientRect();
+      const rect = {
+        top: (screenRect.top - layerTop) / dragScale,
+        width: screenRect.width / dragScale,
+        height: screenRect.height / dragScale,
+      };
       const clone = cell.cloneNode(true) as HTMLElement;
       sanitizeClone(clone);
       clone.setAttribute(DRAGGING_COLUMN_ATTRIBUTE, 'live');
       const style = clone.style;
       style.position = 'absolute';
       style.left = '0px';
-      style.top = `${rect.top - layerTop}px`;
+      style.top = `${rect.top}px`;
       style.width = `${rect.width}px`;
       style.minWidth = `${rect.width}px`;
       style.height = `${rect.height}px`;
@@ -852,7 +861,8 @@ export const createColumnHeaderDragController = <T,>(): ColumnHeaderDragControll
     // 変更(段階 2 DU-22): 行ヘッダーだけの左ペイン(列なし)の下に潜った位置も含めます(sticky; left: 0 なので右端は左端 + 行ヘッダーの幅)。
     if (leftEl) {
       const leftRect = leftEl.getBoundingClientRect();
-      const leftRight = args.paneLayout.left.entries.length > 0 ? leftRect.right : leftRect.left + args.leftLeadingWidth;
+      const leftRight =
+        args.paneLayout.left.entries.length > 0 ? leftRect.right : leftRect.left + args.leftLeadingWidth * dragScale;
       if (x < leftRight - 0.5) return true;
     }
     const rightEl = args.rightPaneScrollRef.current;
@@ -874,9 +884,9 @@ export const createColumnHeaderDragController = <T,>(): ColumnHeaderDragControll
       guide.style.display = 'none';
       return;
     }
-    guide.style.left = `${rect.left - layerRect.left}px`;
-    guide.style.top = `${rect.top - layerRect.top}px`;
-    guide.style.height = `${rect.height}px`;
+    guide.style.left = `${(rect.left - layerRect.left) / dragScale}px`;
+    guide.style.top = `${(rect.top - layerRect.top) / dragScale}px`;
+    guide.style.height = `${rect.height / dragScale}px`;
     guide.style.display = 'block';
   };
 
@@ -886,7 +896,7 @@ export const createColumnHeaderDragController = <T,>(): ColumnHeaderDragControll
   const positionFloat = (current: FloatColumn, pane: ColumnPane | null) => {
     const layerRect = current.layer.getBoundingClientRect();
     const maxLeft = Math.max(current.layerWidth - current.columnWidth, 0);
-    const left = Math.min(Math.max(pointer.x - grabOffsetX - layerRect.left, 0), maxLeft);
+    const left = Math.min(Math.max((pointer.x - grabOffsetX - layerRect.left) / dragScale, 0), maxLeft);
     current.column.style.transition = 'none';
     current.column.style.transform = `translateX(${left}px)`;
     const kind = pane === null ? 'none' : pane === 'center' ? 'move' : 'pin';
@@ -908,7 +918,7 @@ export const createColumnHeaderDragController = <T,>(): ColumnHeaderDragControll
   const slideFloatTo = (current: FloatColumn, screenLeft: number, durationMs: number) => {
     const layerRect = current.layer.getBoundingClientRect();
     current.column.style.transition = `transform ${durationMs}ms ${SETTLE_EASING}`;
-    current.column.style.transform = `translateX(${screenLeft - layerRect.left}px)`;
+    current.column.style.transform = `translateX(${(screenLeft - layerRect.left) / dragScale}px)`;
     current.badge?.remove();
     current.guide.style.display = 'none';
   };
@@ -1200,7 +1210,7 @@ export const createColumnHeaderDragController = <T,>(): ColumnHeaderDragControll
       const oldX = before.get(key);
       const newX = newLeftByKey.get(key);
       if (oldX === undefined || newX === undefined) return;
-      const delta = oldX - newX;
+      const delta = (oldX - newX) / dragScale;
       if (Math.abs(delta) < 0.5) return;
       for (const cell of cells) {
         cell.style.transition = 'none';
@@ -1276,6 +1286,7 @@ export const createColumnHeaderDragController = <T,>(): ColumnHeaderDragControll
     seenCells = null;
     pointer = { x: event.clientX, y: event.clientY };
     dragOrigin = { x: event.clientX, y: event.clientY };
+    dragScale = resolveElementScale(args.scrollContainerRef.current).x;
     autoScrollArmed = false;
     document.body.style.cursor = 'grabbing';
     ghostLabel = column.title || column.key;
@@ -1291,8 +1302,9 @@ export const createColumnHeaderDragController = <T,>(): ColumnHeaderDragControll
         ? collectColumnCells(container).find((cell) => cell.dataset.ssgColKey === column.key)
         : undefined;
       grabOffsetX = startCell
-        ? event.clientX - (startCell.getBoundingClientRect().left - currentTranslateX(startCell))
-        : (args.paneLayout[liveSourcePane].entries.find((entry) => entry.column.key === column.key)?.paneLocalSize ?? 0) / 2;
+        ? event.clientX - (startCell.getBoundingClientRect().left - currentTranslateX(startCell) * dragScale)
+        : ((args.paneLayout[liveSourcePane].entries.find((entry) => entry.column.key === column.key)?.paneLocalSize ?? 0) / 2) *
+          dragScale;
     } else {
       createGhost(ghostLabel);
     }

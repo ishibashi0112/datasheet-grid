@@ -29,6 +29,9 @@ const useRowDragFeature = <T,>({
   ...controllerArgs
 }: RowDragFeatureArgs<T>): RowDragFeatureResult<T> => {
   // ゴーストのラベル: 先頭の(合成列でない)表示列の表示値。空なら「行 N」。
+  // 変更(1.0.2 / 2026-11-09 実アプリの総点検 E-06): 値を文字で出さない列(valueFormatter の無い renderCell の列 =
+  //   画像など / チェックボックスのエディタ / showValue: false のデータバー)は飛ばし、文字を出す最初の列にします
+  //   (先頭が画像の列だと、ゴーストに画像の URL が出てどの行を掴んでいるか分からなかった)。無ければ「行 N」。
   const getRowDragLabel = useCallback(
     (viewIndex: number): string => {
       const fallback = formatLocaleText((localeTexts as RowDragTexts).dragRowLabel, { row: viewIndex + 1 });
@@ -37,7 +40,11 @@ const useRowDragFeature = <T,>({
         return fallback;
       }
       const column = visibleColumns.find(
-        (candidate) => !isSyntheticColumnKey(candidate.key),
+        (candidate) =>
+          !isSyntheticColumnKey(candidate.key) &&
+          (candidate.renderCell === undefined || candidate.valueFormatter !== undefined) &&
+          candidate.editor?.type !== 'checkbox' &&
+          candidate.conditionalFormat?.dataBar?.showValue !== false,
       );
       if (!column) {
         return fallback;

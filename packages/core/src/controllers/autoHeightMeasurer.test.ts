@@ -249,6 +249,46 @@ describe('createAutoHeightMeasurer', () => {
     measurer.dispose();
   });
 
+  // 追加(1.0.2 / 2026-11-09 実アプリの総点検 G-12): 器の上下の余白は背の高い行のため。余白を除いた中身が基準の行の高さに
+  //   収まる行は基準の高さのまま(余白で 1 行の行まで高くしない)。
+  it('器の余白を除いた中身が基準の高さに収まれば基準の高さ、収まらなければ余白ごと測る', () => {
+    const container = document.createElement('div');
+    [26, 40].forEach((contentHeight, index) => {
+      const row = document.createElement('div');
+      row.dataset.rowIndex = String(index);
+      const cell = document.createElement('div');
+      cell.setAttribute('data-autoheight-cell', '');
+      cell.style.borderBottomWidth = '1px';
+      cell.getBoundingClientRect = () => ({ height: 200 }) as DOMRect;
+      const content = document.createElement('div');
+      content.setAttribute('data-autoheight-content', '');
+      content.style.paddingTop = '5px';
+      content.style.paddingBottom = '5px';
+      content.getBoundingClientRect = () => ({ height: contentHeight }) as DOMRect;
+      cell.appendChild(content);
+      row.appendChild(cell);
+      container.appendChild(row);
+    });
+    const measurer = createAutoHeightMeasurer<Row>();
+    const store = buildRowHeightStore(rows.length, 20, rowModel.getRowKey, measurer.measuredHeights);
+    measurer.update({
+      scrollContainerRef: { current: container },
+      autoHeightActive: true,
+      minRowHeight: 24,
+      rowHeightStore: store,
+      rowMetrics: createAutoHeightRowMetrics(store),
+      rowModel,
+      virtualRows: [],
+      viewportHeight: 100,
+      version: 0,
+      nonce: 0,
+    });
+    // 26 + 1 = 27 > 24 だが、余白を除くと 16 + 1 = 17 ≤ 24 → 24 / 40 + 1 = 41(余白を除いても 31 > 24)。
+    expect(measurer.measuredHeights.get(1)).toBe(24);
+    expect(measurer.measuredHeights.get(2)).toBe(41);
+    measurer.dispose();
+  });
+
   it('無効化すると observer を破棄し、dispose でも破棄する', () => {
     const measurer = createAutoHeightMeasurer<Row>();
     const store = buildRowHeightStore(rows.length, 20, rowModel.getRowKey, measurer.measuredHeights);

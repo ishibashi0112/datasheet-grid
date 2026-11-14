@@ -8,6 +8,7 @@ import {
   ROW_ENTER_CLASS_NAME,
   ROW_ENTER_FALLBACK_MS,
   ROW_ENTER_INDEX_VAR,
+  ROW_ENTER_LIVE_WINDOW_MS,
   ROW_ENTER_STAGGER_CAP,
   transformOfStyleText,
 } from './rowEnterController';
@@ -177,6 +178,39 @@ describe('rowEnterController', () => {
     await flushObservers();
     expect(r8.classList.contains(ROW_ENTER_CLASS_NAME)).toBe(false);
     controller.dispose();
+  });
+
+  // 追加(1.0.2 / 2026-11-09 実アプリの総点検 B-07): ライブの表(行が頻繁に現れる)ではフェードインしない。
+  it('mountEnter: 前に行が現れてから間もなく現れた行には付けず、間が空けばまた付ける(skeleton はいつも付ける)', async () => {
+    const now = vi.spyOn(Date, 'now').mockReturnValue(10_000);
+    const controller = createRowEnterController();
+    controller.update({ scrollContainerRef: { current: container }, skeletonEnter: true, mountEnter: true });
+    const r1 = makeRow(1, false);
+    pane.append(r1);
+    await flushObservers();
+    expect(r1.classList.contains(ROW_ENTER_CLASS_NAME)).toBe(true);
+    now.mockReturnValue(10_250);
+    const r2 = makeRow(2, false);
+    const s3 = makeRow(3, true);
+    pane.append(r2, s3);
+    await flushObservers();
+    expect(r2.classList.contains(ROW_ENTER_CLASS_NAME)).toBe(false);
+    // 続けて現れる間は付けない(最後に現れた時刻から数える)。
+    now.mockReturnValue(10_250 + ROW_ENTER_LIVE_WINDOW_MS - 1);
+    const r4 = makeRow(4, false);
+    const r3 = makeRow(3, false);
+    s3.remove();
+    pane.append(r4, r3);
+    await flushObservers();
+    expect(r4.classList.contains(ROW_ENTER_CLASS_NAME)).toBe(false);
+    expect(r3.classList.contains(ROW_ENTER_CLASS_NAME)).toBe(true);
+    now.mockReturnValue(10_250 + ROW_ENTER_LIVE_WINDOW_MS * 3);
+    const r5 = makeRow(5, false);
+    pane.append(r5);
+    await flushObservers();
+    expect(r5.classList.contains(ROW_ENTER_CLASS_NAME)).toBe(true);
+    controller.dispose();
+    now.mockRestore();
   });
 
   it('mountEnter: DOM 移動された行は旧 transform → 新 transform を付け直し(transition を走らせる)、移動していない行・インライン transition の行は触らない', async () => {

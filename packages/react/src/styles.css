@@ -478,6 +478,11 @@
     min-width: 0;
     justify-content: inherit;
     align-items: flex-start;
+    /* 追加(1.0.2 / 2026-11-09 実アプリの総点検 G-12): 折り返して背が高くなった行で、文字が上下の罫線に接していました
+       (上 0px・下 1px)。上下に余白を足します(文字の大きさに合わせて density で変わる。測る高さに入る)。中身が基準の
+       行の高さに収まる 1 行の行は、余白を足しても基準の高さのまま(autoHeightMeasurer)で、真ん中にそろうので見た目も
+       変わりません。 */
+    padding-block: 0.4em;
   }
   /* 追加(段階 2 DU-32): 背の高い行で上にそろえるセル(verticalAlign。auto-height の列は既定で上)。 */
   .ssg-body-cell--valign-top {
@@ -503,6 +508,18 @@
   .ssg-body-cell--align-center:not(.ssg-body-cell--autoheight) > span {
     min-width: 0;
     max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  /* 変更(1.0.2 / 2026-11-09 実アプリの総点検 D-06): 左寄せ(既定)の文字のセルも、あふれたら末尾を省略記号で切ります
+     (これまでは右寄せ / 中央寄せだけで、左寄せは字の途中で切れていた)。切る箱に上下左右 2px の余白を足して同じだけ
+     外へ出し(文字の位置と省略の位置は変わらない)、検索のカレントの枠(.ssg-find-mark--current の影)を切らないように
+     します。既定の文字のセル(.ssg-cell-value)だけで、renderCell の中身は変えません。 */
+  .ssg-body-cell:not(.ssg-body-cell--autoheight) > .ssg-cell-value {
+    min-width: 0;
+    max-width: calc(100% + 4px);
+    margin: -2px;
+    padding: 2px;
     overflow: hidden;
     text-overflow: ellipsis;
   }
@@ -644,13 +661,19 @@
   /* ── 追加(合計行 3A): 表の下端に固定する合計行(totalRow) ── */
   /* 各ペインのボックスの下端(本体ぶんの空きの直後)に置く sticky 行です。縦スクロール中はスクロールコンテナの
      下端に留まり、行が少ないときは最後の行の直後に来ます。z-index はヘッダー行と同じ 6(本体の行 / 選択枠 /
-     エディタより前面)。上辺の区切り線は box-shadow(セルの境界と重ならない)。 */
+     エディタより前面)。上辺の区切り線は box-shadow(セルの境界と重ならない)。
+     変更(1.0.2 / J-11): 下へも背景色の影を 2px 伸ばします。`transform: scale(0.8)` の箱の中では、下端に留まった
+     合計行がペインの合成の端数で 1px 弱だけ上に描かれ、下の隙間から本体の行がのぞいていたためです(1px では
+     右の固定ペインの端の 1 画素に残った)。はみ出た影はスクロールコンテナが切ります。行が少なく下端に留まって
+     いないときは、合計行の親(overflow: clip)が影を切るので見た目は変わりません。 */
   .ssg-total-row {
     position: sticky;
     bottom: 0;
     z-index: 6;
     background-color: var(--ssg-total-row-bg);
-    box-shadow: 0 -1px 0 var(--ssg-total-row-border);
+    box-shadow:
+      0 -1px 0 var(--ssg-total-row-border),
+      0 2px 0 var(--ssg-total-row-bg);
   }
   .ssg-total-cell {
     background-color: var(--ssg-total-row-bg);
@@ -1138,6 +1161,14 @@
   .ssg-chip-label {
     overflow: hidden;
     text-overflow: ellipsis;
+  }
+  /* 追加(1.0.2 / 2026-11-09 実アプリの総点検 C-04): 細い列(80px 未満)のチップは余白を詰めてアイコンを外し、文字を出します
+     (46px の列で 1 文字のラベルが欠けていた)。意味は文字と色で伝わります。 */
+  .ssg-body-cell--chip-compact .ssg-chip {
+    padding: 1px 4px;
+  }
+  .ssg-body-cell--chip-compact .ssg-chip-icon {
+    display: none;
   }
 
   /* 追加(motion-7 / M-9): セル単位の保存状態(SSRM 書き戻し)。saveStatusController が data-ssg-save を付け替え、
@@ -1725,13 +1756,6 @@
      空きを埋める要素(折り返しの判定では幅 0 = 既存のグループは折り返さない)、margin-left で .ssg-bar-container の
      gap(6px)を打ち消し、既存のグループの位置を変えません。中身は絶対配置(行の高さに影響しない)で、入りきらない
      ときは端から切れます。 */
-  .ssg-bar-sep {
-    flex: none;
-    width: 1px;
-    height: 12px;
-    margin: 0 2px;
-    background-color: var(--ssg-divider);
-  }
   .ssg-bar-aggregates {
     position: relative;
     flex: 1 1 0;
@@ -1753,6 +1777,22 @@
     justify-content: flex-start;
     padding-left: 6px;
   }
+  /* 変更(1.0.2 / RV-J2): 区切り線は 1 行目に最初に置く項目(.ssg-bar-aggregates-sep = 右端の項目)の疑似要素で、
+     一覧の端(右グループの側)に描きます。縦の位置はその項目の行なので、項目が 1 つも入らず 2 行目(見えない)へ回った
+     ときは区切り線も見えません(これまでは一覧の外の要素で、区切り線だけが残っていた)。一覧の余白 9px は、これまでの
+     「隙間 4px + 区切り線 1px + 左右 2px」と同じ幅です。 */
+  .ssg-bar-aggregates-sep::after {
+    content: '';
+    position: absolute;
+    right: 2px;
+    width: 1px;
+    height: 12px;
+    background-color: var(--ssg-divider);
+  }
+  .ssg-bar-aggregates--trailing .ssg-bar-aggregates-sep::after {
+    right: auto;
+    left: 2px;
+  }
   /* 変更(1.0.1 / 実アプリの総点検 AP-28): 入りきらない項目は途中で切らずに丸ごと隠す(英語対応の確かめ直しで入れた端の
      ぼかしは、切れた数字を値と読み違えないためのものだったので外した)。項目は order で逆順(右から 合計 → データの個数 →
      平均)に並べ、右から詰めて折り返す。項目の高さを一覧の高さにして、折り返した 2 行目以降は一覧の外 = 見えない。
@@ -1767,9 +1807,13 @@
     align-content: flex-start;
     column-gap: 4px;
     overflow: hidden;
+    position: relative;
+    padding-right: 9px;
   }
   .ssg-bar-aggregates--trailing .ssg-bar-aggregates-list {
     justify-content: flex-end;
+    padding-right: 0;
+    padding-left: 9px;
   }
   .ssg-bar-aggregates-list > .ssg-bar-chip {
     flex: none;
@@ -3533,7 +3577,10 @@
   .ssg-header-cell--align-right {
     flex-direction: row-reverse;
   }
+  /* 変更(1.0.2 / 2026-11-09 実アプリの総点検 I-03): 右寄せのラベルは中身の幅にし(右へ詰める)、状態(矢印 / 漏斗)を
+     ラベルのすぐ左に置きます。これまではラベルが残りの幅を取り、状態が見出しの左端に出て左隣の列の印に見えていました。 */
   .ssg-header-cell--align-right .ssg-header-label {
+    flex: 0 1 auto;
     text-align: right;
   }
   .ssg-header-cell--align-center .ssg-header-label {
@@ -3558,6 +3605,44 @@
       background-color: transparent;
       opacity: 1;
       pointer-events: auto;
+    }
+  }
+  /* 追加(1.0.2 / 2026-11-09 実アプリの総点検 F-11 / C-07): 幅のある見出し(--inline-actions = 120px 以上)では、ホバーで
+     出る操作を重ねずにラベルと状態の間(右寄せは状態の左)へ並べ、並べ替えの矢印とフィルターの印を隠しません(ラベルが
+     長ければ省略記号で縮む)。出ていない間は幅 0 で、隣の gap を負の余白で打ち消します。細い見出しは、並べると文字も ⋮ も
+     入らないので、これまでどおり重ねます。タッチ(hover: none)は上の常時表示のまま。 */
+  @media (hover: hover) {
+    .ssg-header-cell--inline-actions .ssg-header-status {
+      order: 2;
+    }
+    .ssg-header-cell--inline-actions .ssg-header-actions {
+      position: static;
+      order: 1;
+      width: 0;
+      height: auto;
+      overflow: hidden;
+      padding: 0;
+      margin-left: -4px;
+      background-color: transparent;
+    }
+    .ssg-header-cell--inline-actions:hover .ssg-header-actions,
+    .ssg-header-cell--inline-actions .ssg-header-actions:has(:focus-visible) {
+      width: auto;
+      overflow: visible;
+      margin-left: 0;
+      background-color: transparent;
+    }
+    .ssg-header-cell--inline-actions.ssg-header-cell--align-right .ssg-header-status {
+      order: 1;
+    }
+    .ssg-header-cell--inline-actions.ssg-header-cell--align-right .ssg-header-actions {
+      order: 2;
+      margin-left: 0;
+      margin-right: -4px;
+    }
+    .ssg-header-cell--inline-actions.ssg-header-cell--align-right:hover .ssg-header-actions,
+    .ssg-header-cell--inline-actions.ssg-header-cell--align-right .ssg-header-actions:has(:focus-visible) {
+      margin-right: 0;
     }
   }
   /* 追加: hover で出る操作アイコン(grip / ⋮)の通常色を濃く(slate-600)して視認性を上げます。

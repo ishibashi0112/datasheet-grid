@@ -186,6 +186,21 @@ function showTooltipFor(target: Element) {
   watchTarget();
 }
 
+// 追加(1.0.2 / 2026-11-09 実アプリの総点検 D-06): 切れているか。要素そのものに加えて、直下の子(既定の文字のセルの
+//   .ssg-cell-value のように、自分で縮んで省略記号を付ける箱)が切れているときも数えます(子が縮むと要素の scrollWidth は
+//   増えないので、右寄せ / 中央寄せのセルでは 0.41 から出ていなかった)。
+function isClipped(element: Element): boolean {
+  if (element.scrollWidth > element.clientWidth + 1) {
+    return true;
+  }
+  for (const child of Array.from(element.children)) {
+    if (child.scrollWidth > child.clientWidth + 1) {
+      return true;
+    }
+  }
+  return false;
+}
+
 function handlePointerOverOrFocusIn(event: Event) {
   const node = event.target;
   if (!(node instanceof Element)) {
@@ -201,10 +216,7 @@ function handlePointerOverOrFocusIn(event: Event) {
     return;
   }
   // overflow マーカーだけの要素は、実際に省略(クリップ)されているときだけ表示します。
-  if (
-    !target.hasAttribute(TOOLTIP_ATTRIBUTE) &&
-    target.scrollWidth <= target.clientWidth + 1
-  ) {
+  if (!target.hasAttribute(TOOLTIP_ATTRIBUTE) && !isClipped(target)) {
     return;
   }
   const wasVisible = currentTarget !== null;

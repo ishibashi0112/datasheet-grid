@@ -79,6 +79,9 @@ const TEXT_SAFETY = 4;
 //   (例: 文字 67.14px に対しセルの中で使える幅 67px)。丸めの不足は 1px 未満なので、1px 足せば必ず収まります。
 //   getBoundingClientRect の小数の幅は祖先の transform: scale() で縮んだ値になるため使いません。
 const DOM_ROUNDING_SAFETY = 1;
+// 追加(1.0.2 / 2026-11-09 実アプリの総点検 D-02): 状態チップ(.ssg-chip)の枠(DOM で測れないときの補正)。
+//   padding 6 + 8、アイコン 12 + 間 5。
+const CHIP_HORIZONTAL_FRAME = 31;
 // ヘッダーセルのテキスト以外の固定幅です(現行の hover オーバーレイヘッダーと同期。styles.css):
 //   padding 0 6px(=12) + borderRight 1 + ラベル↔状態スロットの gap 4
 //   + 状態スロット(ソート矢印 + フィルター漏斗 + 内部 gap)~24
@@ -250,10 +253,43 @@ const createTotalRowMeasuringNode = (text: AutosizeTotalRowText): HTMLElement =>
   return node;
 };
 
+// 追加(1.0.2 / 2026-11-09 実アプリの総点検 D-02): 状態チップのセル 1 つぶんの計測ノードです。実際のチップと同じクラス
+//   (.ssg-chip / .ssg-chip-icon / .ssg-chip-label)で組み、余白・アイコン・文字の大きさ(0.92em)ごと測ります。
+const createChipMeasuringNode = (label: string, icon: boolean): HTMLElement => {
+  const node = createMeasuringNode('');
+  const chip = document.createElement('span');
+  chip.className = 'ssg-chip';
+  if (icon) {
+    const iconNode = document.createElement('span');
+    iconNode.className = 'ssg-chip-icon';
+    chip.appendChild(iconNode);
+  }
+  const labelNode = document.createElement('span');
+  labelNode.className = 'ssg-chip-label';
+  labelNode.textContent = label;
+  chip.appendChild(labelNode);
+  node.appendChild(chip);
+  return node;
+};
+
+// 状態チップの列の候補のチップ(チップの列でない / 渡されていなければ null)。
+const resolveCandidateChip = <T,>(
+  chipOf: AutosizeChipOf<T> | undefined,
+  row: T,
+  column: GridColumn<T>,
+  viewIndex: number | undefined,
+): AutosizeCellChip | null =>
+  chipOf !== undefined && column.conditionalFormat?.chips !== undefined ? chipOf(row, column, viewIndex ?? -1) : null;
+
 // 追加(見直し): 列幅の自動調整で、本体の行に加えて幅に収める合計行の表示(列の key → 文字列と見出し)。
 //   合計行が無ければ渡しません(従来どおり本体の行だけで決まる)。
 export type AutosizeTotalRowText = { text: string; caption?: string };
 export type AutosizeTotalRowTexts = ReadonlyMap<string, AutosizeTotalRowText>;
+// 追加(1.0.2 / 2026-11-09 実アプリの総点検 D-02): 状態チップ(conditionalFormat.chips)のセルの中身。チップの枠
+//   (余白とアイコン)ごと測ります(これまでは文字だけを測り、調整した直後でもチップの文字が切れていた)。
+//   label が無ければ表示文字列。チップを出さないセルは null。条件付き書式の機能があるときだけシェルが渡します。
+export type AutosizeCellChip = { label: string | undefined; icon: boolean };
+export type AutosizeChipOf<T> = (row: T, column: GridColumn<T>, viewIndex: number) => AutosizeCellChip | null;
 
 export type ColumnAutosizeParams<T> = {
   // 計測対象の列です(1 列だけ / 全表示列のどちらも渡せます)。
@@ -281,7 +317,8 @@ export type ColumnAutosizeParams<T> = {
 export type ColumnWidthAccumulator<T> = {
   // 1 行ぶんを候補へ反映します(全列同時)。getRow の OOB(undefined)は呼び出し側で
   //   吸収する前提で、ここへは非 null の行だけ渡します。
-  collect: (row: T) => void;
+  // 変更(1.0.2 / D-02): ビュー行の index も任意で受けます(チップの関数へ渡す。省略時は -1)。
+  collect: (row: T, viewIndex?: number) => void;
   // 候補から各列幅を確定し、現在幅から変化がある列だけの { columnKey: width } を返します
   //   (空オブジェクトなら呼び出し側は dispatch をスキップできます)。
   finalize: (params: {
@@ -289,6 +326,8 @@ export type ColumnWidthAccumulator<T> = {
     currentWidths: Record<string, number>;
     // 追加(見直し): 合計行の表示も幅に収めます(省略時は従来どおり)。
     totalRowTexts?: AutosizeTotalRowTexts;
+    // 追加(1.0.2 / D-02): 状態チップのセルの中身(省略時は文字だけを測る)。
+    chipOf?: AutosizeChipOf<T> | undefined;
   }) => Record<string, number>;
 };
 
@@ -314,6 +353,8 @@ export function createColumnWidthAccumulator<T>(
   //   - candidateEst[ci]: 各候補の推定幅(生テキスト基準)
   //   - candidateMinEst[ci]: 候補内の最小推定幅(満杯時の足切り用。満杯前は +∞)
   const candidateRow: T[][] = columns.map(() => []);
+  // 追加(1.0.2 / D-02): 候補のビュー行の index(チップの関数へ渡す)。
+  const candidateIndex: number[][] = columns.map(() => []);
   const candidateEst: number[][] = columns.map(() => []);
   const candidateMinEst: number[] = columns.map(
     () => Number.POSITIVE_INFINITY,
@@ -322,7 +363,7 @@ export function createColumnWidthAccumulator<T>(
   //   (px)の全行 running-max を保持します(finalize でセル枠を足して確定)。
   const maxEstimateWidth: number[] = columns.map(() => 0);
 
-  const collect = (row: T): void => {
+  const collect = (row: T, viewIndex = -1): void => {
     for (let ci = 0; ci < columns.length; ci += 1) {
       // 計測対象外(②-S1/S3): suppressAutoSize / autoHeight 列はスキップ(候補も貯めません)。
       if (isAutosizeExcludedColumn(columns[ci])) {
@@ -343,6 +384,7 @@ export function createColumnWidthAccumulator<T>(
         continue;
       }
       const rows = candidateRow[ci];
+      const indexList = candidateIndex[ci];
       const estList = candidateEst[ci];
       // 追加(DS-4 ①-(3a)): 候補が満杯なら、実推定幅を出す前に length で O(1) 足切りします。
       //   units ≤ 2*text.length のため、2*text.length ≤ 最小推定幅 なら推定幅も最小以下が
@@ -354,6 +396,7 @@ export function createColumnWidthAccumulator<T>(
       const est = estimateTextWidthUnits(text);
       if (rows.length < TOP_K) {
         rows.push(row);
+        indexList.push(viewIndex);
         estList.push(est);
         if (rows.length === TOP_K) {
           // 満杯になった時点で最小推定幅を確定します(以後の足切りに使用)。
@@ -379,6 +422,7 @@ export function createColumnWidthAccumulator<T>(
         }
       }
       rows[minIdx] = row;
+      indexList[minIdx] = viewIndex;
       estList[minIdx] = est;
       let m = estList[0];
       for (let j = 1; j < TOP_K; j += 1) {
@@ -394,10 +438,12 @@ export function createColumnWidthAccumulator<T>(
     gridRoot,
     currentWidths,
     totalRowTexts,
+    chipOf,
   }: {
     gridRoot: HTMLElement | null;
     currentWidths: Record<string, number>;
     totalRowTexts?: AutosizeTotalRowTexts;
+    chipOf?: AutosizeChipOf<T> | undefined;
   }): Record<string, number> => {
     const context = getSharedContext();
     if (!context || columns.length === 0) {
@@ -440,10 +486,12 @@ export function createColumnWidthAccumulator<T>(
           const nodes: HTMLElement[] = [];
           for (let j = 0; j < rows.length; j += 1) {
             const text = resolveCellDisplayText(rows[j], columns[ci]);
-            if (text === '') {
+            const chip = resolveCandidateChip(chipOf, rows[j], columns[ci], candidateIndex[ci][j]);
+            const shown = chip?.label ?? text;
+            if (shown === '') {
               continue;
             }
-            const node = createMeasuringNode(text);
+            const node = chip ? createChipMeasuringNode(shown, chip.icon) : createMeasuringNode(shown);
             container.appendChild(node);
             nodes.push(node);
           }
@@ -498,10 +546,12 @@ export function createColumnWidthAccumulator<T>(
           const rows = candidateRow[ci];
           for (let j = 0; j < rows.length; j += 1) {
             const text = resolveCellDisplayText(rows[j], column);
-            if (text === '') {
+            const chip = resolveCandidateChip(chipOf, rows[j], column, candidateIndex[ci][j]);
+            const shown = chip?.label ?? text;
+            if (shown === '') {
               continue;
             }
-            const width = context.measureText(text).width;
+            const width = context.measureText(shown).width + (chip ? CHIP_HORIZONTAL_FRAME : 0);
             if (width > maxCellTextWidth) {
               maxCellTextWidth = width;
             }

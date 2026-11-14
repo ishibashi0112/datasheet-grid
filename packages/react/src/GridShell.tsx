@@ -217,7 +217,7 @@ import GridHeaderRow, { type GridPaneKind } from './view/GridHeaderRow';
 // 追加(合計行 3A): 下端に固定する合計行と、その集計(core)。
 // 変更(差し込み式 段階 2): 描画部品と集計 / 表示の関数は機能セット(features.totalRow)から受け取ります。
 import { EMPTY_TOTAL_ROW_CELLS } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/totalRow';
-import type { AutosizeTotalRowText } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/columnAutosize';
+import type { AutosizeChipOf, AutosizeTotalRowText } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/columnAutosize';
 // 変更(UP-1): フィルター管理 / 列の表示 / 並び替えの独立 3 パネルを統合ツールパネル
 //   (ToolPanel + useToolPanelController)へ集約しました。旧 3 controller
 //   (useColumnChooserController / useSortManagementController / useFilterManagementController)
@@ -1471,12 +1471,42 @@ export function useGridShell<T extends object>({
   }, [totalRowEnabled, totalRowFeature, orderedColumns, totalRowCells, totalRowLabelColumnKey, totalRowLabel, localeTexts]);
   // 変更(差し込み式 段階 2): ランナーの接続は機能セットの hook(features/columnAutosize.ts)へ移し、この位置で
   //   呼びます(hook の順番は従来どおり)。無い構成では代役(列メニューの項目なし / autoSizeColumns は false 扱い)。
+  // 追加(1.0.2 / 2026-11-09 実アプリの総点検 D-02): 列幅の自動調整で状態チップ(conditionalFormat.chips)のセルを
+  //   チップの枠(余白とアイコン)ごと測るための中身です。セルの描画(renderCellContent)と同じ ctx でチップを決めます
+  //   (選択などの状態は false)。条件付き書式の機能が無い構成では渡しません(チップを出さないので文字だけを測る)。
+  const autosizeChipFeature = features.conditionalFormat;
+  const autosizeChipOf = useMemo<AutosizeChipOf<T> | undefined>(() => {
+    if (!autosizeChipFeature) {
+      return undefined;
+    }
+    return (row, column, viewIndex) => {
+      const chips = column.conditionalFormat?.chips;
+      if (!chips) {
+        return null;
+      }
+      const spec = autosizeChipFeature.resolveChipSpec(chips, {
+        row,
+        rowIndex: viewIndex,
+        sourceRowIndex: rowModel.getSourceIndex(viewIndex) ?? viewIndex,
+        rowKey: rowModel.getRowKey(viewIndex) ?? viewIndex,
+        colIndex: orderedColumns.findIndex((candidate) => candidate.key === column.key),
+        value: getCellValue(row, column),
+        column,
+        isActive: false,
+        isSelected: false,
+        isEditing: false,
+        readOnly: false,
+      });
+      return spec ? { label: spec.label, icon: spec.icon !== false } : null;
+    };
+  }, [autosizeChipFeature, rowModel, orderedColumns]);
   const columnAutosize = features.columnAutosize.useColumnAutosize<T>({
     rowModel,
     gridRootRef,
     columnWidths: effectiveColumnWidths,
     dispatch,
     totalRowTexts: totalRowAutosizeTexts,
+    chipOf: autosizeChipOf,
   });
   const { isAutosizing, runAutosize } = columnAutosize;
 
@@ -3791,7 +3821,8 @@ export function useGridShell<T extends object>({
           );
         }
       }
-      return <span>{textContent}</span>;
+      // 変更(1.0.2 / D-06): 左寄せのセルでも省略記号を付けるためのクラス(styles.css)。
+      return <span className="ssg-cell-value">{textContent}</span>;
     },
     [
       rowModel,
@@ -4420,6 +4451,20 @@ export function useGridShell<T extends object>({
           // 追加(motion-5 / M-6): クロスヘアの列ホバーも本体から出たら消します。
           if (hoverHighlight === 'cross') {
             setHoveredColumnIndex(null);
+          }
+        }}
+        // 追加(1.0.2 / 2026-11-09 実アプリの総点検 C-06): ラベル行(全幅の帯。固定した帯も)には行のホバーも列の帯も
+        //   出しません。セルからラベル行へポインタを動かしたとき、前の行のホバーと列の帯が残っていました(ラベル行には
+        //   セルの pointerenter が無いため)。
+        onPointerOver={(event) => {
+          if (
+            event.target instanceof Element &&
+            event.target.closest('[data-ssg-label-row], [data-ssg-sticky-label]') !== null
+          ) {
+            applyHoveredRowChange(null);
+            if (hoverHighlight === 'cross') {
+              setHoveredColumnIndex(null);
+            }
           }
         }}
         onPointerMoveCapture={(event) => {

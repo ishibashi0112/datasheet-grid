@@ -22,6 +22,8 @@ import type { DEFAULT_AGGREGATES_LOCALE_TEXT } from '@ishibashi0112/spreadsheet-
 //   項目は order で逆順に並べ(右から 合計 → データの個数 → 平均)、読み上げの順(DOM の順)は左からのままです。
 //   1 行目の先頭(右端)に幅 0 の目印を置くので、1 つも入らない幅では項目がすべて 2 行目へ回って何も出ません
 //   (flex は行の最初の項目だけは入らなくても置くため。目印が無いと入らない項目が 1 行目に残って切れる)。
+//   変更(1.0.2 / RV-J2): 区切り線は、1 行目に最初に置く項目(配列の最後 = 右端)の疑似要素で描きます(位置は一覧の
+//   端)。これまでは一覧の外の要素だったので、項目が 1 つも入らない幅でも区切り線だけが残っていました。
 export function GridSelectionAggregates({
   aggregates,
   trailing,
@@ -62,17 +64,19 @@ export function GridSelectionAggregates({
       chips.push({ key: 'partial', text: localeTexts.aggregatePartial, muted: true });
     }
   }
-  const separator = <span className="ssg-bar-sep" aria-hidden="true" />;
   return (
     <div className={cx('ssg-bar-aggregates', trailing && 'ssg-bar-aggregates--trailing')}>
       <div className="ssg-bar-aggregates-inner" title={chips.map((chip) => chip.text).join('  ')}>
-        {trailing ? separator : null}
         <div className="ssg-bar-aggregates-list">
           <span className="ssg-bar-aggregates-fit" aria-hidden="true" />
           {chips.map((chip, index) => (
             <span
               key={chip.key}
-              className={cx('ssg-bar-chip', chip.muted && 'ssg-bar-chip--muted')}
+              className={cx(
+                'ssg-bar-chip',
+                chip.muted && 'ssg-bar-chip--muted',
+                index === chips.length - 1 && 'ssg-bar-aggregates-sep',
+              )}
               style={{ order: -index }}
             >
               {chip.label !== undefined ? (
@@ -86,7 +90,6 @@ export function GridSelectionAggregates({
             </span>
           ))}
         </div>
-        {trailing ? null : separator}
       </div>
     </div>
   );

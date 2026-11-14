@@ -32,6 +32,11 @@ import { isActiveColumnFilterValue } from '@ishibashi0112/spreadsheet-grid-core/
 import { DETAIL_TOGGLE_COLUMN_KEY, isSyntheticColumnKey } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/detailRow';
 import { ROW_DRAG_HANDLE_COLUMN_KEY } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/rowReorder';
 import type { GridResolvedSlots } from '../model/gridTypes';
+
+// 追加(1.0.2 / 2026-11-09 実アプリの総点検 F-11 / C-07): ホバーで出る操作(grip / ⋮)をラベルと状態の間に並べる(覆わない)
+//   見出しの幅の下限(px)。余白 12 + 操作 34 前後 + 状態(矢印・番号・漏斗)30 前後 + 間 8 + ラベルの最低限 30 前後。
+//   これより細い見出しは、並べると文字も ⋮ も入らないので、これまでどおり操作を重ねます。
+const HEADER_INLINE_ACTIONS_MIN_WIDTH = 120;
 import { useGridLocaleText } from '../hooks/useGridLocaleText';
 import { formatLocaleText } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/localeText';
 
@@ -399,6 +404,7 @@ function GridHeaderRowInner<T>({
               hoveredColumnIndex === colIndex && 'ssg-header-cell--hovered',
               headerAlign === 'center' && 'ssg-header-cell--align-center',
               headerAlign === 'right' && 'ssg-header-cell--align-right',
+              size >= HEADER_INLINE_ACTIONS_MIN_WIDTH && 'ssg-header-cell--inline-actions',
               slots?.headerCell?.className,
             )}
             style={{

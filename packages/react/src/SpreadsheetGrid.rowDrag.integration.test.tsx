@@ -348,6 +348,33 @@ describe('行ドラッグ並び替え(結合)', () => {
     ).toBe(false);
   });
 
+  // 追加(1.0.2 / 2026-11-09 実アプリの総点検 E-06): 先頭が画像などの renderCell の列なら、文字を出す次の列の値を出す。
+  it('ゴーストは値を文字で出さない列(renderCell / チェックボックス)を飛ばす', () => {
+    const imageColumns: GridColumn<Row>[] = [
+      { key: 'id', title: '画像', width: 80, renderCell: ({ value }) => <img alt="" src={`/thumbs/${String(value)}.svg`} /> },
+      { key: 'qty', title: '在庫あり', width: 80, editor: { type: 'checkbox' } },
+      ...columns.slice(1),
+    ];
+    const { container } = render(
+      <SpreadsheetGrid
+        columns={imageColumns}
+        rows={rows}
+        rowKeyGetter={rowKeyGetter}
+        onRowsChange={() => {}}
+        enableRowDrag
+        rowHeight={ROW_HEIGHT}
+        headerHeight={HEADER_HEIGHT}
+      />,
+    );
+    act(() => {
+      pressHandle(handleAt(container, 1) as HTMLElement, 1, upperHalfY(1));
+    });
+    expect(document.querySelector<HTMLElement>('[data-grid-drag-ghost]')?.textContent).toBe('beta');
+    act(() => {
+      dispatchWindowPointer('pointerup', 1, upperHalfY(1));
+    });
+  });
+
   it('後方の行を前方へ(行 2 を行 0 の上へ)移動できる', () => {
     const onRowsChange = vi.fn();
     const { container } = render(
