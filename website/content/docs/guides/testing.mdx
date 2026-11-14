@@ -81,6 +81,7 @@ fireEvent.scroll(scroller);
 | コピー | グリッドは `navigator.clipboard.writeText` で書きます。user-event の `userEvent.setup()` はクリップボードを差し替えるので、`Ctrl+C` の後に `await navigator.clipboard.readText()` で中身を確かめられます。user-event を使わないときは `navigator.clipboard` を `{ writeText: vi.fn() }` などに差し替えます。 |
 | 範囲選択 | jsdom には座標が無いので、ポインタのドラッグでは正しい範囲になりません。`Shift+矢印` / `Shift+クリック`、またはハンドルの `selectRange` を使います。 |
 | 確定・取り消しの後 | 確定(`Enter` / `Tab`)の後のアクティブセルの移動と、次の編集を受け付けるようになるのは、その後のマイクロタスクです。fireEvent で同期に続けて書くときは、間に `await act(async () => {})` を挟みます(結果を確かめるだけなら `waitFor` でも構いません)。 |
+| エディタの入力欄を取る | 編集中は、エディタの枠(`role="group"`)と入力欄の両方が「(列名) を編集」の名前を持ちます。`getByLabelText('品名 を編集')` は 2 つに当たって落ちるので、`getByRole('textbox', { name: '品名 を編集' })`(number は `spinbutton`、select は `combobox`)で取ります。 |
 | date エディタ | ネイティブの `<input type="date">` なので、`fireEvent.change(input, { target: { value: '2026-11-09' } })` で値を入れます(jsdom の一般的な制約)。 |
 | ハンドルでセルを選んだ後のキー操作 | `selectCell` / `setActiveCell` はフォーカスを移しません。続けてキーを送るときは、ハンドルの `focus()` を呼ぶか、セルを押します。 |
 
@@ -95,6 +96,8 @@ module.exports = {
   moduleNameMapper: { '\\.css$': 'identity-obj-proxy' },
 };
 ```
+
+Jest 30 の jsdom(26)には `PointerEvent` がありません。グリッドはセルの選択をポインタのイベントで受けるため、`fireEvent.pointerDown` / `fireEvent.click` だけではセルが選ばれません。セルを押す操作は user-event(`await user.click(cell)`)で書くか、ハンドルの `selectCell` と `focus()` を使います。
 
 ## ポップオーバーを開くテスト
 

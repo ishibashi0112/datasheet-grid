@@ -1072,7 +1072,7 @@ const columns = [
 - **date の Tab はグリッド流(確定 + 移動)**です。ピッカー内のセグメント移動は ← → 矢印で行えます。
 - **checkbox のダブルクリックは click 2 回**(トグル往復)として扱われます(Excel / AG Grid と同様)。`renderCell` 指定時はそちらが優先され、組み込みチェックボックスセルは描画されません。
 - **custom の `ctx.commit(value)`** は、`value` が string なら列パーサ(`parseClipboardValue` ?? editor 既定)を通し、**非 string ならパースをバイパスしてドメイン値をそのまま書き込みます**。`ctx` には `row` / `rowIndex`(ビュー行)/ `sourceRowIndex`・`rowKey`(source 基準)/ `colIndex` / `column` / `value`(編集開始時の生値)/ `initialText`(印字キー開始時はそのキー)/ `align` / `commit` / `cancel` が入ります。`commit` の返り値(`EditorCommitResult`)で reject 列の検証結果を受け取れます(無視しても安全)。`commit(value, direction)` の第 2 引数(`'down' | 'up' | 'right' | 'left'`)で確定後のアクティブセル移動を指定できます(省略時は移動しない。`editorEnterMove` prop は custom エディタには効かないため、Enter で下へ進めたい場合は `'down'` を明示)。編集が終わった後(確定 / 取消 / 別のセルの編集が始まった後)に呼んだ前の編集の `ctx.commit` / `ctx.cancel` は何もしない(`ctx.commit` は `{ status: 'noop' }` を返す)。非同期の検査の後で確定する作りでも、遅れて届いた値が別のセルへ書かれることはない。
-- **custom の枠**: `render(ctx)` の返り値は、編集中のセルと同じ位置・大きさの枠(`.ssg-cell-editor`。`position: absolute`)の中に描く。枠は透明なので、返す要素の根に `width: 100%; height: 100%; box-sizing: border-box` と背景色(`var(--ssg-cell-bg)` など)を付ける(付けないと内容の高さにしかならず、下のセルの文字が透ける)。デザインシステムの入力部品は、外側の要素だけでなく内側の入力欄にも高さを渡す(Mantine なら `styles={{ wrapper: { height: '100%' }, input: { height: '100%', minHeight: 0 } }}`)。枠より少し大きい部品(星のピッカーなど)ははみ出して描いてよいが、枠はスクロール領域の中にあるので、領域の端で切れ、下端に固定した合計行(`totalRow`)の下に隠れる。候補の一覧のように表の外まで伸びる部品は、`createPortal(…, document.body)` + `position: fixed`(セルの `getBoundingClientRect()` から位置を決める)で描く。portal の部品の `onMouseDown`(`onPointerDown`)で `preventDefault()` すると、押したときに入力欄の blur(確定)が起きない。表をスクロールしても portal の部品は付いてこないので、表(エディタを含む要素)や文書がスクロールしたら閉じる(`useEffect` で `window.addEventListener('scroll', onScroll, true)` とし、`onScroll` では `event.target === document || (event.target instanceof Node && event.target.contains(エディタの根の要素))` のときだけ閉じる。capture で聞くので、候補の一覧そのもののスクロールも届く。それでは閉じない。Mantine の `Select` などデザインシステムの部品も同じ)。枠の中身はクリックを受ける(0.61.0 までは受けず、下のセルに当たっていた)。
+- **custom の枠**: `render(ctx)` の返り値は、編集中のセルと同じ位置・大きさの枠(`.ssg-cell-editor`。`position: absolute`)の中に描く。枠は透明なので、返す要素の根に `width: 100%; height: 100%; box-sizing: border-box` と背景色(`var(--ssg-cell-bg)` など)を付ける(付けないと内容の高さにしかならず、下のセルの文字が透ける)。デザインシステムの入力部品は、外側の要素だけでなく内側の入力欄にも高さを渡す(Mantine なら `styles={{ wrapper: { height: '100%' }, input: { height: '100%', minHeight: 0 } }}`)。枠より少し大きい部品(星のピッカーなど)ははみ出して描いてよいが、枠はスクロール領域の中にあるので、領域の端で切れ、下端に固定した合計行(`totalRow`)の下に隠れる。候補の一覧のように表の外まで伸びる部品は、`createPortal(…, document.body)` + `position: fixed`(セルの `getBoundingClientRect()` から位置を決める)で描く。portal の部品の `onMouseDown`(`onPointerDown`)で `preventDefault()` すると、押したときに入力欄の blur(確定)が起きない。表をスクロールしても portal の部品は付いてこないので、表(エディタを含む要素)や文書がスクロールしたら閉じる(`useEffect` で `window.addEventListener('scroll', onScroll, true)` とし、`onScroll` では `event.target === document || (event.target instanceof Node && event.target.contains(エディタの根の要素))` のときだけ閉じる。capture で聞くので、候補の一覧そのもののスクロールも届く。それでは閉じない。Mantine の `Select` などデザインシステムの部品も同じ)。見えていないセルで `startEditing()` を呼んだとき(行を足してすぐ編集するなど)は、エディタを出した直後にグリッドがセルまでスクロールするので、このスクロールで閉じないよう、見張りと位置の計測は開いてから 2 フレーム後(`requestAnimationFrame` を 2 回)に始める(先に `scrollToCell` で見せておいてもよい)。枠の中身はクリックを受ける(0.61.0 までは受けず、下のセルに当たっていた)。
 
 ### バリデーション(validate / validationMode)
 
@@ -1883,8 +1883,19 @@ const [columns, setColumns] = useState(() => restoreColumnsFromState(defaultColu
 ```tsx
 // URL のクエリ(?sort=qty.desc)から戻す。Next.js の App Router なら、サーバーの描画から並べ替えが効く。
 // app/orders/page.tsx(サーバーコンポーネント。OrdersGrid は 'use client' で SpreadsheetGrid を描く)
-// Next.js 16 の cacheComponents では、searchParams を読むページは <Suspense> の中に置く(Next.js の決まり。layout か呼び出し側で包む)。
-export default async function Page({ searchParams }: { searchParams: Promise<{ sort?: string }> }) {
+// Next.js 16 の cacheComponents では、searchParams を読む部分を <Suspense> の中に置く(Next.js の決まり)。
+// ページの中で包む(layout.tsx で包むと、build は通っても開発時に「searchParams accessed outside of <Suspense>」の console.error が出る)。
+import { Suspense } from 'react';
+
+export default function Page({ searchParams }: { searchParams: Promise<{ sort?: string }> }) {
+  return (
+    <Suspense>
+      <Orders searchParams={searchParams} />
+    </Suspense>
+  );
+}
+
+async function Orders({ searchParams }: { searchParams: Promise<{ sort?: string }> }) {
   const [columnKey, direction] = ((await searchParams).sort ?? '').split('.');
   const initialState = columnKey
     ? { sort: [{ columnKey, direction: direction === 'desc' ? ('desc' as const) : ('asc' as const) }] }
@@ -2350,7 +2361,7 @@ beforeAll(() => {
 - これで `.ssg-body-row` / `.ssg-body-cell` の描画・付与クラス・セル文字列を DOM で検証できる(本体の `SpreadsheetGrid.jsdomLayoutStubs.integration.test.tsx` が動作保証)。仮想化はそのまま効くので、描かれるのはスタブの大きさに入る行・列(と先読みの分)だけ(既定の 1200×600、行の高さ 36px、幅 120px の列で約 38 行・約 18 列。グリッドの `height` では変わらない)。全部を描くときはスタブを大きくする(`{ width: 3000, height: 4000 }` など)か、`.ssg-scroll-container` の `scrollTop` / `scrollLeft` を書いて `fireEvent.scroll` を出す。ハンドルの `scrollToRow` / `scrollToCell` は jsdom では何もしない(スタブの `scrollTo` は no-op)。行は固定ペインにも描かれ、行番号「#」は左のペインの行にあるので(0.63.0 から、左固定列が無い表でも)、行を数える / n 番目の行のセルを引くときは中央のペインの行(`[data-pane="center"].ssg-body-row`)を使う。
 - 列フィルターのポップオーバー / ツールパネルを開いた直後に**同期で**中身を確かめるテストでは、部品の遅延読み込みが終わっていないと出ていない。`beforeAll(() => preloadGridPopups())`(本体から import。`/lite` のグリッドなら `/lite` から)で先に読み込むか、`findBy*` / `waitFor` で待つ([ポップオーバー部品の遅延読み込み](#ポップオーバー部品の遅延読み込みpreloadgridpopups))。
 - よく書く操作: 貼り付けは paste イベントの `clipboardData` を読むので user-event の `user.paste('a\tb')` か `fireEvent.paste(shell, { clipboardData: { getData: () => 'a\tb' } })`(`Ctrl+V` のキーだけでは貼り付かない)。コピーは `navigator.clipboard.writeText` で書く(`userEvent.setup()` の後なら `navigator.clipboard.readText()` で読める)。範囲選択は jsdom に座標が無いので `Shift+矢印` / `Shift+クリック` / `selectRange`。確定・取り消しの後のアクティブセルの移動と次の編集の受け付けはその後のマイクロタスクなので、fireEvent で同期に続けるときは `await act(async () => {})` を挟む。date エディタはネイティブの `<input type="date">` なので `fireEvent.change`。`selectCell` / `setActiveCell` はフォーカスを移さないので、続けてキーを送るときは `focus()` を呼ぶ。
-- Jest: CommonJS の入口があるのでそのまま読める。CSS の import は `moduleNameMapper: { '\\.css$': 'identity-obj-proxy' }` などで読み替える。
+- Jest: CommonJS の入口があるのでそのまま読める。CSS の import は `moduleNameMapper: { '\\.css$': 'identity-obj-proxy' }` などで読み替える。 Jest 30 の jsdom(26)には `PointerEvent` が無く、`fireEvent` だけではセルが選ばれないので、セルを押す操作は user-event か、ハンドルの `selectCell` + `focus()` で書く。
 
 ## パーツ別スロット(`classNames` / `GridSlotProps`)
 
