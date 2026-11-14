@@ -382,5 +382,42 @@ describe('clipboardController', () => {
     c.handlePaste({ clipboardData: { getData: () => 'p\nq' }, preventDefault: vi.fn() });
     const written2 = (col.args.onRowsChange as ReturnType<typeof vi.fn>).mock.calls[0][0] as Row[];
     expect(written2.map((r) => r.name)).toEqual(['p', 'q', 'c']);
+
+    // 変更(1.0.1 のレビュー RA-2): 範囲の左上がグループ行(全選択など)でも、先頭のデータ行から貼る。
+    const all = makeArgs({
+      rows: leafRows,
+      rowModel: groupModel,
+      uiState: {
+        ...createInitialGridUiState(),
+        activeCell: { row: 4, col: 1 },
+        selection: { type: 'cell', range: { start: { row: 0, col: 0 }, end: { row: 4, col: 1 } } },
+      },
+    });
+    c.update(all.args);
+    c.handlePaste({ clipboardData: { getData: () => 'r\ts' }, preventDefault: vi.fn() });
+    const written3 = (all.args.onRowsChange as ReturnType<typeof vi.fn>).mock.calls[0][0] as Row[];
+    expect(written3[0]).toEqual({ id: 'r', name: 's' });
+    expect(all.dispatch).toHaveBeenCalledWith({ type: 'cell/activate', cell: { row: 1, col: 0 } });
+  });
+
+  // 追加(1.0.1 のレビュー RA-2): 全選択 / 行の選択の左上が合成列(行ドラッグの掴み手)のときは、合成列でない最初の列を
+  //   起点にする(貼った後のアクティブセルが掴み手の列に乗っていた)。
+  it('起点の列は合成列を飛ばす(RA-2)', () => {
+    const c = createClipboardController<Row>();
+    const withHandle: GridColumn<Row>[] = [{ key: '__ssg_row_drag_handle__', title: '', width: 24 }, ...columns];
+    for (const selection of [
+      { type: 'cell' as const, range: { start: { row: 0, col: 0 }, end: { row: 1, col: 2 } } },
+      { type: 'row' as const, startRow: 0, endRow: 1 },
+    ]) {
+      const t = makeArgs({
+        visibleColumns: withHandle,
+        uiState: { ...createInitialGridUiState(), activeCell: { row: 1, col: 2 }, selection },
+      });
+      c.update(t.args);
+      c.handlePaste({ clipboardData: { getData: () => 'x\ty' }, preventDefault: vi.fn() });
+      const written = (t.args.onRowsChange as ReturnType<typeof vi.fn>).mock.calls[0][0] as Row[];
+      expect(written[0]).toEqual({ id: 'x', name: 'y' });
+      expect(t.dispatch).toHaveBeenCalledWith({ type: 'cell/activate', cell: { row: 0, col: 1 } });
+    }
   });
 });

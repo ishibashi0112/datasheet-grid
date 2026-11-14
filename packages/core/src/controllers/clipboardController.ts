@@ -248,11 +248,13 @@ export const createClipboardController = <T extends object>(): ClipboardControll
     }
 
     const pasteAnchor = resolvePasteAnchor(uiState.selection, uiState.activeCell);
-    // 列 / 行の選択は先頭のデータ行から(先頭がラベル行・グループ行なら次のデータ行)。
-    const anchor =
-      uiState.selection?.type === 'col' || uiState.selection?.type === 'row'
-        ? { row: findFirstPasteRow(rowModel, pasteAnchor.row), col: pasteAnchor.col }
-        : pasteAnchor;
+    // 起点の行は先頭のデータ行から(先頭がラベル行・グループ行なら次のデータ行)、列は合成列でない最初の列から。
+    // 変更(1.0.1 のレビュー RA-2): 範囲の選択(全選択を含む)の左上にも当てます。左上がラベル行 / グループ行だと貼り付けが
+    //   何もせず、全選択 / 行の選択の後はアクティブセルが合成列(行ドラッグの掴み手など)に乗っていた。
+    const anchor = {
+      row: findFirstPasteRow(rowModel, pasteAnchor.row),
+      col: resolvePasteColumnIndexes(visibleColumns, pasteAnchor.col, 1)[0] ?? pasteAnchor.col,
+    };
     const startFilteredRowIndex = anchor.row;
     const startColIndexForEdits = anchor.col;
     // 追加(FC-03): 貼り付けの最後の列。合成列は 1 列と数えないので、範囲の右端は合成列を飛ばした位置です。
