@@ -57,9 +57,6 @@ export type EditController<T extends object> = {
     direction?: EditorCommitDirection,
   ) => EditorCommitResult;
   cancelEdit: () => void;
-  // 追加(1.0.1 / AP-12): エディタがフォーカスを持ったまま外れたとき(グリッドごとアンマウント)の確定。cell がまだ編集中の
-  //   セル(最後に描いた編集中のセル)で、確定・取消の直後でなければ、方向なしで確定します。別のセルの編集へ移った後なら何もしない。
-  commitEditAt: (cell: CellCoord, value: unknown) => void;
 };
 
 // 追加(audit RD-1 / RD-3): 編集セッションの「同一性」です。editingCell は view / 論理 index だけを
@@ -413,16 +410,5 @@ export const createEditController = <T extends object>(): EditController<T> => {
     scheduleAfterEdit(null, null, undefined, immediate);
   };
 
-  const commitEditAt = (cell: CellCoord, value: unknown) => {
-    if (args === null || args.editorActionGuardRef.current) {
-      return;
-    }
-    const editing = args.uiState.editingCell;
-    if (editing === null || editing.row !== cell.row || editing.col !== cell.col) {
-      return;
-    }
-    commitEdit(value);
-  };
-
-  return { update, activateSingleCell, startEditWithValue, commitEdit, cancelEdit, commitEditAt };
+  return { update, activateSingleCell, startEditWithValue, commitEdit, cancelEdit };
 };

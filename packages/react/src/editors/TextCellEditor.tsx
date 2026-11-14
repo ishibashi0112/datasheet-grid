@@ -17,7 +17,6 @@ import type {
 } from '../model/gridTypes';
 import { useIsomorphicLayoutEffect } from '../hooks/useController';
 import { createEditorKeyDownHandler } from './editorKeyBindings';
-import { useCommitIfRemovedWhileFocused } from './useCommitIfRemovedWhileFocused';
 import { CellEditorErrorBubble } from './CellEditorErrorBubble';
 import { cx } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/cx';
 
@@ -42,8 +41,6 @@ type TextCellEditorProps = {
   lineBreak?: string;
   // 追加(段階 2 の確かめ直し N3-2): 編集中のセルが上にそろえて描かれているか(背の高い行の auto-height の列など)。
   alignTop?: boolean;
-  // 追加(1.0.1 / AP-12): フォーカスを持ったまま外れたとき(グリッドごとアンマウント)に、打っていた値で呼びます。
-  onRemovedWhileFocused?: (value: unknown) => void;
 };
 
 // 追加(段階 2 DU-14): 複数行の入力欄の 1 行の高さが読めないとき(line-height: normal など)の値です。
@@ -96,7 +93,6 @@ export function TextCellEditor({
   wordBreak,
   lineBreak,
   alignTop = false,
-  onRemovedWhileFocused,
 }: TextCellEditorProps) {
   const inputRef = useRef<HTMLInputElement | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
@@ -107,8 +103,6 @@ export function TextCellEditor({
   const multilinePaddingRef = useRef<{ key: string; padding: number } | null>(null);
   const [draftValue, setDraftValue] = useState(initialValue);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
-  // 追加(1.0.1 / AP-12): フォーカスを持ったまま外れたら(グリッドごとアンマウント)打っていた値を確定します。
-  useCommitIfRemovedWhileFocused([inputRef, textareaRef], draftValue, onRemovedWhileFocused);
 
   // 追加(段階 2 DU-14): 複数行の入力欄は中身が変わるたびに高さを合わせます(描く前に合わせて、伸びる途中を見せない)。
   useIsomorphicLayoutEffect(() => {

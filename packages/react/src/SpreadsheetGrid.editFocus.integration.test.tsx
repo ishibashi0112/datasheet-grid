@@ -337,10 +337,11 @@ describe('blur で確定しない custom エディタ(AP-11)', () => {
 });
 
 
-// 追加(1.0.1 / 実アプリの総点検 AP-12): 編集中にグリッドごとアンマウントされると(キーボードのショートカットでタブを
-//   切り替えた等)、打っていた値が黙って捨てられていた。フォーカスを持ったまま外れたエディタは確定する。
-describe('編集中のアンマウント(AP-12)', () => {
-  let hideGrid: () => void = () => {};
+// 変更(1.0.1 のレビュー RA-1): 編集中にグリッドごとアンマウントされたときは、1.0.0 と同じく確定しない(外れたグリッドが
+//   持っている古い rows で onRowsChange を呼ぶと、外すのと同じ更新で親が変えた rows を上書きするため)。残したいときは
+//   外す前に入力欄の blur で確定する(ドキュメントの書き方)。
+describe('編集中のアンマウント(AP-12 / RA-1)', () => {
+  let hideGrid: (options?: { blurFirst?: boolean; nextRows?: Row[] }) => void = () => {};
   function TogglingHarness({ gridRef }: { gridRef: RefObject<SpreadsheetGridHandle<Row> | null> }) {
     const [rows, setRows] = useState(initialRows);
     const [shown, setShown] = useState(true);
@@ -348,7 +349,15 @@ describe('編集中のアンマウント(AP-12)', () => {
       currentRows = rows;
     }, [rows]);
     useEffect(() => {
-      hideGrid = () => setShown(false);
+      hideGrid = ({ blurFirst = false, nextRows } = {}) => {
+        if (blurFirst && document.activeElement instanceof HTMLElement) {
+          document.activeElement.blur();
+        }
+        if (nextRows) {
+          setRows(nextRows);
+        }
+        setShown(false);
+      };
     }, []);
     return shown ? (
       <SpreadsheetGrid<Row>
@@ -361,42 +370,37 @@ describe('編集中のアンマウント(AP-12)', () => {
     ) : null;
   }
 
-  it('エディタにフォーカスがあるままアンマウントすると、打っていた値を確定する(StrictMode でも開いた直後に閉じない)', async () => {
+  it('外すのと同じ更新で親が rows を変えても、外れたグリッドの古い rows で上書きしない', async () => {
     const ref = createRef<SpreadsheetGridHandle<Row>>();
     const { container } = render(
       <StrictMode>
         <TogglingHarness gridRef={ref} />
       </StrictMode>,
     );
-    const editor = startEditing(container, 1, 0, 'draft');
-    // StrictMode の付け直しで確定・終了していない。
+    startEditing(container, 1, 0, 'draft');
+    const replaced: Row[] = [{ id: 9, name: 'other', memo: 'z' }];
     await act(async () => {
+      hideGrid({ nextRows: replaced });
       await Promise.resolve();
     });
-    expect(container.querySelector('.ssg-cell-editor-input')).toBe(editor);
-    expect(currentRows[1]?.name).toBe('beta');
+    expect(container.querySelector('.ssg-shell')).toBeNull();
+    expect(currentRows).toEqual(replaced);
+  });
 
+  it('外す前に入力欄を blur すると、打っていた値を確定してから外れる', async () => {
+    const ref = createRef<SpreadsheetGridHandle<Row>>();
+    const { container } = render(
+      <StrictMode>
+        <TogglingHarness gridRef={ref} />
+      </StrictMode>,
+    );
+    startEditing(container, 1, 0, 'draft');
     await act(async () => {
-      hideGrid();
+      hideGrid({ blurFirst: true });
       await Promise.resolve();
     });
     expect(container.querySelector('.ssg-shell')).toBeNull();
     expect(currentRows[1]?.name).toBe('draft');
-  });
-
-  it('Escape で取り消した後のアンマウントでは書かない', async () => {
-    const ref = createRef<SpreadsheetGridHandle<Row>>();
-    const { container } = render(<TogglingHarness gridRef={ref} />);
-    const editor = startEditing(container, 2, 0, 'nope');
-    await act(async () => {
-      fireEvent.keyDown(editor, { key: 'Escape' });
-      await Promise.resolve();
-    });
-    await act(async () => {
-      hideGrid();
-      await Promise.resolve();
-    });
-    expect(currentRows[2]?.name).toBe('gamma');
   });
 });
 

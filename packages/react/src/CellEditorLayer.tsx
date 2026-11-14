@@ -85,8 +85,6 @@ type CellEditorLayerProps<T> = {
     direction?: EditorCommitDirection,
   ) => EditorCommitResult | void;
   onCancel: () => void;
-  // 追加(1.0.1 / AP-12): エディタがフォーカスを持ったまま外れたとき(グリッドごとアンマウント)の確定。編集していたセルと値を渡す。
-  onCommitAt?: (cell: { row: number; col: number }, value: unknown) => void;
   // 追加(③): 編集 input の text-align。列 align に追従(右寄せ数値列を編集中も右寄せ維持)。
   align?: 'left' | 'center' | 'right';
   // 追加(enter-move ②): 組み込みエディタの Enter 確定後の移動先です(未指定 = 'down')。
@@ -115,7 +113,6 @@ export function CellEditorLayer<T>({
   slots,
   onCommit,
   onCancel,
-  onCommitAt,
   align,
   enterMove,
   domId,
@@ -175,10 +172,6 @@ export function CellEditorLayer<T>({
     return null;
   }
 
-  // 追加(AP-12): フォーカスを持ったまま外れたときの確定先(このセッションのセル)。
-  const onRemovedWhileFocused =
-    onCommitAt && identity ? (value: unknown) => onCommitAt({ row: identity.row, col: identity.col }, value) : undefined;
-
   // 変更(UI CSS移行): wrapper は座標のみインライン。zIndex / pointerEvents と input の静的
   //   スタイルは styles.css(.ssg-cell-editor / .ssg-cell-editor-input)へ。枠色は accent 追従。
   const wrapperStyle: CSSProperties = {
@@ -202,7 +195,6 @@ export function CellEditorLayer<T>({
       <NumberCellEditor
         key={sessionId}
         ariaLabel={editLabel}
-        onRemovedWhileFocused={onRemovedWhileFocused}
         enterMove={enterMove}
         initialValue={initialValue}
         min={editor.min}
@@ -220,7 +212,6 @@ export function CellEditorLayer<T>({
       <DateCellEditor
         key={sessionId}
         ariaLabel={editLabel}
-        onRemovedWhileFocused={onRemovedWhileFocused}
         enterMove={enterMove}
         initialValue={toDateInputValue(
           editorSession ? editorSession.value : initialValue,
@@ -285,7 +276,6 @@ export function CellEditorLayer<T>({
       <TextCellEditor
         key={sessionId}
         ariaLabel={editLabel}
-        onRemovedWhileFocused={onRemovedWhileFocused}
         enterMove={enterMove}
         initialValue={initialValue}
         onCommit={onCommit}

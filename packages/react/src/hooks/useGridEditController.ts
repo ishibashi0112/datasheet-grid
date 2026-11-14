@@ -17,7 +17,6 @@ export const useGridEditController = <T extends object>(
     startEditWithValue: controller.startEditWithValue,
     commitEdit: controller.commitEdit,
     cancelEdit: controller.cancelEdit,
-    commitEditAt: controller.commitEditAt,
   };
 };
 

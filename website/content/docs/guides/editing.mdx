@@ -59,6 +59,18 @@ const columns: GridColumn<Row>[] = [
 
 どちらも `Tab` は確定して右へ、`Escape` は取り消し、フォーカスアウトは確定です。スマートフォンなどのソフトキーボードでは `Alt` / `Ctrl` を押せないため、既定の `'commit'` では改行できません。モバイルで改行させたい列は `enterKey: 'newline'` にしてください(確定は外をタップ = フォーカスアウト)。改行を表示するのは `autoHeight` の列(値の改行どおりに折り返して行が伸びる)で、それ以外の列は 1 行に並べて表示します。
 
+## 編集中にグリッドを外すとき
+
+組み込みのエディタはフォーカスが外れたときに確定します。編集中にグリッドごとアンマウントすると(キーボードのショートカットで画面のタブを切り替えたときなど)フォーカスアウトが起きないため、打っていた値は捨てられます(`display: none` で隠したときや、マウスでタブを押したときはフォーカスアウトで確定します)。外す前に確定させたいときは、外す処理の先頭で入力欄の `blur()` を呼んでください。グリッドが `onRowsChange` を呼んでから外れます。
+
+```tsx
+const switchTab = (next: string) => {
+  // 編集中の値を確定してから外す
+  if (document.activeElement instanceof HTMLElement) document.activeElement.blur();
+  setTab(next);
+};
+```
+
 ## Enter 確定後の移動先(`editorEnterMove`)
 
 組み込みエディタの `Enter` 確定後、アクティブセルは既定で **1 行下**へ移動します(Excel 同様)。`editorEnterMove` prop で変更できます:

@@ -2891,7 +2891,7 @@ export function useGridShell<T extends object>({
   );
 
   // ── edit controller ───────────────────────────────────
-  const { startEditWithValue, commitEdit, cancelEdit, commitEditAt } = useGridEditController({
+  const { startEditWithValue, commitEdit, cancelEdit } = useGridEditController({
     uiState,
     rows,
     // 変更(10-E): editingCell.col は論理 index 空間のため orderedColumns で indexing します。
@@ -4560,7 +4560,6 @@ export function useGridShell<T extends object>({
                   themeClassName={portalClassName}
                   onCommit={commitEdit}
                   onCancel={cancelEdit}
-                  onCommitAt={commitEditAt}
                   align={editingColumn?.align}
                   enterMove={editorEnterMove}
                   domId={cellEditorDomId}
@@ -4783,7 +4782,6 @@ export function useGridShell<T extends object>({
                   themeClassName={portalClassName}
                   onCommit={commitEdit}
                   onCancel={cancelEdit}
-                  onCommitAt={commitEditAt}
                   align={editingColumn?.align}
                   enterMove={editorEnterMove}
                   domId={cellEditorDomId}
@@ -5007,7 +5005,6 @@ export function useGridShell<T extends object>({
                   themeClassName={portalClassName}
                   onCommit={commitEdit}
                   onCancel={cancelEdit}
-                  onCommitAt={commitEditAt}
                   align={editingColumn?.align}
                   enterMove={editorEnterMove}
                   domId={cellEditorDomId}
