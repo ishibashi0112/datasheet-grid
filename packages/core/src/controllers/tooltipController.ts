@@ -254,6 +254,23 @@ function handleGlobalHide() {
   hideTooltip();
 }
 
+// 変更(1.0.1 の確かめ直し L): タップで出したアクティブセルのツールチップは、同じセルをもう一度タップしても閉じません
+//   (閉じるとアクティブセルが変わらないので出し直されず、もう一度タップしても読めなかった)。マウスは従来どおり押したら閉じる。
+function handlePointerDown(event: Event) {
+  if (
+    activatedTarget !== null &&
+    currentTarget === activatedTarget &&
+    typeof PointerEvent !== 'undefined' &&
+    event instanceof PointerEvent &&
+    event.pointerType !== 'mouse' &&
+    event.target instanceof Node &&
+    activatedTarget.contains(event.target)
+  ) {
+    return;
+  }
+  hideTooltip();
+}
+
 function handleKeyDown(event: KeyboardEvent) {
   if (event.key === 'Escape') {
     hideTooltip();
@@ -265,7 +282,7 @@ function installListeners() {
   window.addEventListener('pointerout', handlePointerOutOrFocusOut, true);
   window.addEventListener('focusin', handlePointerOverOrFocusIn, true);
   window.addEventListener('focusout', handlePointerOutOrFocusOut, true);
-  window.addEventListener('pointerdown', handleGlobalHide, true);
+  window.addEventListener('pointerdown', handlePointerDown, true);
   window.addEventListener('scroll', handleGlobalHide, true);
   window.addEventListener('keydown', handleKeyDown, true);
 }
@@ -275,7 +292,7 @@ function uninstallListeners() {
   window.removeEventListener('pointerout', handlePointerOutOrFocusOut, true);
   window.removeEventListener('focusin', handlePointerOverOrFocusIn, true);
   window.removeEventListener('focusout', handlePointerOutOrFocusOut, true);
-  window.removeEventListener('pointerdown', handleGlobalHide, true);
+  window.removeEventListener('pointerdown', handlePointerDown, true);
   window.removeEventListener('scroll', handleGlobalHide, true);
   window.removeEventListener('keydown', handleKeyDown, true);
 }

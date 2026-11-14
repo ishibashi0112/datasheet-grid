@@ -211,6 +211,25 @@ describe('アクティブセルのツールチップ(AP-35)', () => {
     controller.dispose();
   });
 
+  // 1.0.1 の確かめ直し(L): 同じセルをもう一度タップするとツールチップが閉じ、その後は出なかった。
+  it('同じセルをもう一度タップしても閉じない。マウスで押したとき・別の所をタップしたときは閉じる', () => {
+    const controller = acquireTooltipController();
+    scheduleActiveCellTooltip('active-cell', root);
+    vi.advanceTimersByTime(100);
+    expect(isVisible()).toBe(true);
+    cell.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, pointerType: 'touch' }));
+    expect(isVisible()).toBe(true);
+    outside.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, pointerType: 'touch' }));
+    expect(isVisible()).toBe(false);
+
+    scheduleActiveCellTooltip('active-cell', root);
+    vi.advanceTimersByTime(100);
+    expect(isVisible()).toBe(true);
+    cell.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, pointerType: 'mouse' }));
+    expect(isVisible()).toBe(false);
+    controller.dispose();
+  });
+
   it('グリッドの外へフォーカスが移ったら閉じる', () => {
     const controller = acquireTooltipController();
     scheduleActiveCellTooltip('active-cell', root);
