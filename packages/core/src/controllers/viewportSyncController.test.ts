@@ -7,6 +7,7 @@ import {
   clampScrollToContent,
   createScrollScaleAnchor,
   createViewportSyncController,
+  revealActiveCellInPage,
   scrollCellIntoView,
   type ViewportSyncArgs,
 } from './viewportSyncController';
@@ -15,7 +16,16 @@ type ScrollToArgs = { top?: number; left?: number; behavior?: string };
 
 const createScrollElement = () => {
   const scrollTo = vi.fn<(args: ScrollToArgs) => void>();
-  const raw = { scrollLeft: 0, scrollTop: 0, clientWidth: 300, clientHeight: 200, scrollTo };
+  // closest / ownerDocument: アクティブセルをページでも見せる処理(J-10)が読む(グリッドの外なので何もしない)。
+  const raw = {
+    scrollLeft: 0,
+    scrollTop: 0,
+    clientWidth: 300,
+    clientHeight: 200,
+    scrollTo,
+    ownerDocument: document,
+    closest: () => null,
+  };
   return { element: raw as unknown as HTMLElement, raw, scrollTo };
 };
 
@@ -202,6 +212,87 @@ describe('scrollCellIntoView の縦の位置', () => {
     expect(run(300, { top: 310, height: 30 }, { stickyTopInset })).toBe(280);
     // 帯より下なら動かさない。
     expect(run(300, { top: 330, height: 30 }, { stickyTopInset })).toBeUndefined();
+  });
+});
+
+// 追加(1.0.2 / 2026-11-09 実アプリの総点検 J-10): キーボードで動かしたアクティブセルがウィンドウの外へ出たら、ページも最小限動かす。
+describe('revealActiveCellInPage(J-10)', () => {
+  const geometry = { headerHeight: 40, verticalScaleFactor: 1 };
+  const rect = { top: 100, height: 36, left: 0, width: 100 };
+  const rectAt = (top: number, height: number) =>
+    () => ({ top, bottom: top + height, height, left: 0, right: 300, width: 300, x: 0, y: top, toJSON: () => ({}) }) as DOMRect;
+  const setup = () => {
+    const shell = document.createElement('div');
+    shell.className = 'ssg-shell';
+    shell.tabIndex = 0;
+    const container = document.createElement('div');
+    shell.appendChild(container);
+    document.body.appendChild(shell);
+    // スクロールの枠は画面の 300〜500。行の上端 100 は 見出し 40 の下 = 画面の 440〜476。
+    container.getBoundingClientRect = rectAt(300, 200);
+    const innerHeight = window.innerHeight;
+    Object.defineProperty(window, 'innerHeight', { configurable: true, value: 400 });
+    const scrollBy = vi.spyOn(window, 'scrollBy').mockImplementation(() => {});
+    const restore = () => {
+      Object.defineProperty(window, 'innerHeight', { configurable: true, value: innerHeight });
+      scrollBy.mockRestore();
+      shell.remove();
+    };
+    return { shell, container, scrollBy, restore };
+  };
+
+  it('グリッドがフォーカスを持ち、最後の操作がキーボードのとき、見えるだけページを動かす', () => {
+    const { shell, container, scrollBy, restore } = setup();
+    shell.focus();
+    revealActiveCellInPage(container, rect, geometry);
+    expect(scrollBy).toHaveBeenCalledWith({ top: 76, behavior: 'auto' });
+    restore();
+  });
+
+  it('マウス / タッチで触った後・フォーカスが外にあるとき・見えているときは動かさない', () => {
+    const { shell, container, scrollBy, restore } = setup();
+    shell.focus();
+    shell.setAttribute('data-ssg-pointer', '');
+    revealActiveCellInPage(container, rect, geometry);
+    shell.removeAttribute('data-ssg-pointer');
+    shell.blur();
+    revealActiveCellInPage(container, rect, geometry);
+    shell.focus();
+    revealActiveCellInPage(container, { ...rect, top: 0 }, geometry);
+    expect(scrollBy).not.toHaveBeenCalled();
+    restore();
+  });
+
+  it('スクロールする親があれば先に親を動かし、残りをページで動かす', () => {
+    const { shell, container, scrollBy, restore } = setup();
+    const parent = document.createElement('div');
+    parent.style.overflowY = 'auto';
+    // 親の見える範囲は画面の 0〜380(ウィンドウの中)、スクロールできるのは 30 まで。
+    parent.getBoundingClientRect = rectAt(0, 380);
+    Object.defineProperty(parent, 'clientHeight', { configurable: true, value: 380 });
+    Object.defineProperty(parent, 'scrollHeight', { configurable: true, value: 410 });
+    let parentScrollTop = 0;
+    Object.defineProperty(parent, 'scrollTop', {
+      configurable: true,
+      get: () => parentScrollTop,
+      set: (value: number) => {
+        parentScrollTop = value;
+      },
+    });
+    document.body.appendChild(parent);
+    parent.appendChild(shell);
+    shell.focus();
+    // 行の上端 10 = 画面の 350〜386。下端を親の 380 に入れるには 6。親だけ動かし、ページは動かさない。
+    revealActiveCellInPage(container, { ...rect, top: 10 }, geometry);
+    expect(parent.scrollTop).toBe(6);
+    expect(scrollBy).not.toHaveBeenCalled();
+    // 親が動ききらない(上限 30)ときは、残りをページで(画面の 440〜476 → 親で 30 → 410〜446 → ページで 46)。
+    parent.scrollTop = 0;
+    revealActiveCellInPage(container, rect, geometry);
+    expect(parent.scrollTop).toBe(30);
+    expect(scrollBy).toHaveBeenCalledWith({ top: 46, behavior: 'auto' });
+    parent.remove();
+    restore();
   });
 });
 

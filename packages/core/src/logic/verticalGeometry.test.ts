@@ -20,6 +20,7 @@ import {
   createUniformRowMetrics,
   logicalToPhysicalScrollTop,
   physicalToLogicalScrollTop,
+  resolvePageTargetRow,
   shouldUseAutoHeight,
   type ComputeVerticalGeometryArgs,
 } from './verticalGeometry';
@@ -836,5 +837,25 @@ describe('createRowHeightOverrideMetrics (sparse cell-height overrides over a ba
     );
     expect(geometry.rows[1]).toEqual({ index: 1, start: 30, size: 60, detailSize: 100 });
     expect(geometry.rows[2].start).toBe(190);
+  });
+});
+
+// 追加(1.0.2 / 2026-11-09 実アプリの総点検 L-18): PageDown → PageUp で同じ行へ戻る(見える高さが行の高さで割り切れないとき)。
+describe('resolvePageTargetRow(L-18)', () => {
+  it('下へも上へも同じ行数だけ動く(1 画面 = 15.5 行)', () => {
+    const metrics = createUniformRowMetrics(100, 36);
+    const page = 36 * 15.5;
+    expect(resolvePageTargetRow(metrics, 2, 1, page)).toBe(17);
+    expect(resolvePageTargetRow(metrics, 17, 1, page)).toBe(32);
+    expect(resolvePageTargetRow(metrics, 32, -1, page)).toBe(17);
+    expect(resolvePageTargetRow(metrics, 17, -1, page)).toBe(2);
+  });
+
+  it('割り切れるとき・先頭と末尾の近くは端で止まる', () => {
+    const metrics = createUniformRowMetrics(20, 30);
+    expect(resolvePageTargetRow(metrics, 10, -1, 300)).toBe(0);
+    expect(resolvePageTargetRow(metrics, 10, 1, 300)).toBe(19);
+    expect(resolvePageTargetRow(metrics, 3, -1, 300)).toBe(0);
+    expect(resolvePageTargetRow(metrics, 15, 1, 300)).toBe(19);
   });
 });

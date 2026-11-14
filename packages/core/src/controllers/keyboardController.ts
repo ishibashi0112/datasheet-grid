@@ -17,8 +17,7 @@ import type {
 import { clamp } from '../logic/geometry';
 import { isImeInputTarget, isPrintableKey, shouldIgnoreGridKeydown } from '../logic/domGuards';
 import { isViewCellEditable } from '../utils/permissions';
-import { DETAIL_TOGGLE_COLUMN_KEY } from '../logic/detailRow';
-import { ROW_DRAG_HANDLE_COLUMN_KEY } from '../logic/rowReorder';
+import { DETAIL_TOGGLE_COLUMN_KEY, resolveFirstDataColIndex } from '../logic/detailRow';
 
 export type GridKeyboardEventLike = {
   key: string;
@@ -65,8 +64,6 @@ export type KeyboardControllerArgs<T> = {
 
 // 追加(dogfood DU-01): Home / Ctrl+Home / Ctrl+← で止まる先頭の列は、操作用の合成列(行ドラッグのハンドル列・展開トグル列)を
 //   飛ばした最初の列です(← ではこれまでどおり合成列へも移れる)。自動グループ列は値を出す列なので止まります。
-const isControlColumnKey = (key: string): boolean =>
-  key === ROW_DRAG_HANDLE_COLUMN_KEY || key === DETAIL_TOGGLE_COLUMN_KEY;
 const DEFAULT_PAGE_ROWS = 10;
 
 // 追加(label-row ③): 縦移動ではラベル行(セルを持たない)に止まらず、同じ向きに読み飛ばします。
@@ -85,10 +82,7 @@ const skipLabelRows = <T,>(rowModel: RowModel<T>, candidateRow: number, step: 1 
 
 // 追加(dogfood DU-01 / DU-16): 端の行(ラベル行を飛ばした最初の行)と端の列(操作用の合成列を飛ばした最初の列)。
 const firstRowIndex = <T,>(rowModel: RowModel<T>): number => skipLabelRows(rowModel, 0, 1, 0);
-const firstColIndex = <T,>(visibleColumns: GridColumn<T>[]): number => {
-  const index = visibleColumns.findIndex((column) => !isControlColumnKey(column.key));
-  return index < 0 ? 0 : index;
-};
+const firstColIndex = <T,>(visibleColumns: GridColumn<T>[]): number => resolveFirstDataColIndex(visibleColumns);
 
 // 追加(段階 2 lite-2): 最初のデータのセルです(ラベル行と操作用の合成列を飛ばす)。Tab の最初の止まり先(DU-16)と同じで、
 //   全選択(Ctrl+A / 左上の角)の後のアクティブセルにも使います(これまでは (0, 0) で、枠が合成列やラベル行に乗っていた)。
@@ -418,8 +412,10 @@ export const createKeyboardController = <T,>(): KeyboardController<T> => {
         return;
       }
       const currentCol = uiState.activeCell?.col ?? 0;
+      // 変更(1.0.2 / 2026-11-09 実アプリの総点検 F-04): 先頭の端は操作用の合成列を飛ばした最初の列(Home / Ctrl+← と同じ)。
+      //   これまでは先頭のデータ列の Shift+Tab で行ドラッグのハンドル列に止まり、外へ出るのにもう 1 回要りました。
       const atEdge = event.shiftKey
-        ? currentCol <= 0
+        ? currentCol <= firstColIndex(args.visibleColumns)
         : currentCol >= args.visibleColumns.length - 1;
       if (atEdge) {
         // 変更(段階 2 C-N2): 最終列の Tab は、その行のカードが開いていればカードの中へ(無ければ別の行のカードを飛ばして外へ)。

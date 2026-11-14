@@ -150,6 +150,73 @@ export const scrollCellIntoView = (
   }
 };
 
+// 追加(1.0.2 / 2026-11-09 実アプリの総点検 J-10): キーボードでアクティブセルを動かしたとき、グリッドの外側(スクロールする親と
+//   ページ)も最小限スクロールしてセルを見せます。グリッドの下半分がウィンドウの外にあると、↓ でアクティブセルが画面の外へ
+//   出てもページが動かず、打ち始めてエディタにフォーカスが移ったときに初めて動いていた。グリッドの中のスクロール
+//   (scrollCellIntoView)の後に呼びます。グリッドがフォーカスを持っていて、最後の操作がマウス / タッチでないとき
+//   (シェルの data-ssg-pointer が無いとき)だけ。命令的な API でフォーカスが外にあるときと、押したセルでは動かしません。
+//   縦だけ。大きさの無い環境(jsdom)では何もしません。
+const resolveRevealDelta = (top: number, bottom: number, viewTop: number, viewBottom: number): number => {
+  if (top < viewTop) {
+    return top - viewTop;
+  }
+  if (bottom > viewBottom) {
+    // 見える高さより背の高いセルは上端に合わせます。
+    return Math.min(bottom - viewBottom, top - viewTop);
+  }
+  return 0;
+};
+
+export const revealActiveCellInPage = (
+  scrollElement: HTMLElement,
+  rect: ViewportCellRect,
+  args: Pick<ViewportSyncArgs<unknown>, 'headerHeight' | 'verticalScaleFactor'>,
+): void => {
+  const doc = scrollElement.ownerDocument;
+  const view = doc.defaultView;
+  const shell = scrollElement.closest('.ssg-shell');
+  const active = doc.activeElement;
+  if (!view || !shell || !active || !shell.contains(active) || shell.hasAttribute('data-ssg-pointer')) {
+    return;
+  }
+  const box = scrollElement.getBoundingClientRect();
+  if (box.height === 0) {
+    return;
+  }
+  const scrollTop = physicalToLogicalScrollTop(scrollElement.scrollTop, args.verticalScaleFactor);
+  let top = box.top + scrollElement.clientTop + args.headerHeight + rect.top - scrollTop;
+  let bottom = top + rect.height;
+  for (
+    let element = scrollElement.parentElement;
+    element && element !== doc.body && element !== doc.documentElement;
+    element = element.parentElement
+  ) {
+    const max = element.scrollHeight - element.clientHeight;
+    if (max <= 0) {
+      continue;
+    }
+    const overflowY = view.getComputedStyle(element).overflowY;
+    if (overflowY !== 'auto' && overflowY !== 'scroll' && overflowY !== 'overlay') {
+      continue;
+    }
+    const viewTop = element.getBoundingClientRect().top + element.clientTop;
+    const delta = resolveRevealDelta(top, bottom, viewTop, viewTop + element.clientHeight);
+    if (delta === 0) {
+      continue;
+    }
+    // CSS の scroll-behavior: smooth でも動いた量が分かるよう、行き先を自分で上限へ詰めます。
+    const before = element.scrollTop;
+    const target = Math.min(Math.max(before + delta, 0), max);
+    element.scrollTop = target;
+    top -= target - before;
+    bottom -= target - before;
+  }
+  const delta = resolveRevealDelta(top, bottom, 0, view.innerHeight);
+  if (delta !== 0) {
+    view.scrollBy({ top: delta, behavior: 'auto' });
+  }
+};
+
 // 追加(1.0.1 / 2026-11-09 実アプリの総点検 AP-24): 縮めたスクロール(論理全高が MAX_BODY_PX を超える表)で、行の数が
 //   変わって縮める率(verticalScaleFactor)が変わったときに、見ている行(論理の位置)を保ちます。物理の scrollTop が
 //   同じままだと論理の位置 = scrollTop × 率 が変わり、ログに行を足し続ける 100 万行の表では、上へ戻って読んでいる
@@ -258,6 +325,7 @@ export const createViewportSyncController = <T,>(): ViewportSyncController<T> =>
       lastEvaluatedCell = activeCell;
       if (!coordUnchanged && args.scrollElement && args.activeCellRect) {
         scrollCellIntoView(args.scrollElement, args.activeCellRect, args);
+        revealActiveCellInPage(args.scrollElement, args.activeCellRect, args);
       }
     }
 

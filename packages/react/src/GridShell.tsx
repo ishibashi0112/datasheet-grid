@@ -135,14 +135,17 @@ import {
   AUTO_HEIGHT_MAX_ROWS,
   // 追加(label-row ③.5): 縦固定の現在セクション判定で物理 scrollTop を論理へ換算します。
   physicalToLogicalScrollTop,
+  resolvePageTargetRow,
 } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/verticalGeometry';
 import type { StickyTopInset } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/scrollTargets';
 // 追加(detail ③): 展開行(Master/Detail)の純ロジック(トグル列キー / rowKey→view index 解決 / 選択帯分割)です。
 import {
   DEFAULT_DETAIL_ROW_HEIGHT,
   DETAIL_TOGGLE_COLUMN_KEY,
+  isControlColumnKey,
   isInsideDetailCardOf,
   isSyntheticColumnKey,
+  resolveFirstDataColIndex,
   seedDetailIndexCache,
 } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/detailRow';
 // 変更(差し込み式 段階 5): ラベル行(見出し / 区切り行)の SSRM ラッパ / 縦スクロール固定の解決 / 部品は機能セット
@@ -2702,18 +2705,22 @@ export function useGridShell<T extends object>({
   const handleTabPastLastColumn = useCallback(
     (viewRowIndex: number): boolean => {
       const scroll = scrollContainerRef.current;
-      if (!hasDetailCards || !scroll) {
-        return false;
-      }
-      const card = findDetailCard(scroll, viewRowIndex);
+      const card = hasDetailCards && scroll ? findDetailCard(scroll, viewRowIndex) : null;
       if (card && focusDetailCardEdge(card, 'first')) {
         return true;
       }
+      // 変更(1.0.2 / 2026-11-09 実アプリの総点検 F-10): 展開行が無い表でも、表の直後の目印から既定の Tab を進めます(ラベル行の
+      //   render やセルの中に置いたボタンへ DOM の順に入り、表の外へ出るのに何回も Tab が要っていた)。
       moveFocusPastTable();
       return false;
     },
     [hasDetailCards, moveFocusPastTable],
   );
+  // 追加(1.0.2 / 2026-11-09 実アプリの総点検 G-13): フォーカスを持ったカードがスクロールや絞り込みで消えたら、グリッドへ戻します
+  //   (body に落ちて、矢印キーや Ctrl+C がグリッドに届かなかった)。
+  const handleDetailCardFocusLost = useCallback(() => {
+    gridRootRef.current?.focus({ preventScroll: true });
+  }, []);
   const handleDetailCardKeyDown = useCallback(
     (event: ReactKeyboardEvent<HTMLDivElement>, viewRowIndex: number) => {
       if (
@@ -2792,7 +2799,8 @@ export function useGridShell<T extends object>({
   const resolvePageRow = useCallback(
     (fromRow: number, direction: 1 | -1): number => {
       const pageHeight = Math.max(viewportHeight - headerHeight, rowHeight);
-      return rowMetrics.rowAtContentY(rowMetrics.rowTop(fromRow) + direction * pageHeight);
+      // 変更(1.0.2 / 2026-11-09 実アプリの総点検 L-18): 上へも下へと同じ行数だけ動かす(core resolvePageTargetRow)。
+      return resolvePageTargetRow(rowMetrics, fromRow, direction, pageHeight);
     },
     [rowMetrics, viewportHeight, headerHeight, rowHeight],
   );
@@ -2852,7 +2860,7 @@ export function useGridShell<T extends object>({
     resolvePageRow,
     openColumnMenu: columnMenuEnabled ? openColumnMenuForCell : undefined,
     // 追加(段階 2 C-N2): 最終列の Tab をその行の展開行のカードへ。
-    onTabPastLastColumn: detailRowEnabled ? handleTabPastLastColumn : undefined,
+    onTabPastLastColumn: handleTabPastLastColumn,
   });
 
   // 修正(段階 2 の見直し): セルや見出しの中の消費側の要素(renderCell のボタンなど)で Tab を押し、表の中にもう止まる要素が
@@ -3421,14 +3429,15 @@ export function useGridShell<T extends object>({
   // 行移動の共通 commit です(ドロップ確定 / 命令的 moveRow)。moveArrayItem が no-op(同一位置 /
   //   範囲外)なら onRowsChange も onRowMove も呼びません。履歴ラッパ(handleRowsChange)経由のため
   //   undo/redo 対象になります(controller は latest-ref 越しに読むため参照変化は無害)。
+  //   変更(1.0.2 / RV-F3): 動かしたら true を返します(ドラッグで離したときにアクティブセルを決めるため)。
   const commitRowMove = useCallback(
-    (fromIndex: number, toIndex: number) => {
+    (fromIndex: number, toIndex: number): boolean => {
       if (!handleRowsChange) {
-        return;
+        return false;
       }
       const next = moveArrayItem(rows, fromIndex, toIndex);
       if (next === rows) {
-        return;
+        return false;
       }
       const movedRow = rows[fromIndex];
       const nextRows = next as T[];
@@ -3439,6 +3448,7 @@ export function useGridShell<T extends object>({
         toIndex,
         rows: nextRows,
       });
+      return true;
     },
     [rows, handleRowsChange, onRowMove, resolvedRowKeyGetter],
   );
@@ -3468,12 +3478,22 @@ export function useGridShell<T extends object>({
   // 追加(アプリの再確認): ドラッグで離したときは、行のホバーを外します。ドラッグ中はポインタを掴んだハンドルが受けるので
   //   ホバーは掴んだ行の位置(view index)のまま残り、離した後はそこへ来た別の行に印が付いていました(次にポインタが
   //   別のセルへ入ると付き直す)。命令的 API の moveRow はポインタと関係ないので外しません。
+  // 追加(1.0.2 / 2026-11-09 実アプリの総点検 RV-F3): 離した行(動かした先)をアクティブセルにします(列は今のアクティブセルの列、
+  //   無いか合成列なら先頭のデータ列)。ハンドルを押すとフォーカスはグリッドへ移るのに、アクティブセルが無いままで、続けて
+  //   ↓ を押すと表の先頭へ飛んでいた。
   const commitRowMoveFromDrag = useCallback(
     (fromIndex: number, toIndex: number) => {
-      commitRowMove(fromIndex, toIndex);
+      const moved = commitRowMove(fromIndex, toIndex);
       applyHoveredRowChange(null);
+      const activeCol = gridStore.getState().activeCell?.col;
+      const activeColumn = activeCol === undefined ? undefined : orderedColumns[activeCol];
+      const col =
+        activeCol !== undefined && activeColumn !== undefined && !isControlColumnKey(activeColumn.key)
+          ? activeCol
+          : resolveFirstDataColIndex(orderedColumns);
+      gridApi.handle.selectCell(moved ? toIndex : fromIndex, col);
     },
-    [commitRowMove, applyHoveredRowChange],
+    [commitRowMove, applyHoveredRowChange, gridStore, orderedColumns, gridApi],
   );
   // 変更(差し込み式 段階 2): ゴーストのラベル / controller の接続 / settle の layout effect と、ハンドル列のセル・
   //   ガイド線の描画は機能セットの hook(features/rowDrag.tsx)へ移し、この位置で呼びます(hook の順番は従来どおり)。
@@ -4845,6 +4865,7 @@ export function useGridShell<T extends object>({
                   slots={slots}
                   entries={detailEntries}
                   onCardKeyDown={handleDetailCardKeyDown}
+                  onCardFocusLost={handleDetailCardFocusLost}
                   mode="center"
                   paneWidth={centerContentWidth}
                   cardStickyLeft={detailCardStickyLeft}
@@ -5106,16 +5127,15 @@ export function useGridShell<T extends object>({
           )}
         </div>
         {/* ── /共有スクロールコンテナ ── */}
-        {/* 追加(段階 2 C-N2): 表の直後の目印(展開行があるときだけ)。Tab の順番に入れるのはカードが描かれているときだけです。 */}
-        {detailRowEnabled ? (
-          <span
-            ref={tableExitRef}
-            className="ssg-tab-exit"
-            tabIndex={hasDetailCards ? 0 : -1}
-            aria-hidden="true"
-            onFocus={handleTableExitFocus}
-          />
-        ) : null}
+        {/* 追加(段階 2 C-N2): 表の直後の目印。Tab の順番に入れるのはカードが描かれているときだけです。 */}
+        {/* 変更(1.0.2 / F-10): 展開行が無い表でも置きます(最終列の Tab で表の中のボタンを飛ばして外へ出るため)。 */}
+        <span
+          ref={tableExitRef}
+          className="ssg-tab-exit"
+          tabIndex={hasDetailCards ? 0 : -1}
+          aria-hidden="true"
+          onFocus={handleTableExitFocus}
+        />
 
         {/* 追加(scrollHint): スクロール位置インジケーター(行番号バブル)です。autosize /
             filter overlay と同じくシェルへの絶対配置・pointer-events: none の装飾オーバーレイ。

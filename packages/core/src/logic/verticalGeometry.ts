@@ -146,6 +146,23 @@ export type RowMetrics = {
   detailHeight(index: number): number;
 };
 
+// 追加(1.0.2 / 2026-11-09 実アプリの総点検 L-18): PageDown / PageUp の行き先(見える本体の高さ 1 画面ぶん)。下へは 1 画面ぶん下の
+//   位置を含む行、上へは「上端が 1 画面ぶん上の位置より下にある最初の行」(下へと同じ行数だけ戻る)。これまでは上へも 1 画面ぶん
+//   上の位置を含む行で、見える高さが行の高さで割り切れないと PageDown → PageUp で 1 行ずれていた(2 → 17 → 32 → 16)。
+export const resolvePageTargetRow = (
+  metrics: Pick<RowMetrics, 'rowTop' | 'rowAtContentY'>,
+  fromRow: number,
+  direction: 1 | -1,
+  pageHeight: number,
+): number => {
+  if (direction > 0) {
+    return metrics.rowAtContentY(metrics.rowTop(fromRow) + pageHeight);
+  }
+  const y = metrics.rowTop(fromRow) - pageHeight;
+  const row = metrics.rowAtContentY(Math.max(y, 0));
+  return metrics.rowTop(row) < y ? row + 1 : row;
+};
+
 // uniform 行高の RowMetrics を生成します(純算術)。
 //   各 resolver は移行前の呼び出し箇所(index*rowHeight 等)とバイト等価です。
 export const createUniformRowMetrics = (

@@ -162,6 +162,34 @@ describe('blurForPopover / restoreGridFocus', () => {
   });
 });
 
+describe('restoreGridFocus(1.0.2 / RV-K2)', () => {
+  it('閉じるパネル(グリッドのポップアップ)の中にフォーカスがあるときは、その場で root へ移す', () => {
+    const root = document.createElement('div');
+    root.tabIndex = 0;
+    const panel = document.createElement('div');
+    panel.className = 'ssg-filter-popover';
+    const input = document.createElement('input');
+    panel.appendChild(input);
+    const outside = document.createElement('input');
+    document.body.append(root, panel, outside);
+    const callbacks: FrameRequestCallback[] = [];
+    vi.stubGlobal('requestAnimationFrame', (cb: FrameRequestCallback) => {
+      callbacks.push(cb);
+      return callbacks.length;
+    });
+    input.focus();
+    restoreGridFocus({ current: root });
+    expect(document.activeElement).toBe(root);
+    // パネルの外(利用側の入力欄)にあるときは、その場では動かさない(次のフレームで戻す = 従来どおり)。
+    outside.focus();
+    restoreGridFocus({ current: root });
+    expect(document.activeElement).toBe(outside);
+    for (const cb of callbacks) cb(0);
+    expect(document.activeElement).toBe(root);
+    vi.unstubAllGlobals();
+  });
+});
+
 describe('isInsideGridRoot(監査 C-3)', () => {
   it('押下先が root の内側のときだけ true(外側クリックで閉じたときのフォーカス復帰判定)', () => {
     const root = document.createElement('div');

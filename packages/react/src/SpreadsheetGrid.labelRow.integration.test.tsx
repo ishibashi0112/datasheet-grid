@@ -493,3 +493,32 @@ describe('SpreadsheetGrid × 合成列の数え方(DF-11)', () => {
     expect(container.textContent).toContain('列 3 / 3');
   });
 });
+
+// 追加(1.0.2 / 2026-11-09 実アプリの総点検 F-10): 最終列の Tab で、ラベル行の render に置いたボタンへ DOM の順に入り、表の外へ
+//   出るのに何回も Tab が要っていた。展開行が無い表でも、表の直後の目印から既定の Tab で外へ出す。
+describe('SpreadsheetGrid × ラベル行の中のボタンと Tab(F-10)', () => {
+  it('最終列の Tab は表の直後の目印へ移して既定動作で外へ(ラベル行のボタンに止まらない)', () => {
+    const ref = createRef<SpreadsheetGridHandle<Row>>();
+    const { container } = render(
+      <SpreadsheetGrid
+        ref={ref}
+        rows={rows}
+        columns={columns}
+        rowKeyGetter={rowKeyGetter}
+        labelRow={{ ...labelRow, render: ({ label }) => <button type="button">{label} を開く</button> }}
+      />,
+    );
+    expect(container.querySelector('[data-ssg-label-row] button')).not.toBeNull();
+    const shell = container.querySelector<HTMLElement>('.ssg-shell') as HTMLElement;
+    const lastCol = (ref.current?.getColIndex('qty') ?? -1);
+    act(() => {
+      ref.current?.setActiveCell({ row: 1, col: lastCol });
+    });
+    shell.focus();
+    expect(fireEvent.keyDown(shell, { key: 'Tab' })).toBe(true);
+    const exit = container.querySelector<HTMLElement>('.ssg-tab-exit');
+    expect(document.activeElement).toBe(exit);
+    // 展開行が無い表では目印は Tab の止まり先にならない(表の後ろからの Shift+Tab は従来どおり表の中へ)。
+    expect(exit?.tabIndex).toBe(-1);
+  });
+});

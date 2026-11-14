@@ -10,6 +10,7 @@
 //     capture / pointerdown / keydown capture)を attach / detach で管理します。判定(パネル内か・
 //     Escape の扱い)は各コントローラが handlers で与えます。
 import { isFocusInsideDetailCard } from '../logic/detailRow';
+import { GRID_POPUP_SELECTOR } from './escapeClaimController';
 
 export type ReadonlyElementRef<E extends HTMLElement = HTMLElement> = {
   readonly current: E | null;
@@ -24,7 +25,20 @@ export const blurForPopover = (gridRoot: HTMLElement | null): void => {
 
 // 変更(1.0.1 / 2026-11-09 実アプリの総点検 AP-10): セルのエディタにフォーカスがあるときも奪いません。右クリックメニューの
 //   onSelect で startEditing() を呼ぶと、開いたエディタがこの復帰で blur して確定され、すぐ閉じていた。
+// 変更(1.0.2 / 2026-11-09 実アプリの総点検 RV-K2): 閉じるパネル(グリッドのポップアップ)の中にフォーカスがあるときは、その場で
+//   グリッドへ移します(パネルが消えてから次のフレームまでフォーカスが body にあった。jsdom のテストでは最大約 50ms)。
+//   次のフレームの確かめは従来どおり(押したセルなどへ移ったフォーカスを最後にグリッドへ)。
 export const restoreGridFocus = (gridRootRef: ReadonlyElementRef): void => {
+  const current = gridRootRef.current;
+  const focused = current?.ownerDocument.activeElement ?? null;
+  if (
+    current !== null &&
+    focused !== null &&
+    !current.contains(focused) &&
+    focused.closest(GRID_POPUP_SELECTOR) !== null
+  ) {
+    current.focus({ preventScroll: true });
+  }
   requestAnimationFrame(() => {
     const root = gridRootRef.current;
     if (root === null || isFocusInsideDetailCard()) {

@@ -3,6 +3,7 @@
 import { describe, it, expect, afterEach } from 'vitest';
 
 import {
+  beginEscapeCancelableDrag,
   createEscapeClaimController,
   isClearableSelection,
   isEscapeClaimedByGrid,
@@ -95,6 +96,21 @@ describe('createEscapeClaimController', () => {
     inner.addEventListener('keydown', prevent);
     const event = pressEscape(inner);
     expect(isEscapePreventedInside(event)).toBe(true);
+  });
+
+  // 追加(1.0.2 / 1.0.1 のレビュー RA-6 の残り): 1 セルを選んだまま行 / 列 / フィルハンドルのドラッグを Escape でやめると、
+  //   ダイアログまで閉じていた。
+  it('ドラッグの間は対象に関係なく Escape を使う。終えたら戻す(戻すのは 1 回だけ。RA-6)', () => {
+    const { inner } = setup(() => false);
+    const release = beginEscapeCancelableDrag();
+    expect(pressEscape(inner).defaultPrevented).toBe(true);
+    expect(pressEscape(document.body).defaultPrevented).toBe(true);
+    const releaseOther = beginEscapeCancelableDrag();
+    release();
+    release();
+    expect(pressEscape(inner).defaultPrevented).toBe(true);
+    releaseOther();
+    expect(pressEscape(inner).defaultPrevented).toBe(false);
   });
 
   it('dispose の後は聞かない', () => {

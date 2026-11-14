@@ -57,6 +57,10 @@ let appliedTooltipSlot: AppliedSlot | undefined;
 //   移ったら閉じる)。
 let activatedTarget: Element | null = null;
 let activatedFocusRoot: Element | null = null;
+// 追加(1.0.2 / 2026-11-09 実アプリの総点検 RV-D2): グリッド(フォーカスを持つ要素)ごとの今のアクティブセルの id です
+//   (scheduleActiveCellTooltip で控え、hideActiveCellTooltip で消す)。Escape / ホイール / 押したことで閉じた後、同じセルを
+//   押し直したら出し直すために使います(アクティブセルが変わらないので予約し直されず、別のセルへ移って戻るまで出なかった)。
+const activeCellIds = new WeakMap<Element, string>();
 
 function syncTooltipSlot(el: HTMLDivElement) {
   appliedTooltipSlot = applySlotToElement(el, tooltipSlot, appliedTooltipSlot);
@@ -271,6 +275,24 @@ function handlePointerDown(event: Event) {
   hideTooltip();
 }
 
+// 追加(1.0.2 / RV-D2): アクティブセルを押し直したら(指 / ボタンを離したら)、閉じていたメッセージを出し直します。
+function handlePointerUp(event: Event) {
+  const node = event.target;
+  if (!(node instanceof Element)) {
+    return;
+  }
+  const focusRoot = node.closest('.ssg-shell');
+  const cellId = focusRoot === null ? undefined : activeCellIds.get(focusRoot);
+  if (focusRoot === null || cellId === undefined) {
+    return;
+  }
+  const cell = document.getElementById(cellId);
+  if (cell === null || currentTarget === cell || !cell.contains(node)) {
+    return;
+  }
+  scheduleActiveCellTooltip(cellId, focusRoot);
+}
+
 function handleKeyDown(event: KeyboardEvent) {
   if (event.key === 'Escape') {
     hideTooltip();
@@ -283,6 +305,7 @@ function installListeners() {
   window.addEventListener('focusin', handlePointerOverOrFocusIn, true);
   window.addEventListener('focusout', handlePointerOutOrFocusOut, true);
   window.addEventListener('pointerdown', handlePointerDown, true);
+  window.addEventListener('pointerup', handlePointerUp, true);
   window.addEventListener('scroll', handleGlobalHide, true);
   window.addEventListener('keydown', handleKeyDown, true);
 }
@@ -293,6 +316,7 @@ function uninstallListeners() {
   window.removeEventListener('focusin', handlePointerOverOrFocusIn, true);
   window.removeEventListener('focusout', handlePointerOutOrFocusOut, true);
   window.removeEventListener('pointerdown', handlePointerDown, true);
+  window.removeEventListener('pointerup', handlePointerUp, true);
   window.removeEventListener('scroll', handleGlobalHide, true);
   window.removeEventListener('keydown', handleKeyDown, true);
 }
@@ -305,9 +329,17 @@ export function scheduleActiveCellTooltip(cellId: string, focusRoot: Element | n
   if (typeof requestAnimationFrame !== 'function' || refCount === 0) {
     return () => {};
   }
+  if (focusRoot !== null) {
+    activeCellIds.set(focusRoot, cellId);
+  }
   let frameId = requestAnimationFrame(() => {
     frameId = requestAnimationFrame(() => {
       frameId = 0;
+      // 変更(1.0.2 / RV-D2): 待っている間に編集を始めた / アクティブセルが無くなった(hideActiveCellTooltip で消えた)ら出しません
+      //   (押し直しで予約したものは取り消されないため)。
+      if (focusRoot !== null && activeCellIds.get(focusRoot) !== cellId) {
+        return;
+      }
       const cell = document.getElementById(cellId);
       const show =
         cell !== null &&
@@ -316,7 +348,7 @@ export function scheduleActiveCellTooltip(cellId: string, focusRoot: Element | n
         cell.classList.contains('ssg-body-cell--invalid') &&
         (cell.getAttribute(TOOLTIP_ATTRIBUTE) ?? '') !== '';
       if (!show) {
-        hideActiveCellTooltip(focusRoot);
+        hideActivatedTooltip(focusRoot);
         return;
       }
       if (currentTarget !== cell) {
@@ -338,7 +370,15 @@ export function scheduleActiveCellTooltip(cellId: string, focusRoot: Element | n
 
 // 追加(1.0.1 / AP-35): アクティブセルのために出したツールチップを閉じます(編集を始めた / 検査 NG でないセルへ移った)。
 //   ホバーで出したツールチップはそのままです。focusRoot を渡したら、そのグリッドのために出したものだけを閉じます。
+//   変更(1.0.2 / RV-D2): そのグリッドのアクティブセルの控えも消します(押し直しで出し直さない)。
 export function hideActiveCellTooltip(focusRoot?: Element | null): void {
+  if (focusRoot) {
+    activeCellIds.delete(focusRoot);
+  }
+  hideActivatedTooltip(focusRoot);
+}
+
+function hideActivatedTooltip(focusRoot?: Element | null): void {
   if (activatedTarget === null || (focusRoot !== undefined && focusRoot !== activatedFocusRoot)) {
     return;
   }
