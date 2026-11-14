@@ -527,6 +527,11 @@ await page.evaluate(() => window.__grid.clearRowSelection());
 
 // ---- 11. コンテキストメニュー ----
 await clearEvents(page);
+// 追加(1.0.1 の確かめ): フィルターを消して出た行のフェードイン(ssg-body-row--enter)が終わるのを待ちます。動いている間に
+//   押すと、Playwright がセルを「動いている」と待ってからスクロールし直して押すため、その scroll でメニューが閉じていた
+//   (1.0.0 ではフィルター中の全選択が隠れた行まで選んでいて、選択を外す描き直しでこのクラスが早く外れていた。AP-03 で
+//   見えている行だけを選ぶようになり、フェードインが最後まで走るようになった)。
+await page.waitForFunction(() => document.querySelector('.ssg-body-row--enter') === null);
 await cell(page, 2, 'name').click({ button: 'right' });
 await waitIdle(page, 150);
 const ctxItems = await page.locator('.ssg-menu-panel .ssg-menu-item').allTextContents();
