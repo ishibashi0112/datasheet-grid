@@ -119,6 +119,27 @@ export const countSelectedRowsInOrder = <T,>(
   return count;
 };
 
+// 追加(1.0.1 のレビュー RA-7): countSelectedRowsInOrder を、選択・行・並びが同じ間は数え直さずに返す版です。
+//   rowKeyGetter をインラインで渡すと参照が描くたびに変わり、フィルター中の見出しの 3 状態を描くたび(スクロールの各フレーム
+//   など)に見えている行の数だけ数えていた(90 万行で 1 回約 13ms)。rowKeyGetter の参照だけが変わったときは前の数を使います
+//   (同じ行から別のキーを返すように変えるときは、rows も新しい配列にする)。
+export const createSelectedRowsInOrderCounter = () => {
+  let last: { state: RowSelectionState; rows: readonly unknown[]; order: ArrayLike<number>; count: number } | null = null;
+  return <T,>(
+    state: RowSelectionState,
+    rows: readonly T[],
+    order: ArrayLike<number>,
+    rowKeyGetter: (row: T, index: number) => GridRowKey,
+  ): number => {
+    if (last !== null && last.state === state && last.rows === rows && last.order === order) {
+      return last.count;
+    }
+    const count = countSelectedRowsInOrder(state, rows, order, rowKeyGetter);
+    last = { state, rows, order, count };
+    return count;
+  };
+};
+
 // 全解除(空の include)です。
 export const clearRowSelection = (): RowSelectionState =>
   createEmptyRowSelection();

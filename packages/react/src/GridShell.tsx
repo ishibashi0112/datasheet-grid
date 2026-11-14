@@ -157,7 +157,7 @@ import {
 // 追加(imperative API #1): CSV エクスポート / スクロール先算出の純ロジックです。
 // 追加(行選択): チェックボックス行選択の純ロジックです。
 import {
-  countSelectedRowsInOrder,
+  createSelectedRowsInOrderCounter,
   getSelectAllState,
   resolveSelectAllState,
 } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/rowSelection';
@@ -2157,6 +2157,8 @@ export function useGridShell<T extends object>({
         : null,
     [isServerSide, order, baseOrder.length, rows, resolvedRowKeyGetter],
   );
+  // 変更(1.0.1 のレビュー RA-7): 選択・行・並びが同じ間は数え直さない(インラインの rowKeyGetter で描くたびに全件を数えていた)。
+  const [countSelectedRowsInOrder] = useState(createSelectedRowsInOrderCounter);
   const selectAllRowsState = useMemo(
     () =>
       filteredDataRows && enableRowSelection
@@ -2170,7 +2172,7 @@ export function useGridShell<T extends object>({
             filteredDataRows.order.length,
           )
         : getSelectAllState(rowSelectionState, leafRowCount),
-    [filteredDataRows, enableRowSelection, rowSelectionState, leafRowCount],
+    [filteredDataRows, enableRowSelection, rowSelectionState, leafRowCount, countSelectedRowsInOrder],
   );
 
   // 変更(本体分解 E-4c): 選択コミット / ガター選択 / ドラッグ範囲 / 全選択トグル / controlled 同期は
