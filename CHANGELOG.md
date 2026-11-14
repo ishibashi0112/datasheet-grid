@@ -11,7 +11,7 @@
 
 詳しい使い方は[ドキュメントサイト](https://datasheet-grid.vercel.app)と [API リファレンス](./packages/react/API_REFERENCE.md)を参照してください。
 
-## 未リリース
+## 1.0.1 — 2026-11-14
 
 ### 修正
 
