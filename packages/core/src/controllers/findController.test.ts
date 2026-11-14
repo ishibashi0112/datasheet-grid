@@ -217,14 +217,43 @@ describe('findController', () => {
     expect(controller.getSnapshot().matches).toHaveLength(1);
     expect(reads).toBe(many.length);
     const appended = [...many, { id: 60_000, name: 'needle too', qty: 0 }];
+    // 新しい結果が出た時点で読んだ行の数(足した 1 行だけ)。
+    let readsWhenFound: number | null = null;
+    const unsubscribe = controller.subscribe(() => {
+      if (readsWhenFound === null && controller.getSnapshot().matches.length === 2) readsWhenFound = reads;
+    });
     controller.update({ ...base, rowModel: makeRowModel(appended) });
     expect(controller.getSnapshot()).toMatchObject({ scanning: false });
     expect(controller.getSnapshot().matches).toHaveLength(1);
-    for (let i = 0; i < 200 && controller.getSnapshot().matches.length < 2; i += 1) {
+    for (let i = 0; i < 400 && reads < many.length + 1 + appended.length; i += 1) {
       await flush();
     }
+    unsubscribe();
     expect(controller.getSnapshot().matches.map((m) => m.rowIndex)).toEqual([5, 60_000]);
-    expect(reads).toBe(many.length + 1);
+    expect(readsWhenFound).toBe(many.length + 1);
+    // そのあと控えを使わずに全行を 1 回確かめる(RB-3)。
+    expect(reads).toBe(many.length + 1 + appended.length);
+    controller.dispose();
+  });
+
+  // 1.0.1 のレビュー RB-3: 行のオブジェクトをその場で書き換えて新しい配列を渡すと、控えが古く、古い件数と印のままだった。
+  it('大きな表で行をその場で書き換えて新しい配列を渡しても、確かめの走査で正しい結果になる(RB-3)', async () => {
+    const many: Row[] = Array.from({ length: 60_000 }, (_, i) => ({ id: i, name: i === 5 ? 'needle' : `r${i}`, qty: i }));
+    const controller = createFindController<Row>();
+    const base = { enabled: true, columns, caseSensitive: false, onNavigate: vi.fn() };
+    controller.update({ ...base, rowModel: makeRowModel(many) });
+    controller.open('needle');
+    for (let i = 0; i < 200 && controller.getSnapshot().scanning; i += 1) {
+      await flush();
+    }
+    expect(controller.getSnapshot().matches.map((m) => m.rowIndex)).toEqual([5]);
+    many[5].name = 'r5';
+    many[7].name = 'needle';
+    controller.update({ ...base, rowModel: makeRowModel([...many]) });
+    for (let i = 0; i < 400 && controller.getSnapshot().matches[0]?.rowIndex !== 7; i += 1) {
+      await flush();
+    }
+    expect(controller.getSnapshot().matches.map((m) => m.rowIndex)).toEqual([7]);
     controller.dispose();
   });
 });

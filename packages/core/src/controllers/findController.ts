@@ -72,6 +72,19 @@ const EMPTY_INDEX: FindIndex = new Map();
 type RowFindHit = { colIndex: number; columnKey: string; start: number; length: number };
 const NO_ROW_HITS: readonly RowFindHit[] = [];
 
+const isSameMatches = (a: readonly FindMatch[], b: readonly FindMatch[]): boolean =>
+  a.length === b.length &&
+  a.every((match, index) => {
+    const other = b[index];
+    return (
+      match.rowIndex === other.rowIndex &&
+      match.colIndex === other.colIndex &&
+      match.columnKey === other.columnKey &&
+      match.start === other.start &&
+      match.length === other.length
+    );
+  });
+
 export const createFindController = <T,>(): FindController<T> => {
   let args: FindArgs<T> | null = null;
   let generation = 0;
@@ -142,7 +155,10 @@ export const createFindController = <T,>(): FindController<T> => {
   };
 
   // 走査(時間分割)。完了時にカレントを決めて onNavigate。
-  const rescan = (navigate: boolean) => {
+  // 変更(1.0.1 のレビュー RB-3): 控えから返した行があった走査の後は、控えを使わずに 1 回走査し直して確かめます(fresh)。
+  //   行のオブジェクトをその場で書き換えて新しい配列を渡す使い方では、同じオブジェクトの控えが古く、古い件数と印を出し続けて
+  //   いた。確かめた走査の控えを次の控えにします。
+  const rescan = (navigate: boolean, fresh = false) => {
     const current = args;
     const s = store.getSnapshot();
     if (!current || !s.open || s.query.length === 0) {
@@ -158,10 +174,17 @@ export const createFindController = <T,>(): FindController<T> => {
     //   (「検索中…」へ戻さない)。
     const sameQueryAsShown = scanned !== null && scanned.query === query && scanned.caseSensitive === caseSensitive;
     scanned = { rowModel, columns, query, caseSensitive };
-    if (hitCache === null || hitCache.columns !== columns || hitCache.query !== query || hitCache.caseSensitive !== caseSensitive) {
+    if (
+      fresh ||
+      hitCache === null ||
+      hitCache.columns !== columns ||
+      hitCache.query !== query ||
+      hitCache.caseSensitive !== caseSensitive
+    ) {
       hitCache = { columns, query, caseSensitive, byRow: new WeakMap() };
     }
     const byRow = hitCache.byRow;
+    let cacheHits = 0;
     const shouldNavigate = navigate || pendingNavigate;
     pendingNavigate = shouldNavigate;
     const previousCurrent = s.currentIndex === null ? null : (s.matches[s.currentIndex] ?? null);
@@ -202,6 +225,8 @@ export const createFindController = <T,>(): FindController<T> => {
           if (hits === undefined) {
             hits = hitsOf(row);
             byRow.set(row, hits);
+          } else {
+            cacheHits += 1;
           }
         } else {
           hits = hitsOf(row);
@@ -220,11 +245,18 @@ export const createFindController = <T,>(): FindController<T> => {
         return;
       }
       pendingNavigate = false;
+      // 確かめた結果が控えの結果と同じなら、そのままにします(印を描き直さない)。
+      if (fresh && truncated === store.getSnapshot().truncated && isSameMatches(store.getSnapshot().matches, matches)) {
+        return;
+      }
       const currentIndex = resolveCurrentAfterRescan(matches, previousCurrent);
       patch({ matches, index: buildFindIndex(matches), currentIndex, scanning: false, truncated });
       notify();
       if (shouldNavigate) {
         navigateToCurrent();
+      }
+      if (!fresh && cacheHits > 0) {
+        rescan(false, true);
       }
     });
   };

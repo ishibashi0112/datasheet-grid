@@ -144,17 +144,53 @@ describe('createGlobalFilteredOrderRunner', () => {
 
     const appended = [...rows, { t: 'xaa' }, { t: 'q' }];
     const appendedKey = { ...key, rows: appended, baseOrder: createSourceOrder(appended.length) };
+    // 新しい結果が出た時点で読んだ行の数(足した 2 行だけ)。
+    let readsWhenReady: number | null = null;
+    const unsubscribe = runner.subscribe(() => {
+      const ready = runner.getSnapshot().ready;
+      if (readsWhenReady === null && ready?.rows === appended) readsWhenReady = reads;
+    });
     runner.update({ ...appendedKey, needsAsync: true });
     // やり直しの間も前の結果を「済み」で出す(全行に戻さない)。
     expect(selectGlobalFilteredOrderResult(null, runner.getSnapshot(), appendedKey)).toMatchObject({
       status: 'ready',
       order: runner.getSnapshot().ready?.order,
     });
-    for (let i = 0; i < 8; i += 1) {
+    for (let i = 0; i < 12; i += 1) {
       await flushYields();
     }
+    unsubscribe();
     expect(Array.from(runner.getSnapshot().ready?.order ?? [])).toEqual([0, 2, 5]);
-    expect(reads).toBe(rows.length + 2);
+    expect(readsWhenReady).toBe(rows.length + 2);
+    // そのあと控えを使わずに全行を 1 回確かめる(RB-3)。
+    expect(reads).toBe(rows.length + 2 + appended.length);
+  });
+
+  // 1.0.1 のレビュー RB-3: 行のオブジェクトをその場で書き換えて新しい配列を渡すと、控えが古く、結果が古いままだった。
+  it('行をその場で書き換えて新しい配列を渡しても、確かめの走査で正しい結果になる(RB-3)', async () => {
+    const own: Row[] = rows.map((row) => ({ ...row }));
+    const runner = createGlobalFilteredOrderRunner<Row>();
+    const key = { rows: own, baseOrder, columns, needle: 'aa' };
+    runner.update({ ...key, needsAsync: true });
+    for (let i = 0; i < 12; i += 1) {
+      await flushYields();
+    }
+    expect(Array.from(runner.getSnapshot().ready?.order ?? [])).toEqual([0, 2]);
+    own[0].t = 'zzz';
+    own[1].t = 'xaax';
+    const nextRows = [...own];
+    runner.update({ ...key, rows: nextRows, needsAsync: true });
+    for (let i = 0; i < 12; i += 1) {
+      await flushYields();
+    }
+    expect(Array.from(runner.getSnapshot().ready?.order ?? [])).toEqual([1, 2]);
+    expect(runner.getSnapshot().ready?.rows).toBe(nextRows);
+    // 確かめた走査の控えを次に使う(同じ行のまま配列だけ変えても結果は正しい)。
+    runner.update({ ...key, rows: [...own], needsAsync: true });
+    for (let i = 0; i < 12; i += 1) {
+      await flushYields();
+    }
+    expect(Array.from(runner.getSnapshot().ready?.order ?? [])).toEqual([1, 2]);
   });
 
   // 追加(1.0.1 / 実アプリの総点検 AP-20): 「A → 消す → B」で、B の計算中に消した A の結果を出さない。
