@@ -166,6 +166,40 @@ describe('createGlobalFilteredOrderRunner', () => {
     expect(reads).toBe(rows.length + 2 + appended.length);
   });
 
+  // 1.0.1 の確かめ直し G: 控えを rows の位置ごとの結果にした。途中で止めた走りの結果も次の走りで使う(rows がよく変わる表で
+  //   毎回止められても、いつかは走り切る)。
+  it('途中で止めた走りの結果も次の走りで使い、先頭に行を足したときは調べ直す', async () => {
+    let reads = 0;
+    const countingColumns: GridColumn<Row>[] = [{ key: 't', width: 100, getValue: (row) => ((reads += 1), row.t) }];
+    const runner = createGlobalFilteredOrderRunner<Row>();
+    runner.update({ rows, baseOrder, columns: countingColumns, needle: 'aa', needsAsync: true });
+    // 最初の区切りまで(2 行)読んだところで行が変わる。
+    expect(reads).toBe(2);
+    const appended = [...rows, { t: 'xaa' }];
+    let readsWhenReady: number | null = null;
+    const unsubscribe = runner.subscribe(() => {
+      const ready = runner.getSnapshot().ready;
+      if (readsWhenReady === null && ready?.rows === appended) readsWhenReady = reads;
+    });
+    runner.update({ rows: appended, baseOrder: createSourceOrder(appended.length), columns: countingColumns, needle: 'aa', needsAsync: true });
+    for (let i = 0; i < 12; i += 1) {
+      await flushYields();
+    }
+    unsubscribe();
+    expect(Array.from(runner.getSnapshot().ready?.order ?? [])).toEqual([0, 2, 5]);
+    // 止めた走りで読んだ 2 行は読み直さない。
+    expect(readsWhenReady).toBe(appended.length);
+    // 先頭に足すと位置がずれるので、全行を調べ直す(結果は正しい)。
+    const prepended = [{ t: 'aaz' }, ...appended];
+    const before = reads;
+    runner.update({ rows: prepended, baseOrder: createSourceOrder(prepended.length), columns: countingColumns, needle: 'aa', needsAsync: true });
+    for (let i = 0; i < 12; i += 1) {
+      await flushYields();
+    }
+    expect(Array.from(runner.getSnapshot().ready?.order ?? [])).toEqual([0, 1, 3, 6]);
+    expect(reads - before).toBeGreaterThanOrEqual(prepended.length);
+  });
+
   // 1.0.1 のレビュー RB-3: 行のオブジェクトをその場で書き換えて新しい配列を渡すと、控えが古く、結果が古いままだった。
   it('行をその場で書き換えて新しい配列を渡しても、確かめの走査で正しい結果になる(RB-3)', async () => {
     const own: Row[] = rows.map((row) => ({ ...row }));

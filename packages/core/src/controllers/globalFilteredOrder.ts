@@ -134,15 +134,13 @@ export const createGlobalFilteredOrderRunner = <T,>(): GlobalFilteredOrderRunner
   const store = createValueStore<GlobalFilteredOrderSnapshot<T>>({ ready: null, progress: null });
   let current: GlobalFilteredOrderArgs<T> | null = null;
   let cancelCurrent: (() => void) | null = null;
-  // 追加(1.0.1 / AP-19): 行(オブジェクト)ごとの判定の控えです(検索語と列が同じ間だけ)。rows が差し替わっても同じ行の
-  //   オブジェクトは判定し直さないので、行を足しただけのやり直しは足した行の判定だけで済みます。
-  let matchCache: { columns: GridColumn<T>[]; needle: string; byRow: WeakMap<object, boolean> } | null = null;
-  const cacheFor = (columns: GridColumn<T>[], needle: string): WeakMap<object, boolean> => {
-    if (matchCache === null || matchCache.columns !== columns || matchCache.needle !== needle) {
-      matchCache = { columns, needle, byRow: new WeakMap() };
-    }
-    return matchCache.byRow;
-  };
+  // 追加(1.0.1 / AP-19): 行ごとの判定の控えです(検索語と列が同じ間だけ)。rows が差し替わっても、同じ位置に同じ行
+  //   (オブジェクト)があれば判定し直さないので、行を足しただけのやり直しは足した行の判定だけで済みます。
+  //   変更(1.0.1 の確かめ直し G): 控えを WeakMap から「rows の位置ごとの結果」(Uint8Array。0 = まだ、1 = 外れ、2 = 当たり)に
+  //   しました。WeakMap へ 100 万行を書くと、初めての絞り込みが 1.0.0 より 3〜5 割遅くなっていたため。走りの途中で
+  //   止められても(rows がよく変わる表)、そこまでの結果を次の走りで使えるように、走り始めに控えを差し替えます。
+  type MatchMemo = { rows: readonly unknown[]; results: Uint8Array };
+  let matchCache: { columns: GridColumn<T>[]; needle: string; memo: MatchMemo } | null = null;
 
   // 変更(1.0.1 のレビュー RB-3): 控えから返した行があった走査(fresh でない)の後は、控えを使わずに 1 回走査し直して確かめます
   //   (fresh)。行のオブジェクトをその場で書き換えて新しい配列を渡す使い方では、同じオブジェクトの控えが古く、検索語を
@@ -157,7 +155,19 @@ export const createGlobalFilteredOrderRunner = <T,>(): GlobalFilteredOrderRunner
     };
     const length = key.baseOrder.length;
     const buffer = new Int32Array(length);
-    const byRow = fresh ? new WeakMap<object, boolean>() : cacheFor(key.columns, key.needle);
+    const previous =
+      !fresh && matchCache !== null && matchCache.columns === key.columns && matchCache.needle === key.needle
+        ? matchCache.memo
+        : null;
+    const previousRows = previous?.rows;
+    const previousResults = previous?.results;
+    // 控えの結果の数まで(同じ配列をその場で伸ばした場合も、控えの無い位置は調べ直す)。
+    const previousLength = previousResults?.length ?? 0;
+    const memo: MatchMemo = { rows: key.rows, results: new Uint8Array(key.rows.length) };
+    const results = memo.results;
+    if (!fresh) {
+      matchCache = { columns: key.columns, needle: key.needle, memo };
+    }
     let cacheHits = 0;
     let count = 0;
     let cancelled = false;
@@ -170,19 +180,17 @@ export const createGlobalFilteredOrderRunner = <T,>(): GlobalFilteredOrderRunner
       (pos) => {
         const sourceIndex = key.baseOrder[pos];
         const row = key.rows[sourceIndex];
-        let matched: boolean | undefined;
-        if (typeof row === 'object' && row !== null) {
-          matched = byRow.get(row);
-          if (matched === undefined) {
-            matched = rowMatchesGlobalText(row, key.columns, key.needle);
-            byRow.set(row, matched);
-          } else {
-            cacheHits += 1;
-          }
-        } else {
-          matched = rowMatchesGlobalText(row, key.columns, key.needle);
+        let result = 0;
+        if (sourceIndex < previousLength && previousRows![sourceIndex] === row) {
+          result = previousResults![sourceIndex];
         }
-        if (matched) {
+        if (result === 0) {
+          result = rowMatchesGlobalText(row, key.columns, key.needle) ? 2 : 1;
+        } else {
+          cacheHits += 1;
+        }
+        results[sourceIndex] = result;
+        if (result === 2) {
           buffer[count] = sourceIndex;
           count += 1;
         }
@@ -210,7 +218,7 @@ export const createGlobalFilteredOrderRunner = <T,>(): GlobalFilteredOrderRunner
       const order = count === length ? key.baseOrder : buffer.slice(0, count);
       const ready = store.getSnapshot().ready;
       if (fresh) {
-        matchCache = { columns: key.columns, needle: key.needle, byRow };
+        matchCache = { columns: key.columns, needle: key.needle, memo };
       }
       // 確かめた結果が控えの結果と同じなら、参照を変えずに済ませます(描き直さない)。
       if (!(fresh && ready !== null && sameKey(ready, key) && isSameOrder(ready.order, order))) {
