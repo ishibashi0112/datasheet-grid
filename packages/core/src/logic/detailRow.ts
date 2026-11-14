@@ -26,6 +26,16 @@ export const isSyntheticColumnKey = (key: string): boolean =>
   key === DETAIL_TOGGLE_COLUMN_KEY ||
   key === ROW_DRAG_HANDLE_COLUMN_KEY;
 
+// 追加(1.0.2 / 2026-11-09 実アプリの総点検 F-04): キーボードで止まる先頭の列 = 操作用の合成列(行ドラッグのハンドル列・
+//   展開トグル列)を飛ばした最初の列(Home / Ctrl+← / Shift+Tab の端 / エディタの Shift+Tab の確定)。自動グループ列は値を
+//   出す列なので止まります。合成列しか無ければ 0。
+export const isControlColumnKey = (key: string): boolean =>
+  key === ROW_DRAG_HANDLE_COLUMN_KEY || key === DETAIL_TOGGLE_COLUMN_KEY;
+export const resolveFirstDataColIndex = (columns: readonly { key: string }[]): number => {
+  const index = columns.findIndex((column) => !isControlColumnKey(column.key));
+  return index < 0 ? 0 : index;
+};
+
 // 要素が展開行カード(data-ssg-detail)の内側にあるか。カードの中身は消費側 UI(入れ子のグリッドも
 //   あり得る)のため、グリッド本体の DOM クエリ(auto-height 実測 / 列ヘッダー探索)から除外し、
 //   フォーカスがカード内にあるあいだは grid root へフォーカスを戻しません(detail batch 4)。

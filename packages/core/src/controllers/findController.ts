@@ -38,6 +38,10 @@ export type FindArgs<T> = {
   caseSensitive: boolean;
   onNavigate: (rowIndex: number, colIndex: number) => void;
   onChange?: (params: FindChangeParams) => void;
+  // 追加(1.0.2 / レビュー QB-1): 条件付き書式(状態チップ / データバー)を描くか(既定 true)。描かない構成(`/lite` で
+  //   条件付き書式の機能が無い)では、画面に出ていないチップの label ではなく値の文字を探し、データバーの
+  //   showValue: false の列も(値の文字が出るので)探します。
+  conditionalFormat?: boolean | undefined;
 };
 
 export type FindSnapshot = {
@@ -95,12 +99,18 @@ export const createFindController = <T,>(): FindController<T> => {
     columns: readonly GridColumn<T>[];
     query: string;
     caseSensitive: boolean;
+    conditionalFormatShown: boolean;
     byRow: WeakMap<object, readonly RowFindHit[]>;
   } | null = null;
   // 追加(1.0.1 / AP-19): 打った直後の走査(最初のヒットへ移る)が、行の変化によるやり直しで取り消されても移動を忘れない。
   let pendingNavigate = false;
-  let scanned: { rowModel: RowModel<T>; columns: readonly GridColumn<T>[]; query: string; caseSensitive: boolean } | null =
-    null;
+  let scanned: {
+    rowModel: RowModel<T>;
+    columns: readonly GridColumn<T>[];
+    query: string;
+    caseSensitive: boolean;
+    conditionalFormatShown: boolean;
+  } | null = null;
   const store = createValueStore<FindSnapshot>({
     open: false,
     query: '',
@@ -169,19 +179,21 @@ export const createFindController = <T,>(): FindController<T> => {
     generation += 1;
     const myGeneration = generation;
     const { rowModel, columns, caseSensitive } = current;
+    const conditionalFormatShown = current.conditionalFormat !== false;
     const query = s.query;
     // 変更(1.0.1 / AP-19): 同じクエリのやり直し(行・列の変化)では、走査の間も前の結果と件数を出したままにします
     //   (「検索中…」へ戻さない)。
     const sameQueryAsShown = scanned !== null && scanned.query === query && scanned.caseSensitive === caseSensitive;
-    scanned = { rowModel, columns, query, caseSensitive };
+    scanned = { rowModel, columns, query, caseSensitive, conditionalFormatShown };
     if (
       fresh ||
       hitCache === null ||
       hitCache.columns !== columns ||
       hitCache.query !== query ||
-      hitCache.caseSensitive !== caseSensitive
+      hitCache.caseSensitive !== caseSensitive ||
+      hitCache.conditionalFormatShown !== conditionalFormatShown
     ) {
-      hitCache = { columns, query, caseSensitive, byRow: new WeakMap() };
+      hitCache = { columns, query, caseSensitive, conditionalFormatShown, byRow: new WeakMap() };
     }
     const byRow = hitCache.byRow;
     let cacheHits = 0;
@@ -193,13 +205,25 @@ export const createFindController = <T,>(): FindController<T> => {
     const total = rowModel.getRowCount();
     // 控えは大きな表だけで使います(小さな表は毎回読み直す。列の getValue / valueFormatter が行の外の値を読んでも古くならない)。
     const useCache = total > FIND_HIT_CACHE_ROW_THRESHOLD;
-    const hitsOf = (row: T): readonly RowFindHit[] => {
+    // 変更(1.0.2 / G-16): チップの label を探すため、行の位置も渡します(チップの関数へ渡す)。
+    const hitsOf = (row: T, rowIndex: number): readonly RowFindHit[] => {
       const hits: RowFindHit[] = [];
       columns.forEach((column, colIndex) => {
-        if (isSyntheticColumnKey(column.key) || !isFindableColumn(column)) {
+        if (isSyntheticColumnKey(column.key) || !isFindableColumn(column, conditionalFormatShown)) {
           return;
         }
-        const text = resolveFindCellText(column, row);
+        const text = resolveFindCellText(
+          column,
+          row,
+          !conditionalFormatShown || column.conditionalFormat?.chips === undefined
+            ? undefined
+            : {
+                rowIndex,
+                sourceRowIndex: rowModel.getSourceIndex(rowIndex) ?? rowIndex,
+                rowKey: rowModel.getRowKey(rowIndex) ?? rowIndex,
+                colIndex,
+              },
+        );
         for (const range of findRangesInText(text, query, caseSensitive)) {
           hits.push({ colIndex, columnKey: String(column.key), start: range.start, length: range.length });
         }
@@ -223,13 +247,13 @@ export const createFindController = <T,>(): FindController<T> => {
         if (useCache && typeof row === 'object' && row !== null) {
           hits = byRow.get(row);
           if (hits === undefined) {
-            hits = hitsOf(row);
+            hits = hitsOf(row, rowIndex);
             byRow.set(row, hits);
           } else {
             cacheHits += 1;
           }
         } else {
-          hits = hitsOf(row);
+          hits = hitsOf(row, rowIndex);
         }
         for (const hit of hits) {
           if (matches.length >= MAX_FIND_MATCHES) {
@@ -271,7 +295,8 @@ export const createFindController = <T,>(): FindController<T> => {
       scanned.rowModel !== args.rowModel ||
       scanned.columns !== args.columns ||
       scanned.query !== s.query ||
-      scanned.caseSensitive !== args.caseSensitive
+      scanned.caseSensitive !== args.caseSensitive ||
+      scanned.conditionalFormatShown !== (args.conditionalFormat !== false)
     );
   };
 

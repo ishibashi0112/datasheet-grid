@@ -112,9 +112,11 @@ export const computeHorizontalScrollTarget = ({
   } else {
     const visibleLeft = currentScrollLeft + leftPaneWidth;
     const visibleRight = currentScrollLeft + viewportWidth - rightPaneWidth;
+    // 変更(1.0.2 の確かめ直し): 見える幅より広い列は左端に合わせます(縦の背の高い行と同じ。これまでは右へ動くと列の右端に
+    //   合わせ、書き出しが見えなかった)。
     if (cellLeft >= visibleLeft && cellRight <= visibleRight) {
       target = currentScrollLeft;
-    } else if (cellLeft < visibleLeft) {
+    } else if (cellLeft < visibleLeft || cellWidth > visibleSpan) {
       target = cellLeft - leftPaneWidth;
     } else {
       target = cellRight - viewportWidth + rightPaneWidth;

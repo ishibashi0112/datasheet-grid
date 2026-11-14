@@ -478,10 +478,20 @@
     min-width: 0;
     justify-content: inherit;
     align-items: flex-start;
+    /* 追加(1.0.2 / 2026-11-09 実アプリの総点検 G-12): 折り返して背が高くなった行で、文字が上下の罫線に接していました
+       (上 0px・下 1px)。上下に余白を足します(文字の大きさに合わせて density で変わる。測る高さに入る)。中身が基準の
+       行の高さに収まる 1 行の行は、余白を足しても基準の高さのまま(autoHeightMeasurer)で、真ん中にそろうので見た目も
+       変わりません。 */
+    padding-block: 0.4em;
   }
   /* 追加(段階 2 DU-32): 背の高い行で上にそろえるセル(verticalAlign。auto-height の列は既定で上)。 */
   .ssg-body-cell--valign-top {
     align-items: flex-start;
+  }
+  /* 追加(1.0.2 / レビュー QB-4): 上にそろえるとき、auto-height でないセルも auto-height の器(G-12 の上下 0.4em)と同じく
+     上に 0.4em の余白を取ります(背の高い行の 1 行目の高さが列ごとにずれていた)。上にそろえるのは背の高い行だけです。 */
+  .ssg-body-cell--valign-top:not(.ssg-body-cell--autoheight) {
+    padding-top: 0.4em;
   }
 
   /* 追加(③): セル内容の水平寄せ(GridColumn.align)。基底に justify-content 未指定=左のため、
@@ -503,6 +513,18 @@
   .ssg-body-cell--align-center:not(.ssg-body-cell--autoheight) > span {
     min-width: 0;
     max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  /* 変更(1.0.2 / 2026-11-09 実アプリの総点検 D-06): 左寄せ(既定)の文字のセルも、あふれたら末尾を省略記号で切ります
+     (これまでは右寄せ / 中央寄せだけで、左寄せは字の途中で切れていた)。切る箱に上下左右 2px の余白を足して同じだけ
+     外へ出し(文字の位置と省略の位置は変わらない)、検索のカレントの枠(.ssg-find-mark--current の影)を切らないように
+     します。既定の文字のセル(.ssg-cell-value)だけで、renderCell の中身は変えません。 */
+  .ssg-body-cell:not(.ssg-body-cell--autoheight) > .ssg-cell-value {
+    min-width: 0;
+    max-width: calc(100% + 4px);
+    margin: -2px;
+    padding: 2px;
     overflow: hidden;
     text-overflow: ellipsis;
   }
@@ -644,13 +666,19 @@
   /* ── 追加(合計行 3A): 表の下端に固定する合計行(totalRow) ── */
   /* 各ペインのボックスの下端(本体ぶんの空きの直後)に置く sticky 行です。縦スクロール中はスクロールコンテナの
      下端に留まり、行が少ないときは最後の行の直後に来ます。z-index はヘッダー行と同じ 6(本体の行 / 選択枠 /
-     エディタより前面)。上辺の区切り線は box-shadow(セルの境界と重ならない)。 */
+     エディタより前面)。上辺の区切り線は box-shadow(セルの境界と重ならない)。
+     変更(1.0.2 / J-11): 下へも背景色の影を 2px 伸ばします。`transform: scale(0.8)` の箱の中では、下端に留まった
+     合計行がペインの合成の端数で 1px 弱だけ上に描かれ、下の隙間から本体の行がのぞいていたためです(1px では
+     右の固定ペインの端の 1 画素に残った)。はみ出た影はスクロールコンテナが切ります。行が少なく下端に留まって
+     いないときは、合計行の親(overflow: clip)が影を切るので見た目は変わりません。 */
   .ssg-total-row {
     position: sticky;
     bottom: 0;
     z-index: 6;
     background-color: var(--ssg-total-row-bg);
-    box-shadow: 0 -1px 0 var(--ssg-total-row-border);
+    box-shadow:
+      0 -1px 0 var(--ssg-total-row-border),
+      0 2px 0 var(--ssg-total-row-bg);
   }
   .ssg-total-cell {
     background-color: var(--ssg-total-row-bg);
@@ -1139,6 +1167,26 @@
     overflow: hidden;
     text-overflow: ellipsis;
   }
+  /* 追加(1.0.2 / 2026-11-09 実アプリの総点検 C-04): 細い列(80px 未満)のチップは余白を詰めてアイコンを外し、文字を出します
+     (46px の列で 1 文字のラベルが欠けていた)。意味は文字と色で伝わります。 */
+  .ssg-body-cell--chip-compact .ssg-chip {
+    padding: 1px 4px;
+  }
+  .ssg-body-cell--chip-compact .ssg-chip-icon {
+    display: none;
+  }
+  /* 追加(1.0.2 / 2026-11-09 実アプリの総点検 L-14): ハイコントラスト(forced-colors)では、チップの色(と、データバーの棒)が
+     システムの色に置き換わって消え、`icon: false` の列は状態を見分けられませんでした。色そのものが情報なので、チップ
+     (文字と地の組)とデータバーの棒は作者の色のまま描き、チップには枠を足して形を見せます。 */
+  @media (forced-colors: active) {
+    .ssg-chip,
+    .ssg-cf-bar {
+      forced-color-adjust: none;
+    }
+    .ssg-chip {
+      outline: 1px solid CanvasText;
+    }
+  }
 
   /* 追加(motion-7 / M-9): セル単位の保存状態(SSRM 書き戻し)。saveStatusController が data-ssg-save を付け替え、
      インジケーター(.ssg-save-indicator)をセル末尾に足します。保存中は斜線が流れ、成功は ✓、失敗は揺れ + 赤いフラッシュ。
@@ -1444,10 +1492,33 @@
     /* 変更(THEME-2): セル本体と同じ横 padding トークン(編集中も文字位置が揃う)。 */
     padding: 0 var(--ssg-cell-pad-x);
     margin: 0;
-    font-size: 16px;
+    /* 変更(1.0.2 / 2026-11-09 実アプリの総点検 H-08): 文字の大きさはセルと同じ(グリッドから受け継ぎ、密度で拡縮)。これまでは
+       16px の固定で、compact や小さい文字のページ(入れ子のグリッドなど)では開いた瞬間に文字が大きくなっていた。タッチの
+       端末は下の (pointer: coarse) で 16px 以上(iOS は 16px 未満の入力欄にフォーカスするとページを拡大するため)。 */
+    font-size: inherit;
+    /* 追加(1.0.2 の確かめ直し): 書体もセルと同じ(受け継ぐ)。これまでは 1 行の入力欄だけブラウザの既定の書体で、開いた瞬間に
+       文字の形と幅が変わっていた(複数行の入力欄は受け継いでいた)。 */
+    font-family: inherit;
     color: var(--ssg-cell-text);
     background-color: var(--ssg-cell-bg);
     pointer-events: auto;
+  }
+  /* 変更(1.0.2 / H-08・レビュー QA-4): 変換中の入力受けの文字の大きさもセルと同じ(受け継いで、密度で拡縮)。すぐ下の密度の規則と
+     特異度が同じなので、その前に置きます(後ろの `.ssg-ime-input--composing` の規則に書くと密度の拡縮を打ち消していた)。 */
+  .ssg-ime-input--composing {
+    font-size: inherit;
+    font-family: inherit;
+  }
+  :where(.ssg-root--density-compact) :is(.ssg-cell-editor-input, .ssg-ime-input--composing) {
+    font-size: 0.85em;
+  }
+  :where(.ssg-root--density-comfortable) :is(.ssg-cell-editor-input, .ssg-ime-input--composing) {
+    font-size: 1.1em;
+  }
+  /* 追加(1.0.2 / A-09): 日付の入力欄は中身(年 / 月 / 日とカレンダーの印)より狭くしません(細い列で年が切れていた)。
+     右のペインの下や表の外へはみ出すときはエディタが左へずらします。 */
+  .ssg-cell-editor-input[type='date'] {
+    min-width: max-content;
   }
 
   /* 追加(段階 2 DU-14): 複数行の text エディタ(editor: { type: 'text', multiline: true })。枠の左上から下へ伸びます
@@ -1508,10 +1579,22 @@
     z-index: 6;
     border: 2px solid var(--ssg-accent);
     padding: 0 var(--ssg-cell-pad-x);
-    font-size: 16px;
+    /* 文字の大きさは上(密度の規則の前)で決めます(QA-4)。 */
     color: var(--ssg-cell-text);
     caret-color: auto;
     background-color: var(--ssg-cell-bg);
+  }
+  @media (pointer: coarse) {
+    .ssg-cell-editor-input,
+    .ssg-ime-input--composing {
+      font-size: max(16px, 1em);
+    }
+    :where(.ssg-root--density-compact) :is(.ssg-cell-editor-input, .ssg-ime-input--composing) {
+      font-size: max(16px, 0.85em);
+    }
+    :where(.ssg-root--density-comfortable) :is(.ssg-cell-editor-input, .ssg-ime-input--composing) {
+      font-size: max(16px, 1.1em);
+    }
   }
 
   /* ── select エディタ(editor: select) ── */
@@ -1600,6 +1683,26 @@
     border-top: 10px solid var(--ssg-note-indicator);
     border-left: 10px solid transparent;
     pointer-events: none;
+  }
+  /* 追加(1.0.2 / 2026-11-09 実アプリの総点検 L-14): Windows のハイコントラスト(forced-colors)では、背景と枠の色がシステムの
+     色に置き換わり、検査 NG の桃色の背景が消えて右上の印も四角(透明の辺まで塗られる)になり、メモの印と区別できません
+     でした。検査 NG のセルには内側に点線の枠を引き、右上の印はシステムの色の三角で描きます(NG は強調色、メモは文字色)。 */
+  @media (forced-colors: active) {
+    .ssg-body-cell--invalid {
+      outline: 2px dashed Highlight;
+      outline-offset: -3px;
+    }
+    .ssg-body-cell--invalid::after,
+    .ssg-body-cell--has-note::before {
+      forced-color-adjust: none;
+      border-left-color: transparent;
+    }
+    .ssg-body-cell--invalid::after {
+      border-top-color: Highlight;
+    }
+    .ssg-body-cell--has-note::before {
+      border-top-color: CanvasText;
+    }
   }
   /* reject 表示: エディタ input の枠色 + 即時エラーバブル(hover 遅延のある tooltip は使わない)。
      バブルはエディタ wrapper(.ssg-cell-editor / absolute)基準で下側、ビューポート下端では
@@ -1698,13 +1801,6 @@
      空きを埋める要素(折り返しの判定では幅 0 = 既存のグループは折り返さない)、margin-left で .ssg-bar-container の
      gap(6px)を打ち消し、既存のグループの位置を変えません。中身は絶対配置(行の高さに影響しない)で、入りきらない
      ときは端から切れます。 */
-  .ssg-bar-sep {
-    flex: none;
-    width: 1px;
-    height: 12px;
-    margin: 0 2px;
-    background-color: var(--ssg-divider);
-  }
   .ssg-bar-aggregates {
     position: relative;
     flex: 1 1 0;
@@ -1726,6 +1822,22 @@
     justify-content: flex-start;
     padding-left: 6px;
   }
+  /* 変更(1.0.2 / RV-J2): 区切り線は 1 行目に最初に置く項目(.ssg-bar-aggregates-sep = 右端の項目)の疑似要素で、
+     一覧の端(右グループの側)に描きます。縦の位置はその項目の行なので、項目が 1 つも入らず 2 行目(見えない)へ回った
+     ときは区切り線も見えません(これまでは一覧の外の要素で、区切り線だけが残っていた)。一覧の余白 9px は、これまでの
+     「隙間 4px + 区切り線 1px + 左右 2px」と同じ幅です。 */
+  .ssg-bar-aggregates-sep::after {
+    content: '';
+    position: absolute;
+    right: 2px;
+    width: 1px;
+    height: 12px;
+    background-color: var(--ssg-divider);
+  }
+  .ssg-bar-aggregates--trailing .ssg-bar-aggregates-sep::after {
+    right: auto;
+    left: 2px;
+  }
   /* 変更(1.0.1 / 実アプリの総点検 AP-28): 入りきらない項目は途中で切らずに丸ごと隠す(英語対応の確かめ直しで入れた端の
      ぼかしは、切れた数字を値と読み違えないためのものだったので外した)。項目は order で逆順(右から 合計 → データの個数 →
      平均)に並べ、右から詰めて折り返す。項目の高さを一覧の高さにして、折り返した 2 行目以降は一覧の外 = 見えない。
@@ -1740,9 +1852,13 @@
     align-content: flex-start;
     column-gap: 4px;
     overflow: hidden;
+    position: relative;
+    padding-right: 9px;
   }
   .ssg-bar-aggregates--trailing .ssg-bar-aggregates-list {
     justify-content: flex-end;
+    padding-right: 0;
+    padding-left: 9px;
   }
   .ssg-bar-aggregates-list > .ssg-bar-chip {
     flex: none;
@@ -2714,6 +2830,10 @@
     border-radius: 1px;
     background-color: var(--ssg-panel-accent-contrast);
   }
+  /* 追加(1.0.2 / 2026-11-09 実アプリの総点検 L-09): 無効のときの「一部」の線も濃い灰色に(チェックの色と同じ。地は無効の灰色)。 */
+  .ssg-checkbox--disabled .ssg-checkbox-dash {
+    background-color: var(--ssg-panel-text-muted);
+  }
 
   /* ── 列フィルター popover(ColumnFilterPopover) ── */
   /* パネル(.ssg-popover)とは別の軽量フレーム(radius 10 / 影も控えめ)。
@@ -2740,6 +2860,10 @@
   }
   .ssg-filter-popover > * {
     flex: none;
+  }
+  /* 追加(1.0.2 / L-10): タッチの端末で開いたときはポップオーバーそのものにフォーカスを置くので、その枠は出しません。 */
+  .ssg-filter-popover:focus {
+    outline: none;
   }
 
   .ssg-filter-title {
@@ -3506,8 +3630,16 @@
   .ssg-header-cell--align-right {
     flex-direction: row-reverse;
   }
+  /* 変更(1.0.2 / 2026-11-09 実アプリの総点検 I-03): 右寄せのラベルは中身の幅にし(右へ詰める)、状態(矢印 / 漏斗)を
+     ラベルのすぐ左に置きます。これまではラベルが残りの幅を取り、状態が見出しの左端に出て左隣の列の印に見えていました。 */
   .ssg-header-cell--align-right .ssg-header-label {
+    flex: 0 1 auto;
     text-align: right;
+  }
+  /* 変更(レビュー QB-7): renderHeader の中身(幅いっぱいを前提にした width: 100% や space-between など)は、これまでどおり
+     残りの幅を取ります。 */
+  .ssg-header-cell--align-right .ssg-header-label--custom {
+    flex: 1;
   }
   .ssg-header-cell--align-center .ssg-header-label {
     text-align: center;
@@ -3531,6 +3663,59 @@
       background-color: transparent;
       opacity: 1;
       pointer-events: auto;
+    }
+    /* 追加(1.0.2 の確かめ直し): 右寄せの見出しはラベルが中身の幅になった(I-03)ので、操作を左端へ寄せます(状態の
+       すぐ左に並ぶと見出しの真ん中に ⋮ が来て、見出しを押したつもりで列メニューが開いていた)。 */
+    .ssg-header-cell--align-right .ssg-header-actions {
+      margin-right: auto;
+    }
+    /* 追加(1.0.2 / 2026-11-09 実アプリの総点検 L-11): タッチでは操作が常に出るので、120px より細い見出し(--inline-actions
+       の無い見出し)は並べ替えのつまみ(grip)を出さず、⋮ だけにします(64px の「単位」が「単…」に切れていた)。印の無い
+       状態のスロットも幅と隙間を取らないよう外します。細い列の並べ替えはツールパネルの「列」タブで。
+       変更(レビュー QB-5): ⋮ がある見出しだけです(列メニューが無い構成で細い列の並べ替えができなくなっていた)。 */
+    .ssg-header-cell:not(.ssg-header-cell--inline-actions) .ssg-header-actions:has(.ssg-icon-btn) .ssg-header-grip {
+      display: none;
+    }
+    .ssg-header-status:empty {
+      display: none;
+    }
+  }
+  /* 追加(1.0.2 / 2026-11-09 実アプリの総点検 F-11 / C-07): 幅のある見出し(--inline-actions = 120px 以上)では、ホバーで
+     出る操作を重ねずにラベルと状態の間(右寄せは状態の左)へ並べ、並べ替えの矢印とフィルターの印を隠しません(ラベルが
+     長ければ省略記号で縮む)。出ていない間は幅 0 で、隣の gap を負の余白で打ち消します。細い見出しは、並べると文字も ⋮ も
+     入らないので、これまでどおり重ねます。タッチ(hover: none)は上の常時表示のまま。 */
+  @media (hover: hover) {
+    .ssg-header-cell--inline-actions .ssg-header-status {
+      order: 2;
+    }
+    .ssg-header-cell--inline-actions .ssg-header-actions {
+      position: static;
+      order: 1;
+      width: 0;
+      height: auto;
+      overflow: hidden;
+      padding: 0;
+      margin-left: -4px;
+      background-color: transparent;
+    }
+    .ssg-header-cell--inline-actions:hover .ssg-header-actions,
+    .ssg-header-cell--inline-actions .ssg-header-actions:has(:focus-visible) {
+      width: auto;
+      overflow: visible;
+      margin-left: 0;
+      background-color: transparent;
+    }
+    .ssg-header-cell--inline-actions.ssg-header-cell--align-right .ssg-header-status {
+      order: 1;
+    }
+    .ssg-header-cell--inline-actions.ssg-header-cell--align-right .ssg-header-actions {
+      order: 2;
+      margin-left: 0;
+      margin-right: -4px;
+    }
+    .ssg-header-cell--inline-actions.ssg-header-cell--align-right:hover .ssg-header-actions,
+    .ssg-header-cell--inline-actions.ssg-header-cell--align-right .ssg-header-actions:has(:focus-visible) {
+      margin-right: 0;
     }
   }
   /* 追加: hover で出る操作アイコン(grip / ⋮)の通常色を濃く(slate-600)して視認性を上げます。
@@ -4455,4 +4640,16 @@
     width: 100%;
     margin: 0;
     padding-left: 1.2em;
+  }
+
+  /* 追加(1.0.2 / 2026-11-09 実アプリの総点検 L-10): タッチが主の端末では、ポップオーバー(列フィルター / ツールパネル)と
+     バー(グローバルフィルター / セル内検索 / AI のバー)の入力欄の文字も 16px 以上にします(iOS は 16px 未満の入力欄に
+     フォーカスするとページを拡大するため。セルのエディタと同じ)。ほかの指定に勝つよう最後に置きます。 */
+  @media (pointer: coarse) {
+    :is(.ssg-filter-popover, .ssg-popover) :is(input:not([type='checkbox']):not([type='radio']), select, textarea),
+    .ssg-bar-input,
+    .ssg-find-bar-input,
+    .ssg-ask-input {
+      font-size: max(16px, 1em);
+    }
   }

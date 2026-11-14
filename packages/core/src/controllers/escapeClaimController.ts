@@ -51,6 +51,22 @@ export const isEscapePreventedInside = (event: Event): boolean =>
 
 const MANTINE_STOP_ATTRIBUTE = 'data-mantine-stop-propagation';
 
+// 追加(1.0.2 / 1.0.1 のレビュー RA-6 の残り): 行 / 列 / フィルハンドルのドラッグの最中の Escape は、ドラッグをやめるのに使います
+//   (1 セルを選んだままドラッグしてやめると、印が付かずにダイアログまで閉じていた)。各ドラッグは始めるときに数を足し、
+//   終わるときに戻します(戻り値を呼ぶ。2 回呼んでも 1 回だけ戻す)。ドラッグのキーの聞き取りは window の capture 相で
+//   (印の付いた Escape はグリッドのルートで伝播を止めるため)。
+let activeEscapeDrags = 0;
+export const beginEscapeCancelableDrag = (): (() => void) => {
+  activeEscapeDrags += 1;
+  let released = false;
+  return () => {
+    if (!released) {
+      released = true;
+      activeEscapeDrags -= 1;
+    }
+  };
+};
+
 export const createEscapeClaimController = (): EscapeClaimController => {
   let args: EscapeClaimArgs | null = null;
   let listening = false;
@@ -63,7 +79,11 @@ export const createEscapeClaimController = (): EscapeClaimController => {
     }
     const root = args.gridRootRef.current;
     const target = event.target;
-    if (root === null || !(target instanceof Element) || !args.isClaimedTarget(target, root)) {
+    if (
+      root === null ||
+      !(target instanceof Element) ||
+      (activeEscapeDrags === 0 && !args.isClaimedTarget(target, root))
+    ) {
       return;
     }
     claimedEvents.add(event);

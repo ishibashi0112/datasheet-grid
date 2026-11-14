@@ -21,7 +21,7 @@ import {
 import type { GridColumn, GridState } from '../model/gridTypes';
 
 // 型だけの宣言です(利用側のバンドラが process.env.NODE_ENV を文字列へ置き換える。hooks/useUnregisteredFeatureWarnings と同じ)。
-declare const process: { env: { NODE_ENV?: string } };
+declare const process: { env: { NODE_ENV?: string | undefined } };
 
 /**
  * AI に聞く関数です(利用側が用意する)。`request` を自分のサーバーへ送り、AI の答え(オブジェクトか JSON の文字列)を返します。
@@ -51,21 +51,21 @@ export type UseGridAskOptions<T> = {
   /** AI に聞く関数。 */
   ask: GridAsk;
   /** 列ごとの補足(単位や値の書き方)。`false` でその列を AI に見せない。 */
-  columnHints?: Readonly<Record<string, string | false>>;
+  columnHints?: Readonly<Record<string, string | false>> | undefined;
   /** 列の条件(フィルター)を変えてよいか(既定 true)。 */
-  allowFilter?: boolean;
+  allowFilter?: boolean | undefined;
   /** 並びを変えてよいか(既定 true)。 */
-  allowSort?: boolean;
+  allowSort?: boolean | undefined;
   /** グローバル検索の文字を変えてよいか(既定 true)。 */
-  allowSearch?: boolean;
+  allowSearch?: boolean | undefined;
   /** 列を隠す・見せるのを許す(既定 false。グリッドに onColumnsChange を渡しているときに付ける)。 */
-  allowColumnVisibility?: boolean;
+  allowColumnVisibility?: boolean | undefined;
   /** 反映したあとに呼ぶ。 */
-  onApply?: (event: GridAskApplyEvent) => void;
+  onApply?: ((event: GridAskApplyEvent) => void) | undefined;
   /** ask が失敗したとき(throw / reject)に呼ぶ。止めたときは呼ばない。 */
-  onError?: (error: unknown) => void;
+  onError?: ((error: unknown) => void) | undefined;
   /** 文言(既定は日本語。英語は `gridAskLocaleTextEn`。一部だけ渡すと残りは既定)。 */
-  localeText?: Partial<GridAskLocaleText>;
+  localeText?: Partial<GridAskLocaleText> | undefined;
 };
 
 /** 最後の頼みの結果です。 */
@@ -206,8 +206,12 @@ export function useGridAsk<T>(options: UseGridAskOptions<T>): UseGridAskResult {
           .filter((key) => !options.columns.some((column) => column.key === key))
           .join(', ');
   // 変更(作り直しの確認 AI-N4): 接頭辞を [GridAskBar] から [spreadsheet-grid] に(useGridAsk だけの画面でも出るため)。
+  // 変更(1.0.2 / 2026-11-09 実アプリの総点検 I-11): 最後に警告したキーを覚えて、StrictMode の effect の付け直しで
+  //   もう一度出さないようにしました(これまでは 2 回以上出ていた)。
+  const warnedHintKeysRef = useRef('');
   useEffect(() => {
-    if (unknownHintKeys !== '') {
+    if (unknownHintKeys !== '' && unknownHintKeys !== warnedHintKeysRef.current) {
+      warnedHintKeysRef.current = unknownHintKeys;
       console.warn(
         `[spreadsheet-grid] GridAskBar / useGridAsk の columnHints に列に無いキーがあります: ${unknownHintKeys}。列の key と同じ名前にしてください(この補足や \`false\` は効いていません)。\n` +
           `[spreadsheet-grid] columnHints of GridAskBar / useGridAsk has keys that are not columns: ${unknownHintKeys}. Use the column keys (these hints and \`false\` have no effect).`,

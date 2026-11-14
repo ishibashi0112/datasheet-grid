@@ -594,6 +594,10 @@ describe('SpreadsheetGrid フィルター管理パネル導線(FM-3・結合)', 
   it('既定トップバーの Filters chip クリックでパネルがトグルする(pointerdown で閉じ戻らない)', () => {
     render(<SpreadsheetGrid columns={columns} rows={rows} />);
     const chip = screen.getByLabelText('フィルター管理パネルを開閉');
+    // 追加(1.0.2 / L-08): 読み上げの名前は見えている要約で始まる(WCAG 2.5.3)。
+    // 操作の説明はボタンの外の隠した要素なので、ボタンの文字は見えている要約のまま。
+    expect(chip.textContent).toBe('絞り込み: なし');
+    expect(screen.getByRole('button', { name: '絞り込み: なし フィルター管理パネルを開閉' })).toBe(chip);
     // 実イベント順(pointerdown → click)で開きます。
     fireEvent.pointerDown(chip);
     fireEvent.click(chip);

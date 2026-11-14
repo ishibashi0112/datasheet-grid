@@ -676,8 +676,60 @@ describe('readGridAskAnswer: 利用者の条件を黙って変えない', () => 
       dropped: ['並び: 在庫数 の向き「down」は使えません', '並び: 「nothing」という列はありません'],
     });
     expect(read(answer({ mode: 'refine', sort: [] }), state).state.sort).toEqual([]);
-    // replace は空から始めるので、使えなければ並びなし
-    expect(read(answer({ sort: [{ column: 'stock', direction: 'down' }] }), state).state.sort).toEqual([]);
+    // replace は空から始めるので、ほかに使えた指示があれば並びなし
+    expect(
+      read(answer({ filters: [f('price', '>=', { value: '100' })], sort: [{ column: 'stock', direction: 'down' }] }), state).state.sort,
+    ).toEqual([]);
+    // 変更(1.0.2 / I-06): 並びだけを書いてきて 1 つも使えなければ、replace でも今のまま
+    expect(read(answer({ sort: [{ column: 'stock', direction: 'down' }] }), state)).toMatchObject({
+      changed: false,
+      state: { sort: state.sort },
+    });
+  });
+
+  // 追加(1.0.2 / 2026-11-09 実アプリの総点検 I-06): replace で書いてきた指示がすべて使えないときは、表を空にしない。
+  it('replace で書いてきた条件がすべて使えなければ、今の条件を消さずに「変わらない」にする', () => {
+    const state = stateOf(
+      { code: { kind: 'text', value: 'ペン' } },
+      { sort: [{ columnKey: 'price', direction: 'desc' }], globalText: '赤', hidden: ['memo'] },
+    );
+    const result = read(answer({ filters: [f('category', 'equals', { value: '食品' }), f('nothing', '=', { value: 'x' })] }), state);
+    expect(result.changed).toBe(false);
+    expect(result.state.filters).toEqual(state.filters);
+    expect(result.state.sort).toEqual(state.sort);
+    expect(isGridAskColumnsChanged(state, result.state)).toBe(false);
+    expect(result.dropped).toEqual(['分類: 「食品」は候補にありません', '「nothing」という列はありません']);
+    // 返す状態は今の状態の複製(書き換えても今の状態に響かない)
+    expect(result.state.filters.columnFilters.code).not.toBe(state.filters.columnFilters.code);
+    // 1 つでも使えれば、これまでどおり空から始める
+    const partial = read(answer({ filters: [f('category', 'equals', { value: '食品' }), f('price', '<', { value: '100' })] }), state);
+    expect(partial.changed).toBe(true);
+    expect(Object.keys(partial.state.filters.columnFilters)).toEqual(['price']);
+    expect(partial.state.filters.globalText).toBe('');
+    // 何も書かずに「できなかった」だけを返した答え(AI が断った)は今のまま(レビュー QB-6)
+    const refused = read(answer({ unsupported: '天気は分かりません' }), state);
+    expect(refused.changed).toBe(false);
+    expect(refused.unsupported).toBe('天気は分かりません');
+    expect(refused.state.filters).toEqual(state.filters);
+    // 何も書かずに空を返した答え(「全部見せて」)は、これまでどおり空にする
+    const cleared = read(answer({}), state);
+    expect(cleared.changed).toBe(true);
+    expect(cleared.state.filters.columnFilters).toEqual({});
+    // refine はこれまでどおり(使えなかった条件だけ捨てて今のまま)
+    expect(read(answer({ mode: 'refine', filters: [f('category', 'equals', { value: '食品' })] }), state).changed).toBe(false);
+  });
+
+  // 追加(1.0.2 / 2026-11-09 実アプリの総点検 I-08): 配列でない並び / hide / show を黙って捨てない。
+  it('配列でない並びと列の指定は「使えなかった部分」に出す', () => {
+    const state = stateOf({}, { sort: [{ columnKey: 'price', direction: 'desc' }] });
+    const refined = read(answer({ mode: 'refine', sort: 'amount', hide: 'memo', show: { key: 'note' } }), state);
+    expect(refined.dropped).toEqual(['並びを読めませんでした', '読めない列の指定(2 件)は使えません']);
+    expect(refined.state.sort).toEqual(state.sort);
+    expect(refined.changed).toBe(false);
+    // replace で並びだけを読めない形で書いてきたときも今のまま(I-06)
+    expect(read(answer({ sort: 'amount' }), state)).toMatchObject({ changed: false, dropped: ['並びを読めませんでした'] });
+    // null は「今のまま / 指定なし」で、理由は出さない
+    expect(read(answer({ mode: 'refine', sort: null, hide: null, show: null }), state).dropped).toEqual([]);
   });
 
   it('読めない条件・列の指定・検索は理由を出す', () => {

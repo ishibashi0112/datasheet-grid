@@ -72,7 +72,9 @@ export type ColumnMenuController<T> = {
   dispose: () => void;
 };
 
-const MENU_WIDTH = 200;
+// 変更(1.0.2 / 2026-11-09 実アプリの総点検 H-10): 200 → 220px。日本語の「すべての列の幅を自動調整」(12 字)が 2 行に
+//   折り返し、その項目だけ高さが 44px になっていました(右クリックメニューと同じ幅)。
+const MENU_WIDTH = 220;
 // 追加(別視点のレビュー): キーボードで移る項目(列メニューの項目は role を持たないのでクラスで探す)。
 const COLUMN_MENU_ITEM = '.ssg-menu-item';
 const VIEWPORT_MARGIN = 8;

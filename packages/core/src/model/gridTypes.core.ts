@@ -37,13 +37,13 @@ export type RowModel<T> = {
   //   (DS-3-9 の OOB と同じ「型は T / number のまま・実行時 undefined」の契約に合流。
   //   既存 consumer の !row ガード / === undefined 判定がそのままグループ行を no-op として
   //   吸収します)。グルーピング無効(clientSide 非グループ / serverSide)では未定義です。
-  getGroupRow?: (viewIndex: number) => GridGroupRow | undefined;
+  getGroupRow?: ((viewIndex: number) => GridGroupRow | undefined) | undefined;
   // 追加(label-row ①): ラベル行(見出し / 区切り行)有効時のみ定義される任意アクセサです。ビュー行が
   //   ラベル行のとき記述子(GridLabelRow)を返し、データ行 / OOB では undefined を返します。
   //   ラベル行の viewIndex では getRow / getSourceIndex が実行時 undefined になります(グループ行と
   //   同じ契約 = 既存 consumer の !row ガードがラベル行を no-op として吸収します)。getRowKey は
   //   ラベル行でも定義され、rowKeyGetter(row, sourceIndex) の値を返します。
-  getLabelRow?: (viewIndex: number) => GridLabelRow<T> | undefined;
+  getLabelRow?: ((viewIndex: number) => GridLabelRow<T> | undefined) | undefined;
 };
 
 // 追加(DS-4 ②): serverSide(SSRM)用のデータ供給契約群です。dataSource 指定時に serverSide
@@ -53,11 +53,11 @@ export type RowModel<T> = {
 //   stage ② でサーバ実行へ配線します。
 export type ServerSideQuery = {
   // グローバルフィルター文字列(stage ② で配線)。
-  globalText?: string;
+  globalText?: string | undefined;
   // 列フィルター記述子(stage ② で配線)。
-  columnFilters?: Record<string, ColumnFilterValue>;
+  columnFilters?: Record<string, ColumnFilterValue> | undefined;
   // ソート状態(stage ② で配線)。
-  sort?: GridSortState;
+  sort?: GridSortState | undefined;
 };
 
 // 追加(DS-4 ②): getRows の引数です。[startIndex, endIndex) は view 空間・end 排他。
@@ -89,12 +89,12 @@ export type ServerSideDataSource<T> = {
   //   ペースト / Delete クリア / setValue / checkbox)が楽観更新つきでここへ届きます。
   //   resolve = 確定(rows を返せばサーバー確定行をキャッシュへマージ)/ reject = ロールバック
   //   (グリッドが編集前の値へ自動で戻します)。未指定なら SSRM では編集が従来どおり無効です。
-  updateRows?: (
+  updateRows?: ((
     params: ServerSideUpdateRowsParams<T>,
-  ) => Promise<ServerSideUpdateRowsResult<T> | void>;
-  initialRowCount?: number;
-  blockSize?: number;
-  maxCachedBlocks?: number;
+  ) => Promise<ServerSideUpdateRowsResult<T> | void>) | undefined;
+  initialRowCount?: number | undefined;
+  blockSize?: number | undefined;
+  maxCachedBlocks?: number | undefined;
 };
 
 // 追加(SSRM 書き戻し): セル単位の変更内容です(columnKey は GridColumn.key)。
@@ -125,7 +125,7 @@ export type ServerSideUpdateRowsParams<T> = {
 //   「サーバー確定後の行」を返してください(サーバー計算列の反映用にキャッシュへマージされます)。
 //   void / rows 省略は「楽観値をそのまま確定」を意味します。
 export type ServerSideUpdateRowsResult<T> = {
-  rows?: T[];
+  rows?: T[] | undefined;
 };
 
 // 追加(batch 9): getRows 失敗通知(onServerSideLoadError)のパラメータです。失敗した要求の
@@ -238,7 +238,7 @@ export type GetFilterOptionsResult = {
   // value は記述子の values にそのまま載る文字列。dateSet 列は 'YYYY-MM-DD'、空白(NULL)は '' を渡す。
   options: GridSelectFilterOption[];
   // 件数上限で打ち切ったら true(popover に「先頭のみ」の注記が出る。反転 = NOT IN で候補外の値も扱える)。
-  truncated?: boolean;
+  truncated?: boolean | undefined;
 };
 
 // 追加(filter-ext E): フィルター popover が実際に描画する UI 種別です('auto' を含まない
@@ -273,7 +273,7 @@ export type SetColumnFilterValue = {
   kind: 'set';
   // 追加(反転set): 既定 'include'(values=選択値)。多数選択時は 'exclude'(values=非選択値のみ)で
   //   巨大配列の生成・複製・dispatch を回避します。mode 省略時は従来どおり include 扱い(後方互換)。
-  mode?: 'include' | 'exclude';
+  mode?: 'include' | 'exclude' | undefined;
   values: string[];
 };
 
@@ -337,7 +337,7 @@ export type NumberSetColumnFilterValue = {
   kind: 'numberSet';
   condition: ParsedNumberFilter | null;
   set: {
-    mode?: 'include' | 'exclude';
+    mode?: 'include' | 'exclude' | undefined;
     values: string[];
   } | null;
 };
@@ -364,7 +364,7 @@ export type TextSetColumnFilterValue = {
   kind: 'textSet';
   condition: ParsedTextFilter | null;
   set: {
-    mode?: 'include' | 'exclude';
+    mode?: 'include' | 'exclude' | undefined;
     values: string[];
   } | null;
 };
@@ -378,8 +378,8 @@ export type DateFilterPreset = 'today' | 'thisMonth' | 'last30days';
 //   'YYYY-MM-DD' 文字列か Date を受け付け、片側のみなら 以降 / 以前 として評価されます
 //   (両方 undefined は「条件なし」)。
 export type DateFilterPresetRange = {
-  from?: string | Date;
-  to?: string | Date;
+  from?: string | Date | undefined;
+  to?: string | Date | undefined;
 };
 
 // 追加(preset-opt): 列定義で渡すカスタムプリセットです。id が保存値(相対のまま)になり、
@@ -443,7 +443,7 @@ export type DateSetColumnFilterValue = {
   kind: 'dateSet';
   condition: ParsedDateFilter | null;
   set: {
-    mode?: 'include' | 'exclude';
+    mode?: 'include' | 'exclude' | undefined;
     values: string[];
   } | null;
 };
@@ -499,7 +499,7 @@ export type CellRenderContext<T, F extends GridFrameworkTypes = GridFrameworkTyp
   // 追加(detail ②): 展開行(detailRow prop)有効時のみ定義されます。任意の列の renderCell から
   //   自前のトグル UI を置くための口です(専用トグル列を使わない配置 = T2)。
   //   expandable が false の行では toggle / setExpanded は no-op です。
-  detail?: CellDetailContext;
+  detail?: CellDetailContext | undefined;
 };
 
 // 追加(detail ②): renderCell 側から展開行を操作するためのコンテキストです。
@@ -549,7 +549,7 @@ export type DetailRowOptions<T, F extends GridFrameworkTypes = GridFrameworkType
    *
    * @defaultValue `200`
    */
-  height?: number;
+  height?: number | undefined;
   // 行ごとに展開可否を決めます(未指定 = 全行展開可)。false の行はトグルが描画されず、
   //   命令的 API / ctx.detail からの展開も no-op です。
   /**
@@ -558,7 +558,7 @@ export type DetailRowOptions<T, F extends GridFrameworkTypes = GridFrameworkType
    *
    * @defaultValue 全行展開可
    */
-  isExpandable?: (row: T, ctx: { rowKey: GridRowKey; sourceRowIndex: number }) => boolean;
+  isExpandable?: ((row: T, ctx: { rowKey: GridRowKey; sourceRowIndex: number }) => boolean) | undefined;
   // 専用トグル列(幅 28px、行ヘッダーの右隣 = 先頭列)を自動挿入するか(既定 true)。
   //   false にした場合は renderCell の ctx.detail.toggle() で任意の列にトグルを置いてください。
   /**
@@ -568,14 +568,14 @@ export type DetailRowOptions<T, F extends GridFrameworkTypes = GridFrameworkType
    *
    * @defaultValue `true`
    */
-  showToggleColumn?: boolean;
+  showToggleColumn?: boolean | undefined;
   // 帯の内側のカード要素(data-ssg-detail を持つ境界要素)へ追加する className。
   // 変更(slot-props): `{ className, style }` 形(StyleX の stylex.props() 戻り値)も受けます。
   /**
    * カード要素へ追加する class(または `{ className, style }`。`classNames.detailCard`
    * に加えて付与)。
    */
-  className?: GridSlotProps<F>;
+  className?: GridSlotProps<F> | undefined;
 };
 
 // ── 追加(label-row ①): ラベル行(見出し / 区切り行)──
@@ -654,17 +654,17 @@ export type LabelRowOptions<T, F extends GridFrameworkTypes = GridFrameworkTypes
    * `ctx = { row, rowKey, rowIndex, sourceRowIndex, label, sectionRowCount }`(`sectionRowCount`
    * はフィルター後のセクション内データ行数。serverSide では `undefined`)。
    */
-  render?: (ctx: LabelRowRenderContext<L>) => F['node'];
+  render?: ((ctx: LabelRowRenderContext<L>) => F['node']) | undefined;
   // ラベル行の高さ(px)。未指定は rowHeight(データ行と同じ)。行ごとに変えるときは関数を渡します。
   /**
    * ラベル行の高さ(px)。行ごとに変えるときは関数。
    *
    * @defaultValue `rowHeight`
    */
-  height?: number | ((row: L) => number);
+  height?: number | ((row: L) => number) | undefined;
   // ラベル行の行要素へ追加する className(または { className, style })。classNames.labelRow に加えて付与。
   /** 行要素へ追加する class(または `{ className, style }`)。`classNames.labelRow` に加えて付与。 */
-  className?: GridSlotProps<F> | ((row: L) => GridSlotProps<F> | undefined);
+  className?: GridSlotProps<F> | ((row: L) => GridSlotProps<F> | undefined) | undefined;
   // 縦スクロール中、現在のセクションのラベル行を列ヘッダー直下に固定表示します(既定 false)。
   //   次のラベル行が到達すると押し上げられて交代します。
   /**
@@ -674,21 +674,21 @@ export type LabelRowOptions<T, F extends GridFrameworkTypes = GridFrameworkTypes
    *
    * @defaultValue `false`
    */
-  sticky?: boolean;
+  sticky?: boolean | undefined;
   // ソート / フィルター適用時のラベル行の扱いです(既定 'section')。
   /**
    * ソート / フィルター適用時の扱い(下記)。
    *
    * @defaultValue `'section'`
    */
-  sortMode?: LabelRowSortMode;
+  sortMode?: LabelRowSortMode | undefined;
   // フィルターで中身が 0 件になったセクションのラベル行を残すか(既定 false)。
   /**
    * フィルターで中身が 0 件になったセクションのラベル行を残す。
    *
    * @defaultValue `false`
    */
-  keepEmptySections?: boolean;
+  keepEmptySections?: boolean | undefined;
   // エクスポート(includeLabelRows: true)時のラベル行の出力値です。文字列なら先頭列に置き他列は空、
   //   配列なら列順(エクスポート列の並び)にそのまま並べます。未指定は getLabel(row) を先頭列へ。
   /**
@@ -697,7 +697,7 @@ export type LabelRowOptions<T, F extends GridFrameworkTypes = GridFrameworkTypes
    *
    * @defaultValue `getLabel` を先頭列へ
    */
-  exportText?: (row: L) => string | ReadonlyArray<string | number | null | undefined>;
+  exportText?: ((row: L) => string | ReadonlyArray<string | number | null | undefined>) | undefined;
 };
 
 // 追加(合計行 3A): 合計行(totalRow)のセルの種別です。組み込み集計名、'custom'(aggFunc が関数)、
@@ -733,30 +733,30 @@ export type TotalRowOptions<T, F extends GridFrameworkTypes = GridFrameworkTypes
    *
    * @defaultValue `localeText` の `totalRowLabel`(`'合計'`)
    */
-  label?: string;
+  label?: string | undefined;
   // 列 key → 表示する値です。指定した列は計算せずこの値を出します(serverSide はこれだけ)。
   /**
    * 列 key → 表示する値。指定した列は計算せずこの値を出す(`aggFunc` より優先。serverSide
    * はこれだけ)。
    */
-  values?: Readonly<Record<string, unknown>>;
+  values?: Readonly<Record<string, unknown>> | undefined;
   // 値のあるセルの中身を差し替えます(既定は caption + text)。
   /**
    * 値のあるセルの中身を差し替える。`ctx = { column, value, kind, text, caption }`(`kind` は
    * `'sum' | 'avg' | 'min' | 'max' | 'count' | 'custom' | 'value'`、`text` は既定の表示文字列、
    * `caption` は種類の見出し)。
    */
-  renderCell?: (ctx: TotalRowCellContext<T, F>) => F['node'];
+  renderCell?: ((ctx: TotalRowCellContext<T, F>) => F['node']) | undefined;
   // 合計行の高さ(px)。未指定は rowHeight。
   /**
    * 合計行の高さ(px)。
    *
    * @defaultValue `rowHeight`
    */
-  height?: number;
+  height?: number | undefined;
   // 合計行の行要素へ追加する className(または { className, style })。classNames.totalRow に加えて付与。
   /** 行要素へ追加する class(または `{ className, style }`)。`classNames.totalRow` に加えて付与。 */
-  className?: GridSlotProps<F>;
+  className?: GridSlotProps<F> | undefined;
 };
 
 // 追加(フィルハンドル 1A): フィルハンドルで埋める向きです。
@@ -811,7 +811,7 @@ export type FillHandleOptions<T, F extends GridFrameworkTypes = GridFrameworkTyp
    * ドラッグ中のツールチップ(いちばん遠いセルの値)でも呼ぶため、副作用の無い関数にする。返した値も
    * `validate` を通り、reject なら書かない。
    */
-  getFillValue?: (params: GridFillValueParams<T, F>) => unknown;
+  getFillValue?: ((params: GridFillValueParams<T, F>) => unknown) | undefined;
 };
 
 // 追加(row-drag ③): 行ドラッグ並び替え(enableRowDrag)の行ごとの可否判定(isRowDraggable)へ
@@ -895,7 +895,7 @@ export type HeaderRenderContext<T, F extends GridFrameworkTypes = GridFrameworkT
   width: number;
   column: GridColumn<T, F>;
   filterValue?: unknown;
-  isFiltered?: boolean;
+  isFiltered?: boolean | undefined;
 };
 
 // 追加(10-A): AG Grid 互換の列固定方向型です。
@@ -940,10 +940,10 @@ export type GridColumnEditor<T, F extends GridFrameworkTypes = GridFrameworkType
       type: 'text';
       // 追加(段階 2 DU-14): 改行を含む値を編集する複数行の入力欄(textarea。中身に合わせて下へ伸び、表の見える範囲を
       //   超える分は入力欄の中でスクロール)。1 行の入力欄は改行を消すので、改行を含む値の列はこれを使います。
-      multiline?: boolean;
+      multiline?: boolean | undefined;
       // 追加(段階 2 DU-14): multiline のときの Enter。'commit'(既定。Excel と同じ: Enter で確定、Alt+Enter と
       //   Ctrl / ⌘+Enter で改行)/ 'newline'(Enter で改行、Ctrl / ⌘+Enter で確定。メモ帳やチャットに近い)。
-      enterKey?: GridTextEditorEnterKey;
+      enterKey?: GridTextEditorEnterKey | undefined;
     }
   | {
       // 数値エディタ(<input type="number">)。min / max / step はネイティブ属性へ反映します。
@@ -953,10 +953,10 @@ export type GridColumnEditor<T, F extends GridFrameworkTypes = GridFrameworkType
       //   変更(数値の検査): min / max と integer(整数だけ)は値の検査にも使います(validate の後に評価。
       //   validationMode に従い mark / reject。空は通す。logic/validation.ts の getInvalidMessage)。
       type: 'number';
-      min?: number;
-      max?: number;
-      step?: number;
-      integer?: boolean;
+      min?: number | undefined;
+      max?: number | undefined;
+      step?: number | undefined;
+      integer?: boolean | undefined;
     }
   | {
       // select エディタ(候補ドロップダウン)。候補は静的配列 or 行依存の動的関数で指定します
@@ -1006,7 +1006,7 @@ export type CellEditorContext<T, F extends GridFrameworkTypes = GridFrameworkTyp
   value: unknown;
   // 印字キー開始時はそのキー 1 文字 / それ以外は String(value ?? '') です。
   initialText: string;
-  align?: 'left' | 'center' | 'right';
+  align?: 'left' | 'center' | 'right' | undefined;
   // 確定します。string は列パーサ(parseClipboardValue ?? editor 既定)を通し、非 string は
   //   ドメイン値としてそのまま書き込みます(パースのバイパス)。返り値で reject 列の検証結果
   //   (rejected)を受け取れます(無視しても安全 — その場合は編集継続になるだけです)。
@@ -1104,7 +1104,7 @@ export type GridColumn<T, F extends GridFrameworkTypes = GridFrameworkTypes> = {
   //   F['node'] / F['style'] の位置からは推論されないため、列(GridColumn<T, F>)を受け取る React 非依存の
   //   関数が呼び出し側の F(ReactGridTypes 等)をそのまま返せるよう、列型に F を直接載せます。
   /** 型推論用の内部マーカーです(実行時には存在しません)。指定しないでください。 */
-  readonly __framework?: F;
+  readonly __framework?: F | undefined;
   /** 列の一意キー。 */
   key: string;
   // 明確化(proposals ⑦-b): 未指定 / 空文字('')のときはヘッダー・列メニュー・フィルター
@@ -1115,20 +1115,20 @@ export type GridColumn<T, F extends GridFrameworkTypes = GridFrameworkTypes> = {
    * フィルターパネル / CSV ヘッダー等の列名表示も同じフォールバック)。
    * ボタン専用列などで見出しを空にしたい場合は空白 1 文字(`' '`)等を指定する。
    */
-  title?: string;
+  title?: string | undefined;
   /** 列幅(px)。 */
   width: number;
   /**
    * リサイズ時の下限幅(未指定時の手動リサイズの下限は 60px。`0` を指定すると 0 まで縮められる)。
    * flex 配分時の下限クランプにも使用(flex 列で未指定なら内部既定 50px)。
    */
-  minWidth?: number;
+  minWidth?: number | undefined;
   /**
    * 上限幅。**未指定なら上限なし**(autoSize は内容にぴったり合わせ、
    * 手動リサイズも自由に広げられます。既定の上限は設けません)。指定すると autoSize / 手動リサイズ /
    * flex 配分の上限クランプに使われます。
    */
-  maxWidth?: number;
+  maxWidth?: number | undefined;
   // 追加: 折り返し時(= autoHeight 列)の CSS word-break です。'auto-phrase' は Chromium(Chrome / Edge)で
   //   BudouX による文節折り返しを行います(Firefox / 一部 Safari は未対応)。nowrap(非 autoHeight)列では
   //   折り返し自体が起きないため視覚的効果はありません。既定は未指定(ブラウザ標準 = 禁則つき文字折り返し)。
@@ -1138,13 +1138,13 @@ export type GridColumn<T, F extends GridFrameworkTypes = GridFrameworkTypes> = {
    * 列では折り返し自体が起きないため効果なし**。既定(未指定)はブラウザ標準=禁則つき文字折り返し。
    * 詳細は「日本語テキストの折り返し」節。
    */
-  wordBreak?: 'normal' | 'break-all' | 'keep-all' | 'break-word' | 'auto-phrase';
+  wordBreak?: 'normal' | 'break-all' | 'keep-all' | 'break-word' | 'auto-phrase' | undefined;
   // 追加: 折り返し時の CSS line-break です(禁則処理の強さ)。'strict' で禁則を厳格化します。既定は未指定。
   /**
    * 折り返し時の CSS `line-break`(禁則処理の強さ)。`'strict'` で禁則を厳格化。`wordBreak` 同様、
    * 折り返す列でのみ効果あり。
    */
-  lineBreak?: 'auto' | 'loose' | 'normal' | 'strict' | 'anywhere';
+  lineBreak?: 'auto' | 'loose' | 'normal' | 'strict' | 'anywhere' | undefined;
   // 追加(B3): JS 算出 flex(AG Grid の flex 相当)。center ペイン(非 pinned)の列でのみ有効で、
   //   「利用可能幅 − 固定列合計」を flex 比で配分します(min/max でクランプ)。pinned 列では無視されます。
   //   手動リサイズするとその列は固定 px に変わります(columns が変化するまで固定。以後は flex に復帰)。
@@ -1158,7 +1158,7 @@ export type GridColumn<T, F extends GridFrameworkTypes = GridFrameworkTypes> = {
    * の列では `width` は使わない(最小の幅にもならず、余り幅が無いと既定の下限 50px まで縮む)。
    * 縮ませたくない幅は `minWidth` で書く。詳細は下記「flex と autoSize」節。
    */
-  flex?: number;
+  flex?: number | undefined;
   // 追加(①): この列のリサイズ可否です。未指定時はグリッドの enableColumnResize を継承します
   //   (解決規則: column.resizable ?? enableColumnResize)。false でヘッダーのリサイズハンドルを
   //   描画しません(手動リサイズ不可)。
@@ -1169,7 +1169,7 @@ export type GridColumn<T, F extends GridFrameworkTypes = GridFrameworkTypes> = {
    *
    * @defaultValue グリッドの `enableColumnResize` を継承
    */
-  resizable?: boolean;
+  resizable?: boolean | undefined;
   // 追加(②-S1): true の列を autoSize(列メニュー / ヘッダー境界ダブルクリック / すべての列の自動調整)の
   //   対象から除外し、consumer が指定した width を維持します(固定幅優先)。テキストで幅を測れない
   //   カスタムUI列(renderCell)や、固定幅で見せたい列に付ける per-column の opt-in です。
@@ -1181,7 +1181,7 @@ export type GridColumn<T, F extends GridFrameworkTypes = GridFrameworkTypes> = {
    *
    * @defaultValue `false`
    */
-  suppressAutoSize?: boolean;
+  suppressAutoSize?: boolean | undefined;
   // 追加(②-S2): autoSize の幅見積もり関数です。指定すると、その列の autoSize は「セル内容の
   //   ピクセル幅(セルの padding / border を除く content 幅)」をこの関数から得て、全行の最大 +
   //   セル枠で確定します(テキスト計測 / 候補 / 実 DOM 計測は使いません)。テキスト長が実描画幅と
@@ -1193,34 +1193,34 @@ export type GridColumn<T, F extends GridFrameworkTypes = GridFrameworkTypes> = {
    * React mount もしません)。テキスト長が実描画幅と相関しない renderCell
    * カスタムUI列(横並びバッジ等)向けの opt-in。返す値は `renderCell` の実描画幅と一致させること。
    */
-  estimateCellWidth?: (row: T, column: GridColumn<T, F>) => number;
+  estimateCellWidth?: ((row: T, column: GridColumn<T, F>) => number) | undefined;
   // 追加(C1): true の列が auto-height 行の高さを駆動します(複数列指定時は max を採用)。
   //   グリッド props の autoHeight 有効時のみ効きます(無効時はこのフラグは無視)。
   /**
    * この列が auto-height 行の高さを駆動(グリッドの `autoHeight` 有効時のみ)。**autoSize
    * の対象外**(折り返し前提のため。下記「flex と autoSize」の制約を参照)。
    */
-  autoHeight?: boolean;
+  autoHeight?: boolean | undefined;
   // 追加(段階 2 DU-32): auto-height で背の高くなった行での縦の揃え(グリッドの verticalAlign より優先)。
   /**
    * auto-height で伸びた行での、この列の中身の縦の揃え(グリッドの `verticalAlign` より優先)。
    * 書かなければグリッドの指定、それも無ければ `autoHeight` の列は上、ほかの列は真ん中。
    */
-  verticalAlign?: GridVerticalAlign;
+  verticalAlign?: GridVerticalAlign | undefined;
   /**
    * 列の表示/非表示。非表示にしても、その列に載った列フィルター / ソートは行の絞り込み /
    * 並べ替えに効き続ける(クイックフィルター = グローバル検索は可視列のみが対象)。
    */
-  visible?: boolean;
+  visible?: boolean | undefined;
   /**
    * この列の編集可否。**未指定の列は編集可**で、`false` または `readOnly: true`
    * で編集不可になる(グリッド全体は `readOnly`、セル単位は `canEditCell`)。
    *
    * @defaultValue `true`(未指定 = 編集可)
    */
-  editable?: boolean;
+  editable?: boolean | undefined;
   /** この列を読み取り専用にする。 */
-  readOnly?: boolean;
+  readOnly?: boolean | undefined;
   // 追加(10-A): AG Grid 互換の列固定指定です。
   //             未指定 or undefined → 中央スクロール領域に配置されます。
   /**
@@ -1228,11 +1228,13 @@ export type GridColumn<T, F extends GridFrameworkTypes = GridFrameworkTypes> = {
    * 右の固定列の内側から、次に左の固定列の内側から順に、
    * 表示の上だけ固定を外して中央でスクロールさせる(`columns` の `pinned` は変えず、
    * 広くなれば固定に戻る。スマホの幅で右の固定列が左の固定列に重なり、中央が見えなかったため。1.0.1
-   * から)。
+   * から)。列の合計幅が表の幅より狭いときは、
+   * 右の固定列は表の右端ではなく中央の列のすぐ右に付く(右端に置きたいときは中央の列のどれかに
+   * `flex` を付けて余りの幅を埋める)。
    *
    * @defaultValue undefined = 中央スクロール
    */
-  pinned?: GridColumnPinned;
+  pinned?: GridColumnPinned | undefined;
   // 追加(grouping ①): true でこの列を行グルーピングの対象にします。複数列指定時は columns
   //   配列内の出現順が階層順です。グルーピング有効時、この列は表示から自動的に外れ、先頭の
   //   自動グループ列(ツリー表示)へ集約されます。clientSide 行モデル限定で、SSRM
@@ -1245,7 +1247,7 @@ export type GridColumn<T, F extends GridFrameworkTypes = GridFrameworkTypes> = {
    * が要る。`rowGroup` を書いた列だけでなく、集計のある列と最後のデータ列を除くすべての列に出る)。
    * 詳細は「行グルーピング + 集計」節。
    */
-  rowGroup?: boolean;
+  rowGroup?: boolean | undefined;
   // 追加(grouping ①): グルーピング時のこの列の集計です。組み込み(GridAggFuncName)または
   //   カスタム関数(GridAggFunc)。組み込みは値駆動の数値集計で、Number() 変換で有限に
   //   ならない値と空値(null / undefined / '')は対象外です(count のみ leaf 行数)。
@@ -1257,7 +1259,7 @@ export type GridColumn<T, F extends GridFrameworkTypes = GridFrameworkTypes> = {
    * 関数でカスタム集計可(返り値がグループ行 / 合計行に表示)。`rowGroup` 列も `totalRow`
    * もないときは無視。
    */
-  aggFunc?: GridAggFuncName | GridAggFunc<T, F>;
+  aggFunc?: GridAggFuncName | GridAggFunc<T, F> | undefined;
   /**
    * 値アクセサ。`setValue` の無い列へ書き込むと値は `row[key]` へ入り、表示(`getValue`)
    * は変わらない。計算列は `editable: false` にするか `setValue` を渡す(開発時は、
@@ -1265,15 +1267,15 @@ export type GridColumn<T, F extends GridFrameworkTypes = GridFrameworkTypes> = {
    *
    * @defaultValue `row[key]`
    */
-  getValue?: (row: T) => unknown;
+  getValue?: ((row: T) => unknown) | undefined;
   /** 値ライター(新しい行を返す)。 */
-  setValue?: (row: T, value: unknown) => T;
+  setValue?: ((row: T, value: unknown) => T) | undefined;
   /**
    * カスタムセル描画。
    *
    * @defaultValue プレーン `<span>`
    */
-  renderCell?: (ctx: CellRenderContext<T, F>) => F['node'];
+  renderCell?: ((ctx: CellRenderContext<T, F>) => F['node']) | undefined;
   // 追加(UI CSS移行): セルへ付与する追加 className(条件付きスタイル)。文字列 or 関数。
   //   関数版は CellStyleContext を受け取り、値や状態に応じてクラスを返せます(例: Tailwind)。
   //   基底クラス(.ssg-body-cell)は @layer ssg-base のため、ここで返したクラスが特異度を
@@ -1291,7 +1293,7 @@ export type GridColumn<T, F extends GridFrameworkTypes = GridFrameworkTypes> = {
    */
   cellClassName?:
     | GridSlotProps<F>
-    | ((ctx: CellStyleContext<T, F>) => GridSlotProps<F> | undefined);
+    | ((ctx: CellStyleContext<T, F>) => GridSlotProps<F> | undefined) | undefined;
   // 追加(G-3): セルのメモ(FarPoint SPREAD のセルメモ / Excel のメモ相当)。文字列を返したセルに右上の印
   //   (.ssg-body-cell--has-note。色は --ssg-note-indicator)を出し、マウスを乗せるとその文字列を既存のカスタム
   //   ツールチップ(data-ssg-tooltip)で表示します(\n で改行)。入力エラー(validate の mark)と同じセルでは
@@ -1307,7 +1309,7 @@ export type GridColumn<T, F extends GridFrameworkTypes = GridFrameworkTypes> = {
    * 描画中のセルだけ評価する(`cellClassName` 関数と同じコスト階級)。CSV / TSV / クリップボード /
    * `getExportData` には含めない。詳細は「セルのメモ(`cellNote`)」節。
    */
-  cellNote?: (ctx: CellStyleContext<T, F>) => string | null | undefined;
+  cellNote?: ((ctx: CellStyleContext<T, F>) => string | null | undefined) | undefined;
   // 追加(F-3): 条件付き書式ヘルパー。JSDoc は API_REFERENCE の表から生成。
   /**
    * **条件付き書式**。既定セルの描画に、値の「量」/「向き」/「状態」を重ねる。`dataBar`(背景の帯。
@@ -1320,7 +1322,7 @@ export type GridColumn<T, F extends GridFrameworkTypes = GridFrameworkTypes> = {
    * エクスポート / コピー / ソート / フィルターには影響しない。色はトークン `--ssg-cf-*`。
    * 詳細は「条件付き書式(`conditionalFormat`)」節。
    */
-  conditionalFormat?: GridConditionalFormat<T, F>;
+  conditionalFormat?: GridConditionalFormat<T, F> | undefined;
   // 追加(③): セル内容の水平寄せ(UI 表示のみ・元の値は不変)。未指定は左。
   //   セル表示と編集 input の双方へ反映します(renderCell 指定時もセルコンテナへ適用)。
   /**
@@ -1328,7 +1330,7 @@ export type GridColumn<T, F extends GridFrameworkTypes = GridFrameworkTypes> = {
    *
    * @defaultValue `'left'`
    */
-  align?: 'left' | 'center' | 'right';
+  align?: 'left' | 'center' | 'right' | undefined;
   // 追加(DevBI の報告 2026-11-07): 列見出しの水平寄せ。未指定は align と同じ(右寄せの数値列は見出しも右)。
   //   見出しだけ変えたい列に書きます。右寄せは並びを鏡写しにします(状態をラベルの左、ホバーの操作も左)。
   /**
@@ -1339,7 +1341,7 @@ export type GridColumn<T, F extends GridFrameworkTypes = GridFrameworkTypes> = {
    *
    * @defaultValue `align` と同じ
    */
-  headerAlign?: 'left' | 'center' | 'right';
+  headerAlign?: 'left' | 'center' | 'right' | undefined;
   // 追加(③): セル表示値の整形(UI 表示のみ・元の値/編集/コピー/ソート/フィルターに影響しません)。
   //   renderCell 未指定の既定セルが本関数の返り値を表示します(renderCell 指定時は無視)。
   //   組み込みの numberFormatter 等を渡せます(バレルから公開)。
@@ -1349,14 +1351,14 @@ export type GridColumn<T, F extends GridFrameworkTypes = GridFrameworkTypes> = {
    * グループ行の集計値と合計行の値の整形にも使い、そのときは元の行が無いので `row` は
    * `undefined`(型は `T | undefined`。`row` を読むときは `row?.x` と書く)。
    */
-  valueFormatter?: CellValueFormatter<T, F>;
+  valueFormatter?: CellValueFormatter<T, F> | undefined;
   /**
    * カスタムヘッダー描画。中に置いたボタン / 入力欄 / リンク等(`button` / `input` / `select` /
    * `textarea` / `a[href]` / `label` / `contenteditable` / `role="button"` 等)
    * を押したときは列の範囲選択を始めない(既定動作も止めないため入力欄にフォーカスが入る)。
    * それ以外の部分を押すと従来どおり列を選択する。
    */
-  renderHeader?: (ctx: HeaderRenderContext<T, F>) => F['node'];
+  renderHeader?: ((ctx: HeaderRenderContext<T, F>) => F['node']) | undefined;
   // 変更(12-A): 'set' を追加します。AG Grid の Set Filter 相当
   //             (チェックボックス一覧 + 検索 + Select All)の UI になります。
   // 変更(filter-ext B): 'numberSet' を追加します。数値条件(演算子 + 値)と Set 一覧を
@@ -1382,7 +1384,7 @@ export type GridColumn<T, F extends GridFrameworkTypes = GridFrameworkTypes> = {
    * 今月 / 過去 30 日。**相対のまま保存され評価のたびに解決**)で、Set 部分は年 / 月 / 日の 3
    * 階層ツリー(親は 3 状態チェック)になる。
    */
-  filterType?: ColumnFilterTypeOption;
+  filterType?: ColumnFilterTypeOption | undefined;
   // 追加: select / set フィルター時の候補です。未指定時は rows から自動収集します。
   // 変更(proposals ②): readonly 配列も受け付けます(as const 定義の候補をそのまま渡せます)。
   /**
@@ -1390,7 +1392,7 @@ export type GridColumn<T, F extends GridFrameworkTypes = GridFrameworkTypes> = {
    *
    * @defaultValue rows から自動収集
    */
-  filterOptions?: readonly GridSelectFilterOption[];
+  filterOptions?: readonly GridSelectFilterOption[] | undefined;
   // 追加(preset-opt): dateSet フィルターの相対プリセットチップの構成です。
   //   - 未指定: ビルトイン 3 種(今日 / 今月 / 過去 30 日)を表示(従来挙動)。
   //   - false または []: チップ行そのものを非表示にします(オプトアウト)。
@@ -1408,7 +1410,7 @@ export type GridColumn<T, F extends GridFrameworkTypes = GridFrameworkTypes> = {
    *
    * @defaultValue ビルトイン 3 種
    */
-  dateFilterPresets?: false | readonly DateFilterPresetOption[];
+  dateFilterPresets?: false | readonly DateFilterPresetOption[] | undefined;
   /**
    * カスタムフィルター述語。`filterValue` は入力した値そのものではなく、
    * その列のフィルターの記述子(`ColumnFilterValue`)。`filterType: 'custom'` なら
@@ -1417,7 +1419,7 @@ export type GridColumn<T, F extends GridFrameworkTypes = GridFrameworkTypes> = {
    * `filterType: 'custom'` のフィルター画面は文字の入力欄 1 つ(text と同じ画面で、
    * 文言も「部分一致で絞り込み」のまま)で、`filterFn` が無ければ部分一致で絞る。
    */
-  filterFn?: (row: T, filterValue: unknown) => boolean;
+  filterFn?: ((row: T, filterValue: unknown) => boolean) | undefined;
   // 追加(editor 基盤): セルエディタ種別です。未指定は text(プレーンテキスト編集)。
   //   編集可否は従来どおり editable / readOnly / canEditCell で判定されます(editor は種別のみ)。
   /**
@@ -1427,7 +1429,7 @@ export type GridColumn<T, F extends GridFrameworkTypes = GridFrameworkTypes> = {
    *
    * @defaultValue text 相当
    */
-  editor?: GridColumnEditor<T, F>;
+  editor?: GridColumnEditor<T, F> | undefined;
   // 追加(validation): セル値の検証関数です。純粋・軽量であること(cellClassName 関数と同じ
   //   コスト階級で、描画中の可視セルごとに毎レンダー評価されます)。
   /**
@@ -1437,14 +1439,14 @@ export type GridColumn<T, F extends GridFrameworkTypes = GridFrameworkTypes> = {
    * `validate` の後(`validate` の NG はそのメッセージ、通した値だけ組み込みの検査)。
    * 詳細は「バリデーション」節。
    */
-  validate?: (ctx: CellValidationContext<T, F>) => CellValidationResult;
+  validate?: ((ctx: CellValidationContext<T, F>) => CellValidationResult) | undefined;
   // 追加(validation): 検証 NG 時の動作です。既定 'mark'(値は入るが invalid 表示)。
   /**
    * 検証 NG 時の動作。`'mark'`=値は入るがセルに invalid 表示 / `'reject'`=書き込み自体を拒否。
    *
    * @defaultValue `'mark'`
    */
-  validationMode?: GridValidationMode;
+  validationMode?: GridValidationMode | undefined;
   /**
    * 「文字列 → セル値」のパーサ(貼り付け / クリア / エディタ commit
    * で共通)。**明示指定が常に優先**。未指定で `editor` が number / date / checkbox
@@ -1452,9 +1454,9 @@ export type GridColumn<T, F extends GridFrameworkTypes = GridFrameworkTypes> = {
    *
    * @defaultValue editor 既定パーサ
    */
-  parseClipboardValue?: (raw: string, row: T) => unknown;
+  parseClipboardValue?: ((raw: string, row: T) => unknown) | undefined;
   /** コピー時のフォーマッタ。 */
-  formatClipboardValue?: (value: unknown, row: T) => string;
+  formatClipboardValue?: ((value: unknown, row: T) => string) | undefined;
 };
 
 // 追加: 列リサイズ用のドラッグ状態です。初版では reducer 側の設計だけ入れます。
@@ -1599,7 +1601,7 @@ export type GridLocaleText = {
   globalFilterLabel: string;
   /** 上部バーの検索欄の × の読み上げの名前。既定 `フィルターをクリア`、英語 `Clear filter`。 */
   clearGlobalFilter: string;
-  /** 上部バーの絞り込みの要約(押せるとき)の読み上げの名前とツールチップ。既定 `フィルター管理パネルを開閉`、英語 `Show or hide the filter panel`。 */
+  /** 上部バーの絞り込みの要約(押せるとき)のツールチップと、読み上げの名前の後半(前半は見えている要約。1.0.2 から。1.0.1 まではこの文だけが名前)。既定 `フィルター管理パネルを開閉`、英語 `Show or hide the filter panel`。 */
   toggleFilterPanel: string;
   // ── 共通 ──
   /** 「クリア」のボタン / ツールチップ。既定 `クリア`、英語 `Clear`。 */
@@ -1694,7 +1696,7 @@ export type GridLocaleText = {
   menuPinLeft: string;
   /** 固定の小メニューの右。既定 `右に固定`、英語 `Pin right`。 */
   menuPinRight: string;
-  /** `onColumnsChange` が無いときの固定のツールチップ。既定 `onColumnsChange 未指定のため固定状態を変更できません`、英語 `Pinning needs onColumnsChange.`。 */
+  /** `onColumnsChange` が無いときの固定のツールチップ。既定 `この表では列の固定を変えられません`、英語 `Pinning can't be changed in this grid.`。 */
   menuPinUnavailable: string;
   /** 列メニューの幅の自動調整。既定 `この列の幅を自動調整`、英語 `Autosize this column`。 */
   menuAutosize: string;
@@ -1706,7 +1708,7 @@ export type GridLocaleText = {
   menuResetColumns: string;
   /** 列のリセットのツールチップ(列メニューとツールパネル)。既定 `すべての列の幅・固定・表示・並び順・グループ化を初期状態に戻します`、英語 `Restores the width, pinning, visibility, order and grouping of all columns.`。 */
   resetColumnsHint: string;
-  /** `onColumnsChange` が無いときの列のリセットのツールチップ。既定 `onColumnsChange 未指定のため列をリセットできません`、英語 `Resetting columns needs onColumnsChange.`。 */
+  /** `onColumnsChange` が無いときの列のリセットのツールチップ。既定 `この表では列をリセットできません`、英語 `Columns can't be reset in this grid.`。 */
   menuResetUnavailable: string;
   // ── ツールパネル ──
   /** ツールパネルのタブ。既定 `フィルター`、英語 `Filters`。 */
@@ -1729,7 +1731,7 @@ export type GridLocaleText = {
   columnsDragToReorder: string;
   /** 列のタブのつまみのツールチップ(固定の区分があるとき)。既定 `ドラッグして並べ替え(同じセクション内のみ)`、英語 `Drag to reorder (within the same section)`。 */
   columnsDragWithinSection: string;
-  /** `onColumnsChange` が無いときのつまみのツールチップ。既定 `onColumnsChange 未指定のため並べ替えできません`、英語 `Reordering needs onColumnsChange.`。 */
+  /** `onColumnsChange` が無いときのつまみのツールチップ。既定 `この表では列を並べ替えられません`、英語 `Columns can't be reordered in this grid.`。 */
   columnsReorderUnavailable: string;
   /** 列のタブで検索している間のつまみのツールチップ。既定 `検索中は並べ替えできません`、英語 `Columns can't be reordered while searching.`。 */
   columnsReorderWhileSearching: string;
@@ -1743,7 +1745,7 @@ export type GridLocaleText = {
   columnsNoMatches: string;
   /** 列のタブのリセットのボタン。既定 `すべての列を初期状態に戻す`、英語 `Reset all columns`。 */
   columnsReset: string;
-  /** `onColumnsChange` が無いときの列のタブのツールチップ。既定 `onColumnsChange 未指定のため表示/非表示・リセットを変更できません`、英語 `Showing, hiding and resetting columns needs onColumnsChange.`。 */
+  /** `onColumnsChange` が無いときの列のタブのツールチップ。既定 `この表では列の表示/非表示とリセットは使えません`、英語 `Showing, hiding and resetting columns isn't available in this grid.`。 */
   columnsUnavailable: string;
   /** フィルターのタブの検索欄の文字の行。既定 `グローバルフィルター`、英語 `Global filter`。 */
   globalFilterTitle: string;
@@ -1798,7 +1800,7 @@ export type GridLocaleText = {
   filterEditUnderGroup: string;
   /** フィルターのチップのツールチップ。既定 `この列へジャンプして編集`、英語 `Go to this column to edit`。 */
   filterJump: string;
-  /** フィルターのチップの読み上げの名前。既定 `{column} のフィルターを編集`、英語 `Edit the filter on {column}`。 */
+  /** フィルターのチップの読み上げの名前の後半(前半は見えている列名と条件。1.0.2 から。1.0.1 まではこの文だけが名前)と、フィルターの管理の ✎ の読み上げの名前。既定 `{column} のフィルターを編集`、英語 `Edit the filter on {column}`。 */
   filterEditFor: GridLocaleTextTemplate<{ column: string }>;
   /** フィルターのチップの × のツールチップ。既定 `この列のフィルターをクリア`、英語 `Clear this column's filter`。 */
   filterClear: string;
@@ -1808,8 +1810,10 @@ export type GridLocaleText = {
   filterNone: string;
   /** `custom` のフィルターの要約(値が文字でないとき)。既定 `カスタム条件`、英語 `Custom filter`。 */
   filterCustom: string;
-  /** 値の選択の要約(除外)。既定 `{count} 件を除外`、英語は数で変わる(関数)。 */
+  /** 値の選択の要約(除外。3 件以上か 0 件。`filterExcludedValues` を変えずにこのキーだけを変えた表では 1〜2 件も)。既定 `{count} 件を除外`、英語は数で変わる(関数)。 */
   filterExcluded: GridLocaleTextTemplate<{ count: number }>;
+  /** 値の選択の要約(除外。1〜2 件は値を並べる)。既定 `{values} を除外`、英語 `Excluding {values}`。 */
+  filterExcludedValues: GridLocaleTextTemplate<{ values: string }>;
   /** 値の選択の要約(3 件以上)。既定 `{count} 件を選択`、英語 `{count} selected`。 */
   filterSelected: GridLocaleTextTemplate<{ count: number }>;
   /** `select` のフィルターの要約。既定 `"{value}" に一致`、英語 `Is "{value}"`。 */
@@ -2029,6 +2033,8 @@ export type GridLocaleText = {
   enterMax: GridLocaleTextTemplate<{ max: number }>;
   /** number エディタの検査(`min` と `max`)。既定 `{min}〜{max} で入力してください`、英語 `Enter a number from {min} to {max}`。 */
   enterRange: GridLocaleTextTemplate<{ min: number; max: number }>;
+  /** date エディタで文字から打ち始めた入力が日付として読めないとき。既定 `日付で入力してください(例: 2026/3/15)`、英語 `Enter a date (e.g. 2026-03-15)`。 */
+  enterDate: string;
   /** serverSide の保存に失敗したセルの下に出るチップ(`showSaveStatus`)。既定 `保存に失敗しました。値を戻しました`、英語 `Couldn't save. The value was restored.`。 */
   saveFailedCell: string;
   /** serverSide の読み込みに失敗したときのバー。既定 `行の取得に失敗しました({count} ブロック)`、英語は数で変わる(関数)。 */
@@ -2129,7 +2135,7 @@ export type SpreadsheetGridSlotContext<T, F extends GridFrameworkTypes = GridFra
   globalFilterProgress: number;
   // 追加(選択範囲の集計): 2 セル以上を選んでいるときの集計。それ以外 / showSelectionAggregates=false は null。
   //   グリッドは常に入れます。任意(?)なのは、自前で context を組み立てて既定バーを使う利用側の型を壊さないため。
-  selectionAggregates?: GridSelectionAggregates | null;
+  selectionAggregates?: GridSelectionAggregates | null | undefined;
 };
 
 // ── 追加(バッチ②/コンテキストメニュー): セル/行の汎用コンテキストメニュー(完全カスタム)の公開型群 ──
@@ -2207,33 +2213,33 @@ export type GridContextMenuParams<T, F extends GridFrameworkTypes = GridFramewor
 //   - danger : 危険操作(削除等)の赤系強調(Mantine の color="red" 相当)。既定 false。
 //   - kind   : 省略可(既定 'action')。
 export type GridContextMenuActionItem<F extends GridFrameworkTypes = GridFrameworkTypes> = {
-  kind?: 'action';
-  id?: string;
+  kind?: 'action' | undefined;
+  id?: string | undefined;
   label: F['node'];
-  icon?: F['node'];
-  disabled?: boolean;
-  danger?: boolean;
+  icon?: F['node'] | undefined;
+  disabled?: boolean | undefined;
+  danger?: boolean | undefined;
   onSelect: () => void;
 };
 
 // セクション見出し(非インタラクティブ / Mantine の Menu.Label 相当)です。項目群のグルーピング表示に使います。
 export type GridContextMenuLabelItem<F extends GridFrameworkTypes = GridFrameworkTypes> = {
   kind: 'label';
-  id?: string;
+  id?: string | undefined;
   label: F['node'];
 };
 
 // 区切り線です。
 export type GridContextMenuSeparatorItem = {
   kind: 'separator';
-  id?: string;
+  id?: string | undefined;
 };
 
 // 完全自由描画のエスケープハッチ項目(「レンダラ」)です。
 //   render に渡る close() でメニューを閉じられます(項目内のボタン等から任意タイミングで)。
 export type GridContextMenuCustomItem<F extends GridFrameworkTypes = GridFrameworkTypes> = {
   kind: 'custom';
-  id?: string;
+  id?: string | undefined;
   render: (ctx: { close: () => void }) => F['node'];
 };
 
@@ -2299,10 +2305,10 @@ export type GridCellDoubleClickParams<T, F extends GridFrameworkTypes = GridFram
 //     状態で切り替えたい装飾は className 側で行ってください。
 //   - tooltip / dragGhost は命令的 DOM(document.body 直下)のため、style の数値は単位なしのまま
 //     設定されます(px が必要な値は '12px' のように文字列で渡してください)。
-export type GridSlotProps<F extends GridFrameworkTypes = GridFrameworkTypes> = string | { className?: string; style?: F['style'] };
+export type GridSlotProps<F extends GridFrameworkTypes = GridFrameworkTypes> = string | { className?: string | undefined; style?: F['style'] | undefined };
 
 // 解決済みスロット(内部用。view へ渡す形。参照は親で署名 memo 済み)。
-export type GridResolvedSlot<F extends GridFrameworkTypes = GridFrameworkTypes> = { className?: string; style?: F['style'] };
+export type GridResolvedSlot<F extends GridFrameworkTypes = GridFrameworkTypes> = { className?: string | undefined; style?: F['style'] | undefined };
 export type GridResolvedSlots<F extends GridFrameworkTypes = GridFrameworkTypes> = Partial<
   Record<keyof GridClassNames<F>, GridResolvedSlot<F>>
 >;
@@ -2323,150 +2329,150 @@ export type GridResolvedSlots<F extends GridFrameworkTypes = GridFrameworkTypes>
 export type GridClassNames<F extends GridFrameworkTypes = GridFrameworkTypes> = {
   // グリッドのルート要素(.ssg-root。className / style prop と同じ要素)。
   /** 付与先: ルート要素 `.ssg-root`(`className` / `style` prop と同じ要素) */
-  root?: GridSlotProps<F>;
+  root?: GridSlotProps<F> | undefined;
   // 既定トップバー(.ssg-bar--top)。renderTopBar 指定時はカスタム側が markup を持つため対象外。
   /**
    * `toolbar` / `statusBar`: 付与先: 既定トップバー `.ssg-bar--top` / 既定ボトムバー
    * `.ssg-bar--bottom`(`renderTopBar` / `renderBottomBar` 指定時は対象外)
    */
-  toolbar?: GridSlotProps<F>;
+  toolbar?: GridSlotProps<F> | undefined;
   // 既定ボトムバー(.ssg-bar--bottom)。renderBottomBar 指定時は対象外。
   /**
    * `toolbar` / `statusBar`: 付与先: 既定トップバー `.ssg-bar--top` / 既定ボトムバー
    * `.ssg-bar--bottom`(`renderTopBar` / `renderBottomBar` 指定時は対象外)
    */
-  statusBar?: GridSlotProps<F>;
+  statusBar?: GridSlotProps<F> | undefined;
   // ヘッダー行(.ssg-header-row。3 ペイン分)。
   /**
    * `headerRow` / `headerCell`: 付与先: ヘッダー行 /
    * 列ヘッダーセル(コーナー・行ヘッダーセルは含まない)
    */
-  headerRow?: GridSlotProps<F>;
+  headerRow?: GridSlotProps<F> | undefined;
   // 列ヘッダーセル(.ssg-header-cell。コーナー / 行ヘッダーセルは含まない)。
   /**
    * `headerRow` / `headerCell`: 付与先: ヘッダー行 /
    * 列ヘッダーセル(コーナー・行ヘッダーセルは含まない)
    */
-  headerCell?: GridSlotProps<F>;
+  headerCell?: GridSlotProps<F> | undefined;
   // 本体行(.ssg-body-row。データ行 / スケルトン行 / グループ行)。
   /** `bodyRow` / `bodyCell`: 付与先: 本体行(データ / スケルトン / グループ行)/ データセル */
-  bodyRow?: GridSlotProps<F>;
+  bodyRow?: GridSlotProps<F> | undefined;
   // データセル(.ssg-body-cell。グループ行のセルにも付与)。
   /** `bodyRow` / `bodyCell`: 付与先: 本体行(データ / スケルトン / グループ行)/ データセル */
-  bodyCell?: GridSlotProps<F>;
+  bodyCell?: GridSlotProps<F> | undefined;
   // 行ヘッダー「#」セル(.ssg-row-header-cell)とコーナーセル(両方)。
   /**
    * `rowHeaderCell` / `cornerCell`: 付与先: 行ヘッダー「#」セルとコーナーセル(`rowHeaderCell`
    * は両方、`cornerCell` はコーナーのみ)
    */
-  rowHeaderCell?: GridSlotProps<F>;
+  rowHeaderCell?: GridSlotProps<F> | undefined;
   // ヘッダーのアイコンボタン(.ssg-icon-btn。列メニュー ⋮ 等)。
   /** 付与先: ヘッダーのアイコンボタン `.ssg-icon-btn` */
-  iconButton?: GridSlotProps<F>;
+  iconButton?: GridSlotProps<F> | undefined;
   // 左上コーナーセル(.ssg-corner-cell。rowHeaderCell に加えて付与)。
   /**
    * `rowHeaderCell` / `cornerCell`: 付与先: 行ヘッダー「#」セルとコーナーセル(`rowHeaderCell`
    * は両方、`cornerCell` はコーナーのみ)
    */
-  cornerCell?: GridSlotProps<F>;
+  cornerCell?: GridSlotProps<F> | undefined;
   // グループ行(.ssg-body-row[data-ssg-group-row]。bodyRow に加えて付与)。
   /**
    * `groupRow` / `groupCell`: 付与先: グループ行 / グループ行のセル(`bodyRow` / `bodyCell`
    * に加えて付与)
    */
-  groupRow?: GridSlotProps<F>;
+  groupRow?: GridSlotProps<F> | undefined;
   // グループ行のセル(.ssg-group-cell。bodyCell に加えて付与)。
   /**
    * `groupRow` / `groupCell`: 付与先: グループ行 / グループ行のセル(`bodyRow` / `bodyCell`
    * に加えて付与)
    */
-  groupCell?: GridSlotProps<F>;
+  groupCell?: GridSlotProps<F> | undefined;
   // 展開行の帯(.ssg-detail-band。3 ペイン分)。
   /**
    * `detailBand` / `detailCard`: 付与先: 展開行の帯 / カード(`detailRow.className` に加えて付与)
    */
-  detailBand?: GridSlotProps<F>;
+  detailBand?: GridSlotProps<F> | undefined;
   // 展開行のカード(.ssg-detail-card。detailRow.className に加えて付与)。
   /**
    * `detailBand` / `detailCard`: 付与先: 展開行の帯 / カード(`detailRow.className` に加えて付与)
    */
-  detailCard?: GridSlotProps<F>;
+  detailCard?: GridSlotProps<F> | undefined;
   // 追加(label-row ②): ラベル行(.ssg-body-row[data-ssg-label-row]。bodyRow に加えて付与)。
   /**
    * `labelRow` / `labelRowContent`: 付与先: ラベル行(見出し / 区切り行)の行要素
    * `.ssg-body-row[data-ssg-label-row]`(`bodyRow` / `labelRow.className` に加えて付与。
    * 縦固定の複製にも付く)/ 中身の器 `.ssg-label-row-content`
    */
-  labelRow?: GridSlotProps<F>;
+  labelRow?: GridSlotProps<F> | undefined;
   // 追加(label-row ②): ラベル行の中身の器(.ssg-label-row-content。中央ペインの sticky 要素)。
   /**
    * `labelRow` / `labelRowContent`: 付与先: ラベル行(見出し / 区切り行)の行要素
    * `.ssg-body-row[data-ssg-label-row]`(`bodyRow` / `labelRow.className` に加えて付与。
    * 縦固定の複製にも付く)/ 中身の器 `.ssg-label-row-content`
    */
-  labelRowContent?: GridSlotProps<F>;
+  labelRowContent?: GridSlotProps<F> | undefined;
   // 追加(合計行 3A): 合計行(.ssg-total-row。3 ペイン分)。
   /**
    * `totalRow` / `totalCell`: 付与先: 合計行の行要素 `.ssg-total-row`(3 ペイン分。
    * `totalRow.className` に加えて付与)/ 合計行のセル `.ssg-total-cell`(`bodyCell` に加えて付与)
    */
-  totalRow?: GridSlotProps<F>;
+  totalRow?: GridSlotProps<F> | undefined;
   // 追加(合計行 3A): 合計行のセル(.ssg-total-cell)。
   /**
    * `totalRow` / `totalCell`: 付与先: 合計行の行要素 `.ssg-total-row`(3 ペイン分。
    * `totalRow.className` に加えて付与)/ 合計行のセル `.ssg-total-cell`(`bodyCell` に加えて付与)
    */
-  totalCell?: GridSlotProps<F>;
+  totalCell?: GridSlotProps<F> | undefined;
   // ポータル系パネルのルート(列メニュー / フィルター / コンテキストメニュー / select エディタ候補 /
   //   ツールパネル。document.body 直下に描画されるため .ssg-root の子孫ではありません)。
   /**
    * 付与先: ポータル系パネルの root(列メニュー / フィルター / コンテキストメニュー / select
    * エディタ候補 / ツールパネル。`document.body` 直下)
    */
-  popover?: GridSlotProps<F>;
+  popover?: GridSlotProps<F> | undefined;
   // メニュー項目(.ssg-menu-item。列メニュー / コンテキストメニュー)。
   /** 付与先: メニュー項目 `.ssg-menu-item`(列メニュー / コンテキストメニュー) */
-  menuItem?: GridSlotProps<F>;
+  menuItem?: GridSlotProps<F> | undefined;
   // カスタムツールチップ(.ssg-tooltip。body 直下のシングルトン。複数グリッド同居時は最後に
   //   マウント / 更新したグリッドの値が使われます)。
   /**
    * 付与先: カスタムツールチップ `.ssg-tooltip`(body 直下のシングルトン。
    * 複数グリッド同居時は最後に更新したグリッドの値)
    */
-  tooltip?: GridSlotProps<F>;
+  tooltip?: GridSlotProps<F> | undefined;
   // 列 / 行ドラッグのゴースト([data-grid-drag-ghost]。body 直下、ドラッグ開始時に生成)。
   /** 付与先: 列 / 行ドラッグのゴースト `[data-grid-drag-ghost]` */
-  dragGhost?: GridSlotProps<F>;
+  dragGhost?: GridSlotProps<F> | undefined;
   // 行選択 / checkbox 列のチェックボックス glyph(.ssg-row-checkbox)。
   /** 付与先: 行選択 / checkbox 列のチェックボックス glyph `.ssg-row-checkbox` */
-  checkbox?: GridSlotProps<F>;
+  checkbox?: GridSlotProps<F> | undefined;
   // セルエディタの枠(.ssg-cell-editor)。
   /** 付与先: セルエディタの枠 `.ssg-cell-editor` */
-  cellEditor?: GridSlotProps<F>;
+  cellEditor?: GridSlotProps<F> | undefined;
   // 0 行時の空状態(.ssg-empty-state)。
   /** 付与先: 0 行時の空状態 `.ssg-empty-state` */
-  emptyState?: GridSlotProps<F>;
+  emptyState?: GridSlotProps<F> | undefined;
   // フィルターチップバー(.ssg-filter-chip-bar)。
   /** 付与先: フィルターチップバー `.ssg-filter-chip-bar` */
-  filterChipBar?: GridSlotProps<F>;
+  filterChipBar?: GridSlotProps<F> | undefined;
   // SSRM のエラーバー(.ssg-ssrm-error-bar。取得失敗 / 保存失敗)。
   /** 付与先: SSRM のエラーバー `.ssg-ssrm-error-bar` */
-  errorBar?: GridSlotProps<F>;
+  errorBar?: GridSlotProps<F> | undefined;
   // スクロール位置インジケーター(.ssg-scroll-hint)。
   /** 付与先: スクロール位置インジケーター `.ssg-scroll-hint` */
-  scrollHint?: GridSlotProps<F>;
+  scrollHint?: GridSlotProps<F> | undefined;
   // アクティブセル枠(.ssg-active-cell-overlay)。
   /** `activeCellOverlay` / `selectionOverlay`: 付与先: アクティブセル枠 / 範囲選択の塗り */
-  activeCellOverlay?: GridSlotProps<F>;
+  activeCellOverlay?: GridSlotProps<F> | undefined;
   // 範囲選択の塗り(.ssg-selection-overlay)。
   /** `activeCellOverlay` / `selectionOverlay`: 付与先: アクティブセル枠 / 範囲選択の塗り */
-  selectionOverlay?: GridSlotProps<F>;
+  selectionOverlay?: GridSlotProps<F> | undefined;
   // 追加(motion-4 / M-3): コピー範囲の動く点線(.ssg-copy-range-overlay)。
   /** 付与先: コピー範囲の動く点線 `.ssg-copy-range-overlay` */
-  copyRangeOverlay?: GridSlotProps<F>;
+  copyRangeOverlay?: GridSlotProps<F> | undefined;
   // 追加(F-2): セル内検索バー(.ssg-find-bar)。
   /** 付与先: セル内検索バー `.ssg-find-bar` */
-  findBar?: GridSlotProps<F>;
+  findBar?: GridSlotProps<F> | undefined;
 };
 
 // 追加(imperative API #1): ref ハンドルのスクロール整列指定です。
@@ -2510,24 +2516,24 @@ export type CsvExportScope = 'view' | 'raw' | 'rendered' | 'selection';
 // 追加(imperative API #1): CSV エクスポートのオプションです。
 export type CsvExportOptions = {
   // 出力範囲(既定 'view' = フィルター/ソート後のビュー行全体)。各値の意味は CsvExportScope の JSDoc 参照。
-  scope?: CsvExportScope;
+  scope?: CsvExportScope | undefined;
   // 先頭にヘッダー行(列タイトル)を付けるか(既定 true)。
-  includeHeaders?: boolean;
+  includeHeaders?: boolean | undefined;
   // 区切り文字(既定 ',')。'\t' を渡せば TSV になります。
-  delimiter?: string;
+  delimiter?: string | undefined;
   // 先頭に UTF-8 BOM を付けるか(exportCsv は既定 false / downloadCsv は既定 true)。
-  bom?: boolean;
+  bom?: boolean | undefined;
   // 追加(audit L-20): CSV インジェクション対策(既定 false)。= + - @ / タブ / CR で始まる値の先頭に ' を付け、
   //   表計算ソフトで数式として実行されないようにします(-5 など数値として読める値はそのまま。ヘッダー行は対象外)。
-  escapeFormulas?: boolean;
+  escapeFormulas?: boolean | undefined;
   // 追加(label-row ④): ラベル行(labelRow)を出力に含めるか(既定 false)。true のとき、ラベル行は
   //   labelRow.exportText(未指定なら getLabel を先頭列・他列は空)の 1 行として出力されます。
-  includeLabelRows?: boolean;
+  includeLabelRows?: boolean | undefined;
   // 追加(合計行 3A): 合計行(totalRow)を末尾に含めるか(既定 false)。scope 'view' のときだけ出力します。
-  includeTotalRow?: boolean;
+  includeTotalRow?: boolean | undefined;
   // 追加(段階 2 DU-10): 行グルーピング中に、各グループの先頭へ小計の行を入れるか(既定 false)。scope 'view' のときだけ。
   //   グループ元の列は祖先の値と「<ラベル> 小計」、集計のある列(aggFunc)はそのグループの集計値、ほかの列は空です。
-  includeGroupRows?: boolean;
+  includeGroupRows?: boolean | undefined;
 };
 
 // 追加(imperative API: getExportData): エクスポート用「整形済みデータ」のオプションです。CSV と同じ
@@ -2535,16 +2541,16 @@ export type CsvExportOptions = {
 //   持ちません(ヘッダーは columns として別途返すため、書き出すかは consumer 判断)。
 export type GridExportOptions = {
   // 出力範囲(既定 'view')。CsvExportScope を共有します(各値の意味は型定義の JSDoc 参照)。
-  scope?: CsvExportScope;
+  scope?: CsvExportScope | undefined;
   // 追加(label-row ④): ラベル行を含めるか(既定 false)。true のとき rows にラベル行が混ざり、
   //   GridExportData.rowKinds で行種を判別できます。
-  includeLabelRows?: boolean;
+  includeLabelRows?: boolean | undefined;
   // 追加(合計行 3A): 合計行(totalRow)を末尾に含めるか(既定 false)。scope 'view' のときだけ出力し、
   //   GridExportData.rowKinds の 'total' で判別できます。
-  includeTotalRow?: boolean;
+  includeTotalRow?: boolean | undefined;
   // 追加(段階 2 DU-10): 行グルーピング中に、各グループの先頭へ小計の行を入れるか(既定 false。CsvExportOptions と同じ)。
   //   GridExportData.rowKinds の 'group' で判別できます。
-  includeGroupRows?: boolean;
+  includeGroupRows?: boolean | undefined;
 };
 
 // 追加(imperative API: getExportData): エクスポート 1 セルの内容です。
@@ -2569,7 +2575,7 @@ export type GridExportData = {
   //   'label' の行は labelRow.exportText 由来のセル列で、Excel 側で結合セル / 書式を当てる判定に使えます。
   //   追加(合計行 3A): 'total' は末尾の合計行です。
   //   追加(段階 2 DU-10): 'group' はグループの小計の行です(includeGroupRows のとき)。
-  rowKinds?: Array<'data' | 'label' | 'total' | 'group'>;
+  rowKinds?: Array<'data' | 'label' | 'total' | 'group'> | undefined;
 };
 
 // 追加(state v2): 列メタのシリアライズ単位です(getState / applyState の GridState.columns 要素)。
@@ -2584,8 +2590,8 @@ export type GridExportData = {
 //   - width(手動リサイズ幅)は GridState.columnWidths で既にカバー済みです(二重表現の回避)。
 export type GridColumnState = {
   key: string;
-  visible?: boolean;
-  pinned?: GridColumnPinned;
+  visible?: boolean | undefined;
+  pinned?: GridColumnPinned | undefined;
 };
 
 // 追加(state #1): 列状態のシリアライズ可能スナップショットです(getState / applyState の入出力)。
@@ -2603,7 +2609,7 @@ export type GridState = {
   sort: GridSortState;
   // 追加(state v2): 列メタ(可視 / 順序 / ピン)。配列順 = 列順。undefined = 列メタ未適用(v1 後方互換)。
   //   applyState は onColumnsChange が指定されているときのみ反映します(getState は read-only で常に出力)。
-  columns?: GridColumnState[];
+  columns?: GridColumnState[] | undefined;
 };
 
 // 追加(dogfood DU-06): applyState に渡せる形です。渡したスライスだけを変え、渡さない(undefined の)スライスは今のまま
@@ -2614,11 +2620,11 @@ export type GridState = {
  * スライスは今のまま残す(`filters` も `globalText` / `columnFilters` の片方だけ渡せる)。
  */
 export type GridStatePatch = {
-  version?: number;
-  columnWidths?: Record<string, number>;
-  filters?: Partial<GridFilterState>;
-  sort?: GridSortState;
-  columns?: GridColumnState[];
+  version?: number | undefined;
+  columnWidths?: Record<string, number> | undefined;
+  filters?: Partial<GridFilterState> | undefined;
+  sort?: GridSortState | undefined;
+  columns?: GridColumnState[] | undefined;
 };
 
 // 追加(imperative API #1): ref ハンドル(SpreadsheetGridProps.ref で受け取る命令的 API)です。
@@ -2643,13 +2649,16 @@ export type SpreadsheetGridHandle<T> = {
    * 見える高さより背の高い行は上端に合わせる) / `'start'` / `'center'` / `'end'`。`labelRow.sticky`
    * の表では、`'start'` と上へ動かす `'auto'` は行を固定した見出しの下に置く。
    */
-  scrollToRow: (viewRowIndex: number, options?: { align?: ScrollAlign }) => void;
+  scrollToRow: (viewRowIndex: number, options?: { align?: ScrollAlign | undefined }) => void;
   // 指定セルが可視になるよう縦横スクロールします(固定列は横スクロール対象外)。
-  /** 指定セルを縦横とも可視域へ。固定列(左右ピン)は常に可視のため横スクロールしない。 */
+  /**
+   * 指定セルを縦横とも可視域へ。固定列(左右ピン)は常に可視のため横スクロールしない。`'auto'` では、
+   * 見える幅より広い列は左端に合わせる。
+   */
   scrollToCell: (
     viewRowIndex: number,
     colIndex: number,
-    options?: { align?: ScrollAlign },
+    options?: { align?: ScrollAlign | undefined },
   ) => void;
   // 先頭 / 末尾へスクロールします。
   /**
@@ -2686,8 +2695,8 @@ export type SpreadsheetGridHandle<T> = {
    * は途中フレームの `onScroll` が `source:'user'` になり得る)。
    */
   setScrollPosition: (
-    position: { top?: number; left?: number },
-    options?: { behavior?: 'auto' | 'smooth' },
+    position: { top?: number | undefined; left?: number | undefined },
+    options?: { behavior?: 'auto' | 'smooth' | undefined },
   ) => void;
 
   // ── 選択 / アクティブセル ──
@@ -2708,7 +2717,7 @@ export type SpreadsheetGridHandle<T> = {
    */
   setActiveCell: (
     cell: CellCoord | null,
-    options?: { scrollIntoView?: boolean },
+    options?: { scrollIntoView?: boolean | undefined },
   ) => void;
   // 現在の選択状態。
   /** 現在の選択状態(`GridSelection`)。 */
@@ -2722,7 +2731,7 @@ export type SpreadsheetGridHandle<T> = {
   selectCell: (
     viewRowIndex: number,
     colIndex: number,
-    options?: { scrollIntoView?: boolean },
+    options?: { scrollIntoView?: boolean | undefined },
   ) => void;
   // セル範囲を選択(ドラッグ選択相当)。アンカーは range.start です。
   /**
@@ -2730,7 +2739,7 @@ export type SpreadsheetGridHandle<T> = {
    * 範囲はそのままで、アクティブセルだけを範囲の向き(無ければ逆)のデータ行へ寄せる。
    * 範囲がラベル行だけのときは、寄せたデータ行の同じ列の範囲にする。
    */
-  selectRange: (range: CellRange, options?: { scrollIntoView?: boolean }) => void;
+  selectRange: (range: CellRange, options?: { scrollIntoView?: boolean | undefined }) => void;
   // 選択を解除します。
   /** 選択解除。 */
   clearSelection: () => void;
@@ -3055,15 +3064,15 @@ export type GridTheme = 'light' | 'dark' | 'auto' | 'class';
 /** データバー(値の大きさを背景の帯で示す)。`conditionalFormat.dataBar` の設定。 */
 export type GridDataBarFormat = {
   /** 帯の下限。省略時はビュー行(フィルター / ソート適用後。SSRM はロード済み範囲)の数値の最小値。 */
-  min?: number;
+  min?: number | undefined;
   /** 帯の上限。省略時はビュー行の数値の最大値。 */
-  max?: number;
+  max?: number | undefined;
   /** 帯の色(CSS 色)。省略時はトークン `--ssg-cf-bar`。 */
-  color?: string;
+  color?: string | undefined;
   /** 負の値の帯の色(CSS 色)。省略時はトークン `--ssg-cf-bar-negative`。 */
-  negativeColor?: string;
+  negativeColor?: string | undefined;
   /** `false` で値の文字を出さず帯だけにする(既定 `true`)。 */
-  showValue?: boolean;
+  showValue?: boolean | undefined;
 };
 /** カラースケール(値に応じてセル背景を段階的に染める)。`conditionalFormat.colorScale` の設定。 */
 export type GridColorScaleFormat = {
@@ -3071,54 +3080,54 @@ export type GridColorScaleFormat = {
    * `'sequential'`(既定): 1 色相の淡 → 濃(量)。`'diverging'`: `mid` を中立色に、負側 / 正側を別の色相で
    * 濃くする(基準からの向き)。
    */
-  type?: 'sequential' | 'diverging';
+  type?: 'sequential' | 'diverging' | undefined;
   /** 下限。省略時はビュー行の数値の最小値。 */
-  min?: number;
+  min?: number | undefined;
   /** `'diverging'` の中立点。省略時は `min < 0 < max` なら `0`、それ以外は `(min + max) / 2`。 */
-  mid?: number;
+  mid?: number | undefined;
   /** 上限。省略時はビュー行の数値の最大値。 */
-  max?: number;
+  max?: number | undefined;
   /**
    * 色の段(CSS 色)。`'sequential'` は `[淡, 濃]`、`'diverging'` は `[負側, 中立, 正側]`。省略時はトークン
    * (`--ssg-cf-seq-min` / `--ssg-cf-seq-max`、`--ssg-cf-div-negative` / `--ssg-cf-div-mid` / `--ssg-cf-div-positive`)。
    */
-  colors?: readonly string[];
+  colors?: readonly string[] | undefined;
 };
 /** 状態チップの色味。アイコンとラベルを伴う(色だけで意味を運ばない)。 */
 export type GridChipTone = 'neutral' | 'info' | 'good' | 'warning' | 'critical';
 /** 状態チップ 1 つの指定。 */
 export type GridChipSpec = {
   /** 色味(既定 `'neutral'`)。 */
-  tone?: GridChipTone;
+  tone?: GridChipTone | undefined;
   /** ラベル。省略時はセルの表示文字列(`valueFormatter` 適用後)。 */
-  label?: string;
+  label?: string | undefined;
   /** `false` でアイコンを出さない(既定 `true`)。 */
-  icon?: boolean;
+  icon?: boolean | undefined;
   /** 任意の色(CSS 色)。`tone` の色より優先。 */
-  color?: string;
+  color?: string | undefined;
 };
 /** 値(`String(value)`)→ チップのマップ。値は色味の文字列か `GridChipSpec`。載っていない値はチップにしない。 */
 export type GridChipMap = Readonly<Record<string, GridChipTone | GridChipSpec>>;
 /** 条件付き書式(`GridColumn.conditionalFormat`)。複数を同時に指定できる(帯 + 背景色など)。 */
 export type GridConditionalFormat<T, F extends GridFrameworkTypes = GridFrameworkTypes> = {
   /** データバー。 */
-  dataBar?: GridDataBarFormat;
+  dataBar?: GridDataBarFormat | undefined;
   /** カラースケール。 */
-  colorScale?: GridColorScaleFormat;
+  colorScale?: GridColorScaleFormat | undefined;
   /**
    * 状態チップ。値 → チップのマップか、セルのコンテキスト(`cellClassName` の関数版と同じ)から
    * チップを返す関数(`null` / `undefined` でチップにしない)。
    */
   chips?:
     | GridChipMap
-    | ((ctx: CellStyleContext<T, F>) => GridChipTone | GridChipSpec | null | undefined);
+    | ((ctx: CellStyleContext<T, F>) => GridChipTone | GridChipSpec | null | undefined) | undefined;
 };
 // 追加(F-2): セル内検索のオプションです。
 export type FindOptions = {
   // Ctrl/Cmd+F で検索バーを開く(グリッドにフォーカスがあるときだけ。既定 true。false でブラウザ標準の検索に譲る)。
-  shortcut?: boolean;
+  shortcut?: boolean | undefined;
   // 大文字小文字を区別する(既定 false)。
-  caseSensitive?: boolean;
+  caseSensitive?: boolean | undefined;
 };
 // 追加(F-2): onFindChange の引数です。
 export type FindChangeParams = {
@@ -3175,14 +3184,14 @@ export type ScrollHintOptions<T = unknown, F extends GridFrameworkTypes = GridFr
    *
    * @defaultValue `true`
    */
-  bubble?: boolean;
+  bubble?: boolean | undefined;
   // 行目盛りルーラー + トラックホバー時のジャンプ先プレビュー。既定 true。
   /**
    * ルーラー + ジャンプ先プレビューの表示。
    *
    * @defaultValue `true`
    */
-  ruler?: boolean;
+  ruler?: boolean | undefined;
   // カスタム縦スクロールバー(専用ガターに常時表示のトラック + 最小 30px サム)。既定 true。
   //   macOS のオーバーレイスクロールバーは自動で消え、大量行ではサムが極小になり「掴む場所」を
   //   見失うため、ヘッダー下から始まる専用ガターへ自前スクロールバーを描画します(ドラッグ /
@@ -3195,7 +3204,7 @@ export type ScrollHintOptions<T = unknown, F extends GridFrameworkTypes = GridFr
    *
    * @defaultValue `true`
    */
-  scrollbar?: boolean;
+  scrollbar?: boolean | undefined;
   // 表示トリガー。既定 'scroll'。
   /**
    * バブル / ルーラーの表示トリガー(スクロールバー自体は常時表示)。`'scroll'` =
@@ -3204,7 +3213,7 @@ export type ScrollHintOptions<T = unknown, F extends GridFrameworkTypes = GridFr
    *
    * @defaultValue `'scroll'`
    */
-  trigger?: ScrollHintTrigger;
+  trigger?: ScrollHintTrigger | undefined;
   // データ量ゲート: 表示行数(フィルター/グルーピング適用後のビュー行数。SSRM はサーバー総行数)が
   //   この値未満の間、scrollHint 全体(バブル / ルーラー / カスタムスクロールバー)を自動 OFF にして
   //   ネイティブスクロールバー表示のまま保ちます。既定 0(常時有効 = 従来挙動)。
@@ -3218,18 +3227,18 @@ export type ScrollHintOptions<T = unknown, F extends GridFrameworkTypes = GridFr
    *
    * @defaultValue `0`
    */
-  minRows?: number;
+  minRows?: number | undefined;
   // 簡易カスタム: 行番号に添えて表示する列 key(GridColumn.key = 行オブジェクトのフィールド名)。
   //   SSRM の未ロード行では値が手元にないため、行番号のみへ自動フォールバックします。
   /** 行番号に添えて表示する列 key(= 行オブジェクトのフィールド名)。 */
-  hintColumn?: string;
+  hintColumn?: string | undefined;
   // 完全カスタム(hintColumn より優先): 行番号に添える表示内容を組み立てます。
   //   null / undefined を返すと行番号のみの既定表示へフォールバックします。
   /**
    * 表示内容の完全カスタム(`hintColumn` より優先)。`null` / `undefined`
    * を返すと行番号のみの既定表示。
    */
-  renderHint?: (args: ScrollHintRenderArgs<T>) => F['node'];
+  renderHint?: ((args: ScrollHintRenderArgs<T>) => F['node']) | undefined;
 };
 
 /**
@@ -3259,7 +3268,7 @@ export type SpreadsheetGridProps<T, F extends GridFrameworkTypes = GridFramework
    * を渡して呼ばれる。保存タイミングの signal(例: localStorage 自動保存)。発火規約は「状態の保存 /
    * 復元」節を参照。
    */
-  onStateChange?: (state: GridState) => void;
+  onStateChange?: ((state: GridState) => void) | undefined;
   // 追加(段階 2 DU-12): 状態の初期値です(最初の 1 回 = マウント時だけ使う)。これまでは最初の描画の後に applyState を
   //   呼ぶしかなく、SSRM はまず条件なしで取りに行き、サーバーの描画には URL から戻した絞り込みが載らなかった。
   //   列メタ(columns)は columns prop の側で決めるので受けません。
@@ -3275,7 +3284,7 @@ export type SpreadsheetGridProps<T, F extends GridFrameworkTypes = GridFramework
    * 今の `columns` に無い列の幅 / フィルター / ソートは捨てる(開発時に警告)。URL
    * のクエリや保存した状態から戻すときに使う。
    */
-  initialState?: Omit<GridStatePatch, 'columns'>;
+  initialState?: Omit<GridStatePatch, 'columns'> | undefined;
   // 追加(change-callbacks): フィルター / ソートの状態が**実際に変化したとき**だけ、そのスライスの複製を渡して
   //   呼ばれます(onStateChange は列幅 / 列メタの変更でも呼ばれるため、フィルター / ソートだけを追いたい用途
   //   ── 例: 記述子から WHERE / ORDER BY を組み立てる ── 向け)。規約は onStateChange と同じ
@@ -3287,12 +3296,12 @@ export type SpreadsheetGridProps<T, F extends GridFrameworkTypes = GridFramework
    * WHERE を組み立てるなどフィルターだけを追いたい用途向け。規約は `onStateChange`
    * と同じ(初回非発火 / 同値非発火 / `applyState` でも発火)。
    */
-  onFiltersChange?: (filters: GridFilterState) => void;
+  onFiltersChange?: ((filters: GridFilterState) => void) | undefined;
   /**
    * ソート状態が**実際に変化したとき**だけ、その複製を渡して呼ばれる(ORDER BY の組み立てなど)。
    * 規約は `onFiltersChange` と同じ。
    */
-  onSortChange?: (sort: GridSortState) => void;
+  onSortChange?: ((sort: GridSortState) => void) | undefined;
   // 追加(proposals ⑧): スクロールコンテナの scroll 通知です(passive リスナーに相乗り・
   //   rAF で 1 フレーム 1 回に間引き)。縦横どちらの変化でも発火します。source は
   //   GridScrollEventParams の注記を参照(双方向同期のループ防止用)。毎レンダーで新しい
@@ -3300,10 +3309,12 @@ export type SpreadsheetGridProps<T, F extends GridFrameworkTypes = GridFramework
   /**
    * スクロール位置の変化通知(rAF で 1 フレーム 1 回に間引き・縦横どちらの変化でも発火)。`params` は
    * `{ top, left, source }`(px)。`source: 'api'` は `setScrollPosition` / `scrollTo*` 系由来、
-   * `'user'` はそれ以外。2 グリッドの双方向スクロール同期は `source === 'user'`
+   * `'user'` はそれ以外(ホイール / ドラッグ / キーボードのほか、
+   * 絞り込みや行の高さの測り直しで表が縮み、ブラウザが位置を詰めた分も `'user'` で届く)。2
+   * グリッドの双方向スクロール同期は `source === 'user'`
    * のときだけ相手へ反映することでループを止められる。インライン関数可(latest-ref 経由)。
    */
-  onScroll?: (params: GridScrollEventParams) => void;
+  onScroll?: ((params: GridScrollEventParams) => void) | undefined;
   // 変更(DS-4 ②/①-3): rows を optional 化しました。dataSource(serverSide)指定時は rows 不要のため。
   //   clientSide でも SpreadsheetGrid 側で既定値(EMPTY_ROWS)を当てるため、未指定でも従来どおり動作します。
   // 変更(proposals ②): readonly 配列も受け付けます(グリッドは入力配列を破壊的に変更しないため。
@@ -3314,7 +3325,7 @@ export type SpreadsheetGridProps<T, F extends GridFrameworkTypes = GridFramework
    * 編集結果は `onRowsChange` が新配列で返す)。`dataSource` を指定した場合は無視され serverSide
    * モードになる(両者は排他)。
    */
-  rows?: readonly T[];
+  rows?: readonly T[] | undefined;
   // 追加(DS-4 ②): serverSide データ供給口です。指定時に serverSide モードへ切り替えます
   //   (rows と排他・dataSource 優先)。①-3 で本 prop を消費してモード分岐します。
   /**
@@ -3322,7 +3333,7 @@ export type SpreadsheetGridProps<T, F extends GridFrameworkTypes = GridFramework
    * で都度取得し、`rows` 系の clientSide パイプラインをバイパスする。`updateRows`(任意)
    * を持たせるとセル編集の書き戻し(楽観更新つき)が有効になる(「セル編集の書き戻し」節)。
    */
-  dataSource?: ServerSideDataSource<T>;
+  dataSource?: ServerSideDataSource<T> | undefined;
   // 追加(stage ③): serverSide のソフトリフレッシュ用トークンです。値を増やすと、クエリ
   //   (フィルター/ソート/グローバル)を変えずにキャッシュを破棄し、現在の可視レンジをサーバから
   //   取り直します。スクロール位置は保持し、件数は到着ブロックの totalRowCount で追従します
@@ -3333,7 +3344,7 @@ export type SpreadsheetGridProps<T, F extends GridFrameworkTypes = GridFramework
    * 件数は到着ブロックの `totalRowCount` で追従する(clientSide では無視)。
    * 命令的に呼びたい場合は同挙動のハンドル `refreshServerSide()` を使う。
    */
-  serverSideRefreshToken?: number;
+  serverSideRefreshToken?: number | undefined;
   // 追加(batch 9): serverSide の getRows が reject したときの通知です(abort は失敗扱いにせず
   //   通知しません)。利用側のトースト / ログ用で、グリッド内蔵のエラーバー(再試行 UI)とは
   //   独立に呼ばれます。毎レンダーで新しいインライン関数を渡しても問題ありません
@@ -3344,10 +3355,10 @@ export type SpreadsheetGridProps<T, F extends GridFrameworkTypes = GridFramework
    * グリッド内蔵のエラーバー(再試行 UI)とは独立に呼ばれる(利用側トースト / ログ用)。
    * インライン関数可(latest-ref 経由で読む)。
    */
-  onServerSideLoadError?: (
+  onServerSideLoadError?: ((
     error: unknown,
     params: ServerSideLoadErrorParams,
-  ) => void;
+  ) => void) | undefined;
   // 追加(SSRM 書き戻し): serverSide の updateRows が reject したときの通知です。グリッド側は
   //   楽観更新をロールバック済みで、params.updates に失敗した行更新(rowKey / changes /
   //   previousRow)が入ります(利用側のトースト / リトライ導線用)。グリッド内蔵の保存失敗
@@ -3362,30 +3373,34 @@ export type SpreadsheetGridProps<T, F extends GridFrameworkTypes = GridFramework
    * グリッド内蔵の保存失敗バーとは独立に呼ばれる。インライン関数可(latest-ref 経由で読む)。
    * 詳細は「セル編集の書き戻し」節。
    */
-  onServerSideWriteError?: (
+  onServerSideWriteError?: ((
     error: unknown,
     params: ServerSideWriteErrorParams<T>,
-  ) => void;
+  ) => void) | undefined;
   // 変更(proposals ②): readonly 配列も受け付けます(rows と同じ理由。出力側の
   //   onRowsChange / onColumnsChange は従来どおり mutable の新配列を返します)。
   /** 列定義の配列。readonly 配列も受け付ける。 */
   columns: readonly GridColumn<T, F>[];
   /** 行が変化したとき呼ばれる(rows を controlled にする)。 */
-  onRowsChange?: (nextRows: T[]) => void;
+  onRowsChange?: ((nextRows: T[]) => void) | undefined;
   /**
    * 列が変化したとき呼ばれる。列メニューの固定切替はこれが指定されている場合のみ反映。
    * 列の並べ替え(ヘッダーのドラッグ / 列パネル)と `applyState` で渡る `nextColumns` は、
    * 配列順が固定列ごと(左固定 → 中央 → 右固定)に並べ直される(画面上の列順は変わらない。例:
    * 右固定列の後ろに宣言した列があると、右固定列が配列の末尾へ移る)。
-   * 列メニューの固定切替は配列順を変えず `pinned` だけを更新する。
+   * 列メニューの固定切替は配列順を変えず `pinned` だけを更新する。指定が無いと、列メニューの固定 /
+   * リセットと、ツールパネルの「列」タブの表示 /
+   * 非表示・並べ替え・リセットは押せない(今の状態は見える)。
+   * 押せない理由のツールチップは利用者向けの文(「この表では列の固定を変えられません」など。1.0.2
+   * から。1.0.1 までは「onColumnsChange 未指定のため…」)。
    */
-  onColumnsChange?: (nextColumns: GridColumn<T, F>[]) => void;
+  onColumnsChange?: ((nextColumns: GridColumn<T, F>[]) => void) | undefined;
   /**
    * 安定した行キーを返す。
    *
    * @defaultValue index ベース
    */
-  rowKeyGetter?: (row: T, index: number) => GridRowKey;
+  rowKeyGetter?: ((row: T, index: number) => GridRowKey) | undefined;
   // 追加(proposals ⑪): コピー(Ctrl/⌘+C の TSV)/ exportCsv / getExportData の対象行フィルタです。
   //   false を返した行は出力から除きます(行単位のみ。isWholeGridSelected の判定と貼り付けには
   //   影響しません)。ctx.viewRowIndex はフィルター / ソート適用後のビュー行 index
@@ -3400,10 +3415,10 @@ export type SpreadsheetGridProps<T, F extends GridFrameworkTypes = GridFramework
    *
    * @defaultValue 全行 true
    */
-  isRowExportable?: (
+  isRowExportable?: ((
     row: T,
     ctx: { viewRowIndex: number; rowKey: GridRowKey },
-  ) => boolean;
+  ) => boolean) | undefined;
   /**
    * 貼り付けが表の末尾より下へはみ出したとき、
    * 足りない行を作る新規行ファクトリ(はみ出した行数だけ呼ぶ)。
@@ -3411,12 +3426,12 @@ export type SpreadsheetGridProps<T, F extends GridFrameworkTypes = GridFramework
    * ボタンなどで行を足すときは、利用側が `rows` に行を足す(グリッドは `createRow` を呼ばない。
    * serverSide では使わない)。
    */
-  createRow?: () => T;
+  createRow?: (() => T) | undefined;
   /**
    * 貼り付けが右端の列よりはみ出したとき、足りない列を作る列ファクトリ(`onColumnsChange`
    * と一緒に使う)。
    */
-  createOverflowColumn?: (columnIndex: number) => GridColumn<T, F>;
+  createOverflowColumn?: ((columnIndex: number) => GridColumn<T, F>) | undefined;
   // 変更(THEME-2): 未指定時の既定は density プリセットから解決します(standard: 36 /
   //   compact: 28 / comfortable: 44)。明示指定はプリセットより常に優先されます。
   /**
@@ -3425,7 +3440,7 @@ export type SpreadsheetGridProps<T, F extends GridFrameworkTypes = GridFramework
    *
    * @defaultValue density 依存(standard: `36`)
    */
-  rowHeight?: number;
+  rowHeight?: number | undefined;
   // 追加(C1): auto-height 行モードを有効化します。autoHeight:true の列が行高を駆動し、
   //   行ごとに内容量で高さが変わります。論理全高が行数 gate を超える場合は uniform 行高へ
   //   フォールバックします(供給側の配線は C1-3)。
@@ -3436,7 +3451,7 @@ export type SpreadsheetGridProps<T, F extends GridFrameworkTypes = GridFramework
    *
    * @defaultValue `false`
    */
-  autoHeight?: boolean;
+  autoHeight?: boolean | undefined;
   // 追加(段階 2 DU-32): auto-height で背の高くなった行での縦の揃え(列の verticalAlign が優先)。
   /**
    * auto-height で伸びた行(基準の `rowHeight` より高い行)での、セルの中身の縦の揃え。書かなければ
@@ -3444,14 +3459,14 @@ export type SpreadsheetGridProps<T, F extends GridFrameworkTypes = GridFramework
    * `'center'` で全部の列を真ん中にそろえる(列ごとの指定は `GridColumn.verticalAlign` が優先)。1
    * 行の行と、auto-height を使わないグリッドではどれも真ん中。詳細は「auto-height 行」節。
    */
-  verticalAlign?: GridVerticalAlign;
+  verticalAlign?: GridVerticalAlign | undefined;
   // 追加(C1): auto-height の未測定行に使う 1 行の推定高さ(px)。未指定時は rowHeight。
   /**
    * 未測定行の推定行高(px)。
    *
    * @defaultValue `rowHeight`
    */
-  estimateRowHeight?: number;
+  estimateRowHeight?: number | undefined;
   // 変更(THEME-2): 未指定時の既定は density プリセットから解決します(standard: 40 /
   //   compact: 32 / comfortable: 48)。明示指定はプリセットより常に優先されます。
   /**
@@ -3460,7 +3475,7 @@ export type SpreadsheetGridProps<T, F extends GridFrameworkTypes = GridFramework
    *
    * @defaultValue density 依存(standard: `40`)
    */
-  headerHeight?: number;
+  headerHeight?: number | undefined;
   // 追加(THEME-2): グリッド全体の密度プリセットです(既定 'standard' = 従来と同値)。
   //   rowHeight / headerHeight の既定値(上記)と、寸法トークン(セル横 padding / バー padding /
   //   アイコンボタン寸法 / セル文字の相対拡縮)を root 修飾子(ssg-root--density-*)経由で
@@ -3473,7 +3488,7 @@ export type SpreadsheetGridProps<T, F extends GridFrameworkTypes = GridFramework
    *
    * @defaultValue `'standard'`
    */
-  density?: GridDensity;
+  density?: GridDensity | undefined;
   // 追加(TH-DK-2): カラーテーマです(既定 'light' = 従来と同値)。'dark' でダークプリセット
   //   (.ssg-theme-dark のトークン一括上書き)を、グリッド本体・全ポータル(popover / menu /
   //   panel)・ドラッグゴースト・ツールチップへ適用します。'auto' は prefers-color-scheme へ
@@ -3490,7 +3505,7 @@ export type SpreadsheetGridProps<T, F extends GridFrameworkTypes = GridFramework
    *
    * @defaultValue `'light'`
    */
-  theme?: GridTheme;
+  theme?: GridTheme | undefined;
   // 追加(motion-0): モーションの有効化です(既定 'auto')。'off'(または 'auto' + prefers-reduced-motion)では
   //   root と全ポータル root・ドラッグゴースト・ツールチップへ .ssg-motion-off が付き、継続時間トークン
   //   (--ssg-motion-fast / base / slow)が 0 になります(styles.css)。各効果はトークンだけを参照します。
@@ -3505,7 +3520,7 @@ export type SpreadsheetGridProps<T, F extends GridFrameworkTypes = GridFramework
    *
    * @defaultValue `'auto'`
    */
-  motion?: GridMotion;
+  motion?: GridMotion | undefined;
   // 追加(motion-3 / M-4・M-5): 行の並び替え(ソート / フィルター / グループ開閉 / データ差し替え)で、描画中の行を
   //   新しい位置へ滑らせ、スクロールなしで現れた行をフェードインさせます(既定 true)。auto-height / serverSide では
   //   自動で無効(行高の実測 / ブロック到着と干渉するため)。motion の実効値が 'off' なら動きません。
@@ -3518,7 +3533,7 @@ export type SpreadsheetGridProps<T, F extends GridFrameworkTypes = GridFramework
    *
    * @defaultValue `true`
    */
-  animateRows?: boolean;
+  animateRows?: boolean | undefined;
   // 追加(motion-4 / M-3): Ctrl/Cmd+C したあと、コピー元の範囲に Excel と同じ「動く点線」を残します(既定 true)。
   //   Esc / 編集開始で消え、ソート / フィルター / グループ開閉 / 行数 / 列の変化で描画しなくなります。
   /**
@@ -3529,7 +3544,7 @@ export type SpreadsheetGridProps<T, F extends GridFrameworkTypes = GridFramework
    *
    * @defaultValue `true`
    */
-  showCopyRange?: boolean;
+  showCopyRange?: boolean | undefined;
   // 追加(motion-5 / M-6): ホバーの強調範囲。'row'(既定 = 従来)はポインタの行だけ。'cross' はその行に加えて
   //   ポインタの列(列ヘッダー・同じ列の他セルの薄い帯)と行番号も染め、交点が分かるクロスヘア表示。
   /**
@@ -3541,7 +3556,7 @@ export type SpreadsheetGridProps<T, F extends GridFrameworkTypes = GridFramework
    *
    * @defaultValue `'row'`
    */
-  hoverHighlight?: 'row' | 'cross';
+  hoverHighlight?: 'row' | 'cross' | undefined;
   // 追加(motion-6 / M-2): rows が変わったとき、値が変わったセルを一瞬アクセント色で光らせ、数値は旧値から新値へ
   //   カウントアップする(既定 false)。clientSide 専用。描画中のセルだけが対象で、変更が多いとき(2,000 セル超 / 構造変化)
   //   は何もしない。
@@ -3557,7 +3572,7 @@ export type SpreadsheetGridProps<T, F extends GridFrameworkTypes = GridFramework
    *
    * @defaultValue `false`
    */
-  highlightChanges?: boolean;
+  highlightChanges?: boolean | undefined;
   // 追加(motion-7 / M-9): serverSide の書き戻し(dataSource.updateRows)で、確定したセルに保存状態の印を出す(既定 true)。
   //   保存中: 斜線 + 小さなスピナー / 成功: ✓ バッジ(1.3 秒)/ 失敗: 揺れ + 赤いフラッシュ + ✕ バッジ + セル下のチップ。
   //   既存の保存失敗バーとは独立(両方出る)。
@@ -3572,7 +3587,7 @@ export type SpreadsheetGridProps<T, F extends GridFrameworkTypes = GridFramework
    *
    * @defaultValue `true`
    */
-  showSaveStatus?: boolean;
+  showSaveStatus?: boolean | undefined;
   // 追加(motion-8 / M-11): 行ドラッグ並べ替えの表示方式。'ghost'(既定 = 従来: ゴースト + ガイド線、ドロップ後に
   //   スライド)/ 'live'(掴んだ行がポインタに追従し、通る先の行がその場で上下へ退避。ドロップ先が「隙間」として見える)。
   /**
@@ -3585,7 +3600,7 @@ export type SpreadsheetGridProps<T, F extends GridFrameworkTypes = GridFramework
    *
    * @defaultValue `'ghost'`
    */
-  rowDragMotion?: 'ghost' | 'live';
+  rowDragMotion?: 'ghost' | 'live' | undefined;
   // 追加(motion-9 / M-12): 列ヘッダーのドラッグ並べ替えの表示方式。'ghost'(既定 = 従来: ゴースト + 縦線、ドロップ後に
   //   スライド)/ 'live'(同じペイン内では掴んだ列がポインタに追従し、通る先の列がその場で左右へ退避。別ペインへ移すときは従来表示)。
   /**
@@ -3601,7 +3616,7 @@ export type SpreadsheetGridProps<T, F extends GridFrameworkTypes = GridFramework
    *
    * @defaultValue `'ghost'`
    */
-  columnDragMotion?: 'ghost' | 'live';
+  columnDragMotion?: 'ghost' | 'live' | undefined;
   // 追加(F-2): セル内検索(既定 無効)。true でグリッド右上の検索バー + Ctrl/Cmd+F。表示文字列(valueFormatter 後)への
   //   部分一致で、ヒットをすべて強調しつつ Enter で順送り(アクティブセルとスクロールが追従)。行は消さない(フィルターとは別)。
   /**
@@ -3616,20 +3631,20 @@ export type SpreadsheetGridProps<T, F extends GridFrameworkTypes = GridFramework
    *
    * @defaultValue `false`
    */
-  find?: boolean | FindOptions;
+  find?: boolean | FindOptions | undefined;
   // 追加(F-2): 検索状態(クエリ / ヒット数 / カレント / 開閉)が変わったときの通知。
   /**
    * セル内検索の状態(`{ query, matchCount, currentIndex, open }`)が変わったときの通知。
    * `currentIndex` は 0 始まり(ヒットなしは `null`)。ツールバーに「3 / 12」を出す等に使う。
    */
-  onFindChange?: (params: FindChangeParams) => void;
+  onFindChange?: ((params: FindChangeParams) => void) | undefined;
   /**
    * 行番号列の幅(px)。行番号列は左固定列が無くても左に固定され、横にスクロールしても流れない(Excel
    * の行見出しと同じ。0.63.0 から)。
    *
    * @defaultValue `56`
    */
-  rowHeaderWidth?: number;
+  rowHeaderWidth?: number | undefined;
   // 追加: グリッドの明示高さです。値の種類で「何の高さか」が変わります(変更: fill-height)。
   //   - '%' を含む文字列('100%' / '50%' / 'calc(100% - 40px)' 等): トップバー / フィルターチップバー /
   //     ボトムバーを含むグリッド全体(.ssg-root)の高さ。'100%' で親要素いっぱいに収まり、バーを除いた
@@ -3649,7 +3664,7 @@ export type SpreadsheetGridProps<T, F extends GridFrameworkTypes = GridFramework
    * 未指定: スクロール領域は内容の高さで `maxHeight` によりクリップ。ルートへの
    * `style={{ height }}` だけではスクロール領域は決まらないため、高さはこの prop で指定する。
    */
-  height?: number | string;
+  height?: number | string | undefined;
   // 追加: スクロール領域(.ssg-scroll-container)の高さ上限です。height の種類に関わらず常にスクロール
   //   領域に効きます(バーは含みません)。height・maxHeight が共に未指定のときのみ既定 480px です。
   //   - number height と併用: スクロール領域 = min(height, maxHeight)。
@@ -3663,7 +3678,7 @@ export type SpreadsheetGridProps<T, F extends GridFrameworkTypes = GridFramework
    *
    * @defaultValue `—`（既定 480px）
    */
-  maxHeight?: number | string;
+  maxHeight?: number | string | undefined;
   /**
    * グリッド全体の編集を無効化。編集中に `true` へ切り替わった場合、
    * その編集は確定時に書き込まれず終了する(`canEditCell` も確定時に再評価)。`renderCell` の
@@ -3673,7 +3688,7 @@ export type SpreadsheetGridProps<T, F extends GridFrameworkTypes = GridFramework
    *
    * @defaultValue `false`
    */
-  readOnly?: boolean;
+  readOnly?: boolean | undefined;
   // 追加(THEME-3): readonly セルの組み込み淡色表示(背景 + 文字色)の opt-in です。
   //   既定 false = readonly でも色変化なし。false でもセマンティッククラス
   //   (.ssg-body-cell--readonly)は常時付与されるため、利用側 CSS のフックとして使えます。
@@ -3683,7 +3698,7 @@ export type SpreadsheetGridProps<T, F extends GridFrameworkTypes = GridFramework
    *
    * @defaultValue `false`
    */
-  dimReadOnlyCells?: boolean;
+  dimReadOnlyCells?: boolean | undefined;
   // 変更(audit RD-4): rowIndex はどの経路(表示 / 編集開始 / 確定 / 貼り付け / Delete / IME 入力)でも
   //   ビュー行 index に統一し、元 rows の index と rowKey を第 5 引数 ctx で渡します(CellStyleContext と同基準)。
   /**
@@ -3695,13 +3710,13 @@ export type SpreadsheetGridProps<T, F extends GridFrameworkTypes = GridFramework
    * 貼り付けで末尾に追加される行は、追加後の位置と元 `rows` の index で呼ばれる。※ v0.48 以前は
    * clientSide の貼り付けと Delete クリアだけ元 `rows` の index が渡っていた。
    */
-  canEditCell?: (
+  canEditCell?: ((
     rowIndex: number,
     colIndex: number,
     row: T,
     column: GridColumn<T, F>,
     ctx: CanEditCellContext,
-  ) => boolean;
+  ) => boolean) | undefined;
   // 追加(undo/redo): グリッド編集(セル編集 / ペースト / renderCell の setValue)の取り消し/やり直し
   //   です(既定 true)。Ctrl/Cmd+Z = undo、Ctrl/Cmd+Shift+Z / Ctrl/Cmd+Y = redo。ハンドルの
   //   undo() / redo() でも操作できます。clientSide(rows + onRowsChange)専用で、serverSide
@@ -3724,7 +3739,7 @@ export type SpreadsheetGridProps<T, F extends GridFrameworkTypes = GridFramework
    *
    * @defaultValue `true`
    */
-  enableUndoRedo?: boolean;
+  enableUndoRedo?: boolean | undefined;
   // 追加(clear opt-out): Delete / Backspace キーによる選択セルの値クリアの有効化です
   //   (既定 true = 現行どおり)。false でキーは何もしません(素通し。誤爆防止や
   //   旧バージョン互換の挙動に戻したい消費側向けの opt-out)。ペースト・エディタでの
@@ -3736,7 +3751,7 @@ export type SpreadsheetGridProps<T, F extends GridFrameworkTypes = GridFramework
    *
    * @defaultValue `true`
    */
-  enableClearOnDelete?: boolean;
+  enableClearOnDelete?: boolean | undefined;
   // 追加(enter-move ②): 組み込みエディタ(text / number / select / date)の Enter 確定後に
   //   アクティブセルをどこへ移すかです(既定 'down' = 下へ)。'none' で移動せずその場に
   //   留まります。Tab / Shift+Tab(右 / 左)と Escape には影響しません。custom エディタは
@@ -3752,7 +3767,7 @@ export type SpreadsheetGridProps<T, F extends GridFrameworkTypes = GridFramework
    *
    * @defaultValue `'down'`
    */
-  editorEnterMove?: EditorEnterMove;
+  editorEnterMove?: EditorEnterMove | undefined;
   // 追加(G-2): IME オンのままの直接入力(Excel / SPREAD と同じ)。true で、編集していないあいだグリッドのフォーカスを
   //   アクティブセル上の透明な入力受け(input)に置き、IME の変換をそこで始めます。text エディタの編集可能セルでは
   //   変換中の文字をセルの上に表示し、変換を確定すると確定した文字列を初期値に編集を始めます(もう一度 Enter で
@@ -3776,14 +3791,14 @@ export type SpreadsheetGridProps<T, F extends GridFrameworkTypes = GridFramework
    *
    * @defaultValue `false`
    */
-  imeDirectInput?: boolean;
+  imeDirectInput?: boolean | undefined;
   // 追加(undo/redo): 保持する undo ステップ数の上限です(既定 100)。超過分は古い順に破棄します。
   /**
    * 保持する undo ステップ数の上限。超過分は古い順に破棄。
    *
    * @defaultValue `100`
    */
-  undoHistoryLimit?: number;
+  undoHistoryLimit?: number | undefined;
   // 追加(undo/redo 通知): undo / redo 可能状態が変化したときに呼ばれます(ツールバーの
   //   undo/redo ボタンの disabled 表示など、リアクティブな UI 用。命令的な canUndo()/canRedo()
   //   のポーリングを不要にします)。発火規約:
@@ -3796,13 +3811,13 @@ export type SpreadsheetGridProps<T, F extends GridFrameworkTypes = GridFramework
    * 毎レンダーのインライン関数でも問題ない。引数の型 `UndoRedoState`(`{ canUndo, canRedo }`)
    * はパッケージから import できる。
    */
-  onUndoRedoStateChange?: (state: UndoRedoState) => void;
+  onUndoRedoStateChange?: ((state: UndoRedoState) => void) | undefined;
   /**
    * 複数セル範囲選択。
    *
    * @defaultValue `true`
    */
-  enableRangeSelection?: boolean;
+  enableRangeSelection?: boolean | undefined;
   // ── 追加(行選択): チェックボックス行選択(セル範囲選択とは別レイヤー)──
   //   参照性能を落とさない設計(判定 O(1) / 全選択は除外集合)。既定 false で完全に無効。
   //   有効時は行ヘッダ(行NO)ガターが行選択のヒット領域になり、Excel 風のガター起点セル範囲
@@ -3816,7 +3831,7 @@ export type SpreadsheetGridProps<T, F extends GridFrameworkTypes = GridFramework
    *
    * @defaultValue `false`
    */
-  enableRowSelection?: boolean;
+  enableRowSelection?: boolean | undefined;
   // 単一/複数の選択モードです(既定 'multiple')。single は常に 1 行だけ。
   /**
    * 単一/複数の選択モード。single は常に 1 行。multiple はクリックでトグル、
@@ -3824,7 +3839,7 @@ export type SpreadsheetGridProps<T, F extends GridFrameworkTypes = GridFramework
    *
    * @defaultValue `'multiple'`
    */
-  rowSelectionMode?: RowSelectionMode;
+  rowSelectionMode?: RowSelectionMode | undefined;
   // ヘッダの全選択チェック(tri-state)の有効化です。
   //   既定は enableRowSelection && rowSelectionMode==='multiple'。
   /**
@@ -3833,7 +3848,7 @@ export type SpreadsheetGridProps<T, F extends GridFrameworkTypes = GridFramework
    *
    * @defaultValue `enableRowSelection && multiple`
    */
-  enableSelectAllRows?: boolean;
+  enableSelectAllRows?: boolean | undefined;
   // controlled: 行選択の記述子です(指定時は controlled。未指定は内部 state=uncontrolled)。
   //   include=これらを選択 / exclude=全選択のうち除外。全選択をキー列挙せず表現できます。
   /**
@@ -3841,17 +3856,21 @@ export type SpreadsheetGridProps<T, F extends GridFrameworkTypes = GridFramework
    * `{ type:'exclude', rowKeys }`=全選択のうち除外。全選択をキー列挙せず表現できる。指定時は
    * controlled(内部 state を使わない)。
    */
-  rowSelection?: RowSelectionModel;
+  rowSelection?: RowSelectionModel | undefined;
   // controlled 簡易版: 選択キー配列です({ type:'include', rowKeys } の糖衣)。
   //   rowSelection と併用時は rowSelection を優先します。全選択(exclude)は表現できません。
   /**
    * controlled 簡易版(`{ type:'include', rowKeys }` の糖衣)。`rowSelection` と併用時は
    * `rowSelection` を優先。全選択(exclude)は表現不可。
    */
-  selectedRowKeys?: GridRowKey[];
+  selectedRowKeys?: GridRowKey[] | undefined;
   // 選択変化の通知です(controlled/uncontrolled いずれでも発火)。
-  /** 行選択変化の通知(controlled/uncontrolled いずれでも発火)。 */
-  onRowSelectionChange?: (model: RowSelectionModel) => void;
+  /**
+   * 行選択変化の通知(controlled/uncontrolled いずれでも発火)。通知の中でハンドルの
+   * `getSelectedRowKeys()` / `getSelectedRowData()` / `getSelectedRowCount()` などを呼ぶと、
+   * 新しい選択を返す。
+   */
+  onRowSelectionChange?: ((model: RowSelectionModel) => void) | undefined;
   /**
    * グローバルフィルター**機能**の有効化。`false` で機能が無効になり、
    * 既定トップバーのフィルター入力欄も出ない(summary は `showTopBarSummary` に従う。
@@ -3859,13 +3878,13 @@ export type SpreadsheetGridProps<T, F extends GridFrameworkTypes = GridFramework
    *
    * @defaultValue `true`
    */
-  enableGlobalFilter?: boolean;
+  enableGlobalFilter?: boolean | undefined;
   /**
    * 列ごとのフィルター。
    *
    * @defaultValue `true`
    */
-  enableColumnFilter?: boolean;
+  enableColumnFilter?: boolean | undefined;
   // 追加(date-input): dateSet フィルター条件の日付入力(ネイティブ <input type="date">)を
   //   利用側コンポーネント(Mantine DatePickerInput 等)へ差し替えるスロットです。
   //   未指定はネイティブ input(従来挙動)。値の契約は FilterDateInputContext を参照。
@@ -3879,7 +3898,7 @@ export type SpreadsheetGridProps<T, F extends GridFrameworkTypes = GridFramework
    *
    * @defaultValue 内製の日付フィールド
    */
-  renderFilterDateInput?: (ctx: FilterDateInputContext) => F['node'];
+  renderFilterDateInput?: ((ctx: FilterDateInputContext) => F['node']) | undefined;
   // 追加(async-options): set / select / 複合列の候補を非同期に供給するコールバックです(DB の DISTINCT 等)。
   //   優先順位は column.filterOptions(静的)> getFilterOptions > rows からの自動収集。popover を開くたびに
   //   呼び、閉じる / 列切替で signal を abort。読み込み中 / 失敗(再試行)/ 打ち切りの表示は popover が持つ。
@@ -3894,7 +3913,7 @@ export type SpreadsheetGridProps<T, F extends GridFrameworkTypes = GridFramework
    * `column.filterOptions`(静的)> `getFilterOptions` > rows 自動収集。非同期候補の列は反転(exclude)
    * 可。clientSide / serverSide 両対応。詳細は「ソートとフィルター」ガイド。
    */
-  getFilterOptions?: (params: GetFilterOptionsParams<T, F>) => Promise<GetFilterOptionsResult>;
+  getFilterOptions?: ((params: GetFilterOptionsParams<T, F>) => Promise<GetFilterOptionsResult>) | undefined;
   /**
    * ソート機能の有効化。ソートは列メニュー(⋮)の「昇順 / 降順で並び替え」と「並び替えを管理…」
    * パネルから行う(ヘッダー本体のクリックは列範囲選択。`Shift` を押しながら見出しを押すと、
@@ -3905,7 +3924,7 @@ export type SpreadsheetGridProps<T, F extends GridFrameworkTypes = GridFramework
    *
    * @defaultValue `true`
    */
-  enableSorting?: boolean;
+  enableSorting?: boolean | undefined;
   // 追加(manual-mode): 列 / グローバルフィルターの「絞り込み」をグリッドで行わない(既定 false)。
   //   フィルター UI(popover / チップバー / フィルター管理 / フィルター中の印)と状態
   //   (GridState.filters / onStateChange / onFiltersChange)は従来どおり動き、行の絞り込みだけを外部
@@ -3920,7 +3939,7 @@ export type SpreadsheetGridProps<T, F extends GridFrameworkTypes = GridFramework
    *
    * @defaultValue `false`
    */
-  manualFiltering?: boolean;
+  manualFiltering?: boolean | undefined;
   // 追加(manual-mode): ソートの並べ替えをグリッドで行わない(既定 false)。ソート UI(ヘッダーの矢印 /
   //   列メニュー)と状態(GridState.sort / onStateChange / onSortChange)は従来どおり動き、rows は渡した順の
   //   まま表示される。再マウントなしで切り替えられる(false へ戻すと即座にクライアントソートが適用される)。
@@ -3934,7 +3953,7 @@ export type SpreadsheetGridProps<T, F extends GridFrameworkTypes = GridFramework
    *
    * @defaultValue `false`
    */
-  manualSorting?: boolean;
+  manualSorting?: boolean | undefined;
   // 追加(①): 列幅の手動リサイズ可否のグリッド既定です(既定 true=現行挙動)。
   //   各列の column.resizable が未指定のとき本値を継承します(column.resizable ?? enableColumnResize)。
   /**
@@ -3943,7 +3962,7 @@ export type SpreadsheetGridProps<T, F extends GridFrameworkTypes = GridFramework
    *
    * @defaultValue `true`
    */
-  enableColumnResize?: boolean;
+  enableColumnResize?: boolean | undefined;
   // 追加: データ投入時に全列幅を内容へ自動フィットさせるモードです(既定 false)。
   //   詳細と suppressAutoSize / autoHeight 列の除外については AutoSizeColumnsMode を参照。
   /**
@@ -3957,7 +3976,7 @@ export type SpreadsheetGridProps<T, F extends GridFrameworkTypes = GridFramework
    *
    * @defaultValue `false`
    */
-  autoSizeColumns?: AutoSizeColumnsMode;
+  autoSizeColumns?: AutoSizeColumnsMode | undefined;
   // 追加: セル内容が省略(…)される列で、ホバー時に全文ツールチップを表示します(既定 false)。
   //   対象は既定テキストセルのみ(renderCell 列 / autoHeight 折り返し列は対象外)。表示はホバー時に
   //   scrollWidth > clientWidth を判定し、実際にクリップされているセルのみ出します(全文はセルの
@@ -3970,7 +3989,7 @@ export type SpreadsheetGridProps<T, F extends GridFrameworkTypes = GridFramework
    *
    * @defaultValue `false`
    */
-  showCellOverflowTooltip?: boolean;
+  showCellOverflowTooltip?: boolean | undefined;
   // 追加(validation 表示制御): invalid マーク(背景 + コーナーマーカー + ホバーツールチップ)を
   //   表示するかどうかです。既定 true = 現行挙動(常時リアルタイム表示)。false では表示を出さず、
   //   可視セルごとの validate 評価もスキップします(評価結果はマーク表示にしか使わないため)。
@@ -3987,14 +4006,14 @@ export type SpreadsheetGridProps<T, F extends GridFrameworkTypes = GridFramework
    *
    * @defaultValue `true`
    */
-  showValidationMarks?: boolean;
+  showValidationMarks?: boolean | undefined;
   // 追加(UI hover): 行ホバー時に行全体を薄くハイライトします。既定 true。
   /**
    * 行ホバー時に行全体を薄くハイライト。
    *
    * @defaultValue `true`
    */
-  enableRowHover?: boolean;
+  enableRowHover?: boolean | undefined;
   // 追加(proposals ⑩): 行ホバーの controlled 値です(ビュー行 index / null = ホバーなし)。
   //   指定時は内部 state を使わず、この値でハイライトします(optionally controlled。pointer 由来の
   //   変化は onHoveredRowChange で通知のみ)。enableRowHover: false のときは無視されます
@@ -4006,7 +4025,7 @@ export type SpreadsheetGridProps<T, F extends GridFrameworkTypes = GridFramework
    * controlled)。`enableRowHover: false` のときは無視(ハイライトも通知もしない)。一時的な UI
    * 状態のため `GridState` / ハンドルには載らない。
    */
-  hoveredRowIndex?: number | null;
+  hoveredRowIndex?: number | null | undefined;
   // 追加(proposals ⑩): 行ホバーが変わったときの通知です(uncontrolled でも呼ばれます)。
   //   viewRowIndex はフィルター / ソート適用後のビュー行 index です。同値では発火しません
   //   (pointerenter は同一行内のセル跨ぎでも来るため)。source は将来の拡張用です(現状 'pointer' のみ)。
@@ -4015,10 +4034,10 @@ export type SpreadsheetGridProps<T, F extends GridFrameworkTypes = GridFramework
    * ソート適用後のビュー行 index。同値では発火しない(pointerenter
    * は同一行内のセル跨ぎでも来るため)。用途: 複数グリッド間のホバー同期など。
    */
-  onHoveredRowChange?: (
+  onHoveredRowChange?: ((
     viewRowIndex: number | null,
     ctx: { source: 'pointer' },
-  ) => void;
+  ) => void) | undefined;
   // ── 追加(G-1): セル操作の通知 ──
   //   データセル(データ行 × 利用側の列)の click で呼びます。左ボタンのみ・押した位置と離した位置が同じセルのとき
   //   だけ(範囲選択のドラッグはクリック扱いにしない)。読み取り専用セルでも呼びます。セル内の要素(checkbox 等)の
@@ -4033,7 +4052,7 @@ export type SpreadsheetGridProps<T, F extends GridFrameworkTypes = GridFramework
    * の未ロード行 / 合成列(展開トグル・行ドラッグハンドル)では呼ばれない。インライン関数可。
    * 詳細は「セル操作の通知」節。
    */
-  onCellClick?: (params: GridCellEventParams<T, F>) => void;
+  onCellClick?: ((params: GridCellEventParams<T, F>) => void) | undefined;
   //   データセルのダブルクリック(タッチのダブルタップ含む)で、既定の動作(編集開始)の前に呼びます。
   //   読み取り専用セルでも呼びます。params.preventDefault() で既定の動作を止められます。
   /**
@@ -4042,7 +4061,7 @@ export type SpreadsheetGridProps<T, F extends GridFrameworkTypes = GridFramework
    * で既定の動作を止められる(`params.event.preventDefault()` では止まらない)。対象のセルは
    * `onCellClick` と同じ。インライン関数可。
    */
-  onCellDoubleClick?: (params: GridCellDoubleClickParams<T, F>) => void;
+  onCellDoubleClick?: ((params: GridCellDoubleClickParams<T, F>) => void) | undefined;
   //   由来(クリック / キー操作 / handle.selectCell 等)を問わず、アクティブセルが変わったときに呼びます
   //   (passive タイミング = ペイント後)。アクティブセルが無くなった / データセル以外へ移ったときは null。
   //   (rowKey, columnKey, rowIndex, colIndex)が同じなら呼びません(同じセルへの再設定)。初回マウントでは呼びません。
@@ -4054,14 +4073,14 @@ export type SpreadsheetGridProps<T, F extends GridFrameworkTypes = GridFramework
    * ソートなどでその位置の行が変われば呼ばれる。初回マウントでは呼ばれない。
    * 通知はペイント後(クリックでは `onCellClick` より先)。インライン関数可。
    */
-  onActiveCellChange?: (cell: GridCellRef<T, F> | null) => void;
+  onActiveCellChange?: ((cell: GridCellRef<T, F> | null) => void) | undefined;
   // 追加(UI hover): 列ヘッダーのホバー時にヘッダーセルを薄くハイライトします。既定 true。
   /**
    * 列ヘッダーのホバー時にヘッダーセルを薄くハイライト。
    *
    * @defaultValue `true`
    */
-  enableColumnHeaderHover?: boolean;
+  enableColumnHeaderHover?: boolean | undefined;
   // 追加(13-A): 列メニュー(「⋮」ボタン + ヘッダー右クリック)の有効化フラグです。
   //             既定は true。メニューからの列固定切替は columns が controlled のため
   //             onColumnsChange が指定されている場合にのみ反映されます
@@ -4071,7 +4090,7 @@ export type SpreadsheetGridProps<T, F extends GridFrameworkTypes = GridFramework
    *
    * @defaultValue `true`
    */
-  enableColumnMenu?: boolean;
+  enableColumnMenu?: boolean | undefined;
   // 追加(12-B): フィルター結果 0 行時に表示するテキストです
   //             (AG Grid の "No Matching Rows" オーバーレイ相当)。
   /**
@@ -4081,7 +4100,7 @@ export type SpreadsheetGridProps<T, F extends GridFrameworkTypes = GridFramework
    *
    * @defaultValue `localeText` の `noMatchingRows`(`'一致する行がありません'`)
    */
-  noMatchingRowsText?: string;
+  noMatchingRowsText?: string | undefined;
   // 追加(12-B): rows 自体が 0 件のときに表示するテキストです
   //             (AG Grid の "No Rows To Show" 相当)。
   /**
@@ -4089,13 +4108,13 @@ export type SpreadsheetGridProps<T, F extends GridFrameworkTypes = GridFramework
    *
    * @defaultValue `localeText` の `noRows`(`'表示する行がありません'`)
    */
-  noRowsText?: string;
+  noRowsText?: string | undefined;
   // 追加(audit V-05): 表(role="grid" の要素)のアクセシブル名。スクリーンリーダーが表を読み上げるときの名前です。
   /**
    * 表(`role="grid"` の要素)のアクセシブル名。スクリーンリーダーが表を読み上げるときの名前で、1
    * 画面に複数のグリッドを置くときは付けておくと区別できる(「アクセシビリティ」節)。
    */
-  ariaLabel?: string;
+  ariaLabel?: string | undefined;
   // 追加: 上部バー(ツールバー)を表示するかどうかです。既定 true。
   //   false にすると renderTopBar / enableGlobalFilter に関わらず上部バーを一切描画しません
   //   (表示のマスタースイッチ。矛盾指定時は renderTopBar より優先されます)。
@@ -4105,7 +4124,7 @@ export type SpreadsheetGridProps<T, F extends GridFrameworkTypes = GridFramework
    *
    * @defaultValue `true`
    */
-  showTopBar?: boolean;
+  showTopBar?: boolean | undefined;
   // 追加: 既定トップバーの summary chips(件数/フィルター/ソート)を表示するかどうかです。既定 true。
   //   既定トップバー(renderTopBar 未指定)のときのみ効きます。これと showTopBarFilter の両方が
   //   非表示(かつフィルター入力も出ない)場合、トップバーは描画されません(空バーは出しません)。
@@ -4116,7 +4135,7 @@ export type SpreadsheetGridProps<T, F extends GridFrameworkTypes = GridFramework
    *
    * @defaultValue `true`
    */
-  showTopBarSummary?: boolean;
+  showTopBarSummary?: boolean | undefined;
   // 追加: 既定トップバーの Rows / Columns 件数 chips を表示するかどうかです。既定 true。
   //   既定トップバー(renderTopBar 未指定)かつ showTopBarSummary=true のときのみ効きます
   //   (Filter / Sort chips は本値の対象外で、showTopBarSummary に従います)。
@@ -4126,7 +4145,7 @@ export type SpreadsheetGridProps<T, F extends GridFrameworkTypes = GridFramework
    *
    * @defaultValue `true`
    */
-  showTopBarCounts?: boolean;
+  showTopBarCounts?: boolean | undefined;
   // 追加: 既定トップバーのグローバルフィルター入力欄を表示するかどうかです。既定 true。
   //   既定トップバー(renderTopBar 未指定)のときのみ効きます。enableGlobalFilter=false のときは
   //   本値に関わらず入力欄を出しません(無効な機能の入力欄を出さないため)。
@@ -4136,7 +4155,7 @@ export type SpreadsheetGridProps<T, F extends GridFrameworkTypes = GridFramework
    *
    * @defaultValue `true`
    */
-  showTopBarFilter?: boolean;
+  showTopBarFilter?: boolean | undefined;
   // 追加: 既定トップバーのグローバルフィルター入力欄の placeholder です。
   //   既定トップバー(renderTopBar 未指定)のときのみ効きます。未指定時は 'グローバルフィルター'。
   /**
@@ -4144,7 +4163,7 @@ export type SpreadsheetGridProps<T, F extends GridFrameworkTypes = GridFramework
    *
    * @defaultValue `localeText` の `globalFilterPlaceholder`(`'グローバルフィルター'`)
    */
-  globalFilterPlaceholder?: string;
+  globalFilterPlaceholder?: string | undefined;
   // 追加: 既定トップバーのグローバルフィルター入力欄の「左アイコン」です。
   //   既定トップバー(renderTopBar 未指定)のときのみ効きます。未指定(undefined)時は組み込みの
   //   検索アイコンを表示します。null を渡すとアイコン無し、任意の ReactNode で差し替え可能です。
@@ -4155,7 +4174,7 @@ export type SpreadsheetGridProps<T, F extends GridFrameworkTypes = GridFramework
    *
    * @defaultValue 組み込み検索アイコン
    */
-  globalFilterIcon?: F['node'];
+  globalFilterIcon?: F['node'] | undefined;
   // 追加(段階 2 DU-18): 文言(今は上部 / 下部バー)。変えたいキーだけを渡し、ほかは既定(日本語)のまま。
   /**
    * グリッドが自分で出す文言(バー・メニュー・列フィルター・ツールパネル・検索・読み上げの名前・検証のメッセージなど)。
@@ -4165,7 +4184,7 @@ export type SpreadsheetGridProps<T, F extends GridFrameworkTypes = GridFramework
    *
    * @defaultValue 日本語
    */
-  localeText?: Partial<GridLocaleText>;
+  localeText?: Partial<GridLocaleText> | undefined;
   // 追加: 下部バー(ステータスバー)を表示するかどうかです。既定 true。
   //   false にすると renderBottomBar に関わらず下部バーを一切描画しません
   //   (表示のマスタースイッチ。矛盾指定時は renderBottomBar より優先されます)。
@@ -4175,7 +4194,7 @@ export type SpreadsheetGridProps<T, F extends GridFrameworkTypes = GridFramework
    *
    * @defaultValue `true`
    */
-  showBottomBar?: boolean;
+  showBottomBar?: boolean | undefined;
   // 追加: 既定ボトムバーの Rows / Columns 件数 chips(左側)を表示するかどうかです。既定 true。
   //   既定ボトムバー(renderBottomBar 未指定)のときのみ効きます。右側の Active / Selection /
   //   選択統計 / Cols chips は本値の対象外で常時表示です。
@@ -4185,7 +4204,7 @@ export type SpreadsheetGridProps<T, F extends GridFrameworkTypes = GridFramework
    *
    * @defaultValue `true`
    */
-  showBottomBarCounts?: boolean;
+  showBottomBarCounts?: boolean | undefined;
   // 追加(選択範囲の集計): 2 セル以上を選んだとき、選択範囲の集計(平均 / データの個数 / 合計)を計算して
   //   既定ボトムバーに出すかどうかです。既定 true。false では計算もせず slotContext.selectionAggregates は null。
   /**
@@ -4200,7 +4219,7 @@ export type SpreadsheetGridProps<T, F extends GridFrameworkTypes = GridFramework
    *
    * @defaultValue `true`
    */
-  showSelectionAggregates?: boolean;
+  showSelectionAggregates?: boolean | undefined;
   // 追加(FM-2): フィルターチップバー(適用中の列フィルターをトップバー直下にチップで常時
   //   一覧表示)の表示有無です。既定 false(opt-in)。有効フィルター 0 件のときはバーごと
   //   非表示です(空バーは出しません)。showTopBar とは独立です(トップバー非表示でも出せます)。
@@ -4215,7 +4234,7 @@ export type SpreadsheetGridProps<T, F extends GridFrameworkTypes = GridFramework
    *
    * @defaultValue `false`
    */
-  showFilterChipBar?: boolean;
+  showFilterChipBar?: boolean | undefined;
   // 追加: Grid 上部カスタム領域です。未指定時は既定ツールバー(summary chips + グローバルフィルター
   //   入力)を表示します。既定バーの内訳は showTopBarSummary / showTopBarFilter で出し分けできます
   //   (フィルター入力は enableGlobalFilter=true が前提)。showTopBar=false のときは本指定に関わらず
@@ -4227,7 +4246,7 @@ export type SpreadsheetGridProps<T, F extends GridFrameworkTypes = GridFramework
    *
    * @defaultValue 内蔵トップバー
    */
-  renderTopBar?: (context: SpreadsheetGridSlotContext<T, F>) => F['node'];
+  renderTopBar?: ((context: SpreadsheetGridSlotContext<T, F>) => F['node']) | undefined;
   // 追加: Grid 下部カスタム領域です。未指定時は既定ステータスバーを表示します。
   //   showBottomBar=false のときは本指定に関わらず描画しません。
   /**
@@ -4236,16 +4255,16 @@ export type SpreadsheetGridProps<T, F extends GridFrameworkTypes = GridFramework
    *
    * @defaultValue 内蔵ボトムバー
    */
-  renderBottomBar?: (context: SpreadsheetGridSlotContext<T, F>) => F['node'];
+  renderBottomBar?: ((context: SpreadsheetGridSlotContext<T, F>) => F['node']) | undefined;
   /** ルート要素の class。 */
-  className?: string;
+  className?: string | undefined;
   // 追加(slot-props): ルート要素(.ssg-root)へのインライン style です(classNames.root の style と
   //   マージし、こちらが後勝ち)。
   /**
    * ルート要素(`.ssg-root`)のインライン style。`classNames.root` の style とマージされ、
    * こちらが後勝ち。
    */
-  style?: F['style'];
+  style?: F['style'] | undefined;
   // 追加(UI CSS移行): パーツ別の追加 className スロット(詳細は GridClassNames)。
   // 変更(slot-props): 各値は `string | { className, style }`(GridSlotProps)を受けます。
   /**
@@ -4260,7 +4279,7 @@ export type SpreadsheetGridProps<T, F extends GridFrameworkTypes = GridFramework
    * レイヤー順の宣言(`@layer theme, base, ssg-base, components, utilities;`)にするか、`!`
    * を付ける。
    */
-  classNames?: GridClassNames<F>;
+  classNames?: GridClassNames<F> | undefined;
   // 追加(UI CSS移行): 行ごとの追加 className を返すコールバック(条件付き行スタイル)。
   //   返り値は行コンテナと各データセルへ付与され、Tailwind 等での行ハイライトに使えます。
   //   (注記: 行ヘッダー「#」セルはヘッダー系スタイルと共有のため現状この対象外です。)
@@ -4278,11 +4297,11 @@ export type SpreadsheetGridProps<T, F extends GridFrameworkTypes = GridFramework
    * は行と各セルの両方に付くので、`opacity` / `filter` のように重なる指定は style で返さず、class
    * を返して `.ssg-body-row.<class>` で行だけに当てる(style の `opacity: 0.5` は 0.25 になる)。
    */
-  getRowClassName?: (
+  getRowClassName?: ((
     row: T,
     rowIndex: number,
     ctx: RowStyleContext<T>,
-  ) => GridSlotProps<F> | undefined;
+  ) => GridSlotProps<F> | undefined) | undefined;
   // ── 追加(detail ②): 展開行(Master/Detail) ──
   //   指定時のみ有効な opt-in 機能です。詳細は DetailRowOptions を参照。
   /**
@@ -4294,13 +4313,13 @@ export type SpreadsheetGridProps<T, F extends GridFrameworkTypes = GridFramework
    *
    * @defaultValue —(無効)
    */
-  detailRow?: DetailRowOptions<T, F>;
+  detailRow?: DetailRowOptions<T, F> | undefined;
   // 追加(detail ②): 展開中の行キー集合が変わるたびに通知します(開閉の永続化・外部同期用)。
   /**
    * 展開中の展開行のマスター行キー集合が**変化したとき**に呼ばれる(開閉の永続化・外部同期用)。
    * 初回マウントでは発火しない。インライン関数可(latest-ref 経由)。
    */
-  onExpandedDetailRowKeysChange?: (keys: GridRowKey[]) => void;
+  onExpandedDetailRowKeysChange?: ((keys: GridRowKey[]) => void) | undefined;
   // ── 追加(label-row ①): ラベル行(見出し / 区切り行) ──
   //   指定時のみ有効な opt-in 機能です。詳細は LabelRowOptions を参照。
   /**
@@ -4315,7 +4334,7 @@ export type SpreadsheetGridProps<T, F extends GridFrameworkTypes = GridFramework
    *
    * @defaultValue —(無効)
    */
-  labelRow?: LabelRowOptions<T, F, L>;
+  labelRow?: LabelRowOptions<T, F, L> | undefined;
   // ── 追加(合計行 3A): 表の下端に固定する合計行 ──
   //   指定時のみ有効な opt-in 機能です。詳細は TotalRowOptions を参照。
   /**
@@ -4331,7 +4350,7 @@ export type SpreadsheetGridProps<T, F extends GridFrameworkTypes = GridFramework
    *
    * @defaultValue —(無効)
    */
-  totalRow?: boolean | TotalRowOptions<T, F>;
+  totalRow?: boolean | TotalRowOptions<T, F> | undefined;
   // ── 追加(フィルハンドル 1A): 選択範囲の右下の四角を引いて連続データ / コピーで埋める ──
   //   指定時のみ有効な opt-in 機能です。詳細は FillHandleOptions を参照。
   /**
@@ -4347,7 +4366,7 @@ export type SpreadsheetGridProps<T, F extends GridFrameworkTypes = GridFramework
    *
    * @defaultValue —(無効)
    */
-  fillHandle?: boolean | FillHandleOptions<T, F>;
+  fillHandle?: boolean | FillHandleOptions<T, F> | undefined;
   // ── 追加(row-drag ③): 行ドラッグ並び替え ──
   //   true で先頭にドラッグハンドル列(幅 28px の合成列。左固定列があれば左ペイン)を挿入し、
   //   ハンドルを掴んで行を上下へ動かせます(既定 false)。確定時は onRowsChange へ「移動後の
@@ -4369,7 +4388,7 @@ export type SpreadsheetGridProps<T, F extends GridFrameworkTypes = GridFramework
    *
    * @defaultValue `false`
    */
-  enableRowDrag?: boolean;
+  enableRowDrag?: boolean | undefined;
   // 行ごとにドラッグ可否を決めます(未指定 = 全行可)。false の行にはハンドルを描画しません。
   /**
    * 行ごとのドラッグ可否。`false` の行にはハンドルを描画しない。
@@ -4377,7 +4396,7 @@ export type SpreadsheetGridProps<T, F extends GridFrameworkTypes = GridFramework
    *
    * @defaultValue 全行可
    */
-  isRowDraggable?: (row: T, ctx: RowDragContext) => boolean;
+  isRowDraggable?: ((row: T, ctx: RowDragContext) => boolean) | undefined;
   // 行移動の確定後(onRowsChange の直後)に呼ばれます(サーバ保存 / 監査ログ等)。
   //   命令的 API moveRow() による移動でも呼ばれます。
   /**
@@ -4385,7 +4404,7 @@ export type SpreadsheetGridProps<T, F extends GridFrameworkTypes = GridFramework
    * `params = { rowKey, fromIndex, toIndex, rows }`(index は元 `rows` 配列基準、`rows` は
    * `onRowsChange` と同じ新配列参照)。ハンドルの `moveRow()` による移動でも呼ばれる。
    */
-  onRowMove?: (params: RowMoveParams<T>) => void;
+  onRowMove?: ((params: RowMoveParams<T>) => void) | undefined;
   // ── 追加(バッチ②/コンテキストメニュー): セル/行の汎用コンテキストメニュー(完全カスタム) ──
   //   有効化のマスタースイッチです(既定 false=OFF)。他機能の enable* と同じく、機能自体は既定で無効。
   //   false のあいだは getContextMenuItems を渡しても発火せず、右クリックはブラウザ標準メニューのままです。
@@ -4398,7 +4417,7 @@ export type SpreadsheetGridProps<T, F extends GridFrameworkTypes = GridFramework
    *
    * @defaultValue `false`
    */
-  enableContextMenu?: boolean;
+  enableContextMenu?: boolean | undefined;
   //   右クリック時のみ呼ばれ、返した項目でメニューを描画します(ライブラリは固定の既定項目を持ちません)。
   //   opt-in は enableContextMenu={true} かつ本コールバックの指定の両方が必要です。未指定、または [] を
   //   返したときはブラウザ標準の右クリックメニューへフォールスルーします(空のパネルは表示しません)。
@@ -4412,12 +4431,12 @@ export type SpreadsheetGridProps<T, F extends GridFrameworkTypes = GridFramework
    * 未ロード行では開かない。ヘッダー右クリックは列メニュー(`enableColumnMenu`)が担当し、
    * 本メニューはボディ(セル / 行NO ガター)専用。詳細は「コンテキストメニュー」節を参照。
    */
-  getContextMenuItems?: (
+  getContextMenuItems?: ((
     params: GridContextMenuParams<T, F>,
-  ) => GridContextMenuItem<F>[];
+  ) => GridContextMenuItem<F>[]) | undefined;
   // 追加(バッチ②): コンテキストメニューが実際に開いた直後の通知です(項目が 1 件以上あり表示された場合のみ)。
   /**  */
-  onContextMenuOpen?: (params: GridContextMenuParams<T, F>) => void;
+  onContextMenuOpen?: ((params: GridContextMenuParams<T, F>) => void) | undefined;
   // ── 追加(scrollHint): スクロール位置インジケーター ──
   //   スクロール中に「今どの行にいるか」を示すオーバーレイです(既定 undefined = 完全無効)。
   //   true で全部入り(行番号バブル + 行目盛りルーラー)、オブジェクトで個別設定します
@@ -4436,5 +4455,5 @@ export type SpreadsheetGridProps<T, F extends GridFrameworkTypes = GridFramework
    *
    * @defaultValue —(無効)
    */
-  scrollHint?: boolean | ScrollHintOptions<T, F>;
+  scrollHint?: boolean | ScrollHintOptions<T, F> | undefined;
 };

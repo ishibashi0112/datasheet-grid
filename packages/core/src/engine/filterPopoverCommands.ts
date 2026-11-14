@@ -41,6 +41,7 @@ import {
 import { normalizeDateSetOptions } from '../logic/dateFilterTree';
 import type { SelectOptionEntry } from '../logic/selectOptions';
 import { createMemo } from './memo';
+import type { FilterLocaleText } from '../logic/localeTextFilters';
 
 // ── set 演算ヘルパ(小さい側だけを更新) ──────────────────
 const setWith = (base: ReadonlySet<string>, value: string): Set<string> => {
@@ -164,6 +165,8 @@ export type FilterPopoverCommandsArgs<T> = {
   updateNumberDraft: (draft: NumberFilterConditionDraft) => void;
   updateTextDraft: (draft: TextFilterConditionDraft) => void;
   updateDateDraft: (draft: DateFilterConditionDraft) => void;
+  // 追加(1.0.2 / D-03): number の記述子の raw を作る文言(グリッドの localeText。省略時は既定 = 日本語)。
+  filterTexts?: FilterLocaleText | undefined;
 };
 
 export type FilterPopoverCommands<T> = {
@@ -470,7 +473,7 @@ export const createFilterPopoverCommands = <T,>(): FilterPopoverCommands<T> => {
   // 適用ボタン方式の commit。set / 複合は即時適用のため閉じるだけ。number は構造化 draft から記述子を構築、
   //   text / date / select / custom はタグ付き記述子で commit(空入力は clearColumn)。
   const applyFilterPopoverValue = () => {
-    const { filterPopoverState, openedFilterType, dispatch, closeColumnFilterPopover } = requireArgs();
+    const { filterPopoverState, openedFilterType, dispatch, closeColumnFilterPopover, filterTexts } = requireArgs();
     if (!filterPopoverState) {
       return;
     }
@@ -481,7 +484,7 @@ export const createFilterPopoverCommands = <T,>(): FilterPopoverCommands<T> => {
     }
     if (filterType === 'number') {
       const descriptor = filterPopoverState.numberDraft
-        ? buildNumberColumnFilterValueFromDraft(filterPopoverState.numberDraft)
+        ? buildNumberColumnFilterValueFromDraft(filterPopoverState.numberDraft, filterTexts)
         : null;
       if (!descriptor) {
         dispatch(gridActions.clearColumnFilter(filterPopoverState.columnKey));

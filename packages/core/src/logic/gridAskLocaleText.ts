@@ -160,6 +160,8 @@ export type GridAskLocaleText = Pick<GridLocaleText, FilterLocaleTextKey> & {
   sortNoSuchColumn: GridLocaleTextTemplate<{ column: string }>;
   /** 並びの向きが読めない。既定 `並び: {column} の向き{direction}は使えません`、英語 `Sort: {direction} can't be used for {column}`。 */
   sortBadDirection: GridLocaleTextTemplate<{ column: string; direction: string }>;
+  /** 並びが読めない(配列でない)。既定 `並びを読めませんでした`、英語 `Couldn't read the sort order`。 */
+  sortUnreadable: string;
   /** 検索の文字が読めない。既定 `検索の文字を読めませんでした`、英語 `Couldn't read the search text`。 */
   searchUnreadable: string;
   /** `allowSearch: false` のとき。既定 `検索の文字は変えない設定です`、英語 `The search text is locked`。 */
@@ -240,6 +242,7 @@ export const DEFAULT_GRID_ASK_LOCALE_TEXT: GridAskLocaleText = {
   sortLocked: '並びは変えない設定です',
   sortNoSuchColumn: '並び: {column}という列はありません',
   sortBadDirection: '並び: {column} の向き{direction}は使えません',
+  sortUnreadable: '並びを読めませんでした',
   searchUnreadable: '検索の文字を読めませんでした',
   searchLocked: '検索の文字は変えない設定です',
   searchTooLong: '検索の文字は {limit} 字までです',

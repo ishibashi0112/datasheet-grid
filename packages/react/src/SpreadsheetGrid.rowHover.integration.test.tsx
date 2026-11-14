@@ -173,4 +173,27 @@ describe('行ホバーの optionally controlled 化(proposals ⑩)', () => {
     expect(onHoveredRowChange).not.toHaveBeenCalled();
     expect(hoveredRows(container)).toEqual([]);
   });
+
+  // 追加(1.0.2 / 2026-11-09 実アプリの総点検 C-06): セルからラベル行へ動かすと、行のホバーを外す(ラベル行には出さない)。
+  it('ラベル行へ入ると行のホバーを外す', () => {
+    type Mixed = Row | { section: string };
+    const mixedRows: Mixed[] = [{ section: '前半' }, ...rows];
+    const onHoveredRowChange = vi.fn();
+    const { container } = render(
+      <SpreadsheetGrid<Mixed>
+        rows={mixedRows}
+        columns={columns as GridColumn<Mixed>[]}
+        labelRow={{ isLabelRow: (row) => 'section' in row, getLabel: (row) => ('section' in row ? row.section : '') }}
+        onHoveredRowChange={onHoveredRowChange}
+      />,
+    );
+    const firstDataCell = container.querySelector<HTMLElement>('[data-pane="center"][data-row-index="1"] .ssg-body-cell');
+    fireEvent.pointerEnter(firstDataCell!);
+    expect(onHoveredRowChange).toHaveBeenLastCalledWith(1, { source: 'pointer' });
+    const label = container.querySelector<HTMLElement>('[data-pane="center"][data-ssg-label-row]');
+    expect(label).not.toBeNull();
+    fireEvent.pointerOver(label!);
+    expect(onHoveredRowChange).toHaveBeenLastCalledWith(null, { source: 'pointer' });
+    expect(container.querySelector('.ssg-body-cell--row-hovered')).toBeNull();
+  });
 });

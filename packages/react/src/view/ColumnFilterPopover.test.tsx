@@ -9,11 +9,12 @@
 //   ツリー上の親)への合成バブリングだけを遮断」になります。
 //   本テストの 1〜4 件目は修正前の実装では落ちます(イベントがハンドラへ届かない)。
 // @vitest-environment jsdom
-import { describe, it, expect, afterEach, vi } from 'vitest';
+import { describe, it, expect, afterEach, afterAll, beforeAll, vi } from 'vitest';
 import { render, screen, fireEvent, cleanup } from '@testing-library/react';
 import { createRef } from 'react';
 
 import { ColumnFilterPopover } from './ColumnFilterPopover';
+import { installJsdomLayoutStubs } from '../testing';
 import {
   DEFAULT_NUMBER_FILTER_DRAFT,
   type NumberFilterConditionDraft,
@@ -416,6 +417,61 @@ describe('ColumnFilterPopover の dateSet 複合 UI(filter-ext D)', () => {
       ...DEFAULT_DATE_FILTER_DRAFT,
       value1: '2026-02-01',
     });
+  });
+});
+
+// 追加(1.0.2 / 2026-11-09 実アプリの総点検 G-11): dateSet の木の行は、文字(「2026年」「2月」)を押してもチェックが
+//   切り替わる(set の一覧と同じ)。開閉ボタンは開閉だけ。
+describe('ColumnFilterPopover の dateSet の木の行(G-11)', () => {
+  // 候補の一覧は仮想化しているので、jsdom のレイアウトのスタブで大きさを与えます。
+  let restoreLayout: () => void = () => {};
+  beforeAll(() => {
+    restoreLayout = installJsdomLayoutStubs();
+  });
+  afterAll(() => {
+    restoreLayout();
+  });
+
+  it('行の文字を押すとチェックを切り替え、開閉ボタンでは切り替えない', () => {
+    const props = makeDateSetProps(DEFAULT_DATE_FILTER_DRAFT);
+    render(<ColumnFilterPopover {...props} />);
+    // ポップオーバーは body 直下へ描く。
+    const labels = [...document.querySelectorAll('.ssg-filter-option .ssg-filter-option-label')];
+    expect(labels.length).toBeGreaterThan(0);
+    const first = labels[0] as HTMLElement;
+    fireEvent.click(first);
+    expect(props.onSetSelectAllChange).toHaveBeenCalledTimes(1);
+    const toggle = document.querySelector<HTMLElement>('.ssg-filter-option button.ssg-filter-tree-toggle');
+    if (toggle) {
+      fireEvent.click(toggle);
+    }
+    expect(props.onSetSelectAllChange).toHaveBeenCalledTimes(1);
+    // チェックボックスそのものは onChange の 1 回だけ(行の onClick で 2 回にならない)
+    const checkbox = first.parentElement?.querySelector<HTMLInputElement>('input[type="checkbox"]');
+    if (checkbox) {
+      fireEvent.click(checkbox);
+    }
+    expect(props.onSetSelectAllChange).toHaveBeenCalledTimes(2);
+  });
+});
+
+// 追加(1.0.2 / 2026-11-09 実アプリの総点検 G-06): 大きな表の候補を集めている間も、複合列は条件の欄(dateSet のプリセット
+//   も)を出し、値の一覧の位置に進捗を出す。set だけの列は従来どおり進捗だけ。
+describe('ColumnFilterPopover の候補を集めている間(G-06)', () => {
+  it('dateSet はプリセットと条件の欄を出したまま、進捗を出す', () => {
+    const props = { ...makeDateSetProps(DEFAULT_DATE_FILTER_DRAFT), optionsStatus: 'collecting' as const, optionsProgress: 0.42 };
+    render(<ColumnFilterPopover {...props} />);
+    expect(screen.getByText('候補を収集中… 42%')).toBeTruthy();
+    fireEvent.pointerDown(screen.getByRole('button', { name: '過去 30 日' }));
+    expect(props.onDateConditionDraftChange).toHaveBeenCalledWith({ ...DEFAULT_DATE_FILTER_DRAFT, preset: 'last30days' });
+    expect(screen.getByLabelText('条件の演算子')).toBeTruthy();
+  });
+
+  it('set だけの列は進捗だけ', () => {
+    const props = { ...makeProps(), optionsStatus: 'collecting' as const, optionsProgress: 0.5 };
+    render(<ColumnFilterPopover {...props} />);
+    expect(screen.getByText('候補を収集中… 50%')).toBeTruthy();
+    expect(screen.queryByLabelText('条件の演算子')).toBeNull();
   });
 });
 

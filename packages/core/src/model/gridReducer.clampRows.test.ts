@@ -75,3 +75,33 @@ describe('gridUiReducer (selection/clampToRowCount)', () => {
     expect(next.selection).toEqual({ type: 'col', startCol: 2, endCol: 2 });
   });
 });
+
+// 追加(1.0.2 / 2026-11-09 実アプリの総点検 C-02): 列が減ったときも、はみ出した activeCell / selection を詰める。
+describe('gridUiReducer (selection/clampToRowCount の colCount)', () => {
+  it('列の数を渡すと、はみ出した列を最終列へ詰める。はみ出しが無ければ同一参照', () => {
+    const s = withCellRange();
+    expect(gridUiReducer(s, gridActions.clampSelectionToRowCount(100, 4))).toBe(s);
+    const next = gridUiReducer(s, gridActions.clampSelectionToRowCount(100, 3));
+    expect(next.activeCell).toEqual({ row: 8, col: 2 });
+    expect(next.selection).toEqual({
+      type: 'cell',
+      range: { start: { row: 2, col: 1 }, end: { row: 8, col: 2 } },
+    });
+  });
+
+  it('列の選択も詰め、0 列ではアクティブセルとセル / 列の選択を外す(行の選択は残す)', () => {
+    let s = createInitialGridUiState();
+    s = gridUiReducer(s, gridActions.startColumnSelection(4));
+    s = gridUiReducer(s, gridActions.updateColumnSelection(6));
+    s = gridUiReducer(s, gridActions.endSelection());
+    const next = gridUiReducer(s, gridActions.clampSelectionToRowCount(100, 5));
+    expect(next.selection).toEqual({ type: 'col', startCol: 4, endCol: 4 });
+    expect(gridUiReducer(withCellRange(), gridActions.clampSelectionToRowCount(100, 0)).selection).toBeNull();
+    let rowSelected = createInitialGridUiState();
+    rowSelected = gridUiReducer(rowSelected, gridActions.startRowSelection(1));
+    rowSelected = gridUiReducer(rowSelected, gridActions.endSelection());
+    expect(gridUiReducer(rowSelected, gridActions.clampSelectionToRowCount(100, 0)).selection).toEqual(
+      rowSelected.selection,
+    );
+  });
+});

@@ -83,6 +83,17 @@ describe('選択範囲の集計(下部バー)', () => {
     expect(aggregateTexts(container)).toEqual(['平均:15', 'データの個数:3', '合計:30']);
   });
 
+  it('区切り線は右端の項目(合計)が持つ(項目が 1 つも入らない幅では区切り線も出ない = 1.0.2 / RV-J2)', () => {
+    const { container, ref } = setup();
+    act(() => {
+      ref.current?.selectRange({ start: { row: 0, col: 1 }, end: { row: 3, col: 1 } });
+    });
+    // 一覧の外に区切り線の要素を置かない(項目と一緒に 2 行目 = 見えない所へ回るように)。
+    expect(container.querySelector('.ssg-bar-aggregates .ssg-bar-sep')).toBeNull();
+    const separated = Array.from(container.querySelectorAll('.ssg-bar-aggregates .ssg-bar-aggregates-sep'));
+    expect(separated.map((chip) => chip.textContent)).toEqual(['合計:30']);
+  });
+
   it('1 セルだけの選択では出さない', () => {
     const { container, ref } = setup();
     act(() => {

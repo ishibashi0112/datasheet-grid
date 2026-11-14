@@ -28,6 +28,7 @@ import {
 } from '../logic/autoScrollGeometry';
 import { resolveElementScale } from '../logic/elementScale';
 import { isInsideDetailCardOf } from '../logic/detailRow';
+import { beginEscapeCancelableDrag } from './escapeClaimController';
 import { syncPortalTokens } from '../utils/portalTokens';
 import { applySlotToElement } from '../logic/slotDom';
 import type { GridResolvedSlot } from '../model/gridTypes.unbound';
@@ -767,12 +768,15 @@ export const createRowDragController = (): RowDragController => {
       pointer = { x: nativeEvent.clientX, y: nativeEvent.clientY };
       updateIndicator();
     };
+    // 追加(1.0.2 / RA-6): ドラッグの間の Escape はグリッドが使う(ダイアログを閉じない)。
+    const releaseEscape = beginEscapeCancelableDrag();
     const cleanup = () => {
       window.removeEventListener('pointermove', handleMove);
       window.removeEventListener('pointerup', handleUp);
       window.removeEventListener('pointercancel', handleCancel);
-      window.removeEventListener('keydown', handleKeyDown);
+      window.removeEventListener('keydown', handleKeyDown, true);
       window.removeEventListener('blur', handleBlur);
+      releaseEscape();
       activeDragDispose = null;
       try {
         target.releasePointerCapture(pointerId);
@@ -806,7 +810,8 @@ export const createRowDragController = (): RowDragController => {
     window.addEventListener('pointermove', handleMove);
     window.addEventListener('pointerup', handleUp);
     window.addEventListener('pointercancel', handleCancel);
-    window.addEventListener('keydown', handleKeyDown);
+    // 変更(1.0.2 / RA-6): capture 相で聞きます(印の付いた Escape はグリッドのルートで伝播が止まるため)。
+    window.addEventListener('keydown', handleKeyDown, true);
     window.addEventListener('blur', handleBlur);
     activeDragDispose = cleanup;
 

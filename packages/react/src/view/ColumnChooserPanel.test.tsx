@@ -135,4 +135,19 @@ describe('ColumnChooserPanel(全選択トグル 13-B2-4)', () => {
     render(<ColumnChooserPanel {...makeProps(hiddenGrouped)} />);
     expect(screen.getByRole('button', { name: 'すべての列を非表示(先頭の列は残ります)' })).toBeTruthy();
   });
+
+  // 追加(1.0.2 / 2026-11-09 実アプリの総点検 L-09 / L-08): 押せないときも今の状態を aria-pressed で伝え、
+  //   中の項目にフォーカスが入らない一覧そのものに Tab で止まれるようにする。
+  it('表示 / 非表示のボタンは aria-pressed を持ち、canToggle=false では一覧に tabindex が付く', () => {
+    const { container } = render(<ColumnChooserPanel {...makeProps(makeItems([true, false]), false)} />);
+    const visibleToggle = screen.getByText('列0').closest('button') as HTMLButtonElement;
+    const hiddenToggle = screen.getByText('列1').closest('button') as HTMLButtonElement;
+    expect(visibleToggle.disabled).toBe(true);
+    expect(visibleToggle.getAttribute('aria-pressed')).toBe('true');
+    expect(hiddenToggle.getAttribute('aria-pressed')).toBe('false');
+    expect(container.querySelector('.ssg-chooser-list')?.getAttribute('tabindex')).toBe('0');
+    cleanup();
+    const { container: enabled } = render(<ColumnChooserPanel {...makeProps(makeItems([true, false]))} />);
+    expect(enabled.querySelector('.ssg-chooser-list')?.hasAttribute('tabindex')).toBe(false);
+  });
 });

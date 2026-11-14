@@ -88,6 +88,33 @@ describe('createFilterPopoverController', () => {
     expect(c.getSnapshot().state?.columnKey).toBe('name');
   });
 
+  // 追加(1.0.2 / 2026-11-09 実アプリの総点検 L-10): タッチが主の端末では入力欄ではなくポップオーバーそのものへフォーカスする
+  //   (ソフトキーボードが値の一覧を覆わないように)。
+  it('pointer: coarse の端末では、開いたときのフォーカスを入力欄ではなくパネルへ置く', () => {
+    vi.stubGlobal('matchMedia', (query: string) => ({ matches: query === '(pointer: coarse)', media: query }));
+    const c = createFilterPopoverController<unknown>();
+    const root = document.createElement('div');
+    const cell = document.createElement('div');
+    cell.dataset.ssgColKey = 'name';
+    root.appendChild(cell);
+    document.body.appendChild(root);
+    const args = { visibleColumns: columns, columnFilterValues: {}, enableColumnFilter: true, gridRootRef: { current: root } };
+    c.update(args);
+    c.open(columns[0]);
+    const panel = document.createElement('div');
+    panel.tabIndex = -1;
+    const input = document.createElement('input');
+    input.type = 'text';
+    panel.appendChild(input);
+    document.body.appendChild(panel);
+    c.panelRef.current = panel;
+    c.textInputRef.current = input;
+    c.update(args);
+    flushRaf();
+    expect(document.activeElement).toBe(panel);
+    c.dispose();
+  });
+
   // 追加(lazy-popups): ポップオーバー部品の遅延読み込み中に開かれた(パネル未描画の)ときは予約せず、
   //   読み込み後の描画で呼ばれる update で予約する(初回オープンでも入力欄へフォーカスが入る)。
   it('パネルが未描画の間はフォーカスを予約せず、描画後の update で予約する', () => {

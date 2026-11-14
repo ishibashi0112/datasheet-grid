@@ -7,6 +7,7 @@ import { createEditController, type EditControllerArgs } from './editController'
 import { createInitialGridUiState } from '../model/gridReducer';
 import type { GridUiAction } from '../model/gridActions';
 import type { GridColumn, RowModel } from '../model/gridTypes.unbound';
+import { ROW_DRAG_HANDLE_COLUMN_KEY } from '../logic/rowReorder';
 
 type Row = { id: number; qty: number };
 const columns: GridColumn<Row>[] = [
@@ -72,6 +73,19 @@ describe('editController', () => {
     const activate = t.dispatch.mock.calls.find(([a]) => a.type === 'cell/activate');
     expect(activate?.[0]).toMatchObject({ cell: { row: 0, col: 0 } });
     expect(t.args.editorActionGuardRef.current).toBe(false);
+  });
+
+  // 追加(1.0.2 / 2026-11-09 実アプリの総点検 F-04): 先頭のデータ列の Shift+Tab(左への確定)で行ドラッグのハンドル列に止まらない。
+  it('左への確定は操作用の合成列へ入らない(F-04)', () => {
+    const c = createEditController<Row>();
+    const rows1 = [{ id: 1, qty: 1 }];
+    const withHandle: GridColumn<Row>[] = [{ key: ROW_DRAG_HANDLE_COLUMN_KEY, title: '', width: 28 }, ...columns];
+    const t = makeArgs(rows1, { row: 0, col: 1 });
+    c.update({ ...t.args, visibleColumns: withHandle });
+    expect(c.commitEdit('3', 'left')).toEqual({ status: 'committed' });
+    for (const cb of rafCallbacks) cb(0);
+    const activate = t.dispatch.mock.calls.find(([a]) => a.type === 'cell/activate');
+    expect(activate?.[0]).toMatchObject({ cell: { row: 0, col: 1 } });
   });
 
   it('列 / 行が見つからないときは stopEdit だけ行い noop を返す', () => {

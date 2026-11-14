@@ -164,6 +164,8 @@ const baseOptions = {
   lib: ['ES2022', 'DOM', 'DOM.Iterable'],
   jsx: 'react-jsx',
   strict: true,
+  // 追加(1.0.2 / K-08): @tsconfig/strictest などの利用者と同じく、省略可の項目へ undefined を渡せるかも見る。
+  exactOptionalPropertyTypes: true,
   skipLibCheck: false,
   noEmit: true,
   types: [],

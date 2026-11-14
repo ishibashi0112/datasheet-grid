@@ -12,6 +12,7 @@
 //     (ジャンプ先が無いため。× でのクリアは可能)。
 //   - .ssg-root 内で描画されるため、ポータル系(popover/panel)と違いデザイントークン
 //     (--ssg-*)が届きます(padding は --ssg-bar-pad-* で density 連動)。
+import { useId } from 'react';
 import type { FilterManagementEntry } from './FilterManagementPanel';
 import { cx } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/cx';
 import type { GridResolvedSlot } from '../model/gridTypes';
@@ -41,6 +42,11 @@ export function GridFilterChipBar({
 }: GridFilterChipBarProps) {
   // 追加(英語対応): 文言(localeText)。
   const texts = useFeatureLocaleText<typeof DEFAULT_FILTERING_LOCALE_TEXT>();
+  // 追加(1.0.2 / 2026-11-09 実アプリの総点検 L-08): チップの名前を、見えている「列名 + 条件の要約」+ 操作の説明(既定「列名 の
+  //   フィルターを編集」)にします(見えている文字と読み上げの名前が違っていた = WCAG 2.5.3)。部品を id で結ぶ
+  //   (aria-labelledby)ので、`getByLabelText('列名 のフィルターを編集')` はこれまでどおり見つかります。操作の説明は
+  //   隠した要素でボタンの外に置き、ボタンの textContent は見えている文字のままにします。
+  const chipIdBase = useId();
   // 有効フィルター 0 件は非表示です(合意 b: 空バーは出さない)。
   if (entries.length === 0) {
     return null;
@@ -51,7 +57,7 @@ export function GridFilterChipBar({
       className={cx('ssg-filter-chip-bar', slot?.className)}
       style={slot?.style}
     >
-      {entries.map((entry) => (
+      {entries.map((entry, index) => (
         <div
           key={entry.columnKey}
           className={
@@ -71,16 +77,16 @@ export function GridFilterChipBar({
                   ? texts.filterEditUnderGroup
                   : texts.filterJump
             }
-            aria-label={formatLocaleText(texts.filterEditFor, { column: entry.title })}
+            aria-labelledby={`${chipIdBase}-${index}-name ${chipIdBase}-${index}-summary ${chipIdBase}-${index}-action`}
             onClick={() => {
               onEditFilter(entry.columnKey);
             }}
           >
-            <span className="ssg-filter-chip-name">
+            <span id={`${chipIdBase}-${index}-name`} className="ssg-filter-chip-name">
               {entry.title}
               {entry.isHidden ? texts.filterHiddenColumn : entry.isGrouped === true ? texts.filterGroupedColumn : ''}
             </span>
-            <span className="ssg-filter-chip-summary">
+            <span id={`${chipIdBase}-${index}-summary`} className="ssg-filter-chip-summary">
               {entry.summaryText}
             </span>
           </button>
@@ -96,6 +102,10 @@ export function GridFilterChipBar({
           >
             ×
           </button>
+          {/* 名前の後半(操作の説明)。チップのボタンの中に置くと textContent に混ざるので外に置きます。 */}
+          <span id={`${chipIdBase}-${index}-action`} hidden>
+            {formatLocaleText(texts.filterEditFor, { column: entry.title })}
+          </span>
         </div>
       ))}
       <button

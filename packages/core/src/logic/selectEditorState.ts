@@ -103,3 +103,30 @@ export const computeSelectPopoverPlacement = (
     : Math.max(VIEWPORT_MARGIN, anchorRect.top - OFFSET_Y - listHeight);
   return { left, top, width, maxHeight: listHeight };
 };
+// 追加(1.0.2 / 2026-11-09 実アプリの総点検 E-08): IME で確定した文字(日本語の名前など)で候補を探します。label がその文字で
+//   始まる最初の候補、無ければ label にその文字を含む最初の候補(一致なしは null)。印字キーのタイプアヘッド(前方一致だけ)と
+//   違い、確定した 1 つの語で引くので途中に含む候補も探します。
+// 変更(1.0.2 の確かめ直し): 全角の英数字・記号と全角スペースは半角に寄せて比べます(IME がオンのまま英字を打つと「ｓ」の
+//   ような全角で確定し、英語の名前の候補へ移らなかった)。候補の label の側も同じに寄せます。
+const FULL_WIDTH_ASCII_PATTERN = /[\uFF01-\uFF5E]/g;
+const foldComposedText = (text: string): string =>
+  text
+    .replace(FULL_WIDTH_ASCII_PATTERN, (ch) => String.fromCharCode(ch.charCodeAt(0) - 0xfee0))
+    .replace(/\u3000/g, ' ')
+    .toLocaleLowerCase();
+export const findOptionByComposedText = (
+  options: GridSelectEditorOption[],
+  text: string,
+): number | null => {
+  const query = foldComposedText(text).trim();
+  if (query === '') {
+    return null;
+  }
+  const labels = options.map((option) => foldComposedText(option.label));
+  const prefix = labels.findIndex((label) => label.startsWith(query));
+  if (prefix >= 0) {
+    return prefix;
+  }
+  const contains = labels.findIndex((label) => label.includes(query));
+  return contains >= 0 ? contains : null;
+};
