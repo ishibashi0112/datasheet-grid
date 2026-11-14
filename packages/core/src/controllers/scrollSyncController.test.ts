@@ -91,6 +91,19 @@ describe('createScrollSyncController', () => {
     runFrame();
     expect(onScroll).toHaveBeenLastCalledWith({ top: 220, left: 0, source: 'user' });
 
+    // 1.0.1 の確かめ直し G: 同じフレームで 2 回動かしても scroll イベントは 1 回。その後のユーザーのスクロールは 'user'。
+    controller.markApiScroll();
+    el.scrollTop = 230;
+    controller.markApiScroll();
+    el.scrollTop = 240;
+    el.dispatchEvent(new Event('scroll'));
+    runFrame();
+    expect(onScroll).toHaveBeenLastCalledWith({ top: 240, left: 0, source: 'api' });
+    el.scrollTop = 250;
+    el.dispatchEvent(new Event('scroll'));
+    runFrame();
+    expect(onScroll).toHaveBeenLastCalledWith({ top: 250, left: 0, source: 'user' });
+
     // onScroll を外しても scrollTop の反映は続く(通知だけ止まる)。
     controller.update({ scrollContainerRef: { current: el }, setViewState, onScroll: undefined });
     el.scrollTop = 300;

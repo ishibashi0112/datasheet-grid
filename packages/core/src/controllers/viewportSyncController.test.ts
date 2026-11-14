@@ -231,4 +231,21 @@ describe('createScrollScaleAnchor(AP-24)', () => {
     expect(other.raw.scrollTop).toBe(500);
     expect(onAnchored).toHaveBeenCalledTimes(2);
   });
+
+  // 1.0.1 の確かめ直し G: 末尾までスクロールしていたときは末尾のまま(1.0.0 と同じ。末尾を追う表で 2 回描き直さない)。
+  it('末尾にいたときは直さない。末尾より上にいたときは直す', () => {
+    const { element, raw } = createScrollElement();
+    Object.assign(raw, { scrollHeight: 15_000_200 });
+    const anchor = createScrollScaleAnchor();
+    const onAnchored = vi.fn();
+    raw.scrollTop = 15_000_000;
+    anchor.update(element, 2.4, onAnchored);
+    anchor.update(element, 2.5, onAnchored);
+    expect(raw.scrollTop).toBe(15_000_000);
+    expect(onAnchored).not.toHaveBeenCalled();
+    raw.scrollTop = 14_000_000;
+    anchor.update(element, 2.6, onAnchored);
+    expect(raw.scrollTop).toBeCloseTo((14_000_000 * 2.5) / 2.6, 3);
+    expect(onAnchored).toHaveBeenCalledTimes(1);
+  });
 });

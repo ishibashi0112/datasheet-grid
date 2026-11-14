@@ -155,6 +155,9 @@ export const scrollCellIntoView = (
 //   同じままだと論理の位置 = scrollTop × 率 が変わり、ログに行を足し続ける 100 万行の表では、上へ戻って読んでいる
 //   行が足すたびに流れていた(縮めない表では scrollTop = 論理の位置なので流れない。同じ動きにそろえる)。
 //   コミットの後(描く前)に呼び、物理の位置を直したら onAnchored(新しい scrollTop)で知らせます(view スライスへ書く)。
+//   変更(1.0.1 の確かめ直し G): 末尾までスクロールしていたときは直しません(1.0.0 と同じく末尾のまま = 足した行が見える)。
+//   末尾を追うログ(行を足すたびに scrollToBottom())で、直して上へ動かしてから末尾へ戻す 2 回の描き直しになり、
+//   100 万行で足すたびに約 100ms の長いタスクが出ていたため。
 export type ScrollScaleAnchor = {
   update: (
     scrollElement: HTMLElement | null,
@@ -166,16 +169,26 @@ export type ScrollScaleAnchor = {
 export const createScrollScaleAnchor = (): ScrollScaleAnchor => {
   let previousElement: HTMLElement | null = null;
   let previousScale = 1;
+  // 前のコミットでのスクロールの上限(縮めたスクロールのときだけ測る。末尾にいたかの判定に使う)。
+  let previousMaxTop = 0;
   return {
     update: (scrollElement, verticalScaleFactor, onAnchored) => {
       const element = previousElement;
       const scale = previousScale;
+      const maxTop = previousMaxTop;
       previousElement = scrollElement;
       previousScale = verticalScaleFactor;
+      previousMaxTop =
+        scrollElement !== null && verticalScaleFactor !== 1
+          ? Math.max(scrollElement.scrollHeight - scrollElement.clientHeight, 0)
+          : 0;
       if (scrollElement === null || scrollElement !== element || scale === verticalScaleFactor) {
         return;
       }
       const before = scrollElement.scrollTop;
+      if (maxTop > 0 && before >= maxTop - 1) {
+        return;
+      }
       const target = logicalToPhysicalScrollTop(physicalToLogicalScrollTop(before, scale), verticalScaleFactor);
       if (Math.abs(target - before) < 1) {
         return;

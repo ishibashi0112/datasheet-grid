@@ -170,7 +170,8 @@ export type GridApiArgs<T> = {
   // 行選択のコミット(rowSelectionCommands。controlled では onChange のみ)。
   commitRowSelection: (next: RowSelectionState) => void;
   // 命令的 API 由来のスクロール(位置が実際に変わるもの)を通知します(scroll イベントの source 判定用)。
-  markApiScroll: () => void;
+  //   変更(1.0.1 の確かめ直し G): 印を前の状態へ戻す関数を返せます(位置が変わらず scroll イベントが来ないとき用)。
+  markApiScroll: () => (() => void) | void;
 };
 
 export type GridApi<T> = {
@@ -219,10 +220,25 @@ export const createGridApi = <T,>(features: Pick<GridCoreFeatures, 'export' | 'g
     const maxLeft = Math.max(el.scrollWidth - el.clientWidth, 0);
     const top = Math.min(Math.max(target.top, 0), maxTop);
     const left = Math.min(Math.max(target.left, 0), maxLeft);
-    if (Math.round(top) !== Math.round(el.scrollTop) || Math.round(left) !== Math.round(el.scrollLeft)) {
-      args?.markApiScroll();
-    }
+    const beforeTop = el.scrollTop;
+    const beforeLeft = el.scrollLeft;
+    const restoreMark =
+      Math.round(top) !== Math.round(beforeTop) || Math.round(left) !== Math.round(beforeLeft)
+        ? args?.markApiScroll()
+        : undefined;
     el.scrollTo({ top, left, behavior });
+    // 追加(1.0.1 の確かめ直し G): ブラウザが範囲へ収めた結果、位置が変わらなかったときは scroll イベントが来ないので
+    //   印を戻します(縮めたスクロールの末尾は見える高さの小数で上限が 1px ずれ、末尾にいるときの scrollToBottom() で
+    //   印だけが残り、次のホイールが 'api' で届いていた。1.0.0 から)。smooth(引数か CSS)はまだ動いていないだけなので戻しません。
+    if (
+      restoreMark &&
+      behavior === 'auto' &&
+      el.scrollTop === beforeTop &&
+      el.scrollLeft === beforeLeft &&
+      getComputedStyle(el).scrollBehavior !== 'smooth'
+    ) {
+      restoreMark();
+    }
   };
 
   const applyScroll: GridApi<T>['applyScroll'] = (logicalTop, left, align) => {
