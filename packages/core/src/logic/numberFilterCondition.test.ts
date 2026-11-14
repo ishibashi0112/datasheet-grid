@@ -3,6 +3,7 @@
 //   - parsed → raw 表示文字列(日本語。チップ / 管理パネルにそのまま出る)
 //   - 記述子 → draft 復元(旧・式構文の保存値からの復元を含む)
 import { describe, it, expect } from 'vitest';
+import { localeTextEn } from '../locales/en';
 import {
   DEFAULT_NUMBER_FILTER_DRAFT,
   NUMBER_FILTER_OPERATOR_OPTIONS,
@@ -153,6 +154,16 @@ describe('formatParsedNumberFilter / buildNumberColumnFilterValueFromDraft', () 
     expect(
       buildNumberColumnFilterValueFromDraft(draft({ value1: '' })),
     ).toBeNull();
+  });
+
+  // 追加(1.0.2 / 2026-11-09 実アプリの総点検 D-03): raw はグリッドの文言で作る(英語のアプリで query や URL に日本語が
+  //   入っていた)。
+  it('文言を渡すと raw もその文言(英語)', () => {
+    expect(buildNumberColumnFilterValueFromDraft(draft({ operator: 'gte', value1: '100' }), localeTextEn)).toEqual({
+      kind: 'number',
+      raw: '≥ 100',
+      parsed: { mode: 'comparison', operator: '>=', value: 100 },
+    });
   });
 });
 

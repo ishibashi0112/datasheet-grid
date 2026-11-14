@@ -867,7 +867,8 @@ const buildFilterValue = <T,>(
       if (original?.kind === 'number' && isSameColumnFilterValue({ kind: 'number', raw: original.raw, parsed: parsed.value }, original)) {
         return ok(cloneColumnFilterValue(original));
       }
-      return ok({ kind: 'number', raw: formatParsedNumberFilter(parsed.value), parsed: parsed.value });
+      // 変更(1.0.2 / D-03): raw はバーの文言(localeText)で作ります(グリッドの操作で作る raw と同じ言語に)。
+      return ok({ kind: 'number', raw: formatParsedNumberFilter(parsed.value, String, t), parsed: parsed.value });
     }
     default: {
       // 条件 AND 選択の複合です。同じ答えの中で同じ列に条件と選択が 1 つずつ来たら合わせます。refine で

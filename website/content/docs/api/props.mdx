@@ -325,7 +325,8 @@ import { localeTextEn } from '@ishibashi0112/spreadsheet-grid/locales/en';
 | `filterClearFor` | `{column} のフィルターをクリア` | `Clear the filter on {column}` | フィルターのチップの × の読み上げの名前。 |
 | `filterNone` | `フィルターなし` | `No filter` | 条件の無いフィルターの要約。 |
 | `filterCustom` | `カスタム条件` | `Custom filter` | `custom` のフィルターの要約(値が文字でないとき)。 |
-| `filterExcluded` | `{count} 件を除外` | (数で変わる) | 値の選択の要約(除外)。 |
+| `filterExcluded` | `{count} 件を除外` | (数で変わる) | 値の選択の要約(除外。3 件以上)。 |
+| `filterExcludedValues` | `{values} を除外` | `Excluding {values}` | 値の選択の要約(除外。1〜2 件は値を並べる)。 |
 | `filterSelected` | `{count} 件を選択` | `{count} selected` | 値の選択の要約(3 件以上)。 |
 | `filterMatches` | `"{value}" に一致` | `Is "{value}"` | `select` のフィルターの要約。 |
 | `filterBoth` | `{condition} かつ {set}` | `{condition} and {set}` | 条件と値の選択の両方があるときの要約。 |
@@ -963,7 +964,7 @@ const [rows, setRows] = useState(initialRows);
 // find={{ shortcut: false, caseSensitive: true }}
 ```
 
-- **対象**: ビュー行(フィルター / ソート適用後)× 可視列の**表示文字列**(`valueFormatter` 適用後 = 画面に見えている文字)。`renderCell` の列も表示文字列(`valueFormatter` または `String(value)`)で検索されるが、`<mark>` の強調は既定セルだけ(カレントへの移動は同じ)。`renderCell` の無い列のうち、チェックボックスのエディタの列と、データバーの `showValue: false` の列(画面に文字が出ない列)は対象外。折りたたんだグループの中の行、グループ化で隠れたグループ元の列(グループ行のラベルにだけ出る値)、ラベル行(`labelRow`)の文字も探さない(行を表示しているときだけ探す。グループ元の列の値はグローバルフィルターなら絞り込める)。
+- **対象**: ビュー行(フィルター / ソート適用後)× 可視列の**表示文字列**(`valueFormatter` 適用後 = 画面に見えている文字)。`renderCell` の列も表示文字列(`valueFormatter` または `String(value)`)で検索されるが、`<mark>` の強調は既定セルだけ(カレントへの移動は同じ)。状態チップ(`conditionalFormat.chips`)の `label` で文字を変えたセルは、画面に出ている `label` を探す(1.0.2 から。チップの関数には `isActive` などのセルの状態を false で渡す)。`renderCell` の無い列のうち、チェックボックスのエディタの列と、データバーの `showValue: false` の列(画面に文字が出ない列)は対象外。折りたたんだグループの中の行、グループ化で隠れたグループ元の列(グループ行のラベルにだけ出る値)、ラベル行(`labelRow`)の文字も探さない(行を表示しているときだけ探す。グループ元の列の値はグローバルフィルターなら絞り込める)。
 - **走査**: 時間分割(1 チャンク 10ms)で入力・描画を止めない。走査中は件数が「検索中…」になる。クエリ / 大文字小文字 / `rows`(編集・差し替え)/ ソート / フィルター / 列が変わると再走査し、同じヒットが残っていればカレントを保つ(移動はしない)。
 - **順送り**: `Enter` / `↓` で次、`Shift+Enter` / `↑` で前(循環)。カレントのヒットへはクリック相当の単一選択 + 可視化スクロール(`selectCell(row, col, { scrollIntoView: true })` と同じ)。クエリを打ち直すと先頭のヒットへ移動する。
 - **閉じる**: `Esc` / × でクエリとヒットが消え、フォーカスはグリッド本体へ戻る。`find` を `false` にすると開いていても閉じる。

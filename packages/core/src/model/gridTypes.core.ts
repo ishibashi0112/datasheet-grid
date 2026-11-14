@@ -1808,8 +1808,10 @@ export type GridLocaleText = {
   filterNone: string;
   /** `custom` のフィルターの要約(値が文字でないとき)。既定 `カスタム条件`、英語 `Custom filter`。 */
   filterCustom: string;
-  /** 値の選択の要約(除外)。既定 `{count} 件を除外`、英語は数で変わる(関数)。 */
+  /** 値の選択の要約(除外。3 件以上)。既定 `{count} 件を除外`、英語は数で変わる(関数)。 */
   filterExcluded: GridLocaleTextTemplate<{ count: number }>;
+  /** 値の選択の要約(除外。1〜2 件は値を並べる)。既定 `{values} を除外`、英語 `Excluding {values}`。 */
+  filterExcludedValues: GridLocaleTextTemplate<{ values: string }>;
   /** 値の選択の要約(3 件以上)。既定 `{count} 件を選択`、英語 `{count} selected`。 */
   filterSelected: GridLocaleTextTemplate<{ count: number }>;
   /** `select` のフィルターの要約。既定 `"{value}" に一致`、英語 `Is "{value}"`。 */

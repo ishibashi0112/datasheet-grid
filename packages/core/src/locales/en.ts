@@ -12,6 +12,7 @@ const FILTER_LOCALE_TEXT_EN = {
   filterNone: 'No filter',
   filterCustom: 'Custom filter',
   filterExcluded: ({ count }) => (count === 1 ? 'Excluding 1 value' : `Excluding ${count} values`),
+  filterExcludedValues: 'Excluding {values}',
   filterSelected: '{count} selected',
   filterMatches: 'Is "{value}"',
   filterBoth: '{condition} and {set}',

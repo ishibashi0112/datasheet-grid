@@ -2,8 +2,9 @@
 //   - 走査対象は「ビュー行 × 可視列(合成列を除く)」の表示文字列(valueFormatter 適用後 = 画面に見えている文字)。
 //   - 1 セル内の複数ヒットも個別のヒット(FindMatch)として数えます(順送りの単位 = ヒット)。
 //   - buildFindIndex は描画側(renderCellContent)が O(1) で「このセルのヒット範囲」を引くための索引です。
-import type { GridColumn } from '../model/gridTypes.unbound';
+import type { CellStyleContext, GridColumn } from '../model/gridTypes.unbound';
 import { getCellValue } from '../utils/permissions';
+import { resolveChipSpec } from './conditionalFormat';
 
 export type FindMatch = {
   rowIndex: number;
@@ -19,10 +20,34 @@ export type FindRange = { start: number; length: number; matchIndex: number };
 // rowIndex → colIndex → そのセル内のヒット範囲(表示順)。
 export type FindIndex = ReadonlyMap<number, ReadonlyMap<number, readonly FindRange[]>>;
 
+// 追加(1.0.2 / G-16): チップの関数(`conditionalFormat.chips` の関数版)へ渡す、行の位置。セルの状態(アクティブ /
+//   選択 / 編集中 / 読み取り専用)は検索では見ないので false で渡します。
+export type FindChipPosition = Pick<CellStyleContext<unknown>, 'rowIndex' | 'sourceRowIndex' | 'rowKey' | 'colIndex'>;
+
 // 既定セルの表示文字列(renderCellContent の既定分岐と同じ規則)。
-export const resolveFindCellText = <T,>(column: GridColumn<T>, row: T): string => {
+// 変更(1.0.2 / 2026-11-09 実アプリの総点検 G-16): 状態チップ(`conditionalFormat.chips`)の `label` で文字を変えた
+//   セルは、画面に出ている label を探します(これまでは label の前の値を探し、「FATAL!」と出ているのに「FATAL!」では
+//   見つからなかった)。renderCell の列はチップを描かないので対象外。
+export const resolveFindCellText = <T,>(column: GridColumn<T>, row: T, chipPosition?: FindChipPosition): string => {
   const value = getCellValue(row, column);
-  return column.valueFormatter ? column.valueFormatter({ value, row, column }) : String(value ?? '');
+  const text = column.valueFormatter ? column.valueFormatter({ value, row, column }) : String(value ?? '');
+  const chips = column.renderCell === undefined ? column.conditionalFormat?.chips : undefined;
+  if (chips !== undefined && chipPosition !== undefined) {
+    const label = resolveChipSpec<T>(chips, {
+      ...chipPosition,
+      row,
+      value,
+      column,
+      isActive: false,
+      isSelected: false,
+      isEditing: false,
+      readOnly: false,
+    })?.label;
+    if (label !== undefined) {
+      return label;
+    }
+  }
+  return text;
 };
 
 // 追加(1.0 前の最終チェック FC-26): 検索の対象にする列か。合成列のほか、文字を出さない列(チェックボックスのエディタ =

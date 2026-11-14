@@ -40,6 +40,39 @@ describe('resolveFindCellText', () => {
     expect(resolveFindCellText(plain, { name: 'a', qty: null })).toBe('');
     expect(resolveFindCellText(formatted, { name: 'a', qty: 12 })).toBe('12個');
   });
+
+  // 追加(1.0.2 / 2026-11-09 実アプリの総点検 G-16): 状態チップの label で文字を変えたセルは label を探す。
+  it('チップの label があれば label(マップ / 関数。label の無いチップと renderCell の列は表示文字列)', () => {
+    const position = { rowIndex: 3, sourceRowIndex: 5, rowKey: 'k', colIndex: 0 };
+    const mapped: GridColumn<Row> = {
+      key: 'name',
+      title: 'Name',
+      width: 80,
+      conditionalFormat: { chips: { FATAL: { tone: 'critical', label: 'FATAL!' }, WARN: 'warning' } },
+    };
+    expect(resolveFindCellText(mapped, { name: 'FATAL', qty: 1 }, position)).toBe('FATAL!');
+    expect(resolveFindCellText(mapped, { name: 'WARN', qty: 1 }, position)).toBe('WARN');
+    expect(resolveFindCellText(mapped, { name: 'INFO', qty: 1 }, position)).toBe('INFO');
+    // 位置を渡さないとき(チップを見ない呼び出し)は今までどおり
+    expect(resolveFindCellText(mapped, { name: 'FATAL', qty: 1 })).toBe('FATAL');
+    const seen: unknown[] = [];
+    const byFunction: GridColumn<Row> = {
+      key: 'qty',
+      title: 'Qty',
+      width: 80,
+      conditionalFormat: {
+        chips: (ctx) => {
+          seen.push([ctx.rowIndex, ctx.sourceRowIndex, ctx.rowKey, ctx.isActive]);
+          return Number(ctx.value) > 10 ? { tone: 'good', label: '多い' } : null;
+        },
+      },
+    };
+    expect(resolveFindCellText(byFunction, { name: 'a', qty: 12 }, position)).toBe('多い');
+    expect(resolveFindCellText(byFunction, { name: 'a', qty: 3 }, position)).toBe('3');
+    expect(seen[0]).toEqual([3, 5, 'k', false]);
+    const rendered: GridColumn<Row> = { ...mapped, renderCell: () => null };
+    expect(resolveFindCellText(rendered, { name: 'FATAL', qty: 1 }, position)).toBe('FATAL');
+  });
 });
 
 describe('buildFindIndex / splitTextByFindRanges', () => {

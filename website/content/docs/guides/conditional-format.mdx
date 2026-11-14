@@ -48,7 +48,7 @@ chips: {
 chips: ({ row }) => (row.stock === 0 ? 'critical' : null)
 ```
 
-`label` 省略時はセルの表示文字列(`valueFormatter` 適用後。[セル内検索](/docs/guides/find)の強調もそのまま)。マップに載っていない値はふつうの文字のままです。
+`label` 省略時はセルの表示文字列(`valueFormatter` 適用後。[セル内検索](/docs/guides/find)の強調もそのまま)。`label` を書いたときは、セル内検索も画面に出ている `label` を探します。マップに載っていない値はふつうの文字のままです。
 
 ## 見た目と影響範囲
 

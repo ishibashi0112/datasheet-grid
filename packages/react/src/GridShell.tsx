@@ -923,6 +923,19 @@ export function useGridShell<T extends object>({
     gridRootRef,
   });
   const columnMenuEnabled = enableColumnMenu && columnMenuAvailable;
+  // 追加(1.0.2 / 2026-11-09 実アプリの総点検 C-09): 列フィルターを開いたまま別の列(同じ列も)の ⋮ を押すと、列メニューが
+  //   フィルターに重なって開き、Escape の後もフィルターが残っていました。⋮ の pointerdown はヘッダーの列の範囲選択と
+  //   ぶつからないよう伝播を止めるので、フィルター側の「外を押したら閉じる」に届きません。⋮ を押したらここで閉じます
+  //   (外を押して閉じたときと同じくフォーカスはグリッドへ)。
+  const openColumnMenuFromButtonClosingFilter = useCallback(
+    (column: GridColumn<T>, event: PointerEvent<HTMLButtonElement>) => {
+      if (isFilterPopoverOpen && event.button === 0) {
+        closeColumnFilterPopover();
+      }
+      openColumnMenuFromButton(column, event);
+    },
+    [isFilterPopoverOpen, closeColumnFilterPopover, openColumnMenuFromButton],
+  );
 
   // ── tool panel(UP-1) ─────────────────────────────────
   // 変更(UP-1): フィルター管理 / 列の表示 / 並び替えの独立 3 パネルを、SegmentedControl で
@@ -3735,9 +3748,10 @@ export function useGridShell<T extends object>({
       }
       // 追加(F-2): セル内検索のヒットを <mark> にします(既定セルだけ。カレントは --current)。
       const findRanges = findIndex.get(rowIndex)?.get(colIndex);
-      const textContent: ReactNode =
+      // 変更(1.0.2 / G-16): チップの label にも同じ強調を付けるため、文字を受ける形にしました。
+      const highlightFind = (text: string): ReactNode =>
         findRanges && findRanges.length > 0 && splitTextByFindRanges
-          ? splitTextByFindRanges(formattedText, findRanges).map((segment, segmentIndex) =>
+          ? splitTextByFindRanges(text, findRanges).map((segment, segmentIndex) =>
               segment.range ? (
                 <mark
                   key={segmentIndex}
@@ -3752,7 +3766,8 @@ export function useGridShell<T extends object>({
                 segment.text
               ),
             )
-          : formattedText;
+          : text;
+      const textContent = highlightFind(formattedText);
       // 追加(F-3): 状態チップ(値 → 色味 / 指定)。ラベル省略時は表示文字列(検索の強調つき)。
       if (conditionalFormatFeature && conditionalFormat?.chips) {
         const chip = conditionalFormatFeature.resolveChipSpec(conditionalFormat.chips, {
@@ -3771,7 +3786,7 @@ export function useGridShell<T extends object>({
         if (chip) {
           return (
             <conditionalFormatFeature.GridChip spec={chip}>
-              {chip.label === undefined || chip.label === formattedText ? textContent : chip.label}
+              {chip.label === undefined || chip.label === formattedText ? textContent : highlightFind(chip.label)}
             </conditionalFormatFeature.GridChip>
           );
         }
@@ -4533,7 +4548,7 @@ export function useGridShell<T extends object>({
                   enableColumnMenu={columnMenuEnabled}
                   enableColumnResize={enableColumnResize}
                   openedMenuColumnKey={openedMenuColumnKey}
-                  onColumnMenuButtonPointerDown={openColumnMenuFromButton}
+                  onColumnMenuButtonPointerDown={openColumnMenuFromButtonClosingFilter}
                   onColumnMenuButtonClick={openColumnMenuFromButtonClick}
                   onColumnHeaderContextMenu={openColumnMenuFromContextMenu}
                   onColumnDragHandlePointerDown={headerDragHandler}
@@ -4756,7 +4771,7 @@ export function useGridShell<T extends object>({
                 enableColumnMenu={columnMenuEnabled}
                 enableColumnResize={enableColumnResize}
                 openedMenuColumnKey={openedMenuColumnKey}
-                onColumnMenuButtonPointerDown={openColumnMenuFromButton}
+                onColumnMenuButtonPointerDown={openColumnMenuFromButtonClosingFilter}
                   onColumnMenuButtonClick={openColumnMenuFromButtonClick}
                 onColumnHeaderContextMenu={openColumnMenuFromContextMenu}
                 onColumnDragHandlePointerDown={headerDragHandler}
@@ -4982,7 +4997,7 @@ export function useGridShell<T extends object>({
                   enableColumnMenu={columnMenuEnabled}
                   enableColumnResize={enableColumnResize}
                   openedMenuColumnKey={openedMenuColumnKey}
-                  onColumnMenuButtonPointerDown={openColumnMenuFromButton}
+                  onColumnMenuButtonPointerDown={openColumnMenuFromButtonClosingFilter}
                   onColumnMenuButtonClick={openColumnMenuFromButtonClick}
                   onColumnHeaderContextMenu={openColumnMenuFromContextMenu}
                   onColumnDragHandlePointerDown={headerDragHandler}

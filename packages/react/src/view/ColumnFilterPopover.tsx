@@ -946,6 +946,17 @@ function DateSetFilterBody({
     return count;
   };
 
+  // 追加(1.0.2 / 2026-11-09 実アプリの総点検 G-11): 木の行のチェックの切り替え(チェックボックスと、行の文字 / 余白の
+  //   クリックで共通)。リーフはその値、親は配下リーフの一括トグル(全選択なら解除 / それ以外は全選択)。
+  const toggleTreeRow = (row: DateTreeRow) => {
+    if (row.type === 'leaf') {
+      onValueToggle(row.key);
+      return;
+    }
+    const checked = row.leafKeys.length > 0 && countSelectedLeaves(row.leafKeys) === row.leafKeys.length;
+    onSelectAllChange(row.leafKeys, !checked);
+  };
+
   const renderTreeRow = (row: DateTreeRow) => {
     const selectedLeafCount = countSelectedLeaves(row.leafKeys);
     const isChecked =
@@ -987,14 +998,7 @@ function DateSetFilterBody({
           }}
           // 追加(1.0.1 / 2026-11-09 実アプリの総点検 AP-34): 木の行は label で包まない(開閉ボタンを含む)ので、名前を付けます。
           aria-label={displayOptionLabel(row.key, row.label, texts.blank)}
-          onChange={() => {
-            if (row.type === 'leaf') {
-              onValueToggle(row.key);
-              return;
-            }
-            // 親は配下リーフの一括トグルです(全選択なら解除 / それ以外は全選択)。
-            onSelectAllChange(row.leafKeys, !isChecked);
-          }}
+          onChange={() => toggleTreeRow(row)}
         />
         <span className="ssg-filter-option-label">{displayOptionLabel(row.key, row.label, texts.blank)}</span>
       </>
@@ -1099,6 +1103,8 @@ function DateSetFilterBody({
                 return null;
               }
               return (
+                // 変更(1.0.2 / G-11): 行の文字(「2 日」「11 月」)や余白を押してもチェックを切り替えます(set の一覧は行全体が
+                //   label で、文字を押しても切り替わるのにそろえる)。開閉ボタンとチェックボックスそのものは除く。
                 <div
                   key={row.key}
                   className="ssg-filter-option"
@@ -1106,6 +1112,13 @@ function DateSetFilterBody({
                     transform: `translateY(${virtualItem.start}px)`,
                     height: virtualItem.size,
                     paddingLeft: 8 + row.depth * 16,
+                  }}
+                  onClick={(event) => {
+                    const target = event.target as Element;
+                    if (target.closest('button, input')) {
+                      return;
+                    }
+                    toggleTreeRow(row);
                   }}
                 >
                   {renderTreeRow(row)}
@@ -1501,9 +1514,29 @@ export function ColumnFilterPopover({
       optionsStatus === 'collecting' ? (
         // 追加(DS-4 #1): 大規模列(>閾値)の候補収集中です。universe 未確定のため操作 UI は出さず、
         //   進捗のみ表示します(収集完了 = ready で本来の set / select UI へ切り替わります)。
-        <div className="ssg-filter-collecting">
-          {formatLocaleText(texts.filterCollecting, { percent: Math.round(optionsProgress * 100) })}
-        </div>
+        // 変更(1.0.2 / 2026-11-09 実アプリの総点検 G-06): 複合列(numberSet / textSet / dateSet)は、条件の欄(dateSet の
+        //   プリセットも)を出したまま、値の一覧の位置に進捗を出します(条件は候補に依存しない。getFilterOptions の取得中と
+        //   同じ)。100 万行では数秒、条件も使えませんでした。
+        isComboFilter ? (
+          <ComboFilterLayout
+            conditionEditor={comboConditionEditor}
+            conditionActive={comboConditionActive}
+            onConditionClear={onComboConditionClear}
+            options={comboOptions}
+            setSelection={setSelection}
+            onSelectionClear={onComboSelectionClear}
+            summaryText={comboSummaryText}
+            optionsMeta={texts.filterOptionsLoadingShort}
+          >
+            <div className="ssg-filter-collecting">
+              {formatLocaleText(texts.filterCollecting, { percent: Math.round(optionsProgress * 100) })}
+            </div>
+          </ComboFilterLayout>
+        ) : (
+          <div className="ssg-filter-collecting">
+            {formatLocaleText(texts.filterCollecting, { percent: Math.round(optionsProgress * 100) })}
+          </div>
+        )
       ) : (isImmediateFilter || filterType === 'select') && optionsPending ? (
         // 追加(async-options): getFilterOptions からの取得中 / 失敗です。複合列は条件エディタを出したまま
         //   Set 一覧の位置に状態を表示し(条件は候補に依存しない)、set / select は本体全体を状態表示にします。

@@ -23,6 +23,8 @@ import { DEFAULT_FILTER_LOCALE_TEXT, formatLocaleText, type FilterLocaleText } f
 //                    clear 済みの防御表示)。母数(全候補数)はフィルター値に保存されない
 //                    (収集コストが高い)ため出しません。
 //   - set(exclude): 「N 件を除外」(values は非選択値 = 除外対象そのもの)
+//                    変更(1.0.2 / 2026-11-09 実アプリの総点検 I-04): 1〜2 件は include と同じく値を並べて
+//                    「"x", "y" を除外」(何を除いたかがフィルターの画面を開かないと分からなかった)。
 //   - custom       : value が非空 string なら「"x"」(trim)、それ以外は「カスタム条件」
 //     (custom の中身は利用側 filterFn の自由形のため、汎用の安全側表示に留めます)
 
@@ -64,12 +66,15 @@ const describeSetSelection = (
   labelOf: ((value: string) => string | undefined) | undefined,
   texts: FilterLocaleText,
 ): string => {
+  const listed = values.length > 0 && values.length <= 2 ? values.map((value) => formatSetValue(value, labelOf, texts)).join(', ') : null;
   // mode 省略は include 扱いです(反転set 導入前の値との後方互換)。
   if ((mode ?? 'include') === 'exclude') {
-    return formatLocaleText(texts.filterExcluded, { count: values.length });
+    return listed === null
+      ? formatLocaleText(texts.filterExcluded, { count: values.length })
+      : formatLocaleText(texts.filterExcludedValues, { values: listed });
   }
-  if (values.length > 0 && values.length <= 2) {
-    return values.map((value) => formatSetValue(value, labelOf, texts)).join(', ');
+  if (listed !== null) {
+    return listed;
   }
   return formatLocaleText(texts.filterSelected, { count: values.length });
 };
@@ -134,7 +139,10 @@ export const describeColumnFilterValue = (
       if (!value.parsed) {
         return value.raw;
       }
-      return formatNumber || value.raw === formatParsedNumberFilter(value.parsed)
+      // 変更(1.0.2 / D-03): raw はグリッドの文言で作るので、今の文言の書き方どおりのときも作り直します。
+      return formatNumber ||
+        value.raw === formatParsedNumberFilter(value.parsed) ||
+        value.raw === formatParsedNumberFilter(value.parsed, String, texts)
         ? formatParsedNumberFilter(value.parsed, formatNumber, texts)
         : value.raw;
     case 'set':

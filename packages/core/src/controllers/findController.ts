@@ -193,13 +193,25 @@ export const createFindController = <T,>(): FindController<T> => {
     const total = rowModel.getRowCount();
     // 控えは大きな表だけで使います(小さな表は毎回読み直す。列の getValue / valueFormatter が行の外の値を読んでも古くならない)。
     const useCache = total > FIND_HIT_CACHE_ROW_THRESHOLD;
-    const hitsOf = (row: T): readonly RowFindHit[] => {
+    // 変更(1.0.2 / G-16): チップの label を探すため、行の位置も渡します(チップの関数へ渡す)。
+    const hitsOf = (row: T, rowIndex: number): readonly RowFindHit[] => {
       const hits: RowFindHit[] = [];
       columns.forEach((column, colIndex) => {
         if (isSyntheticColumnKey(column.key) || !isFindableColumn(column)) {
           return;
         }
-        const text = resolveFindCellText(column, row);
+        const text = resolveFindCellText(
+          column,
+          row,
+          column.conditionalFormat?.chips === undefined
+            ? undefined
+            : {
+                rowIndex,
+                sourceRowIndex: rowModel.getSourceIndex(rowIndex) ?? rowIndex,
+                rowKey: rowModel.getRowKey(rowIndex) ?? rowIndex,
+                colIndex,
+              },
+        );
         for (const range of findRangesInText(text, query, caseSensitive)) {
           hits.push({ colIndex, columnKey: String(column.key), start: range.start, length: range.length });
         }
@@ -223,13 +235,13 @@ export const createFindController = <T,>(): FindController<T> => {
         if (useCache && typeof row === 'object' && row !== null) {
           hits = byRow.get(row);
           if (hits === undefined) {
-            hits = hitsOf(row);
+            hits = hitsOf(row, rowIndex);
             byRow.set(row, hits);
           } else {
             cacheHits += 1;
           }
         } else {
-          hits = hitsOf(row);
+          hits = hitsOf(row, rowIndex);
         }
         for (const hit of hits) {
           if (matches.length >= MAX_FIND_MATCHES) {
