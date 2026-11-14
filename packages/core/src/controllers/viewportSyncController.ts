@@ -126,7 +126,11 @@ export const scrollCellIntoView = (
   // 固定ペインのセルは常に横の見える範囲にあるので横は動かしません(rect はそのペインのローカル座標で、中央ペインの
   //   位置ではない)。
   const pinned = args.activeCellPinned === true;
+  // 変更(1.0.2 の確かめ直し): 見える幅より広い列は左端に合わせます(縦の背の高い行と同じ。これまでは右の列へ動くと列の右端に
+  //   合わせ、書き出しが見えなかった。logic/scrollTargets の 'auto' も同じ)。
   if (!pinned && cellLeft < visibleLeft) {
+    nextScrollLeft = Math.max(cellLeft - args.leftPaneWidth, 0);
+  } else if (!pinned && cellRight > visibleRight && rect.width > visibleRight - visibleLeft) {
     nextScrollLeft = Math.max(cellLeft - args.leftPaneWidth, 0);
   } else if (!pinned && cellRight > visibleRight) {
     nextScrollLeft = Math.max(

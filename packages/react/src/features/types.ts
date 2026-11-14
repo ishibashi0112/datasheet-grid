@@ -397,7 +397,9 @@ export interface GridFeature<K extends GridFeatureName> {
   readonly [gridFeatureBrand]: K;
 }
 /** `createSpreadsheetGrid` の `features` の型(機能セットのキー → その機能の部品)。どの機能も省略できます。 */
-export type GridFeatures = { [K in GridFeatureName]?: GridFeature<K> };
+// 変更(1.0.2 の確かめ直し / K-08): `| undefined` を足します(利用側の exactOptionalPropertyTypes で
+//   `find: compact ? undefined : findFeature` のように書けるように。実行時は undefined を「無い」と同じに扱う)。
+export type GridFeatures = { [K in GridFeatureName]?: GridFeature<K> | undefined };
 // 機能の部品の中身の型(内部)。features/<名前> が satisfies で使います。
 export type GridFeatureParts<K extends GridFeatureName> = NonNullable<ReactGridFeatures[K]>;
 

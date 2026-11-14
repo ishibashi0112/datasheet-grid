@@ -379,7 +379,8 @@ const closeAll = async (page) => {
     }, key);
   const left = await measure('name');
   // 変更(1.0.2 / C-07・F-11): 幅 120px 以上の見出しは操作をホバーのときだけ文字の後ろに並べるので、ホバーしていない間の操作の位置は見ない。
-  check('headerAlign: a column without align keeps the label on the left and actions on the right', left && Math.abs(left.textLeft) < 1 && (left.inline ? left.actionsOpacity === 0 : left.actionsAtRight), left);
+  //   ホバーの無い環境(タッチ / geckodriver の Firefox)では操作は常に出ていて、これまでどおり右端。
+  check('headerAlign: a column without align keeps the label on the left and actions on the right', left && Math.abs(left.textLeft) < 1 && (left.inline && !left.hoverNone ? left.actionsOpacity === 0 : left.actionsAtRight), left);
   const right = await measure('qty');
   check('headerAlign: align right -> the label text ends at the right edge of the cell content', right && Math.abs(right.textRight) < 1, right);
   check('headerAlign: align right -> the sort arrow sits to the left of the label', right?.statusLeftOfText === true, right);

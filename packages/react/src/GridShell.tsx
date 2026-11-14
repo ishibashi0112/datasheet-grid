@@ -3568,6 +3568,8 @@ export function useGridShell<T extends object>({
   //   ↓ を押すと表の先頭へ飛んでいた。
   //   変更(1.0.2 / レビュー QA-6): その列が横の見える範囲に無ければ、見えている先頭のデータ列にします(アクティブセルの列を横に
   //   スクロールして外した後に行を落とすと、横のスクロールがその列まで飛んでいた)。見えているデータ列が無ければその列のまま。
+  //   変更(1.0.2 の確かめ直し): 丸ごと見えているデータ列が無い(見える幅が列 1 本より狭い)ときは、いちばん広く見えているデータ列に
+  //   します(隠れた列のままで横のスクロールが飛んでいた。見せ直すずれは見えていない部分だけ)。
   const commitRowMoveFromDrag = useCallback(
     (fromIndex: number, toIndex: number) => {
       const moved = commitRowMove(fromIndex, toIndex);
@@ -3576,23 +3578,44 @@ export function useGridShell<T extends object>({
         const column = orderedColumns[col];
         return column !== undefined && !isControlColumnKey(column.key);
       };
-      const isColInView = (col: number): boolean => {
+      // 列の見えている幅と、丸ごと見えているか(固定ペインの列はいつも見えている)。
+      const resolveColVisibility = (col: number): { visible: number; whole: boolean } => {
         const single = computeSinglePaneColumnExtent(paneLayout, col);
         const scrollElement = scrollContainerRef.current;
         if (!single || single.pane !== 'center' || !scrollElement) {
-          return single !== null;
+          return single !== null ? { visible: single.extent.width, whole: true } : { visible: 0, whole: false };
         }
         const left = leftPaneTotalWidth + centerLeadingWidth + single.extent.start;
+        const right = left + single.extent.width;
         const visibleLeft = scrollElement.scrollLeft + leftPaneTotalWidth;
         const visibleRight = scrollElement.scrollLeft + scrollElement.clientWidth - rightPaneTotalWidth;
-        return left >= visibleLeft && left + single.extent.width <= visibleRight;
+        return {
+          visible: Math.max(0, Math.min(right, visibleRight) - Math.max(left, visibleLeft)),
+          whole: left >= visibleLeft && right <= visibleRight,
+        };
       };
       const activeCol = gridStore.getState().activeCell?.col;
       let col = activeCol !== undefined && isDataCol(activeCol) ? activeCol : resolveFirstDataColIndex(orderedColumns);
-      if (!isColInView(col)) {
-        const visibleCol = orderedColumns.findIndex((_, index) => isDataCol(index) && isColInView(index));
-        if (visibleCol >= 0) {
-          col = visibleCol;
+      if (!resolveColVisibility(col).whole) {
+        let widest = -1;
+        let widestVisible = 0;
+        let wholeCol = -1;
+        for (let index = 0; index < orderedColumns.length && wholeCol < 0; index += 1) {
+          if (!isDataCol(index)) {
+            continue;
+          }
+          const visibility = resolveColVisibility(index);
+          if (visibility.whole) {
+            wholeCol = index;
+          } else if (visibility.visible > widestVisible) {
+            widest = index;
+            widestVisible = visibility.visible;
+          }
+        }
+        if (wholeCol >= 0) {
+          col = wholeCol;
+        } else if (widest >= 0 && widestVisible > resolveColVisibility(col).visible) {
+          col = widest;
         }
       }
       gridApi.handle.selectCell(moved ? toIndex : fromIndex, col);

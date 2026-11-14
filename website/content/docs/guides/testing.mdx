@@ -84,7 +84,8 @@ fireEvent.scroll(scroller);
 | エディタの入力欄を取る | 編集中は、エディタの枠(`role="group"`)と入力欄の両方が「(列名) を編集」の名前を持ちます。`getByLabelText('品名 を編集')` は 2 つに当たって落ちるので、`getByRole('textbox', { name: '品名 を編集' })`(number は `spinbutton`、select は `combobox`)で取ります。 |
 | date エディタ | ネイティブの `<input type="date">` なので、`fireEvent.change(input, { target: { value: '2026-11-09' } })` で値を入れます(jsdom の一般的な制約)。 |
 | ハンドルでセルを選んだ後のキー操作 | `selectCell` / `setActiveCell` はフォーカスを移しません。続けてキーを送るときは、ハンドルの `focus()` を呼ぶか、セルを押します。 |
-| ポップオーバーを開いた後のフォーカス | 列フィルターのポップオーバーの入力欄へフォーカスが移るのは、開いてから 2 フレーム後(位置が決まってから)です。`await waitFor(() => expect(input).toHaveFocus())` で待ちます。`Escape` などで閉じたときは、その場でグリッドへ戻ります(1.0.2)。 |
+| ポップオーバーを開いた後のフォーカス | 列フィルターのポップオーバーの入力欄へフォーカスが移るのは、開いてから 2 フレーム後(位置が決まってから)です。`await waitFor(() => expect(input).toHaveFocus())` で待ちます。`Escape` などで閉じたときは、すぐにグリッドへ戻ります(1.0.2。パネルの中のボタンからはその場で、入力欄からはパネルが外れた直後 = `fireEvent` の後の `await act(async () => {})` か user-event の後。blur で確定する入力欄を `Escape` で確定しないため)。 |
+| 実ブラウザ(Playwright など)で列見出しの ⋮ を押す | マウスのある環境では、見出しの操作(⋮ と並べ替えのつまみ)は見出しへポインタを乗せたときだけ現れ、それまではポインタを受けません。`locator.click()` の前に見出しへ `hover()` します(幅 120px 以上の見出しでは、⋮ は乗せたときに文字の後ろへ並ぶ)。 |
 
 ## Jest で使うとき
 

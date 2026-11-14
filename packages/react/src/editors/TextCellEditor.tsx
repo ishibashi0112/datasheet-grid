@@ -54,6 +54,8 @@ const FALLBACK_LINE_HEIGHT = 20;
 // 変更(1.0.2 / G-12 の見直し・レビュー QB-4): 上にそろえたセルは、文字の上に 0.4em の余白があります(auto-height の列は中身の器
 //   .ssg-autoheight-content、ほかの列はセル。styles.css)。エディタもその分(エディタの文字の大きさ = セルの文字の大きさの 0.4 倍)を
 //   余白にします(これまでの 0 のままだと、背の高い行で 1 行目がセルの文字より約 5px 上に出た)。
+// 変更(1.0.2 の確かめ直し): 入力欄の上の枠線(2px)のぶんを余白から引きます(枠線の内側から 0.4em だと、セルの文字より約 2px
+//   下に出ていた)。
 const TOP_ALIGNED_PADDING_EM = 0.4;
 const resolveMultilinePadding = (
   textarea: HTMLTextAreaElement,
@@ -61,7 +63,10 @@ const resolveMultilinePadding = (
   alignTop: boolean,
 ): number => {
   if (alignTop) {
-    return Math.round((Number.parseFloat(getComputedStyle(textarea).fontSize) || 0) * TOP_ALIGNED_PADDING_EM);
+    const style = getComputedStyle(textarea);
+    const fontSize = Number.parseFloat(style.fontSize) || 0;
+    const borderTop = Number.parseFloat(style.borderTopWidth) || 0;
+    return Math.max(0, Math.round(fontSize * TOP_ALIGNED_PADDING_EM - borderTop));
   }
   textarea.style.paddingTop = '0px';
   textarea.style.paddingBottom = '0px';

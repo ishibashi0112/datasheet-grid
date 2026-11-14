@@ -2651,7 +2651,10 @@ export type SpreadsheetGridHandle<T> = {
    */
   scrollToRow: (viewRowIndex: number, options?: { align?: ScrollAlign | undefined }) => void;
   // 指定セルが可視になるよう縦横スクロールします(固定列は横スクロール対象外)。
-  /** 指定セルを縦横とも可視域へ。固定列(左右ピン)は常に可視のため横スクロールしない。 */
+  /**
+   * 指定セルを縦横とも可視域へ。固定列(左右ピン)は常に可視のため横スクロールしない。`'auto'` では、
+   * 見える幅より広い列は左端に合わせる。
+   */
   scrollToCell: (
     viewRowIndex: number,
     colIndex: number,

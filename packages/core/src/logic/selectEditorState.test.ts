@@ -136,5 +136,16 @@ describe('findOptionByComposedText', () => {
   it('一致しない / 空白だけは null', () => {
     expect(findOptionByComposedText(makers, '福岡')).toBeNull();
     expect(findOptionByComposedText(makers, '  ')).toBeNull();
+    expect(findOptionByComposedText(makers, '\u3000')).toBeNull();
+  });
+  it('全角の英数字は半角に寄せて比べる(IME がオンのまま英字を打った確定)', () => {
+    const owners = [
+      { value: 'm', label: 'Mika' },
+      { value: 's', label: 'Sato' },
+      { value: 'f', label: 'ＦＵＪＩ' },
+    ];
+    expect(findOptionByComposedText(owners, 'ｓ')).toBe(1);
+    expect(findOptionByComposedText(owners, 'ＳＡ')).toBe(1);
+    expect(findOptionByComposedText(owners, 'fu')).toBe(2);
   });
 });

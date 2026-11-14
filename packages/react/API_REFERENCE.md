@@ -1558,13 +1558,13 @@ const gridRef = useRef<SpreadsheetGridHandle<Row>>(null);
 | メソッド | 説明 |
 | --- | --- |
 | `scrollToRow(viewRowIndex, { align? })` | 指定行を可視域へ。`align`(既定 `'auto'`): `'auto'`(最小スクロール。見える高さより背の高い行は上端に合わせる) / `'start'` / `'center'` / `'end'`。`labelRow.sticky` の表では、`'start'` と上へ動かす `'auto'` は行を固定した見出しの下に置く。 |
-| `scrollToCell(viewRowIndex, colIndex, { align? })` | 指定セルを縦横とも可視域へ。固定列(左右ピン)は常に可視のため横スクロールしない。 |
+| `scrollToCell(viewRowIndex, colIndex, { align? })` | 指定セルを縦横とも可視域へ。固定列(左右ピン)は常に可視のため横スクロールしない。`'auto'` では、見える幅より広い列は左端に合わせる。 |
 | `scrollToTop()` / `scrollToBottom()` | 先頭 / 末尾へ。行高を実測するモード(auto-height 列 / 展開行)でも、`scrollToBottom()` は直後の計測で総高が伸びた分を短時間(約 1 秒・上スクロールで中断)自動で再補正し、1 回の呼び出しで末尾に届く。 |
 | `getVisibleRowRange()` | 現在描画中の行ウィンドウ `{ startIndex, endIndex }`(end 排他)。空は `null`。 |
 | `getScrollPosition()` | 現在のスクロール位置 `{ top, left }`(px)。値はスクロールコンテナの生の `scrollTop` / `scrollLeft` で、`setScrollPosition` / `onScroll` と同一基準(往復で一貫)。未マウント時は `null`。 |
 | `setScrollPosition({ top?, left? }, { behavior? })` | スクロール位置の設定(px)。省略側は現状維持・スクロール可能範囲へクランプ。`behavior` は `'auto'`(既定・即時)/ `'smooth'`。2 グリッドの双方向同期では `'auto'` を推奨(`'smooth'` は途中フレームの `onScroll` が `source:'user'` になり得る)。 |
 
-スクロール変化の**通知**は props 側の `onScroll` で受け取る(`{ top, left, source }`・rAF で 1 フレーム 1 回に間引き)。`source: 'api'` は `setScrollPosition` / `scrollTo*` 系由来、`'user'` はそれ以外(ホイール / ドラッグ / キーボード等。絞り込みや行の高さの測り直しで表が縮み、ブラウザが位置を詰めた分も `'user'` で届くので、「人が動かした」の判定には使えない)。2 グリッドの双方向スクロール同期は「`onScroll` で `source === 'user'` のときだけ相手の `setScrollPosition` を呼ぶ」ことでループを止められる(proposals ⑧)。 末尾を追う(ログのように行が増えるたびに末尾を見せる)ときは、行を足す前に末尾にいるかを `.ssg-scroll-container` の `scrollHeight - scrollTop - clientHeight < 1` で確かめ、末尾にいたら足した後に `scrollToBottom()` を呼ぶ(`onScroll` の `source` では判定しない)。
+スクロール変化の**通知**は props 側の `onScroll` で受け取る(`{ top, left, source }`・rAF で 1 フレーム 1 回に間引き)。`source: 'api'` は `setScrollPosition` / `scrollTo*` 系由来、`'user'` はそれ以外(ホイール / ドラッグ / キーボード等。絞り込みや行の高さの測り直しで表が縮み、ブラウザが位置を詰めた分も `'user'` で届くので、「人が動かした」の判定には使えない)。2 グリッドの双方向スクロール同期は「`onScroll` で `source === 'user'` のときだけ相手の `setScrollPosition` を呼ぶ」ことでループを止められる(proposals ⑧)。 末尾を追う(ログのように行が増えるたびに末尾を見せる)ときは、行を足す前に末尾にいるかを `.ssg-scroll-container` の `scrollHeight - scrollTop - clientHeight < 1` で確かめ、末尾にいたら足した後に `scrollToBottom()` を呼ぶ(`onScroll` の `source` では判定しない)。絞り込みを外して表が伸びたときのように、行を足す以外で末尾から離れたときも追い続けるなら、その後に `scrollToBottom()` を呼ぶ。
 
 ### 選択 / アクティブセル
 
@@ -2031,39 +2031,39 @@ export const OrdersTable = () => <Grid columns={columns} dataSource={dataSource}
 - **画面の入口は機能の組み合わせで決まる**: 列フィルターを画面から掛ける入口は列メニューの「フィルター…」と、適用中フィルターのチップ(ツールパネル)なので、`filtering` だけでは列フィルターを追加できない(グローバル検索欄は使える)。ツールパネルを開く入口は列メニューの項目、適用中フィルターのチップ、`openFilterManager` なので、`toolPanel` は `columnMenu` か `filtering` と一緒に使う(どちらも無いと代役になり、部品も読み込まない)。列メニューの「幅の自動調整」は `columnAutosize` があるときだけ出る。
 - **機能が無いときの扱い(注意が要るもの)**: `filtering` が無いとグローバル / 列フィルターは無効(`enableGlobalFilter` / `enableColumnFilter` を false として扱う)で、`applyState` で渡したフィルターは状態には残るが行には効かない(開発時に警告。上部 / 下部バーの「絞り込み: …」にも数えない)。`serverSide` が無いと `dataSource` を無視して clientSide で動く。`labelRow` が無いとラベル行の述語に当たる行もデータ行として並ぶ。`rowGroup` の列は `grouping` が無ければグループ化せずそのまま表示。`autoHeight` が無いと行の高さは一定(`rowHeight`)。`toolPanel` があっても `filtering` が無ければフィルタータブは出ず、`openFilterManager` は何もしない(全部入りで `enableColumnFilter={false}` にしたときと同じ。開発時に警告)。
 - Next.js(App Router)では、`createSpreadsheetGrid` を呼ぶファイルに `'use client'` を付ける。作ったコンポーネントや `standardFeatures` は関数なので、サーバーコンポーネントから props で渡せない(クライアントコンポーネントの中で import して使う)。
-- 全部入りの `SpreadsheetGrid` と同じアプリで混ぜることはできるが、`/lite` は機能ごとのファイルに分けた別のビルドなので共通部分を共有しない。同じページで両方を使うと共通部分が二重に入り(esbuild の実測で、全部入りだけのときより約 +32KB)、ページを分けても `/lite` だけのページが大きくなることがある(Next.js 16 の Turbopack の実測で、`standardFeatures` のページが約 90KB → 約 97KB)。どちらかの入口に揃える。
+- 全部入りの `SpreadsheetGrid` と同じアプリで混ぜることはできるが、`/lite` は機能ごとのファイルに分けた別のビルドなので共通部分を共有しない。同じページで両方を使うと共通部分が二重に入り(esbuild の実測で、全部入りだけのときより約 +34KB)、ページを分けても `/lite` だけのページが大きくなることがある(Next.js 16 の Turbopack の実測で、`standardFeatures` のページが約 90KB → 約 97KB)。どちらかの入口に揃える。
 
 | キー | 部品 | 中身(関係する prop) | 目安(gzip) |
 | --- | --- | --- | --- |
-| `filtering` | `filteringFeature` | グローバル / 列フィルター、フィルターのポップオーバー(遅延読み込み)、チップバー、非同期の候補(`enableGlobalFilter` / `enableColumnFilter` / `columns[].filterType` / `getFilterOptions` / `showFilterChipBar` / `onFiltersChange` / `manualFiltering` ほか) | +13.4KB(+ 遅延 8.2KB) |
-| `fillHandle` | `fillHandleFeature` | フィルハンドル(`fillHandle`) | +9.2KB |
-| `columnReorder` | `columnReorderFeature` | 列ヘッダーのドラッグ並べ替え(`onColumnsChange` 指定時 / `columnDragMotion`) | +5.9KB |
-| `rowDrag` | `rowDragFeature` | 行のドラッグ並べ替え(`enableRowDrag` / `isRowDraggable` / `onRowMove` / `rowDragMotion`。ハンドルの `moveRow()` は本体にあるので無くても使える) | +4.6KB |
-| `serverSide` | `serverSideFeature` | サーバーサイド行モデル(SSRM)の読み取りと書き戻し、保存状態の表示(`dataSource` / `serverSideRefreshToken` / `showSaveStatus` ほか) | +4.6KB |
-| `columnMenu` | `columnMenuFeature` | 列メニュー(ソート・固定。幅の自動調整は `columnAutosize`、フィルターの入口は `filtering`、パネルの入口は `toolPanel` があるとき。`enableColumnMenu`) | +3.4KB |
-| `find` | `findFeature` | セル内検索(`find` / `onFindChange`) | +2.7KB |
+| `filtering` | `filteringFeature` | グローバル / 列フィルター、フィルターのポップオーバー(遅延読み込み)、チップバー、非同期の候補(`enableGlobalFilter` / `enableColumnFilter` / `columns[].filterType` / `getFilterOptions` / `showFilterChipBar` / `onFiltersChange` / `manualFiltering` ほか) | +13.8KB(+ 遅延 8.2KB) |
+| `fillHandle` | `fillHandleFeature` | フィルハンドル(`fillHandle`) | +9.3KB |
+| `columnReorder` | `columnReorderFeature` | 列ヘッダーのドラッグ並べ替え(`onColumnsChange` 指定時 / `columnDragMotion`) | +6.0KB |
+| `rowDrag` | `rowDragFeature` | 行のドラッグ並べ替え(`enableRowDrag` / `isRowDraggable` / `onRowMove` / `rowDragMotion`。ハンドルの `moveRow()` は本体にあるので無くても使える) | +4.8KB |
+| `serverSide` | `serverSideFeature` | サーバーサイド行モデル(SSRM)の読み取りと書き戻し、保存状態の表示(`dataSource` / `serverSideRefreshToken` / `showSaveStatus` ほか) | +4.7KB |
+| `columnMenu` | `columnMenuFeature` | 列メニュー(ソート・固定。幅の自動調整は `columnAutosize`、フィルターの入口は `filtering`、パネルの入口は `toolPanel` があるとき。`enableColumnMenu`) | +3.5KB |
+| `find` | `findFeature` | セル内検索(`find` / `onFindChange`) | +2.9KB |
 | `grouping` | `groupingFeature` | 行グルーピングと集計(`columns[].rowGroup` / `aggFunc`) | +2.7KB |
-| `export` | `exportFeature` | CSV / TSV / `getExportData`(ハンドルの `exportCsv` / `downloadCsv` / `getExportData`) | +2.5KB |
-| `scrollHint` | `scrollHintFeature` | スクロール位置インジケーター(`scrollHint`) | +2.4KB |
-| `columnAutosize` | `columnAutosizeFeature` | 列幅の自動調整(境界のダブルクリック・列メニューの項目・`autoSizeColumns`) | +2.2KB |
+| `columnAutosize` | `columnAutosizeFeature` | 列幅の自動調整(境界のダブルクリック・列メニューの項目・`autoSizeColumns`) | +2.5KB |
+| `export` | `exportFeature` | CSV / TSV / `getExportData`(ハンドルの `exportCsv` / `downloadCsv` / `getExportData`) | +2.4KB |
+| `scrollHint` | `scrollHintFeature` | スクロール位置インジケーター(`scrollHint`) | +2.3KB |
 | `selectionAggregates` | `selectionAggregatesFeature` | 選択範囲の集計(`showSelectionAggregates`) | +2.2KB |
-| `contextMenu` | `contextMenuFeature` | セル / 行の右クリックメニュー(`enableContextMenu` / `getContextMenuItems`) | +2.0KB |
-| `toolPanel` | `toolPanelFeature` | ツールパネル(フィルター管理 / 列の表示 / 並び替え。部品は遅延読み込み) | +1.9KB(+ 遅延 7.1KB) |
+| `contextMenu` | `contextMenuFeature` | セル / 行の右クリックメニュー(`enableContextMenu` / `getContextMenuItems`) | +2.2KB |
+| `toolPanel` | `toolPanelFeature` | ツールパネル(フィルター管理 / 列の表示 / 並び替え。部品は遅延読み込み) | +2.0KB(+ 遅延 7.1KB) |
 | `labelRow` | `labelRowFeature` | ラベル行(`labelRow`) | +1.8KB |
 | `totalRow` | `totalRowFeature` | 合計行(`totalRow`) | +1.7KB |
 | `conditionalFormat` | `conditionalFormatFeature` | 条件付き書式とチップ(`columns[].conditionalFormat`) | +1.3KB |
 | `imeDirectInput` | `imeDirectInputFeature` | IME オンのままの直接入力(`imeDirectInput`) | +1.2KB |
 | `motionExtras` | `motionExtrasFeature` | 変更のハイライト、コピー範囲の点線、十字ホバー(`highlightChanges` / `showCopyRange` / `hoverHighlight`) | +1.2KB |
-| `autoHeight` | `autoHeightFeature` | 行の高さの実測(`autoHeight` / `columns[].autoHeight`) | +1.1KB |
+| `autoHeight` | `autoHeightFeature` | 行の高さの実測(`autoHeight` / `columns[].autoHeight`) | +1.2KB |
 
 サイズ(初期読み込みの JS の gzip。esbuild で minify・React は外部化・`@tanstack/virtual-core` 込み。2026-11-08 の dist で計測):
 
 | 構成 | 初期 JS(gzip) |
 | --- | --- |
-| 全部入り(`SpreadsheetGrid`) | 約 136KB |
-| `/lite` 機能なし | 約 77KB |
-| `/lite` + `standardFeatures` | 約 99KB |
-| `/lite` + `standardFeatures` + `serverSideFeature` | 約 103KB |
+| 全部入り(`SpreadsheetGrid`) | 約 140KB |
+| `/lite` 機能なし | 約 80KB |
+| `/lite` + `standardFeatures` | 約 102KB |
+| `/lite` + `standardFeatures` + `serverSideFeature` | 約 107KB |
 
 - 各機能の目安は「機能なし」に 1 つだけ足したときの増え方で、組み合わせると共通部分のぶん合計より少し小さくなる。バンドラーによって数 KB 前後する(0.61.0 の全部入りの実測で、Vite 8(Rolldown)は esbuild より約 1.5KB 小さく、Vite 7(Rollup)はほぼ同じ。Next.js 16 では webpack が Turbopack より約 4KB 大きい)。
 - 使わない機能がバンドルから落ちることは、Vite 8・webpack 5・Next.js 16(既定の Turbopack)・esbuild で確かめている(バンドラーが `package.json` の `sideEffects` と `/* @__PURE__ */` を解釈する必要がある)。
@@ -2087,7 +2087,7 @@ import { preloadGridPopups } from '@ishibashi0112/spreadsheet-grid';
 
 ## ことばで絞り込み(`/ai` サブパス)
 
-`@ishibashi0112/spreadsheet-grid/ai` の `GridAskBar` をグリッドの上に置くと、利用者が「東京の在庫が 10 個以下を高い順に」のように書いた文を AI に頼んで、グリッドのフィルター・並び・グローバル検索・列の表示へ反映できる(0.57.0 で追加)。グリッドは AI を呼ばない。利用側が渡す `ask`(自分のサーバー → 好きな AI)で聞くので、AI の種類は問わず、API キーはサーバーに置ける。全部入り・`/lite` とは別の入口で、使うときだけバンドルに入る(全部入り・`/lite` の JS の大きさは変わらない。`/ai` は約 13.8KB gzip)。
+`@ishibashi0112/spreadsheet-grid/ai` の `GridAskBar` をグリッドの上に置くと、利用者が「東京の在庫が 10 個以下を高い順に」のように書いた文を AI に頼んで、グリッドのフィルター・並び・グローバル検索・列の表示へ反映できる(0.57.0 で追加)。グリッドは AI を呼ばない。利用側が渡す `ask`(自分のサーバー → 好きな AI)で聞くので、AI の種類は問わず、API キーはサーバーに置ける。全部入り・`/lite` とは別の入口で、使うときだけバンドルに入る(全部入り・`/lite` の JS の大きさは変わらない。`/ai` は約 14.0KB gzip)。
 
 ```tsx
 import { useRef } from 'react';

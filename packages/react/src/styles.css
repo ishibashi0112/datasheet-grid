@@ -1496,6 +1496,9 @@
        16px の固定で、compact や小さい文字のページ(入れ子のグリッドなど)では開いた瞬間に文字が大きくなっていた。タッチの
        端末は下の (pointer: coarse) で 16px 以上(iOS は 16px 未満の入力欄にフォーカスするとページを拡大するため)。 */
     font-size: inherit;
+    /* 追加(1.0.2 の確かめ直し): 書体もセルと同じ(受け継ぐ)。これまでは 1 行の入力欄だけブラウザの既定の書体で、開いた瞬間に
+       文字の形と幅が変わっていた(複数行の入力欄は受け継いでいた)。 */
+    font-family: inherit;
     color: var(--ssg-cell-text);
     background-color: var(--ssg-cell-bg);
     pointer-events: auto;
@@ -1504,6 +1507,7 @@
      特異度が同じなので、その前に置きます(後ろの `.ssg-ime-input--composing` の規則に書くと密度の拡縮を打ち消していた)。 */
   .ssg-ime-input--composing {
     font-size: inherit;
+    font-family: inherit;
   }
   :where(.ssg-root--density-compact) :is(.ssg-cell-editor-input, .ssg-ime-input--composing) {
     font-size: 0.85em;
@@ -3659,6 +3663,11 @@
       background-color: transparent;
       opacity: 1;
       pointer-events: auto;
+    }
+    /* 追加(1.0.2 の確かめ直し): 右寄せの見出しはラベルが中身の幅になった(I-03)ので、操作を左端へ寄せます(状態の
+       すぐ左に並ぶと見出しの真ん中に ⋮ が来て、見出しを押したつもりで列メニューが開いていた)。 */
+    .ssg-header-cell--align-right .ssg-header-actions {
+      margin-right: auto;
     }
     /* 追加(1.0.2 / 2026-11-09 実アプリの総点検 L-11): タッチでは操作が常に出るので、120px より細い見出し(--inline-actions
        の無い見出し)は並べ替えのつまみ(grip)を出さず、⋮ だけにします(64px の「単位」が「単…」に切れていた)。印の無い
