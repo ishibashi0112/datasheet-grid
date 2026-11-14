@@ -371,10 +371,15 @@ const closeAll = async (page) => {
         actionsOpacity: Number(getComputedStyle(actions).opacity),
         actionsPadding: `${getComputedStyle(actions).paddingLeft} ${getComputedStyle(actions).paddingRight}`,
         resizeAtRight: resize ? Math.abs(resize.getBoundingClientRect().right - (c.right + 3)) < 1.5 : null,
+        // 追加(1.0.2 / C-07・F-11): 幅 120px 以上の見出し(--inline-actions)は、ホバーで出る操作を文字の後ろ(印の前)に並べる。
+        inline: cell.classList.contains('ssg-header-cell--inline-actions'),
+        actionsAfterText: a.left >= text.right - 0.5,
+        actionsInsideCell: a.left >= c.left - 0.5 && a.right <= c.right + 0.5,
       };
     }, key);
   const left = await measure('name');
-  check('headerAlign: a column without align keeps the label on the left and actions on the right', left && Math.abs(left.textLeft) < 1 && left.actionsAtRight, left);
+  // 変更(1.0.2 / C-07・F-11): 幅 120px 以上の見出しは操作をホバーのときだけ文字の後ろに並べるので、ホバーしていない間の操作の位置は見ない。
+  check('headerAlign: a column without align keeps the label on the left and actions on the right', left && Math.abs(left.textLeft) < 1 && (left.inline ? left.actionsOpacity === 0 : left.actionsAtRight), left);
   const right = await measure('qty');
   check('headerAlign: align right -> the label text ends at the right edge of the cell content', right && Math.abs(right.textRight) < 1, right);
   check('headerAlign: align right -> the sort arrow sits to the left of the label', right?.statusLeftOfText === true, right);
@@ -383,9 +388,9 @@ const closeAll = async (page) => {
     check('headerAlign: no hover (touch) -> the mirrored actions sit in the flow without the overlay padding', right.actionsPadding === '0px 0px', right);
   }
   const center = await measure('mid');
-  check('headerAlign: align center -> the label text is centered (status stays on the right)', center && Math.abs(center.textCenterInLabel) < 1 && center.statusRightOfText === true && center.actionsAtRight, center);
+  check('headerAlign: align center -> the label text is centered (status stays on the right)', center && Math.abs(center.textCenterInLabel) < 1 && center.statusRightOfText === true && (center.inline || center.actionsAtRight), center);
   const override = await measure('code');
-  check('headerAlign: headerAlign "left" on a right-aligned column keeps the header on the left', override && Math.abs(override.textLeft) < 1 && override.actionsAtRight, override);
+  check('headerAlign: headerAlign "left" on a right-aligned column keeps the header on the left', override && Math.abs(override.textLeft) < 1 && (override.inline || override.actionsAtRight), override);
   // ホバーで出る操作: 右寄せの列は左端、左寄せの列は右端。
   await page.locator('.ssg-header-cell[data-ssg-col-key="qty"] .ssg-header-label').hover();
   await waitIdle(page, 250);
@@ -394,7 +399,12 @@ const closeAll = async (page) => {
   await page.locator('.ssg-header-cell[data-ssg-col-key="name"] .ssg-header-label').hover();
   await waitIdle(page, 250);
   const hoveredLeft = await measure('name');
-  check('headerAlign: a left column still shows hover actions on the right edge', hoveredLeft?.actionsAtRight === true && hoveredLeft.actionsOpacity === 1, hoveredLeft);
+  // 変更(1.0.2 / C-07・F-11): 幅 120px 以上の見出しでは、ホバーで出る操作は右端に重ねず文字の後ろに並ぶ(セルの中)。
+  check(
+    'headerAlign: a left column still shows hover actions on the right edge',
+    hoveredLeft?.actionsOpacity === 1 && (hoveredLeft.inline ? hoveredLeft.actionsAfterText && hoveredLeft.actionsInsideCell : hoveredLeft.actionsAtRight === true),
+    hoveredLeft,
+  );
   check('headerAlign: no unexpected page errors', unexpectedPageErrors(pageErrors).length === 0, pageErrors);
   await close();
 }

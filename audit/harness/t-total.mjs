@@ -226,6 +226,9 @@ const fmtNumber = (page, v) =>
   await page.evaluate(() => window.__setProps({ totalRow: true, columnDragMotion: 'live' }));
   await waitIdle(page, 200);
   const grip = header(page, 'qty').locator('.ssg-header-grip');
+  // 変更(1.0.2 / C-07・F-11): ホバーで操作の位置が変わる見出しがあるので、ホバーしてから grip の位置を測る。
+  await header(page, 'qty').hover();
+  await waitIdle(page, 100);
   const gb = await grip.boundingBox();
   const target = await header(page, 'category').boundingBox();
   await page.mouse.move(gb.x + 3, gb.y + 5);

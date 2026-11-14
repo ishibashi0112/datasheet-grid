@@ -537,9 +537,9 @@ describe('GridAskBar(結合)', () => {
     expect(columnsLog).toHaveLength(2);
   });
 
-  // 追加(1.0.2 / 2026-11-09 実アプリの総点検 I-05): 途中の列を固定した表で AI が列を隠す / 元に戻しても、列の配列を
-  //   固定列ごとに並べ直さない(後で固定を外したときに元の位置へ戻るように)。
-  it('途中の列を固定した表で列を隠して元に戻しても、columns の並びは変えない', async () => {
+  // 追加(1.0.2 / 2026-11-09 実アプリの総点検 I-05。文書): 列を隠す / 元に戻すと、applyState の規則(M-09)どおり columns の
+  //   配列は固定列ごとに並べ直される(画面の並びは同じ)。ドキュメントに書いた挙動を固定する。
+  it('途中の列を固定した表で列を隠すと、columns の配列は固定列ごとの順になる(applyState の規則)', async () => {
     const pinnedMiddle = baseColumns.map((column) => (column.key === 'warehouse' ? { ...column, pinned: 'left' as const } : column));
     const { columnsLog } = setup(async () => answerOf({ hide: ['stock'] }), { allowColumnVisibility: true }, pinnedMiddle);
     typeAndEnter(screen.getByRole('textbox', { name: 'ことばで絞り込み' }) as HTMLInputElement, '在庫数の列を隠して');
@@ -547,11 +547,10 @@ describe('GridAskBar(結合)', () => {
     fireEvent.click(screen.getByRole('button', { name: '元に戻す' }));
     expect(columnsLog).toHaveLength(2);
     for (const next of columnsLog) {
-      expect(next.map((column) => column.key)).toEqual(['id', 'name', 'warehouse', 'stock']);
+      expect(next.map((column) => column.key)).toEqual(['warehouse', 'id', 'name', 'stock']);
     }
     expect(columnsLog[0].find((column) => column.key === 'stock')?.visible).toBe(false);
     expect(columnsLog[1].find((column) => column.key === 'stock')?.visible).toBeUndefined();
-    expect(columnsLog[1].find((column) => column.key === 'warehouse')?.pinned).toBe('left');
   });
 
   it('列の表示を許していなければ隠さない', async () => {
