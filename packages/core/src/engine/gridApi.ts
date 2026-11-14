@@ -169,6 +169,8 @@ export type GridApiArgs<T> = {
   moveRowByKey: (rowKey: GridRowKey, toIndex: number) => void;
   // 行選択のコミット(rowSelectionCommands。controlled では onChange のみ)。
   commitRowSelection: (next: RowSelectionState) => void;
+  // 追加(1.0.2 / H-07): onRowSelectionChange を呼んでいる間の新しい選択(rowSelectionCommands)。省略 = 常に store の値。
+  pendingRowSelection?: () => RowSelectionState | null;
   // 命令的 API 由来のスクロール(位置が実際に変わるもの)を通知します(scroll イベントの source 判定用)。
   //   変更(1.0.1 の確かめ直し G): 印を前の状態へ戻す関数を返せます(位置が変わらず scroll イベントが来ないとき用)。
   markApiScroll: () => (() => void) | void;
@@ -347,6 +349,9 @@ export const createGridApi = <T,>(features: Pick<GridCoreFeatures, 'export' | 'g
 
   // 追加(作り直しの確認 N-3): store の今の UI 状態(無ければ描画のときの値)。
   const currentUi = (s: GridApiArgs<T>): GridUiState => s.getUiState?.() ?? s.uiState;
+  // 追加(1.0.2 / H-07): 行選択の読み取りは、onRowSelectionChange の中なら新しい選択を返します。
+  const currentRowSelection = (s: GridApiArgs<T>): RowSelectionState =>
+    s.pendingRowSelection?.() ?? currentUi(s).rowSelection;
 
   // 追加(dogfood DU-03): getViewRowIndex の行キー → view index のキャッシュ(行モデルごと)。
   let rowKeyIndexCache: { model: RowModel<T> | null; map: Map<GridRowKey, number> } = { model: null, map: new Map() };
@@ -648,7 +653,7 @@ export const createGridApi = <T,>(features: Pick<GridCoreFeatures, 'export' | 'g
     // ── 行選択(チェックボックス選択)──
     getRowSelection: () => {
       const s = args;
-      return s ? rowSelectionToModel(currentUi(s).rowSelection) : { type: 'include', rowKeys: [] };
+      return s ? rowSelectionToModel(currentRowSelection(s)) : { type: 'include', rowKeys: [] };
     },
     setRowSelection: (model) => {
       args?.commitRowSelection(rowSelectionFromModel(model));
@@ -658,7 +663,7 @@ export const createGridApi = <T,>(features: Pick<GridCoreFeatures, 'export' | 'g
       if (!s) {
         return [];
       }
-      const sel = currentUi(s).rowSelection;
+      const sel = currentRowSelection(s);
       // include はキーをそのまま返します(exclude のみ全行を走査)。
       if (sel.mode === 'include') {
         return Array.from(sel.keys);
@@ -682,7 +687,7 @@ export const createGridApi = <T,>(features: Pick<GridCoreFeatures, 'export' | 'g
       if (!s) {
         return [];
       }
-      const sel = currentUi(s).rowSelection;
+      const sel = currentRowSelection(s);
       const result: T[] = [];
       const count = s.rowModel.getRowCount();
       for (let i = 0; i < count; i += 1) {
@@ -699,11 +704,11 @@ export const createGridApi = <T,>(features: Pick<GridCoreFeatures, 'export' | 'g
     },
     getSelectedRowCount: () => {
       const s = args;
-      return s ? countSelectedRows(currentUi(s).rowSelection, s.leafRowCount) : 0;
+      return s ? countSelectedRows(currentRowSelection(s), s.leafRowCount) : 0;
     },
     isRowSelected: (rowKey) => {
       const s = args;
-      return s ? resolveIsRowSelected(currentUi(s).rowSelection, rowKey) : false;
+      return s ? resolveIsRowSelected(currentRowSelection(s), rowKey) : false;
     },
     selectAllRows: () => {
       args?.commitRowSelection(selectAllRows());

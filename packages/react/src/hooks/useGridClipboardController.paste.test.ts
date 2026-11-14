@@ -106,7 +106,8 @@ describe('useGridClipboardController ペースト(特性テスト)', () => {
     expect(next).toHaveLength(2);
     expect(next[1]).toMatchObject({ id: 2, name: 'A' });
     expect(t.onColumnsChange).not.toHaveBeenCalled();
-    expect(t.dispatch.mock.calls[1][0]).toMatchObject({ cell: { row: 2, col: 2 } });
+    // 変更(1.0.2 / 2026-11-09 実アプリの総点検 C-02): 貼り付けの後の選択は書き込んだ範囲まで(表の外の行 2 / 列 2 へ広げない)。
+    expect(t.dispatch.mock.calls[1][0]).toMatchObject({ cell: { row: 1, col: 1 } });
   });
 
   it('serverSide: applyServerSideCellEdits へ編集を渡し、範囲は既存の行数 / 列数で clamp', () => {

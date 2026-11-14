@@ -7,14 +7,14 @@ import type { CellValueFormatterParams, GridFrameworkTypes } from '../model/grid
 // 追加(③): numberFormatter のオプションです。
 export type NumberFormatterOptions = {
   // 整形ロケール。未指定時は実行環境の既定(日本/米国はいずれも 3 桁区切り「,」/小数点「.」)。
-  locale?: string;
+  locale?: string | undefined;
   // 3 桁区切りの有無。既定 true。
-  useGrouping?: boolean;
+  useGrouping?: boolean | undefined;
   // 小数桁を固定したいとき指定。未指定時は「元の値の精度を保持」します。
-  minimumFractionDigits?: number;
-  maximumFractionDigits?: number;
+  minimumFractionDigits?: number | undefined;
+  maximumFractionDigits?: number | undefined;
   // 値が null / undefined / '' のときの表示。既定 ''。
-  emptyText?: string;
+  emptyText?: string | undefined;
 };
 
 // 追加(③): 数値を「桁区切り＋(既定では)元の精度保持」で整形するフォーマッタを生成します。

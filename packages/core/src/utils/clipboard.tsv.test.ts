@@ -66,6 +66,42 @@ describe('escapeTsvField / joinTsvRow(監査 L-04)', () => {
     });
     expect(parseClipboardText(tsv)).toEqual(rows.map((r) => [r.a, r.b]));
   });
+
+  // 追加(1.0.2 / 2026-11-09 実アプリの総点検の確かめ直し RV-C1): 最後の行のセルがすべて空なら末尾に改行を 1 つ足す
+  //   (Excel のコピーと同じ形)。足さないと 1 列の範囲の最後の空のセルが、貼り付けで消えていた。
+  it('最後の行が空なら末尾に改行を足し、貼り付けで行の数が変わらない', () => {
+    type Row = { a: string; b: string };
+    const rows: Row[] = [
+      { a: 'x', b: 'y' },
+      { a: '', b: '' },
+    ];
+    const getRow = (index: number) => rows[index] as Row;
+    const columns: GridColumn<Row>[] = [
+      { key: 'a', title: 'A', width: 80 },
+      { key: 'b', title: 'B', width: 80 },
+    ];
+    const oneColumn = serializeSelectionToTsv(getRow, 2, columns, { type: 'col', startCol: 0, endCol: 0 });
+    expect(oneColumn).toBe('x\n\n');
+    expect(parseClipboardText(oneColumn)).toEqual([['x'], ['']]);
+    const twoColumns = serializeSelectionToTsv(getRow, 2, columns, { type: 'row', startRow: 0, endRow: 1 });
+    expect(twoColumns).toBe('x\ty\n\t\n');
+    expect(parseClipboardText(twoColumns)).toEqual([['x', 'y'], ['', '']]);
+    // 空のセル 1 つも、貼り付けると 1 つの空のセルになる(これまでは '' で何も貼られなかった)
+    const single = serializeSelectionToTsv(getRow, 2, columns, {
+      type: 'cell',
+      range: { start: { row: 1, col: 0 }, end: { row: 1, col: 0 } },
+    });
+    expect(single).toBe('\n');
+    expect(parseClipboardText(single)).toEqual([['']]);
+    // 最後の行に値があれば今までどおり改行を足さない(途中の空の行はそのまま)
+    const reversed = serializeSelectionToTsv((index) => [rows[1], rows[0]][index] as Row, 2, columns, {
+      type: 'col',
+      startCol: 0,
+      endCol: 0,
+    });
+    expect(reversed).toBe('\nx');
+    expect(parseClipboardText(reversed)).toEqual([[''], ['x']]);
+  });
 });
 
 describe('合成列はコピー / 貼り付けの列に数えない(1.0 前の最終チェック FC-03)', () => {

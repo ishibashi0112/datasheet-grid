@@ -379,18 +379,16 @@ export const createClipboardController = <T extends object>(): ClipboardControll
       },
     );
 
+    // 変更(1.0.2 / 2026-11-09 実アプリの総点検 C-02): 選択範囲は実際に書いた範囲まで。行を足せない(createRow が無い)・列を
+    //   足せない(createOverflowColumn が無い)ときに、表の外へはみ出した範囲(無い行 / 列)を選んでいた。
     const endRow = clamp(
       lastTargetViewIndex,
       0,
-      Math.max(Math.max(rowModel.getRowCount() - 1, 0), lastTargetViewIndex),
+      Math.max(workingRows.length > rows.length ? lastTargetViewIndex : viewRowCountForPaste - 1, 0),
     );
     // 修正(audit C-12): 選択範囲の幅は serverSide 経路と同じく最も長い行の幅にします(先頭行が他の行より短い TSV
     //   (`a\nb\tc` 等)で、実際に貼り付けた範囲より狭くなっていた)。
-    const endCol = clamp(
-      lastPasteColIndex,
-      0,
-      Math.max(Math.max(workingColumns.length - 1, 0), lastPasteColIndex),
-    );
+    const endCol = clamp(lastPasteColIndex, 0, Math.max(workingColumns.length - 1, 0));
 
     onRowsChange(nextRows);
     dispatch(gridActions.startSelection(anchor));

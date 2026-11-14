@@ -100,6 +100,17 @@ export const escapeTsvField = (value: string): string =>
 // 追加(監査 L-04): セル列を TSV の 1 行へ連結します(各セルを escapeTsvField)。
 export const joinTsvRow = (cells: string[]): string => cells.map(escapeTsvField).join('\t');
 
+// 追加(1.0.2 / 2026-11-09 実アプリの総点検の確かめ直し RV-C1): 行を改行でつなぎます。最後の行のセルがすべて空なら、
+//   末尾に改行を 1 つ足します(Excel のコピーと同じ形)。貼り付け(このグリッド / Excel / Google スプレッドシート)は
+//   末尾の改行 1 つを「最後の行の終わり」として読むため、足さないと 1 列の範囲の最後の空のセルが貼り付けで消えて
+//   いました(例: 「a」と空の 2 行が「a」の 1 行に)。最後の行に値があるときは今までどおり改行を足しません。
+//   空のセルは '' のまま、タブや改行を含むセルは引用符で囲むので、タブだけの行 = すべて空の行です。
+const joinTsvLines = (lines: string[]): string => {
+  const last = lines[lines.length - 1];
+  const text = lines.join('\n');
+  return last !== undefined && /^\t*$/.test(last) ? `${text}\n` : text;
+};
+
 // 追加(1.0 前の最終チェック FC-03): コピー / 貼り付けの対象にする列か。ライブラリの合成列(行ドラッグハンドル /
 //   展開トグル / 自動グループ列)は値を持たないので、コピーの TSV に空の列を作らず、貼り付けでも 1 列と数えません
 //   (エクスポート / 集計 / フィルハンドルと同じ扱い。Excel に貼ったときに列がずれないようにする)。
@@ -187,7 +198,7 @@ export const serializeSelectionToTsv = <T,>(
       }
       lines.push(joinTsvRow(copyColumns.map((column) => formatClipboardCell(row, column))));
     }
-    return lines.join('\n');
+    return joinTsvLines(lines);
   }
 
   // 追加: 行選択のコピーです。選択された行 × visible columns 全体を対象にします。
@@ -211,7 +222,7 @@ export const serializeSelectionToTsv = <T,>(
       }
       lines.push(joinTsvRow(rowCopyColumns.map((column) => formatClipboardCell(row, column))));
     }
-    return lines.join('\n');
+    return joinTsvLines(lines);
   }
 
   // 追加: 列選択のコピーです。visible rows × 選択列 を対象にします。
@@ -233,7 +244,7 @@ export const serializeSelectionToTsv = <T,>(
     lines.push(joinTsvRow(colCopyColumns.map((column) => formatClipboardCell(row, column))));
   }
 
-  return lines.join('\n');
+  return joinTsvLines(lines);
 };
 
 // 追加: 貼り付け matrix を rows へ適用します。

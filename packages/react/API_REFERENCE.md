@@ -54,7 +54,7 @@
 | `enableSelectAllRows` | `boolean` | `enableRowSelection && multiple` | ヘッダ左上コーナーの全選択チェック(tri-state: none/some/all)の有効化。clientSide のフィルターで行が隠れている間は、見えている行だけを選ぶ / 外す(印も見えている行だけで決める)。 |
 | `rowSelection` | `RowSelectionModel` | — | **controlled** の行選択記述子。`{ type:'include', rowKeys }`=これらを選択 / `{ type:'exclude', rowKeys }`=全選択のうち除外。全選択をキー列挙せず表現できる。指定時は controlled(内部 state を使わない)。 |
 | `selectedRowKeys` | `GridRowKey[]` | — | controlled 簡易版(`{ type:'include', rowKeys }` の糖衣)。`rowSelection` と併用時は `rowSelection` を優先。全選択(exclude)は表現不可。 |
-| `onRowSelectionChange` | `(model: RowSelectionModel) => void` | — | 行選択変化の通知(controlled/uncontrolled いずれでも発火)。 |
+| `onRowSelectionChange` | `(model: RowSelectionModel) => void` | — | 行選択変化の通知(controlled/uncontrolled いずれでも発火)。通知の中でハンドルの `getSelectedRowKeys()` / `getSelectedRowData()` / `getSelectedRowCount()` などを呼ぶと、新しい選択を返す。 |
 | `enableGlobalFilter` | `boolean` | `true` | グローバルフィルター**機能**の有効化。`false` で機能が無効になり、既定トップバーのフィルター入力欄も出ない(summary は `showTopBarSummary` に従う。トップバー自体を消すには `showTopBar=false`)。 |
 | `enableColumnFilter` | `boolean` | `true` | 列ごとのフィルター。 |
 | `renderFilterDateInput` | `(ctx: FilterDateInputContext) => ReactNode` | 内製の日付フィールド | dateSet フィルター条件の日付入力を利用側コンポーネント(Mantine `DatePickerInput` 等)へ差し替えるスロット。既定は内製フィールド(自由入力 + ドリルアップカレンダー。下記「dateSet の日付入力(既定 UI)」節)。詳細は「日付入力の差し替え(renderFilterDateInput)」節。 |
@@ -98,7 +98,7 @@
 | `initialState` | `Omit<GridStatePatch, 'columns'>` | — | 状態(列幅 / フィルター / ソート)の初期値。**最初の 1 回(マウント時)だけ**使い、後から変えても今の状態は変わらない(変えるときは `applyState`)。最初の描画・サーバーの描画(SSR)・serverSide の最初の `getRows` から効き(clientSide で 5 万行を超える表のグローバルフィルター `filters.globalText` だけは、時間を分けて評価するので最初の描画の少し後に効く)、`getState()` もその値を返す。マウント時は `onStateChange` / `onFiltersChange` / `onSortChange` を呼ばない。`getState()` の値をそのまま渡せる(列メタの `columns` は使わない。列の並び / 表示 / 固定は `columns` prop で決める。保存した値から戻すときは `restoreColumnsFromState(columns, saved)` で作った配列を渡す。並び / 表示 / 固定が `columns` prop と見た目で違うときだけ開発時に警告)。今の `columns` に無い列の幅 / フィルター / ソートは捨てる(開発時に警告)。URL のクエリや保存した状態から戻すときに使う。 |
 | `onFiltersChange` | `(filters: GridFilterState) => void` | — | フィルター状態(`globalText` + `columnFilters`)が**実際に変化したとき**だけ、そのスライスの複製を渡して呼ばれる。`onStateChange` は列幅 / 列メタでも呼ばれるため、記述子から WHERE を組み立てるなどフィルターだけを追いたい用途向け。規約は `onStateChange` と同じ(初回非発火 / 同値非発火 / `applyState` でも発火)。 |
 | `onSortChange` | `(sort: GridSortState) => void` | — | ソート状態が**実際に変化したとき**だけ、その複製を渡して呼ばれる(ORDER BY の組み立てなど)。規約は `onFiltersChange` と同じ。 |
-| `onScroll` | `(params: GridScrollEventParams) => void` | — | スクロール位置の変化通知(rAF で 1 フレーム 1 回に間引き・縦横どちらの変化でも発火)。`params` は `{ top, left, source }`(px)。`source: 'api'` は `setScrollPosition` / `scrollTo*` 系由来、`'user'` はそれ以外。2 グリッドの双方向スクロール同期は `source === 'user'` のときだけ相手へ反映することでループを止められる。インライン関数可(latest-ref 経由)。 |
+| `onScroll` | `(params: GridScrollEventParams) => void` | — | スクロール位置の変化通知(rAF で 1 フレーム 1 回に間引き・縦横どちらの変化でも発火)。`params` は `{ top, left, source }`(px)。`source: 'api'` は `setScrollPosition` / `scrollTo*` 系由来、`'user'` はそれ以外(ホイール / ドラッグ / キーボードのほか、絞り込みや行の高さの測り直しで表が縮み、ブラウザが位置を詰めた分も `'user'` で届く)。2 グリッドの双方向スクロール同期は `source === 'user'` のときだけ相手へ反映することでループを止められる。インライン関数可(latest-ref 経由)。 |
 | `enableContextMenu` | `boolean` | `false` | コンテキストメニュー機能の有効化(マスタースイッチ)。他機能の `enable*` と同じく**既定 OFF**。`false` のあいだは `getContextMenuItems` を渡しても発火せず、右クリックはブラウザ標準メニューのまま。現状はまだ機能 / UI に改善余地があるため既定 OFF で提供する(利用側で明示 opt-in)。 |
 | `getContextMenuItems` | `(params: GridContextMenuParams<T>) => GridContextMenuItem[]` | — | セル/行の**完全カスタム**コンテキストメニュー。右クリック時のみ呼ばれ、返した項目でメニューを描画する(ライブラリは固定の既定項目を持たない)。opt-in は `enableContextMenu={true}` かつ本コールバックの指定の両方。**未指定、または `[]` を返したときはブラウザ標準の右クリックメニューへフォールスルー**(空パネルは出さない)。SSRM 未ロード行では開かない。ヘッダー右クリックは列メニュー(`enableColumnMenu`)が担当し、本メニューはボディ(セル / 行NO ガター)専用。詳細は「コンテキストメニュー」節を参照。 |
 | `onContextMenuOpen` | `(params: GridContextMenuParams<T>) => void` | — | コンテキストメニューが実際に開いた直後の通知(項目が 1 件以上あり表示された場合のみ)。
@@ -1546,7 +1546,7 @@ const gridRef = useRef<SpreadsheetGridHandle<Row>>(null);
 // const csv = gridRef.current?.exportCsv({ scope: 'selection' });
 ```
 
-`viewRowIndex` / `colIndex` は**ビュー座標**(フィルター/ソート適用後の表示 index。`colIndex` は固定列を含む視覚順 = 左→中央→右)。`viewRowIndex` はラベル行・グループ行も 1 行に数え、`colIndex` は行ドラッグのハンドル列・展開トグル列・自動グループ列(ライブラリが足す列)も数える。行キー / 列キーからは `getViewRowIndex(rowKey)` / `getColIndex(columnKey)` で引ける。アクティブセルは表示位置に付く(上の行を消すと、同じ位置に来た別の行を指す。Excel と同じ)。範囲外 index は内部でクランプ/無視する。表示行数が減った(rows 差し替え / フィルター / グループの折りたたみ等)ときも、はみ出したアクティブセル / 選択範囲は範囲内へ詰められる(アクティブセルは最終行へ寄せ、範囲ははみ出した部分を切り詰める。0 行になったらセル / 行の選択とアクティブセルは解除)。行が 0 件のときの `selectCell` / `selectRange` / `setActiveCell` は何もしない。このため `getActiveCell()` / `getSelection()` が存在しない行を返すことはない。
+`viewRowIndex` / `colIndex` は**ビュー座標**(フィルター/ソート適用後の表示 index。`colIndex` は固定列を含む視覚順 = 左→中央→右)。`viewRowIndex` はラベル行・グループ行も 1 行に数え、`colIndex` は行ドラッグのハンドル列・展開トグル列・自動グループ列(ライブラリが足す列)も数える。行キー / 列キーからは `getViewRowIndex(rowKey)` / `getColIndex(columnKey)` で引ける。アクティブセルは表示位置に付く(上の行を消すと、同じ位置に来た別の行を指す。Excel と同じ)。範囲外 index は内部でクランプ/無視する。表示行数が減った(rows 差し替え / フィルター / グループの折りたたみ等)ときも、はみ出したアクティブセル / 選択範囲は範囲内へ詰められる(アクティブセルは最終行へ寄せ、範囲ははみ出した部分を切り詰める。0 行になったらセル / 行の選択とアクティブセルは解除)。列が減ったとき(`columns` から外す / 非表示にする)も同じく最終列へ寄せて切り詰める(0 列になったらアクティブセルとセル / 列の選択は解除)。貼り付けの後の選択も書き込んだ範囲まで。行が 0 件のときの `selectCell` / `selectRange` / `setActiveCell` は何もしない。このため `getActiveCell()` / `getSelection()` が存在しない行や列を返すことはない。
 
 ### スクロール
 
@@ -1559,7 +1559,7 @@ const gridRef = useRef<SpreadsheetGridHandle<Row>>(null);
 | `getScrollPosition()` | 現在のスクロール位置 `{ top, left }`(px)。値はスクロールコンテナの生の `scrollTop` / `scrollLeft` で、`setScrollPosition` / `onScroll` と同一基準(往復で一貫)。未マウント時は `null`。 |
 | `setScrollPosition({ top?, left? }, { behavior? })` | スクロール位置の設定(px)。省略側は現状維持・スクロール可能範囲へクランプ。`behavior` は `'auto'`(既定・即時)/ `'smooth'`。2 グリッドの双方向同期では `'auto'` を推奨(`'smooth'` は途中フレームの `onScroll` が `source:'user'` になり得る)。 |
 
-スクロール変化の**通知**は props 側の `onScroll` で受け取る(`{ top, left, source }`・rAF で 1 フレーム 1 回に間引き)。`source: 'api'` は `setScrollPosition` / `scrollTo*` 系由来、`'user'` はそれ以外(ホイール / ドラッグ / キーボード等)。2 グリッドの双方向スクロール同期は「`onScroll` で `source === 'user'` のときだけ相手の `setScrollPosition` を呼ぶ」ことでループを止められる(proposals ⑧)。
+スクロール変化の**通知**は props 側の `onScroll` で受け取る(`{ top, left, source }`・rAF で 1 フレーム 1 回に間引き)。`source: 'api'` は `setScrollPosition` / `scrollTo*` 系由来、`'user'` はそれ以外(ホイール / ドラッグ / キーボード等。絞り込みや行の高さの測り直しで表が縮み、ブラウザが位置を詰めた分も `'user'` で届くので、「人が動かした」の判定には使えない)。2 グリッドの双方向スクロール同期は「`onScroll` で `source === 'user'` のときだけ相手の `setScrollPosition` を呼ぶ」ことでループを止められる(proposals ⑧)。 末尾を追う(ログのように行が増えるたびに末尾を見せる)ときは、行を足す前に末尾にいるかを `.ssg-scroll-container` の `scrollHeight - scrollTop - clientHeight < 1` で確かめ、末尾にいたら足した後に `scrollToBottom()` を呼ぶ(`onScroll` の `source` では判定しない)。
 
 ### 選択 / アクティブセル
 

@@ -289,6 +289,15 @@ const renderDetailToggleCell = (ctx: CellRenderContext<unknown>) => {
   return <DetailToggleButton detail={detail} />;
 };
 
+// 追加(1.0.2 / G-14): 開発時の警告を、グリッド 1 つにつき種類(id)ごとに 1 回だけ出します。
+const warnOncePerGrid = (warned: Set<string>, id: string, message: string) => {
+  if (warned.has(id)) {
+    return;
+  }
+  warned.add(id);
+  console.warn(message);
+};
+
 // 変更(差し込み式 段階 2): グリッド本体(旧 SpreadsheetGrid コンポーネントの中身)を、機能セット(features)を受け取る
 //   hook にしました。公開コンポーネントは SpreadsheetGrid.tsx(全部入りの機能セットを渡す)で、ここは描画まで含めた
 //   本体です。機能セットはモジュールの読み込み時に決まり描画のあいだ変わらない前提です(機能ごとの hook を
@@ -1486,9 +1495,12 @@ export function useGridShell<T extends object>({
   // 追加(監査 B-05 補足): 表示行数が減った(rows 差し替え / フィルター / グループ折りたたみ等)とき、
   //   はみ出した activeCell / selection を範囲内へ詰めます(getActiveCell / getSelection が存在しない
   //   行番号を返さないように)。はみ出しが無ければ reducer が同一参照を返し、通知も起きません。
+  // 変更(1.0.2 / 2026-11-09 実アプリの総点検 C-02): 列が減ったとき(columns の差し替え / 列を隠す)も同じく詰めます(下部バーに
+  //   無い列の番地や範囲が出て、getActiveCell / getSelection が存在しない列を返していた)。
+  const viewColCount = orderedColumns.length;
   useEffect(() => {
-    dispatch(gridActions.clampSelectionToRowCount(viewRowCount));
-  }, [viewRowCount, dispatch]);
+    dispatch(gridActions.clampSelectionToRowCount(viewRowCount, viewColCount));
+  }, [viewRowCount, viewColCount, dispatch]);
 
   // 追加(grouping ④): leaf 行数(グループ行を除くデータ行数)です。行選択の件数・bar summary の
   //   「Rows: X / Y」はこちらを使います(viewRowCount はグループ行込みの表示行数で、仮想化・
@@ -1710,19 +1722,27 @@ export function useGridShell<T extends object>({
   // gate 外フォールバック時の開発時警告(例外は投げず uniform にフォールバック)。
   // 変更(①-3): serverSide では行数に関わらず未対応の旨を警告します(行数上限とは別理由のため
   //   メッセージを分けます)。
+  // 変更(1.0.2 / 2026-11-09 実アプリの総点検 G-14): 下の展開行の警告と合わせて、グリッド 1 つにつき種類ごとに 1 回だけ
+  //   出します。これまでは絞り込みで行数がしきい値をまたぐたび(上限を超えたままの行数の変化でも)出ていました。
+  const devWarnedRef = useRef<Set<string> | null>(null);
   useEffect(() => {
     if (process.env.NODE_ENV === 'production' || !autoHeight || !hasAutoHeightColumn) {
       return;
     }
+    devWarnedRef.current ??= new Set();
     if (isServerSide) {
-      console.warn(
+      warnOncePerGrid(
+        devWarnedRef.current,
+        'autoHeightServerSide',
         '[SpreadsheetGrid] serverSide(dataSource)では auto-height は未対応です(未ロード行の高さが不明なため)。uniform 行高にフォールバックします。\n' +
           '[SpreadsheetGrid] auto-height is not supported with serverSide (dataSource) because rows that are not loaded have no height. Falling back to a uniform row height.',
       );
       return;
     }
     if (viewRowCount > AUTO_HEIGHT_MAX_ROWS) {
-      console.warn(
+      warnOncePerGrid(
+        devWarnedRef.current,
+        'autoHeightMaxRows',
         `[SpreadsheetGrid] auto-height は ${AUTO_HEIGHT_MAX_ROWS} 行までです(現在 ${viewRowCount} 行)。uniform 行高にフォールバックします。\n` +
           `[SpreadsheetGrid] auto-height supports up to ${AUTO_HEIGHT_MAX_ROWS} rows (currently ${viewRowCount}). Falling back to a uniform row height.`,
       );
@@ -1734,7 +1754,10 @@ export function useGridShell<T extends object>({
       return;
     }
     if (detailExtras.length > 0 && !detailActive) {
-      console.warn(
+      devWarnedRef.current ??= new Set();
+      warnOncePerGrid(
+        devWarnedRef.current,
+        'detailMaxBody',
         `[SpreadsheetGrid] 展開行は論理全高(行高合計 + 帯高)が ${MAX_BODY_PX}px 以内のときだけ描画します(行数上限超過)。展開状態は保持されますが帯は描かれません。\n` +
           `[SpreadsheetGrid] Detail rows are drawn only while the total height (rows + details) is at most ${MAX_BODY_PX}px (too many rows). The expanded state is kept, but the details are not drawn.`,
       );
@@ -1885,8 +1908,19 @@ export function useGridShell<T extends object>({
   // 追加(stage ②): serverSide で query(debounced queryKey)が変わったら先頭へスクロールを戻します。
   //   フィルター/ソートで結果セットが総入れ替えされるため、同一 index に別行が来る違和感を避けます。
   //   mount 時は scrollTop が既に 0 のため無害です。clientSide では queryKey が安定空のため不発です。
+  // 変更(1.0.2 / 2026-11-09 実アプリの総点検の確かめ直し RV-D3): 前に見た queryKey と比べ、本当に変わったときだけ
+  //   戻します。<Activity>(Next.js の画面遷移)で隠して見せると effect が付け直されるので、query が同じでも
+  //   先頭へ戻り、`onScroll` に `top: 0` が `'user'` で届いていました(下の展開行を閉じる effect も同じ)。
+  const lastServerSideQueryKeyRef = useRef<string | null>(null);
+  const lastDetailQueryKeyRef = useRef<string | null>(null);
   useEffect(() => {
     if (!isServerSide) {
+      lastServerSideQueryKeyRef.current = null;
+      return;
+    }
+    const previousKey = lastServerSideQueryKeyRef.current;
+    lastServerSideQueryKeyRef.current = serverSideQueryKey;
+    if (previousKey === serverSideQueryKey) {
       return;
     }
     const el = scrollContainerRef.current;
@@ -1902,6 +1936,12 @@ export function useGridShell<T extends object>({
   //   するので mount 時や clientSide(queryKey 安定空)では何も起きません。
   useEffect(() => {
     if (!isServerSide || !detailRowEnabled) {
+      lastDetailQueryKeyRef.current = null;
+      return;
+    }
+    const previousKey = lastDetailQueryKeyRef.current;
+    lastDetailQueryKeyRef.current = serverSideQueryKey;
+    if (previousKey === serverSideQueryKey) {
       return;
     }
     detailIndexCacheHolder.reset();
@@ -4275,6 +4315,7 @@ export function useGridShell<T extends object>({
     detailIndexCacheRef: detailIndexCacheHolder,
     moveRowByKey,
     commitRowSelection: rowSelectionCommands.commitRowSelection,
+    pendingRowSelection: rowSelectionCommands.pendingRowSelection,
     markApiScroll: scrollSync.markApiScroll,
   });
   useImperativeHandle(ref, () => gridApi.handle, [gridApi]);

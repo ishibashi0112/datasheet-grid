@@ -120,7 +120,7 @@ export type FilterOrderFeatureArgs<T> = {
   effectiveColumns: GridColumn<T>[];
   globalFilterText: string;
   // 追加(dogfood DF-18): 検索の文字を遅らせずに評価するとき true(applyState で入れたフィルター)。
-  globalFilterUrgent?: boolean;
+  globalFilterUrgent?: boolean | undefined;
   globalFilterEnabled: boolean;
   columnFilterEnabled: boolean;
   columnFilters: Record<string, ColumnFilterValue>;
@@ -139,7 +139,7 @@ export type FilterOrderFeatureResult = {
   relativeDateKey: string;
   // 追加(dogfood DF-20): フィルターが行に効くか(フィルターの機能が無い構成の代役は false。省略は true)。false のときは
   //   下部 / 上部バーの「Filter: …」に状態のフィルターを数えません(効いていないのに「Filter: 1列」と出ていた)。
-  available?: boolean;
+  available?: boolean | undefined;
 };
 
 // 列フィルターのポップオーバー(filtering)の controller の接続が受け取るシェルの値と返す値です(返す値は controller の
@@ -152,9 +152,9 @@ export type FilterPopoverFeatureArgs<T> = {
   isServerSide: boolean;
   rows: T[];
   // 追加(別視点のレビュー): ラベル行の判定('auto' 列の種別の推定でラベル行の値を数えないため。ラベル行が無ければ未指定)。
-  isLabelRow?: (row: T, sourceIndex: number) => boolean;
+  isLabelRow?: ((row: T, sourceIndex: number) => boolean) | undefined;
   // 追加(段階 2 DU-11): 行グルーピング中のグループ元の列(表示から外れているが絞り込める。グルーピングしていなければ空)。
-  groupColumns?: GridColumn<T>[];
+  groupColumns?: GridColumn<T>[] | undefined;
 };
 export type FilterPopoverFeatureResult<T> = ReturnType<typeof useFilterPopoverController<T>>;
 // ポップオーバーの中身(候補の収集・派生値・コマンド群・描画)の hook が受け取るシェルの値です。
@@ -189,7 +189,7 @@ export type FilterManagementFeatureArgs<T> = {
   rightPaneTotalWidth: number;
   openColumnFilterPopover: (column: GridColumn<T>) => void;
   // 追加(段階 2 DU-11): 行グルーピング中のグループ元の列(「フィルターを追加」の候補と、自動グループ列の見出しの下で開く)。
-  groupColumns?: GridColumn<T>[];
+  groupColumns?: GridColumn<T>[] | undefined;
   // 追加(英語対応): グリッドの文言(要約・グループ化中の列の名前)。
   localeTexts: ResolvedGridLocaleText;
 };
@@ -282,26 +282,26 @@ export type ConditionalFormatCellResolvers = {
 
 // 追加(英語対応): 機能だけが使う文言の既定(core の logic/localeText<機能>.ts の表)。シェルが本体の既定に重ねて部品へ
 //   渡します(機能を入れない構成の初期 JS に入れないため。hooks/useGridLocaleText の mergeFeatureLocaleDefaults)。
-type FeatureLocaleDefaults = { localeText?: Readonly<Partial<GridLocaleText>> };
+type FeatureLocaleDefaults = { localeText?: Readonly<Partial<GridLocaleText>> | undefined };
 
 export type ReactGridFeatures = {
   // セル内検索(F-2): 走査のコントローラ(core)+ 検索バー + セル文字列のヒット分割。
   find?: NonNullable<GridCoreFeatures['find']> & FeatureLocaleDefaults & {
     FindBar: typeof GridFindBar;
     splitTextByFindRanges: typeof splitTextByFindRanges;
-  };
+  } | undefined;
   // フィルハンドル(フィルハンドル 1A): コントローラの接続から描画までを 1 つの hook で。
   fillHandle?: FeatureLocaleDefaults & {
     useFillHandle: <T>(args: FillHandleFeatureArgs<T>) => FillHandleFeatureResult;
-  };
+  } | undefined;
   // 列ヘッダーのドラッグによる列の並べ替え(13-B3 / M-12): grip / ドロップの縦線 / live 方式。
   columnReorder?: {
     useColumnReorder: <T>(args: ColumnReorderFeatureArgs<T>) => ColumnReorderFeatureResult<T>;
-  };
+  } | undefined;
   // IME オンのままの直接入力(G-2): core の部品そのまま(入力受けのコントローラ + 判定 / 初期値の関数)。
-  imeDirectInput?: NonNullable<GridCoreFeatures['imeDirectInput']>;
+  imeDirectInput?: NonNullable<GridCoreFeatures['imeDirectInput']> | undefined;
   // エクスポート(命令的 API の exportCsv / downloadCsv / getExportData)。描画の部品は無い。
-  export?: NonNullable<GridCoreFeatures['export']>;
+  export?: NonNullable<GridCoreFeatures['export']> | undefined;
   // フィルター(グローバル / 列): 列フィルターの段と日付の変わり目の見張り(core)+ グローバルフィルターの適用と
   //   相対日付プリセットの基準日の hook / 列フィルターのポップオーバー(controller の接続・部品の遅延読み込み・中身)/
   //   適用中フィルターの一覧とジャンプ / チップバーの部品。
@@ -312,74 +312,74 @@ export type ReactGridFeatures = {
     useFilterPopoverContent: <T>(args: FilterPopoverContentFeatureArgs<T>) => ReactNode;
     useFilterManagement: <T>(args: FilterManagementFeatureArgs<T>) => FilterManagementFeatureResult;
     FilterChipBar: typeof GridFilterChipBar;
-  };
+  } | undefined;
   // サーバーサイド行モデル(SSRM): 保存状態の表示(core)+ 行モデルの接続と内蔵エラーバーの hook。
   serverSide?: NonNullable<GridCoreFeatures['serverSide']> & FeatureLocaleDefaults & {
     useServerSide: <T>(args: ServerSideFeatureArgs<T>) => ServerSideFeatureResult<T>;
-  };
+  } | undefined;
   // 行の高さの実測(autoHeight): 実測のコントローラ + 行高ストア(core)。描画の部品は無い。
-  autoHeight?: NonNullable<GridCoreFeatures['autoHeight']>;
+  autoHeight?: NonNullable<GridCoreFeatures['autoHeight']> | undefined;
   // ラベル行(labelRow): 配置 / 表示順 / 行モデル / serverSide のラッパ / 縦スクロール固定の解決(core)+ 帯の行と
   //   縦スクロール固定の層の部品。
   labelRow?: NonNullable<GridCoreFeatures['labelRow']> & {
     BodyLabelRow: typeof GridBodyLabelRow;
     StickyLabelLayer: typeof GridStickyLabelLayer;
-  };
+  } | undefined;
   // 行グルーピング(rowGroup / aggFunc): グループツリーの構築と開閉の適用(core)+ グループ行の部品。
   grouping?: NonNullable<GridCoreFeatures['grouping']> & FeatureLocaleDefaults & {
     BodyGroupRow: typeof GridBodyGroupRow;
-  };
+  } | undefined;
   // 列幅の自動調整(DS-4 / 13-B1): 計測の時間分割ランナー。
   columnAutosize?: {
     useColumnAutosize: <T>(args: ColumnAutosizeFeatureArgs<T>) => ColumnAutosizeFeatureResult<T>;
-  };
+  } | undefined;
   // 合計行(合計行 3A): 集計のリゾルバ(core)+ 描画部品 + 表示の純関数。
   totalRow?: NonNullable<GridCoreFeatures['totalRow']> & {
     TotalRow: typeof GridTotalRow;
     formatTotalRowCellText: typeof formatTotalRowCellText;
     resolveTotalRowCaption: typeof resolveTotalRowCaption;
     resolveTotalRowLabelColumnKey: typeof resolveTotalRowLabelColumnKey;
-  };
+  } | undefined;
   // 条件付き書式(F-3): min / max の集計(core)+ データバー / カラースケール(本体の行)+ 状態チップ(セル内容)。
   conditionalFormat?: NonNullable<GridCoreFeatures['conditionalFormat']> & ConditionalFormatCellResolvers & {
     resolveChipSpec: typeof resolveChipSpec;
     GridChip: typeof GridChip;
-  };
+  } | undefined;
   // 選択範囲の集計(showSelectionAggregates): 集計の hook(大きな選択は時間分割)+ 既定の下部バーの表示部品。
   selectionAggregates?: FeatureLocaleDefaults & {
     useSelectionAggregates: <T>(args: UseSelectionAggregatesArgs<T>) => GridSelectionAggregates | null;
     SelectionAggregates: typeof GridSelectionAggregatesView;
-  };
+  } | undefined;
   // 動きの追加分(M-2 / M-3 / M-6): 変更セルの強調(core)+ コピー範囲の点線 + クロスヘアの列の帯。
   motionExtras?: NonNullable<GridCoreFeatures['motionExtras']> & {
     CopyRangeOverlay: typeof CopyRangeOverlay;
     ColumnHoverOverlay: typeof ColumnHoverOverlay;
-  };
+  } | undefined;
   // 列メニュー(13-A): ⋮ ボタン / ヘッダーの右クリックで開く popover の controller の接続 + popover。
   columnMenu?: FeatureLocaleDefaults & {
     useColumnMenu: <T>(args: ColumnMenuFeatureArgs<T>) => ColumnMenuFeatureResult<T>;
     ColumnMenuPopover: typeof ColumnMenuPopover;
-  };
+  } | undefined;
   // ツールパネル(UP-1): controller の接続 + 部品(別チャンク)の遅延読み込み。シェルはそれぞれ元の位置で呼ぶ
   //   (useToolPanelViews は列フィルターの部品の読み込みの直後)。
   toolPanel?: {
     useToolPanel: (args: ToolPanelFeatureArgs) => ToolPanelFeatureResult;
     useToolPanelViews: (options: UseLazyModuleOptions) => ToolPanelViews | null;
-  };
+  } | undefined;
   // セル / 行のコンテキストメニュー(バッチ②): controller の接続 + popover、右クリックの対象の解決。
   contextMenu?: {
     useCellContextMenu: <T>(args: CellContextMenuFeatureArgs) => CellContextMenuFeatureResult<T>;
     buildBodyContextMenuParams: <T>(input: BodyContextMenuInput<T>) => GridContextMenuParams<T> | null;
-  };
+  } | undefined;
   // スクロール位置インジケーター(scrollHint): オプションの解決 + 描画部品。
   scrollHint?: FeatureLocaleDefaults & {
     resolveScrollHintOptions: typeof resolveScrollHintOptions;
     ScrollHint: typeof GridScrollHint;
-  };
+  } | undefined;
   // 行ドラッグによる行の並べ替え(row-drag / M-11): ハンドル列のセル / ガイド線 / live 方式。
   rowDrag?: FeatureLocaleDefaults & {
     useRowDrag: <T>(args: RowDragFeatureArgs<T>) => RowDragFeatureResult<T>;
-  };
+  } | undefined;
 };
 
 // 追加(1.0 の準備): /lite が公開する機能の部品の型です。部品の中身(上の ReactGridFeatures の各機能)は内部の実装で、

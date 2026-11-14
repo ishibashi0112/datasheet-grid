@@ -79,20 +79,20 @@ export type GridAskOptions<T> = {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any -- 描画ノード / style は素通し(上のコメント)
   columns: readonly PublicGridColumn<T, any>[];
   // 列ごとの補足(単位や値の書き方)。false でその列を AI に見せません(その列の条件も変えません)。
-  columnHints?: Readonly<Record<string, string | false>>;
+  columnHints?: Readonly<Record<string, string | false>> | undefined;
   // 列の条件(フィルター)を変えてよいか(既定 true)。グリッドの enableColumnFilter を false にしているときは
   //   false にします(表の見出しから外せない条件を入れないため)。
-  allowFilter?: boolean;
+  allowFilter?: boolean | undefined;
   // 並びを変えてよいか(既定 true)。グリッドの enableSorting を false にしているときは false にします。
-  allowSort?: boolean;
+  allowSort?: boolean | undefined;
   // グローバル検索の文字を変えてよいか(既定 true)。enableGlobalFilter を false にしているときは false にします。
-  allowSearch?: boolean;
+  allowSearch?: boolean | undefined;
   // 列を隠す・見せるのを許すか(既定 false)。列の表示の反映には onColumnsChange が要るため opt-in です。
-  allowColumnVisibility?: boolean;
+  allowColumnVisibility?: boolean | undefined;
   // 「今日」です(既定 new Date())。プロンプトの日付と、テストで日付を固定するために使います。
-  now?: Date;
+  now?: Date | undefined;
   // 追加(英語対応): 文言(使えなかった理由・チップ・バーの表示。既定は日本語、英語は gridAskLocaleTextEn)。
-  localeText?: Partial<GridAskLocaleText>;
+  localeText?: Partial<GridAskLocaleText> | undefined;
 };
 
 export type GridAskResult =
@@ -296,7 +296,7 @@ const isAllowed = (flag: boolean | undefined, fallback: boolean): boolean => fla
 const toItem = (
   column: string,
   op: GridAskOp,
-  extra: { value?: string; values?: string[]; to?: string } = {},
+  extra: { value?: string | undefined; values?: string[] | undefined; to?: string | undefined } = {},
 ): GridAskFilter => ({
   column,
   op,
@@ -338,12 +338,12 @@ const dateConditionToItems = (key: string, parsed: ParsedDateFilter): GridAskFil
 // 今の選択が長いときは先頭の VIEW_VALUES_LIMIT 件だけを書き、残りの件数を more に書きます。
 const setToItems = (
   key: string,
-  set: { mode?: 'include' | 'exclude'; values: string[] } | null,
+  set: { mode?: 'include' | 'exclude' | undefined; values: string[] } | null,
 ): GridAskFilter[] => {
   if (!set) {
     return [];
   }
-  const item: GridAskFilter & { more?: number } = toItem(key, set.mode === 'exclude' ? 'notIn' : 'in', {
+  const item: GridAskFilter & { more?: number | undefined } = toItem(key, set.mode === 'exclude' ? 'notIn' : 'in', {
     values: set.values.slice(0, VIEW_VALUES_LIMIT),
   });
   if (set.values.length > VIEW_VALUES_LIMIT) {

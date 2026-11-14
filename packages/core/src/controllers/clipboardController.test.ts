@@ -208,6 +208,26 @@ describe('clipboardController', () => {
     expect(t.dispatch).toHaveBeenCalledWith({ type: 'selection/update', cell: { row: 1, col: 1 } });
   });
 
+  // 追加(1.0.2 / 2026-11-09 実アプリの総点検 C-02): 行 / 列を足せないときに表の外へはみ出す貼り付けは、選択範囲を書いた範囲まで。
+  it('行 / 列を足せないとき、貼り付け後の選択範囲は表の中まで(C-02)', () => {
+    const c = createClipboardController<Row>();
+    const t = makeArgs({
+      uiState: { ...createInitialGridUiState(), activeCell: { row: 1, col: 1 } },
+    });
+    c.update(t.args);
+    c.handlePaste({ clipboardData: { getData: () => 'x\ty\tz\np\tq\tr' }, preventDefault: vi.fn() });
+    expect(t.dispatch).toHaveBeenCalledWith({ type: 'selection/update', cell: { row: 1, col: 1 } });
+
+    // createRow があれば足した行まで選ぶ(従来どおり)。
+    const withCreate = makeArgs({
+      uiState: { ...createInitialGridUiState(), activeCell: { row: 1, col: 1 } },
+      createRow: () => ({ id: 9, name: '' }),
+    });
+    c.update(withCreate.args);
+    c.handlePaste({ clipboardData: { getData: () => 'x\ny\nz' }, preventDefault: vi.fn() });
+    expect(withCreate.dispatch).toHaveBeenCalledWith({ type: 'selection/update', cell: { row: 3, col: 1 } });
+  });
+
   // 追加(audit RD-2): 編集中 / 入力要素が発火元の paste はグリッドが横取りしない。
   it('セル編集中の paste は無視する(エディタ input のネイティブ貼り付けに委ねる)', () => {
     const c = createClipboardController<Row>();

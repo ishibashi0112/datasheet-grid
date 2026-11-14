@@ -4,7 +4,7 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi, beforeAll, afterEach } from 'vitest';
 import { render, cleanup, act, fireEvent, screen, within } from '@testing-library/react';
-import { Activity, createRef, useState, type RefObject } from 'react';
+import { Activity, createRef, StrictMode, useState, type RefObject } from 'react';
 
 import { SpreadsheetGrid } from '../SpreadsheetGrid';
 import { GridAskBar, type GridAsk, type GridAskBarProps } from '../ai';
@@ -681,6 +681,27 @@ describe('GridAskBar(結合)', () => {
         warn.mockClear();
         rerender(<HintsHost hints={{ stock: '個' }} />);
         expect(warn).not.toHaveBeenCalled();
+      } finally {
+        warn.mockRestore();
+      }
+    });
+
+    // 追加(1.0.2 / 2026-11-09 実アプリの総点検 I-11): StrictMode(Next.js の開発時の既定)では、effect の付け直しで 2 回以上出ていた。
+    it('StrictMode でも、同じ打ち間違いの警告は 1 回だけ', () => {
+      const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+      try {
+        const { rerender } = render(
+          <StrictMode>
+            <HintsHost hints={{ stok: false }} />
+          </StrictMode>,
+        );
+        rerender(
+          <StrictMode>
+            <HintsHost hints={{ stok: false }} />
+          </StrictMode>,
+        );
+        const count = warn.mock.calls.filter(([message]) => String(message).includes('columnHints')).length;
+        expect(count).toBe(1);
       } finally {
         warn.mockRestore();
       }

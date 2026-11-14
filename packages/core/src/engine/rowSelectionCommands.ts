@@ -52,6 +52,9 @@ export type FilteredDataRows<T> = {
 export type RowSelectionCommands<T> = {
   update: (args: RowSelectionCommandsArgs<T>) => void;
   commitRowSelection: (next: RowSelectionState) => void;
+  // 追加(1.0.2 / 2026-11-09 実アプリの総点検 H-07): onRowSelectionChange を呼んでいる間の新しい選択(それ以外は null)。
+  //   命令的 API の読み取り(getSelectedRowCount など)がコールバックの中でも新しい値を返すのに使います。
+  pendingRowSelection: () => RowSelectionState | null;
   handleGutterRowSelect: (viewIndex: number, opts: { shiftKey: boolean }) => void;
   handleGutterRowSelectDrag: (viewIndex: number) => void;
   handleToggleSelectAllRows: () => void;
@@ -70,13 +73,24 @@ export const createRowSelectionCommands = <T,>(): RowSelectionCommands<T> => {
     return args;
   };
 
+  // 変更(1.0.2 / 2026-11-09 実アプリの総点検 H-07): uncontrolled は先に反映してから通知し、通知の間は新しい選択を
+  //   pendingRowSelection で見せます(コールバックの中でハンドルの getSelectedRowCount / getSelectedRowKeys を読むと、
+  //   1 つ前の値が返っていた。controlled は親が prop を変えるまで反映しないので、通知の間だけ新しい値を見せる)。
+  let pending: RowSelectionState | null = null;
   const commitRowSelection = (next: RowSelectionState) => {
     const { rowSelectionState, onRowSelectionChange, controlledRowSelectionModel, dispatch } = requireArgs();
-    if (!rowSelectionStateEquals(rowSelectionState, next)) {
-      onRowSelectionChange?.(rowSelectionToModel(next));
-    }
+    const changed = !rowSelectionStateEquals(rowSelectionState, next);
     if (controlledRowSelectionModel === undefined) {
       dispatch(gridActions.setRowSelectionState(next));
+    }
+    if (changed && onRowSelectionChange) {
+      const previous = pending;
+      pending = next;
+      try {
+        onRowSelectionChange(rowSelectionToModel(next));
+      } finally {
+        pending = previous;
+      }
     }
   };
 
@@ -170,6 +184,7 @@ export const createRowSelectionCommands = <T,>(): RowSelectionCommands<T> => {
       }
     },
     commitRowSelection,
+    pendingRowSelection: () => pending,
     handleGutterRowSelect,
     handleGutterRowSelectDrag,
     handleToggleSelectAllRows,

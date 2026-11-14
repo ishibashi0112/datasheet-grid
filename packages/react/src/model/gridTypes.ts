@@ -76,5 +76,5 @@ export type SpreadsheetGridProps<T, L extends T = T> = Core.SpreadsheetGridProps
    * 命令的 API(`SpreadsheetGridHandle`)を受け取る ref(利用側で `forwardRef` は不要。React 18.3 / 19 のどちらも同じ)。
    * 例: `const gridRef = useRef<SpreadsheetGridHandle<Row>>(null)` → `<SpreadsheetGrid ref={gridRef} … />`。
    */
-  ref?: Ref<Core.SpreadsheetGridHandle<T>>;
+  ref?: Ref<Core.SpreadsheetGridHandle<T>> | undefined;
 };
