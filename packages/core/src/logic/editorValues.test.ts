@@ -199,6 +199,27 @@ describe('toDateInputValue', () => {
     expect(toDateInputValue('November 30 2026')).toBe('2026-11-30');
     expect(toDateInputValue(new Date(2026, 10, 5).toString())).toBe('2026-11-05');
   });
+
+  // 1.0.1 のレビュー RA-4: AP-01 の修正で 1.0.0 まで読めていた 2 桁の年と、日の無い月と年を読めなくしていた。
+  it('2 桁の年(00〜49 は 2000 年代、50〜99 は 1900 年代)と日の無い月と年は 1.0.0 と同じく読む', () => {
+    expect(toDateInputValue('11/2/26')).toBe('2026-11-02');
+    expect(toDateInputValue('11/02/26')).toBe('2026-11-02');
+    expect(toDateInputValue('11-2-49')).toBe('2049-11-02');
+    expect(toDateInputValue('11.2.50')).toBe('1950-11-02');
+    expect(toDateInputValue('9-Nov-26')).toBe('2026-11-09');
+    expect(toDateInputValue('1-Nov-01')).toBe('2001-11-01');
+    expect(toDateInputValue('Nov 2026')).toBe('2026-11-01');
+    expect(toDateInputValue('November 2026')).toBe('2026-11-01');
+  });
+
+  it('2 桁の年でも、年の無い文字列とありえない日付は読まない', () => {
+    expect(toDateInputValue('2/30/26')).toBe('');
+    expect(toDateInputValue('30-Feb-26')).toBe('');
+    expect(toDateInputValue('Nov 01')).toBe('');
+    expect(toDateInputValue('01-Nov')).toBe('');
+    expect(toDateInputValue('Nov 26')).toBe('');
+    expect(toDateInputValue('November 9')).toBe('');
+  });
 });
 
 describe('parseCommittedValue', () => {

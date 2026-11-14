@@ -91,7 +91,9 @@ const DIGITS_ONLY = /^\s*[+-]?\d+\s*$/;
 //   (「2026/2/30」「2026-13-01」)も読めない値にします。Date.parse は年の無い文字列を 2001 年として、ありえない日付を
 //   翌月へ繰り越して読むため(「11/2」が 2001-11-02、「2026/2/30」が 2026-03-02 になり、黙って違う日付が入っていた)。
 //   数字で書いた日付(年 / 月 / 日、月 / 日 / 年)は自前で読み、それ以外(「Nov 1 2026」など)は Date.parse の結果の年が
-//   4 桁の数として書かれていて、日の数も書かれているときだけ受け取ります。
+//   数として書かれていて、日の数も書かれているときだけ受け取ります。
+//   変更(1.0.1 のレビュー RA-4): 1.0.0 で読めていた 2 桁の年(「11/2/26」「9-Nov-26」。00〜49 は 2000 年代、50〜99 は
+//   1900 年代 = Date.parse と同じ)と、日の無い月と年(「Nov 2026」→ その月の 1 日)はそのまま読みます。
 const isValidDateParts = (year: number, month: number, day: number): boolean =>
   year >= 1000 &&
   year <= 9999 &&
@@ -105,8 +107,11 @@ const formatYmd = (year: number, month: number, day: number): string =>
 
 // 年 / 月 / 日(区切りは - / .)。後ろに時刻などが続いてもよい。
 const YMD_PREFIX = /^\s*(\d{4})[-/.](\d{1,2})[-/.](\d{1,2})(?![\d])/;
-// 月 / 日 / 年(Date.parse と同じく月が先)。
-const MDY_PREFIX = /^\s*(\d{1,2})[-/.](\d{1,2})[-/.](\d{4})(?![\d])/;
+// 月 / 日 / 年(Date.parse と同じく月が先。年は 4 桁か 2 桁)。
+const MDY_PREFIX = /^\s*(\d{1,2})[-/.](\d{1,2})[-/.](\d{4}|\d{2})(?![\d])/;
+
+// 2 桁の年を 4 桁へ(Date.parse と同じく 00〜49 は 2000 年代、50〜99 は 1900 年代)。
+const expandTwoDigitYear = (year: number): number => (year < 50 ? 2000 + year : 1900 + year);
 
 const readNumericDate = (text: string): string | undefined => {
   const ymd = YMD_PREFIX.exec(text);
@@ -116,10 +121,38 @@ const readNumericDate = (text: string): string | undefined => {
   }
   const mdy = MDY_PREFIX.exec(text);
   if (mdy) {
-    const [month, day, year] = [Number(mdy[1]), Number(mdy[2]), Number(mdy[3])];
+    const [month, day, writtenYear] = [Number(mdy[1]), Number(mdy[2]), Number(mdy[3])];
+    const year = mdy[3].length === 2 ? expandTwoDigitYear(writtenYear) : writtenYear;
     return isValidDateParts(year, month, day) ? formatYmd(year, month, day) : '';
   }
   return undefined;
+};
+
+// Date.parse で読んだ日付が、書かれた数と合っているか。年は 4 桁の数として書かれていること(書かれていないと
+//   Date.parse は 2001 年などにする)。2 桁の年は、ほかに日の数も書かれているときだけ(「Nov 01」は年の無い文字列)。
+//   日はその数が書かれていること(「Feb 30 2026」は 3 月 2 日に繰り越されるので、書かれた数に 2 が無い)。年のほかに数が
+//   無いときは 1 日(「Nov 2026」)。
+const matchesWrittenNumbers = (text: string, parsed: Date): boolean => {
+  const year = parsed.getFullYear();
+  if (year < 1000 || year > 9999) {
+    return false;
+  }
+  const numbers = text.match(/\d+/g) ?? [];
+  let yearIndex = numbers.findIndex((part) => part.length === 4 && Number(part) === year);
+  if (yearIndex === -1 && numbers.length >= 2) {
+    yearIndex = numbers.findLastIndex(
+      (part) => part.length === 2 && expandTwoDigitYear(Number(part)) === year,
+    );
+  }
+  if (yearIndex === -1) {
+    return false;
+  }
+  const rest = numbers.filter((_, index) => index !== yearIndex);
+  const day = parsed.getDate();
+  if (rest.length === 0) {
+    return day === 1;
+  }
+  return rest.some((part) => part.length <= 2 && Number(part) === day);
 };
 
 export const toDateInputValue = (value: unknown): string => {
@@ -135,18 +168,7 @@ export const toDateInputValue = (value: unknown): string => {
       return numeric;
     }
     const parsed = new Date(value);
-    if (Number.isNaN(parsed.getTime())) {
-      return '';
-    }
-    const year = parsed.getFullYear();
-    // 年は 4 桁の数として書かれていること(書かれていないと Date.parse は 2001 年などにする)。
-    if (year < 1000 || year > 9999 || !new RegExp(`(^|\\D)${year}(\\D|$)`).test(value)) {
-      return '';
-    }
-    // 日の数が書かれていること(「Feb 30 2026」は 3 月 2 日に繰り越されるので、書かれた数に 2 が無い)。
-    const numbers = value.match(/\d+/g) ?? [];
-    const day = parsed.getDate();
-    if (!numbers.some((part) => part.length <= 2 && Number(part) === day)) {
+    if (Number.isNaN(parsed.getTime()) || !matchesWrittenNumbers(value, parsed)) {
       return '';
     }
     return formatDateParts(parsed);
