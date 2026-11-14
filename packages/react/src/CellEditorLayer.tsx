@@ -291,7 +291,6 @@ export function CellEditorLayer<T>({
         wordBreak={editorSession?.column.wordBreak}
         lineBreak={editorSession?.column.lineBreak}
         alignTop={alignTop}
-        autoHeightCell={editorSession?.column.autoHeight === true}
       />
     );
   }

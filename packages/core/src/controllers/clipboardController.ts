@@ -25,6 +25,7 @@ import {
   buildClipboardCellEdits,
   filterClipboardColumns,
   formatClipboardCell,
+  joinTsvLines,
   joinTsvRow,
   parseClipboardText,
   resolvePasteColumnIndexes,
@@ -160,7 +161,9 @@ export const createClipboardController = <T extends object>(): ClipboardControll
       }
       lines.push(joinTsvRow(copyColumns.map((column) => formatClipboardCell(row, column))));
     }
-    return lines.join('\n');
+    // 変更(1.0.2 / レビュー QA-10): 範囲のコピーと同じく、最後の行がすべて空なら末尾に改行を足します(RV-C1。1 列の表で
+    //   全体を選んでコピーすると、貼り付けで最後の空の行が消えていた)。
+    return joinTsvLines(lines);
   };
 
   const handleCopy = async () => {

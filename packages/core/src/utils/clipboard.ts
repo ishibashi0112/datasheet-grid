@@ -105,7 +105,8 @@ export const joinTsvRow = (cells: string[]): string => cells.map(escapeTsvField)
 //   末尾の改行 1 つを「最後の行の終わり」として読むため、足さないと 1 列の範囲の最後の空のセルが貼り付けで消えて
 //   いました(例: 「a」と空の 2 行が「a」の 1 行に)。最後の行に値があるときは今までどおり改行を足しません。
 //   空のセルは '' のまま、タブや改行を含むセルは引用符で囲むので、タブだけの行 = すべて空の行です。
-const joinTsvLines = (lines: string[]): string => {
+// 変更(レビュー QA-10): 全体の選択のコピー(clipboardController の serializeWholeGridToTsv)でも使うので export します。
+export const joinTsvLines = (lines: string[]): string => {
   const last = lines[lines.length - 1];
   const text = lines.join('\n');
   return last !== undefined && /^\t*$/.test(last) ? `${text}\n` : text;

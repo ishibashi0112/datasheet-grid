@@ -69,7 +69,12 @@ const describeSetSelection = (
   const listed = values.length > 0 && values.length <= 2 ? values.map((value) => formatSetValue(value, labelOf, texts)).join(', ') : null;
   // mode 省略は include 扱いです(反転set 導入前の値との後方互換)。
   if ((mode ?? 'include') === 'exclude') {
-    return listed === null
+    // 追加(1.0.2 / レビュー QB-3): 自前の言語の表で filterExcluded だけを訳し、1.0.2 で足した filterExcludedValues を渡していない
+    //   ときは、これまでどおり件数の文言(訳したもの)を使います(既定の日本語に戻らないように)。
+    const valuesUntranslated =
+      texts.filterExcludedValues === DEFAULT_FILTER_LOCALE_TEXT.filterExcludedValues &&
+      texts.filterExcluded !== DEFAULT_FILTER_LOCALE_TEXT.filterExcluded;
+    return listed === null || valuesUntranslated
       ? formatLocaleText(texts.filterExcluded, { count: values.length })
       : formatLocaleText(texts.filterExcludedValues, { values: listed });
   }

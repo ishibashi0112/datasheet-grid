@@ -2737,6 +2737,8 @@ export function useGridShell<T extends object>({
     rowModel,
     columns: orderedColumns,
     caseSensitive: findCaseSensitive,
+    // 追加(1.0.2 / レビュー QB-1): 条件付き書式の機能が無ければチップもデータバーも描かれないので、値の文字を探す。
+    conditionalFormat: features.conditionalFormat !== undefined,
     // カレントのヒットへ: クリック相当の単一選択 + 可視化スクロール(命令的 API と同じ経路)。
     onNavigate: (rowIndex: number, colIndex: number) => {
       gridApi.handle.selectCell(rowIndex, colIndex, { scrollIntoView: true });
@@ -3564,19 +3566,49 @@ export function useGridShell<T extends object>({
   // 追加(1.0.2 / 2026-11-09 実アプリの総点検 RV-F3): 離した行(動かした先)をアクティブセルにします(列は今のアクティブセルの列、
   //   無いか合成列なら先頭のデータ列)。ハンドルを押すとフォーカスはグリッドへ移るのに、アクティブセルが無いままで、続けて
   //   ↓ を押すと表の先頭へ飛んでいた。
+  //   変更(1.0.2 / レビュー QA-6): その列が横の見える範囲に無ければ、見えている先頭のデータ列にします(アクティブセルの列を横に
+  //   スクロールして外した後に行を落とすと、横のスクロールがその列まで飛んでいた)。見えているデータ列が無ければその列のまま。
   const commitRowMoveFromDrag = useCallback(
     (fromIndex: number, toIndex: number) => {
       const moved = commitRowMove(fromIndex, toIndex);
       applyHoveredRowChange(null);
+      const isDataCol = (col: number) => {
+        const column = orderedColumns[col];
+        return column !== undefined && !isControlColumnKey(column.key);
+      };
+      const isColInView = (col: number): boolean => {
+        const single = computeSinglePaneColumnExtent(paneLayout, col);
+        const scrollElement = scrollContainerRef.current;
+        if (!single || single.pane !== 'center' || !scrollElement) {
+          return single !== null;
+        }
+        const left = leftPaneTotalWidth + centerLeadingWidth + single.extent.start;
+        const visibleLeft = scrollElement.scrollLeft + leftPaneTotalWidth;
+        const visibleRight = scrollElement.scrollLeft + scrollElement.clientWidth - rightPaneTotalWidth;
+        return left >= visibleLeft && left + single.extent.width <= visibleRight;
+      };
       const activeCol = gridStore.getState().activeCell?.col;
-      const activeColumn = activeCol === undefined ? undefined : orderedColumns[activeCol];
-      const col =
-        activeCol !== undefined && activeColumn !== undefined && !isControlColumnKey(activeColumn.key)
-          ? activeCol
-          : resolveFirstDataColIndex(orderedColumns);
+      let col = activeCol !== undefined && isDataCol(activeCol) ? activeCol : resolveFirstDataColIndex(orderedColumns);
+      if (!isColInView(col)) {
+        const visibleCol = orderedColumns.findIndex((_, index) => isDataCol(index) && isColInView(index));
+        if (visibleCol >= 0) {
+          col = visibleCol;
+        }
+      }
       gridApi.handle.selectCell(moved ? toIndex : fromIndex, col);
     },
-    [commitRowMove, applyHoveredRowChange, gridStore, orderedColumns, gridApi],
+    [
+      commitRowMove,
+      applyHoveredRowChange,
+      gridStore,
+      orderedColumns,
+      gridApi,
+      paneLayout,
+      scrollContainerRef,
+      leftPaneTotalWidth,
+      rightPaneTotalWidth,
+      centerLeadingWidth,
+    ],
   );
   // 変更(差し込み式 段階 2): ゴーストのラベル / controller の接続 / settle の layout effect と、ハンドル列のセル・
   //   ガイド線の描画は機能セットの hook(features/rowDrag.tsx)へ移し、この位置で呼びます(hook の順番は従来どおり)。

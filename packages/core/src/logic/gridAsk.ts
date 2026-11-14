@@ -1229,6 +1229,8 @@ export const readGridAskAnswer = <T,>(
   //   (すべて「使えなかった部分」へ回った)ときは、表を空にせず今のままにします(「変える条件はありませんでした」)。これまでは
   //   今の条件が消えて全件になっていました。何も書かずに空を返した答え(「全部見せて」)はこれまでどおり空にします。
   //   読めない形で書いてきたもの(`sort: "amount"` など)も「書いてきた」に数えます。
+  //   変更(レビュー QB-6): 何も書かずに「できなかった」(unsupported)だけを返した答え(「天気は?」に AI が断った)も今のままに
+  //   します(空にすると全件になっていた)。何も書かず unsupported も無い答え(「全部見せて」)はこれまでどおり空にします。
   const hasContent = (value: unknown): boolean =>
     value !== undefined &&
     value !== null &&
@@ -1240,7 +1242,7 @@ export const readGridAskAnswer = <T,>(
     hasContent(source.search) ||
     hasContent(source.hide) ||
     hasContent(source.show);
-  if (!refine && attempted && !used && dropped.length > 0) {
+  if (!refine && !used && (attempted ? dropped.length > 0 : unsupported !== null)) {
     return {
       ok: true,
       state: {

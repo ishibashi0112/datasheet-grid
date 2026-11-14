@@ -163,13 +163,13 @@ describe('blurForPopover / restoreGridFocus', () => {
 });
 
 describe('restoreGridFocus(1.0.2 / RV-K2)', () => {
-  it('閉じるパネル(グリッドのポップアップ)の中にフォーカスがあるときは、その場で root へ移す', () => {
+  it('閉じるパネル(グリッドのポップアップ)の中のボタンにフォーカスがあるときは、その場で root へ移す', () => {
     const root = document.createElement('div');
     root.tabIndex = 0;
     const panel = document.createElement('div');
     panel.className = 'ssg-filter-popover';
-    const input = document.createElement('input');
-    panel.appendChild(input);
+    const button = document.createElement('button');
+    panel.appendChild(button);
     const outside = document.createElement('input');
     document.body.append(root, panel, outside);
     const callbacks: FrameRequestCallback[] = [];
@@ -177,7 +177,7 @@ describe('restoreGridFocus(1.0.2 / RV-K2)', () => {
       callbacks.push(cb);
       return callbacks.length;
     });
-    input.focus();
+    button.focus();
     restoreGridFocus({ current: root });
     expect(document.activeElement).toBe(root);
     // パネルの外(利用側の入力欄)にあるときは、その場では動かさない(次のフレームで戻す = 従来どおり)。
@@ -186,6 +186,40 @@ describe('restoreGridFocus(1.0.2 / RV-K2)', () => {
     expect(document.activeElement).toBe(outside);
     for (const cb of callbacks) cb(0);
     expect(document.activeElement).toBe(root);
+    vi.unstubAllGlobals();
+  });
+
+  // 追加(レビュー QA-1): 入力欄は blur で打った文字を確定することがあるので、パネルが外れてから(マイクロタスク)移す。
+  it('パネルの中の入力欄にフォーカスがあるときは、その場では動かさず、パネルが外れたら(マイクロタスク)root へ移す', async () => {
+    const root = document.createElement('div');
+    root.tabIndex = 0;
+    const panel = document.createElement('div');
+    panel.className = 'ssg-filter-popover';
+    const input = document.createElement('input');
+    const onBlur = vi.fn();
+    input.addEventListener('blur', onBlur);
+    panel.appendChild(input);
+    document.body.append(root, panel);
+    vi.stubGlobal('requestAnimationFrame', () => 0);
+    input.focus();
+    restoreGridFocus({ current: root });
+    expect(document.activeElement).toBe(input);
+    expect(onBlur).not.toHaveBeenCalled();
+    // 利用側の描画の確定でパネルが外れる(jsdom は外れた要素の blur を出さない)。
+    input.removeEventListener('blur', onBlur);
+    panel.remove();
+    await Promise.resolve();
+    expect(document.activeElement).toBe(root);
+    // まだ外れていない(入力欄にフォーカスが残る)ときは、マイクロタスクでは動かさない(次のフレームに任せる)。
+    const panel2 = document.createElement('div');
+    panel2.className = 'ssg-filter-popover';
+    const input2 = document.createElement('input');
+    panel2.appendChild(input2);
+    document.body.append(panel2);
+    input2.focus();
+    restoreGridFocus({ current: root });
+    await Promise.resolve();
+    expect(document.activeElement).toBe(input2);
     vi.unstubAllGlobals();
   });
 });

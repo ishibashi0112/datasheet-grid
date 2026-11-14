@@ -73,7 +73,7 @@ export const createColumnAutosizeRunner = <T,>(): ColumnAutosizeRunner<T> => {
 
     const viewRowCount = rowModel.getRowCount();
     const gridRoot = gridRootRef.current;
-    const accumulator = createColumnWidthAccumulator(columns);
+    const accumulator = createColumnWidthAccumulator(columns, chipOf);
 
     overlayTimer = setTimeout(() => {
       if (runGeneration === myGeneration) {

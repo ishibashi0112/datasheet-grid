@@ -20,7 +20,10 @@ import type {
 import { createEditorKeyDownHandler } from './editorKeyBindings';
 import { CellEditorErrorBubble } from './CellEditorErrorBubble';
 import { cx } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/cx';
-import { toDateInputValue } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/editorValues';
+import {
+  normalizeTypedDateText,
+  toDateInputValue,
+} from '@ishibashi0112/spreadsheet-grid-core/internal/logic/editorValues';
 import { useGridLocaleText } from '../hooks/useGridLocaleText';
 import { resolveShiftIntoView } from './editorVisibleBounds';
 
@@ -84,7 +87,8 @@ export function DateCellEditor({
     if (text === '') {
       return onCommit('', direction);
     }
-    const normalized = toDateInputValue(text);
+    // 変更(レビュー QA-5): IME をオンのまま打った全角の数字や「2026年3月15日」も読みます。
+    const normalized = toDateInputValue(normalizeTypedDateText(text));
     return normalized === ''
       ? { status: 'rejected', message: texts.enterDate }
       : onCommit(normalized, direction);

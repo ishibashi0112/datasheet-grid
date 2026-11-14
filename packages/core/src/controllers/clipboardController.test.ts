@@ -117,6 +117,33 @@ describe('clipboardController', () => {
     expect(writeText).toHaveBeenLastCalledWith('b');
   });
 
+  // 追加(1.0.2 / レビュー QA-10): 全体の選択のコピーも、最後の行がすべて空なら末尾に改行を足す(RV-C1 と同じ)。
+  it('全選択のコピーで最後の行が空なら末尾に改行を足す(1 列の表で最後の空の行が貼り付けで消えない)', async () => {
+    type One = { name: string };
+    const oneRows: One[] = [{ name: 'x' }, { name: '' }];
+    const c = createClipboardController<One>();
+    c.update({
+      rows: oneRows,
+      rowModel: {
+        getRowCount: () => oneRows.length,
+        getRow: (i) => oneRows[i],
+        getSourceIndex: (i) => i,
+        getRowKey: (i) => i,
+      },
+      visibleColumns: [{ key: 'name', title: 'Name', width: 120 }],
+      uiState: {
+        ...createInitialGridUiState(),
+        selection: { type: 'cell', range: { start: { row: 0, col: 0 }, end: { row: 1, col: 0 } } },
+      },
+      readOnly: false,
+      canEditCell: undefined,
+      onRowsChange: vi.fn(),
+      dispatch: vi.fn(),
+    });
+    await c.handleCopy();
+    expect(writeText).toHaveBeenLastCalledWith('x\n\n');
+  });
+
   it('構造的イベント型でペーストでき、clipboardData が null なら何もしない', () => {
     const c = createClipboardController<Row>();
     const t = makeArgs({

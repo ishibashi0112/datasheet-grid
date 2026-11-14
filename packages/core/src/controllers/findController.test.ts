@@ -113,6 +113,42 @@ describe('findController', () => {
     controller.dispose();
   });
 
+  it('条件付き書式を描かない構成(conditionalFormat: false)では、チップの label ではなく値を探し、showValue: false のデータバーの列も探す(レビュー QB-1)', async () => {
+    type CfRow = { id: number; status: string; score: number };
+    const cfColumns: GridColumn<CfRow>[] = [
+      { key: 'status', title: 'Status', width: 120, conditionalFormat: { chips: { A: { tone: 'good', label: 'Approved' } } } },
+      { key: 'score', title: 'Score', width: 80, conditionalFormat: { dataBar: { showValue: false } } },
+    ];
+    const cfRows: CfRow[] = [{ id: 1, status: 'A', score: 12 }];
+    const cfRowModel: RowModel<CfRow> = {
+      getRow: (i) => cfRows[i],
+      getRowCount: () => cfRows.length,
+      getSourceIndex: (i) => i,
+      getRowKey: (i) => cfRows[i]?.id ?? i,
+    };
+    const controller = createFindController<CfRow>();
+    const args = { enabled: true, rowModel: cfRowModel, columns: cfColumns, caseSensitive: false, onNavigate: vi.fn() };
+    // 既定(描く): label にヒットし、データバーの列は探さない。
+    controller.update(args);
+    controller.open('approved');
+    await flush();
+    expect(controller.getSnapshot().matches.map((m) => m.colIndex)).toEqual([0]);
+    controller.setQuery('12');
+    await flush();
+    expect(controller.getSnapshot().matches).toEqual([]);
+    // 描かない: 画面に出る値の文字を探す。
+    controller.update({ ...args, conditionalFormat: false });
+    await flush();
+    expect(controller.getSnapshot().matches.map((m) => m.colIndex)).toEqual([1]);
+    controller.setQuery('approved');
+    await flush();
+    expect(controller.getSnapshot().matches).toEqual([]);
+    controller.setQuery('a');
+    await flush();
+    expect(controller.getSnapshot().matches.map((m) => m.colIndex)).toEqual([0]);
+    controller.dispose();
+  });
+
   it('rowModel の差し替えで再走査し、同じヒットがあればカレントを保つ(移動はしない)。大文字小文字区別も反映', async () => {
     const controller = createFindController<Row>();
     const onNavigate = vi.fn();

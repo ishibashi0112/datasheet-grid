@@ -53,9 +53,12 @@ export const resolveFindCellText = <T,>(column: GridColumn<T>, row: T, chipPosit
 // 追加(1.0 前の最終チェック FC-26): 検索の対象にする列か。合成列のほか、文字を出さない列(チェックボックスのエディタ =
 //   チェックの印だけ / データバーの showValue: false = 帯だけ)は外します(見えない "true" / 数値にヒットしていた)。
 //   renderCell の列は renderCell が中身を描く(この 2 つより先に効く)ので、従来どおり対象にします。
-export const isFindableColumn = <T,>(column: GridColumn<T>): boolean =>
+//   変更(1.0.2 / レビュー QB-1): 条件付き書式を描かない構成(`/lite` で機能が無い)では、データバーの showValue: false の
+//   列も値の文字を出すので対象にします(conditionalFormatShown = false)。
+export const isFindableColumn = <T,>(column: GridColumn<T>, conditionalFormatShown = true): boolean =>
   column.renderCell !== undefined ||
-  (column.editor?.type !== 'checkbox' && column.conditionalFormat?.dataBar?.showValue !== false);
+  (column.editor?.type !== 'checkbox' &&
+    (!conditionalFormatShown || column.conditionalFormat?.dataBar?.showValue !== false));
 
 // text 内の query の出現位置(重ならない範囲)を返します。query が空なら空配列。
 export const findRangesInText = (

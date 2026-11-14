@@ -28,6 +28,12 @@ export const blurForPopover = (gridRoot: HTMLElement | null): void => {
 // 変更(1.0.2 / 2026-11-09 実アプリの総点検 RV-K2): 閉じるパネル(グリッドのポップアップ)の中にフォーカスがあるときは、その場で
 //   グリッドへ移します(パネルが消えてから次のフレームまでフォーカスが body にあった。jsdom のテストでは最大約 50ms)。
 //   次のフレームの確かめは従来どおり(押したセルなどへ移ったフォーカスを最後にグリッドへ)。
+// 変更(1.0.2 / レビュー QA-1): フォーカスが入力欄(input / textarea / select / contenteditable)にあるときは、パネルが外れてから
+//   (React の確定はマイクロタスク)移します。その場で移すと、blur で打った文字を確定する入力欄(列フィルターの日付欄 / 利用側の
+//   renderFilterDateInput)が Escape で閉じたときにも確定していた。外れた後のフォーカスが body のときだけ移し、まだ外れて
+//   いなければ次のフレームの確かめに任せます(1.0.1 と同じ)。
+const TEXT_ENTRY_SELECTOR = 'input, textarea, select, [contenteditable]:not([contenteditable="false"])';
+
 export const restoreGridFocus = (gridRootRef: ReadonlyElementRef): void => {
   const current = gridRootRef.current;
   const focused = current?.ownerDocument.activeElement ?? null;
@@ -37,7 +43,17 @@ export const restoreGridFocus = (gridRootRef: ReadonlyElementRef): void => {
     !current.contains(focused) &&
     focused.closest(GRID_POPUP_SELECTOR) !== null
   ) {
-    current.focus({ preventScroll: true });
+    if (focused.matches(TEXT_ENTRY_SELECTOR)) {
+      queueMicrotask(() => {
+        const root = gridRootRef.current;
+        const active = root?.ownerDocument.activeElement ?? null;
+        if (root !== null && (active === null || active === root.ownerDocument.body)) {
+          root.focus({ preventScroll: true });
+        }
+      });
+    } else {
+      current.focus({ preventScroll: true });
+    }
   }
   requestAnimationFrame(() => {
     const root = gridRootRef.current;

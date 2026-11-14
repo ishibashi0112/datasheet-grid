@@ -706,8 +706,13 @@ describe('readGridAskAnswer: 利用者の条件を黙って変えない', () => 
     expect(partial.changed).toBe(true);
     expect(Object.keys(partial.state.filters.columnFilters)).toEqual(['price']);
     expect(partial.state.filters.globalText).toBe('');
-    // 何も書かずに空を返した答え(「全部見せて」)は、AI からの文があってもこれまでどおり空にする
-    const cleared = read(answer({ unsupported: '天気は分かりません' }), state);
+    // 何も書かずに「できなかった」だけを返した答え(AI が断った)は今のまま(レビュー QB-6)
+    const refused = read(answer({ unsupported: '天気は分かりません' }), state);
+    expect(refused.changed).toBe(false);
+    expect(refused.unsupported).toBe('天気は分かりません');
+    expect(refused.state.filters).toEqual(state.filters);
+    // 何も書かずに空を返した答え(「全部見せて」)は、これまでどおり空にする
+    const cleared = read(answer({}), state);
     expect(cleared.changed).toBe(true);
     expect(cleared.state.filters.columnFilters).toEqual({});
     // refine はこれまでどおり(使えなかった条件だけ捨てて今のまま)

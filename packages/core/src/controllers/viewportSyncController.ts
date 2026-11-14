@@ -176,7 +176,15 @@ export const revealActiveCellInPage = (
   const view = doc.defaultView;
   const shell = scrollElement.closest('.ssg-shell');
   const active = doc.activeElement;
-  if (!view || !shell || !active || !shell.contains(active) || shell.hasAttribute('data-ssg-pointer')) {
+  // 変更(1.0.2 / レビュー QA-7): フォーカスがグリッド(シェル)か IME の入力受けにあるときだけ動かします。シェルの中の検索バーで
+  //   打つと、ヒットへ移るたびにページが動き、検索バーが画面の外へ出ていた。
+  if (
+    !view ||
+    !shell ||
+    !active ||
+    (active !== shell && !(active.classList.contains('ssg-ime-input') && shell.contains(active))) ||
+    shell.hasAttribute('data-ssg-pointer')
+  ) {
     return;
   }
   const box = scrollElement.getBoundingClientRect();

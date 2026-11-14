@@ -344,6 +344,10 @@ const isAutosizeExcludedColumn = <T,>(column: GridColumn<T>): boolean =>
 // へ落とす accumulator を生成します。候補保持は列あたり最大 TOP_K 件で行数非依存です。
 export function createColumnWidthAccumulator<T>(
   columns: GridColumn<T>[],
+  // 追加(1.0.2 / レビュー QB-2): 状態チップの列は、候補を選ぶ推定にもチップの文字(label)を使います(finalize と同じ
+  //   chipOf)。これまでは生の値の幅で上位 16 行を選んでいたので、値は短いが label の長い行(`A` → 'Approved by the
+  //   manager')が候補から外れ、チップが切れていました。
+  chipOf?: AutosizeChipOf<T> | undefined,
 ): ColumnWidthAccumulator<T> {
   // ── 候補状態(1 パス × 全列同時) ──
   //   変更(②-S1): 候補に「元の行」を保持します(candidateRow)。Phase 2 でその行から表示テキスト
@@ -362,6 +366,28 @@ export function createColumnWidthAccumulator<T>(
   // 追加(②-S2): estimateCellWidth 指定列用。候補 / テキスト計測を使わず、consumer 申告の content 幅
   //   (px)の全行 running-max を保持します(finalize でセル枠を足して確定)。
   const maxEstimateWidth: number[] = columns.map(() => 0);
+  // 追加(1.0.2 / QB-2): チップが値だけで決まる列(chips がマップ)は、値ごとの推定の文字を控えます。
+  const chipTextCache: (Map<string, string> | null)[] = columns.map((column) =>
+    chipOf !== undefined && column.conditionalFormat?.chips !== undefined && typeof column.conditionalFormat.chips !== 'function'
+      ? new Map()
+      : null,
+  );
+  const chipEstimateText = (ci: number, row: T, viewIndex: number, text: string): string => {
+    const column = columns[ci];
+    if (chipOf === undefined || column.conditionalFormat?.chips === undefined) {
+      return text;
+    }
+    const cache = chipTextCache[ci];
+    const cached = cache?.get(text);
+    if (cached !== undefined) {
+      return cached;
+    }
+    const chip = chipOf(row, column, viewIndex);
+    // チップの枠(余白とアイコン)は finalize で足すので、ここでは文字だけで順位を決めます。
+    const estimateText = chip === null ? text : (chip.label ?? text);
+    cache?.set(text, estimateText);
+    return estimateText;
+  };
 
   const collect = (row: T, viewIndex = -1): void => {
     for (let ci = 0; ci < columns.length; ci += 1) {
@@ -379,10 +405,11 @@ export function createColumnWidthAccumulator<T>(
         }
         continue;
       }
-      const text = String(getCellValue(row, columns[ci]) ?? '');
-      if (text === '') {
+      const rawText = String(getCellValue(row, columns[ci]) ?? '');
+      if (rawText === '') {
         continue;
       }
+      const text = chipEstimateText(ci, row, viewIndex, rawText);
       const rows = candidateRow[ci];
       const indexList = candidateIndex[ci];
       const estList = candidateEst[ci];

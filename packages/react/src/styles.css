@@ -488,6 +488,11 @@
   .ssg-body-cell--valign-top {
     align-items: flex-start;
   }
+  /* 追加(1.0.2 / レビュー QB-4): 上にそろえるとき、auto-height でないセルも auto-height の器(G-12 の上下 0.4em)と同じく
+     上に 0.4em の余白を取ります(背の高い行の 1 行目の高さが列ごとにずれていた)。上にそろえるのは背の高い行だけです。 */
+  .ssg-body-cell--valign-top:not(.ssg-body-cell--autoheight) {
+    padding-top: 0.4em;
+  }
 
   /* 追加(③): セル内容の水平寄せ(GridColumn.align)。基底に justify-content 未指定=左のため、
      center / right のときだけ上書きします(text-align は autoHeight 折り返し時の行揃え用)。 */
@@ -1495,6 +1500,11 @@
     background-color: var(--ssg-cell-bg);
     pointer-events: auto;
   }
+  /* 変更(1.0.2 / H-08・レビュー QA-4): 変換中の入力受けの文字の大きさもセルと同じ(受け継いで、密度で拡縮)。すぐ下の密度の規則と
+     特異度が同じなので、その前に置きます(後ろの `.ssg-ime-input--composing` の規則に書くと密度の拡縮を打ち消していた)。 */
+  .ssg-ime-input--composing {
+    font-size: inherit;
+  }
   :where(.ssg-root--density-compact) :is(.ssg-cell-editor-input, .ssg-ime-input--composing) {
     font-size: 0.85em;
   }
@@ -1565,8 +1575,7 @@
     z-index: 6;
     border: 2px solid var(--ssg-accent);
     padding: 0 var(--ssg-cell-pad-x);
-    /* 変更(1.0.2 / H-08): エディタと同じくセルの文字の大きさ(密度の拡縮は上のエディタと同じ規則)。 */
-    font-size: inherit;
+    /* 文字の大きさは上(密度の規則の前)で決めます(QA-4)。 */
     color: var(--ssg-cell-text);
     caret-color: auto;
     background-color: var(--ssg-cell-bg);
@@ -3623,6 +3632,11 @@
     flex: 0 1 auto;
     text-align: right;
   }
+  /* 変更(レビュー QB-7): renderHeader の中身(幅いっぱいを前提にした width: 100% や space-between など)は、これまでどおり
+     残りの幅を取ります。 */
+  .ssg-header-cell--align-right .ssg-header-label--custom {
+    flex: 1;
+  }
   .ssg-header-cell--align-center .ssg-header-label {
     text-align: center;
   }
@@ -3648,8 +3662,9 @@
     }
     /* 追加(1.0.2 / 2026-11-09 実アプリの総点検 L-11): タッチでは操作が常に出るので、120px より細い見出し(--inline-actions
        の無い見出し)は並べ替えのつまみ(grip)を出さず、⋮ だけにします(64px の「単位」が「単…」に切れていた)。印の無い
-       状態のスロットも幅と隙間を取らないよう外します。細い列の並べ替えはツールパネルの「列」タブで。 */
-    .ssg-header-cell:not(.ssg-header-cell--inline-actions) .ssg-header-actions .ssg-header-grip {
+       状態のスロットも幅と隙間を取らないよう外します。細い列の並べ替えはツールパネルの「列」タブで。
+       変更(レビュー QB-5): ⋮ がある見出しだけです(列メニューが無い構成で細い列の並べ替えができなくなっていた)。 */
+    .ssg-header-cell:not(.ssg-header-cell--inline-actions) .ssg-header-actions:has(.ssg-icon-btn) .ssg-header-grip {
       display: none;
     }
     .ssg-header-status:empty {

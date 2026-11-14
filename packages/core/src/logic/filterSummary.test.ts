@@ -8,6 +8,7 @@ import { describe, it, expect } from 'vitest';
 import { createColumnFilterDescribeOptions, describeColumnFilterValue } from './filterSummary';
 import { numberFormatter } from './valueFormatters';
 import { localeTextEn } from '../locales/en';
+import { DEFAULT_FILTER_LOCALE_TEXT } from './localeTextFilters';
 import type { GridColumn } from '../model/gridTypes.unbound';
 
 describe('describeColumnFilterValue', () => {
@@ -103,6 +104,19 @@ describe('describeColumnFilterValue', () => {
         values: ['A', 'B', 'C'],
       }),
     ).toBe('3 件を除外');
+  });
+
+  // 追加(1.0.2 / レビュー QB-3): 自前の言語の表で filterExcluded だけを訳しているとき(1.0.2 で足した filterExcludedValues が無い)は、
+  //   1〜2 件でも訳した件数の文言を使う(既定の日本語に戻らない)。
+  it('filterExcluded だけを訳した表では、1〜2 件も件数の文言', () => {
+    const texts = { ...DEFAULT_FILTER_LOCALE_TEXT, filterExcluded: '{count}개 제외' };
+    expect(describeColumnFilterValue({ kind: 'set', mode: 'exclude', values: ['A'] }, { texts })).toBe('1개 제외');
+    expect(
+      describeColumnFilterValue(
+        { kind: 'set', mode: 'exclude', values: ['A'] },
+        { texts: { ...texts, filterExcludedValues: '{values} 제외' } },
+      ),
+    ).toBe('"A" 제외');
   });
 
   // 追加(filter-ext B): numberSet(条件 AND 選択)の複合要約です。

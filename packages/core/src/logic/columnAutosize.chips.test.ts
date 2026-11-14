@@ -71,6 +71,24 @@ describe('createColumnWidthAccumulator(状態チップ)', () => {
     expect(seen).toEqual([0, 0, 0]);
   });
 
+  it('候補を選ぶ推定にもチップの label を使う(値が短く label が長い行を取りこぼさない。レビュー QB-2)', () => {
+    const column: GridColumn<Row> = {
+      key: 'status',
+      title: 'S',
+      width: 50,
+      conditionalFormat: { chips: { A: { tone: 'good', label: 'Approved by the manager', icon: false } } },
+    };
+    const chipOf: AutosizeChipOf<Row> = (row) =>
+      row.status === 'A' ? { label: 'Approved by the manager', icon: false } : null;
+    // 生の値が 16 文字の行が 20 行(候補の上限 16 を埋める)+ 値 1 文字・label 23 文字の行が 1 行。
+    const rows: Row[] = [...Array.from({ length: 20 }, () => ({ status: 'pending-review-x' })), { status: 'A' }];
+    const gridRoot = document.createElement('div');
+    document.body.appendChild(gridRoot);
+    const accumulator = createColumnWidthAccumulator([column], chipOf);
+    rows.forEach((row, index) => accumulator.collect(row, index));
+    expect(accumulator.finalize({ gridRoot, currentWidths: {}, chipOf }).status).toBe(23 * CHAR_PX + CHIP_FRAME_PX + 1);
+  });
+
   it('chipOf を渡さないとき(条件付き書式の機能が無い構成)は文字だけ', () => {
     expect(measure(chipColumn, [{ status: 'suspended' }])).toBe(9 * CHAR_PX + 1);
   });

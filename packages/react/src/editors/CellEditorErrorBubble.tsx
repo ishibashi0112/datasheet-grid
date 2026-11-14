@@ -8,6 +8,8 @@ import { useCallback, useState } from 'react';
 import { cx } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/cx';
 import { resolveShiftIntoView } from './editorVisibleBounds';
 
+const ABOVE_CLASS = 'ssg-cell-editor-error--above';
+
 export function CellEditorErrorBubble({ message }: { message: string }) {
   const [placement, setPlacement] = useState({ above: false, shift: 0 });
   // マウント時に自身の矩形を計測し、下側に収まらなければ上側へフリップします
@@ -16,12 +18,19 @@ export function CellEditorErrorBubble({ message }: { message: string }) {
     if (!element) {
       return;
     }
-    // ずらす前の位置で測ります(文言が変わって測り直すとき)。
+    // ずらす前・下に出した位置で測ります(文言が変わって測り直すとき)。
+    // 変更(1.0.2 / レビュー QA-3): 作り直した要素は今の配置(上に出す印・ずらし)を付けて描かれるので、外してから測り、測った
+    //   配置をこの場で付け直します(上に出した位置で測ると「下に収まる」と判定して下へ戻っていた。配置が前と同じだと React は
+    //   DOM を書き直さないので、外したままにもしない)。
+    element.classList.remove(ABOVE_CLASS);
     element.style.left = '';
-    setPlacement({
+    const next = {
       above: element.getBoundingClientRect().bottom > window.innerHeight - 4,
       shift: resolveShiftIntoView(element),
-    });
+    };
+    element.classList.toggle(ABOVE_CLASS, next.above);
+    element.style.left = next.shift > 0 ? `${-next.shift}px` : '';
+    setPlacement(next);
   }, []);
 
   return (
@@ -32,7 +41,7 @@ export function CellEditorErrorBubble({ message }: { message: string }) {
       role="alert"
       className={cx(
         'ssg-cell-editor-error',
-        placement.above && 'ssg-cell-editor-error--above',
+        placement.above && ABOVE_CLASS,
       )}
       style={placement.shift > 0 ? { left: -placement.shift } : undefined}
     >

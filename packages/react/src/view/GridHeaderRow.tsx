@@ -423,6 +423,8 @@ function GridHeaderRowInner<T>({
               className={cx(
                 'ssg-header-label',
                 isColumnFiltered && 'ssg-header-label--filtered',
+                // 追加(1.0.2 / レビュー QB-7): renderHeader の中身は幅いっぱいを前提にしうるので、右寄せでも縮めない(styles.css)。
+                column.renderHeader && 'ssg-header-label--custom',
               )}
               data-ssg-tooltip={
                 column.renderHeader || isDetailToggleColumn

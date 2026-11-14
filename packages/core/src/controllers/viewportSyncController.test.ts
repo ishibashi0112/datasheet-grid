@@ -263,6 +263,24 @@ describe('revealActiveCellInPage(J-10)', () => {
     restore();
   });
 
+  // 追加(1.0.2 / レビュー QA-7): シェルの中の入力欄(検索バー)にフォーカスがあるときは動かさない。IME の入力受けは動かす。
+  it('シェルの中の入力欄(検索バー)にフォーカスがあるときは動かさず、IME の入力受けのときは動かす', () => {
+    const { shell, container, scrollBy, restore } = setup();
+    const findInput = document.createElement('input');
+    findInput.className = 'ssg-find-input';
+    shell.appendChild(findInput);
+    findInput.focus();
+    revealActiveCellInPage(container, rect, geometry);
+    expect(scrollBy).not.toHaveBeenCalled();
+    const imeInput = document.createElement('textarea');
+    imeInput.className = 'ssg-ime-input';
+    shell.appendChild(imeInput);
+    imeInput.focus();
+    revealActiveCellInPage(container, rect, geometry);
+    expect(scrollBy).toHaveBeenCalledWith({ top: 76, behavior: 'auto' });
+    restore();
+  });
+
   it('スクロールする親があれば先に親を動かし、残りをページで動かす', () => {
     const { shell, container, scrollBy, restore } = setup();
     const parent = document.createElement('div');

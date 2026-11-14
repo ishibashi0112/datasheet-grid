@@ -27,6 +27,19 @@ export const normalizeNumberText = (raw: string): string => {
   return THOUSANDS_SEPARATED_PATTERN.test(text) ? text.replace(/,/g, '') : text;
 };
 
+// 追加(1.0.2 / レビュー QA-5): date エディタに文字から打ち始めた(J-12)文字列を、日付として読む前に寄せます。IME をオンのまま
+//   打つと入る全角の数字・記号(「２０２６／３／１５」)、長音「ー」やマイナス記号(「2026ー3ー15」)を半角へ、「2026年3月15日」の
+//   年 / 月を「/」へ、日を消します。読めるかどうかは toDateInputValue が決めます(数字だけの「20260315」は読まない = 貼り付けと同じ)。
+//   打った文字の確定だけで使い、貼り付けとパーサの読み方は変えません。
+export const normalizeTypedDateText = (raw: string): string =>
+  raw
+    .replace(FULL_WIDTH_ASCII_PATTERN, (ch) => String.fromCharCode(ch.charCodeAt(0) - 0xfee0))
+    .replace(/\u3000/g, ' ')
+    .replace(NUMBER_DASH_PATTERN, '-')
+    .replace(/\s*[年月]\s*/g, '/')
+    .replace(/\s*日\s*$/, '')
+    .trim();
+
 // 追加(全角数値): 文字列を数値として読みます(normalizeNumberText を通す)。読めない / 空白だけ / 非有限は null。
 export const parseNumberText = (raw: string): number | null => {
   const text = normalizeNumberText(raw);
