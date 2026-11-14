@@ -66,8 +66,18 @@ describe('画面の中に収める(AP-30)', () => {
   });
 
   it('掴んで動かした位置: 位置はそのままで、下に残る高さを上限にする', () => {
-    expect(resolveToolPanelVerticalPlacement(300, 390, true)).toEqual({ top: 300, maxHeight: 82 });
+    expect(resolveToolPanelVerticalPlacement(500, 900, true)).toEqual({ top: 500, maxHeight: 392 });
     expect(resolveToolPanelVerticalPlacement(20, 900, true)).toEqual({ top: 20, maxHeight: 420 });
+  });
+
+  // 1.0.1 のレビュー RB-5: 下へ動かすと本体の最小の高さ(240px)が枠の外へはみ出していた。
+  it('掴んで動かした位置でも、最小の高さ(336px)が入らない位置へは下げない', () => {
+    // 高さ 900 で上端 700: 900 - 8 - 336 = 556 まで上げる。
+    expect(resolveToolPanelVerticalPlacement(700, 900, true)).toEqual({ top: 556, maxHeight: 336 });
+    // スマホの横向き(高さ 390px): 390 - 8 - 336 = 46。
+    expect(resolveToolPanelVerticalPlacement(300, 390, true)).toEqual({ top: 46, maxHeight: 336 });
+    // 画面がもっと低いときは、上限(画面の高さ - 余白 2 つ)まで。
+    expect(resolveToolPanelVerticalPlacement(200, 300, true)).toEqual({ top: 8, maxHeight: 284 });
   });
 
   it('開いたときの layout に maxHeight が入る', () => {
@@ -79,8 +89,11 @@ describe('画面の中に収める(AP-30)', () => {
     c.update({ canUseFilterTab: true, canUseColumnsTab: true, canUseSortTab: true, gridRootRef: { current: root } });
     c.open('columns');
     expect(c.getSnapshot().layout).toMatchObject({ top: 8, maxHeight: 374 });
+    c.move(30, 100);
+    expect(c.getSnapshot().layout).toMatchObject({ top: 30, maxHeight: 352 });
+    // 最小の高さが入らない位置へは下げない(RB-5)。
     c.move(200, 100);
-    expect(c.getSnapshot().layout).toMatchObject({ top: 200, maxHeight: 182 });
+    expect(c.getSnapshot().layout).toMatchObject({ top: 46, maxHeight: 336 });
     c.dispose();
   });
 });

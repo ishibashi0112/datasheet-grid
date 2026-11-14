@@ -113,13 +113,15 @@ export function ToolPanel({
     tabs.findIndex((descriptor) => descriptor.tab === activeTab),
   );
 
-  const wrapperStyle: CSSProperties = {
+  // 追加(1.0.1 / AP-30): 画面の中に収まる高さ(中の一覧が縮んでスクロールになる)。
+  //   変更(1.0.1 のレビュー RB-5): inline の max-height ではなく変数で渡します(styles.css の .ssg-toolpanel が使う)。
+  //   inline だと classNames.popover / slotProps の style の max-height より勝ち、利用側が変えられなくなっていた。
+  const wrapperStyle = {
     top: layout.top,
     left: layout.left,
     width: layout.width,
-    // 追加(1.0.1 / AP-30): 画面の中に収まる高さ(中の一覧が縮んでスクロールになる)。
-    maxHeight: layout.maxHeight,
-  };
+    '--ssg-toolpanel-max-height': `${layout.maxHeight}px`,
+  } as CSSProperties;
 
   const handlePointerDown = (event: PointerEvent<HTMLDivElement>) => {
     // パネル内 pointer 操作を grid 側へ伝播させません(セル選択開始 / outside click 競合回避)。

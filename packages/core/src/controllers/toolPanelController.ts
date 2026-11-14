@@ -55,6 +55,9 @@ export type ToolPanelController = {
 const PANEL_WIDTH = 360;
 // パネルの高さの上限(styles.css の .ssg-toolpanel の max-height と同じ)。
 export const TOOL_PANEL_MAX_HEIGHT = 420;
+// 追加(1.0.1 のレビュー RB-5): パネルの最小の高さ(styles.css の .ssg-toolpanel-body の min-height 240px + ヘッダーと
+//   余白の 96px)。
+const TOOL_PANEL_MIN_HEIGHT = 336;
 const VIEWPORT_MARGIN = 8;
 const GRID_INSET = 12;
 const TAB_ORDER: ToolPanelTab[] = ['filter', 'columns', 'sort'];
@@ -63,15 +66,18 @@ const TAB_ORDER: ToolPanelTab[] = ['filter', 'columns', 'sort'];
 //   グリッドの右上から max-height 420px で出して画面の下にはみ出し、下の項目と「すべての列を初期状態に戻す」に届かなかった。
 //   - 既定の位置(dragged = false): 上限(420px と画面の高さ - 余白 2 つの小さいほう)が下に入らなければ上へずらす。
 //   - 掴んで動かした位置(dragged = true): 位置はそのままで、下に残る高さを上限にする(中の一覧が縮んでスクロールになる)。
+//     変更(1.0.1 のレビュー RB-5): 下に残る高さが最小の高さ(min(336px, 上限))に足りない位置へは下げない(本体の最小の
+//     高さが枠の外へはみ出し、背景なしで表に重なっていた)。
 export const resolveToolPanelVerticalPlacement = (
   top: number,
   viewportHeight: number,
   dragged: boolean,
 ): { top: number; maxHeight: number } => {
   const cap = Math.max(0, Math.min(TOOL_PANEL_MAX_HEIGHT, viewportHeight - VIEWPORT_MARGIN * 2));
+  const needed = dragged ? Math.min(TOOL_PANEL_MIN_HEIGHT, cap) : cap;
   let nextTop = top;
-  if (!dragged && nextTop + cap > viewportHeight - VIEWPORT_MARGIN) {
-    nextTop = Math.max(VIEWPORT_MARGIN, viewportHeight - VIEWPORT_MARGIN - cap);
+  if (nextTop + needed > viewportHeight - VIEWPORT_MARGIN) {
+    nextTop = Math.max(VIEWPORT_MARGIN, viewportHeight - VIEWPORT_MARGIN - needed);
   }
   const maxHeight = Math.max(0, Math.min(TOOL_PANEL_MAX_HEIGHT, viewportHeight - VIEWPORT_MARGIN - nextTop));
   return { top: nextTop, maxHeight };

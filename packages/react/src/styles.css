@@ -2035,7 +2035,9 @@
      キャップし、各コンテンツのリスト(flex: 1 / overflow-y: auto)がスクロールを担う
      (旧 3 パネルの max-height: 420px を継承)。 */
   .ssg-toolpanel {
-    max-height: 420px;
+    /* 変更(1.0.1 のレビュー RB-5): 画面の中に収まる高さは、ToolPanel が inline の変数で渡す(利用側のクラスや slot の
+       style の max-height が勝つように、inline の max-height にはしない)。 */
+    max-height: var(--ssg-toolpanel-max-height, 420px);
   }
 
   /* 追加(UP-2 / 既開時フラッシュ): 既に開いているパネルへ再度 open(導線の再クリック /
