@@ -45,15 +45,15 @@ describe('UP-1: 統合ツールパネル(controller の move / clamp / リセッ
       width: 360,
       maxHeight: 420,
     });
-    // 範囲外(右下遠方)は clamp されます(左右: vw - 幅 - 8 / 上下: vh - 40)。
+    // 範囲外(右下遠方)は clamp されます(左右: vw - 幅 - 8 / 上下: 最小の高さ 336px が入る位置まで = 1.0.1 のレビュー RB-5)。
     act(() => {
       result.current.moveToolPanel(99999, 99999);
     });
     expect(result.current.toolPanelLayout).toEqual({
-      top: window.innerHeight - 40,
+      top: window.innerHeight - 8 - 336,
       left: window.innerWidth - 360 - 8,
       width: 360,
-      maxHeight: 32,
+      maxHeight: 336,
     });
   });
 
@@ -87,13 +87,13 @@ describe('UP-1: 統合ツールパネル(controller の move / clamp / リセッ
       result.current.openToolPanel('filter');
     });
     act(() => {
-      result.current.moveToolPanel(500, 600);
+      result.current.moveToolPanel(300, 600);
     });
     expect(result.current.toolPanelLayout).toEqual({
-      top: 500,
+      top: 300,
       left: 600,
       width: 360,
-      maxHeight: window.innerHeight - 8 - 500,
+      maxHeight: Math.min(420, window.innerHeight - 8 - 300),
     });
     const originalWidth = window.innerWidth;
     const originalHeight = window.innerHeight;
@@ -110,11 +110,12 @@ describe('UP-1: 統合ツールパネル(controller の move / clamp / リセッ
         });
         window.dispatchEvent(new Event('resize'));
       });
+      // 上下は最小の高さ(336px)が入る位置まで上げます(RB-5)。
       expect(result.current.toolPanelLayout).toEqual({
-        top: 400 - 40,
+        top: 400 - 8 - 336,
         left: 500 - 360 - 8,
         width: 360,
-        maxHeight: 400 - 8 - 360,
+        maxHeight: 336,
       });
     } finally {
       Object.defineProperty(window, 'innerWidth', {
