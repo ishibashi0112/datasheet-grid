@@ -16,6 +16,8 @@ import { CellEditorErrorBubble } from './CellEditorErrorBubble';
 import { cx } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/cx';
 
 type DateCellEditorProps = {
+  // 追加(1.0.1 / 2026-11-09 実アプリの総点検 AP-34): 入力欄の読み上げの名前(「(列名) を編集」。枠の group と同じ)。
+  ariaLabel?: string;
   // 'YYYY-MM-DD' | ''(正規化済み)。
   initialValue: string;
   onCommit: (
@@ -29,6 +31,7 @@ type DateCellEditorProps = {
 };
 
 export function DateCellEditor({
+  ariaLabel,
   initialValue,
   onCommit,
   onCancel,
@@ -71,6 +74,8 @@ export function DateCellEditor({
             onCancel();
           }
         }}
+        aria-label={ariaLabel}
+        aria-invalid={errorMessage !== null || undefined}
         className={cx(
           'ssg-cell-editor-input',
           errorMessage !== null && 'ssg-cell-editor-input--invalid',

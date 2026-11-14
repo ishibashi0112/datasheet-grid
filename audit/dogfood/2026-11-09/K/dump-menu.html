@@ -1,0 +1,367 @@
+<div>
+<section aria-label="在庫">
+<div role="toolbar" aria-label="在庫の操作">
+<button type="button">行を追加</button>
+<button type="button">選択した行を削除</button>
+<button type="button">保存</button>
+<button type="button">CSV</button>
+<span data-testid="count">3 件</span>
+<span data-testid="filters">
+</span>
+<span data-testid="sort">
+</span>
+<output data-testid="message">
+</output>
+</div>
+<div class="ssg-root ssg-root--animate-rows">
+<div class="ssg-bar--top">
+<div class="ssg-bar-container">
+<div class="ssg-bar-group ssg-bar-leading">
+<span class="ssg-bar-chip ssg-bar-chip--emphasis">行 3 / 3</span>
+<span class="ssg-bar-chip ssg-bar-chip--emphasis">列 10 / 10</span>
+<button type="button" class="ssg-bar-chip ssg-bar-chip--emphasis ssg-bar-chip--action" data-ssg-tooltip="フィルター管理パネルを開閉" aria-label="フィルター管理パネルを開閉">絞り込み: なし</button>
+<span class="ssg-bar-chip ssg-bar-chip--emphasis">並び替え: なし</span>
+</div>
+<div class="ssg-bar-input-group">
+<span class="ssg-bar-input-icon" aria-hidden="true">
+<svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+<circle cx="7" cy="7" r="4.5">
+</circle>
+<line x1="10.6" y1="10.6" x2="14.5" y2="14.5">
+</line>
+</svg>
+</span>
+<input placeholder="グローバルフィルター" aria-label="グローバルフィルター" class="ssg-bar-input" type="text" value="">
+</div>
+</div>
+</div>
+<div class="ssg-shell" tabindex="-1" role="group" aria-activedescendant="_r_0_-active-cell" data-ssg-has-active-cell="">
+<div tabindex="-1" role="grid" aria-label="在庫一覧" aria-rowcount="4" aria-colcount="11" aria-multiselectable="true" class="ssg-scroll-container" style="height: 400px; max-height: none;">
+<div class="ssg-inner-row" style="width: 1316px; min-width: 1316px; height: 148px;">
+<div style="position: sticky; left: 0px; width: 166px; min-width: 166px; flex-shrink: 0; align-self: stretch; z-index: 2; border-right: 1px solid var(--ssg-pane-border); box-shadow: var(--ssg-pane-shadow-left);">
+<div style="position: relative; overflow: clip; width: 166px; min-width: 166px; height: 148px;">
+<div data-pane="left" role="row" aria-rowindex="1" class="ssg-header-row" style="height: 40px;">
+<div role="columnheader" aria-colindex="1" class="ssg-header-cell ssg-corner-cell" style="width: 56px; min-width: 56px; height: 40px; cursor: pointer;">#</div>
+<div data-ssg-col-key="sku" role="columnheader" aria-colindex="2" class="ssg-header-cell" style="left: 56px; width: 110px; min-width: 110px; height: 40px;">
+<div class="ssg-header-label" data-ssg-tooltip="SKU">SKU</div>
+<div class="ssg-header-status">
+</div>
+<div class="ssg-header-actions">
+<button type="button" tabindex="-1" data-ssg-tooltip="列メニュー" aria-label="SKU の列メニュー" class="ssg-icon-btn">⋮</button>
+</div>
+<div class="ssg-header-resize">
+</div>
+</div>
+</div>
+<div style="position: absolute; top: 0px; left: 0px; width: 166px; height: 148px;">
+<div data-pane="left" data-row-index="0" role="row" aria-rowindex="2" data-row-key="item-1" class="ssg-body-row" style="height: 36px; transform: translateY(40px);">
+<div role="rowheader" aria-colindex="1" class="ssg-header-cell ssg-row-header-cell" style="width: 56px; min-width: 56px; height: 36px;">1</div>
+<div role="gridcell" aria-colindex="2" aria-selected="false" aria-readonly="true" data-ssg-col-key="sku" class="ssg-body-cell ssg-body-cell--readonly" style="left: 56px; width: 110px; min-width: 110px; height: 36px; z-index: 1;">
+<span>SKU-0001</span>
+</div>
+</div>
+<div data-pane="left" data-row-index="1" role="row" aria-rowindex="3" data-row-key="item-2" class="ssg-body-row" style="height: 36px; transform: translateY(76px);">
+<div role="rowheader" aria-colindex="1" class="ssg-header-cell ssg-row-header-cell" style="width: 56px; min-width: 56px; height: 36px;">2</div>
+<div role="gridcell" aria-colindex="2" aria-selected="false" aria-readonly="true" data-ssg-col-key="sku" class="ssg-body-cell ssg-body-cell--readonly" style="left: 56px; width: 110px; min-width: 110px; height: 36px; z-index: 1;">
+<span>SKU-0002</span>
+</div>
+</div>
+<div data-pane="left" data-row-index="2" role="row" aria-rowindex="4" data-row-key="item-3" class="ssg-body-row" style="height: 36px; transform: translateY(112px);">
+<div role="rowheader" aria-colindex="1" class="ssg-header-cell ssg-row-header-cell" style="width: 56px; min-width: 56px; height: 36px;">3</div>
+<div role="gridcell" aria-colindex="2" aria-selected="false" aria-readonly="true" data-ssg-col-key="sku" class="ssg-body-cell ssg-body-cell--readonly" style="left: 56px; width: 110px; min-width: 110px; height: 36px; z-index: 1;">
+<span>SKU-0003</span>
+</div>
+</div>
+</div>
+</div>
+<div class="ssg-col-drop-indicator" style="position: absolute; top: 0px; height: 148px; transform: translateX(-1px); pointer-events: none; z-index: 8; display: none;">
+</div>
+</div>
+<div class="ssg-center-pane" style="width: 1150px; min-width: 1150px;">
+<div style="position: relative; overflow: clip; width: 1150px; min-width: 1150px; height: 148px;">
+<div data-pane="center" role="row" aria-rowindex="1" class="ssg-header-row" style="height: 40px;">
+<div data-ssg-col-key="name" role="columnheader" aria-colindex="3" class="ssg-header-cell" style="left: 0px; width: 200px; min-width: 200px; height: 40px;">
+<div class="ssg-header-label" data-ssg-tooltip="品名">品名</div>
+<div class="ssg-header-status">
+</div>
+<div class="ssg-header-actions">
+<button type="button" tabindex="-1" data-ssg-tooltip="列メニュー" aria-label="品名 の列メニュー" class="ssg-icon-btn">⋮</button>
+</div>
+<div class="ssg-header-resize">
+</div>
+</div>
+<div data-ssg-col-key="category" role="columnheader" aria-colindex="4" class="ssg-header-cell" style="left: 200px; width: 120px; min-width: 120px; height: 40px;">
+<div class="ssg-header-label" data-ssg-tooltip="カテゴリ">カテゴリ</div>
+<div class="ssg-header-status">
+</div>
+<div class="ssg-header-actions">
+<button type="button" tabindex="-1" data-ssg-tooltip="列メニュー" aria-label="カテゴリ の列メニュー" class="ssg-icon-btn">⋮</button>
+</div>
+<div class="ssg-header-resize">
+</div>
+</div>
+<div data-ssg-col-key="warehouse" role="columnheader" aria-colindex="5" class="ssg-header-cell" style="left: 320px; width: 100px; min-width: 100px; height: 40px;">
+<div class="ssg-header-label" data-ssg-tooltip="倉庫">倉庫</div>
+<div class="ssg-header-status">
+</div>
+<div class="ssg-header-actions">
+<button type="button" tabindex="-1" data-ssg-tooltip="列メニュー" aria-label="倉庫 の列メニュー" class="ssg-icon-btn">⋮</button>
+</div>
+<div class="ssg-header-resize">
+</div>
+</div>
+<div data-ssg-col-key="qty" role="columnheader" aria-colindex="6" class="ssg-header-cell ssg-header-cell--hovered ssg-header-cell--align-right" style="left: 420px; width: 100px; min-width: 100px; height: 40px;">
+<div class="ssg-header-label" data-ssg-tooltip="在庫数">在庫数</div>
+<div class="ssg-header-status">
+</div>
+<div class="ssg-header-actions">
+<button type="button" tabindex="-1" data-ssg-tooltip="列メニュー" aria-label="在庫数 の列メニュー" class="ssg-icon-btn ssg-icon-btn--active">⋮</button>
+</div>
+<div class="ssg-header-resize">
+</div>
+</div>
+<div data-ssg-col-key="price" role="columnheader" aria-colindex="7" class="ssg-header-cell ssg-header-cell--align-right" style="left: 520px; width: 110px; min-width: 110px; height: 40px;">
+<div class="ssg-header-label" data-ssg-tooltip="単価">単価</div>
+<div class="ssg-header-status">
+</div>
+<div class="ssg-header-actions">
+<button type="button" tabindex="-1" data-ssg-tooltip="列メニュー" aria-label="単価 の列メニュー" class="ssg-icon-btn">⋮</button>
+</div>
+<div class="ssg-header-resize">
+</div>
+</div>
+<div data-ssg-col-key="amount" role="columnheader" aria-colindex="8" class="ssg-header-cell ssg-header-cell--align-right" style="left: 630px; width: 130px; min-width: 130px; height: 40px;">
+<div class="ssg-header-label" data-ssg-tooltip="在庫金額">在庫金額</div>
+<div class="ssg-header-status">
+</div>
+<div class="ssg-header-actions">
+<button type="button" tabindex="-1" data-ssg-tooltip="列メニュー" aria-label="在庫金額 の列メニュー" class="ssg-icon-btn">⋮</button>
+</div>
+<div class="ssg-header-resize">
+</div>
+</div>
+<div data-ssg-col-key="arrivedAt" role="columnheader" aria-colindex="9" class="ssg-header-cell" style="left: 760px; width: 120px; min-width: 120px; height: 40px;">
+<div class="ssg-header-label" data-ssg-tooltip="入荷日">入荷日</div>
+<div class="ssg-header-status">
+</div>
+<div class="ssg-header-actions">
+<button type="button" tabindex="-1" data-ssg-tooltip="列メニュー" aria-label="入荷日 の列メニュー" class="ssg-icon-btn">⋮</button>
+</div>
+<div class="ssg-header-resize">
+</div>
+</div>
+<div data-ssg-col-key="discontinued" role="columnheader" aria-colindex="10" class="ssg-header-cell" style="left: 880px; width: 70px; min-width: 70px; height: 40px;">
+<div class="ssg-header-label" data-ssg-tooltip="廃番">廃番</div>
+<div class="ssg-header-status">
+</div>
+<div class="ssg-header-actions">
+<button type="button" tabindex="-1" data-ssg-tooltip="列メニュー" aria-label="廃番 の列メニュー" class="ssg-icon-btn">⋮</button>
+</div>
+<div class="ssg-header-resize">
+</div>
+</div>
+<div data-ssg-col-key="note" role="columnheader" aria-colindex="11" class="ssg-header-cell" style="left: 950px; width: 200px; min-width: 200px; height: 40px;">
+<div class="ssg-header-label" data-ssg-tooltip="備考">備考</div>
+<div class="ssg-header-status">
+</div>
+<div class="ssg-header-actions">
+<button type="button" tabindex="-1" data-ssg-tooltip="列メニュー" aria-label="備考 の列メニュー" class="ssg-icon-btn">⋮</button>
+</div>
+<div class="ssg-header-resize">
+</div>
+</div>
+</div>
+<div style="position: absolute; top: 0px; left: 0px; width: 1150px; height: 148px;">
+<div class="ssg-selection-overlay" style="position: absolute; left: 0px; top: 40px; width: 200px; height: 36px;">
+</div>
+<div class="ssg-active-cell-overlay" style="position: absolute; left: 0px; top: 40px; width: 200px; height: 36px;">
+</div>
+<div data-pane="center" data-row-index="0" role="row" aria-rowindex="2" data-row-key="item-1" class="ssg-body-row" style="height: 36px; transform: translateY(40px);">
+<div role="gridcell" aria-colindex="3" aria-selected="true" data-ssg-col-key="name" class="ssg-body-cell" style="left: 0px; width: 200px; min-width: 200px; height: 36px; z-index: 3;" id="_r_0_-active-cell">
+<span>ボールペン 1</span>
+</div>
+<div role="gridcell" aria-colindex="4" aria-selected="false" data-ssg-col-key="category" class="ssg-body-cell" style="left: 200px; width: 120px; min-width: 120px; height: 36px; z-index: 1;">
+<span>文房具</span>
+</div>
+<div role="gridcell" aria-colindex="5" aria-selected="false" data-ssg-col-key="warehouse" class="ssg-body-cell" style="left: 320px; width: 100px; min-width: 100px; height: 36px; z-index: 1;">
+<span>東京</span>
+</div>
+<div role="gridcell" aria-colindex="6" aria-selected="false" data-ssg-col-key="qty" class="ssg-body-cell ssg-body-cell--align-right" style="left: 420px; width: 100px; min-width: 100px; height: 36px; z-index: 1;">
+<span>0</span>
+</div>
+<div role="gridcell" aria-colindex="7" aria-selected="false" data-ssg-col-key="price" class="ssg-body-cell ssg-body-cell--align-right" style="left: 520px; width: 110px; min-width: 110px; height: 36px; z-index: 1;">
+<span>100</span>
+</div>
+<div role="gridcell" aria-colindex="8" aria-selected="false" aria-readonly="true" data-ssg-col-key="amount" class="ssg-body-cell ssg-body-cell--align-right ssg-body-cell--readonly" style="left: 630px; width: 130px; min-width: 130px; height: 36px; z-index: 1;">
+<span>0</span>
+</div>
+<div role="gridcell" aria-colindex="9" aria-selected="false" data-ssg-col-key="arrivedAt" class="ssg-body-cell" style="left: 760px; width: 120px; min-width: 120px; height: 36px; z-index: 1;">
+<span>2026-01-01</span>
+</div>
+<div role="gridcell" aria-colindex="10" aria-selected="false" data-ssg-col-key="discontinued" class="ssg-body-cell" style="left: 880px; width: 70px; min-width: 70px; height: 36px; z-index: 1;">
+<span role="checkbox" aria-checked="false" aria-label="廃番" class="ssg-cell-checkbox">
+<span aria-hidden="true" class="ssg-row-checkbox" data-state="unchecked">
+</span>
+</span>
+</div>
+<div role="gridcell" aria-colindex="11" aria-selected="false" data-ssg-col-key="note" class="ssg-body-cell" style="left: 950px; width: 200px; min-width: 200px; height: 36px; z-index: 1;">
+<span>
+</span>
+</div>
+</div>
+<div data-pane="center" data-row-index="1" role="row" aria-rowindex="3" data-row-key="item-2" class="ssg-body-row" style="height: 36px; transform: translateY(76px);">
+<div role="gridcell" aria-colindex="3" aria-selected="false" data-ssg-col-key="name" class="ssg-body-cell" style="left: 0px; width: 200px; min-width: 200px; height: 36px; z-index: 1;">
+<span>ノート 1</span>
+</div>
+<div role="gridcell" aria-colindex="4" aria-selected="false" data-ssg-col-key="category" class="ssg-body-cell" style="left: 200px; width: 120px; min-width: 120px; height: 36px; z-index: 1;">
+<span>文房具</span>
+</div>
+<div role="gridcell" aria-colindex="5" aria-selected="false" data-ssg-col-key="warehouse" class="ssg-body-cell" style="left: 320px; width: 100px; min-width: 100px; height: 36px; z-index: 1;">
+<span>大阪</span>
+</div>
+<div role="gridcell" aria-colindex="6" aria-selected="false" data-ssg-col-key="qty" class="ssg-body-cell ssg-body-cell--align-right" style="left: 420px; width: 100px; min-width: 100px; height: 36px; z-index: 1;">
+<span>7</span>
+</div>
+<div role="gridcell" aria-colindex="7" aria-selected="false" data-ssg-col-key="price" class="ssg-body-cell ssg-body-cell--align-right" style="left: 520px; width: 110px; min-width: 110px; height: 36px; z-index: 1;">
+<span>200</span>
+</div>
+<div role="gridcell" aria-colindex="8" aria-selected="false" aria-readonly="true" data-ssg-col-key="amount" class="ssg-body-cell ssg-body-cell--align-right ssg-body-cell--readonly" style="left: 630px; width: 130px; min-width: 130px; height: 36px; z-index: 1;">
+<span>1,400</span>
+</div>
+<div role="gridcell" aria-colindex="9" aria-selected="false" data-ssg-col-key="arrivedAt" class="ssg-body-cell" style="left: 760px; width: 120px; min-width: 120px; height: 36px; z-index: 1;">
+<span>2026-02-02</span>
+</div>
+<div role="gridcell" aria-colindex="10" aria-selected="false" data-ssg-col-key="discontinued" class="ssg-body-cell" style="left: 880px; width: 70px; min-width: 70px; height: 36px; z-index: 1;">
+<span role="checkbox" aria-checked="false" aria-label="廃番" class="ssg-cell-checkbox">
+<span aria-hidden="true" class="ssg-row-checkbox" data-state="unchecked">
+</span>
+</span>
+</div>
+<div role="gridcell" aria-colindex="11" aria-selected="false" data-ssg-col-key="note" class="ssg-body-cell" style="left: 950px; width: 200px; min-width: 200px; height: 36px; z-index: 1;">
+<span>
+</span>
+</div>
+</div>
+<div data-pane="center" data-row-index="2" role="row" aria-rowindex="4" data-row-key="item-3" class="ssg-body-row" style="height: 36px; transform: translateY(112px);">
+<div role="gridcell" aria-colindex="3" aria-selected="false" data-ssg-col-key="name" class="ssg-body-cell" style="left: 0px; width: 200px; min-width: 200px; height: 36px; z-index: 1;">
+<span>事務椅子 1</span>
+</div>
+<div role="gridcell" aria-colindex="4" aria-selected="false" data-ssg-col-key="category" class="ssg-body-cell" style="left: 200px; width: 120px; min-width: 120px; height: 36px; z-index: 1;">
+<span>家具</span>
+</div>
+<div role="gridcell" aria-colindex="5" aria-selected="false" data-ssg-col-key="warehouse" class="ssg-body-cell" style="left: 320px; width: 100px; min-width: 100px; height: 36px; z-index: 1;">
+<span>福岡</span>
+</div>
+<div role="gridcell" aria-colindex="6" aria-selected="false" data-ssg-col-key="qty" class="ssg-body-cell ssg-body-cell--align-right" style="left: 420px; width: 100px; min-width: 100px; height: 36px; z-index: 1;">
+<span>14</span>
+</div>
+<div role="gridcell" aria-colindex="7" aria-selected="false" data-ssg-col-key="price" class="ssg-body-cell ssg-body-cell--align-right" style="left: 520px; width: 110px; min-width: 110px; height: 36px; z-index: 1;">
+<span>300</span>
+</div>
+<div role="gridcell" aria-colindex="8" aria-selected="false" aria-readonly="true" data-ssg-col-key="amount" class="ssg-body-cell ssg-body-cell--align-right ssg-body-cell--readonly" style="left: 630px; width: 130px; min-width: 130px; height: 36px; z-index: 1;">
+<span>4,200</span>
+</div>
+<div role="gridcell" aria-colindex="9" aria-selected="false" data-ssg-col-key="arrivedAt" class="ssg-body-cell" style="left: 760px; width: 120px; min-width: 120px; height: 36px; z-index: 1;">
+<span>2026-03-03</span>
+</div>
+<div role="gridcell" aria-colindex="10" aria-selected="false" data-ssg-col-key="discontinued" class="ssg-body-cell" style="left: 880px; width: 70px; min-width: 70px; height: 36px; z-index: 1;">
+<span role="checkbox" aria-checked="false" aria-label="廃番" class="ssg-cell-checkbox">
+<span aria-hidden="true" class="ssg-row-checkbox" data-state="unchecked">
+</span>
+</span>
+</div>
+<div role="gridcell" aria-colindex="11" aria-selected="false" data-ssg-col-key="note" class="ssg-body-cell" style="left: 950px; width: 200px; min-width: 200px; height: 36px; z-index: 1;">
+<span>
+</span>
+</div>
+</div>
+</div>
+<div class="ssg-col-drop-indicator" style="position: absolute; top: 0px; height: 148px; transform: translateX(-1px); pointer-events: none; z-index: 8; display: none;">
+</div>
+</div>
+</div>
+<div style="position: sticky; right: 0px; width: 0px; min-width: 0px; flex-shrink: 0; align-self: stretch; z-index: 2;">
+<div class="ssg-col-drop-indicator" style="position: absolute; top: 0px; height: 148px; transform: translateX(-1px); pointer-events: none; z-index: 8; display: none;">
+</div>
+</div>
+</div>
+</div>
+</div>
+<div class="ssg-bar--bottom">
+<div class="ssg-bar-container">
+<div class="ssg-bar-group">
+<span class="ssg-bar-chip">行 3 / 3</span>
+<span class="ssg-bar-chip">列 10 / 10</span>
+</div>
+<div class="ssg-bar-group">
+<span class="ssg-bar-chip">セル B1</span>
+<span class="ssg-bar-chip">範囲 B1</span>
+<span class="ssg-bar-chip">1 セル / 1 行</span>
+<span class="ssg-bar-chip">1 列</span>
+</div>
+</div>
+</div>
+</div>
+</section>
+</div>
+<div class="ssg-menu-panel" style="position: fixed; top: 606px; left: 816px; width: 200px; z-index: 1000;">
+<div class="ssg-menu-title">在庫数</div>
+<button type="button" class="ssg-menu-item">
+<span class="ssg-menu-icon">
+</span>
+<span class="ssg-menu-label">フィルター…</span>
+</button>
+<div class="ssg-menu-separator">
+</div>
+<button type="button" class="ssg-menu-item">
+<span class="ssg-menu-sort-icon">↑</span>
+<span class="ssg-menu-label">昇順で並び替え</span>
+</button>
+<button type="button" class="ssg-menu-item">
+<span class="ssg-menu-sort-icon">↓</span>
+<span class="ssg-menu-label">降順で並び替え</span>
+</button>
+<button type="button" class="ssg-menu-item">
+<span class="ssg-menu-icon">
+</span>
+<span class="ssg-menu-label">並び替えを管理…</span>
+</button>
+<button type="button" class="ssg-menu-item">
+<span class="ssg-menu-icon">
+</span>
+<span class="ssg-menu-label">フィルターを管理…</span>
+</button>
+<div class="ssg-menu-separator">
+</div>
+<div class="ssg-menu-submenu-anchor">
+<button type="button" class="ssg-menu-item">
+<span class="ssg-menu-icon">
+</span>
+<span class="ssg-menu-label">列の固定</span>
+<span class="ssg-menu-caret">›</span>
+</button>
+</div>
+<button type="button" class="ssg-menu-item">
+<span class="ssg-menu-icon">
+</span>
+<span class="ssg-menu-label">この列の幅を自動調整</span>
+</button>
+<button type="button" class="ssg-menu-item">
+<span class="ssg-menu-icon">
+</span>
+<span class="ssg-menu-label">すべての列の幅を自動調整</span>
+</button>
+<button type="button" class="ssg-menu-item">
+<span class="ssg-menu-icon">
+</span>
+<span class="ssg-menu-label">列の表示</span>
+</button>
+<button type="button" aria-disabled="true" tabindex="-1" data-ssg-tooltip="onColumnsChange 未指定のため列をリセットできません" class="ssg-menu-item ssg-menu-item--disabled">
+<span class="ssg-menu-icon">
+</span>
+<span class="ssg-menu-label">列のリセット</span>
+</button>
+<div class="ssg-menu-footer">
+<button type="button" class="ssg-menu-close-btn">閉じる</button>
+</div>
+</div>

@@ -5,6 +5,7 @@
 //     KeyboardEvent をほぼそのまま渡せます。
 //   - update(args) はレンダー後に毎回呼ばれる前提(hooks/useController)。handleKeyDown はイベント時点の
 //     最新 args(uiState / rowModel / 列 / コールバック)を読みます。
+import { isClearableSelection } from './escapeClaimController';
 import { gridActions, type GridUiAction } from '../model/gridActions';
 import type {
   CellCoord,
@@ -432,7 +433,11 @@ export const createKeyboardController = <T,>(): KeyboardController<T> => {
       return;
     }
     if (event.key === 'Escape') {
-      event.preventDefault();
+      // 変更(1.0.1 / AP-17): 外す選択があるときだけ既定の動作を止めます(1 セルを選んでいるだけの Escape は、グリッドを入れた
+      //   <dialog> などが閉じるのに使えるように)。
+      if (isClearableSelection(uiState.selection)) {
+        event.preventDefault();
+      }
       dispatch(gridActions.clearSelection());
       return;
     }
@@ -474,6 +479,11 @@ export const createKeyboardController = <T,>(): KeyboardController<T> => {
         activateFirstCellIfNone();
       }
       return;
+    }
+    // 追加(1.0.1 / 2026-11-09 実アプリの総点検 AP-16): グリッドにフォーカスがある間の Space はページをスクロールさせません
+    //   (編集できないセル / アクティブセルが無いときに、ブラウザの既定の動作でページが 1 画面ぶん動いていた)。
+    if (event.key === ' ' && !event.ctrlKey && !event.metaKey && !event.altKey) {
+      event.preventDefault();
     }
     // 印字キーは、その文字を初期値にして編集開始(checkbox 列は Space でトグルのみ)。
     if (isPrintableKey(event) && uiState.activeCell) {

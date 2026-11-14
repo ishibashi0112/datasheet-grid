@@ -4,9 +4,13 @@ import {
   addRowRange,
   clearRowSelection,
   countSelectedRows,
+  countSelectedRowsInOrder,
   createEmptyRowSelection,
+  createSelectedRowsInOrderCounter,
   getSelectAllState,
+  removeRowKeys,
   resolveIsRowSelected,
+  resolveSelectAllState,
   rowSelectionFromModel,
   rowSelectionModelEquals,
   rowSelectionStateEquals,
@@ -170,5 +174,46 @@ describe('model 変換 / 等価判定', () => {
         { type: 'exclude', rowKeys: [1] },
       ),
     ).toBe(false);
+  });
+});
+
+describe('フィルター中の全選択の部品(1.0.1 / AP-03)', () => {
+  it('removeRowKeys: include は集合から外し、exclude は除外集合へ足す', () => {
+    const include = rowSelectionFromModel({ type: 'include', rowKeys: [1, 2, 3] });
+    expect(rowSelectionToModel(removeRowKeys(include, [2, 9]))).toEqual({ type: 'include', rowKeys: [1, 3] });
+    const exclude = selectAllRows();
+    expect(rowSelectionToModel(removeRowKeys(exclude, [2]))).toEqual({ type: 'exclude', rowKeys: [2] });
+  });
+
+  it('countSelectedRowsInOrder / resolveSelectAllState: order の行だけで数える', () => {
+    const rows = [{ id: 1 }, { id: 2 }, { id: 3 }, { id: 4 }];
+    const order = Int32Array.from([1, 3]);
+    const keyOf = (row: { id: number }) => row.id;
+    const state = rowSelectionFromModel({ type: 'include', rowKeys: [1, 2] });
+    expect(countSelectedRowsInOrder(state, rows, order, keyOf)).toBe(1);
+    expect(resolveSelectAllState(1, 2)).toBe('some');
+    expect(countSelectedRowsInOrder(selectAllRows(), rows, order, keyOf)).toBe(2);
+    expect(resolveSelectAllState(2, 2)).toBe('all');
+    expect(resolveSelectAllState(0, 2)).toBe('none');
+    expect(resolveSelectAllState(0, 0)).toBe('none');
+  });
+
+  // 1.0.1 のレビュー RA-7: インラインの rowKeyGetter で、描くたびに見えている行の数だけ数えていた。
+  it('createSelectedRowsInOrderCounter: 選択・行・並びが同じ間は rowKeyGetter の参照が変わっても数え直さない', () => {
+    const rows = [{ id: 1 }, { id: 2 }, { id: 3 }, { id: 4 }];
+    const order = Int32Array.from([1, 3]);
+    const state = rowSelectionFromModel({ type: 'include', rowKeys: [2, 4] });
+    const count = createSelectedRowsInOrderCounter();
+    let reads = 0;
+    const inlineGetter = () => (row: { id: number }) => ((reads += 1), row.id);
+    expect(count(state, rows, order, inlineGetter())).toBe(2);
+    expect(reads).toBe(2);
+    expect(count(state, rows, order, inlineGetter())).toBe(2);
+    expect(reads).toBe(2);
+    // 選択・並び・行が変われば数え直す。
+    expect(count(rowSelectionFromModel({ type: 'include', rowKeys: [2] }), rows, order, inlineGetter())).toBe(1);
+    expect(count(state, rows, Int32Array.from([0, 1]), inlineGetter())).toBe(1);
+    expect(count(state, [...rows], Int32Array.from([0, 1]), inlineGetter())).toBe(1);
+    expect(reads).toBe(8);
   });
 });

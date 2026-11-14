@@ -275,4 +275,149 @@ describe('clipboardController', () => {
     expect(writeText).not.toHaveBeenCalled();
     expect(onCopied).not.toHaveBeenCalled();
   });
+
+  // 追加(1.0.1 / 実アプリの総点検 AP-02): 範囲を選んで貼り付けると、範囲の左上から貼る(Shift+矢印で広げると
+  //   アクティブセルは範囲の端にあり、そこから貼っていた)。
+  it('範囲の選択への貼り付けは範囲の左上から(アクティブセルが範囲の端でも)(AP-02)', () => {
+    const c = createClipboardController<Row>();
+    const t = makeArgs({
+      uiState: {
+        ...createInitialGridUiState(),
+        activeCell: { row: 1, col: 1 },
+        selection: { type: 'cell', range: { start: { row: 0, col: 0 }, end: { row: 1, col: 1 } } },
+      },
+    });
+    c.update(t.args);
+    c.handlePaste({ clipboardData: { getData: () => 'x\ty\nz\tw' }, preventDefault: vi.fn() });
+    const written = (t.args.onRowsChange as ReturnType<typeof vi.fn>).mock.calls[0][0] as Row[];
+    expect(written).toEqual([
+      { id: 'x', name: 'y' },
+      { id: 'z', name: 'w' },
+    ]);
+    expect(t.dispatch).toHaveBeenCalledWith({ type: 'cell/activate', cell: { row: 0, col: 0 } });
+  });
+
+  it('列の選択への貼り付けは列の先頭の行から、範囲の外のアクティブセルはそのまま(AP-02)', () => {
+    const c = createClipboardController<Row>();
+    const col = makeArgs({
+      uiState: {
+        ...createInitialGridUiState(),
+        activeCell: { row: 1, col: 1 },
+        selection: { type: 'col', startCol: 1, endCol: 1 },
+      },
+    });
+    c.update(col.args);
+    c.handlePaste({ clipboardData: { getData: () => 'p\nq' }, preventDefault: vi.fn() });
+    const written = (col.args.onRowsChange as ReturnType<typeof vi.fn>).mock.calls[0][0] as Row[];
+    expect(written.map((r) => r.name)).toEqual(['p', 'q']);
+
+    // 選択の外にアクティブセルがあるとき(選択だけ別の場所に残っている)はアクティブセルから。
+    const outside = makeArgs({
+      uiState: {
+        ...createInitialGridUiState(),
+        activeCell: { row: 1, col: 0 },
+        selection: { type: 'cell', range: { start: { row: 0, col: 1 }, end: { row: 0, col: 1 } } },
+      },
+    });
+    c.update(outside.args);
+    c.handlePaste({ clipboardData: { getData: () => 'k' }, preventDefault: vi.fn() });
+    const written2 = (outside.args.onRowsChange as ReturnType<typeof vi.fn>).mock.calls[0][0] as Row[];
+    expect(written2[1]).toEqual({ id: 'k', name: 'b' });
+  });
+
+  // 追加(1.0.1 / AP-04): 行グルーピング中の貼り付けはグループ行を読み飛ばす(ラベル行と同じ)。値が捨てられていた。
+  it('グループ行をまたぐ貼り付けはグループ行を読み飛ばし、列の選択は先頭のデータ行から(AP-04)', () => {
+    const c = createClipboardController<Row>();
+    const leafRows: Row[] = [
+      { id: 1, name: 'a' },
+      { id: 2, name: 'b' },
+      { id: 3, name: 'c' },
+    ];
+    // view: 0 = グループ行 / 1 = a / 2 = グループ行 / 3 = b / 4 = c
+    const viewToSource: (number | undefined)[] = [undefined, 0, undefined, 1, 2];
+    const groupModel: RowModel<Row> = {
+      getRowCount: () => viewToSource.length,
+      // グループ行では getRow / getSourceIndex が実行時 undefined(本物の rowModel と同じ)。
+      getRow: (i) => {
+        const source = viewToSource[i];
+        return (source === undefined ? undefined : leafRows[source]) as Row;
+      },
+      getSourceIndex: (i) => viewToSource[i] as number,
+      getRowKey: (i) => i,
+      getGroupRow: (i) =>
+        viewToSource[i] === undefined
+          ? {
+              kind: 'group',
+              groupKey: `g${i}`,
+              columnKey: 'name',
+              value: i,
+              label: String(i),
+              level: 0,
+              leafCount: 1,
+              aggregates: {},
+            }
+          : undefined,
+    };
+    const cell = makeArgs({
+      rows: leafRows,
+      rowModel: groupModel,
+      uiState: { ...createInitialGridUiState(), activeCell: { row: 1, col: 1 } },
+    });
+    c.update(cell.args);
+    c.handlePaste({ clipboardData: { getData: () => 'x\ny\nz' }, preventDefault: vi.fn() });
+    const written = (cell.args.onRowsChange as ReturnType<typeof vi.fn>).mock.calls[0][0] as Row[];
+    expect(written.map((r) => r.name)).toEqual(['x', 'y', 'z']);
+    expect(cell.dispatch).toHaveBeenCalledWith({ type: 'selection/update', cell: { row: 4, col: 1 } });
+
+    const col = makeArgs({
+      rows: leafRows,
+      rowModel: groupModel,
+      uiState: {
+        ...createInitialGridUiState(),
+        activeCell: { row: 3, col: 1 },
+        selection: { type: 'col', startCol: 1, endCol: 1 },
+      },
+    });
+    c.update(col.args);
+    c.handlePaste({ clipboardData: { getData: () => 'p\nq' }, preventDefault: vi.fn() });
+    const written2 = (col.args.onRowsChange as ReturnType<typeof vi.fn>).mock.calls[0][0] as Row[];
+    expect(written2.map((r) => r.name)).toEqual(['p', 'q', 'c']);
+
+    // 変更(1.0.1 のレビュー RA-2): 範囲の左上がグループ行(全選択など)でも、先頭のデータ行から貼る。
+    const all = makeArgs({
+      rows: leafRows,
+      rowModel: groupModel,
+      uiState: {
+        ...createInitialGridUiState(),
+        activeCell: { row: 4, col: 1 },
+        selection: { type: 'cell', range: { start: { row: 0, col: 0 }, end: { row: 4, col: 1 } } },
+      },
+    });
+    c.update(all.args);
+    c.handlePaste({ clipboardData: { getData: () => 'r\ts' }, preventDefault: vi.fn() });
+    const written3 = (all.args.onRowsChange as ReturnType<typeof vi.fn>).mock.calls[0][0] as Row[];
+    expect(written3[0]).toEqual({ id: 'r', name: 's' });
+    expect(all.dispatch).toHaveBeenCalledWith({ type: 'cell/activate', cell: { row: 1, col: 0 } });
+  });
+
+  // 追加(1.0.1 のレビュー RA-2): 全選択 / 行の選択の左上が合成列(行ドラッグの掴み手)のときは、合成列でない最初の列を
+  //   起点にする(貼った後のアクティブセルが掴み手の列に乗っていた)。
+  it('起点の列は合成列を飛ばす(RA-2)', () => {
+    const c = createClipboardController<Row>();
+    const withHandle: GridColumn<Row>[] = [{ key: '__ssg_row_drag_handle__', title: '', width: 24 }, ...columns];
+    for (const selection of [
+      { type: 'cell' as const, range: { start: { row: 0, col: 0 }, end: { row: 1, col: 2 } } },
+      { type: 'row' as const, startRow: 0, endRow: 1 },
+    ]) {
+      const t = makeArgs({
+        visibleColumns: withHandle,
+        uiState: { ...createInitialGridUiState(), activeCell: { row: 1, col: 2 }, selection },
+      });
+      c.update(t.args);
+      c.handlePaste({ clipboardData: { getData: () => 'x\ty' }, preventDefault: vi.fn() });
+      const written = (t.args.onRowsChange as ReturnType<typeof vi.fn>).mock.calls[0][0] as Row[];
+      expect(written[0]).toEqual({ id: 'x', name: 'y' });
+      expect(t.dispatch).toHaveBeenCalledWith({ type: 'cell/activate', cell: { row: 0, col: 1 } });
+    }
+  });
 });

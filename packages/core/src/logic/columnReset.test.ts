@@ -32,6 +32,7 @@ const makeSnapshot = (
         width: column.width,
         pinned: column.pinned,
         visible: column.visible,
+        rowGroup: column.rowGroup,
       },
     ]),
   );
@@ -146,5 +147,23 @@ describe('buildResetColumns(列リセット再構成 13-B2-5)', () => {
 
     // x(スナップショット外)だけ live 幅 180。初期列 a と並び順に差分なし。
     expect(buildResetColumns(current, snapshot, { x: 180 })).toBeNull();
+  });
+
+  // 追加(1.0.1 / 実アプリの総点検 AP-21): 列メニューでグループ化した後のリセットは、グループ化も初期へ戻す。
+  it('グループ化(rowGroup)も初期へ戻す。書いていなかった列は書かないまま(AP-21)', () => {
+    const initial = [col('dept', { rowGroup: false }), col('team', { rowGroup: true }), col('name')];
+    const snapshot = makeSnapshot(initial);
+    // 列メニューで「部署でグループ化」(部署を最後のグループ元の後ろへ移す)をした後。
+    const grouped = [col('team', { rowGroup: true }), col('dept', { rowGroup: true }), col('name')];
+    const result = buildResetColumns(grouped, snapshot, {});
+    expect(result?.map((column) => [column.key, column.rowGroup])).toEqual([
+      ['dept', false],
+      ['team', true],
+      ['name', undefined],
+    ]);
+    expect(result?.[2]).not.toHaveProperty('rowGroup');
+    // 「グループ化を外す」の後(全部 false)も初期のグループへ戻す。
+    const ungrouped = [col('dept', { rowGroup: false }), col('team', { rowGroup: false }), col('name')];
+    expect(buildResetColumns(ungrouped, snapshot, {})?.map((column) => column.rowGroup)).toEqual([false, true, undefined]);
   });
 });

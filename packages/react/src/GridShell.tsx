@@ -38,6 +38,12 @@ import { useVirtualizerCore } from './hooks/useVirtualizerCore';
 // 追加(本体分解 E-7): グリッドエンジン(リゾルバ / コマンド / 通知 / DOM コントローラ / store の束ね。React 非依存)。
 import { createGridEngine } from '@ishibashi0112/spreadsheet-grid-core/internal/engine/createGridEngine';
 import { useControllerLifecycle } from './hooks/useController';
+import {
+  GRID_POPUP_SELECTOR,
+  createEscapeClaimController,
+  isClearableSelection,
+  isEscapeClaimedByGrid,
+} from '@ishibashi0112/spreadsheet-grid-core/internal/controllers/escapeClaimController';
 // 追加(G-2): IME オンのままの直接入力(imeDirectInput)の入力受けの属性名です。
 // 変更(差し込み式 段階 2): 入力してよいセルの判定 / 編集の初期値の決定は機能セット(features.imeDirectInput)から。
 import { IME_INPUT_ATTRIBUTE, isImeComposingKeyEvent } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/domGuards';
@@ -78,6 +84,10 @@ import { useGridPointerInteractions } from './hooks/useGridPointerInteractions';
 import { useGridViewportSync } from './hooks/useGridViewportSync';
 // 追加(TT-1): title 属性置き換えのカスタムツールチップ(data-ssg-tooltip 委譲)です。
 import { useGridTooltip } from './hooks/useGridTooltip';
+import {
+  hideActiveCellTooltip,
+  scheduleActiveCellTooltip,
+} from '@ishibashi0112/spreadsheet-grid-core/internal/controllers/tooltipController';
 // 追加(TH-DK-2): theme prop('light' | 'dark' | 'auto')の実効テーマ解決フックです。
 import { useResolvedGridTheme } from './hooks/useResolvedGridTheme';
 import { useResolvedGridMotion } from './hooks/useResolvedGridMotion';
@@ -147,7 +157,9 @@ import {
 // 追加(imperative API #1): CSV エクスポート / スクロール先算出の純ロジックです。
 // 追加(行選択): チェックボックス行選択の純ロジックです。
 import {
+  createSelectedRowsInOrderCounter,
   getSelectAllState,
+  resolveSelectAllState,
 } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/rowSelection';
 // 追加(state #1): 列状態 get/apply の純ロジックです(snapshot 組み立て / 外部入力の正規化)。
 // 追加(state #2): onStateChange の発火可否判定(decideStateChangeEmit)も同モジュールから読みます。
@@ -1454,6 +1466,8 @@ export function useGridShell<T extends object>({
       rows,
       visibleColumns,
       runAutosize,
+      // 追加(1.0.1 / AP-22): display: none の中では測らずに待ち、描かれたら測る。
+      gridRootRef,
     },
     'passive',
   );
@@ -1596,6 +1610,7 @@ export function useGridShell<T extends object>({
     hasAutoHeightColumn,
     autoHeightActive,
     rowHeightStore,
+    baseRowMetrics,
     detailExtras,
     detailActive,
     rowMetrics,
@@ -1654,6 +1669,11 @@ export function useGridShell<T extends object>({
       labelRowHeightOption,
     ],
   );
+
+  // 追加(1.0.1 / 2026-11-09 実アプリの総点検 AP-26): 行だけで論理全高の上限(MAX_BODY_PX)を超える表(約 50 万行〜)では
+  //   展開行を描けないので、トグル(▸)を出さず、Enter / Space でも開閉しません(ctx.detail.expandable も false)。
+  //   これまではトグルが出たままで、押すと ▾ になるだけでカードは出なかった。絞り込んで行が減れば出ます。
+  const detailDrawable = baseRowMetrics.totalBodyHeight <= MAX_BODY_PX;
 
   // 追加(motion-3 / M-4・M-5): 行の並び替えアニメの実効値。auto-height(行高の実測で transform が動く)と serverSide
   //   (ブロック到着で行が差し替わる)では自動 OFF。root 修飾子(ssg-root--animate-rows)で行要素の transform に
@@ -2054,9 +2074,27 @@ export function useGridShell<T extends object>({
   // 追加(TT-1): カスタムツールチップの表示制御です(body 直下シングルトン + window 委譲。
   //   複数グリッド同居時はフック内の refCount で共有されます)。
   useGridTooltip(slots.tooltip);
+  // 追加(1.0.1 / 2026-11-09 実アプリの総点検 AP-35): キーボード / タップでアクティブセルになったセルが検査 NG なら、メッセージの
+  //   ツールチップをすぐ出します(これまではマウスのホバーでしか出なかった)。編集中は出しません。
+  const tooltipActiveRow = uiState.activeCell?.row;
+  const tooltipActiveCol = uiState.activeCell?.col;
+  const tooltipEditing = uiState.editingCell !== null;
+  useEffect(() => {
+    if (tooltipActiveRow === undefined || tooltipActiveCol === undefined || tooltipEditing) {
+      hideActiveCellTooltip(gridRootRef.current);
+      return undefined;
+    }
+    return scheduleActiveCellTooltip(activeCellDomId, gridRootRef.current);
+  }, [tooltipActiveRow, tooltipActiveCol, tooltipEditing, activeCellDomId]);
 
   useGridViewportSync({
     scrollRef: scrollContainerRef,
+    // 追加(1.0.1 / 2026-11-09 実アプリの総点検 AP-24): 縮めたスクロールで行の数が変わったときに見ている行を保つ(物理の
+    //   位置を直したら view スライスへ書き、onScroll の source は 'api')。
+    onScrollTopAnchored: (scrollTop) => {
+      scrollSync.markApiScroll();
+      gridStore.setViewState({ scrollTop });
+    },
     columnVirtualizer,
     columnMeasurements,
     totalScrollWidth,
@@ -2110,7 +2148,32 @@ export function useGridShell<T extends object>({
   const rowSelectionState = uiState.rowSelection;
   // ヘッダ全選択チェックの 3 状態(none/some/all)。件数は O(1) で求まります。
   // 変更(grouping ④): 総数は leafRowCount(グループ行を除くデータ行数)です。
-  const selectAllRowsState = getSelectAllState(rowSelectionState, leafRowCount);
+  // 追加(1.0.1 / 実アプリの総点検 AP-03): clientSide のフィルターで隠れている行があるときは、見出しのチェックボックスは
+  //   見えている行だけを選ぶ / 外し(rowSelectionCommands)、3 状態も見えている行だけで数えます。
+  const filteredDataRows = useMemo(
+    () =>
+      !isServerSide && order.length < baseOrder.length
+        ? { rows, order, rowKeyGetter: resolvedRowKeyGetter }
+        : null,
+    [isServerSide, order, baseOrder.length, rows, resolvedRowKeyGetter],
+  );
+  // 変更(1.0.1 のレビュー RA-7): 選択・行・並びが同じ間は数え直さない(インラインの rowKeyGetter で描くたびに全件を数えていた)。
+  const [countSelectedRowsInOrder] = useState(createSelectedRowsInOrderCounter);
+  const selectAllRowsState = useMemo(
+    () =>
+      filteredDataRows && enableRowSelection
+        ? resolveSelectAllState(
+            countSelectedRowsInOrder(
+              rowSelectionState,
+              filteredDataRows.rows,
+              filteredDataRows.order,
+              filteredDataRows.rowKeyGetter,
+            ),
+            filteredDataRows.order.length,
+          )
+        : getSelectAllState(rowSelectionState, leafRowCount),
+    [filteredDataRows, enableRowSelection, rowSelectionState, leafRowCount, countSelectedRowsInOrder],
+  );
 
   // 変更(本体分解 E-4c): 選択コミット / ガター選択 / ドラッグ範囲 / 全選択トグル / controlled 同期は
   //   engine/rowSelectionCommands.ts(React 非依存)へ移設しました(旧 latest-ref 4 本 + アンカー ref を解消)。
@@ -2124,6 +2187,7 @@ export function useGridShell<T extends object>({
       onRowSelectionChange,
       controlledRowSelectionModel,
       leafRowCount,
+      filteredDataRows,
       dispatch,
     },
   );
@@ -2603,7 +2667,7 @@ export function useGridShell<T extends object>({
   const toggleDetailRowFromKeyboard = useCallback(
     (cell: CellCoord): boolean => {
       const row = rowModel.getRow(cell.row);
-      if (row === undefined) {
+      if (row === undefined || !detailDrawable) {
         return false;
       }
       const rowKey = rowModel.getRowKey(cell.row) ?? cell.row;
@@ -2614,7 +2678,7 @@ export function useGridShell<T extends object>({
       toggleDetailRowAt(rowKey, cell.row);
       return true;
     },
-    [rowModel, detailIsExpandable, toggleDetailRowAt],
+    [rowModel, detailIsExpandable, toggleDetailRowAt, detailDrawable],
   );
 
   // 追加(段階 2 C-N2): 展開行のカードと Tab の順番です。最終列の Tab は、その行のカードが開いていればカードの最初の要素へ、
@@ -3424,6 +3488,8 @@ export function useGridShell<T extends object>({
       windowBaseOffsetPx: overlayBaseOffset,
       scrollContainerRef,
       bodyScrollRef,
+      // 追加(1.0.1 / AP-15): ハンドルを押したらグリッドへフォーカスを移す。
+      gridRootRef,
       commitRowMove: commitRowMoveFromDrag,
       hasRowKeys: rowKeyGetter !== undefined,
       ghostSlot: slots.dragGhost,
@@ -3528,9 +3594,9 @@ export function useGridShell<T extends object>({
         const detail: CellDetailContext | undefined = detailRowEnabled
           ? {
               expanded: expandedDetailRowKeys.has(rowKey),
-              expandable: detailIsExpandable
-                ? detailIsExpandable(row, { rowKey, sourceRowIndex })
-                : true,
+              // 変更(1.0.1 / AP-26): 行が多すぎて展開行を描けない間は false(トグルを出さない)。
+              expandable:
+                detailDrawable && (detailIsExpandable ? detailIsExpandable(row, { rowKey, sourceRowIndex }) : true),
               toggle: () => toggleDetailRowAt(rowKey, rowIndex),
               setExpanded: (expanded) =>
                 setDetailRowExpandedAt(rowKey, rowIndex, expanded),
@@ -3666,6 +3732,7 @@ export function useGridShell<T extends object>({
       detailRowEnabled,
       expandedDetailRowKeys,
       detailIsExpandable,
+      detailDrawable,
       toggleDetailRowAt,
       setDetailRowExpandedAt,
       renderRowDragHandleCell,
@@ -4014,6 +4081,45 @@ export function useGridShell<T extends object>({
     // 追加(バッチ②): コンテキストメニュー表示中も grid の tab/keyboard/paste を止めます。
     isContextMenuOpen;
 
+  // 追加(1.0.1 / 2026-11-09 実アプリの総点検 AP-17): グリッドが使う Escape(編集の取り消し・検索バーやポップアップを閉じる・
+  //   範囲の選択を外す)で、グリッドを入れたダイアログまで閉じないようにします(window の capture で印を付ける)。
+  const [escapeClaim] = useState(createEscapeClaimController);
+  useControllerLifecycle(escapeClaim, {
+    gridRootRef,
+    isClaimedTarget: (target: Element, root: HTMLElement) => {
+      const state = gridStore.getState();
+      if (!root.contains(target)) {
+        if (target.closest(GRID_POPUP_SELECTOR) !== null) {
+          return isAnyGridPopupOpen || state.editingCell !== null;
+        }
+        // 追加(1.0.1 のレビュー RA-6): 右クリックメニューやマウスで開いた列メニューは、開くときにフォーカスを外す
+        //   (blurForPopover)ので、Escape の対象は body になる。その Escape はメニューを閉じるのに使う。
+        const ownerDocument = target.ownerDocument;
+        return isAnyGridPopupOpen && (target === ownerDocument.body || target === ownerDocument.documentElement);
+      }
+      if (target.closest('.ssg-cell-editor, [data-ssg-find-bar]') !== null) {
+        return true;
+      }
+      if (target === root || target.hasAttribute('data-ssg-ime-input')) {
+        // 変更(1.0.1 の確かめ直し J): コピー範囲の点線を出している間の Escape も、点線を消すのに使う(1 セルのコピーでも)。
+        return state.editingCell !== null || isClearableSelection(state.selection) || copiedSelection !== null;
+      }
+      return false;
+    },
+  });
+  const handleShellKeyDown = useCallback(
+    (event: ReactKeyboardEvent<HTMLDivElement>) => {
+      if (!isAnyGridPopupOpen) {
+        handleRootKeyDown(event);
+      }
+      // 印の付いた Escape は外へ伝えません(React のイベントで Escape を聞くモーダル = React Aria / HeroUI が閉じないように)。
+      if (isEscapeClaimedByGrid(event.nativeEvent)) {
+        event.stopPropagation();
+      }
+    },
+    [isAnyGridPopupOpen, handleRootKeyDown],
+  );
+
   // ── slot bars ─────────────────────────────────────────
   // 追加: slot helper を使って top/bottom の描画を解決します。
   // 変更: showTopBar / showBottomBar(既定 true)を最優先のマスタースイッチにします。
@@ -4266,7 +4372,7 @@ export function useGridShell<T extends object>({
         //   (styles.css の .ssg-shell:focus-visible。Tab で入った直後など)。
         data-ssg-has-active-cell={uiState.activeCell === null ? undefined : ''}
         // 追加: popup open 中は root の keyboard/paste handler 自体を外します。
-        onKeyDown={isAnyGridPopupOpen ? undefined : handleRootKeyDown}
+        onKeyDown={handleShellKeyDown}
         onPaste={isAnyGridPopupOpen ? undefined : handlePaste}
         // 追加(バッチ②): ボディ右クリックの委譲。未 opt-in / 対象外は素通しで標準メニューになります。
         onContextMenu={handleBodyContextMenu}

@@ -1,0 +1,25 @@
+const { launch, shot, BASE } = require('./lib.cjs')
+const { cellCenter, state, revealColumn, revealRow } = require('./helpers.cjs')
+;(async () => {
+  const { browser, context, page, logs } = await launch({ viewport: { width: 1280, height: 800 }, locale: 'ja-JP' })
+  await page.goto(BASE)
+  await page.waitForSelector('.ssg-body-row')
+  await page.waitForTimeout(800)
+  await revealRow(page, 22)
+  const c = await cellCenter(page, 22, 'photo')
+  await page.mouse.move(c.x + 20, c.y)
+  await page.waitForTimeout(1500)
+  const tip = await page.evaluate(() => [...document.body.children].filter((e) => e.id !== 'root').map((e) => ({ cls: e.className, role: e.getAttribute('role'), t: e.textContent.slice(0, 80), id: e.id })))
+  console.log('hover tip', tip)
+  console.log(await shot(page, '07-desktop-hover-tip'))
+  // キーボードでその セルへ
+  await page.mouse.click(c.x - 300, c.y)  // 項目のセル
+  await page.waitForTimeout(200)
+  for (let i = 0; i < 6; i++) { await page.keyboard.press('ArrowRight'); await page.waitForTimeout(80) }
+  await page.waitForTimeout(1200)
+  const tip2 = await page.evaluate(() => [...document.body.children].filter((e) => e.id !== 'root').map((e) => ({ cls: e.className, role: e.getAttribute('role'), t: e.textContent.slice(0, 80), vis: getComputedStyle(e).visibility, op: getComputedStyle(e).opacity })))
+  console.log('keyboard on invalid', await state(page), tip2)
+  const ad = await page.evaluate(() => { const id = document.querySelector('.ssg-shell').getAttribute('aria-activedescendant'); const e = document.getElementById(id); return e ? [...e.attributes].map((a) => `${a.name}=${a.value.slice(0, 50)}`) : null })
+  console.log('active cell attrs', ad)
+  await browser.close()
+})()

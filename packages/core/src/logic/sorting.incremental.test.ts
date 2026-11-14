@@ -4,6 +4,7 @@ import { describe, it, expect } from 'vitest';
 import {
   decorateSortKeys,
   diffSortKeys,
+  isOrderPrefix,
   repositionSortedPositions,
   sortOrder,
   sortPositionsByKeys,
@@ -185,6 +186,63 @@ describe('差分ソート(監査 B-10)', () => {
         expect(paths.same).toBeGreaterThan(0);
         expect(paths.reposition).toBeGreaterThan(0);
         expect(paths.full).toBeGreaterThan(0);
+      });
+    }
+  }
+});
+
+// 追加(1.0.1 / 2026-11-09 実アプリの総点検 AP-25): 末尾に行を足したとき(前回の order が今回の先頭と同じ)も差分の経路で
+//   差し込み、全件ソートと同じ結果になる。
+describe('末尾に足したときの差分ソート(AP-25)', () => {
+  it('isOrderPrefix: 先頭が同じなら true、途中が違う / 前回が長いなら false', () => {
+    expect(isOrderPrefix(Int32Array.from([3, 1]), Int32Array.from([3, 1, 4]))).toBe(true);
+    expect(isOrderPrefix(Int32Array.from([3, 1]), Int32Array.from([3, 2, 4]))).toBe(false);
+    expect(isOrderPrefix(Int32Array.from([3, 1, 4]), Int32Array.from([3, 1]))).toBe(false);
+  });
+
+  it('足した位置はすべて「変わった位置」。足した件数が limit を超えたら null', () => {
+    const rows = makeRows(createRandom(21), 30, VALUE_POOLS.numeric);
+    const more = [...rows, ...makeRows(createRandom(22), 5, VALUE_POOLS.numeric)];
+    const sort: GridSortState = [{ columnKey: 'a', direction: 'desc' }];
+    const prevKeys = decorateSortKeys(rows, createSourceOrder(rows.length), columns, sort);
+    const nextKeys = decorateSortKeys(more, createSourceOrder(more.length), columns, sort);
+    expect(prevKeys && nextKeys && diffSortKeys(prevKeys, nextKeys, 10)).toEqual([30, 31, 32, 33, 34]);
+    expect(prevKeys && nextKeys && diffSortKeys(prevKeys, nextKeys, 4)).toBeNull();
+  });
+
+  for (const [poolName, pool] of Object.entries(VALUE_POOLS)) {
+    for (const [sortIndex, sort] of SORTS.entries()) {
+      it(`乱数の追加 + 編集で全件ソートと一致する(${poolName} / sort ${sortIndex})`, () => {
+        const random = createRandom(5000 + sortIndex * 31 + poolName.length);
+        for (let trial = 0; trial < 60; trial += 1) {
+          const count = 1 + Math.floor(random() * 60);
+          const rows = makeRows(random, count, pool);
+          // フィルター済みを模して一部を間引く(足した行も一部だけ通す)。
+          const prevOrder = Int32Array.from(Array.from(createSourceOrder(count)).filter(() => random() > 0.2));
+          const added = makeRows(random, 1 + Math.floor(random() * 6), pool);
+          const next = [...rows, ...added];
+          // 既存の行も 0〜2 行書き換える。
+          for (let e = Math.floor(random() * 3); e > 0; e -= 1) {
+            const target = Math.floor(random() * count);
+            next[target] = { ...next[target], a: pick(random, pool) };
+          }
+          const nextOrder = Int32Array.from([
+            ...Array.from(prevOrder),
+            ...Array.from({ length: added.length }, (_, i) => count + i).filter(() => random() > 0.3),
+          ]);
+          expect(isOrderPrefix(prevOrder, nextOrder)).toBe(true);
+          const prevKeys = decorateSortKeys(rows, prevOrder, columns, sort);
+          const nextKeys = decorateSortKeys(next, nextOrder, columns, sort);
+          if (prevKeys === null || nextKeys === null) {
+            throw new Error('sort が空');
+          }
+          const prevPositions = sortPositionsByKeys(prevKeys, prevOrder);
+          const changed = diffSortKeys(prevKeys, nextKeys, 1024);
+          expect(changed).not.toBeNull();
+          const positions = repositionSortedPositions(prevPositions, changed ?? [], nextKeys, nextOrder);
+          const expected = sortOrder(next, nextOrder, columns, sort);
+          expect(Array.from(undecorateSortedPositions(nextOrder, positions))).toEqual(Array.from(expected));
+        }
       });
     }
   }

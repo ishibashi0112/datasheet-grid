@@ -18,6 +18,7 @@ import {
   type GridPaneLayout,
 } from '../logic/geometry';
 import { clientYToRowIndex, type RowMetrics } from '../logic/verticalGeometry';
+import { resolveElementScale } from '../logic/elementScale';
 import {
   AUTO_SCROLL_ACTIVATION_DISTANCE,
   AUTO_SCROLL_EDGE_THRESHOLD,
@@ -129,6 +130,8 @@ export const createPointerInteractionsController = <T,>(): PointerInteractionsCo
   let selectionAutoScrollActive = false;
 
   const dragState = () => args?.uiState.dragState ?? null;
+  // 追加(1.0.1 / AP-29): 列幅のドラッグの倍率(ドラッグの始めの dragState ごとに 1 回測る。pointermove ごとにレイアウトを読まない)。
+  let resizeScale: { drag: object; x: number } | null = null;
 
   // 追加(合計行 3A): 合計行の上のポインタは、本体の見えている最後の位置として扱います(合計行が無ければそのまま)。
   const clampFooterClientY = (clientY: number): number => {
@@ -138,10 +141,12 @@ export const createPointerInteractionsController = <T,>(): PointerInteractionsCo
       return clientY;
     }
     const rect = scrollElement.getBoundingClientRect();
+    // 変更(1.0.1 / AP-29): 祖先の transform: scale() の中では、レイアウトの px を画面の px へ直して比べます。
+    const scale = resolveElementScale(scrollElement, rect);
     return clampClientYAboveFooter(
       clientY,
-      rect.top + scrollElement.clientTop + scrollElement.clientHeight,
-      footerHeight,
+      rect.top + (scrollElement.clientTop + scrollElement.clientHeight) * scale.y,
+      footerHeight * scale.y,
     );
   };
 
@@ -170,7 +175,10 @@ export const createPointerInteractionsController = <T,>(): PointerInteractionsCo
       return null;
     }
     const centerRect = centerEl.getBoundingClientRect();
-    const y = centerEl.scrollTop + clampFooterClientY(clientY) - centerRect.top - headerHeight;
+    // 追加(1.0.1 / 2026-11-09 実アプリの総点検 AP-29): 祖先の transform: scale() の倍率で、画面の px をレイアウトの px へ戻す
+    //   (ペインの中の位置は倍率で縮んでいるため。倍率 1 のときは今までどおり)。
+    const scale = resolveElementScale(centerEl, centerRect);
+    const y = centerEl.scrollTop + (clampFooterClientY(clientY) - centerRect.top) / scale.y - headerHeight;
     const row = clientYToRowIndex(
       y,
       scrollContainerRef.current?.scrollTop ?? 0,
@@ -183,7 +191,7 @@ export const createPointerInteractionsController = <T,>(): PointerInteractionsCo
     if (col === null && leftEl && paneLayout.left.entries.length > 0) {
       const leftRect = leftEl.getBoundingClientRect();
       if (clientX < leftRect.right) {
-        const localX = clientX - leftRect.left - leftLeadingWidth;
+        const localX = (clientX - leftRect.left) / scale.x - leftLeadingWidth;
         col = findLogicalIndexFromPaneOffset(paneLayout.left, localX);
       }
     }
@@ -191,7 +199,7 @@ export const createPointerInteractionsController = <T,>(): PointerInteractionsCo
     if (col === null && rightEl && paneLayout.right.entries.length > 0) {
       const rightRect = rightEl.getBoundingClientRect();
       if (clientX >= rightRect.left) {
-        const localX = clientX - rightRect.left - rightLeadingWidth;
+        const localX = (clientX - rightRect.left) / scale.x - rightLeadingWidth;
         col = findLogicalIndexFromPaneOffset(paneLayout.right, localX);
       }
     }
@@ -200,9 +208,9 @@ export const createPointerInteractionsController = <T,>(): PointerInteractionsCo
       //   した表で、行ヘッダーの下に隠れた列を拾わない)。左ペインは sticky; left: 0 なので右端は左端 + 行ヘッダーの幅。
       const visibleClientX =
         leftEl && paneLayout.left.entries.length === 0
-          ? Math.max(clientX, leftEl.getBoundingClientRect().left + leftLeadingWidth)
+          ? Math.max(clientX, leftEl.getBoundingClientRect().left + leftLeadingWidth * scale.x)
           : clientX;
-      const localX = centerEl.scrollLeft + visibleClientX - centerRect.left - centerLeadingWidth;
+      const localX = centerEl.scrollLeft + (visibleClientX - centerRect.left) / scale.x - centerLeadingWidth;
       col = findLogicalIndexFromPaneOffset(paneLayout.center, Math.max(localX, 0));
     }
     if (col === null) {
@@ -298,8 +306,16 @@ export const createPointerInteractionsController = <T,>(): PointerInteractionsCo
       return;
     }
     args.pointerClientRef.current = { x: event.clientX, y: event.clientY };
-    if (dragState()?.type === 'columnResize') {
-      args.dispatch(gridActions.updateColumnResize(event.clientX));
+    const drag = dragState();
+    if (drag?.type === 'columnResize') {
+      // 変更(1.0.1 / AP-29): 祖先の transform: scale() の中では、動かした量(画面の px)を倍率で割って列幅(レイアウトの px)に
+      //   します(倍率 0.8 では 100px 引いても 80px しか広がらなかった)。倍率はドラッグの始めに 1 回だけ測ります。
+      if (resizeScale === null || resizeScale.drag !== drag) {
+        resizeScale = { drag, x: resolveElementScale(args.scrollContainerRef.current).x };
+      }
+      const clientX =
+        resizeScale.x === 1 ? event.clientX : drag.startX + (event.clientX - drag.startX) / resizeScale.x;
+      args.dispatch(gridActions.updateColumnResize(clientX));
     }
   };
   const handleWindowPointerUp = (event: PointerEvent) => {
@@ -375,6 +391,7 @@ export const createPointerInteractionsController = <T,>(): PointerInteractionsCo
       clientTop: scrollElement.clientTop,
       clientWidth: scrollElement.clientWidth,
       clientHeight: scrollElement.clientHeight,
+      scale: resolveElementScale(scrollElement, rect),
     });
     const current = dragState();
     const isColumnSelection = current?.type === 'selection' && current.selectionKind === 'col';
@@ -454,6 +471,7 @@ export const createPointerInteractionsController = <T,>(): PointerInteractionsCo
         clientTop: scrollElement.clientTop,
         clientWidth: scrollElement.clientWidth,
         clientHeight: scrollElement.clientHeight,
+        scale: resolveElementScale(scrollElement, rect),
       });
       const verticalDirection = resolveAutoScrollAxisDirection(
         pointer.y,

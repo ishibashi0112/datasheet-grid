@@ -12,7 +12,7 @@ description: 列定義(GridColumn<T>)・エディタ・バリデーション・�
 | `width` | `number` | (required) | 列幅(px)。 |
 | `minWidth` | `number` | — | リサイズ時の下限幅(未指定時の手動リサイズの下限は 60px。`0` を指定すると 0 まで縮められる)。flex 配分時の下限クランプにも使用(flex 列で未指定なら内部既定 50px)。 |
 | `maxWidth` | `number` | — | 上限幅。**未指定なら上限なし**(autoSize は内容にぴったり合わせ、手動リサイズも自由に広げられます。既定の上限は設けません)。指定すると autoSize / 手動リサイズ / flex 配分の上限クランプに使われます。 |
-| `flex` | `number` | — | center 列(非 pinned)の伸縮比。余り幅(コンテナ幅 − 行ヘッダー − pinned 合計 − `width` 固定列の合計)を flex 比で配分し `minWidth`/`maxWidth` でクランプ。配分した幅は整数 px(端数は切り捨てて次の列へ回すため、合計が利用可能幅をはみ出さない)。コンテナ追従でリアクティブに伸縮。手動リサイズで固定 px へ変化(その列の `flex` / `pinned` / `width` 指定が変わるか列のリセットまで固定 → 以後 flex 復帰)。pinned 列では無視。詳細は下記「flex と autoSize」節。 |
+| `flex` | `number` | — | center 列(非 pinned)の伸縮比。余り幅(コンテナ幅 − 行ヘッダー − pinned 合計 − `width` 固定列の合計)を flex 比で配分し `minWidth`/`maxWidth` でクランプ。配分した幅は整数 px(端数は切り捨てて次の列へ回すため、合計が利用可能幅をはみ出さない)。コンテナ追従でリアクティブに伸縮。手動リサイズで固定 px へ変化(その列の `flex` / `pinned` / `width` 指定が変わるか列のリセットまで固定 → 以後 flex 復帰)。pinned 列では無視。`flex` の列では `width` は使わない(最小の幅にもならず、余り幅が無いと既定の下限 50px まで縮む)。縮ませたくない幅は `minWidth` で書く。詳細は下記「flex と autoSize」節。 |
 | `resizable` | `boolean` | グリッドの `enableColumnResize` を継承 | この列の手動リサイズ可否。`false` でヘッダーのリサイズハンドルを非表示。リサイズハンドルの**ダブルクリック**でその列を内容幅へ autoSize(`false` 時はハンドルが無いため不可。列メニューからの autoSize は引き続き可能)。 |
 | `suppressAutoSize` | `boolean` | `false` | `true` で autoSize の対象外(列メニュー / 境界ダブルクリック / すべての列の自動調整すべてでスキップ)。consumer 指定の `width` を維持(固定幅優先)。テキストで測れないカスタムUI列や固定で見せたい列向けの per-column opt-in。 |
 | `estimateCellWidth` | `(row, column) => number` | — | autoSize の幅見積もり。指定列は「セル内容の content 幅(px・セルの padding/border を除く)」をこの関数から得て、**全行の最大 + セル枠**で確定します(テキスト/候補/実 DOM 計測を使わず、React mount もしません)。テキスト長が実描画幅と相関しない renderCell カスタムUI列(横並びバッジ等)向けの opt-in。返す値は `renderCell` の実描画幅と一致させること。 |
@@ -23,8 +23,8 @@ description: 列定義(GridColumn<T>)・エディタ・バリデーション・�
 | `visible` | `boolean` | — | 列の表示/非表示。非表示にしても、その列に載った列フィルター / ソートは行の絞り込み / 並べ替えに効き続ける(クイックフィルター = グローバル検索は可視列のみが対象)。 |
 | `editable` | `boolean` | `true`(未指定 = 編集可) | この列の編集可否。**未指定の列は編集可**で、`false` または `readOnly: true` で編集不可になる(グリッド全体は `readOnly`、セル単位は `canEditCell`)。 |
 | `readOnly` | `boolean` | — | この列を読み取り専用にする。 |
-| `pinned` | `'left' \| 'right'` | undefined = 中央スクロール | 列固定の方向。 |
-| `rowGroup` | `boolean` | — | `true` でこの列を行グルーピングの対象にする(複数指定時は `columns` 配列の出現順が階層順)。有効時はグループ元列が表示から外れ、先頭に自動グループ列(ツリー表示)が注入される。**clientSide 限定**(serverSide では無視 + 開発時警告)。列のどれかに `rowGroup` を書いている(`false` を含む)表では、列メニューに「この列でグループ化」/「グループ化を外す」が出る(`onColumnsChange` が要る。集計のある列には出ない)。詳細は「行グルーピング + 集計」節。 |
+| `pinned` | `'left' \| 'right'` | undefined = 中央スクロール | 列固定の方向。固定列(行番号の列を含む)の合計が広すぎて中央に 120px を残せない間は、右の固定列の内側から、次に左の固定列の内側から順に、表示の上だけ固定を外して中央でスクロールさせる(`columns` の `pinned` は変えず、広くなれば固定に戻る。スマホの幅で右の固定列が左の固定列に重なり、中央が見えなかったため。1.0.1 から)。 |
+| `rowGroup` | `boolean` | — | `true` でこの列を行グルーピングの対象にする(複数指定時は `columns` 配列の出現順が階層順)。有効時はグループ元列が表示から外れ、先頭に自動グループ列(ツリー表示)が注入される。**clientSide 限定**(serverSide では無視 + 開発時警告)。列のどれかに `rowGroup` を書いている(`false` を含む)表では、列メニューに「この列でグループ化」/「グループ化を外す」が出る(`onColumnsChange` が要る。`rowGroup` を書いた列だけでなく、集計のある列と最後のデータ列を除くすべての列に出る)。詳細は「行グルーピング + 集計」節。 |
 | `aggFunc` | `'sum' \| 'min' \| 'max' \| 'avg' \| 'count' \| GridAggFunc<T>` | — | グルーピング時と合計行(`totalRow`)のこの列の集計。組み込みは数値と数値の文字列だけを数える集計(空値・空白だけの文字列・`true` / `false`・`Date`・配列などは対象外、`count` は配下 leaf 行数 / 合計行では対象の行数)。関数でカスタム集計可(返り値がグループ行 / 合計行に表示)。`rowGroup` 列も `totalRow` もないときは無視。 |
 | `getValue` | `(row: T) => unknown` | `row[key]` | 値アクセサ。`setValue` の無い列へ書き込むと値は `row[key]` へ入り、表示(`getValue`)は変わらない。計算列は `editable: false` にするか `setValue` を渡す(開発時は、行に無いプロパティを足した列ごとに 1 回 console.warn)。 |
 | `setValue` | `(row: T, value: unknown) => T` | — | 値ライター(新しい行を返す)。 |
@@ -36,10 +36,10 @@ description: 列定義(GridColumn<T>)・エディタ・バリデーション・�
 | `cellNote` | `(ctx: CellStyleContext<T>) => string \| null \| undefined` | — | セルのメモ(FarPoint SPREAD のセルメモ / Excel のメモ相当)。文字列を返したセルの右上に印(10px の三角。色はトークン `--ssg-note-indicator`)を出し、マウスを乗せるとその文字列をツールチップで表示する(`\n` で改行)。`undefined` / `null` / 空文字(空白だけを含む)なら何も出さない。`ctx` は `cellClassName` の関数版と同じ。入力エラー(`validate` の mark)と同じセルでは、エラーの 6px の赤い三角がメモの三角の上に重なって両方見え、ツールチップは「エラー → 改行 → メモ」の順。描画中のセルだけ評価する(`cellClassName` 関数と同じコスト階級)。CSV / TSV / クリップボード / `getExportData` には含めない。詳細は「セルのメモ(`cellNote`)」節。 |
 | `conditionalFormat` | `GridConditionalFormat<T>` | — | **条件付き書式**。既定セルの描画に、値の「量」/「向き」/「状態」を重ねる。`dataBar`(背景の帯。`min` / `max` 省略時はビュー行 = フィルター / ソート適用後の数値から自動集計、負の値は 0 の軸から左へ。`color` / `negativeColor` / `showValue: false` で帯だけ)/ `colorScale`(セル背景を段階的に染める。`type: 'sequential'`(既定。淡 → 濃)/ `'diverging'`(`mid` を中立色に負側 / 正側を別の色相で。`colors` で色の段を差し替え)/ `chips`(値 → 色味 `'neutral' \| 'info' \| 'good' \| 'warning' \| 'critical'` か `{ tone, label, icon, color }` のマップ、または `ctx` から返す関数。アイコン + ラベルのピル)。複数を同時指定可。表示だけで、エクスポート / コピー / ソート / フィルターには影響しない。色はトークン `--ssg-cf-*`。詳細は「条件付き書式(`conditionalFormat`)」節。 |
 | `renderHeader` | `(ctx: HeaderRenderContext<T>) => ReactNode` | — | カスタムヘッダー描画。中に置いたボタン / 入力欄 / リンク等(`button` / `input` / `select` / `textarea` / `a[href]` / `label` / `contenteditable` / `role="button"` 等)を押したときは列の範囲選択を始めない(既定動作も止めないため入力欄にフォーカスが入る)。それ以外の部分を押すと従来どおり列を選択する。 |
-| `filterType` | `'text' \| 'textSet' \| 'number' \| 'numberSet' \| 'date' \| 'dateSet' \| 'select' \| 'set' \| 'custom' \| 'auto'` | — | フィルター UI の種別。`'auto'` は列の値から `numberSet` / `textSet` / `dateSet` を自動判定する opt-in(判定は popover の初回オープン時に 1 回。詳細は[ソートとフィルター](/docs/guides/filter-sort))。`'numberSet'` / `'textSet'` / `'dateSet'` は条件(演算子 + 値)と Set 一覧を 1 つの popover に縦に並べて **AND 結合**する複合フィルター(条件を適用すると Set 候補が連動して絞られる。候補外になった値の選択は破棄せず保持)。numberSet の演算子は 以上 / より大きい / 以下 / 未満 / に等しい / に等しくない / 範囲 / 空白 / 空白でない、textSet は を含む / に等しい / で始まる / で終わる / 空白 / 空白でない(判定は大文字小文字無視)。dateSet は 範囲 / 以降 / 以前 / に等しい / に等しくない / 空白 / 空白でない + 相対プリセット(今日 / 今月 / 過去 30 日。**相対のまま保存され評価のたびに解決**)で、Set 部分は年 / 月 / 日の 3 階層ツリー(親は 3 状態チェック)になる。 |
+| `filterType` | `'text' \| 'textSet' \| 'number' \| 'numberSet' \| 'date' \| 'dateSet' \| 'select' \| 'set' \| 'custom' \| 'auto'` | — | フィルター UI の種別。`'auto'` は列の値から `numberSet` / `textSet` / `dateSet` を自動判定する opt-in(判定は popover の初回オープン時に 1 回。詳細は[ソートとフィルター](/docs/guides/filter-sort))。`'numberSet'` / `'textSet'` / `'dateSet'` は条件(演算子 + 値)と Set 一覧を 1 つの popover に縦に並べて **AND 結合**する複合フィルター(条件を適用すると Set 候補が連動して絞られる。候補外になった値の選択は破棄せず保持)。numberSet の一覧は数の順(数でない値はその後ろ、空白は最後。`filterOptions` / `getFilterOptions` で渡した候補は渡した順)。numberSet の演算子は 以上 / より大きい / 以下 / 未満 / に等しい / に等しくない / 範囲 / 空白 / 空白でない、textSet は を含む / に等しい / で始まる / で終わる / 空白 / 空白でない(判定は大文字小文字無視)。dateSet は 範囲 / 以降 / 以前 / に等しい / に等しくない / 空白 / 空白でない + 相対プリセット(今日 / 今月 / 過去 30 日。**相対のまま保存され評価のたびに解決**)で、Set 部分は年 / 月 / 日の 3 階層ツリー(親は 3 状態チェック)になる。 |
 | `filterOptions` | `readonly GridSelectFilterOption[]` | rows から自動収集 | select / set の候補(readonly / `as const` 配列も可)。 |
 | `dateFilterPresets` | `false \| DateFilterPresetOption[]` | ビルトイン 3 種 | dateSet の相対プリセットチップの構成。`false` / `[]` でチップ行を非表示(オプトアウト)。配列はビルトイン ID(`'today'` / `'thisMonth'` / `'last30days'`)の再利用とカスタム定義 `{ id, label, resolve }` を表示順のまま混在可。詳細は[ソートとフィルター](/docs/guides/filter-sort)。 |
-| `filterFn` | `(row: T, filterValue: unknown) => boolean` | — | カスタムフィルター述語。 |
+| `filterFn` | `(row: T, filterValue: unknown) => boolean` | — | カスタムフィルター述語。`filterValue` は入力した値そのものではなく、その列のフィルターの記述子(`ColumnFilterValue`)。`filterType: 'custom'` なら `{ kind: 'custom', value: 入力した文字列 }`、ほかの種別ならその種別の形(「列フィルターの wire format」と同じ)。指定するとどの `filterType` でも組み込みの判定より優先する。`filterType: 'custom'` のフィルター画面は文字の入力欄 1 つ(text と同じ画面で、文言も「部分一致で絞り込み」のまま)で、`filterFn` が無ければ部分一致で絞る。 |
 | `editor` | `GridColumnEditor<T>` | text 相当 | セルエディタ種別(判別共用体)。`{ type: 'text' \| 'number' \| 'select' \| 'date' \| 'checkbox' \| 'custom', ... }`。詳細は「セルエディタ」節。 |
 | `validate` | `(ctx: CellValidationContext<T>) => CellValidationResult` | — | セル値の検証。`true`=有効 / `false`=無効(既定メッセージ)/ `string`・`{ message }`=無効+メッセージ。**純粋・軽量であること**(描画中の可視セルごとに毎レンダー評価。`cellClassName` 関数と同コスト階級)。number エディタの `min` / `max` / `integer` の検査は `validate` の後(`validate` の NG はそのメッセージ、通した値だけ組み込みの検査)。詳細は「バリデーション」節。 |
 | `validationMode` | `'mark' \| 'reject'` | `'mark'` | 検証 NG 時の動作。`'mark'`=値は入るがセルに invalid 表示 / `'reject'`=書き込み自体を拒否。 |
@@ -48,7 +48,7 @@ description: 列定義(GridColumn<T>)・エディタ・バリデーション・�
 
 ### 値フォーマッタ(UI 表示)
 
-`valueFormatter` はセルの**表示文字列だけ**を変えます(元の値・編集・コピー・ソート・フィルターは生値のまま)。組み込みファクタは `logic/valueFormatters.ts` に集約し、バレルから公開します。利用側も同じ契約(`CellValueFormatter<T>`)で自作でき、将来パターン(日付/％/通貨等)はファクタ追加 + バレル公開で拡張できます。
+`valueFormatter` はセルの**表示文字列だけ**を変えます(元の値・編集・コピー・ソート・フィルターは生値のまま)。組み込みのファクトリ(下の `numberFormatter` など)はパッケージの入口から import します。利用側も同じ契約(`CellValueFormatter<T>`)で自作できます(日付 / ％ / 通貨など)。
 
 - `numberFormatter(options?)` — 数値を 3 桁区切りで整形。既定は**元の精度を保持**(小数桁を勝手に丸めない)。`minimumFractionDigits` / `maximumFractionDigits` で固定桁、`useGrouping: false` で区切り無効、`locale` 指定可。`null` / `undefined` / `''` は `emptyText`(既定 `''`)、数値化できない値は原値の文字列をそのまま表示。型引数なしで作ったもの(`const amount = numberFormatter()`)は、行の型の違う列やグリッドでも使い回せる。
 
@@ -68,12 +68,12 @@ const columns = [
 
 | type | UI / 操作 | オプション | 既定パーサ(`parseClipboardValue` 未指定時) |
 | --- | --- | --- | --- |
-| `'text'` | 従来のテキスト input(既定)。`multiline: true` で複数行の入力欄(textarea。中身に合わせて下へ伸び、表の見える範囲の下端で止まって中でスクロール。行の間隔、1 行目の位置と折り返し = 列の `wordBreak` / `lineBreak` はセルと同じ) | `multiline` / `enterKey`(`multiline` のときの `Enter`。`'commit'`(既定。Excel と同じ)= `Enter` で確定、`Alt+Enter` と `Ctrl` / `⌘+Enter` で改行 / `'newline'`(メモ帳やチャットに近い)= `Enter`(`Shift` / `Alt` 付きも)で改行、`Ctrl` / `⌘+Enter` で確定) | パススルー(生文字列のまま) |
+| `'text'` | 従来のテキスト input(既定)。`multiline: true` で複数行の入力欄(textarea。中身に合わせて下へ伸び、表の見える範囲の下端で止まって中でスクロール。行の間隔、1 行目の位置と折り返し = 列の `wordBreak` / `lineBreak` はセルと同じ) | `multiline` / `enterKey`(`multiline` のときの `Enter`。`'commit'`(既定。Excel と同じ)= `Enter` で確定、`Alt+Enter` と `Ctrl` / `⌘+Enter` で改行 / `'newline'`(メモ帳やチャットに近い)= `Enter`(`Shift` / `Alt` 付きも)で改行、`Ctrl` / `⌘+Enter` で確定。スマートフォンのソフトキーボードでは `Alt` / `Ctrl` を押せないので、モバイルで改行させたい列は `'newline'`(確定はフォーカスアウト)) | パススルー(生文字列のまま) |
 | `'number'` | `<input type="number">`(スピナー / ↑↓ステップ / 不正文字抑止)。セルを選んで `-` / `+` / `.` から打ち始めたときは、その文字を消さないよう文字の入力欄(`inputmode="decimal"`)で開き、確定した文字列を列のパーサで数値に直す(`-5`→`-5`、`.5`→`0.5`、`-` だけなら空。数値として読めない文字列は貼り付けと同じくそのまま)。英字など数値にならない文字から打ち始めたとき・数値でない文字列の値を開いたときも文字の入力欄で開き、その文字をそのまま見せる。数値の文字列の値(`'1,234'` / `'１２'`)は半角の数値(`1234` / `12`)で開く | `min` / `max` / `step` / `integer`(`min` / `max` / `integer` は値の検査にも使う。「バリデーション」節) | `''`・空白だけ→`null` / 有限数値文字列→`number`(全角の数字・符号・小数点と 3 桁区切りも読む: `'１，２３４'`→`1234`、`'ー５'`→`-5`)/ 非数値→生文字列のまま(mark が拾う) |
 | `'select'` | 候補ドロップダウン(body 直下ポータル)。↑↓=ハイライト移動 / Enter=確定(下へ)/ Tab=確定(左右へ)/ クリック=確定 / 印字キー=label 前方一致のタイプアヘッド(約 700ms でリセット) | `options: GridSelectEditorOption[] \| (row) => GridSelectEditorOption[]`(静的 or 行依存。関数はレンダー中に呼ばれるため純粋であること) | パススルー(`option.value` は string。型変換したい場合は `parseClipboardValue` を併用) |
-| `'date'` | ネイティブ `<input type="date">`。ドラフトは `'YYYY-MM-DD' \| ''` | — | `''`→`null` / 解釈可能→`'YYYY-MM-DD'` へ正規化 / 解釈不可→生文字列のまま(数字だけの文字列 = Excel の日付のシリアル値「45678」や「5」と、年が 4 桁にならない文字列も解釈不可) |
-| `'checkbox'` | **直接トグル**(編集セッションなし)。クリック / Space で即トグル。Enter / F2 / ダブルクリックではエディタが開かない | `checkedValue`(既定 `true`)/ `uncheckedValue`(既定 `false`)。checked 判定は `Object.is(value, checkedValue)` のみ | `''`→unchecked / checked・unchecked の文字列表現→対応値 / `'true'`・`'1'`→checked / その他→unchecked |
-| `'custom'` | `render(ctx)` の返り値を編集オーバーレイ内に描画。**フォーカス管理・キーバインドは利用側の責務** | `render: (ctx: CellEditorContext<T>) => ReactNode` | パススルー |
+| `'date'` | ネイティブ `<input type="date">`。ドラフトは `'YYYY-MM-DD' \| ''` | — | `''`→`null` / 解釈可能→`'YYYY-MM-DD'` へ正規化 / 解釈不可→生文字列のまま(数字だけの文字列 = Excel の日付のシリアル値「45678」や「5」と、年が 4 桁にならない文字列、年の無い文字列(「11/2」「Nov 1」)、ありえない日付(「2026/2/30」)も解釈不可。翌月へ繰り越さない) |
+| `'checkbox'` | **直接トグル**(編集セッションなし)。チェックボックスそのものを押すか、アクティブセルで Space を押すと即トグル(セルのチェックボックスの外を押したときはアクティブセルになるだけ。ダブルクリックでも切り替わらない)。Enter / F2 / ダブルクリックではエディタが開かない | `checkedValue`(既定 `true`)/ `uncheckedValue`(既定 `false`)。checked 判定は `Object.is(value, checkedValue)` のみ | `''`→unchecked / checked・unchecked の文字列表現→対応値 / `'true'`・`'1'`→checked / その他→unchecked |
+| `'custom'` | `render(ctx)` の返り値を編集オーバーレイ内に描画。**フォーカス管理・キーバインドは利用側の責務**(開いたままグリッドの中の別のセルを押したときに値を残す / エディタを閉じるには、入力欄の `onBlur` で `ctx.commit` か `ctx.cancel` を呼ぶ。呼ばないとエディタが開いたまま残り、グリッドのキー操作が効かない) | `render: (ctx: CellEditorContext<T>) => ReactNode` | パススルー |
 
 注意点:
 
@@ -84,7 +84,7 @@ const columns = [
 - **date の Tab はグリッド流(確定 + 移動)**です。ピッカー内のセグメント移動は ← → 矢印で行えます。
 - **checkbox のダブルクリックは click 2 回**(トグル往復)として扱われます(Excel / AG Grid と同様)。`renderCell` 指定時はそちらが優先され、組み込みチェックボックスセルは描画されません。
 - **custom の `ctx.commit(value)`** は、`value` が string なら列パーサ(`parseClipboardValue` ?? editor 既定)を通し、**非 string ならパースをバイパスしてドメイン値をそのまま書き込みます**。`ctx` には `row` / `rowIndex`(ビュー行)/ `sourceRowIndex`・`rowKey`(source 基準)/ `colIndex` / `column` / `value`(編集開始時の生値)/ `initialText`(印字キー開始時はそのキー)/ `align` / `commit` / `cancel` が入ります。`commit` の返り値(`EditorCommitResult`)で reject 列の検証結果を受け取れます(無視しても安全)。`commit(value, direction)` の第 2 引数(`'down' | 'up' | 'right' | 'left'`)で確定後のアクティブセル移動を指定できます(省略時は移動しない。`editorEnterMove` prop は custom エディタには効かないため、Enter で下へ進めたい場合は `'down'` を明示)。編集が終わった後(確定 / 取消 / 別のセルの編集が始まった後)に呼んだ前の編集の `ctx.commit` / `ctx.cancel` は何もしない(`ctx.commit` は `{ status: 'noop' }` を返す)。非同期の検査の後で確定する作りでも、遅れて届いた値が別のセルへ書かれることはない。
-- **custom の枠**: `render(ctx)` の返り値は、編集中のセルと同じ位置・大きさの枠(`.ssg-cell-editor`。`position: absolute`)の中に描く。枠は透明なので、返す要素の根に `width: 100%; height: 100%; box-sizing: border-box` と背景色(`var(--ssg-cell-bg)` など)を付ける(付けないと内容の高さにしかならず、下のセルの文字が透ける)。デザインシステムの入力部品は、外側の要素だけでなく内側の入力欄にも高さを渡す(Mantine なら `styles={{ wrapper: { height: '100%' }, input: { height: '100%', minHeight: 0 } }}`)。枠より大きい部品(星のピッカーなど)ははみ出して描いてよい。枠の中身はクリックを受ける(0.61.0 までは受けず、下のセルに当たっていた)。
+- **custom の枠**: `render(ctx)` の返り値は、編集中のセルと同じ位置・大きさの枠(`.ssg-cell-editor`。`position: absolute`)の中に描く。枠は透明なので、返す要素の根に `width: 100%; height: 100%; box-sizing: border-box` と背景色(`var(--ssg-cell-bg)` など)を付ける(付けないと内容の高さにしかならず、下のセルの文字が透ける)。デザインシステムの入力部品は、外側の要素だけでなく内側の入力欄にも高さを渡す(Mantine なら `styles={{ wrapper: { height: '100%' }, input: { height: '100%', minHeight: 0 } }}`)。枠より少し大きい部品(星のピッカーなど)ははみ出して描いてよいが、枠はスクロール領域の中にあるので、領域の端で切れ、下端に固定した合計行(`totalRow`)の下に隠れる。候補の一覧のように表の外まで伸びる部品は、`createPortal(…, document.body)` + `position: fixed`(セルの `getBoundingClientRect()` から位置を決める)で描く。portal の部品の `onMouseDown`(`onPointerDown`)で `preventDefault()` すると、押したときに入力欄の blur(確定)が起きない。表をスクロールしても portal の部品は付いてこないので、表(エディタを含む要素)や文書がスクロールしたら閉じる(`useEffect` で `window.addEventListener('scroll', onScroll, true)` とし、`onScroll` では `event.target === document || (event.target instanceof Node && event.target.contains(エディタの根の要素))` のときだけ閉じる。capture で聞くので、候補の一覧そのもののスクロールも届く。それでは閉じない。Mantine の `Select` などデザインシステムの部品も同じ)。見えていないセルで `startEditing()` を呼んだとき(行を足してすぐ編集するなど)は、エディタを出した直後にグリッドがセルまでスクロールするので、このスクロールで閉じないよう、見張りと位置の計測は開いてから 2 フレーム後(`requestAnimationFrame` を 2 回)に始める(先に `scrollToCell` で見せておいてもよい)。枠の中身はクリックを受ける(0.61.0 までは受けず、下のセルに当たっていた)。
 
 ### バリデーション(validate / validationMode)
 
@@ -105,7 +105,7 @@ const columns = [
 
 動作モード(`validationMode`、既定 `'mark'`):
 
-- **`'mark'`(既定)** — 値は書き込み、セルに invalid 表示(背景 + 右上マーカー)+ ホバーでメッセージのツールチップを出します。invalid 判定は**表示時導出**(state 非保持)のため、貼り付け・クリア・初期データ・undo/redo・外部からの `rows` 差し替え後も常に `rows` と整合します。
+- **`'mark'`(既定)** — 値は書き込み、セルに invalid 表示(背景 + 右上マーカー)+ メッセージのツールチップを出します(マウスを乗せたときと、キーボード / タップでそのセルをアクティブセルにしたとき。セルには `aria-invalid` と、メッセージの `aria-description` も付く。1.0.1)。invalid 判定は**表示時導出**(state 非保持)のため、貼り付け・クリア・初期データ・undo/redo・外部からの `rows` 差し替え後も常に `rows` と整合します。
 - **`'reject'`** — 検証 NG の書き込み自体を拒否します。経路ごとの挙動:
   - エディタ確定(Enter / Tab): **確定拒否・編集継続**。エディタ枠が赤くなり、即時のエラーバブルでメッセージを表示します。blur(フォーカスが外れた)の場合は cancel(値不変でエディタを閉じる)へフォールバックします。
   - 貼り付け: 検証 NG の**セルだけスキップ**します(他のセルは書き込まれる。readonly セルのスキップと同じ意味論)。
@@ -154,14 +154,20 @@ function OrderForm() {
       setShowErrors(true); // ここで初めてマークを出す
       // メッセージはセル粒度で返るため、重複排除して 1 通知にまとめる
       notifyError([...new Set(invalid.map((c) => c.message))].join(' / '));
-      // 先頭のエラーセルへジャンプ。scrollToCell はビュー座標のため、手入力フォームの
-      //   ようにソート / フィルター未適用なら sourceRowIndex をそのまま使える(ビュー順 =
-      //   source 順)。ソートあり得る画面では rowKey からビュー index を自前解決すること。
-      const first = invalid[0];
-      gridRef.current?.scrollToCell(
-        first.sourceRowIndex,
-        columns.findIndex((c) => c.key === first.columnKey),
-      );
+      // 先頭のエラーセルへ移る。scrollToCell / selectCell はビューの位置(並び替え・絞り込みの後の行と、
+      //   行ドラッグのハンドル列などグリッドが足す列も数えた列の並び)なので、rowKey と列キーから引き直す。
+      //   sourceRowIndex や columns.findIndex をそのまま渡すと、並び替え中や合成列があるときにずれる。
+      const grid = gridRef.current;
+      const first = invalid.find((cell) => (grid?.getViewRowIndex(cell.rowKey) ?? -1) >= 0); // 絞り込みで隠れた行は飛ばす
+      if (grid && first) {
+        const viewRow = grid.getViewRowIndex(first.rowKey);
+        const col = grid.getColIndex(first.columnKey);
+        if (col >= 0) {
+          grid.scrollToCell(viewRow, col);
+          grid.selectCell(viewRow, col);
+          grid.focus(); // selectCell はフォーカスを移さない
+        }
+      }
       return;
     }
     setShowErrors(false); // 成功したらマークを消す
@@ -214,7 +220,7 @@ const columns: GridColumn<Part>[] = [
 - **戻り値**: 文字列ならメモあり(`\n` で改行)。`undefined` / `null` / 空文字(空白だけを含む)ならメモなし。`ctx` は `cellClassName` の関数版と同じ `CellStyleContext<T>`(`row` / `rowIndex` / `sourceRowIndex` / `rowKey` / `colIndex` / `value` / `column` / `isActive` / `isSelected` / `isEditing` / `readOnly`)。
 - **印**: セルの右上に 10px の三角(既定色はライト `#f59e0b` / ダーク `#fbbf24`)。色はトークン `--ssg-note-indicator` で変えられる。メモのあるセルには公開契約のクラス `.ssg-body-cell--has-note` が付く(印は `::before`。形を変えたいときは `.ssg-body-cell.ssg-body-cell--has-note::before` を上書きする)。
 - **入力エラーと同じセル**: エラーの 6px の赤い三角(`::after`)がメモの三角の上に重なり、二重の三角で両方見える。ツールチップは「エラーのメッセージ → 改行 → メモ」の順。`showValidationMarks={false}` のあいだはメモだけを表示する。
-- **ツールチップ**: グリッドの既存のカスタムツールチップ(`data-ssg-tooltip`。「ツールチップ」節)で表示する。表示はマウスを乗せたとき(既存と同じ遅延)。メモのあるセルでは、省略時の全文ツールチップ(`showCellOverflowTooltip`)よりメモを優先する。
+- **ツールチップ**: グリッドの既存のカスタムツールチップ(`data-ssg-tooltip`。「ツールチップ」節)で表示する。表示はマウスを乗せたとき(既存と同じ遅延)。メモはセルの `aria-description` にも入り、支援技術はアクティブセルの説明として読み上げる(1.0.1)。メモのあるセルでは、省略時の全文ツールチップ(`showCellOverflowTooltip`)よりメモを優先する。
 - **出力には含めない**: CSV / TSV(コピー)/ `getExportData` には出力されない(表示だけの情報)。
 - **評価のタイミング**: 描画中のセルだけ、行の再描画のたびに評価する(`cellClassName` 関数と同じコスト階級。純粋・軽量に保つこと)。行は行データ・列定義などが変わったときに再描画されるため、メモの内容を `rows` 以外の state(取込結果の Map など)から引く場合は、その state を `useMemo` の依存に入れて `columns` を作り直す。
 
@@ -353,7 +359,7 @@ const columns: GridColumn<Order>[] = [
 ];
 ```
 
-- **画面からのグループ化**: 列のどれかに `rowGroup` を書いている(`false` を含む)表では、列メニュー(⋮)に「この列でグループ化」(その列を階層の一番下に足す)と、グルーピング中は「グループ化を外す」(すべての階層を外す)が出ます。どちらも `onColumnsChange` に `rowGroup` を変えた列定義を渡します(`onColumnsChange` が無い表には出ません)。階層は `columns` の並び順なので、今のグループ元の列より前にある列でグループ化すると、その列を最後のグループ元の列の後ろへ移します。集計のある列(`aggFunc`)と、表に出ている最後のデータ列(グループ化すると自動グループ列だけが残り、メニューから戻せなくなるため)には出ません。グループ化を最初は使わずに入口だけ出したいときは、グループ化できる列に `rowGroup: false` を書きます。
+- **画面からのグループ化**: 列のどれかに `rowGroup` を書いている(`false` を含む)表では、列メニュー(⋮)に「この列でグループ化」(その列を階層の一番下に足す)と、グルーピング中は「グループ化を外す」(すべての階層を外す)が出ます。どちらも `onColumnsChange` に `rowGroup` を変えた列定義を渡します(`onColumnsChange` が無い表には出ません)。階層は `columns` の並び順なので、今のグループ元の列より前にある列でグループ化すると、その列を最後のグループ元の列の後ろへ移します。集計のある列(`aggFunc`)と、表に出ている最後のデータ列(グループ化すると自動グループ列だけが残り、メニューから戻せなくなるため)には出ません。グループ化を最初は使わずに入口だけ出したいときは、どれか 1 つの列に `rowGroup: false` を書きます(項目は `rowGroup` を書いた列だけでなく、集計の列と最後のデータ列を除くすべての列に出ます。列ごとに出さない設定はありません)。「列のリセット」(列メニュー / ツールパネルの「すべての列を初期状態に戻す」)は、グループ化も最初の列定義の `rowGroup` へ戻します(1.0.1 から)。
 - **自動グループ列**: グルーピング有効時、先頭にツリー表示列(インデント + 開閉シェブロン + ラベル + 件数)が注入され、グループ元列は表示から自動的に外れます。左固定列がある表では、自動グループ列も左に固定します(左ペインの先頭。展開トグル列と同じ。0.63.0 から)。自動グループ列は合成列で、列メニュー / ソート / 並べ替え DnD / autoSize / エクスポートの対象外です(手動リサイズ・列範囲選択は可能)。
 - **集計**: `aggFunc` 指定列は、グループ行の同じ列位置に集計値を表示します。組み込み(`'sum' | 'min' | 'max' | 'avg' | 'count'`)は数値(`number`)と数値の文字列(`Number()` で有限になる文字列。`'1,200'` のような区切り入りは対象外)だけを数え、空値(`null` / `undefined` / `''` / 空白だけの文字列)・`true` / `false`・`Date`・配列などは対象外(`count` のみ配下 leaf 行数)。数値対象 0 件の sum / avg / min / max は空セルになります。カスタム関数(`GridAggFunc<T>` = `({ values, rows, column }) => unknown`)は返り値がそのまま表示されるため、整形済み文字列を返すこともできます。
 - **集計値の整形**: 合計行と同じ書式です(0.63.0 から。これまでは素の値で `4115.333333` のように出ていました)。文字列はそのまま、`count` は件数(桁区切り)、列に `valueFormatter` があれば集計値にも適用され(leaf セルと表示が揃う。`numberFormatter()` の 3 桁区切り等)、無ければ数値は桁区切り + 小数 4 桁まで(カスタム集計の数値も同じ)。合計以外(平均 / 最小 / 最大 / 個数)は値の前に種類を小さく出します(`平均 4,115.33`)。ただしグループ行に leaf 行は無いため **formatter の `row` は `undefined`** です。`row` を読む formatter は `row?.x` のように `row` が無いときも動くように書いてください(カスタムの `aggFunc` が数値などを返したときも formatter は掛かります。型でも `row` は `T | undefined`)。カスタムの `aggFunc` が文字列を返したときは、formatter を通さずにそのまま出します(合計行と同じ。0.63.0 から。これまでグループ行では formatter に渡していました)。列幅に収まらない集計値は、合計行と同じく末尾を「…」にし、ポインタを乗せるとツールチップで全文を出します。グループの件数(「(6,220件)」)も桁区切りです。

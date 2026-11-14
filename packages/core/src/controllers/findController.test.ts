@@ -186,4 +186,74 @@ describe('findController', () => {
     expect(onChange).toHaveBeenCalledTimes(3);
     controller.dispose();
   });
+
+  // 追加(1.0.1 / 実アプリの総点検 AP-19): rows がよく変わる表で、打った直後の走査が行の変化でやり直しになっても
+  //   最初のヒットへ移る(移動を忘れていた)。
+  it('打った直後の走査が rowModel の変化でやり直しになっても、最初のヒットへ移る(AP-19)', async () => {
+    const controller = createFindController<Row>();
+    const onNavigate = vi.fn();
+    const base = { enabled: true, columns, caseSensitive: false, onNavigate };
+    controller.update({ ...base, rowModel: makeRowModel(rows) });
+    controller.open('gamma');
+    controller.update({ ...base, rowModel: makeRowModel([...rows, { id: 4, name: 'delta', qty: 1 }]) });
+    await flush();
+    expect(onNavigate).toHaveBeenCalledWith(2, 0);
+    controller.dispose();
+  });
+
+  // 追加(1.0.1 / AP-19): 大きな表では行ごとのヒットを控え、行を足したやり直しは足した行だけを読む。やり直しの間も
+  //   前の件数を出したまま(「検索中…」へ戻さない)。
+  it('大きな表のやり直しは足した行だけを読み、走査の間も前の結果を出したまま(AP-19)', async () => {
+    let reads = 0;
+    const countingColumns: GridColumn<Row>[] = [{ key: 'name', title: 'Name', width: 120, getValue: (row) => ((reads += 1), row.name) }];
+    const many: Row[] = Array.from({ length: 60_000 }, (_, i) => ({ id: i, name: i === 5 ? 'needle' : `r${i}`, qty: i }));
+    const controller = createFindController<Row>();
+    const base = { enabled: true, columns: countingColumns, caseSensitive: false, onNavigate: vi.fn() };
+    controller.update({ ...base, rowModel: makeRowModel(many) });
+    controller.open('needle');
+    for (let i = 0; i < 200 && controller.getSnapshot().scanning; i += 1) {
+      await flush();
+    }
+    expect(controller.getSnapshot().matches).toHaveLength(1);
+    expect(reads).toBe(many.length);
+    const appended = [...many, { id: 60_000, name: 'needle too', qty: 0 }];
+    // 新しい結果が出た時点で読んだ行の数(足した 1 行だけ)。
+    let readsWhenFound: number | null = null;
+    const unsubscribe = controller.subscribe(() => {
+      if (readsWhenFound === null && controller.getSnapshot().matches.length === 2) readsWhenFound = reads;
+    });
+    controller.update({ ...base, rowModel: makeRowModel(appended) });
+    expect(controller.getSnapshot()).toMatchObject({ scanning: false });
+    expect(controller.getSnapshot().matches).toHaveLength(1);
+    for (let i = 0; i < 400 && reads < many.length + 1 + appended.length; i += 1) {
+      await flush();
+    }
+    unsubscribe();
+    expect(controller.getSnapshot().matches.map((m) => m.rowIndex)).toEqual([5, 60_000]);
+    expect(readsWhenFound).toBe(many.length + 1);
+    // そのあと控えを使わずに全行を 1 回確かめる(RB-3)。
+    expect(reads).toBe(many.length + 1 + appended.length);
+    controller.dispose();
+  });
+
+  // 1.0.1 のレビュー RB-3: 行のオブジェクトをその場で書き換えて新しい配列を渡すと、控えが古く、古い件数と印のままだった。
+  it('大きな表で行をその場で書き換えて新しい配列を渡しても、確かめの走査で正しい結果になる(RB-3)', async () => {
+    const many: Row[] = Array.from({ length: 60_000 }, (_, i) => ({ id: i, name: i === 5 ? 'needle' : `r${i}`, qty: i }));
+    const controller = createFindController<Row>();
+    const base = { enabled: true, columns, caseSensitive: false, onNavigate: vi.fn() };
+    controller.update({ ...base, rowModel: makeRowModel(many) });
+    controller.open('needle');
+    for (let i = 0; i < 200 && controller.getSnapshot().scanning; i += 1) {
+      await flush();
+    }
+    expect(controller.getSnapshot().matches.map((m) => m.rowIndex)).toEqual([5]);
+    many[5].name = 'r5';
+    many[7].name = 'needle';
+    controller.update({ ...base, rowModel: makeRowModel([...many]) });
+    for (let i = 0; i < 400 && controller.getSnapshot().matches[0]?.rowIndex !== 7; i += 1) {
+      await flush();
+    }
+    expect(controller.getSnapshot().matches.map((m) => m.rowIndex)).toEqual([7]);
+    controller.dispose();
+  });
 });

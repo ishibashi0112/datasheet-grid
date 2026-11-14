@@ -1,5 +1,7 @@
 import { createPortal } from 'react-dom';
+import { isEscapePreventedInside } from '@ishibashi0112/spreadsheet-grid-core/internal/controllers/escapeClaimController';
 import { cx } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/cx';
+import { resolveFocusWrapTarget } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/focusCycle';
 // 追加(filter-ext E): 'auto' を解決した後の実効フィルター種別です。
 // 追加(date-input): FilterDateInputContext は日付入力スロットの公開契約です(columnKey の
 //   付与は親 SpreadsheetGrid の責務のため、本 view は columnKey 抜きの部分型で受けます)。
@@ -379,6 +381,8 @@ function SetFilterBody({
           }
         }}
         placeholder={texts.filterSearchPlaceholder}
+        // 追加(1.0.1 / AP-32): 読み上げの名前(これまでは placeholder だけ)。
+        aria-label={texts.filterSearchPlaceholder}
         className="ssg-filter-input"
       />
 
@@ -981,6 +985,8 @@ function DateSetFilterBody({
               element.indeterminate = isIndeterminate;
             }
           }}
+          // 追加(1.0.1 / 2026-11-09 実アプリの総点検 AP-34): 木の行は label で包まない(開閉ボタンを含む)ので、名前を付けます。
+          aria-label={displayOptionLabel(row.key, row.label, texts.blank)}
           onChange={() => {
             if (row.type === 'leaf') {
               onValueToggle(row.key);
@@ -1025,6 +1031,8 @@ function DateSetFilterBody({
           }
         }}
         placeholder={texts.filterSearchPlaceholder}
+        // 追加(1.0.1 / AP-32): 読み上げの名前(これまでは placeholder だけ)。
+        aria-label={texts.filterSearchPlaceholder}
         className="ssg-filter-input"
       />
 
@@ -1341,9 +1349,29 @@ export function ColumnFilterPopover({
     // 追加(dogfood DF-05): パネルのどこにフォーカスがあっても Escape で閉じます(これまでは入力欄だけが Escape を扱い、
     //   一覧のチェックボックスやボタンにフォーカスがあると閉じませんでした)。中の部品が先に扱った Escape(日付の
     //   カレンダーを閉じる等。preventDefault 済み)と、IME の変換中の Escape は除きます。
-    if (event.key === 'Escape' && !event.defaultPrevented && !isImeComposingKeyEvent(event.nativeEvent)) {
+    // 変更(1.0.1 / AP-17): グリッドが使う Escape はダイアログが閉じないよう先に preventDefault しているので、中の部品が扱ったかは
+    //   isEscapePreventedInside で見ます。
+    if (event.key === 'Escape' && !isEscapePreventedInside(event.nativeEvent) && !isImeComposingKeyEvent(event.nativeEvent)) {
       event.preventDefault();
       onRequestClose();
+    }
+  };
+
+  // 追加(1.0.1 / 2026-11-09 実アプリの総点検 AP-32): Tab はポップオーバーの中で回します(最後の次は先頭、先頭の前は最後)。
+  //   これまでは最後のボタンの次でページの先頭へ出て、開いたまま残っていました(外へ出た後は Esc でも閉じない)。
+  //   中の入力欄やボタンはキーの伝播を止めるので、capture 相で見ます(伝播は止めない)。
+  const handleKeyDownCapture = (event: KeyboardEvent<HTMLDivElement>) => {
+    if (event.key !== 'Tab' || event.altKey || event.ctrlKey || event.metaKey || isImeComposingKeyEvent(event.nativeEvent)) {
+      return;
+    }
+    const next = resolveFocusWrapTarget(
+      event.currentTarget,
+      event.target instanceof Element ? event.target : null,
+      event.shiftKey,
+    );
+    if (next !== null) {
+      event.preventDefault();
+      next.focus();
     }
   };
 
@@ -1456,12 +1484,16 @@ export function ColumnFilterPopover({
       ref={popoverRef}
       onPointerDown={handlePointerDown}
       onKeyDown={handleKeyDown}
+      onKeyDownCapture={handleKeyDownCapture}
       onPasteCapture={(event) => {
         // 追加: portal 内 paste も grid 側へ流しません。
         event.stopPropagation();
       }}
       className={cx('ssg-filter-popover', themeClassName, popoverSlot?.className)}
       style={{ ...popoverSlot?.style, ...wrapperStyle }}
+      // 追加(1.0.1 / AP-32): 支援技術にダイアログとして伝え、見出しと同じ名前を付けます(モーダルではないので aria-modal は付けない)。
+      role="dialog"
+      aria-label={formatLocaleText(texts.filterTitle, { column: title })}
     >
       <div className="ssg-filter-title">{formatLocaleText(texts.filterTitle, { column: title })}</div>
 
@@ -1627,6 +1659,8 @@ export function ColumnFilterPopover({
               }
             }}
             placeholder={texts.filterTextPlaceholder}
+            // 追加(1.0.1 / AP-32): 読み上げの名前(これまでは placeholder だけ)。
+            aria-label={texts.filterTextPlaceholder}
             className="ssg-filter-input"
           />
           <div className="ssg-filter-meta ssg-filter-meta--ellipsis">

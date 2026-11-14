@@ -52,7 +52,7 @@ describe('useToolPanelController(特性テスト)', () => {
     });
     expect(t.result.current.activeToolPanelTab).toBe('columns');
     // right(900) - 360 - 12 = 528, top 100 + 12 = 112
-    expect(t.result.current.toolPanelLayout).toEqual({ top: 112, left: 528, width: 360 });
+    expect(t.result.current.toolPanelLayout).toEqual({ top: 112, left: 528, width: 360, maxHeight: 420 });
     expect(t.result.current.toolPanelFlashTick).toBe(0);
     act(() => {
       t.result.current.openToolPanel('sort');

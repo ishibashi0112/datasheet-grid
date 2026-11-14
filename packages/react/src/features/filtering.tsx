@@ -286,6 +286,7 @@ const useFilterPopoverContent = <T,>({
     column: openedColumnUsesAsyncOptions ? null : openedFilterColumn,
     rowCount: rows.length,
     getRawValueAt: getOpenedColumnRawValueAt,
+    numeric: openedFilterType === 'numberSet',
   });
   const {
     options: openedFilterSelectOptions,

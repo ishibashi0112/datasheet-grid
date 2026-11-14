@@ -1,0 +1,13 @@
+const { chromium } = require('playwright')
+;(async () => {
+  const browser = await chromium.launch()
+  const page = await browser.newPage({ viewport: { width: 900, height: 900 }, deviceScaleFactor: 1 })
+  await page.goto('http://localhost:5410/min/hidden-autosize.html')
+  await page.waitForTimeout(1500)
+  await page.click('#show')
+  await page.waitForTimeout(800)
+  const w = await page.evaluate(() => ['#box', '#box2'].map((s) => [...document.querySelectorAll(s + ' [role=columnheader]')].map((h) => `${h.textContent.replace('⋮', '')}:${h.offsetWidth}`).join(' ')))
+  console.log('隠して作った方:', w[0], '\n最初から見えている方:', w[1])
+  await page.screenshot({ path: 'shots/min-hidden-autosize.png' })
+  await browser.close()
+})()

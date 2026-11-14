@@ -1,0 +1,21 @@
+const { open, shot, wait, clickVisible, rowCount, waitCountChange } = require('./lib.cjs')
+;(async () => {
+  const url = process.argv[2] ?? 'http://localhost:5407/'
+  const { browser, page, logs } = await open(url)
+  await wait(800)
+  const t = Date.now()
+  await page.evaluate(() => window.__grid.applyState({ filters: { globalText: 'Unhandled exception' } }))
+  const r = await waitCountChange(page, 1000000, 90000)
+  console.log('applyState globalText', r, 'ms', Date.now() - t)
+  console.log('input value', await page.locator('.ssg-bar--top input').inputValue())
+  await wait(500)
+  await shot(page, 'copy2-filtered')
+  await clickVisible(page, 0, 'center', 2)
+  await page.keyboard.press('Control+c')
+  await wait(200)
+  console.log('copy multiline cell:', JSON.stringify(await page.evaluate(() => navigator.clipboard.readText())))
+  // 行全体
+  await page.keyboard.press('Shift+Space').catch(() => {})
+  console.log(logs.filter((l) => !l.includes('[vite]') && !l.includes('DevTools') && !l.includes('auto-height')).slice(0, 30).join('\n'))
+  await browser.close()
+})()

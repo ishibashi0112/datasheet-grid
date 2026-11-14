@@ -1,0 +1,15 @@
+const { launch, shot, BASE } = require('./lib.cjs')
+const { cellCenter } = require('./helpers.cjs')
+const f = (page) => page.evaluate(() => `${document.activeElement.className}「${document.activeElement.textContent.slice(0, 12)}」 sub=${document.querySelector('.ssg-menu-submenu-anchor')?.children.length > 1}`)
+;(async () => {
+  const { browser, page } = await launch({ viewport: { width: 1280, height: 800 }, locale: 'ja-JP' })
+  await page.goto(BASE); await page.waitForSelector('.ssg-body-row'); await page.waitForTimeout(800)
+  const c = await cellCenter(page, 2, 'item'); await page.mouse.click(c.x, c.y); await page.mouse.move(5, 700)
+  await page.keyboard.press('Alt+ArrowDown'); await page.waitForTimeout(400)
+  for (let i = 0; i < 5; i++) await page.keyboard.press('ArrowDown')
+  console.log('on pin', await f(page))
+  for (const k of ['ArrowRight', 'Enter', 'ArrowDown', 'ArrowDown', 'ArrowRight', 'Space']) { await page.keyboard.press(k); await page.waitForTimeout(250); console.log(k, await f(page)) }
+  await shot(page, '21-pin-kbd')
+  console.log('panes', await page.evaluate(() => [...document.querySelectorAll('.ssg-body-row[aria-rowindex="2"]')].map((r) => r.getAttribute('data-pane') + ':' + [...r.querySelectorAll('[data-ssg-col-key]')].map((c) => c.getAttribute('data-ssg-col-key')).join(',')).join(' | ')))
+  await browser.close()
+})()

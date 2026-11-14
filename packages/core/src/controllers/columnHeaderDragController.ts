@@ -37,6 +37,7 @@ import {
   resolveAutoScrollAxisDirection,
   resolveScrollContentBox,
 } from '../logic/autoScrollGeometry';
+import { resolveElementScale } from '../logic/elementScale';
 import { isInsideDetailCardOf, isSyntheticColumnKey } from '../logic/detailRow';
 import { applySlotToElement } from '../logic/slotDom';
 import { syncPortalTokens } from '../utils/portalTokens';
@@ -119,9 +120,33 @@ export function resolveConsumerDropSlot<T>(
     const key = entries[i].column.key;
     if (isSyntheticColumnKey(key)) continue;
     const index = visibleKeys.indexOf(key);
-    return index < 0 ? visibleKeys.length : index;
+    // 修正(1.0.1 のレビュー RB-2): 入りきらずに中央へ回した固定列(columns では左 / 右の固定)はアンカーにしません
+    //   (これまでは見つからないと末尾へ入れていたので、中央の先頭へ落とすと末尾へ入っていた)。
+    if (index < 0) continue;
+    return index;
   }
   return visibleKeys.length;
+}
+
+// 追加(1.0.1 のレビュー RB-2): 中央ペインで落とせるスロットの範囲。入りきらずに中央へ回した固定列(columns では左 / 右の
+//   固定。中央の先頭 / 末尾に並ぶ)と先頭の合成列の間には置けないため、縦線 / live の退避も実際の挿入位置に合わせます。
+export function resolveCenterDropSlotRange<T>(
+  columns: GridColumn<T>[],
+  centerGeometry: PaneGeometry<T>,
+): { min: number; max: number } {
+  const paneByKey = new Map(columns.map((column) => [column.key, getColumnPane(column)] as const));
+  const { entries } = centerGeometry;
+  let min = 0;
+  while (min < entries.length) {
+    const key = entries[min].column.key;
+    if (!isSyntheticColumnKey(key) && paneByKey.get(key) !== 'left') break;
+    min += 1;
+  }
+  let max = entries.length;
+  while (max > min && paneByKey.get(entries[max - 1].column.key) === 'right') {
+    max -= 1;
+  }
+  return { min, max };
 }
 
 // 修正(M-12 fix): ペイン先頭の合成列の本数。合成列より前へは置けないため、スロットの下限にします(縦線 / live の退避も
@@ -578,10 +603,9 @@ export const createColumnHeaderDragController = <T,>(): ColumnHeaderDragControll
     if (centerEl && paneLayout.center.entries.length > 0) {
       const rect = centerEl.getBoundingClientRect();
       const localX = centerEl.scrollLeft + clientX - rect.left - centerLeadingWidth;
-      const slot = Math.max(
-        findPaneDropSlot(paneLayout.center, Math.max(localX, 0)),
-        countLeadingSyntheticEntries(paneLayout.center),
-      );
+      // 変更(1.0.1 のレビュー RB-2): 先頭の合成列に加えて、中央へ回した固定列の間にも置かない。
+      const range = resolveCenterDropSlotRange(args.columns, paneLayout.center);
+      const slot = Math.min(Math.max(findPaneDropSlot(paneLayout.center, Math.max(localX, 0)), range.min), range.max);
       return {
         pane: 'center',
         slot,
@@ -997,6 +1021,7 @@ export const createColumnHeaderDragController = <T,>(): ColumnHeaderDragControll
           clientTop: el.clientTop,
           clientWidth: el.clientWidth,
           clientHeight: el.clientHeight,
+          scale: resolveElementScale(el, rect),
         });
         const direction = resolveAutoScrollAxisDirection(
           pointer.x,

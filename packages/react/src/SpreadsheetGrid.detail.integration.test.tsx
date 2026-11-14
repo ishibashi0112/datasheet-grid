@@ -803,3 +803,43 @@ describe('展開行のカードと Tab(C-N2)', () => {
     expect(container.querySelector('.ssg-tab-exit')).toBeNull();
   });
 });
+
+// 追加(1.0.1 / 2026-11-09 実アプリの総点検 AP-26): 行だけで論理全高の上限を超える表では展開行を描けないので、トグルを出さず、
+//   Enter / Space でも開閉しない。絞り込みなどで行が減れば出る。
+describe('展開行を描けない行数(AP-26)', () => {
+  it('行の高さの合計が 15,000,000px を超える間はトグルを出さず、キーでも開閉しない', () => {
+    const ref = createRef<SpreadsheetGridHandle<Row>>();
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    // 3 行 × 6,000,000px = 18,000,000px(上限超え)。
+    const { container, rerender } = render(
+      <SpreadsheetGrid
+        ref={ref}
+        columns={columns}
+        rows={rows}
+        rowKeyGetter={rowKeyGetter}
+        detailRow={detailRow}
+        rowHeight={6_000_000}
+      />,
+    );
+    expect(centerRow(container, 0)).not.toBeNull();
+    expect(toggleAt(container, 0)).toBeNull();
+    act(() => {
+      ref.current?.setActiveCell({ row: 0, col: 0 });
+    });
+    fireEvent.keyDown(getShell(container), { key: 'Enter' });
+    expect(ref.current?.getExpandedDetailRowKeys()).toEqual([]);
+    // 上限以内に戻ればトグルが出る。
+    rerender(
+      <SpreadsheetGrid
+        ref={ref}
+        columns={columns}
+        rows={rows}
+        rowKeyGetter={rowKeyGetter}
+        detailRow={detailRow}
+        rowHeight={36}
+      />,
+    );
+    expect(toggleAt(container, 0)?.getAttribute('aria-expanded')).toBe('false');
+    warn.mockRestore();
+  });
+});

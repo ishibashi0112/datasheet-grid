@@ -1,0 +1,13 @@
+const { launch, shot, BASE } = require('./lib.cjs')
+;(async () => {
+  const { browser, page, logs } = await launch({ viewport: { width: 1280, height: 800 } })
+  await page.goto(BASE)
+  await page.waitForSelector('.ssg-body-row')
+  await page.waitForTimeout(800)
+  console.log('rows rendered', await page.locator('.ssg-body-row').count())
+  console.log(await shot(page, '01-desktop'))
+  const grid = page.locator('[role=grid]')
+  console.log('grid attrs', await grid.evaluate((el) => ({ rc: el.getAttribute('aria-rowcount'), cc: el.getAttribute('aria-colcount'), label: el.getAttribute('aria-label') })))
+  console.log('LOGS\n' + logs.join('\n'))
+  await browser.close()
+})()

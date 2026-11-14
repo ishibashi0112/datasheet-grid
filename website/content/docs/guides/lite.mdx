@@ -3,7 +3,7 @@ title: バンドルを小さくする(/lite)
 description: createSpreadsheetGrid で使う機能だけを組み込み、初期読み込みの JS を約半分にする
 ---
 
-`SpreadsheetGrid` は全機能入りで、初期読み込みの JS は約 131KB(gzip)です。`@ishibashi0112/spreadsheet-grid/lite` の `createSpreadsheetGrid` を使うと、渡した機能だけを入れたグリッドを作れます。渡さなかった機能のコードはバンドルに入りません。
+`SpreadsheetGrid` は全機能入りで、初期読み込みの JS は約 136KB(gzip)です。`@ishibashi0112/spreadsheet-grid/lite` の `createSpreadsheetGrid` を使うと、渡した機能だけを入れたグリッドを作れます。渡さなかった機能のコードはバンドルに入りません。
 
 `/lite` は 0.54.0 で追加しました。
 
@@ -31,10 +31,10 @@ export function OrdersTable() {
 
 | 構成 | 初期 JS(gzip) |
 | --- | --- |
-| 全部入り(`SpreadsheetGrid`) | 約 131KB |
-| `/lite` 機能なし | 約 74KB |
-| `/lite` + `standardFeatures` | 約 94KB |
-| `/lite` + `standardFeatures` + `serverSideFeature` | 約 99KB |
+| 全部入り(`SpreadsheetGrid`) | 約 136KB |
+| `/lite` 機能なし | 約 77KB |
+| `/lite` + `standardFeatures` | 約 99KB |
+| `/lite` + `standardFeatures` + `serverSideFeature` | 約 103KB |
 
 esbuild で minify し、React を外部化して計測した値です(`@tanstack/virtual-core` を含む)。バンドラーによって数 KB 前後します(0.61.0 の全部入りの実測で、Vite 8(Rolldown)は esbuild より約 1.5KB 小さく、Vite 7(Rollup)はほぼ同じ。Next.js 16 では webpack が Turbopack より約 4KB 大きくなりました)。機能ごとの増え方は [API リファレンス](/docs/api/lite)の表にあります。
 
@@ -135,6 +135,6 @@ const Grid = createSpreadsheetGrid({ features });
 - `createSpreadsheetGrid` はモジュールの先頭で呼んでください。コンポーネントの中で呼ぶと描画のたびに別のコンポーネントになり、グリッドの状態(選択・スクロール位置・編集中の値など)が消えます。そうなっているときは開発時に `console.warn` で知らせます(`useMemo` で 1 回だけ作る形は警告しませんが、eslint-plugin-react-hooks の `static-components` が指摘するのでモジュールの先頭を勧めます)。
 - Next.js(App Router)では、`createSpreadsheetGrid` を呼ぶファイルに `'use client'` を付けてください。作ったコンポーネントや `standardFeatures` は関数なので、サーバーコンポーネントから props で渡せません(クライアントコンポーネントの中で import して使います)。
 - 機能の組み合わせは作ったときに決まります。途中で機能を足したいときは、別の組み合わせで作ったコンポーネントに切り替えてください。
-- 全部入りの `SpreadsheetGrid` と同じアプリで混ぜることはできますが、`/lite` は機能ごとのファイルに分けた別のビルドなので共通部分を共有しません。同じページで両方を使うと共通部分が二重に入り、ページを分けても `/lite` だけのページが大きくなることがあります(Next.js 16 の Turbopack の実測で、`standardFeatures` のページが約 90KB → 約 97KB)。どちらかの入口に揃えてください。
+- 全部入りの `SpreadsheetGrid` と同じアプリで混ぜることはできますが、`/lite` は機能ごとのファイルに分けた別のビルドなので共通部分を共有しません。同じページで両方を使うと共通部分が二重に入り(esbuild の実測で、全部入りだけのときより約 +32KB = 約 136KB → 約 168KB)、ページを分けても `/lite` だけのページが大きくなることがあります(Next.js 16 の Turbopack の実測で、`standardFeatures` のページが約 90KB → 約 97KB)。どちらかの入口に揃えてください。
 - 使わない機能がバンドルから落ちることは、Vite 8・webpack 5・Next.js 16(既定の Turbopack)・esbuild で確かめています(バンドラーが `package.json` の `sideEffects` と `/* @__PURE__ */` を解釈する必要があります)。
 - テストで列フィルターやツールパネルを開くときの `preloadGridPopups()` は、`/lite` から import してください(入口ごとに部品が別なので、全部入りの入口のものでは `/lite` のグリッドの部品は読み込まれません。[テスト](/docs/guides/testing#ポップオーバーを開くテスト))。

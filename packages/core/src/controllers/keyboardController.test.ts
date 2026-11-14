@@ -78,6 +78,28 @@ describe('keyboardController', () => {
     input.remove();
   });
 
+  // 追加(1.0.1 / 実アプリの総点検 AP-16): 編集できないセルでも Space の既定の動作(ページのスクロール)を止める。
+  it('編集できないセルとアクティブセルが無いときの Space はページをスクロールさせない(AP-16)', async () => {
+    const c = createKeyboardController<Row>();
+    const rowModel: RowModel<Row> = {
+      getRow: (i) => rows[i],
+      getRowCount: () => rows.length,
+      getSourceIndex: (i) => i,
+      getRowKey: (i) => rows[i]?.id ?? i,
+    };
+    const t = makeArgs(rowModel);
+    c.update({ ...t.args, readOnly: true });
+    const space = ev(' ');
+    await c.handleKeyDown(space);
+    expect(space.preventDefault).toHaveBeenCalled();
+    expect(t.dispatch).not.toHaveBeenCalled();
+
+    c.update({ ...t.args, uiState: createInitialGridUiState() });
+    const noCell = ev(' ');
+    await c.handleKeyDown(noCell);
+    expect(noCell.preventDefault).toHaveBeenCalled();
+  });
+
   it('Tab / Shift+Tab: 列の端では preventDefault せずフォーカスを外へ出す(監査 C-5)', async () => {
     const twoColumns: GridColumn<Row>[] = [
       { key: 'id', title: 'ID', width: 60 },

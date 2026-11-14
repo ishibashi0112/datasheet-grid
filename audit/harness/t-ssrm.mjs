@@ -108,8 +108,9 @@ check('update rowKey is rowKeyGetter value (id=1)', c.updates[0]?.[0]?.rowKey ==
 check('server stored the value', await page.evaluate(() => window.__ssrm.server[0].name === 'renamed-0'));
 
 // 書き戻し: 失敗 → ロールバック + バー + 通知
-// 失敗応答を遅らせ、楽観表示 → ロールバックの両方を観測できるようにする(10ms だと読む前に戻る)。
-await page.evaluate(() => { window.__ssrm.updateFail = true; window.__ssrm.updateLatency = 300; });
+// 失敗応答を遅らせ、楽観表示 → ロールバックの両方を観測できるようにする(10ms だと読む前に戻る。
+//   WebDriver の WebKit は 1 回の操作に 100ms 以上かかることがあり、300ms でも読む前に戻ることがあったので 1,000ms)。
+await page.evaluate(() => { window.__ssrm.updateFail = true; window.__ssrm.updateLatency = 1000; });
 await clearEvents(page);
 await cell(page, 1, 'name').dblclick();
 await page.keyboard.press('Control+A');
@@ -117,7 +118,12 @@ await page.keyboard.type('will-fail');
 await page.keyboard.press('Enter');
 await waitIdle(page, 50);
 const optimistic = await cellText(page, 1, 'name');
-await waitIdle(page, 600);
+await page.waitForFunction(
+  () => document.querySelector('.ssg-body-row[data-row-index="1"] .ssg-body-cell[data-ssg-col-key="name"]')?.textContent?.includes('item-000002'),
+  null,
+  { timeout: 5000 },
+).catch(() => {});
+await waitIdle(page, 100);
 const rolledBack = await cellText(page, 1, 'name');
 check('failed write rolls back', optimistic === 'will-fail' && rolledBack === 'item-000002', { optimistic, rolledBack });
 const werr = await events(page, 'onServerSideWriteError');

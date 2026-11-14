@@ -84,6 +84,62 @@ export const selectAllRows = (): RowSelectionState => ({
   keys: new Set<GridRowKey>(),
 });
 
+// 追加(1.0.1 / 実アプリの総点検 AP-03): 指定キーを選択から外します(mode は保持。exclude は除外集合へ加える)。
+//   フィルター中の見出しのチェックボックスで「見えている行だけ外す」ときに使います。
+export const removeRowKeys = (
+  state: RowSelectionState,
+  rowKeys: readonly GridRowKey[],
+): RowSelectionState => {
+  const keys = new Set<GridRowKey>(state.keys);
+  for (const key of rowKeys) {
+    if (state.mode === 'exclude') {
+      keys.add(key);
+    } else {
+      keys.delete(key);
+    }
+  }
+  return { mode: state.mode, keys };
+};
+
+// 追加(1.0.1 / AP-03): order(フィルター後のデータ行の並び)のうち選択されている行の数です。フィルター中の見出しの
+//   チェックボックスの 3 状態は、見えている行だけで数えます(見えない行の選択を数えると「すべて」に見えていた)。
+export const countSelectedRowsInOrder = <T,>(
+  state: RowSelectionState,
+  rows: readonly T[],
+  order: ArrayLike<number>,
+  rowKeyGetter: (row: T, index: number) => GridRowKey,
+): number => {
+  let count = 0;
+  for (let i = 0; i < order.length; i += 1) {
+    const sourceIndex = order[i];
+    if (resolveIsRowSelected(state, rowKeyGetter(rows[sourceIndex], sourceIndex))) {
+      count += 1;
+    }
+  }
+  return count;
+};
+
+// 追加(1.0.1 のレビュー RA-7): countSelectedRowsInOrder を、選択・行・並びが同じ間は数え直さずに返す版です。
+//   rowKeyGetter をインラインで渡すと参照が描くたびに変わり、フィルター中の見出しの 3 状態を描くたび(スクロールの各フレーム
+//   など)に見えている行の数だけ数えていた(90 万行で 1 回約 13ms)。rowKeyGetter の参照だけが変わったときは前の数を使います
+//   (同じ行から別のキーを返すように変えるときは、rows も新しい配列にする)。
+export const createSelectedRowsInOrderCounter = () => {
+  let last: { state: RowSelectionState; rows: readonly unknown[]; order: ArrayLike<number>; count: number } | null = null;
+  return <T,>(
+    state: RowSelectionState,
+    rows: readonly T[],
+    order: ArrayLike<number>,
+    rowKeyGetter: (row: T, index: number) => GridRowKey,
+  ): number => {
+    if (last !== null && last.state === state && last.rows === rows && last.order === order) {
+      return last.count;
+    }
+    const count = countSelectedRowsInOrder(state, rows, order, rowKeyGetter);
+    last = { state, rows, order, count };
+    return count;
+  };
+};
+
 // 全解除(空の include)です。
 export const clearRowSelection = (): RowSelectionState =>
   createEmptyRowSelection();
@@ -101,8 +157,10 @@ export const countSelectedRows = (
 export const getSelectAllState = (
   state: RowSelectionState,
   totalRowCount: number,
-): SelectAllState => {
-  const count = countSelectedRows(state, totalRowCount);
+): SelectAllState => resolveSelectAllState(countSelectedRows(state, totalRowCount), totalRowCount);
+
+// 追加(1.0.1 / AP-03): 選択件数と総数から 3 状態を求めます(フィルター中は見えている行だけで数えた件数を渡す)。
+export const resolveSelectAllState = (count: number, totalRowCount: number): SelectAllState => {
   if (count <= 0) {
     return 'none';
   }

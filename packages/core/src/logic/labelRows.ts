@@ -351,6 +351,11 @@ export const resolveSectionLabelViewIndex = (
 // 貼り付け先の view index 列を解決します。startViewIndex から count 行ぶん、ラベル行を読み飛ばして
 //   データ行の view index を集めます。viewRowCount 以降(末尾追記ぶん)はラベル行が無いものとして
 //   連番で埋めます(clipboardController の appendBase 計算と同じ index 空間)。
+//   変更(1.0.1 / 実アプリの総点検 AP-04): 行グルーピングのグループ行も読み飛ばします(グループ行に当たった値が捨てられ、
+//   後ろの値がずれていた)。
+export const isPasteSkippedRow = <T,>(rowModel: RowModel<T>, viewIndex: number): boolean =>
+  rowModel.getLabelRow?.(viewIndex) !== undefined || rowModel.getGroupRow?.(viewIndex) !== undefined;
+
 export const resolvePasteTargetViewIndexes = <T,>(
   rowModel: RowModel<T>,
   startViewIndex: number,
@@ -360,12 +365,23 @@ export const resolvePasteTargetViewIndexes = <T,>(
   const viewRowCount = rowModel.getRowCount();
   let viewIndex = startViewIndex;
   while (targets.length < count) {
-    if (viewIndex >= viewRowCount || !rowModel.getLabelRow?.(viewIndex)) {
+    if (viewIndex >= viewRowCount || !isPasteSkippedRow(rowModel, viewIndex)) {
       targets.push(viewIndex);
     }
     viewIndex += 1;
   }
   return targets;
+};
+
+// 追加(1.0.1 / AP-02): from 以降の最初のデータ行(ラベル行・グループ行でない行)。無ければ from。
+export const findFirstPasteRow = <T,>(rowModel: RowModel<T>, from: number): number => {
+  const viewRowCount = rowModel.getRowCount();
+  for (let viewIndex = from; viewIndex < viewRowCount; viewIndex += 1) {
+    if (!isPasteSkippedRow(rowModel, viewIndex)) {
+      return viewIndex;
+    }
+  }
+  return from;
 };
 
 // 追加(label-row ③.5): 縦スクロール固定(labelRow.sticky)の解決です。

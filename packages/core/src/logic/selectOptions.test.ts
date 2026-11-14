@@ -119,4 +119,15 @@ describe('createSelectOptionsAccumulator (chunked collect === one-shot)', () => 
     const values = Array.from({ length: 5000 }, (_, i) => `k${(i * 7) % 1000}`);
     expect(feedInChunks(values, [7, 13, 1])).toEqual(collectFromArray(values));
   });
+
+  // 追加(1.0.1 / 実アプリの総点検 AP-18): 数の列(numberSet)の候補は数の順、数でない文字は後ろ、空白は最後。
+  it('numeric の候補は数の順(小数と負の数)、数でない文字は数の後ろ、空白は最後(AP-18)', () => {
+    const values = [1.2, -0.1, 10, 0.2, -3, 1.01, 0.02, 2, null, 1.1, -2.5, 0, 1, 'n/a'];
+    const options = collectSelectOptions(values.length, (index) => values[index], true);
+    expect(options.map((option) => option.value)).toEqual([
+      '-3', '-2.5', '-0.1', '0', '0.02', '0.2', '1', '1.01', '1.1', '1.2', '2', '10', 'n/a', '',
+    ]);
+    // 既定(文字の列)はこれまでどおり文字の順。
+    expect(collectSelectOptions(values.length, (index) => values[index])).toEqual(referenceCollect(values));
+  });
 });

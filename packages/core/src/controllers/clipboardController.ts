@@ -8,6 +8,7 @@
 //   - 書き込み経路は clientSide(rows / columns の拡張を含む)と serverSide(applyServerSideCellEdits)。
 import { gridActions, type GridUiAction } from '../model/gridActions';
 import type {
+  CellCoord,
   GridColumn,
   GridRowKey,
   GridSelection,
@@ -15,6 +16,7 @@ import type {
   RowModel,
   SpreadsheetGridProps,
 } from '../model/gridTypes.unbound';
+import { normalizeCellRange } from '../model/gridSelectors';
 import { clamp } from '../logic/geometry';
 import { shouldIgnoreGridKeydown } from '../logic/domGuards';
 import { isCellEditable, isViewCellEditable } from '../utils/permissions';
@@ -30,7 +32,7 @@ import {
   writeTextToClipboard,
 } from '../utils/clipboard';
 import type { ServerSideCellEditInput } from '../logic/serverSideEdits';
-import { resolvePasteTargetViewIndexes } from '../logic/labelRows';
+import { findFirstPasteRow, resolvePasteTargetViewIndexes } from '../logic/labelRows';
 
 export type ClipboardEventLike = {
   clipboardData: { getData: (type: string) => string } | null;
@@ -91,6 +93,29 @@ export const computeIsWholeGridSelected = (
     endRow === viewRowCount - 1 &&
     endCol === columnCount - 1
   );
+};
+
+// 追加(1.0.1 / 実アプリの総点検 AP-02): 貼り付けの起点です。範囲を選んでいるときは範囲の左上(Excel と同じ)。
+//   従来はいつもアクティブセルから貼っていたため、Shift+↓ で選んだ範囲(アクティブセルが範囲の下端へ動く)では範囲の
+//   下から、列見出しで選んだ列では前のアクティブ行から貼られ、範囲の外へ書き込んでいました。列の選択は先頭の行、行の
+//   選択は先頭の列(合成列は resolvePasteColumnIndexes が飛ばす)から。アクティブセルが範囲の外にあるときは従来どおり。
+export const resolvePasteAnchor = (selection: GridSelection, activeCell: CellCoord): CellCoord => {
+  if (selection?.type === 'cell') {
+    const range = normalizeCellRange(selection.range);
+    const inside =
+      activeCell.row >= range.start.row &&
+      activeCell.row <= range.end.row &&
+      activeCell.col >= range.start.col &&
+      activeCell.col <= range.end.col;
+    return inside ? range.start : activeCell;
+  }
+  if (selection?.type === 'col') {
+    return { row: 0, col: Math.min(selection.startCol, selection.endCol) };
+  }
+  if (selection?.type === 'row') {
+    return { row: Math.min(selection.startRow, selection.endRow), col: 0 };
+  }
+  return activeCell;
 };
 
 export const createClipboardController = <T extends object>(): ClipboardController<T> => {
@@ -222,22 +247,31 @@ export const createClipboardController = <T extends object>(): ClipboardControll
       return;
     }
 
-    const startFilteredRowIndex = uiState.activeCell.row;
-    const startColIndexForEdits = uiState.activeCell.col;
+    const pasteAnchor = resolvePasteAnchor(uiState.selection, uiState.activeCell);
+    // 起点の行は先頭のデータ行から(先頭がラベル行・グループ行なら次のデータ行)、列は合成列でない最初の列から。
+    // 変更(1.0.1 のレビュー RA-2): 範囲の選択(全選択を含む)の左上にも当てます。左上がラベル行 / グループ行だと貼り付けが
+    //   何もせず、全選択 / 行の選択の後はアクティブセルが合成列(行ドラッグの掴み手など)に乗っていた。
+    const anchor = {
+      row: findFirstPasteRow(rowModel, pasteAnchor.row),
+      col: resolvePasteColumnIndexes(visibleColumns, pasteAnchor.col, 1)[0] ?? pasteAnchor.col,
+    };
+    const startFilteredRowIndex = anchor.row;
+    const startColIndexForEdits = anchor.col;
     // 追加(FC-03): 貼り付けの最後の列。合成列は 1 列と数えないので、範囲の右端は合成列を飛ばした位置です。
     const pasteColumnIndexes = resolvePasteColumnIndexes(visibleColumns, startColIndexForEdits, maxPasteWidth);
     const lastPasteColIndex = pasteColumnIndexes[pasteColumnIndexes.length - 1] ?? startColIndexForEdits;
     // 追加(label-row ③): ラベル行(getLabelRow)を読み飛ばした貼り付け先の view index 列です。ラベル行が
     //   無ければ startRow からの連番(= 従来どおり)。行オフセット k の行は pasteTargets[k]。
-    const hasLabelRows = rowModel.getLabelRow !== undefined;
-    const pasteTargets = hasLabelRows
+    // 変更(AP-04): グループ行も読み飛ばします(ラベル行と同じ)。
+    const hasSkippedRows = rowModel.getLabelRow !== undefined || rowModel.getGroupRow !== undefined;
+    const pasteTargets = hasSkippedRows
       ? resolvePasteTargetViewIndexes(rowModel, startFilteredRowIndex, matrix.length)
       : null;
     const targetViewIndex = (viewIndex: number): number =>
       pasteTargets ? pasteTargets[viewIndex - startFilteredRowIndex] : viewIndex;
     const lastTargetViewIndex = pasteTargets
       ? pasteTargets[pasteTargets.length - 1]
-      : uiState.activeCell.row + Math.max(matrix.length - 1, 0);
+      : anchor.row + Math.max(matrix.length - 1, 0);
 
     if (applyServerSideCellEdits) {
       const edits = buildClipboardCellEdits(
@@ -262,12 +296,12 @@ export const createClipboardController = <T extends object>(): ClipboardControll
         0,
         Math.max(visibleColumns.length - 1, 0),
       );
-      dispatch(gridActions.startSelection(uiState.activeCell));
+      dispatch(gridActions.startSelection(anchor));
       dispatch(
         gridActions.updateSelection({ row: serverSideEndRow, col: serverSideEndCol }),
       );
       dispatch(gridActions.endSelection());
-      dispatch(gridActions.activateCell(uiState.activeCell));
+      dispatch(gridActions.activateCell(anchor));
       return;
     }
     if (!onRowsChange) {
@@ -278,7 +312,7 @@ export const createClipboardController = <T extends object>(): ClipboardControll
     if (startOriginalRowIndex === undefined) {
       return;
     }
-    const startColIndex = uiState.activeCell.col;
+    const startColIndex = anchor.col;
 
     const workingRows = [...rows];
     const workingColumns = [...visibleColumns];
@@ -359,10 +393,10 @@ export const createClipboardController = <T extends object>(): ClipboardControll
     );
 
     onRowsChange(nextRows);
-    dispatch(gridActions.startSelection(uiState.activeCell));
+    dispatch(gridActions.startSelection(anchor));
     dispatch(gridActions.updateSelection({ row: endRow, col: endCol }));
     dispatch(gridActions.endSelection());
-    dispatch(gridActions.activateCell(uiState.activeCell));
+    dispatch(gridActions.activateCell(anchor));
   };
 
   return { update, handleCopy, handlePaste };

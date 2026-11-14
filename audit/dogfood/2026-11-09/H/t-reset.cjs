@@ -1,0 +1,23 @@
+const { open, G, openColumnMenu, clickMenu, groupRows, bars } = require('./lib.cjs');
+const log = (...a) => console.log(...a);
+const headers = (page) => page.evaluate(() => [...document.querySelectorAll('[aria-label="タスク一覧"] [role="columnheader"][data-ssg-col-key]')].map(h => h.dataset.ssgColKey + '@' + h.closest('[data-pane]')?.dataset.pane + ':' + Math.round(h.getBoundingClientRect().width)).join(' '));
+(async () => {
+  const { browser, page, logs } = await open();
+  await openColumnMenu(page, 'phase'); await clickMenu(page, 'この列でグループ化'); await page.waitForTimeout(500);
+  await openColumnMenu(page, 'progress');
+  await page.locator('.ssg-menu-item', { hasText: '列の固定' }).first().hover(); await page.waitForTimeout(300);
+  await page.locator('.ssg-menu-item', { hasText: '右に固定' }).click(); await page.waitForTimeout(400);
+  const th = page.locator(`${G} [role="columnheader"][data-ssg-col-key="title"]`);
+  const hb = await th.boundingBox();
+  await page.mouse.move(hb.x + hb.width - 2, hb.y + hb.height / 2); await page.mouse.down();
+  await page.mouse.move(hb.x + hb.width - 80, hb.y + hb.height / 2, { steps: 6 }); await page.mouse.up();
+  await page.waitForTimeout(300);
+  log('before reset', await page.getByTestId('grouping').innerText(), '|', await headers(page));
+  await openColumnMenu(page, 'title');
+  await clickMenu(page, '列のリセット');
+  await page.waitForTimeout(800);
+  log('after reset', await page.getByTestId('grouping').innerText(), '|', await headers(page));
+  log('state', await page.evaluate(() => localStorage.getItem('wbs-grid-state')));
+  log(logs.join('\n'));
+  await browser.close();
+})();

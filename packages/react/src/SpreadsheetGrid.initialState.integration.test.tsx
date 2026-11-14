@@ -296,30 +296,35 @@ describe('initialState(DU-12)', () => {
 
   // 修正(段階 2 の見直し): serverSide で相対日付のプリセット(今月など)を initialState に入れても、最初のブロックを 1 回だけ取る
   //   (これまでは最初の query のキーに相対日付の範囲が入らず、debounce の後にキャッシュを捨てて取り直していた)。
-  it('serverSide: 相対日付のプリセットの initialState でも最初のブロックは 1 回だけ取る', async () => {
-    type Dated = { id: number; d: string };
-    const calls: ServerSideGetRowsParams[] = [];
-    const dataSource: ServerSideDataSource<Dated> = {
-      getRows: (params) => {
-        calls.push(params);
-        return Promise.resolve({ rows: [{ id: 1, d: '2026-11-08' }], totalRowCount: 1 });
-      },
-    };
-    render(
-      <SpreadsheetGrid<Dated>
-        rows={[]}
-        columns={[{ key: 'd', title: '日付', width: 120, filterType: 'dateSet' }]}
-        rowKeyGetter={(row) => row.id}
-        height={300}
-        dataSource={dataSource}
-        initialState={{
-          filters: { columnFilters: { d: { kind: 'dateSet', condition: { mode: 'preset', preset: 'thisMonth' }, set: null } } },
-        }}
-      />,
-    );
-    await act(async () => {
-      await new Promise((resolve) => setTimeout(resolve, 700));
-    });
-    expect(calls.filter((call) => call.startIndex === 0)).toHaveLength(1);
-  });
+  // 1.0.1 のレビュー RA-5: クライアントで解けないプリセット(サーバーだけが解く ID)では、見張りを始めて基準日が入ったときに
+  //   キーが変わり、最初のブロックを取り直していた。
+  it.each(['thisMonth', 'serverOnlyPreset'])(
+    'serverSide: 相対日付のプリセットの initialState でも最初のブロックは 1 回だけ取る(%s)',
+    async (preset) => {
+      type Dated = { id: number; d: string };
+      const calls: ServerSideGetRowsParams[] = [];
+      const dataSource: ServerSideDataSource<Dated> = {
+        getRows: (params) => {
+          calls.push(params);
+          return Promise.resolve({ rows: [{ id: 1, d: '2026-11-08' }], totalRowCount: 1 });
+        },
+      };
+      render(
+        <SpreadsheetGrid<Dated>
+          rows={[]}
+          columns={[{ key: 'd', title: '日付', width: 120, filterType: 'dateSet' }]}
+          rowKeyGetter={(row) => row.id}
+          height={300}
+          dataSource={dataSource}
+          initialState={{
+            filters: { columnFilters: { d: { kind: 'dateSet', condition: { mode: 'preset', preset }, set: null } } },
+          }}
+        />,
+      );
+      await act(async () => {
+        await new Promise((resolve) => setTimeout(resolve, 700));
+      });
+      expect(calls.filter((call) => call.startIndex === 0)).toHaveLength(1);
+    },
+  );
 });

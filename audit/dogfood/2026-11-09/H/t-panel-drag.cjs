@@ -1,0 +1,25 @@
+const { open, G, openColumnMenu, clickMenu, groupRows } = require('./lib.cjs');
+const log = (...a) => console.log(...a);
+(async () => {
+  const { browser, page, logs } = await open();
+  await openColumnMenu(page, 'title'); await clickMenu(page, '列の表示'); await page.waitForTimeout(800);
+  const row = (name) => page.locator('[data-chooser-row]', { has: page.locator('.ssg-chooser-label', { hasText: name }) }).first();
+  const labels = () => page.locator('.ssg-chooser-label').allInnerTexts();
+  log('labels', JSON.stringify(await labels()));
+  const st = row('状態'); await st.scrollIntoViewIfNeeded();
+  const as = row('担当者');
+  const h = await st.locator('.ssg-chooser-handle').boundingBox();
+  const ab = await as.boundingBox();
+  await page.mouse.move(h.x + h.width / 2, h.y + h.height / 2); await page.mouse.down();
+  await page.mouse.move(h.x + h.width / 2, h.y - 10, { steps: 4 });
+  await page.mouse.move(h.x + h.width / 2, ab.y + 4, { steps: 10 });
+  await page.waitForTimeout(200);
+  await page.screenshot({ path: 'shots/p-drag.png' });
+  await page.mouse.up();
+  await page.waitForTimeout(600);
+  log('labels after', JSON.stringify(await labels()));
+  log('badge', await page.getByTestId('grouping').innerText(), 'header', await page.locator(`${G} [role="columnheader"][data-ssg-col-key="__ssg_group__"]`).innerText());
+  log('groups', JSON.stringify((await groupRows(page)).slice(0, 3).map(g => g.indent + g.label)));
+  log(logs.join('\n'));
+  await browser.close();
+})();

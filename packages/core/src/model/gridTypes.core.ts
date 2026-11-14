@@ -1154,8 +1154,9 @@ export type GridColumn<T, F extends GridFrameworkTypes = GridFrameworkTypes> = {
    * 固定列の合計)を flex 比で配分し `minWidth`/`maxWidth` でクランプ。配分した幅は整数
    * px(端数は切り捨てて次の列へ回すため、合計が利用可能幅をはみ出さない)。
    * コンテナ追従でリアクティブに伸縮。手動リサイズで固定 px へ変化(その列の `flex` / `pinned` /
-   * `width` 指定が変わるか列のリセットまで固定 → 以後 flex 復帰)。pinned 列では無視。
-   * 詳細は下記「flex と autoSize」節。
+   * `width` 指定が変わるか列のリセットまで固定 → 以後 flex 復帰)。pinned 列では無視。`flex`
+   * の列では `width` は使わない(最小の幅にもならず、余り幅が無いと既定の下限 50px まで縮む)。
+   * 縮ませたくない幅は `minWidth` で書く。詳細は下記「flex と autoSize」節。
    */
   flex?: number;
   // 追加(①): この列のリサイズ可否です。未指定時はグリッドの enableColumnResize を継承します
@@ -1223,7 +1224,11 @@ export type GridColumn<T, F extends GridFrameworkTypes = GridFrameworkTypes> = {
   // 追加(10-A): AG Grid 互換の列固定指定です。
   //             未指定 or undefined → 中央スクロール領域に配置されます。
   /**
-   * 列固定の方向。
+   * 列固定の方向。固定列(行番号の列を含む)の合計が広すぎて中央に 120px を残せない間は、
+   * 右の固定列の内側から、次に左の固定列の内側から順に、
+   * 表示の上だけ固定を外して中央でスクロールさせる(`columns` の `pinned` は変えず、
+   * 広くなれば固定に戻る。スマホの幅で右の固定列が左の固定列に重なり、中央が見えなかったため。1.0.1
+   * から)。
    *
    * @defaultValue undefined = 中央スクロール
    */
@@ -1237,7 +1242,8 @@ export type GridColumn<T, F extends GridFrameworkTypes = GridFrameworkTypes> = {
    * 有効時はグループ元列が表示から外れ、先頭に自動グループ列(ツリー表示)が注入される。**clientSide
    * 限定**(serverSide では無視 + 開発時警告)。列のどれかに `rowGroup` を書いている(`false` を含む)
    * 表では、列メニューに「この列でグループ化」/「グループ化を外す」が出る(`onColumnsChange`
-   * が要る。集計のある列には出ない)。詳細は「行グルーピング + 集計」節。
+   * が要る。`rowGroup` を書いた列だけでなく、集計のある列と最後のデータ列を除くすべての列に出る)。
+   * 詳細は「行グルーピング + 集計」節。
    */
   rowGroup?: boolean;
   // 追加(grouping ①): グルーピング時のこの列の集計です。組み込み(GridAggFuncName)または
@@ -1368,12 +1374,13 @@ export type GridColumn<T, F extends GridFrameworkTypes = GridFrameworkTypes> = {
    * opt-in(下記「filterType: 'auto'(自動判定)」節)。`'numberSet'` / `'textSet'` / `'dateSet'`
    * は条件(演算子 + 値)と Set 一覧を 1 つの popover に縦に並べて **AND
    * 結合**する複合フィルター(条件を適用すると Set 候補が連動して絞られる。
-   * 候補外になった値の選択は破棄せず保持)。numberSet の演算子は 以上 / より大きい / 以下 / 未満 /
-   * に等しい / に等しくない / 範囲 / 空白 / 空白でない、textSet は を含む / に等しい / で始まる /
-   * で終わる / 空白 / 空白でない(判定は大文字小文字無視)。dateSet は 範囲 / 以降 / 以前 / に等しい
-   * / に等しくない / 空白 / 空白でない + 相対プリセット(今日 / 今月 / 過去 30
-   * 日。**相対のまま保存され評価のたびに解決**)で、Set 部分は年 / 月 / 日の 3 階層ツリー(親は 3
-   * 状態チェック)になる。
+   * 候補外になった値の選択は破棄せず保持)。numberSet の一覧は数の順(数でない値はその後ろ、
+   * 空白は最後。`filterOptions` / `getFilterOptions` で渡した候補は渡した順)。numberSet の演算子は
+   * 以上 / より大きい / 以下 / 未満 / に等しい / に等しくない / 範囲 / 空白 / 空白でない、textSet
+   * は を含む / に等しい / で始まる / で終わる / 空白 / 空白でない(判定は大文字小文字無視)。dateSet
+   * は 範囲 / 以降 / 以前 / に等しい / に等しくない / 空白 / 空白でない + 相対プリセット(今日 /
+   * 今月 / 過去 30 日。**相対のまま保存され評価のたびに解決**)で、Set 部分は年 / 月 / 日の 3
+   * 階層ツリー(親は 3 状態チェック)になる。
    */
   filterType?: ColumnFilterTypeOption;
   // 追加: select / set フィルター時の候補です。未指定時は rows から自動収集します。
@@ -1402,7 +1409,14 @@ export type GridColumn<T, F extends GridFrameworkTypes = GridFrameworkTypes> = {
    * @defaultValue ビルトイン 3 種
    */
   dateFilterPresets?: false | readonly DateFilterPresetOption[];
-  /** カスタムフィルター述語。 */
+  /**
+   * カスタムフィルター述語。`filterValue` は入力した値そのものではなく、
+   * その列のフィルターの記述子(`ColumnFilterValue`)。`filterType: 'custom'` なら
+   * `{ kind: 'custom', value: 入力した文字列 }`、ほかの種別ならその種別の形(「列フィルターの wire
+   * format」と同じ)。指定するとどの `filterType` でも組み込みの判定より優先する。
+   * `filterType: 'custom'` のフィルター画面は文字の入力欄 1 つ(text と同じ画面で、
+   * 文言も「部分一致で絞り込み」のまま)で、`filterFn` が無ければ部分一致で絞る。
+   */
   filterFn?: (row: T, filterValue: unknown) => boolean;
   // 追加(editor 基盤): セルエディタ種別です。未指定は text(プレーンテキスト編集)。
   //   編集可否は従来どおり editable / readOnly / canEditCell で判定されます(editor は種別のみ)。
@@ -1690,7 +1704,7 @@ export type GridLocaleText = {
   menuColumns: string;
   /** 列メニューの列のリセット。既定 `列のリセット`、英語 `Reset columns`。 */
   menuResetColumns: string;
-  /** 列のリセットのツールチップ(列メニューとツールパネル)。既定 `すべての列の幅・固定・表示・並び順を初期状態に戻します`、英語 `Restores the width, pinning, visibility and order of all columns.`。 */
+  /** 列のリセットのツールチップ(列メニューとツールパネル)。既定 `すべての列の幅・固定・表示・並び順・グループ化を初期状態に戻します`、英語 `Restores the width, pinning, visibility, order and grouping of all columns.`。 */
   resetColumnsHint: string;
   /** `onColumnsChange` が無いときの列のリセットのツールチップ。既定 `onColumnsChange 未指定のため列をリセットできません`、英語 `Resetting columns needs onColumnsChange.`。 */
   menuResetUnavailable: string;
@@ -2690,6 +2704,7 @@ export type SpreadsheetGridHandle<T> = {
    * で可視化も行う(固定列のセルでも縦方向へスクロールする)。中央ペイン(固定でない列)のセルは、
    * 指定が無くてもアクティブセルの位置が変わると見える位置までスクロールされる(クリック /
    * キー操作と同じ動き)。ラベル行(`labelRow`)を指したときは、下のデータ行(無ければ上)へ寄せる。
+   * フォーカスは移さない(続けてキー操作や入力を受けたいときは `focus()` も呼ぶ)。
    */
   setActiveCell: (
     cell: CellCoord | null,
@@ -2701,7 +2716,8 @@ export type SpreadsheetGridHandle<T> = {
   // 単一セルを選択(クリック相当)。scrollIntoView:true で可視化も行います。
   /**
    * 単一セル選択(クリック相当)。スクロールの扱いと、ラベル行を指したときの扱いは `setActiveCell`
-   * と同じ。
+   * と同じ。クリックと違ってフォーカスは移さない(続けてキー操作や入力を受けたいときは `focus()`
+   * も呼ぶ)。
    */
   selectCell: (
     viewRowIndex: number,
@@ -3535,7 +3551,9 @@ export type SpreadsheetGridProps<T, F extends GridFrameworkTypes = GridFramework
    * 表示は `valueFormatter` で整形)。セル編集 / 貼り付け / クリア / undo・redo / 外部からの `rows`
    * 差し替えのすべてが対象。clientSide 専用(SSRM では無効)。描画中のセルだけが対象で、
    * 変わったセルが 200 を超えるとフラッシュのみ、2,000 を超える・行の挿入 / 削除 /
-   * 並べ替えを伴う・参照の変わった行が 5,000 を超える(データの読み直し)ときは何もしない。
+   * 並べ替えを伴う・参照の変わった行が 5,000 を超える(データの読み直し)ときは何もしない。1
+   * 秒に何度も `rows` を差し替える画面では主スレッドの負荷が大きい(250ms
+   * ごとに多くのセルが変わる表で付けないときの約 2 倍)ので、付けないことを勧める。
    *
    * @defaultValue `false`
    */
@@ -3810,7 +3828,8 @@ export type SpreadsheetGridProps<T, F extends GridFrameworkTypes = GridFramework
   // ヘッダの全選択チェック(tri-state)の有効化です。
   //   既定は enableRowSelection && rowSelectionMode==='multiple'。
   /**
-   * ヘッダ左上コーナーの全選択チェック(tri-state: none/some/all)の有効化。
+   * ヘッダ左上コーナーの全選択チェック(tri-state: none/some/all)の有効化。clientSide
+   * のフィルターで行が隠れている間は、見えている行だけを選ぶ / 外す(印も見えている行だけで決める)。
    *
    * @defaultValue `enableRowSelection && multiple`
    */
@@ -3932,6 +3951,8 @@ export type SpreadsheetGridProps<T, F extends GridFrameworkTypes = GridFramework
    * `'onDataChange'`=`rows`(参照)が変わるたび(= データ差し替えのたび。手動リサイズは上書き) /
    * `false`=無効。計測は列メニュー「すべての列の幅を自動調整」と同一エンジン(`suppressAutoSize` /
    * `autoHeight` 列は除外)。フィルター / ソート / 列並べ替えでは再フィットしません。
+   * グリッドが描かれていない間(`display: none` の中。隠したタブなど)は測らずに待ち、
+   * 描かれたときに測ります(1.0.1 から。1.0.0 は幅 0 のまま測って列を縮めていました)。
    * serverSide(`dataSource`)では無効。詳細は「flex と autoSize」節。
    *
    * @defaultValue `false`
@@ -3958,11 +3979,11 @@ export type SpreadsheetGridProps<T, F extends GridFrameworkTypes = GridFramework
   //   注意: getInvalidCells() は表示状態と無関係に常に全走査で動作します。validationMode 'reject'
   //   の書き込み拒否(エディタのエラーバブル含む)は write 時ゲートであり本 prop の影響を受けません。
   /**
-   * invalid マーク(背景 + 右上マーカー + ホバーツールチップ)の表示可否。`false` で非表示 +
-   * 可視セルの検査(`validate` と number の `min` / `max` / `integer`)の評価スキップ。
-   * `getInvalidCells()` と `validationMode: 'reject'` の書き込み拒否には影響しない(独立経路)。
-   * 「送信時にだけマークを出す」UX は利用側 state で本 prop を切り替えて実現(「バリデーション」
-   * 節のレシピ参照)。
+   * invalid マーク(背景 + 右上マーカー + メッセージのツールチップ + セルの `aria-invalid` /
+   * `aria-description`)の表示可否。`false` で非表示 + 可視セルの検査(`validate` と number の `min`
+   * / `max` / `integer`)の評価スキップ。`getInvalidCells()` と `validationMode: 'reject'`
+   * の書き込み拒否には影響しない(独立経路)。「送信時にだけマークを出す」UX は利用側 state で本 prop
+   * を切り替えて実現(「バリデーション」節のレシピ参照)。
    *
    * @defaultValue `true`
    */
@@ -4174,7 +4195,8 @@ export type SpreadsheetGridProps<T, F extends GridFrameworkTypes = GridFramework
    * 平均は数値と数値の文字列だけ(グループ集計と同じ判定)、データの個数は空でないセル。
    * 大きな選択は時間分割で計算し、その間は「集計中…」。SSRM
    * では読み込み済みの行だけで計算し「読み込み済みの行のみ」と添える。`false` では計算もせず
-   * `slotContext.selectionAggregates` は `null`(「選択範囲の集計」節)。
+   * `slotContext.selectionAggregates` は `null`(「選択範囲の集計」節)。バーに入りきらない項目は、
+   * 途中で切らずに丸ごと出さない(平均 → データの個数 → 合計の順に隠す。1.0.1 から)。
    *
    * @defaultValue `true`
    */
@@ -4233,6 +4255,10 @@ export type SpreadsheetGridProps<T, F extends GridFrameworkTypes = GridFramework
    * レンダー毎に新しいオブジェクトを渡してもよい(内容の署名で memo)。基底 class
    * は未レイヤー・特異度 (0,1,0)
    * のため同特異度のクラスは読み込み順で決まる(確実な上書きは連結セレクタか `style.layer.css`)。
+   * Tailwind CSS v4 のユーティリティはレイヤー(`@layer utilities`)の中にあるので、
+   * 読み込み順に関係なく `style.css`(未レイヤー)に負けて効かない。`style.layer.css` +
+   * レイヤー順の宣言(`@layer theme, base, ssg-base, components, utilities;`)にするか、`!`
+   * を付ける。
    */
   classNames?: GridClassNames<F>;
   // 追加(UI CSS移行): 行ごとの追加 className を返すコールバック(条件付き行スタイル)。

@@ -21,6 +21,8 @@ export type ToolPanelLayout = {
   top: number;
   left: number;
   width: number;
+  // 追加(1.0.1 / 実アプリの総点検 AP-30): 画面の中に収まる高さの上限(px)。
+  maxHeight: number;
 };
 
 export type ToolPanelControllerArgs = {
@@ -51,9 +53,35 @@ export type ToolPanelController = {
 };
 
 const PANEL_WIDTH = 360;
+// パネルの高さの上限(styles.css の .ssg-toolpanel の max-height と同じ)。
+export const TOOL_PANEL_MAX_HEIGHT = 420;
+// 追加(1.0.1 のレビュー RB-5): パネルの最小の高さ(styles.css の .ssg-toolpanel-body の min-height 240px + ヘッダーと
+//   余白の 96px)。
+const TOOL_PANEL_MIN_HEIGHT = 336;
 const VIEWPORT_MARGIN = 8;
 const GRID_INSET = 12;
 const TAB_ORDER: ToolPanelTab[] = ['filter', 'columns', 'sort'];
+
+// 追加(1.0.1 / 2026-11-09 実アプリの総点検 AP-30): 縦の位置と高さの上限を画面に収めます。スマホの横向き(高さ 390px)では
+//   グリッドの右上から max-height 420px で出して画面の下にはみ出し、下の項目と「すべての列を初期状態に戻す」に届かなかった。
+//   - 既定の位置(dragged = false): 上限(420px と画面の高さ - 余白 2 つの小さいほう)が下に入らなければ上へずらす。
+//   - 掴んで動かした位置(dragged = true): 位置はそのままで、下に残る高さを上限にする(中の一覧が縮んでスクロールになる)。
+//     変更(1.0.1 のレビュー RB-5): 下に残る高さが最小の高さ(min(336px, 上限))に足りない位置へは下げない(本体の最小の
+//     高さが枠の外へはみ出し、背景なしで表に重なっていた)。
+export const resolveToolPanelVerticalPlacement = (
+  top: number,
+  viewportHeight: number,
+  dragged: boolean,
+): { top: number; maxHeight: number } => {
+  const cap = Math.max(0, Math.min(TOOL_PANEL_MAX_HEIGHT, viewportHeight - VIEWPORT_MARGIN * 2));
+  const needed = dragged ? Math.min(TOOL_PANEL_MIN_HEIGHT, cap) : cap;
+  let nextTop = top;
+  if (nextTop + needed > viewportHeight - VIEWPORT_MARGIN) {
+    nextTop = Math.max(VIEWPORT_MARGIN, viewportHeight - VIEWPORT_MARGIN - needed);
+  }
+  const maxHeight = Math.max(0, Math.min(TOOL_PANEL_MAX_HEIGHT, viewportHeight - VIEWPORT_MARGIN - nextTop));
+  return { top: nextTop, maxHeight };
+};
 
 // 表示順どおりの可用タブ。
 export const resolveAvailableToolPanelTabs = (
@@ -91,7 +119,12 @@ export const createToolPanelController = (): ToolPanelController => {
     const prev = store.getSnapshot().layout;
     if (
       prev === next ||
-      (prev !== null && next !== null && prev.top === next.top && prev.left === next.left && prev.width === next.width)
+      (prev !== null &&
+        next !== null &&
+        prev.top === next.top &&
+        prev.left === next.left &&
+        prev.width === next.width &&
+        prev.maxHeight === next.maxHeight)
     ) {
       return;
     }
@@ -107,10 +140,14 @@ export const createToolPanelController = (): ToolPanelController => {
       viewportHeight: window.innerHeight,
     });
 
+  const draggedLayout = (clamped: { top: number; left: number }): ToolPanelLayout => {
+    const vertical = resolveToolPanelVerticalPlacement(clamped.top, window.innerHeight, true);
+    return { top: vertical.top, left: clamped.left, width: PANEL_WIDTH, maxHeight: vertical.maxHeight };
+  };
+
   const updateLayout = () => {
     if (draggedPosition) {
-      const clamped = clampDragged(draggedPosition);
-      setLayout({ top: clamped.top, left: clamped.left, width: PANEL_WIDTH });
+      setLayout(draggedLayout(clampDragged(draggedPosition)));
       return;
     }
     const root = args?.gridRootRef.current ?? null;
@@ -124,7 +161,8 @@ export const createToolPanelController = (): ToolPanelController => {
     left = Math.max(VIEWPORT_MARGIN, left);
     left = Math.min(left, window.innerWidth - PANEL_WIDTH - VIEWPORT_MARGIN);
     top = Math.max(VIEWPORT_MARGIN, top);
-    setLayout({ top, left, width: PANEL_WIDTH });
+    const vertical = resolveToolPanelVerticalPlacement(top, window.innerHeight, false);
+    setLayout({ top: vertical.top, left, width: PANEL_WIDTH, maxHeight: vertical.maxHeight });
   };
 
   const isOpen = () =>
@@ -196,7 +234,7 @@ export const createToolPanelController = (): ToolPanelController => {
   const move = (top: number, left: number) => {
     const clamped = clampDragged({ top, left });
     draggedPosition = clamped;
-    patch({ layout: { top: clamped.top, left: clamped.left, width: PANEL_WIDTH } });
+    patch({ layout: draggedLayout(clamped) });
   };
 
   return {

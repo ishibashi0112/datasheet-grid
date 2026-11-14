@@ -505,7 +505,7 @@ export const createColumnCommands = <T,>(): ColumnCommands<T> => {
         initialColumnState = new Map(
           next.columns.map((column) => [
             column.key,
-            { width: column.width, pinned: column.pinned, visible: column.visible },
+            { width: column.width, pinned: column.pinned, visible: column.visible, rowGroup: column.rowGroup },
           ]),
         );
       }

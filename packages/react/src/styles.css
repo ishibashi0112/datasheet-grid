@@ -1531,6 +1531,9 @@
     border: 1px solid var(--ssg-panel-border);
     border-radius: 8px;
     background-color: var(--ssg-panel-bg);
+    /* 追加(1.0.1 / 実アプリの総点検 AP-27): 中の部品が文字色を受け継ぐときの色(Tailwind v4 の preflight は入力欄とボタンを
+       color: inherit にするので、ダークで body の黒になっていた)。 */
+    color: var(--ssg-panel-text);
     box-shadow: var(--ssg-popover-shadow);
     z-index: 1000;
   }
@@ -1718,16 +1721,42 @@
     gap: 4px;
     overflow: hidden;
     white-space: nowrap;
-    /* 追加(英語対応の確かめ直し): 入りきらないときに切れる端(左)をぼかし、切れた数字(「2,194.65」の「,194.65」)を
-       そのままの値と読み違えないようにする。入りきるときはこの端は空きなので見た目は変わらない。 */
-    -webkit-mask-image: linear-gradient(to right, transparent, #000 20px);
-    mask-image: linear-gradient(to right, transparent, #000 20px);
   }
   .ssg-bar-aggregates--trailing .ssg-bar-aggregates-inner {
     justify-content: flex-start;
     padding-left: 6px;
-    -webkit-mask-image: linear-gradient(to left, transparent, #000 20px);
-    mask-image: linear-gradient(to left, transparent, #000 20px);
+  }
+  /* 変更(1.0.1 / 実アプリの総点検 AP-28): 入りきらない項目は途中で切らずに丸ごと隠す(英語対応の確かめ直しで入れた端の
+     ぼかしは、切れた数字を値と読み違えないためのものだったので外した)。項目は order で逆順(右から 合計 → データの個数 →
+     平均)に並べ、右から詰めて折り返す。項目の高さを一覧の高さにして、折り返した 2 行目以降は一覧の外 = 見えない。
+     件数なし(--trailing)のときは左に寄せる。 */
+  .ssg-bar-aggregates-list {
+    flex: 0 1 auto;
+    min-width: 0;
+    align-self: stretch;
+    display: flex;
+    flex-direction: row-reverse;
+    flex-wrap: wrap;
+    align-content: flex-start;
+    column-gap: 4px;
+    overflow: hidden;
+  }
+  .ssg-bar-aggregates--trailing .ssg-bar-aggregates-list {
+    justify-content: flex-end;
+  }
+  .ssg-bar-aggregates-list > .ssg-bar-chip {
+    flex: none;
+    height: 100%;
+    box-sizing: border-box;
+  }
+  /* 1 行目の先頭(右端)の幅 0 の目印。flex は行の最初の項目だけは入らなくても置くので、目印を先頭に置いて、1 つも
+     入らない幅では項目をすべて 2 行目(見えない)へ回す。margin で次の項目との column-gap を打ち消す。 */
+  .ssg-bar-aggregates-fit {
+    order: -100;
+    flex: none;
+    width: 0;
+    height: 100%;
+    margin-left: -4px;
   }
   .ssg-bar-aggregate-value {
     margin-left: 0.25em;
@@ -1938,6 +1967,9 @@
     border: 1px solid var(--ssg-panel-border);
     border-radius: 12px;
     background-color: var(--ssg-panel-bg);
+    /* 追加(1.0.1 / 実アプリの総点検 AP-27): 中の部品が文字色を受け継ぐときの色(Tailwind v4 の preflight は入力欄とボタンを
+       color: inherit にするので、ダークで body の黒になっていた)。 */
+    color: var(--ssg-panel-text);
     box-shadow: var(--ssg-panel-shadow);
     z-index: 1000;
   }
@@ -2003,7 +2035,9 @@
      キャップし、各コンテンツのリスト(flex: 1 / overflow-y: auto)がスクロールを担う
      (旧 3 パネルの max-height: 420px を継承)。 */
   .ssg-toolpanel {
-    max-height: 420px;
+    /* 変更(1.0.1 のレビュー RB-5): 画面の中に収まる高さは、ToolPanel が inline の変数で渡す(利用側のクラスや slot の
+       style の max-height が勝つように、inline の max-height にはしない)。 */
+    max-height: var(--ssg-toolpanel-max-height, 420px);
   }
 
   /* 追加(UP-2 / 既開時フラッシュ): 既に開いているパネルへ再度 open(導線の再クリック /
@@ -2119,7 +2153,9 @@
     display: flex;
     flex-direction: column;
     flex: 1 1 auto;
-    min-height: 240px;
+    /* 変更(1.0.1 / 実アプリの総点検 AP-30): 低い画面(スマホの横向き)ではパネルの高さの上限を画面に合わせるので、
+       ボディの最小の高さも画面の高さに合わせて縮める(ヘッダーと余白のぶん = 96px を引く)。 */
+    min-height: min(240px, calc(100dvh - 96px));
     min-width: 0;
   }
 
@@ -2696,6 +2732,9 @@
     border: 1px solid var(--ssg-panel-border);
     border-radius: 10px;
     background-color: var(--ssg-panel-bg);
+    /* 追加(1.0.1 / 実アプリの総点検 AP-27): 中の部品が文字色を受け継ぐときの色(Tailwind v4 の preflight は入力欄とボタンを
+       color: inherit にするので、ダークで body の黒になっていた)。 */
+    color: var(--ssg-panel-text);
     box-shadow: var(--ssg-popover-shadow);
     z-index: 1000;
   }
@@ -2765,6 +2804,8 @@
     outline: none;
     margin-bottom: 6px;
     font-size: 12.5px;
+    /* 追加(1.0.1 / AP-27): 文字色を決める(Tailwind v4 の preflight の color: inherit でダークのとき黒くなっていた)。 */
+    color: var(--ssg-panel-text);
   }
   .ssg-filter-select {
     width: 100%;
@@ -2775,6 +2816,7 @@
     outline: none;
     margin-bottom: 6px;
     font-size: 12.5px;
+    color: var(--ssg-panel-text);
     background-color: var(--ssg-panel-bg);
   }
 
@@ -3218,6 +3260,9 @@
     border: 1px solid var(--ssg-panel-border);
     border-radius: 10px;
     background-color: var(--ssg-panel-bg);
+    /* 追加(1.0.1 / 実アプリの総点検 AP-27): 中の部品が文字色を受け継ぐときの色(Tailwind v4 の preflight は入力欄とボタンを
+       color: inherit にするので、ダークで body の黒になっていた)。 */
+    color: var(--ssg-panel-text);
     box-shadow: var(--ssg-popover-shadow);
   }
 

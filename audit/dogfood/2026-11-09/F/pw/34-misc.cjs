@@ -1,0 +1,45 @@
+const { open, shot, handle, appState, clickCell, cellBox } = require('./lib.cjs')
+const log = (...a) => console.log(...a)
+const act = (page) => handle(page, 'return JSON.stringify(g.getActiveCell())')
+;(async () => {
+  const { browser, page, logs } = await open('?extra=40')
+  // (a) 候補を選んだ確定(3 項目が変わる)を 1 回の undo で戻す
+  await clickCell(page, 2, '品名')
+  await page.keyboard.press('F2'); await page.keyboard.press('Control+a'); await page.keyboard.type('VP40')
+  await page.waitForTimeout(700); await page.keyboard.press('Enter'); await page.waitForTimeout(200)
+  let st = await appState(page)
+  log('(a) picked', JSON.stringify(st.rows[2]))
+  await page.keyboard.press('Control+z'); await page.waitForTimeout(200)
+  st = await appState(page)
+  log('(a) after 1 undo', JSON.stringify(st.rows[2]))
+  // (d) 単価から 2 列貼る → 金額(読み取り専用)は飛ばす?
+  await page.evaluate(() => navigator.clipboard.writeText('999\t888\tメモ'))
+  await clickCell(page, 3, '単価')
+  await page.keyboard.press('Control+v'); await page.waitForTimeout(200)
+  st = await appState(page)
+  log('(d) row3 after paste', JSON.stringify(st.rows[3]))
+  // (j) Ctrl+End / Ctrl+Home / PageDown
+  await page.keyboard.press('Control+End'); await page.waitForTimeout(200); log('(j) Ctrl+End', await act(page))
+  await page.keyboard.press('Control+Home'); await page.waitForTimeout(200); log('(j) Ctrl+Home', await act(page))
+  await page.keyboard.press('PageDown'); await page.waitForTimeout(200); log('(j) PageDown', await act(page))
+  await page.keyboard.press('PageDown'); await page.waitForTimeout(200); log('(j) PageDown', await act(page))
+  await shot(page, '34-pagedown')
+  await page.keyboard.press('PageUp'); await page.waitForTimeout(200); log('(j) PageUp', await act(page))
+  // (h) 品名の列幅をドラッグで広げる
+  const hdr = await page.locator('[role=columnheader]', { hasText: '品名' }).boundingBox()
+  const edge = hdr.x + hdr.width - 1
+  await page.mouse.move(edge, hdr.y + hdr.height / 2)
+  await page.mouse.down(); await page.mouse.move(edge + 80, hdr.y + hdr.height / 2, { steps: 5 }); await page.mouse.up()
+  await page.waitForTimeout(200)
+  const hdr2 = await page.locator('[role=columnheader]', { hasText: '品名' }).boundingBox()
+  log('(h) name width', hdr.width, '->', hdr2.width, 'state widths', JSON.stringify((await handle(page, 'return g.getState()')).columnWidths))
+  // (i) 境界のダブルクリックで自動調整
+  const e2 = hdr2.x + hdr2.width - 1
+  await page.mouse.dblclick(e2, hdr2.y + hdr2.height / 2)
+  await page.waitForTimeout(300)
+  const hdr3 = await page.locator('[role=columnheader]', { hasText: '品名' }).boundingBox()
+  log('(i) autosize name width', hdr3.width)
+  await shot(page, '34-autosize')
+  log('LOGS', logs)
+  await browser.close()
+})()

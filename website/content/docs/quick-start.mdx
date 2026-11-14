@@ -80,4 +80,21 @@ export const columns: GridColumn<Project>[] = [
 ]
 ```
 
-サーバーレンダリング(SSR / SSG)でもエラーや警告なく描けますが、サーバーで描く HTML は表の骨組みです: 行番号と固定した列(`pinned`)のセルだけで、固定していない列(横の仮想化の対象)はハイドレーションの後に描きます(固定列の無い表は、ハイドレーションまで行番号だけの表です)。JavaScript が動かない環境では表の中身は出ません。`theme="auto"` の場合、サーバーでは light として描画され、ハイドレーション後にクライアントの配色設定へ追従します。`<html class="dark">`(next-themes など)でダークを切り替えるページでは `theme="class"` にすると、サーバーの描画からダークになります。
+サーバーレンダリング(SSR / SSG)でもエラーや警告なく描けますが、サーバーで描く HTML は表の骨組みです: 行番号と固定した列(`pinned`)のセルだけで、固定していない列(横の仮想化の対象)はハイドレーションの後に描きます(固定列の無い表は、ハイドレーションまで行番号だけの表です)。JavaScript が動かない環境では表の中身は出ません。Next.js 16 の `cacheComponents` でも、グリッドだけなら `<Suspense>` で包まずに静的なページとして描けます(1.0.0 では描画中に今日の日付を読んでいて `next build` が止まりました。日付の列の条件(`dateSet` の `condition`)を `initialState` で入れて描くときは、条件を解く今日の日付を読むので `<Suspense>` で包みます)。`theme="auto"` の場合、サーバーでは light として描画され、ハイドレーション後にクライアントの配色設定へ追従します。`<html class="dark">`(next-themes など)でダークを切り替えるページでは `theme="class"` にすると、サーバーの描画からダークになります。
+
+Next.js 16(`cacheComponents`)の画面遷移で前のページへ戻ったとき、グリッドの状態(フィルター・選択・編集の途中)は残りますが、スクロール位置は先頭に戻ります(隠れている間は `display: none` になり、ブラウザがスクロール位置を捨てるため)。位置も戻したいときは、`onScroll` で位置を覚えておき、ページが見えたときにハンドルの `setScrollPosition` で戻します。
+
+```tsx
+const gridRef = useRef<SpreadsheetGridHandle<Row>>(null);
+const scroll = useRef({ top: 0, left: 0 });
+// ページが見えたとき(useEffect はページが表示されるたびに走る)に戻す
+useEffect(() => {
+  gridRef.current?.setScrollPosition(scroll.current);
+}, []);
+
+<SpreadsheetGrid
+  ref={gridRef}
+  onScroll={({ top, left }) => { scroll.current = { top, left }; }}
+  ...
+/>
+```

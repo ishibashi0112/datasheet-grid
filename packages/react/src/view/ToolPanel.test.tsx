@@ -23,7 +23,7 @@ afterEach(() => {
   cleanup();
 });
 
-const layout: ToolPanelLayout = { top: 20, left: 40, width: 360 };
+const layout: ToolPanelLayout = { top: 20, left: 40, width: 360, maxHeight: 420 };
 
 const makeTabs = (): ToolPanelTabDescriptor[] => [
   { tab: 'filter', label: 'フィルター', badge: 2 },
@@ -90,6 +90,20 @@ describe('ToolPanel(統合ツールパネルのシェル UP-1)', () => {
     expect(screen.getByText('タブコンテンツ')).toBeTruthy();
     fireEvent.click(screen.getByLabelText('閉じる'));
     expect(props.onRequestClose).toHaveBeenCalledTimes(1);
+  });
+
+  // 1.0.1 のレビュー RB-5: inline の max-height が slot の style / classNames の max-height より勝っていた。
+  it('画面に収まる高さは変数で渡し、slot の style の max-height が勝つ', () => {
+    const { rerender } = render(<ToolPanel {...makeProps()}>content</ToolPanel>);
+    const panel = document.querySelector<HTMLElement>('.ssg-toolpanel')!;
+    expect(panel.style.getPropertyValue('--ssg-toolpanel-max-height')).toBe('420px');
+    expect(panel.style.maxHeight).toBe('');
+    rerender(
+      <ToolPanel {...makeProps()} popoverSlot={{ style: { maxHeight: 600 } }}>
+        content
+      </ToolPanel>,
+    );
+    expect(document.querySelector<HTMLElement>('.ssg-toolpanel')!.style.maxHeight).toBe('600px');
   });
 
   it('activeTab=null / layout=null では描画しない', () => {

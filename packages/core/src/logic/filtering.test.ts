@@ -7,7 +7,7 @@
 //   - 記述子 helper(parse / build / draftText / isActive / guards)の単体仕様。
 //   変更(記述子化): columnFilters の値は ColumnFilterValue(判別共用体)になりました。テストも
 //     生文字列ではなくタグ付き記述子({kind:'text'|'select'|'date'|'number'|'set'|'custom'})を渡します。
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import {
   applyNumberFilter,
   buildNumberColumnFilterValue,
@@ -1195,5 +1195,23 @@ describe('resolveRelativeDateFilterKey(監査 L-15)', () => {
     const key = resolveRelativeDateFilterKey(dateColumns, filters, '2026-10-12');
     expect(key.split('\u0000')).toHaveLength(2);
     expect(resolveRelativeDateFilterKey(dateColumns, filters, '2026-10-13')).not.toBe(key);
+  });
+
+  // 1.0.1 のレビュー RA-5: 基準日が空(見張りを始める前)と今日の日付とで、解けないプリセットのキーが変わり、serverSide が
+  //   最初のブロックを取り直していた。
+  it('基準日が空のときは今日の基準日と同じキー(解けないプリセットも)', () => {
+    vi.useFakeTimers();
+    try {
+      vi.setSystemTime(new Date(2026, 10, 14, 9, 30));
+      const cases: Record<string, ColumnFilterValue>[] = [{ d: preset('unknownId') }, { d: preset('today') }, { e: preset('broken') }];
+      for (const filters of cases) {
+        expect(resolveRelativeDateFilterKey(dateColumns, filters, '')).toBe(
+          resolveRelativeDateFilterKey(dateColumns, filters, '2026-11-14'),
+        );
+      }
+      expect(resolveRelativeDateFilterKey(dateColumns, {}, '')).toBe('');
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });

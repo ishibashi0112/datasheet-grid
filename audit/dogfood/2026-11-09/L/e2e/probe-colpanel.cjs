@@ -1,0 +1,13 @@
+const { launch, shot, BASE } = require('./lib.cjs')
+;(async () => {
+  const { browser, page } = await launch({ viewport: { width: 1280, height: 800 }, locale: 'ja-JP' })
+  await page.goto(BASE); await page.waitForSelector('.ssg-body-row'); await page.waitForTimeout(800)
+  const k = await page.evaluate(() => { const h = [...document.querySelectorAll('[role=columnheader]')].find((e) => e.textContent.includes('結果')); const r = h.querySelector('button').getBoundingClientRect(); return { x: r.x + r.width / 2, y: r.y + r.height / 2 } })
+  await page.mouse.move(k.x - 30, k.y); await page.waitForTimeout(200); await page.mouse.click(k.x, k.y); await page.waitForTimeout(400)
+  await page.evaluate(() => [...document.querySelectorAll('.ssg-menu-item')].find((m) => m.textContent.includes('列の表示')).click()); await page.waitForTimeout(1000)
+  const html = await page.evaluate(() => { const p = document.querySelector('.ssg-chooser-list'); return p ? p.outerHTML.replace(/<svg.*?<\/svg>/g, '<svg/>').slice(0, 2500) : null })
+  console.log(html)
+  const roles = await page.evaluate(() => [...document.body.children].filter((e) => e.id !== 'root').map((e) => ({ cls: e.className, role: e.getAttribute('role'), label: e.getAttribute('aria-label'), modal: e.getAttribute('aria-modal'), inner: [...e.querySelectorAll('[role]')].slice(0, 6).map((x) => x.getAttribute('role')).join(',') })))
+  console.log(roles)
+  await browser.close()
+})()

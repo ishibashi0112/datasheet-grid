@@ -1,0 +1,20 @@
+const { open, shot, sleep, cellBox } = require('./lib.cjs');
+const R = '[data-testid="modal-grid-wrap"]';
+(async () => {
+  const { browser, page, logs } = await open(process.argv[2]);
+  await page.waitForSelector('.ssg-root');
+  await sleep(800);
+  const n = () => page.evaluate(() => ({ modal: !!document.querySelector('.mantine-Modal-content'), menu: !!document.querySelector('.ssg-menu-panel'), focus: document.activeElement?.className?.toString().slice(0, 40) }));
+  await page.click('[data-testid="open-modal"]');
+  await sleep(1000);
+  const hdr = await page.evaluate((R) => { const h = [...document.querySelector(R).querySelectorAll('[role="columnheader"]')].find(e => e.textContent.includes('状態')); const b = h.getBoundingClientRect(); return { x: b.x + b.width / 2, y: b.y + b.height / 2, w: b.width }; }, R);
+  console.log('hdr', hdr);
+  await page.mouse.move(hdr.x, hdr.y); await sleep(300);
+  const mb = await page.evaluate((R) => { const h = [...document.querySelector(R).querySelectorAll('[role="columnheader"]')].find(e => e.textContent.includes('状態')); const btn = h.querySelector('button, [role="button"]'); const b = btn.getBoundingClientRect(); return { x: b.x + b.width / 2, y: b.y + b.height / 2, html: btn.outerHTML.slice(0, 200) }; }, R);
+  console.log('mb', mb);
+  console.log('top at mb', await page.evaluate(({ x, y }) => document.elementFromPoint(x, y)?.outerHTML.slice(0, 150), mb));
+  await page.mouse.click(mb.x, mb.y); await sleep(500);
+  console.log('after click', await n());
+  await shot(page, '14c-after-menu-click');
+  await browser.close();
+})();

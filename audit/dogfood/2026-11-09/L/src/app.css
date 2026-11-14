@@ -1,0 +1,25 @@
+* { box-sizing: border-box; }
+html, body, #root { height: 100%; margin: 0; }
+body { font-family: system-ui, -apple-system, 'Hiragino Sans', 'Noto Sans JP', sans-serif; color: #1f2933; background: #f5f7fa; }
+.app { display: flex; flex-direction: column; height: 100dvh; }
+.app-header { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 4px 12px; padding: 8px 12px; background: #1e3a5f; color: #fff; }
+.app-header h1 { font-size: 16px; margin: 0; }
+.app-summary { font-size: 13px; }
+.app-form { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; padding: 8px 12px; background: #fff; border-bottom: 1px solid #d9e2ec; }
+.app-form label { display: flex; align-items: center; gap: 4px; font-size: 13px; }
+.app-form input { width: 7em; padding: 6px 8px; font-size: 16px; }
+.app-form button { padding: 6px 10px; font-size: 14px; min-height: 36px; }
+.app-message { margin: 0; padding: 6px 12px; background: #fff7e6; font-size: 13px; }
+.app-grid { flex: 1; min-height: 0; min-width: 0; padding: 8px; }
+.app-footer { display: flex; justify-content: space-between; gap: 8px; padding: 6px 12px; font-size: 12px; background: #fff; border-top: 1px solid #d9e2ec; }
+.root-layout { display: flex; flex-direction: column; height: 100dvh; }
+.root-layout > .app, .root-layout > .daily { flex: 1; min-height: 0; height: auto; }
+.tabs { display: flex; gap: 4px; padding: 4px 8px 0; background: #102a43; }
+.tabs a { color: #bcccdc; padding: 6px 12px; text-decoration: none; font-size: 14px; border-radius: 6px 6px 0 0; }
+.tabs a[aria-current=page] { background: #1e3a5f; color: #fff; }
+.daily { display: flex; flex-direction: column; }
+.daily-tools { padding: 8px 12px; background: #fff; border-bottom: 1px solid #d9e2ec; }
+.daily-tools button { min-height: 36px; padding: 6px 10px; font-size: 14px; }
+.day-head { display: inline-flex; flex-direction: column; align-items: center; line-height: 1.1; }
+.day-head small { font-size: 10px; color: #627d98; }
+.day-head.weekend, .day-head.weekend small { color: #c53030; }

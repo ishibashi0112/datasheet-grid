@@ -1,0 +1,30 @@
+const { open, shot, sleep, cellBox } = require('./lib.cjs');
+const fs = require('fs');
+const path = require('path');
+(async () => {
+  const { browser, page, logs } = await open(process.argv[2]);
+  await page.waitForSelector('.ssg-root');
+  await sleep(800);
+  const [dl] = await Promise.all([page.waitForEvent('download'), page.click('[data-testid="export-csv"]')]);
+  const p = path.join(__dirname, '..', 'shots', 'products.csv');
+  await dl.saveAs(p);
+  const buf = fs.readFileSync(p);
+  console.log('filename', dl.suggestedFilename(), 'bytes', buf.length, 'BOM', buf.slice(0, 3).toString('hex'));
+  const text = buf.toString('utf8').replace(/^﻿/, '');
+  const lines = text.split(/\r?\n/);
+  console.log('lines', lines.length, 'CRLF', text.includes('\r\n'));
+  console.log(lines.slice(0, 4).join('\n'));
+  const labelLines = lines.filter((l) => /^C\d\d /.test(l) || /^"?C\d\d/.test(l));
+  console.log('label lines', labelLines.length, labelLines.slice(0, 3));
+  // フィルター中の出力
+  await page.click('input[placeholder="グローバルフィルター"]');
+  await page.keyboard.insertText('チョコ');
+  await sleep(800);
+  const [dl2] = await Promise.all([page.waitForEvent('download'), page.click('[data-testid="export-csv"]')]);
+  const p2 = path.join(__dirname, '..', 'shots', 'products-filtered.csv');
+  await dl2.saveAs(p2);
+  const t2 = fs.readFileSync(p2, 'utf8').replace(/^﻿/, '').split(/\r?\n/);
+  console.log('filtered lines', t2.length, t2.slice(0, 3));
+  console.log('LOGS:\n' + logs.filter(l => !l.includes('[vite]') && !l.includes('DevTools')).join('\n'));
+  await browser.close();
+})();

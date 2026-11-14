@@ -1,0 +1,13 @@
+const { launch, iphone, cdpTap, BASE } = require('./lib.cjs')
+;(async () => {
+  const { browser, context, page } = await launch({ ...iphone(), locale: 'ja-JP' })
+  const cdp = await context.newCDPSession(page)
+  await page.goto(BASE); await page.waitForSelector('.ssg-body-row'); await page.waitForTimeout(800)
+  const k = await page.evaluate(() => { const h = [...document.querySelectorAll('[role=columnheader]')].find((e) => e.textContent.includes('項目')); const r = h.querySelector('button[aria-label$="列メニュー"]').getBoundingClientRect(); return { x: r.x + r.width / 2, y: r.y + r.height / 2 } })
+  await cdpTap(page, cdp, k.x, k.y); await page.waitForTimeout(500)
+  const pin = await page.evaluate(() => { const e = [...document.querySelectorAll('.ssg-menu-item')].find((x) => x.textContent.includes('列の固定')); const r = e.getBoundingClientRect(); return { x: r.x + r.width / 2, y: r.y + r.height / 2 } })
+  await cdpTap(page, cdp, pin.x, pin.y); await page.waitForTimeout(500)
+  console.log(await page.evaluate(() => document.querySelector('.ssg-menu-submenu-anchor').outerHTML.replace(/<svg.*?<\/svg>/g, '<svg/>').slice(0, 1500)))
+  console.log(await page.evaluate(() => { const s = document.querySelector('.ssg-menu-submenu-anchor > :not(button)'); if (!s) return 'no sub'; const r = s.getBoundingClientRect(); const cs = getComputedStyle(s); return { cls: s.className, l: r.left, r: r.right, t: r.top, b: r.bottom, vis: cs.visibility, disp: cs.display, op: cs.opacity } }))
+  await browser.close()
+})()

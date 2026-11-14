@@ -111,7 +111,7 @@ const GRID_LOCALE_TEXT_EN = {
   menuAutosizeAll: 'Autosize all columns',
   menuColumns: 'Choose columns',
   menuResetColumns: 'Reset columns',
-  resetColumnsHint: 'Restores the width, pinning, visibility and order of all columns.',
+  resetColumnsHint: 'Restores the width, pinning, visibility, order and grouping of all columns.',
   menuResetUnavailable: 'Resetting columns needs onColumnsChange.',
   toolPanelFilters: 'Filters',
   toolPanelSort: 'Sort',

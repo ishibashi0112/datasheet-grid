@@ -182,12 +182,19 @@ export function CellEditorLayer<T>({
     height: rect.height,
   };
 
+  // 追加(audit V-05)/ 変更(1.0.1 / 2026-11-09 実アプリの総点検 AP-34): 「(列名) を編集」。枠の group と組み込みのエディタの
+  //   入力欄の両方の名前にします(これまでは入力欄に名前が無く、axe の label(critical)が出ていた)。
+  const editLabel = editorSession
+    ? formatLocaleText(texts.editCell, { column: editorSession.column.title || editorSession.column.key })
+    : undefined;
+
   // 追加(editor 基盤): エディタ種別ディスパッチです。未指定 / 'text' は従来の text エディタ。
   let editorNode: ReactNode;
   if (editor?.type === 'number') {
     editorNode = (
       <NumberCellEditor
         key={sessionId}
+        ariaLabel={editLabel}
         enterMove={enterMove}
         initialValue={initialValue}
         min={editor.min}
@@ -204,6 +211,7 @@ export function CellEditorLayer<T>({
     editorNode = (
       <DateCellEditor
         key={sessionId}
+        ariaLabel={editLabel}
         enterMove={enterMove}
         initialValue={toDateInputValue(
           editorSession ? editorSession.value : initialValue,
@@ -247,6 +255,7 @@ export function CellEditorLayer<T>({
     editorNode = (
       <SelectCellEditor
         key={sessionId}
+        ariaLabel={editLabel}
         popoverSlot={slots?.popover}
         enterMove={enterMove}
         options={options}
@@ -266,6 +275,7 @@ export function CellEditorLayer<T>({
     editorNode = (
       <TextCellEditor
         key={sessionId}
+        ariaLabel={editLabel}
         enterMove={enterMove}
         initialValue={initialValue}
         onCommit={onCommit}
@@ -289,7 +299,7 @@ export function CellEditorLayer<T>({
       style={{ ...slots?.cellEditor?.style, ...wrapperStyle }}
       // 追加(audit V-05): エディタは行の外に重ねて描画するため、どの列を編集しているかを名前で伝えます。
       {...(editorSession
-        ? { role: 'group', 'aria-label': formatLocaleText(texts.editCell, { column: editorSession.column.title || editorSession.column.key }) }
+        ? { role: 'group', 'aria-label': editLabel }
         : {})}
       // 追加(見直し): 編集中のセルが aria-owns でこの枠を子に持ちます(開いているペインの枠だけ)。
       id={isOpen && editorSession ? domId : undefined}

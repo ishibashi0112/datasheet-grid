@@ -138,6 +138,28 @@ describe('blurForPopover / restoreGridFocus', () => {
     expect(document.activeElement).toBe(root);
     vi.unstubAllGlobals();
   });
+
+  // 追加(1.0.1 / AP-10): メニューの onSelect で編集を始めたときは、開いたエディタからフォーカスを奪わない。
+  it('閉じた後の rAF の時点でセルのエディタにフォーカスがあれば奪わない', () => {
+    const root = document.createElement('div');
+    root.tabIndex = 0;
+    const editor = document.createElement('div');
+    editor.className = 'ssg-cell-editor';
+    const input = document.createElement('input');
+    editor.appendChild(input);
+    root.appendChild(editor);
+    document.body.append(root);
+    const callbacks: FrameRequestCallback[] = [];
+    vi.stubGlobal('requestAnimationFrame', (cb: FrameRequestCallback) => {
+      callbacks.push(cb);
+      return callbacks.length;
+    });
+    restoreGridFocus({ current: root });
+    input.focus();
+    for (const cb of callbacks) cb(0);
+    expect(document.activeElement).toBe(input);
+    vi.unstubAllGlobals();
+  });
 });
 
 describe('isInsideGridRoot(監査 C-3)', () => {

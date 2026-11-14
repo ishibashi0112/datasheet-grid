@@ -1,0 +1,40 @@
+const { open, shot } = require('./lib.cjs')
+const st = (page) => page.evaluate(() => {
+  const sc = [...document.querySelectorAll('.ssg-scroll-container')].find((e) => e.getAttribute('aria-label') === '売上明細')
+  const root = sc.closest('.ssg-root')
+  const rows = [...root.querySelectorAll('[role=row][aria-rowindex]')].map((r) => +r.getAttribute('aria-rowindex')).filter((n) => n > 1)
+  const scR = sc.getBoundingClientRect()
+  // 見えている行(本体の中央付近)
+  const vis = [...root.querySelectorAll('[role=row][aria-rowindex]')].filter((r) => { const b = r.getBoundingClientRect(); return b.bottom > scR.top + 45 && b.top < scR.bottom - 40 && b.height > 0 }).map((r) => +r.getAttribute('aria-rowindex'))
+  const prod = [...root.querySelectorAll('[role=columnheader]')].find((h) => h.textContent.includes('商品'))
+  return { top: sc.scrollTop, left: sc.scrollLeft, minRow: Math.min(...rows), maxRow: Math.max(...rows), visMin: Math.min(...vis), visMax: Math.max(...vis), prodW: prod && Math.round(prod.getBoundingClientRect().width), active: root.querySelector('[class*=active-cell]')?.getBoundingClientRect().top }
+})
+;(async () => {
+  const mode = process.argv[2] || 'force'
+  const { browser, page, logs } = await open(mode === 'unmount' ? '?tabs=unmount' : '')
+  // 売上を 2000 行目へ
+  const sc = await page.locator('[aria-label="売上明細"].ssg-scroll-container').boundingBox()
+  await page.mouse.click(sc.x + 400, sc.y + 100)
+  await page.evaluate(() => { const sc = [...document.querySelectorAll('.ssg-scroll-container')].find((e) => e.getAttribute('aria-label') === '売上明細'); sc.scrollTop = 72000; sc.scrollLeft = 120 })
+  await page.waitForTimeout(400)
+  console.log('before', JSON.stringify(await st(page)))
+  await page.click('[data-testid=tab-stock]')
+  await page.waitForTimeout(300)
+  // 隠れている間にウィンドウの幅を変える
+  await page.setViewportSize({ width: 1100, height: 900 })
+  await page.waitForTimeout(400)
+  await page.click('[data-testid=tab-sales]')
+  await page.waitForTimeout(30)
+  console.log('back+30ms', JSON.stringify(await st(page)))
+  await shot(page, `tabs2-${mode}-back-30ms`, { clip: { x: 0, y: 180, width: 1100, height: 500 } })
+  await page.waitForTimeout(400)
+  console.log('back+430ms', JSON.stringify(await st(page)))
+  await shot(page, `tabs2-${mode}-back`, { clip: { x: 0, y: 180, width: 1100, height: 500 } })
+  // キー操作で下へ
+  await page.keyboard.press('ArrowDown')
+  await page.waitForTimeout(200)
+  console.log('after ArrowDown', JSON.stringify(await st(page)))
+  const l = logs.filter((x) => !x.includes('React DevTools'))
+  if (l.length) console.log('logs:', l.join('\n'))
+  await browser.close()
+})()

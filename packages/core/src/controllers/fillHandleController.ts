@@ -51,6 +51,7 @@ import {
   resolveAutoScrollAxisDirection,
   resolveScrollContentBox,
 } from '../logic/autoScrollGeometry';
+import { resolveElementScale } from '../logic/elementScale';
 import {
   createPopoverWindowBindings,
   isInsideGridRoot,
@@ -347,6 +348,7 @@ export const createFillHandleController = <T,>(): FillHandleController<T> => {
       clientTop: scrollElement.clientTop,
       clientWidth: scrollElement.clientWidth,
       clientHeight: scrollElement.clientHeight,
+      scale: resolveElementScale(scrollElement, rect),
     });
     const nextScrollTop = computeNextScrollPosition(
       scrollElement.scrollTop,

@@ -147,6 +147,28 @@ describe('createGridApi', () => {
     expect(args.commitRowSelection).toHaveBeenCalledWith({ mode: 'include', keys: new Set([2]) });
   });
 
+  // 追加(1.0.1 の確かめ直し G): ブラウザが範囲へ収めて位置が変わらなかったら(scroll イベントが来ない)印を戻す。
+  it('位置が変わらなかった API のスクロールは、markApiScroll の印を戻す', () => {
+    const api = createGridApi<Row>(withExport);
+    const restore = vi.fn();
+    const { args } = makeArgs({ markApiScroll: vi.fn(() => restore) });
+    const el = args.scrollContainerRef.current!;
+    // ブラウザの上限が計算より 1px 下(見える高さの小数)で、今そこにいる。
+    el.scrollTop = 901;
+    el.scrollTo = (() => {}) as typeof el.scrollTo;
+    api.update(args);
+    api.handle.scrollToBottom();
+    expect(args.markApiScroll).toHaveBeenCalledTimes(1);
+    expect(restore).toHaveBeenCalledTimes(1);
+    // 動いたときは戻さない。
+    el.scrollTo = ((options: ScrollToOptions) => {
+      el.scrollTop = options.top ?? el.scrollTop;
+    }) as typeof el.scrollTo;
+    api.handle.scrollToTop();
+    expect(args.markApiScroll).toHaveBeenCalledTimes(2);
+    expect(restore).toHaveBeenCalledTimes(1);
+  });
+
   // 追加(audit B-05): 範囲外 index はビュー座標内へクランプする(API_REFERENCE の記述どおり)。
   // 追加(監査 M-05): 行高実測モードでは scrollToBottom() 直後の計測で総高が伸びたら末尾へ合わせ直す。
   it('scrollToBottom: 行高実測モードでは総高が伸びたら末尾へ再補正し、上スクロール後や固定行高ではしない', () => {

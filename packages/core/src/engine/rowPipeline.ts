@@ -22,6 +22,7 @@ import { createSourceOrder, type RowOrder } from '../logic/filtering';
 import {
   decorateSortKeys,
   diffSortKeys,
+  isOrderPrefix,
   repositionSortedPositions,
   sortPositionsByKeys,
   undecorateSortedPositions,
@@ -189,7 +190,10 @@ export const createRowPipelineResolver = <T,>(features: RowPipelineFeatures) => 
     }
     let positions: number[] | null = null;
     let result: RowOrder | null = null;
-    if (cached !== null && cached.input === input) {
+    // 変更(1.0.1 / 2026-11-09 実アプリの総点検 AP-25): 行を末尾に足しただけ(前回の order が今回の先頭と同じ)のときも差分の
+    //   経路に乗せます(足した行を差し込む)。これまでは order が変わると全件ソートで、「新しい順」のログに毎秒 50 行を
+    //   足す 100 万行の表では 1 回 0.6〜0.9 秒かかっていた。
+    if (cached !== null && isOrderPrefix(cached.input, input)) {
       const changed = diffSortKeys(cached.keys, keys, SORT_REPOSITION_LIMIT);
       if (changed !== null && changed.length === 0) {
         positions = cached.positions;

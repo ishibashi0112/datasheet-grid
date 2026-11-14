@@ -127,4 +127,122 @@ describe('createGlobalFilteredOrderRunner', () => {
     expect(runner.getSnapshot().ready).toBe(ready);
     expect(pendingYields).toHaveLength(0);
   });
+
+  // 追加(1.0.1 / 実アプリの総点検 AP-19): rows がよく変わる表。末尾に足しただけなら前の結果を「済み」のまま出し、
+  //   やり直しでは前からある行を判定し直さない(行ごとの控え)。
+  it('末尾に行を足したやり直しは、前の結果を済みのまま出し、足した行だけを判定する(AP-19)', async () => {
+    let reads = 0;
+    const countingColumns: GridColumn<Row>[] = [{ key: 't', width: 100, getValue: (row) => ((reads += 1), row.t) }];
+    const runner = createGlobalFilteredOrderRunner<Row>();
+    const key = { rows, baseOrder, columns: countingColumns, needle: 'aa' };
+    runner.update({ ...key, needsAsync: true });
+    for (let i = 0; i < 8; i += 1) {
+      await flushYields();
+    }
+    expect(Array.from(runner.getSnapshot().ready?.order ?? [])).toEqual([0, 2]);
+    expect(reads).toBe(rows.length);
+
+    const appended = [...rows, { t: 'xaa' }, { t: 'q' }];
+    const appendedKey = { ...key, rows: appended, baseOrder: createSourceOrder(appended.length) };
+    // 新しい結果が出た時点で読んだ行の数(足した 2 行だけ)。
+    let readsWhenReady: number | null = null;
+    const unsubscribe = runner.subscribe(() => {
+      const ready = runner.getSnapshot().ready;
+      if (readsWhenReady === null && ready?.rows === appended) readsWhenReady = reads;
+    });
+    runner.update({ ...appendedKey, needsAsync: true });
+    // やり直しの間も前の結果を「済み」で出す(全行に戻さない)。
+    expect(selectGlobalFilteredOrderResult(null, runner.getSnapshot(), appendedKey)).toMatchObject({
+      status: 'ready',
+      order: runner.getSnapshot().ready?.order,
+    });
+    for (let i = 0; i < 12; i += 1) {
+      await flushYields();
+    }
+    unsubscribe();
+    expect(Array.from(runner.getSnapshot().ready?.order ?? [])).toEqual([0, 2, 5]);
+    expect(readsWhenReady).toBe(rows.length + 2);
+    // そのあと控えを使わずに全行を 1 回確かめる(RB-3)。
+    expect(reads).toBe(rows.length + 2 + appended.length);
+  });
+
+  // 1.0.1 の確かめ直し G: 控えを rows の位置ごとの結果にした。途中で止めた走りの結果も次の走りで使う(rows がよく変わる表で
+  //   毎回止められても、いつかは走り切る)。
+  it('途中で止めた走りの結果も次の走りで使い、先頭に行を足したときは調べ直す', async () => {
+    let reads = 0;
+    const countingColumns: GridColumn<Row>[] = [{ key: 't', width: 100, getValue: (row) => ((reads += 1), row.t) }];
+    const runner = createGlobalFilteredOrderRunner<Row>();
+    runner.update({ rows, baseOrder, columns: countingColumns, needle: 'aa', needsAsync: true });
+    // 最初の区切りまで(2 行)読んだところで行が変わる。
+    expect(reads).toBe(2);
+    const appended = [...rows, { t: 'xaa' }];
+    let readsWhenReady: number | null = null;
+    const unsubscribe = runner.subscribe(() => {
+      const ready = runner.getSnapshot().ready;
+      if (readsWhenReady === null && ready?.rows === appended) readsWhenReady = reads;
+    });
+    runner.update({ rows: appended, baseOrder: createSourceOrder(appended.length), columns: countingColumns, needle: 'aa', needsAsync: true });
+    for (let i = 0; i < 12; i += 1) {
+      await flushYields();
+    }
+    unsubscribe();
+    expect(Array.from(runner.getSnapshot().ready?.order ?? [])).toEqual([0, 2, 5]);
+    // 止めた走りで読んだ 2 行は読み直さない。
+    expect(readsWhenReady).toBe(appended.length);
+    // 先頭に足すと位置がずれるので、全行を調べ直す(結果は正しい)。
+    const prepended = [{ t: 'aaz' }, ...appended];
+    const before = reads;
+    runner.update({ rows: prepended, baseOrder: createSourceOrder(prepended.length), columns: countingColumns, needle: 'aa', needsAsync: true });
+    for (let i = 0; i < 12; i += 1) {
+      await flushYields();
+    }
+    expect(Array.from(runner.getSnapshot().ready?.order ?? [])).toEqual([0, 1, 3, 6]);
+    expect(reads - before).toBeGreaterThanOrEqual(prepended.length);
+  });
+
+  // 1.0.1 のレビュー RB-3: 行のオブジェクトをその場で書き換えて新しい配列を渡すと、控えが古く、結果が古いままだった。
+  it('行をその場で書き換えて新しい配列を渡しても、確かめの走査で正しい結果になる(RB-3)', async () => {
+    const own: Row[] = rows.map((row) => ({ ...row }));
+    const runner = createGlobalFilteredOrderRunner<Row>();
+    const key = { rows: own, baseOrder, columns, needle: 'aa' };
+    runner.update({ ...key, needsAsync: true });
+    for (let i = 0; i < 12; i += 1) {
+      await flushYields();
+    }
+    expect(Array.from(runner.getSnapshot().ready?.order ?? [])).toEqual([0, 2]);
+    own[0].t = 'zzz';
+    own[1].t = 'xaax';
+    const nextRows = [...own];
+    runner.update({ ...key, rows: nextRows, needsAsync: true });
+    for (let i = 0; i < 12; i += 1) {
+      await flushYields();
+    }
+    expect(Array.from(runner.getSnapshot().ready?.order ?? [])).toEqual([1, 2]);
+    expect(runner.getSnapshot().ready?.rows).toBe(nextRows);
+    // 確かめた走査の控えを次に使う(同じ行のまま配列だけ変えても結果は正しい)。
+    runner.update({ ...key, rows: [...own], needsAsync: true });
+    for (let i = 0; i < 12; i += 1) {
+      await flushYields();
+    }
+    expect(Array.from(runner.getSnapshot().ready?.order ?? [])).toEqual([1, 2]);
+  });
+
+  // 追加(1.0.1 / 実アプリの総点検 AP-20): 「A → 消す → B」で、B の計算中に消した A の結果を出さない。
+  it('同期の経路(検索語を消した)を通ったら、前の完了結果を忘れる(AP-20)', async () => {
+    const runner = createGlobalFilteredOrderRunner<Row>();
+    const key = { rows, baseOrder, columns, needle: 'aa' };
+    runner.update({ ...key, needsAsync: true });
+    for (let i = 0; i < 8; i += 1) {
+      await flushYields();
+    }
+    expect(runner.getSnapshot().ready).not.toBeNull();
+    runner.update({ ...key, needle: '', needsAsync: false });
+    expect(runner.getSnapshot().ready).toBeNull();
+    const nextKey = { ...key, needle: 'zz' };
+    runner.update({ ...nextKey, needsAsync: true });
+    expect(selectGlobalFilteredOrderResult(null, runner.getSnapshot(), nextKey)).toMatchObject({
+      status: 'filtering',
+      order: baseOrder,
+    });
+  });
 });

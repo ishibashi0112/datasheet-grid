@@ -148,4 +148,88 @@ describe('createAutoSizeOnDataTrigger', () => {
     trigger.update(args);
     expect(runAutosize).toHaveBeenCalledTimes(2);
   });
+
+  // 追加(1.0.1 / 実アプリの総点検 AP-22): display: none の中では測らずに待ち、描かれた後の update で測る。
+  it("描かれていない(display: none の中)間は測らずに待ち、描かれた後の update で測る(AP-22)", () => {
+    const runAutosize = vi.fn(async () => {});
+    const trigger = createAutoSizeOnDataTrigger<Row>();
+    const box = document.createElement('div');
+    const root = document.createElement('div');
+    box.appendChild(root);
+    document.body.appendChild(box);
+    box.style.display = 'none';
+    const rows1 = [{ id: 1 }];
+    const base = { mode: 'onMount' as const, isServerSide: false, rows: rows1, visibleColumns: columns, runAutosize, gridRootRef: { current: root } };
+    trigger.update(base);
+    expect(runAutosize).not.toHaveBeenCalled();
+    trigger.update({ ...base });
+    expect(runAutosize).not.toHaveBeenCalled();
+    box.style.display = '';
+    trigger.update({ ...base });
+    expect(runAutosize).toHaveBeenCalledTimes(1);
+    // 'onMount' は一度きり。
+    trigger.update({ ...base });
+    trigger.update({ ...base, rows: [{ id: 2 }] });
+    expect(runAutosize).toHaveBeenCalledTimes(1);
+    box.remove();
+  });
+
+  // 1.0.1 のレビュー RB-6: (a) 隠れている間に rows が変わり、同じ大きさで出し直すと描き直されず測らなかった。
+  //   (b) 'onMount' で待っている間に rows が一度 [] を経ると、二度と測らなかった。
+  it('待っている間はルートの大きさを見張り、描かれたら次のフレームで測る(RB-6)', () => {
+    const observers: Array<{ callback: () => void; disconnected: boolean }> = [];
+    vi.stubGlobal(
+      'ResizeObserver',
+      class {
+        entry: { callback: () => void; disconnected: boolean };
+        constructor(callback: () => void) {
+          this.entry = { callback, disconnected: false };
+          observers.push(this.entry);
+        }
+        observe() {}
+        disconnect() {
+          this.entry.disconnected = true;
+        }
+      },
+    );
+    const frames: Array<() => void> = [];
+    vi.stubGlobal('requestAnimationFrame', (callback: () => void) => frames.push(callback));
+    vi.stubGlobal('cancelAnimationFrame', () => {});
+    try {
+      const runAutosize = vi.fn(async () => {});
+      const trigger = createAutoSizeOnDataTrigger<Row>();
+      const box = document.createElement('div');
+      const root = document.createElement('div');
+      box.appendChild(root);
+      document.body.appendChild(box);
+      box.style.display = 'none';
+      const base = { mode: 'onDataChange' as const, isServerSide: false, rows: [{ id: 1 }], visibleColumns: columns, runAutosize, gridRootRef: { current: root } };
+      trigger.update(base);
+      expect(runAutosize).not.toHaveBeenCalled();
+      expect(observers).toHaveLength(1);
+      // 隠れたままの通知では測らない。
+      observers[0]?.callback();
+      expect(frames).toHaveLength(0);
+      // 描かれた(描き直しの update は来ない)→ 次のフレームで測り、見張りをやめる。
+      box.style.display = '';
+      observers[0]?.callback();
+      frames.splice(0).forEach((frame) => frame());
+      expect(runAutosize).toHaveBeenCalledTimes(1);
+      expect(observers[0]?.disconnected).toBe(true);
+
+      // (b) 'onMount' の 1 回目を待っている間に rows が [] を経ても、次に行が載ったら測る。
+      const mount = createAutoSizeOnDataTrigger<Row>();
+      box.style.display = 'none';
+      const mountBase = { ...base, mode: 'onMount' as const };
+      mount.update(mountBase);
+      mount.update({ ...mountBase, rows: [] });
+      expect(observers[1]?.disconnected).toBe(true);
+      box.style.display = '';
+      mount.update({ ...mountBase, rows: [{ id: 2 }] });
+      expect(runAutosize).toHaveBeenCalledTimes(2);
+      box.remove();
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
 });

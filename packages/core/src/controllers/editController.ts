@@ -103,6 +103,25 @@ const shouldRestoreFocusAfterEdit = (root: HTMLElement): boolean => {
   );
 };
 
+// 追加(1.0.1 / 2026-11-09 実アプリの総点検 AP-05): エディタの中でキー(Enter / Tab / Escape)を押して確定・取消したかです
+//   (フォーカスがグリッドのルートの中のエディタ = .ssg-cell-editor にある)。このときは、エディタが外れる前にフォーカスを
+//   ルートへ移し、移動も次のフレームを待たずに行います。次のフレームまでフォーカスが body に落ちていたため、速い入力
+//   (バーコードリーダー・自動入力)の確定直後のキーが捨てられ、値の頭が欠けたり、別の行へずれたりしていた。
+const isFocusInsideEditor = (root: HTMLElement | null): root is HTMLElement => {
+  if (root === null) {
+    return false;
+  }
+  const active = root.ownerDocument.activeElement;
+  return (
+    active !== null &&
+    active !== root &&
+    root.contains(active) &&
+    typeof active.closest === 'function' &&
+    active.closest('.ssg-cell-editor') !== null &&
+    !isFocusInsideDetailCard()
+  );
+};
+
 export const createEditController = <T extends object>(): EditController<T> => {
   let args: EditControllerArgs<T> | null = null;
   let identity: EditIdentity | null = null;
@@ -209,17 +228,30 @@ export const createEditController = <T extends object>(): EditController<T> => {
   //   アクティブセル / 選択が変わっていれば、編集していたセルへ戻しません。グリッド内の別のセルや行・列ヘッダーを
   //   押したことで blur 確定した場合、押した操作(アクティブセル / ドラッグ選択の開始)を上書きしていたため。
   //   方向付きの移動(Enter / Tab / commit(value, direction))は従来どおり常に行います。
+  //   変更(1.0.1 / AP-05): immediate(エディタの中のキーで確定・取消した)ときは、呼び出し側が stopEdit の前にフォーカスを
+  //   ルートへ移し、後処理は stopEdit を反映した描画の直後(マイクロタスク)に行います。描画がまだなら(React の外から
+  //   確定したなど)従来どおり次のフレーム。後処理は一度だけです。
   const scheduleAfterEdit = (
     nextCell: CellCoord | null,
     stayedFrom: SelectionSnapshot | null = null,
     // 追加(1.0 前の最終チェック FC-18): 確定した行(縦の移動でラベル行を読み飛ばす向きを決める)。
     fromRow?: number,
+    immediate = false,
   ) => {
     const current = args;
     if (current === null) {
       return;
     }
-    requestAnimationFrame(() => {
+    let done = false;
+    const run = (final: boolean) => {
+      if (done) {
+        return;
+      }
+      // マイクロタスクの時点で編集の終了がまだ描かれていなければ(エディタが残っている)、次のフレームに任せます。
+      if (!final && (args === null || args.uiState.editingCell !== null)) {
+        return;
+      }
+      done = true;
       const root = current.gridRootRef.current;
       if (root !== null && shouldRestoreFocusAfterEdit(root)) {
         root.focus();
@@ -251,7 +283,22 @@ export const createEditController = <T extends object>(): EditController<T> => {
         });
       }
       current.editorActionGuardRef.current = false;
-    });
+    };
+    if (immediate) {
+      queueMicrotask(() => run(false));
+    }
+    requestAnimationFrame(() => run(true));
+  };
+
+  // 追加(AP-05): エディタの中のキーで確定・取消したときは、エディタが外れる前にフォーカスをルートへ移します(ガードを
+  //   立てた後に呼ぶ = 移したことによるエディタの blur の確定は空振りになる)。移したら true。
+  const moveFocusToRootFromEditor = (): boolean => {
+    const root = args?.gridRootRef.current ?? null;
+    if (!isFocusInsideEditor(root)) {
+      return false;
+    }
+    root.focus({ preventScroll: true });
+    return true;
   };
 
   const commitEdit = (
@@ -337,13 +384,16 @@ export const createEditController = <T extends object>(): EditController<T> => {
     }
 
     // 旧実装と同じ順序: ガード → rAF 予約 → stopEdit。
+    // 変更(AP-05): エディタの中のキーで確定したときは、予約の前にフォーカスをルートへ移します。
     editorActionGuardRef.current = true;
+    const immediate = moveFocusToRootFromEditor();
     scheduleAfterEdit(
       intendedCell,
       direction === undefined
         ? { activeCell: uiState.activeCell, selection: uiState.selection }
         : null,
       editingCell.row,
+      immediate,
     );
     dispatch(gridActions.stopEdit());
     return { status: 'committed' };
@@ -355,8 +405,9 @@ export const createEditController = <T extends object>(): EditController<T> => {
     }
     // 旧実装と同じ順序: ガード → stopEdit → rAF 予約。
     args.editorActionGuardRef.current = true;
+    const immediate = moveFocusToRootFromEditor();
     args.dispatch(gridActions.stopEdit());
-    scheduleAfterEdit(null);
+    scheduleAfterEdit(null, null, undefined, immediate);
   };
 
   return { update, activateSingleCell, startEditWithValue, commitEdit, cancelEdit };

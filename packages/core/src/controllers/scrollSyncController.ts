@@ -4,8 +4,8 @@
 //     リスナーと ResizeObserver(viewport サイズ変化で窓・倍率・flex 配分を再計算)を付けます。dispose で外します。
 //   - onScroll 通知は rAF で間引き、フレーム内の最後の位置を 1 回で通知します。同一フレームに user / api が混在
 //     したら 'user' を優先(実ユーザー操作の通知を落とすと同期先が追従しなくなるため)。
-//   - markApiScroll: 命令的 API 由来のスクロールで「これから発火する scroll イベント」の残数を増やします。
-//     イベント処理時に 1 消費して source:'api' を割り当てます(位置が変わらない scrollTo は scroll イベントを
+//   - markApiScroll: 命令的 API 由来のスクロールで「これから発火する scroll イベント」に印を付けます。
+//     次の scroll イベントで印を消して source:'api' を割り当てます(位置が変わらない scrollTo は scroll イベントを
 //     発火しないため、実際に位置が変わるときだけ呼ぶこと = engine/gridApi が担保)。
 import type { GridScrollEventParams } from '../model/gridTypes.unbound';
 import type { GridViewStatePatch } from '../model/gridStore';
@@ -24,7 +24,8 @@ export type ScrollSyncArgs = {
 
 export type ScrollSyncController = {
   update: (args: ScrollSyncArgs) => void;
-  markApiScroll: () => void;
+  // 印を付け、付ける前の状態へ戻す関数を返します(位置が変わらず scroll イベントが来なかったとき用)。
+  markApiScroll: () => () => void;
   dispose: () => void;
 };
 
@@ -37,7 +38,10 @@ export const SCROLLING_IDLE_MS = 120;
 export const createScrollSyncController = (): ScrollSyncController => {
   let args: ScrollSyncArgs | null = null;
   let detach: (() => void) | null = null;
-  let apiScrollPending = 0;
+  // 変更(1.0.1 の確かめ直し G): 数ではなく印にします。同じフレームの中で 2 回動かしても(縮めたスクロールで見ている行を
+  //   保つ直しの後に、利用側が scrollToBottom() を呼ぶなど)scroll イベントは 1 回しか来ないため、数えると 1 つ残り、
+  //   その後のホイールが 'api' で届いていた(100 万行のログで「末尾を追う」をホイールで止められなかった)。
+  let apiScrollPending = false;
   let pendingNotify: GridScrollEventParams | null = null;
   let notifyFrameId: number | null = null;
   let scrollingIdleTimer: ReturnType<typeof setTimeout> | null = null;
@@ -76,10 +80,8 @@ export const createScrollSyncController = (): ScrollSyncController => {
         el.classList.remove(SCROLLING_CLASS_NAME);
       }, SCROLLING_IDLE_MS);
       // source の判定はイベント単位(rAF 単位だと api 消費がずれるため)。
-      const source: GridScrollEventParams['source'] = apiScrollPending > 0 ? 'api' : 'user';
-      if (source === 'api') {
-        apiScrollPending -= 1;
-      }
+      const source: GridScrollEventParams['source'] = apiScrollPending ? 'api' : 'user';
+      apiScrollPending = false;
       const pending = pendingNotify;
       pendingNotify = {
         top: el.scrollTop,
@@ -160,7 +162,11 @@ export const createScrollSyncController = (): ScrollSyncController => {
       }
     },
     markApiScroll: () => {
-      apiScrollPending += 1;
+      const previous = apiScrollPending;
+      apiScrollPending = true;
+      return () => {
+        apiScrollPending = previous;
+      };
     },
     dispose: () => {
       detach?.();

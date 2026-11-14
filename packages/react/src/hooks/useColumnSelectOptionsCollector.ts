@@ -23,28 +23,35 @@ type UseColumnSelectOptionsCollectorArgs<T> = {
   column: GridColumn<T> | null;
   rowCount: number;
   getRawValueAt: RawValueAccessor;
+  // 追加(1.0.1 / AP-18): 数の列(解決済みの種別が numberSet)の候補を数の順に並べる。
+  numeric?: boolean;
 };
 
 export const useColumnSelectOptionsCollector = <T,>({
   column,
   rowCount,
   getRawValueAt,
+  numeric = false,
 }: UseColumnSelectOptionsCollectorArgs<T>): ColumnSelectOptionsResult => {
   const syncResult = useMemo(
-    () => resolveSyncSelectOptions(column, rowCount, getRawValueAt),
-    [column, rowCount, getRawValueAt],
+    () => resolveSyncSelectOptions(column, rowCount, getRawValueAt, numeric),
+    [column, rowCount, getRawValueAt, numeric],
   );
+  // 追加(1.0.1 / AP-19): どの列の候補か(同じ列のまま行だけが変わったら、前の候補を出したまま集め直す)。
+  const sourceKey = column === null ? undefined : String(column.key);
   const collector = useController(createSelectOptionsCollector, {
     needsAsync: syncResult === null,
     rowCount,
     getRawValueAt,
+    numeric,
+    sourceKey,
   });
   const snapshot = useSyncExternalStore(
     collector.subscribe,
     collector.getSnapshot,
     collector.getSnapshot,
   );
-  return syncResult ?? selectCollectorResult(snapshot, rowCount, getRawValueAt);
+  return syncResult ?? selectCollectorResult(snapshot, rowCount, getRawValueAt, sourceKey);
 };
 
 export default useColumnSelectOptionsCollector;

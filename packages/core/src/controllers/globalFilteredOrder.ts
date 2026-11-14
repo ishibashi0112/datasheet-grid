@@ -72,7 +72,35 @@ const sameKey = <T,>(a: GlobalFilterKey<T>, b: GlobalFilterKey<T>): boolean =>
   a.columns === b.columns &&
   a.needle === b.needle;
 
+// 前の rows の行が今の rows の同じ位置にあるらしいか(末尾に足した / その場で書き換えた。先頭と末尾の行で見る)。
+const isSameRowsPrefix = <T,>(ready: ReadyState<T>, key: GlobalFilterKey<T>): boolean => {
+  const length = ready.rowsLength;
+  if (length === 0 || length > key.rows.length) {
+    return false;
+  }
+  return ready.rows[0] === key.rows[0] && ready.rows[length - 1] === key.rows[length - 1];
+};
+
+const isSameOrder = (a: RowOrder, b: RowOrder): boolean => {
+  if (a === b) {
+    return true;
+  }
+  if (a.length !== b.length) {
+    return false;
+  }
+  for (let index = 0; index < a.length; index += 1) {
+    if (a[index] !== b[index]) {
+      return false;
+    }
+  }
+  return true;
+};
+
 // 結果の合成(旧 hook の render 末尾と同じ規則)。
+// 変更(1.0.1 / 2026-11-09 実アプリの総点検 AP-19): 検索語と列が同じで行だけが変わった(rows がよく変わる表)ときは、
+//   直前の完了結果をそのまま「済み」として出します(末尾に足した / その場で書き換えただけなら元の行の位置は変わらない。
+//   先頭と末尾の行が同じ位置に無いときはこれまでどおり)。これまでは行数が変わると全行(baseOrder)の「適用中」になり、毎秒行を足す 100 万行の表では
+//   絞り込まれた表がいつまでも出なかった。やり直しは行ごとの結果の控え(下の runner)で短く済みます。
 export const selectGlobalFilteredOrderResult = <T,>(
   syncResult: GlobalFilteredOrderResult | null,
   snapshot: GlobalFilteredOrderSnapshot<T>,
@@ -83,6 +111,9 @@ export const selectGlobalFilteredOrderResult = <T,>(
   }
   const { ready, progress } = snapshot;
   if (ready !== null && sameKey(ready, key)) {
+    return { order: ready.order, status: 'ready', progress: 1 };
+  }
+  if (ready !== null && ready.needle === key.needle && ready.columns === key.columns && isSameRowsPrefix(ready, key)) {
     return { order: ready.order, status: 'ready', progress: 1 };
   }
   const fallbackOrder =
@@ -103,8 +134,19 @@ export const createGlobalFilteredOrderRunner = <T,>(): GlobalFilteredOrderRunner
   const store = createValueStore<GlobalFilteredOrderSnapshot<T>>({ ready: null, progress: null });
   let current: GlobalFilteredOrderArgs<T> | null = null;
   let cancelCurrent: (() => void) | null = null;
+  // 追加(1.0.1 / AP-19): 行ごとの判定の控えです(検索語と列が同じ間だけ)。rows が差し替わっても、同じ位置に同じ行
+  //   (オブジェクト)があれば判定し直さないので、行を足しただけのやり直しは足した行の判定だけで済みます。
+  //   変更(1.0.1 の確かめ直し G): 控えを WeakMap から「rows の位置ごとの結果」(Uint8Array。0 = まだ、1 = 外れ、2 = 当たり)に
+  //   しました。WeakMap へ 100 万行を書くと、初めての絞り込みが 1.0.0 より 3〜5 割遅くなっていたため。走りの途中で
+  //   止められても(rows がよく変わる表)、そこまでの結果を次の走りで使えるように、走り始めに控えを差し替えます。
+  type MatchMemo = { rows: readonly unknown[]; results: Uint8Array };
+  let matchCache: { columns: GridColumn<T>[]; needle: string; memo: MatchMemo } | null = null;
 
-  const start = (args: GlobalFilteredOrderArgs<T>) => {
+  // 変更(1.0.1 のレビュー RB-3): 控えから返した行があった走査(fresh でない)の後は、控えを使わずに 1 回走査し直して確かめます
+  //   (fresh)。行のオブジェクトをその場で書き換えて新しい配列を渡す使い方では、同じオブジェクトの控えが古く、検索語を
+  //   変えるまで古い結果のままだった。控えの結果はすぐ「済み」で出し、確かめた結果が違えば差し替えます(確かめの走査は進捗を
+  //   出しません)。確かめた走査の控えを次の控えにします。
+  const start = (args: GlobalFilteredOrderArgs<T>, fresh = false) => {
     const key: GlobalFilterKey<T> = {
       rows: args.rows,
       baseOrder: args.baseOrder,
@@ -113,6 +155,20 @@ export const createGlobalFilteredOrderRunner = <T,>(): GlobalFilteredOrderRunner
     };
     const length = key.baseOrder.length;
     const buffer = new Int32Array(length);
+    const previous =
+      !fresh && matchCache !== null && matchCache.columns === key.columns && matchCache.needle === key.needle
+        ? matchCache.memo
+        : null;
+    const previousRows = previous?.rows;
+    const previousResults = previous?.results;
+    // 控えの結果の数まで(同じ配列をその場で伸ばした場合も、控えの無い位置は調べ直す)。
+    const previousLength = previousResults?.length ?? 0;
+    const memo: MatchMemo = { rows: key.rows, results: new Uint8Array(key.rows.length) };
+    const results = memo.results;
+    if (!fresh) {
+      matchCache = { columns: key.columns, needle: key.needle, memo };
+    }
+    let cacheHits = 0;
     let count = 0;
     let cancelled = false;
     const cancel = () => {
@@ -123,7 +179,18 @@ export const createGlobalFilteredOrderRunner = <T,>(): GlobalFilteredOrderRunner
       length,
       (pos) => {
         const sourceIndex = key.baseOrder[pos];
-        if (rowMatchesGlobalText(key.rows[sourceIndex], key.columns, key.needle)) {
+        const row = key.rows[sourceIndex];
+        let result = 0;
+        if (sourceIndex < previousLength && previousRows![sourceIndex] === row) {
+          result = previousResults![sourceIndex];
+        }
+        if (result === 0) {
+          result = rowMatchesGlobalText(row, key.columns, key.needle) ? 2 : 1;
+        } else {
+          cacheHits += 1;
+        }
+        results[sourceIndex] = result;
+        if (result === 2) {
           buffer[count] = sourceIndex;
           count += 1;
         }
@@ -131,6 +198,9 @@ export const createGlobalFilteredOrderRunner = <T,>(): GlobalFilteredOrderRunner
       {
         isCancelled: () => cancelled,
         onYield: (done, total) => {
+          if (fresh) {
+            return;
+          }
           store.setSnapshot({
             ...store.getSnapshot(),
             progress: { ...key, progress: done / total },
@@ -146,10 +216,20 @@ export const createGlobalFilteredOrderRunner = <T,>(): GlobalFilteredOrderRunner
         return;
       }
       const order = count === length ? key.baseOrder : buffer.slice(0, count);
-      store.setSnapshot({
-        ...store.getSnapshot(),
-        ready: { ...key, order, rowsLength: key.rows.length },
-      });
+      const ready = store.getSnapshot().ready;
+      if (fresh) {
+        matchCache = { columns: key.columns, needle: key.needle, memo };
+      }
+      // 確かめた結果が控えの結果と同じなら、参照を変えずに済ませます(描き直さない)。
+      if (!(fresh && ready !== null && sameKey(ready, key) && isSameOrder(ready.order, order))) {
+        store.setSnapshot({
+          ...store.getSnapshot(),
+          ready: { ...key, order, rowsLength: key.rows.length },
+        });
+      }
+      if (!fresh && cacheHits > 0 && current !== null && current.needsAsync && sameKey(current, key)) {
+        start(current, true);
+      }
     });
   };
 
@@ -166,6 +246,14 @@ export const createGlobalFilteredOrderRunner = <T,>(): GlobalFilteredOrderRunner
     cancelCurrent = null;
     if (args.needsAsync) {
       start(args);
+      return;
+    }
+    // 追加(1.0.1 / 2026-11-09 実アプリの総点検 AP-20): 同期の経路(検索語を消した / 閾値以下)の結果を出している間は、
+    //   前の完了結果を忘れます。「A → 消す → B」で B の計算中に、消した A の結果が出ていた(計算中は直前の結果を出すため)。
+    matchCache = null;
+    const snapshot = store.getSnapshot();
+    if (snapshot.ready !== null) {
+      store.setSnapshot({ ...snapshot, ready: null });
     }
   };
 

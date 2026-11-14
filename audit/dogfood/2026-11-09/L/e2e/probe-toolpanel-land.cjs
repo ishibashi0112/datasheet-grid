@@ -1,0 +1,23 @@
+const { launch, shot, iphone, cdpTap, cdpTouchDrag, BASE } = require('./lib.cjs')
+;(async () => {
+  const { browser, context, page, logs } = await launch({ ...iphone(), viewport: { width: 664, height: 390 }, locale: 'ja-JP' })
+  const cdp = await context.newCDPSession(page)
+  await page.goto(BASE); await page.waitForSelector('.ssg-body-row'); await page.waitForTimeout(800)
+  const c = (sel, text) => page.evaluate(({ sel, text }) => { const e = [...document.querySelectorAll(sel)].find((b) => !text || b.textContent.includes(text)); if (!e) return null; const r = e.getBoundingClientRect(); return { x: r.x + r.width / 2, y: r.y + r.height / 2, t: Math.round(r.top), b: Math.round(r.bottom) } }, { sel, text })
+  const chip = await c('.ssg-bar--top button', '絞り込み')
+  await cdpTap(page, cdp, chip.x, chip.y); await page.waitForTimeout(1200)
+  const tab = await c('.ssg-toolpanel [role=tab]', '列')
+  console.log('tab', tab)
+  await cdpTap(page, cdp, tab.x, tab.y); await page.waitForTimeout(600)
+  const list = await page.evaluate(() => { const l = document.querySelector('.ssg-chooser-list'); const r = l.getBoundingClientRect(); const s = getComputedStyle(l); return { t: Math.round(r.top), b: Math.round(r.bottom), ch: l.clientHeight, sh: l.scrollHeight, oy: s.overflowY, vh: innerHeight } })
+  console.log('list', list)
+  console.log('last item', await c('.ssg-chooser-toggle', '点検者'), 'reset', await c('.ssg-toolpanel button', '初期状態'))
+  console.log(await shot(page, '22c-toolpanel-land-cols'))
+  // リストの中を指でスクロール
+  const mid = { x: 470, y: Math.min(list.t + 60, 370) }
+  await cdpTouchDrag(page, cdp, mid, { x: mid.x, y: mid.y - 120 }, 10)
+  await page.waitForTimeout(500)
+  console.log('after drag scrollTop', await page.evaluate(() => document.querySelector('.ssg-chooser-list').scrollTop), 'doc scrollY', await page.evaluate(() => scrollY))
+  console.log(await shot(page, '22c-toolpanel-land-cols-scrolled'))
+  await browser.close()
+})()

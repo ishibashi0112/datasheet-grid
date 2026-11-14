@@ -5,14 +5,20 @@
 //   - handleGutterRowSelect: single = 単一選択 / multiple = トグル、shift = アンカーから範囲。SSRM 未ロード行は無視。
 //   - handleGutterRowSelectDrag: ガタードラッグ中の範囲更新(multiple)。single はポインタ下の行を単一選択。
 //   - handleToggleSelectAllRows: 全選択済みなら解除、そうでなければ全選択(総数は leaf 行数)。
+//     変更(1.0.1 / 実アプリの総点検 AP-03): clientSide のフィルターで行が隠れている間は、見えている行だけを選ぶ /
+//     外す(全選択 = exclude のモデルのままだと、フィルターを外したときに見えなかった行まで選ばれていた)。
 //   - update: controlled の記述子が変わったとき reducer へ同期します(差分時のみ。旧 useEffect と同じ deps)。
 //   shift / ドラッグ範囲のアンカー(view index)は揮発 UI 状態としてコントローラ内に持ちます。
 import type { GridRowKey, RowModel, RowSelectionModel, RowSelectionState } from '../model/gridTypes.unbound';
 import { gridActions, type GridUiAction } from '../model/gridActions';
+import type { RowOrder } from '../logic/filtering';
 import {
+  addRowRange,
   clearRowSelection,
+  countSelectedRowsInOrder,
   getSelectAllState,
   rowSelectionFromModel,
+  removeRowKeys,
   rowSelectionStateEquals,
   rowSelectionToModel,
   selectAllRows,
@@ -31,7 +37,16 @@ export type RowSelectionCommandsArgs<T> = {
   controlledRowSelectionModel: RowSelectionModel | undefined;
   // グループ行を除くデータ行数(全選択トグルの総数)。
   leafRowCount: number;
+  // 追加(1.0.1 / AP-03): clientSide のフィルターで隠れている行があるときの、フィルター後のデータ行(order は元 rows の
+  //   index)。null / 省略 = 隠れている行が無い(または serverSide)= 全選択は従来どおり exclude のモデル。
+  filteredDataRows?: FilteredDataRows<T> | null;
   dispatch: (action: GridUiAction) => void;
+};
+
+export type FilteredDataRows<T> = {
+  rows: readonly T[];
+  order: RowOrder;
+  rowKeyGetter: (row: T, index: number) => GridRowKey;
 };
 
 export type RowSelectionCommands<T> = {
@@ -117,7 +132,23 @@ export const createRowSelectionCommands = <T,>(): RowSelectionCommands<T> => {
   };
 
   const handleToggleSelectAllRows = () => {
-    const { rowSelectionState, leafRowCount } = requireArgs();
+    const { rowSelectionState, leafRowCount, filteredDataRows } = requireArgs();
+    if (filteredDataRows) {
+      const { rows, order, rowKeyGetter } = filteredDataRows;
+      const visibleKeys: GridRowKey[] = [];
+      for (let i = 0; i < order.length; i += 1) {
+        const sourceIndex = order[i];
+        visibleKeys.push(rowKeyGetter(rows[sourceIndex], sourceIndex));
+      }
+      const selectedCount = countSelectedRowsInOrder(rowSelectionState, rows, order, rowKeyGetter);
+      const allVisibleSelected = visibleKeys.length > 0 && selectedCount >= visibleKeys.length;
+      commitRowSelection(
+        allVisibleSelected
+          ? removeRowKeys(rowSelectionState, visibleKeys)
+          : addRowRange(rowSelectionState, visibleKeys),
+      );
+      return;
+    }
     const current = getSelectAllState(rowSelectionState, leafRowCount);
     commitRowSelection(current === 'all' ? clearRowSelection() : selectAllRows());
   };
