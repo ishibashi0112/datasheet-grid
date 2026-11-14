@@ -180,7 +180,12 @@ describe('initialState(DU-12)', () => {
       columns: [{ key: 'id', pinned: 'left' }, { key: 'name' }, { key: 'qty', pinned: 'left' }],
     };
     const restored = restoreColumnsFromState(threeColumns, saved);
-    expect(restored.map((column) => column.key)).toEqual(['id', 'qty', 'name']);
+    // 変更(1.0.2 / I-05): 保存の並びが列定義と同じなので、配列は並べ直さずに固定だけを当てる(表示は id, qty | name)。
+    expect(restored.map((column) => [column.key, column.pinned])).toEqual([
+      ['id', 'left'],
+      ['name', undefined],
+      ['qty', 'left'],
+    ]);
     render(
       <SpreadsheetGrid<Row> rows={rows} columns={restored} rowKeyGetter={(row) => row.id} height={300} initialState={saved} />,
     );

@@ -327,6 +327,7 @@ const GRID_ASK_LOCALE_TEXT_EN = {
   sortLocked: 'Sorting is locked',
   sortNoSuchColumn: 'Sort: there is no column {column}',
   sortBadDirection: 'Sort: {direction} can\'t be used for {column}',
+  sortUnreadable: 'Couldn\'t read the sort order',
   searchUnreadable: 'Couldn\'t read the search text',
   searchLocked: 'The search text is locked',
   searchTooLong: 'The search text can be up to {limit} characters',

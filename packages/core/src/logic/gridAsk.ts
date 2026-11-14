@@ -1015,6 +1015,9 @@ export const readGridAskAnswer = <T,>(
   const allowColumnVisibility = isAllowed(options.allowColumnVisibility, false);
   const refine = mode === 'refine';
   const dropped: string[] = [];
+  // 追加(1.0.2 / 2026-11-09 実アプリの総点検 I-06): 答えの中で使えた指示(条件・並び・検索・列の表示)があったか。replace で
+  //   書いてきた指示がすべて使えなかったときは、表を空にせず今のままにします(下の判定)。
+  let used = false;
 
   // replace は AI に見せた列の条件・並び・検索を空にしてから始めます。AI が変えられない条件(見せていない列の
   //   条件と並び、絞り込めない列 = custom などのフィルター)と、隠した列はそのままです。
@@ -1076,6 +1079,7 @@ export const readGridAskAnswer = <T,>(
         touched.delete(column.key);
         fixedSides.delete(column.key);
         cleared.add(column.key);
+        used = true;
         continue;
       }
       const isComposite =
@@ -1101,6 +1105,7 @@ export const readGridAskAnswer = <T,>(
       }
       columnFilters.set(column.key, built.value);
       touched.add(column.key);
+      used = true;
       if (isComposite) {
         sides.add(op === 'in' || op === 'notIn' ? 'set' : 'condition');
         fixedSides.set(column.key, sides);
@@ -1111,7 +1116,11 @@ export const readGridAskAnswer = <T,>(
     }
   }
 
-  if (Array.isArray(source.sort)) {
+  // 変更(1.0.2 / 2026-11-09 実アプリの総点検 I-08): 配列でない並び(`sort: "amount"` など)は黙って捨てずに「使えなかった
+  //   部分」に出します(検索の文字と同じ。null は「今のまま」)。
+  if (source.sort !== undefined && source.sort !== null && !Array.isArray(source.sort)) {
+    dropped.push(t.sortUnreadable);
+  } else if (Array.isArray(source.sort)) {
     if (!allowSort) {
       if (source.sort.length > 0) {
         dropped.push(t.sortLocked);
@@ -1139,6 +1148,9 @@ export const readGridAskAnswer = <T,>(
       if (!(refine && source.sort.length > 0 && nextSort.length === 0)) {
         sort = withKeptSort(nextSort, state.sort, isAskable);
       }
+      if (nextSort.length > 0) {
+        used = true;
+      }
     }
   }
 
@@ -1155,19 +1167,22 @@ export const readGridAskAnswer = <T,>(
     } else if (search !== '' && search === currentSearch.trim()) {
       // 前後の空白だけが違う言い直しは今の文字のまま。
       globalText = currentSearch;
+      used = true;
     } else if (search.length > TEXT_LIMIT) {
       dropped.push(formatLocaleText(t.searchTooLong, { limit: TEXT_LIMIT }));
     } else {
       globalText = search;
+      used = used || search !== '';
     }
   }
 
   let nextColumns = state.columns?.map((entry) => ({ ...entry }));
   const hide = Array.isArray(source.hide) ? source.hide.filter((key) => toText(key) !== '') : [];
   const show = Array.isArray(source.show) ? source.show.filter((key) => toText(key) !== '') : [];
-  const unreadableKeys =
-    (Array.isArray(source.hide) ? source.hide.length - hide.length : 0) +
-    (Array.isArray(source.show) ? source.show.length - show.length : 0);
+  // 変更(1.0.2 / I-08): 配列でない hide / show(`hide: "memo"` など)も読めない指定として数えます(null は「指定なし」)。
+  const unreadableList = (raw: unknown, readable: unknown[]): number =>
+    Array.isArray(raw) ? raw.length - readable.length : raw !== undefined && raw !== null ? 1 : 0;
+  const unreadableKeys = unreadableList(source.hide, hide) + unreadableList(source.show, show);
   if (unreadableKeys > 0) {
     dropped.push(formatLocaleText(t.unreadableColumns, { count: unreadableKeys }));
   }
@@ -1201,6 +1216,7 @@ export const readGridAskAnswer = <T,>(
         dropped.push(t.cannotHideAll);
       } else {
         nextColumns = applied;
+        used = used || hideSet.size > 0 || showSet.size > 0;
       }
     }
   }
@@ -1209,6 +1225,41 @@ export const readGridAskAnswer = <T,>(
     typeof source.unsupported === 'string' && source.unsupported.trim() !== ''
       ? source.unsupported.trim().slice(0, UNSUPPORTED_LIMIT)
       : null;
+  // 追加(1.0.2 / 2026-11-09 実アプリの総点検 I-06): replace で条件・並び・検索・列の表示を書いてきたのに、どれも使えなかった
+  //   (すべて「使えなかった部分」へ回った)ときは、表を空にせず今のままにします(「変える条件はありませんでした」)。これまでは
+  //   今の条件が消えて全件になっていました。何も書かずに空を返した答え(「全部見せて」)はこれまでどおり空にします。
+  //   読めない形で書いてきたもの(`sort: "amount"` など)も「書いてきた」に数えます。
+  const hasContent = (value: unknown): boolean =>
+    value !== undefined &&
+    value !== null &&
+    !(Array.isArray(value) && value.length === 0) &&
+    !(typeof value === 'string' && value.trim() === '');
+  const attempted =
+    rawFilters.length > 0 ||
+    hasContent(source.sort) ||
+    hasContent(source.search) ||
+    hasContent(source.hide) ||
+    hasContent(source.show);
+  if (!refine && attempted && !used && dropped.length > 0) {
+    return {
+      ok: true,
+      state: {
+        version: state.version,
+        columnWidths: { ...state.columnWidths },
+        filters: {
+          globalText: state.filters.globalText,
+          columnFilters: Object.fromEntries(
+            Object.entries(state.filters.columnFilters).map(([key, value]) => [key, cloneColumnFilterValue(value)]),
+          ),
+        },
+        sort: state.sort.map((entry) => ({ ...entry })),
+        columns: state.columns?.map((entry) => ({ ...entry })),
+      },
+      changed: false,
+      dropped: limitDropped(dropped, t),
+      unsupported,
+    };
+  }
   const nextState: GridState = {
     version: state.version,
     columnWidths: { ...state.columnWidths },

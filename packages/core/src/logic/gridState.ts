@@ -436,6 +436,10 @@ export const dropUnknownColumnKeys = (
 //     (grid 本体の pin / visible / reorder ハンドラと同じ"保全"方向。監査 RD-5 / M-03 で全置換から整合へ)。
 //   - 最後に reorderColumnsByPane で pane 連結正規化します(視覚順 = 論理 index 空間。grid の reorder
 //     経路と一致させ、pinned 復元後のグルーピングを確定します)。
+//   - 変更(1.0.2 / 2026-11-09 実アプリの総点検 I-05): 保存の並びが今の配列と同じ(今の列がすべて保存にあり、同じ順)
+//     ときは、並べ直さずに列メタだけを当てます(列メニューの固定の切り替えと同じ)。getState() の値で表示だけを変えて
+//     applyState した(AI のバーで列を隠す / 元に戻すなど)だけで、固定列のある表の配列が固定列ごとに並べ直され、後で
+//     固定を外すと列が元の位置へ戻らなかったため。並びが違うときと、保存に無い列があるときはこれまでどおりです。
 export const applyColumnState = <T,>(
   currentColumns: GridColumn<T>[],
   savedColumnState: GridColumnState[],
@@ -465,6 +469,21 @@ export const applyColumnState = <T,>(
     }
     return next;
   };
+
+  // 0) 並びが今と同じなら、その場で列メタだけを当てます(上の I-05)。
+  const metaByKey = new Map<string, GridColumnState>();
+  for (const meta of savedColumnState) {
+    if (byKey.has(meta.key) && !metaByKey.has(meta.key)) {
+      metaByKey.set(meta.key, meta);
+    }
+  }
+  const savedOrder = [...metaByKey.keys()];
+  if (
+    savedOrder.length === currentColumns.length &&
+    savedOrder.every((key, index) => currentColumns[index]?.key === key)
+  ) {
+    return currentColumns.map((column) => applyOne(column, metaByKey.get(column.key)));
+  }
 
   // 1) 保存 key 順で並べ替え(現 columns に在るものだけ。無い key=削除列は drop)。
   const ordered: GridColumn<T>[] = [];

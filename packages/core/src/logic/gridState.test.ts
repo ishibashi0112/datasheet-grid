@@ -799,21 +799,40 @@ describe('applyColumnState (追加 v2)', () => {
   });
 
   it('visible / pinned を適用し、pane 連結正規化する(left→center→right)', () => {
-    const current = [col('a'), col('b'), col('c')];
+    const current = [col('a'), col('b'), col('c'), col('d')];
     const result = applyColumnState(
       current,
       [
         { key: 'a', pinned: 'right' },
         { key: 'b' },
+        { key: 'd' },
         { key: 'c', pinned: 'left' },
       ],
       {},
     );
-    // reorderColumnsByPane: left=[c], center=[b], right=[a]
-    expect(result.map((c) => c.key)).toEqual(['c', 'b', 'a']);
+    // reorderColumnsByPane: left=[c], center=[b, d], right=[a]
+    expect(result.map((c) => c.key)).toEqual(['c', 'b', 'd', 'a']);
     expect(result.find((c) => c.key === 'a')?.pinned).toBe('right');
     expect(result.find((c) => c.key === 'c')?.pinned).toBe('left');
     expect(result.find((c) => c.key === 'b')?.pinned).toBeUndefined();
+  });
+
+  // 追加(1.0.2 / 2026-11-09 実アプリの総点検 I-05): 並びが今と同じなら配列を並べ直さない(列メニューの固定の切り替えと同じ)。
+  it('保存の並びが今の配列と同じなら、並べ直さずに visible / pinned だけを当てる', () => {
+    const current = [col('a'), col('b'), col('c', { pinned: 'left' }), col('d')];
+    const result = applyColumnState(
+      current,
+      [{ key: 'a' }, { key: 'b' }, { key: 'c', pinned: 'left' }, { key: 'd', visible: false }],
+      {},
+    );
+    expect(result.map((c) => c.key)).toEqual(['a', 'b', 'c', 'd']);
+    expect(result[3].visible).toBe(false);
+    // 固定を変えても並びが同じなら、その場で変える
+    const pinned = applyColumnState(current, [{ key: 'a', pinned: 'right' }, { key: 'b' }, { key: 'c' }, { key: 'd' }], {});
+    expect(pinned.map((c) => [c.key, c.pinned])).toEqual([['a', 'right'], ['b', undefined], ['c', undefined], ['d', undefined]]);
+    // 保存に無い列があるときは、これまでどおり保存の順 + 新しい列を末尾 + 固定列ごと
+    const withNew = applyColumnState([...current, col('e')], [{ key: 'a' }, { key: 'b' }, { key: 'c', pinned: 'left' }, { key: 'd' }], {});
+    expect(withNew.map((c) => c.key)).toEqual(['c', 'a', 'b', 'd', 'e']);
   });
 
   it('visible=undefined / pinned=undefined も反映する(既定へ戻す)', () => {
