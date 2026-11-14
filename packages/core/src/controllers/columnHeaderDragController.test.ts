@@ -7,6 +7,7 @@ import { describe, it, expect, afterEach, beforeEach, vi } from 'vitest';
 import {
   computeHeaderReorderedKeys,
   createColumnHeaderDragController,
+  resolveCenterDropSlotRange,
   resolveConsumerDropSlot,
   type ColumnDragHandlePointerEvent,
   type ColumnHeaderDragArgs,
@@ -883,5 +884,69 @@ describe('resolveConsumerDropSlot', () => {
     expect(resolveConsumerDropSlot(columns, geometry, 'center', 2)).toBe(1);
     expect(resolveConsumerDropSlot(columns, geometry, 'center', 3)).toBe(2);
     expect(resolveConsumerDropSlot(columns, geometry, 'center', 4)).toBe(3);
+  });
+});
+
+// 1.0.1 のレビュー RB-2: 入りきらない固定列を中央へ回した表(AP-23)で、中央へ回した列の位置へ落とすと別の場所へ入っていた。
+describe('中央へ回した固定列があるときの落とし先(RB-2)', () => {
+  type Wide = { a: number };
+  // columns では A・B が左固定、R が右固定。幅が足りないので B と R を中央へ回して描いている(左 [A]、中央 [B C D E R])。
+  const wideColumns: GridColumn<Wide>[] = [
+    { key: 'A', title: 'A', width: 100, pinned: 'left' },
+    { key: 'B', title: 'B', width: 100, pinned: 'left' },
+    { key: 'C', title: 'C', width: 100 },
+    { key: 'D', title: 'D', width: 100 },
+    { key: 'E', title: 'E', width: 100 },
+    { key: 'R', title: 'R', width: 100, pinned: 'right' },
+  ];
+  const centerGeometry: PaneGeometry<Wide> = {
+    pane: 'center',
+    entries: ['B', 'C', 'D', 'E', 'R'].map((key, index) => ({
+      column: { ...wideColumns.find((column) => column.key === key)!, pinned: undefined },
+      logicalIndex: index + 1,
+      paneLocalStart: index * 100,
+      paneLocalSize: 100,
+      paneLocalEnd: index * 100 + 100,
+    })),
+    totalWidth: 500,
+  };
+
+  it('中央で落とせる範囲は、中央へ回した左固定列の後から右固定列の前まで', () => {
+    expect(resolveCenterDropSlotRange(wideColumns, centerGeometry)).toEqual({ min: 1, max: 4 });
+    // 中央へ回した列はアンカーにしない(右固定列の前 = 中央の末尾)。
+    expect(resolveConsumerDropSlot(wideColumns, centerGeometry, 'center', 1)).toBe(0);
+    expect(resolveConsumerDropSlot(wideColumns, centerGeometry, 'center', 4)).toBe(3);
+  });
+
+  it('縦線の位置と、離したときの並びが一致する(先頭へ / 末尾へ)', () => {
+    const controller = createColumnHeaderDragController<Wide>();
+    const base = makeArgs() as unknown as ColumnHeaderDragArgs<Wide> & { applyColumnOrderAndPin: ApplyMock };
+    const body = makeElement(makeRect(0, 0, 400, 300));
+    let scrollLeft = 0;
+    Object.defineProperty(body, 'scrollLeft', { get: () => scrollLeft, configurable: true });
+    const args = {
+      ...base,
+      columns: wideColumns,
+      paneLayout: { left: { pane: 'left', entries: [], totalWidth: 0 }, center: centerGeometry, right: { pane: 'right', entries: [], totalWidth: 0 } },
+      bodyScrollRef: { current: body },
+    } as ColumnHeaderDragArgs<Wide> & { applyColumnOrderAndPin: ApplyMock };
+    controller.update(args);
+
+    // D を掴んで中央の先頭(B の手前)へ。B の手前には置けないので B と C の間に縦線が出て、そこへ入る。
+    controller.onColumnDragHandlePointerDown(wideColumns[3], gripEvent({ clientX: 160 }));
+    dispatchPointer('pointermove', 1, 2, 10);
+    expect(args.centerIndicatorRef.current?.style.left).toBe('100px');
+    dispatchPointer('pointerup', 1, 2, 10);
+    expect(args.applyColumnOrderAndPin.mock.calls[0][0]).toEqual(['A', 'B', 'D', 'C', 'E', 'R']);
+    expect(args.applyColumnOrderAndPin.mock.calls[0][1]).toEqual(new Map([['D', undefined]]));
+
+    // 右へスクロールして、C を掴んで R の後ろへ。R の後ろには置けないので E と R の間に縦線が出て、中央の末尾へ入る。
+    scrollLeft = 150;
+    controller.onColumnDragHandlePointerDown(wideColumns[2], gripEvent({ clientX: 10 }));
+    dispatchPointer('pointermove', 1, 398, 10);
+    expect(args.centerIndicatorRef.current?.style.left).toBe('400px');
+    dispatchPointer('pointerup', 1, 398, 10);
+    expect(args.applyColumnOrderAndPin.mock.calls[1][0]).toEqual(['A', 'B', 'D', 'E', 'C', 'R']);
+    controller.dispose();
   });
 });
