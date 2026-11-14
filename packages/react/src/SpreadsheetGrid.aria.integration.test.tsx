@@ -495,6 +495,8 @@ describe('ARIA(audit V-05 / RD-10 / V-14)', () => {
       grid.querySelector<HTMLElement>(`[data-pane="${pane}"][data-ssg-label-row]`) as HTMLElement;
     expect(label('left').getAttribute('aria-rowindex')).toBe('2');
     expect(label('left').querySelector('[role="rowheader"]')).not.toBeNull();
+    // 追加(1.0.2 / L-08): 行番号の欄は空の見出しにせず、ラベルの文を名前にする。
+    expect(label('left').querySelector('[role="rowheader"]')?.getAttribute('aria-label')).toBe('セクション 1');
     expect(within(label('center')).getByRole('gridcell').textContent).toContain('セクション 1');
     expect(label('right').getAttribute('aria-hidden')).toBe('true');
     // 後続のデータ行の番号はラベル行のぶん進む。

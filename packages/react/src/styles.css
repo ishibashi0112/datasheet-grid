@@ -1170,6 +1170,18 @@
   .ssg-body-cell--chip-compact .ssg-chip-icon {
     display: none;
   }
+  /* 追加(1.0.2 / 2026-11-09 実アプリの総点検 L-14): ハイコントラスト(forced-colors)では、チップの色(と、データバーの棒)が
+     システムの色に置き換わって消え、`icon: false` の列は状態を見分けられませんでした。色そのものが情報なので、チップ
+     (文字と地の組)とデータバーの棒は作者の色のまま描き、チップには枠を足して形を見せます。 */
+  @media (forced-colors: active) {
+    .ssg-chip,
+    .ssg-cf-bar {
+      forced-color-adjust: none;
+    }
+    .ssg-chip {
+      outline: 1px solid CanvasText;
+    }
+  }
 
   /* 追加(motion-7 / M-9): セル単位の保存状態(SSRM 書き戻し)。saveStatusController が data-ssg-save を付け替え、
      インジケーター(.ssg-save-indicator)をセル末尾に足します。保存中は斜線が流れ、成功は ✓、失敗は揺れ + 赤いフラッシュ。
@@ -1658,6 +1670,26 @@
     border-top: 10px solid var(--ssg-note-indicator);
     border-left: 10px solid transparent;
     pointer-events: none;
+  }
+  /* 追加(1.0.2 / 2026-11-09 実アプリの総点検 L-14): Windows のハイコントラスト(forced-colors)では、背景と枠の色がシステムの
+     色に置き換わり、検査 NG の桃色の背景が消えて右上の印も四角(透明の辺まで塗られる)になり、メモの印と区別できません
+     でした。検査 NG のセルには内側に点線の枠を引き、右上の印はシステムの色の三角で描きます(NG は強調色、メモは文字色)。 */
+  @media (forced-colors: active) {
+    .ssg-body-cell--invalid {
+      outline: 2px dashed Highlight;
+      outline-offset: -3px;
+    }
+    .ssg-body-cell--invalid::after,
+    .ssg-body-cell--has-note::before {
+      forced-color-adjust: none;
+      border-left-color: transparent;
+    }
+    .ssg-body-cell--invalid::after {
+      border-top-color: Highlight;
+    }
+    .ssg-body-cell--has-note::before {
+      border-top-color: CanvasText;
+    }
   }
   /* reject 表示: エディタ input の枠色 + 即時エラーバブル(hover 遅延のある tooltip は使わない)。
      バブルはエディタ wrapper(.ssg-cell-editor / absolute)基準で下側、ビューポート下端では
@@ -2785,6 +2817,10 @@
     border-radius: 1px;
     background-color: var(--ssg-panel-accent-contrast);
   }
+  /* 追加(1.0.2 / 2026-11-09 実アプリの総点検 L-09): 無効のときの「一部」の線も濃い灰色に(チェックの色と同じ。地は無効の灰色)。 */
+  .ssg-checkbox--disabled .ssg-checkbox-dash {
+    background-color: var(--ssg-panel-text-muted);
+  }
 
   /* ── 列フィルター popover(ColumnFilterPopover) ── */
   /* パネル(.ssg-popover)とは別の軽量フレーム(radius 10 / 影も控えめ)。
@@ -2811,6 +2847,10 @@
   }
   .ssg-filter-popover > * {
     flex: none;
+  }
+  /* 追加(1.0.2 / L-10): タッチの端末で開いたときはポップオーバーそのものにフォーカスを置くので、その枠は出しません。 */
+  .ssg-filter-popover:focus {
+    outline: none;
   }
 
   .ssg-filter-title {
@@ -3605,6 +3645,15 @@
       background-color: transparent;
       opacity: 1;
       pointer-events: auto;
+    }
+    /* 追加(1.0.2 / 2026-11-09 実アプリの総点検 L-11): タッチでは操作が常に出るので、120px より細い見出し(--inline-actions
+       の無い見出し)は並べ替えのつまみ(grip)を出さず、⋮ だけにします(64px の「単位」が「単…」に切れていた)。印の無い
+       状態のスロットも幅と隙間を取らないよう外します。細い列の並べ替えはツールパネルの「列」タブで。 */
+    .ssg-header-cell:not(.ssg-header-cell--inline-actions) .ssg-header-actions .ssg-header-grip {
+      display: none;
+    }
+    .ssg-header-status:empty {
+      display: none;
     }
   }
   /* 追加(1.0.2 / 2026-11-09 実アプリの総点検 F-11 / C-07): 幅のある見出し(--inline-actions = 120px 以上)では、ホバーで
@@ -4567,4 +4616,16 @@
     width: 100%;
     margin: 0;
     padding-left: 1.2em;
+  }
+
+  /* 追加(1.0.2 / 2026-11-09 実アプリの総点検 L-10): タッチが主の端末では、ポップオーバー(列フィルター / ツールパネル)と
+     バー(グローバルフィルター / セル内検索 / AI のバー)の入力欄の文字も 16px 以上にします(iOS は 16px 未満の入力欄に
+     フォーカスするとページを拡大するため。セルのエディタと同じ)。ほかの指定に勝つよう最後に置きます。 */
+  @media (pointer: coarse) {
+    :is(.ssg-filter-popover, .ssg-popover) :is(input:not([type='checkbox']):not([type='radio']), select, textarea),
+    .ssg-bar-input,
+    .ssg-find-bar-input,
+    .ssg-ask-input {
+      font-size: max(16px, 1em);
+    }
   }

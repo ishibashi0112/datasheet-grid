@@ -1,4 +1,4 @@
-import type { ReactNode } from 'react';
+import { useId, type ReactNode } from 'react';
 import type { SpreadsheetGridDerivedSummary } from '../model/gridTypes';
 import { cx } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/cx';
 import type { GridResolvedSlot } from '../model/gridTypes';
@@ -94,6 +94,11 @@ export function DefaultGridTopBar({
   slot,
 }: DefaultGridTopBarProps) {
   const texts = useGridLocaleText();
+  // 追加(1.0.2 / 2026-11-09 実アプリの総点検 L-08): 絞り込みの要約ボタンの名前を、見えている要約 + 操作の説明にします(見えている
+  //   文字と読み上げの名前が違っていた = WCAG 2.5.3)。名前の部品を id で結ぶ(aria-labelledby)ので、`getByLabelText` で
+  //   操作の説明(既定「フィルター管理パネルを開閉」)だけを渡しても見つかります。操作の説明は隠した要素でボタンの外に
+  //   置き、ボタンの textContent は見えている要約のままにします。
+  const filterSummaryId = useId();
   const globalFilterPlaceholder = globalFilterPlaceholderProp ?? texts.globalFilterPlaceholder;
   // undefined のときだけ既定アイコン。null など falsy なら「アイコン無し」、ReactNode はそのまま差し替え。
   const filterIconNode =
@@ -131,9 +136,9 @@ export function DefaultGridTopBar({
                 }}
                 onClick={onFilterSummaryClick}
                 data-ssg-tooltip={texts.toggleFilterPanel}
-                aria-label={texts.toggleFilterPanel}
+                aria-labelledby={`${filterSummaryId}-text ${filterSummaryId}-action`}
               >
-                {derivedSummary.filterSummaryText}
+                <span id={`${filterSummaryId}-text`}>{derivedSummary.filterSummaryText}</span>
               </button>
             ) : (
               <span className="ssg-bar-chip ssg-bar-chip--emphasis">
@@ -144,6 +149,12 @@ export function DefaultGridTopBar({
             <span className="ssg-bar-chip ssg-bar-chip--emphasis">
               {derivedSummary.sortSummaryText}
             </span>
+            {onFilterSummaryClick ? (
+              // 名前の後半(操作の説明)。ボタンの中に置くとボタンの textContent に混ざるので外に置きます。
+              <span id={`${filterSummaryId}-action`} hidden>
+                {texts.toggleFilterPanel}
+              </span>
+            ) : null}
           </div>
         ) : null}
 

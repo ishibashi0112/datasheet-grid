@@ -1507,6 +1507,8 @@ export function ColumnFilterPopover({
       // 追加(1.0.1 / AP-32): 支援技術にダイアログとして伝え、見出しと同じ名前を付けます(モーダルではないので aria-modal は付けない)。
       role="dialog"
       aria-label={formatLocaleText(texts.filterTitle, { column: title })}
+      // 追加(1.0.2 / L-10): タッチの端末では開いたときのフォーカスを入力欄ではなくここへ置きます(controller)。
+      tabIndex={-1}
     >
       <div className="ssg-filter-title">{formatLocaleText(texts.filterTitle, { column: title })}</div>
 

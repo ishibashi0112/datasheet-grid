@@ -1601,7 +1601,7 @@ export type GridLocaleText = {
   globalFilterLabel: string;
   /** 上部バーの検索欄の × の読み上げの名前。既定 `フィルターをクリア`、英語 `Clear filter`。 */
   clearGlobalFilter: string;
-  /** 上部バーの絞り込みの要約(押せるとき)の読み上げの名前とツールチップ。既定 `フィルター管理パネルを開閉`、英語 `Show or hide the filter panel`。 */
+  /** 上部バーの絞り込みの要約(押せるとき)のツールチップと、読み上げの名前の後半(前半は見えている要約。1.0.2 から。1.0.1 まではこの文だけが名前)。既定 `フィルター管理パネルを開閉`、英語 `Show or hide the filter panel`。 */
   toggleFilterPanel: string;
   // ── 共通 ──
   /** 「クリア」のボタン / ツールチップ。既定 `クリア`、英語 `Clear`。 */
@@ -1696,7 +1696,7 @@ export type GridLocaleText = {
   menuPinLeft: string;
   /** 固定の小メニューの右。既定 `右に固定`、英語 `Pin right`。 */
   menuPinRight: string;
-  /** `onColumnsChange` が無いときの固定のツールチップ。既定 `onColumnsChange 未指定のため固定状態を変更できません`、英語 `Pinning needs onColumnsChange.`。 */
+  /** `onColumnsChange` が無いときの固定のツールチップ。既定 `この表では列の固定を変えられません`、英語 `Pinning can't be changed in this grid.`。 */
   menuPinUnavailable: string;
   /** 列メニューの幅の自動調整。既定 `この列の幅を自動調整`、英語 `Autosize this column`。 */
   menuAutosize: string;
@@ -1708,7 +1708,7 @@ export type GridLocaleText = {
   menuResetColumns: string;
   /** 列のリセットのツールチップ(列メニューとツールパネル)。既定 `すべての列の幅・固定・表示・並び順・グループ化を初期状態に戻します`、英語 `Restores the width, pinning, visibility, order and grouping of all columns.`。 */
   resetColumnsHint: string;
-  /** `onColumnsChange` が無いときの列のリセットのツールチップ。既定 `onColumnsChange 未指定のため列をリセットできません`、英語 `Resetting columns needs onColumnsChange.`。 */
+  /** `onColumnsChange` が無いときの列のリセットのツールチップ。既定 `この表では列をリセットできません`、英語 `Columns can't be reset in this grid.`。 */
   menuResetUnavailable: string;
   // ── ツールパネル ──
   /** ツールパネルのタブ。既定 `フィルター`、英語 `Filters`。 */
@@ -1731,7 +1731,7 @@ export type GridLocaleText = {
   columnsDragToReorder: string;
   /** 列のタブのつまみのツールチップ(固定の区分があるとき)。既定 `ドラッグして並べ替え(同じセクション内のみ)`、英語 `Drag to reorder (within the same section)`。 */
   columnsDragWithinSection: string;
-  /** `onColumnsChange` が無いときのつまみのツールチップ。既定 `onColumnsChange 未指定のため並べ替えできません`、英語 `Reordering needs onColumnsChange.`。 */
+  /** `onColumnsChange` が無いときのつまみのツールチップ。既定 `この表では列を並べ替えられません`、英語 `Columns can't be reordered in this grid.`。 */
   columnsReorderUnavailable: string;
   /** 列のタブで検索している間のつまみのツールチップ。既定 `検索中は並べ替えできません`、英語 `Columns can't be reordered while searching.`。 */
   columnsReorderWhileSearching: string;
@@ -1745,7 +1745,7 @@ export type GridLocaleText = {
   columnsNoMatches: string;
   /** 列のタブのリセットのボタン。既定 `すべての列を初期状態に戻す`、英語 `Reset all columns`。 */
   columnsReset: string;
-  /** `onColumnsChange` が無いときの列のタブのツールチップ。既定 `onColumnsChange 未指定のため表示/非表示・リセットを変更できません`、英語 `Showing, hiding and resetting columns needs onColumnsChange.`。 */
+  /** `onColumnsChange` が無いときの列のタブのツールチップ。既定 `この表では列の表示/非表示とリセットは使えません`、英語 `Showing, hiding and resetting columns isn't available in this grid.`。 */
   columnsUnavailable: string;
   /** フィルターのタブの検索欄の文字の行。既定 `グローバルフィルター`、英語 `Global filter`。 */
   globalFilterTitle: string;
@@ -1800,7 +1800,7 @@ export type GridLocaleText = {
   filterEditUnderGroup: string;
   /** フィルターのチップのツールチップ。既定 `この列へジャンプして編集`、英語 `Go to this column to edit`。 */
   filterJump: string;
-  /** フィルターのチップの読み上げの名前。既定 `{column} のフィルターを編集`、英語 `Edit the filter on {column}`。 */
+  /** フィルターのチップの読み上げの名前の後半(前半は見えている列名と条件。1.0.2 から。1.0.1 まではこの文だけが名前)と、フィルターの管理の ✎ の読み上げの名前。既定 `{column} のフィルターを編集`、英語 `Edit the filter on {column}`。 */
   filterEditFor: GridLocaleTextTemplate<{ column: string }>;
   /** フィルターのチップの × のツールチップ。既定 `この列のフィルターをクリア`、英語 `Clear this column's filter`。 */
   filterClear: string;
@@ -3385,7 +3385,11 @@ export type SpreadsheetGridProps<T, F extends GridFrameworkTypes = GridFramework
    * 列の並べ替え(ヘッダーのドラッグ / 列パネル)と `applyState` で渡る `nextColumns` は、
    * 配列順が固定列ごと(左固定 → 中央 → 右固定)に並べ直される(画面上の列順は変わらない。例:
    * 右固定列の後ろに宣言した列があると、右固定列が配列の末尾へ移る)。
-   * 列メニューの固定切替は配列順を変えず `pinned` だけを更新する。
+   * 列メニューの固定切替は配列順を変えず `pinned` だけを更新する。指定が無いと、列メニューの固定 /
+   * リセットと、ツールパネルの「列」タブの表示 /
+   * 非表示・並べ替え・リセットは押せない(今の状態は見える)。
+   * 押せない理由のツールチップは利用者向けの文(「この表では列の固定を変えられません」など。1.0.2
+   * から。1.0.1 までは「onColumnsChange 未指定のため…」)。
    */
   onColumnsChange?: ((nextColumns: GridColumn<T, F>[]) => void) | undefined;
   /**

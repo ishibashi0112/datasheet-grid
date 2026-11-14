@@ -120,6 +120,10 @@ export const resolveOpenedFilterColumn = <T,>(
   return { ...column, filterType: state.filterType };
 };
 
+// 追加(1.0.2 / L-10): 主な入力がタッチ(指)の端末か。matchMedia の無い環境(古い jsdom など)では false。
+const isCoarsePointer = (): boolean =>
+  typeof window !== 'undefined' && typeof window.matchMedia === 'function' && window.matchMedia('(pointer: coarse)').matches;
+
 export const createFilterPopoverController = <T,>(): FilterPopoverController<T> => {
   let args: FilterPopoverControllerArgs<T> | null = null;
   const store = createValueStore<FilterPopoverSnapshot>({ state: null, layout: null });
@@ -382,6 +386,13 @@ export const createFilterPopoverController = <T,>(): FilterPopoverController<T> 
         focusFrame2 = null;
         if (filterType === 'select') {
           selectRef.current?.focus();
+          return;
+        }
+        // 追加(1.0.2 / 2026-11-09 実アプリの総点検 L-10): タッチが主の端末(pointer: coarse)では入力欄へフォーカスしません
+        //   (ソフトキーボードが出て値の一覧を覆うため)。フォーカスはポップオーバーそのもの(tabIndex -1)へ置き、Escape や
+        //   Tab の巡回はこれまでどおり効くようにします。入力欄はタップすれば入れます。
+        if (isCoarsePointer()) {
+          panelRef.current?.focus({ preventScroll: true });
           return;
         }
         const inputElement = textInputRef.current;

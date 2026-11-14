@@ -14,7 +14,7 @@
 | `serverSideRefreshToken` | `number` | — | serverSide のソフトリフレッシュ用トークン。値を増やすと、クエリ(フィルター/ソート/グローバル)を変えずにキャッシュを破棄して現在の可視レンジをサーバから取り直す。スクロール位置は保持し、件数は到着ブロックの `totalRowCount` で追従する(clientSide では無視)。命令的に呼びたい場合は同挙動のハンドル `refreshServerSide()` を使う。 |
 | `onServerSideLoadError` | `(error, params) => void` | — | serverSide の `getRows` が reject したときの通知(abort は正常キャンセルのため通知しない)。`params` は失敗した要求の view 空間レンジ `{ startIndex, endIndex }`。グリッド内蔵のエラーバー(再試行 UI)とは独立に呼ばれる(利用側トースト / ログ用)。インライン関数可(latest-ref 経由で読む)。 |
 | `onServerSideWriteError` | `(error, params) => void` | — | serverSide の `dataSource.updateRows` が reject したときの通知。グリッド側は楽観更新をロールバック済みで、`params.updates` に失敗して元に戻した行更新(`rowKey` / `changes` / `previousRow`)が入る(利用側トースト / リトライ導線用。`changes` は元に戻したセルだけで、後から同じセルを変えた編集で上書き済みの変更は入らない。`row` は今の表示の行に元に戻した変更を当てた行で、同じ行の新しい編集の値を含む)。グリッド内蔵の保存失敗バーとは独立に呼ばれる。インライン関数可(latest-ref 経由で読む)。詳細は「セル編集の書き戻し」節。 |
-| `onColumnsChange` | `(nextColumns: GridColumn<T>[]) => void` | — | 列が変化したとき呼ばれる。列メニューの固定切替はこれが指定されている場合のみ反映。列の並べ替え(ヘッダーのドラッグ / 列パネル)と `applyState` で渡る `nextColumns` は、配列順が固定列ごと(左固定 → 中央 → 右固定)に並べ直される(画面上の列順は変わらない。例: 右固定列の後ろに宣言した列があると、右固定列が配列の末尾へ移る)。列メニューの固定切替は配列順を変えず `pinned` だけを更新する。 |
+| `onColumnsChange` | `(nextColumns: GridColumn<T>[]) => void` | — | 列が変化したとき呼ばれる。列メニューの固定切替はこれが指定されている場合のみ反映。列の並べ替え(ヘッダーのドラッグ / 列パネル)と `applyState` で渡る `nextColumns` は、配列順が固定列ごと(左固定 → 中央 → 右固定)に並べ直される(画面上の列順は変わらない。例: 右固定列の後ろに宣言した列があると、右固定列が配列の末尾へ移る)。列メニューの固定切替は配列順を変えず `pinned` だけを更新する。指定が無いと、列メニューの固定 / リセットと、ツールパネルの「列」タブの表示 / 非表示・並べ替え・リセットは押せない(今の状態は見える)。押せない理由のツールチップは利用者向けの文(「この表では列の固定を変えられません」など。1.0.2 から。1.0.1 までは「onColumnsChange 未指定のため…」)。 |
 | `rowKeyGetter` | `(row: T, index: number) => GridRowKey` | index ベース | 安定した行キーを返す。 |
 | `isRowExportable` | `(row: T, ctx: { viewRowIndex: number; rowKey: GridRowKey }) => boolean` | 全行 true | コピー(`Ctrl/Cmd+C` の TSV)/ `exportCsv` / `getExportData` の対象行フィルタ。`false` の行は出力から**行ごと**除く(行単位のみ。全体選択かの判定と貼り付けには影響しない)。`ctx.viewRowIndex` はフィルター / ソート適用後のビュー行 index(scope `'raw'` のみ rows 配列のソース index)、`ctx.rowKey` は `rowKeyGetter` の値。用途: プレースホルダ行など表示上の詰め物を出力から除く。 |
 | `createRow` | `() => T` | — | 貼り付けが表の末尾より下へはみ出したとき、足りない行を作る新規行ファクトリ(はみ出した行数だけ呼ぶ)。グリッドが行を足すのはこのときだけで、無ければはみ出した分は捨てる。ボタンなどで行を足すときは、利用側が `rows` に行を足す(グリッドは `createRow` を呼ばない。serverSide では使わない)。 |
@@ -198,7 +198,7 @@ import { localeTextEn } from '@ishibashi0112/spreadsheet-grid/locales/en';
 | `globalFilterPlaceholder` | `グローバルフィルター` | `Filter all columns` | 上部バーの検索欄の placeholder(prop `globalFilterPlaceholder` を渡せばそちら)。 |
 | `globalFilterLabel` | `表全体を検索` | `Search the whole table` | 上部バーの検索欄の読み上げの名前(placeholder を空にしたとき)。 |
 | `clearGlobalFilter` | `フィルターをクリア` | `Clear filter` | 上部バーの検索欄の × の読み上げの名前。 |
-| `toggleFilterPanel` | `フィルター管理パネルを開閉` | `Show or hide the filter panel` | 上部バーの絞り込みの要約(押せるとき)の読み上げの名前とツールチップ。 |
+| `toggleFilterPanel` | `フィルター管理パネルを開閉` | `Show or hide the filter panel` | 上部バーの絞り込みの要約(押せるとき)のツールチップと、読み上げの名前の後半(前半は見えている要約。1.0.2 から。1.0.1 まではこの文だけが名前)。 |
 
 **共通**
 
@@ -259,13 +259,13 @@ import { localeTextEn } from '@ishibashi0112/spreadsheet-grid/locales/en';
 | `menuPinNone` | `固定しない` | `No pin` | 固定の小メニューの「固定しない」。 |
 | `menuPinLeft` | `左に固定` | `Pin left` | 固定の小メニューの左。 |
 | `menuPinRight` | `右に固定` | `Pin right` | 固定の小メニューの右。 |
-| `menuPinUnavailable` | `onColumnsChange 未指定のため固定状態を変更できません` | `Pinning needs onColumnsChange.` | `onColumnsChange` が無いときの固定のツールチップ。 |
+| `menuPinUnavailable` | `この表では列の固定を変えられません` | `Pinning can't be changed in this grid.` | `onColumnsChange` が無いときの固定のツールチップ。 |
 | `menuAutosize` | `この列の幅を自動調整` | `Autosize this column` | 列メニューの幅の自動調整。 |
 | `menuAutosizeAll` | `すべての列の幅を自動調整` | `Autosize all columns` | 列メニューのすべての列の幅の自動調整。 |
 | `menuColumns` | `列の表示` | `Choose columns` | 列メニューの「列の表示」(ツールパネルの列を開く)。 |
 | `menuResetColumns` | `列のリセット` | `Reset columns` | 列メニューの列のリセット。 |
 | `resetColumnsHint` | `すべての列の幅・固定・表示・並び順・グループ化を初期状態に戻します` | `Restores the width, pinning, visibility, order and grouping of all columns.` | 列のリセットのツールチップ(列メニューとツールパネル)。 |
-| `menuResetUnavailable` | `onColumnsChange 未指定のため列をリセットできません` | `Resetting columns needs onColumnsChange.` | `onColumnsChange` が無いときの列のリセットのツールチップ。 |
+| `menuResetUnavailable` | `この表では列をリセットできません` | `Columns can't be reset in this grid.` | `onColumnsChange` が無いときの列のリセットのツールチップ。 |
 
 **ツールパネル**
 
@@ -281,14 +281,14 @@ import { localeTextEn } from '@ishibashi0112/spreadsheet-grid/locales/en';
 | `columnsShowAll` | `すべての列を表示` | `Show all columns` | 列のタブのすべてのチェック。 |
 | `columnsDragToReorder` | `ドラッグして並べ替え` | `Drag to reorder` | 列のタブのつまみのツールチップ。 |
 | `columnsDragWithinSection` | `ドラッグして並べ替え(同じセクション内のみ)` | `Drag to reorder (within the same section)` | 列のタブのつまみのツールチップ(固定の区分があるとき)。 |
-| `columnsReorderUnavailable` | `onColumnsChange 未指定のため並べ替えできません` | `Reordering needs onColumnsChange.` | `onColumnsChange` が無いときのつまみのツールチップ。 |
+| `columnsReorderUnavailable` | `この表では列を並べ替えられません` | `Columns can't be reordered in this grid.` | `onColumnsChange` が無いときのつまみのツールチップ。 |
 | `columnsReorderWhileSearching` | `検索中は並べ替えできません` | `Columns can't be reordered while searching.` | 列のタブで検索している間のつまみのツールチップ。 |
 | `columnsGroupedHint` | `グループ化している列です(値は自動グループ列に出ます)` | `This column is grouped. Its values appear in the group column.` | グループ化している列のツールチップ。 |
 | `groupedColumnTitle` | `{column}(グループ化中)` | `{column} (grouped)` | グループ化している列の名前(列のタブ、フィルターを足す列の一覧)。 |
 | `columnsSearchPlaceholder` | `検索...` | `Search…` | 列のタブの検索欄。 |
 | `columnsNoMatches` | `該当する列がありません` | `No matching columns` | 列のタブの検索で 0 件のとき。 |
 | `columnsReset` | `すべての列を初期状態に戻す` | `Reset all columns` | 列のタブのリセットのボタン。 |
-| `columnsUnavailable` | `onColumnsChange 未指定のため表示/非表示・リセットを変更できません` | `Showing, hiding and resetting columns needs onColumnsChange.` | `onColumnsChange` が無いときの列のタブのツールチップ。 |
+| `columnsUnavailable` | `この表では列の表示/非表示とリセットは使えません` | `Showing, hiding and resetting columns isn't available in this grid.` | `onColumnsChange` が無いときの列のタブのツールチップ。 |
 | `globalFilterTitle` | `グローバルフィルター` | `Global filter` | フィルターのタブの検索欄の文字の行。 |
 | `globalFilterRows` | `"{text}" を含む行` | `Rows containing "{text}"` | フィルターのタブの検索欄の文字の要約。 |
 | `clearGlobalFilterTitle` | `グローバルフィルターをクリア` | `Clear the global filter` | フィルターのタブの検索欄の文字の ×。 |
@@ -320,7 +320,7 @@ import { localeTextEn } from '@ishibashi0112/spreadsheet-grid/locales/en';
 | `filterJumpUnavailable` | `非表示列のためジャンプ編集できません(× でクリアは可能)` | `This column is hidden, so its filter can't be opened here. You can still clear it with ×.` | 隠した列のフィルターのツールチップ。 |
 | `filterEditUnderGroup` | `グループの列の見出しの下で編集` | `Opens under the group column header` | グループ化している列のフィルターのツールチップ。 |
 | `filterJump` | `この列へジャンプして編集` | `Go to this column to edit` | フィルターのチップのツールチップ。 |
-| `filterEditFor` | `{column} のフィルターを編集` | `Edit the filter on {column}` | フィルターのチップの読み上げの名前。 |
+| `filterEditFor` | `{column} のフィルターを編集` | `Edit the filter on {column}` | フィルターのチップの読み上げの名前の後半(前半は見えている列名と条件。1.0.2 から。1.0.1 まではこの文だけが名前)と、フィルターの管理の ✎ の読み上げの名前。 |
 | `filterClear` | `この列のフィルターをクリア` | `Clear this column's filter` | フィルターのチップの × のツールチップ。 |
 | `filterClearFor` | `{column} のフィルターをクリア` | `Clear the filter on {column}` | フィルターのチップの × の読み上げの名前。 |
 | `filterNone` | `フィルターなし` | `No filter` | 条件の無いフィルターの要約。 |
@@ -851,6 +851,9 @@ WAI-ARIA の grid パターンに沿って、表・行・セルに役割と状�
 | 見出し行 / データ行 | `role="row"`。`aria-rowindex` は見出し行が 1、データ行は表示順 + 2。行選択のチェックボックスがあるときは `aria-selected`。未ロード行(SSRM のスケルトン)は `aria-busy`。 |
 | 列見出し | `role="columnheader"`。`aria-colindex`(行番号列が 1)。ソートの第 1 キーの列だけ `aria-sort`(`ascending` / `descending`)。 |
 | 行番号 / 左上の角 | `role="rowheader"` / `role="columnheader"`。 |
+| ラベル行(`labelRow`) | 左の行番号の欄は `role="rowheader"` で、`aria-label` は行の見出しの文(`getLabel` の値。1.0.2 から。1.0.1 までは名前の無い見出し)。 |
+| 上部バーの絞り込みの要約 / フィルターのチップ | 押せるボタン。読み上げの名前は見えている文字の後ろに操作の説明(`aria-labelledby`。例: `絞り込み: 1 列 フィルター管理パネルを開閉`、`単価 >= 1000 単価 のフィルターを編集`。1.0.2 から。1.0.1 までは操作の説明だけ)。`getByLabelText('単価 のフィルターを編集')` のように操作の説明だけでも見つかる。 |
+| ツールパネルの「列」タブ | 列の表示 / 非表示のボタンは `aria-pressed`(表示中なら `true`。押せないときも付く。1.0.2 から)。`onColumnsChange` が無い表では、スクロールする一覧に `tabindex="0"`(中の項目が押せないため。1.0.2 から)。 |
 | 列見出しの `⋮` / グループ行の開閉ボタン / 展開トグル | `tabindex="-1"`(`Tab` の順番に入れない。グリッドのキー操作はフォーカスを受ける要素で行い、`Tab` 1 回でグリッドを出入りする)。`⋮` の `aria-label` は「`<列名> の列メニュー`」(列名の後ろに半角の空白。例: `数量 の列メニュー`。ツールチップは「列メニュー」)。キーボードでは、アクティブセルで `Alt+↓` を押すとその列の列メニューが開く。開閉ボタン / トグルは `aria-expanded` と `aria-label` を持ち、キーボードではアクティブセルでの `Enter` / `Space` で開閉する。 |
 | セル | `role="gridcell"`。`aria-colindex` / `aria-selected`(選択範囲内)/ `aria-readonly`(編集できないセル)/ `aria-invalid`(検査 NG のセル。`showValidationMarks={false}` のときは付けない)/ `aria-description`(検査 NG のメッセージとメモ(`cellNote`)。ツールチップと同じ文。1.0.1)。 |
 | 行選択のチェックボックス | `role="checkbox"`。`aria-checked`(一部選択は `mixed`)/ `aria-label`(「すべての行を選択」「行 N を選択」)。 |
