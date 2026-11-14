@@ -221,12 +221,13 @@ const sumResolvedWidths = <T,>(items: PaneSourceColumn<T>[], columnWidths: Recor
 
 // 追加(1.0.1 / 2026-11-09 実アプリの総点検 AP-23): 固定列が入りきらないときに、表示の上だけ固定を外します。
 //   固定列(行番号の列を含む)の合計がグリッドより広いと、右の固定列が左の固定列に重なり、中央の列は横にスクロールしても
-//   見えなかった(スマホの幅など)。中央に min(幅, max(120px, 幅の 1/4)) を残せるまで、右の固定列の内側(左端)から、次に
+//   見えなかった(スマホの幅など)。中央に min(幅, 120px) を残せるまで、右の固定列の内側(左端)から、次に
 //   左の固定列の内側(右端)から順に中央へ回します。列の並び(orderedColumns の index)は変わりません(内側から外すので、
 //   左の末尾が中央の先頭へ、右の先頭が中央の末尾へ移るだけ)。columns の pinned は変えず、幅が戻れば固定に戻ります。
 //   行ドラッグの掴み手と展開行のトグルの列(幅の小さな合成列)は外しません。
+//   変更(1.0.1 のレビュー RB-1): 残す幅を max(120px, 幅の 1/4) から 120px だけに。幅の 1/4 だと、重なっていない表
+//   (固定列がグリッドの幅の 75〜100% で、中央にまだ 120px 以上ある)でも固定が外れていた。
 export const MIN_CENTER_PANE_WIDTH = 120;
-const MIN_CENTER_PANE_RATIO = 0.25;
 const PIN_OVERFLOW_KEY_SEPARATOR = '\u0000';
 
 export const resolvePinnedOverflowKey = <T,>(
@@ -239,7 +240,7 @@ export const resolvePinnedOverflowKey = <T,>(
     return '';
   }
   const widthOf = ({ column }: PaneSourceColumn<T>) => columnWidths[column.key] ?? column.width;
-  const budget = viewportWidth - Math.min(viewportWidth, Math.max(MIN_CENTER_PANE_WIDTH, viewportWidth * MIN_CENTER_PANE_RATIO));
+  const budget = viewportWidth - Math.min(viewportWidth, MIN_CENTER_PANE_WIDTH);
   let total = rowHeaderWidth + sumResolvedWidths(source.left, columnWidths) + sumResolvedWidths(source.right, columnWidths);
   if (total <= budget) {
     return '';

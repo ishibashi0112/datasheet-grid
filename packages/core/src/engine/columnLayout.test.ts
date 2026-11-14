@@ -234,6 +234,19 @@ describe('入りきらない固定列(AP-23)', () => {
     expect(ordered[1].pinned).toBe('left');
   });
 
+  // 1.0.1 のレビュー RB-1: 残す幅が幅の 1/4 だと、重なっていない表でも固定が外れていた。
+  it('中央に 120px が残る間は外さない(固定列が幅の 75% を超えていても)', () => {
+    const resolve = createPaneLayoutResolver<R>();
+    // 固定列の合計 = 56 + 70 + 160 + 130 = 416px。幅 545px なら中央に 129px が残る。
+    const fits = resolve({ orderedColumns: ordered, columnWidths: {}, viewportWidth: 545, rowHeaderWidth: 56 });
+    expect(keys(fits.paneSourceColumns.left)).toEqual(['no', 'customer']);
+    expect(keys(fits.paneSourceColumns.right)).toEqual(['amount']);
+    // 幅 535px では 119px しか残らないので、右の固定列を中央へ回す。
+    const tight = resolve({ orderedColumns: ordered, columnWidths: {}, viewportWidth: 535, rowHeaderWidth: 56 });
+    expect(keys(tight.paneSourceColumns.left)).toEqual(['no', 'customer']);
+    expect(keys(tight.paneSourceColumns.right)).toEqual([]);
+  });
+
   it('外す列が変わらない間は列ソースが同じ参照(列幅のドラッグ中に作り直さない)。幅が戻れば固定に戻る', () => {
     const resolve = createPaneLayoutResolver<R>();
     const a = resolve({ orderedColumns: ordered, columnWidths: {}, viewportWidth: 340, rowHeaderWidth: 56 });
