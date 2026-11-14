@@ -368,13 +368,19 @@ export const resolveRelativeDateFilterKey = <T,>(
   dateKey: string,
 ): string => {
   const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(dateKey);
-  const now = match
-    ? new Date(Number(match[1]), Number(match[2]) - 1, Number(match[3]), 12)
-    : new Date();
+  // 変更(1.0.1 のレビュー RA-5): 今の日付はプリセットがあるときだけ読みます(AP-06。描画中に new Date() を呼ばない)。
+  //   基準日が空(見張りを始める前)のときは今日の日付キーを基準日にします(解けないプリセットのキーが、見張りを始めて
+  //   基準日が入ったときに変わらないように。変わると serverSide が最初のブロックを取り直していた)。
+  let now: Date | null = null;
+  let effectiveDateKey = dateKey;
   const parts: string[] = [];
   for (const [columnKey, value] of Object.entries(columnFilters)) {
     if (value?.kind !== 'dateSet' || value.condition?.mode !== 'preset') {
       continue;
+    }
+    if (now === null) {
+      now = match ? new Date(Number(match[1]), Number(match[2]) - 1, Number(match[3]), 12) : new Date();
+      effectiveDateKey = match ? dateKey : formatDateKey(now);
     }
     const column = columns.find((candidate) => candidate.key === columnKey);
     let resolved: ReturnType<typeof resolveParsedDateFilter>;
@@ -388,7 +394,7 @@ export const resolveRelativeDateFilterKey = <T,>(
       resolved = null;
     }
     parts.push(
-      `${columnKey}=${resolved === null ? `?${dateKey}` : JSON.stringify(resolved)}`,
+      `${columnKey}=${resolved === null ? `?${effectiveDateKey}` : JSON.stringify(resolved)}`,
     );
   }
   return parts.join('\u0000');
