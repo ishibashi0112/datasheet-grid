@@ -180,13 +180,56 @@ export const createAutoSizeOnDataTrigger = <T,>(): AutoSizeOnDataTrigger<T> => {
   let mountRunToken = 0;
   // 追加(1.0.1 / AP-22): 描かれていなかったので待っている計測があるか。
   let deferred = false;
+  // 追加(1.0.1 のレビュー RB-6): 待っている計測が 'onMount' の 1 回目か(行が無くなって待つのをやめたら、まだ測っていない
+  //   ので、次に行が載ったときに測る)。
+  let deferredMount = false;
+  // 追加(1.0.1 のレビュー RB-6): 待っている間はグリッドのルートの大きさを見張り、描かれたら測ります。隠れている間に rows が
+  //   変わり、隠す前と同じ大きさで出し直すと、ビューの大きさが変わらないので描き直されず、次に何かで描き直されるまで
+  //   測らなかった(そのとき列幅が飛んだ)。
+  let visibilityObserver: ResizeObserver | null = null;
+  let visibilityFrame: number | null = null;
+  const stopWatching = () => {
+    visibilityObserver?.disconnect();
+    visibilityObserver = null;
+    if (visibilityFrame !== null) {
+      cancelAnimationFrame(visibilityFrame);
+      visibilityFrame = null;
+    }
+  };
+  const watchUntilVisible = (root: HTMLElement | null) => {
+    if (root === null || visibilityObserver !== null || typeof ResizeObserver === 'undefined') {
+      return;
+    }
+    visibilityObserver = new ResizeObserver(() => {
+      if (visibilityFrame !== null || isElementHidden(root)) {
+        return;
+      }
+      // ResizeObserver のコールバックの中では書かず、次のフレームで測ります(BR-1 と同じ)。
+      visibilityFrame = requestAnimationFrame(() => {
+        visibilityFrame = null;
+        const current = last;
+        if (!deferred || current === null || current.mode === false || current.isServerSide) {
+          stopWatching();
+          return;
+        }
+        if (!isElementHidden(current.gridRootRef?.current ?? null)) {
+          run(current);
+        }
+      });
+    });
+    visibilityObserver.observe(root);
+  };
 
   const run = (next: AutoSizeOnDataArgs<T>) => {
     if (next.gridRootRef !== undefined && isElementHidden(next.gridRootRef.current)) {
       deferred = true;
+      deferredMount = next.mode === 'onMount';
+      watchUntilVisible(next.gridRootRef.current);
       return;
     }
     deferred = false;
+    deferredMount = false;
+    stopWatching();
     if (next.mode !== 'onMount') {
       void next.runAutosize(next.visibleColumns);
       return;
@@ -209,6 +252,8 @@ export const createAutoSizeOnDataTrigger = <T,>(): AutoSizeOnDataTrigger<T> => {
         hasAutoSizedOnMount = false;
       }
       deferred = false;
+      deferredMount = false;
+      stopWatching();
     },
     update: (next) => {
       if (
@@ -236,7 +281,14 @@ export const createAutoSizeOnDataTrigger = <T,>(): AutoSizeOnDataTrigger<T> => {
       if (shouldRun) {
         run(next);
       } else if (next.mode === false || next.isServerSide || next.rows.length === 0) {
+        // 変更(1.0.1 のレビュー RB-6): 'onMount' の 1 回目を待っている間に行が無くなった(隠したタブで「読み込み → 取り直し」)
+        //   ときは、まだ測っていないので、次に行が載ったときに測ります(これまでは二度と測らなかった)。
+        if (deferred && deferredMount) {
+          hasAutoSizedOnMount = false;
+        }
         deferred = false;
+        deferredMount = false;
+        stopWatching();
       }
     },
   };
