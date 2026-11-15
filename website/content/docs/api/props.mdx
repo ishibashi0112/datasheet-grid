@@ -481,6 +481,8 @@ import { localeTextEn } from '@ishibashi0112/spreadsheet-grid/locales/en';
 | `totalCount` | `個数` | `Count` | 合計行 / グループ行の集計の種類。 |
 | `pinnedTopRow` | `上に固定 {row}` | `Pinned to top {row}` | 上の固定行(`pinnedTopRows`)の行見出し(ピンの印)の読み上げの名前。`{row}` は 1 から数えた位置。 |
 | `pinnedBottomRow` | `下に固定 {row}` | `Pinned to bottom {row}` | 下の固定行(`pinnedBottomRows`)の行見出しの読み上げの名前。 |
+| `contextMenuCell` | `セルのメニュー` | `Cell menu` | 右クリックメニュー(`enableContextMenu`)をセルで開いたときの読み上げの名前(1.2.0 から)。 |
+| `contextMenuRow` | `行のメニュー` | `Row menu` | 同上(行番号で開いたとき)。 |
 | `exportSubtotal` | `{label} 小計` | `{label} subtotal` | エクスポートの小計の行(`includeGroupRows`)。 |
 
 ### 選択範囲の集計(`showSelectionAggregates`)
@@ -1104,7 +1106,7 @@ WAI-ARIA の grid パターンに沿って、表・行・セルに役割と状�
 | `editor: { type: 'checkbox' }` のセル | `role="checkbox"`。`aria-label` は列の `title`(無ければ `key`)。 |
 | 編集中のエディタ | `role="group"`、`aria-label` は「`<列名> を編集`」(列名の後ろに半角の空白。例: `数量 を編集`)。組み込みのエディタの入力欄にも同じ `aria-label`(1.0.1)。行の外に重ねて描画するため、編集中のセルが `aria-owns` でエディタを子に持つ(支援技術ではエディタがセルの中に入る)。`select` エディタの入力欄は `role="combobox"`(選ぶだけ。`aria-expanded` / `aria-controls` / `aria-activedescendant` でハイライト中の候補を指す)、候補の一覧は `role="listbox"`(名前は同じ)、候補は `role="option"` + `aria-selected`(1.0.1)。確定できない値(`validationMode: 'reject'`)のときは入力欄に `aria-invalid`、メッセージは `role="alert"`。 |
 | 列メニュー | `role="menu"`(`aria-label` は列名。1.1.0 から)。項目は `role="menuitem"`、並び替えの昇順 / 降順は `role="menuitemradio"` + `aria-checked`(今の並び)、区切りは `role="separator"`。「列の固定」の小メニューも `role="menu"` で、項目は `role="menuitemradio"` + `aria-checked`(固定できないときの説明は `aria-describedby`)。列見出しの `⋮` は `aria-haspopup="menu"` / `aria-expanded`。マウスで開いたときはパネルにフォーカスが移り(`↓` で先頭の項目)、`Alt+↓` で開いたときは先頭の項目へ。 |
-| 右クリックメニュー(`enableContextMenu`) | `role="menu"`、項目は `role="menuitem"`、区切りは `role="separator"`。右クリックで開いたときはパネルに、`Shift+F10` / メニューキーで開いたときは先頭の項目にフォーカスが移る(1.1.0 から)。 |
+| 右クリックメニュー(`enableContextMenu`) | `role="menu"` + `aria-label`(セルで開くと「セルのメニュー」、行番号で開くと「行のメニュー」。`localeText` の `contextMenuCell` / `contextMenuRow`。1.2.0 から)、項目は `role="menuitem"`、区切りは `role="separator"`。右クリックで開いたときはパネルに、`Shift+F10` / メニューキーで開いたときは先頭の項目にフォーカスが移る(1.1.0 から)。 |
 | ツールパネル | `role="dialog"`(モーダルではない)、`aria-label` は `localeText.toolPanelLabel`(既定 `ツールパネル`、英語 `Tool panel`)。開くと選ばれているタブへフォーカスが移り、`Tab` / `Shift+Tab` は中で回る(最後の次は先頭)。`Escape` / `×` / 開いた部品の押し直しで閉じると、開いた部品(上部バーの絞り込みの要約・利用側のボタンなど)へフォーカスを戻す(列メニューの項目から開いたときはグリッドへ)。上部バーの絞り込みの要約は `aria-haspopup="dialog"` / `aria-expanded`。「列」タブの検索欄へは、開いている間にそのタブへ切り替えたときだけフォーカスを移す(タッチが主の端末では移さない)。タブは `role="tablist"` / `role="tab"` + `aria-selected`、中身は `role="tabpanel"`(1.1.0 から。1.0.2 までは役割と名前が無く、開いてもフォーカスが移らなかった)。 |
 | 列フィルターのポップオーバー | `role="dialog"`(モーダルではない)、`aria-label` は「`列フィルター: <列名>`」。検索欄にも `aria-label`。`Tab` / `Shift+Tab` は中で回り(最後の次は先頭)、`Escape` で閉じてグリッドへ戻る(1.0.1)。 |
 | 合計行(`totalRow`) | `role="row"`(表の最後の行。`aria-rowindex` = 表示行数 + 2 + 固定行の数)。見出しの欄は `role="rowheader"`、セルは `role="gridcell"`。 |

@@ -38,7 +38,7 @@ description: キーボードだけでの操作、スクリーンリーダーへ�
   ```
 
 - **セルの読み上げ**: フォーカスを受ける要素の `aria-activedescendant` がアクティブセルを指すので、矢印キーで動くたびに支援技術がそのセルを読み上げます。仮想化で描いていない行・列は DOM に無いため、表全体の中の位置は `aria-rowindex` / `aria-colindex` / `aria-rowcount` / `aria-colcount` で伝えます。
-- **メニューとパネル**: 列メニューは `role="menu"`(名前は列名)で、項目は `menuitem`、並べ替えの昇順 / 降順と「列の固定」の項目は `menuitemradio` + `aria-checked` です。列見出しの `⋮` は `aria-haspopup="menu"` / `aria-expanded` を持ちます。ツールパネルと列フィルターのポップオーバーは名前の付いた `role="dialog"`(モーダルではない)です(列メニューとツールパネルの役割は 1.1.0 から)。
+- **メニューとパネル**: 列メニューは `role="menu"`(名前は列名)で、項目は `menuitem`、並べ替えの昇順 / 降順と「列の固定」の項目は `menuitemradio` + `aria-checked` です。列見出しの `⋮` は `aria-haspopup="menu"` / `aria-expanded` を持ちます。右クリックメニューも `role="menu"` で、セルで開くと「セルのメニュー」、行番号で開くと「行のメニュー」という名前です(名前は 1.2.0 から)。ツールパネルと列フィルターのポップオーバーは名前の付いた `role="dialog"`(モーダルではない)です(列メニューとツールパネルの役割は 1.1.0 から)。
 - **状態**: 選択範囲のセルは `aria-selected`、編集できないセルは `aria-readonly`、並べ替えの第 1 キーの列見出しは `aria-sort`、読み込み中の行(serverSide)は `aria-busy` です。
 - **検査とメモ**: 検査に通らないセルは `aria-invalid` で、メッセージとメモ(`cellNote`)は `aria-description` で伝えます(ツールチップと同じ文)。`'reject'` の列で確定できないときのメッセージは `role="alert"` です([入力の検査](/docs/guides/validation))。
 - **エディタ**: 編集中のエディタは「`数量 を編集`」のような名前を持ち、編集中のセルの中にあるものとして伝わります(`aria-owns`)。select エディタは combobox と listbox です。

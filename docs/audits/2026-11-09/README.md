@@ -415,7 +415,7 @@ pack した 1.0.1 の候補(2026-11-09 の tarball と中身が同じ。レビ�
 | RV3-C1 | 低 | C | 列フィルターを開いたまま別の列の ⋮ を押すと、列メニューは開くがフォーカスがシェルに残る(閉じたフィルターがフォーカスをシェルへ戻し、パネルへ移す側が「ほかの場所にフォーカスがある」と見ていた) | 直した(core `popoverSupport` の `focusPanelIfIdle`: グリッドのルート・入力受けにあるフォーカスも空いているとみなす) |
 | RV3-I1 | 低 | I | `clipboard: 'label'` で label が空の候補をコピーすると空の文字になり、貼り戻すと値が消える | 直した(空の label の候補は値の文字を出す) |
 | RV3-H1 | 低 | H | 列メニューの「列の表示」で開いたツールパネルの検索欄の名前が placeholder だけ | 直した(`aria-label`) |
-| RV3-H2 | 低 | H / L | 右クリックメニューの `role="menu"` に名前が無い(列メニューは列名。axe の違反にはならない) | 1.2.0 の候補(文言のキーが要る) |
+| RV3-H2 | 低 | H / L | 右クリックメニューの `role="menu"` に名前が無い(列メニューは列名。axe の違反にはならない) | 1.2.0 で済(1.2.0 の作業の表) |
 | RV3-文書 | 低 | A / B / E / G / D | 検査の無い number 列で読めない文字は印も付かない(A)/ 固定行は検索と `highlightChanges` の対象外(B / E / G)/ サーバーコンポーネントから固定行を渡せるか(D) | 直した(API リファレンス(両方)の number の行、ガイド pinned-rows) |
 | RV3-要望 | — | F | 下の固定行は合計行の上にしか置けず、見積書の「合計 → 消費税 → 税込」の順が作れない | 1.2.0 の候補(要望として記録) |
 | RV3-X1 | 中 | J / L | 画面の高さが足りず列メニューがパネルの中でスクロールするとき(高さ 520px の画面・スマートフォン・中身がスクロールするダイアログ)、「列の固定 ›」の小メニューがパネルの枠で切れて押せない(1.0 から。1.0.1 の AP-31 の確かめは高さのある画面だった) | 直した(このときは小メニューを項目の下に開く = `.ssg-menu-subgroup`。ホバーでは開け閉めせず、押す / → で開き、押し直す / ← で閉じる。J の 520 / 760px × 4 つの置き方と L の縦 / 横向きで押せて固定が変わる) |
@@ -458,5 +458,6 @@ pack した 1.0.1 の候補(2026-11-09 の tarball と中身が同じ。レビ�
 | 状態の保存 | H-04 | prop `includeGroupingInState`(既定 false = 1.1 と同じ)。`GridColumnState.rowGroup`(rowGroup を書いた列だけ)と `GridState.collapsedGroups`(core `logic/gridState` の extract / build / migrate / applyColumnState / isSame、`engine/gridApi` の getState / applyState、`engine/notifiers` の onStateChange、`createGridEngine` の initialState。保存の rowGroup が列定義と違えば initialState の警告)。`getGroupRows()` の記述子に `collapsed`(複製に付ける) | 済(batch 5) |
 | タッチ | L-12 | `pointer: coarse` だけ: メニューの項目・select の候補 44px、列フィルターの候補の行(ColumnFilterPopover の仮想化の行の高さも 40px)・(すべて選択)・ツールパネルの列の行・ポップオーバーのボタン 40px 以上、リストの高さ 240px。見出しの ⋮ とポップオーバーの × は `::after` で押せる範囲だけ広げる(見出しの高さは変えない) | 済(batch 6) |
 | ライブの並べ替え | B-04 | アクティブセルを行キーで追う選べる prop(複数行の範囲の扱いはプレビューで選ぶ) | 未着手 |
-| 別枠 | RV3-H2 / RV3-L2 / RV3-要望 / 1 行のエディタ / `isAtBottom()` | 右クリックメニューの名前の文言 / 固定行・合計行の行見出しの axe(見た目を変えない直し方を先に)/ 下の固定行を合計行の下に置ける選べる項目(プレビューで)/ 上にそろえた行の 1 行のエディタを上に / 末尾にいるかを返す `isAtBottom()` と `onScroll` の印 | 未着手 |
+| 別枠 | RV3-H2 | 右クリックメニューの `aria-label`(セル「セルのメニュー」/ 行番号「行のメニュー」。文言 `contextMenuCell` / `contextMenuRow` は contextMenu の機能の表 core `DEFAULT_CONTEXT_MENU_LOCALE_TEXT`、英語の表にも) | 済(batch 7) |
+| 別枠 | RV3-L2 / RV3-要望 / 1 行のエディタ / `isAtBottom()` | 固定行・合計行の行見出しの axe(見た目を変えない直し方を先に)/ 下の固定行を合計行の下に置ける選べる項目(プレビューで)/ 上にそろえた行の 1 行のエディタを上に / 末尾にいるかを返す `isAtBottom()` と `onScroll` の印 | 未着手 |
 | 確かめ | — | 別視点のレビュー 2 系統、12 本のアプリでの確かめ直し、3 ブラウザのハーネス、サイズの上限(入れ終えた後の実測 + 0.5KB) | 未着手 |

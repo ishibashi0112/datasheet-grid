@@ -1045,7 +1045,7 @@ export function useGridShell<T extends object>({
   //             openContextMenu へ渡します。相互排他は他 popover と同じく outside-pointerdown が担います。
   // 変更(差し込み式 段階 2): controller の接続と popover は機能(features/contextMenu)へ移しました。
   const { isContextMenuOpen, openContextMenu, renderContextMenuPopover } =
-    features.contextMenu.useCellContextMenu<T>({ gridRootRef });
+    features.contextMenu.useCellContextMenu<T>({ gridRootRef, localeTexts });
   const buildBodyContextMenuParams = features.contextMenu.buildBodyContextMenuParams;
   const buildCellContextMenuParams = features.contextMenu.buildCellContextMenuParams;
   // 追加(1.1.0 / AP-33): キーボードで開こうとした時刻(ms)と開いたか。続けてブラウザが送る contextmenu(Shift+F10 / メニューキーの

@@ -49,6 +49,12 @@ export const DEFAULT_PINNED_ROWS_LOCALE_TEXT = {
   pinnedBottomRow: '下に固定 {row}',
 } satisfies Partial<GridLocaleText>;
 
+// 追加(1.2.0 / 1.1.0 の確かめ直し RV3-H2): 右クリックメニューの読み上げの名前(contextMenu の機能)
+export const DEFAULT_CONTEXT_MENU_LOCALE_TEXT = {
+  contextMenuCell: 'セルのメニュー',
+  contextMenuRow: '行のメニュー',
+} satisfies Partial<GridLocaleText>;
+
 // スクロールの吹き出しとものさし(scrollHint の機能)
 export const DEFAULT_SCROLL_HINT_LOCALE_TEXT = {
   scrollHintRow: '行 {row}',

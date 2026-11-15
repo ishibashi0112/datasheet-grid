@@ -270,6 +270,8 @@ export type ToolPanelFeatureResult = UseToolPanelControllerResult & { available:
 // セル / 行のコンテキストメニュー(contextMenu)の hook が受け取る値と返す値、右クリックの対象の解決に渡す値です。
 export type CellContextMenuFeatureArgs = {
   gridRootRef: RefObject<HTMLDivElement | null>;
+  // 追加(1.2.0 / RV3-H2): メニューの読み上げの名前(contextMenuCell / contextMenuRow)。
+  localeTexts: ResolvedGridLocaleText;
 };
 export type CellContextMenuFeatureResult<T> = {
   isContextMenuOpen: boolean;
@@ -393,7 +395,7 @@ export type ReactGridFeatures = {
     useToolPanelViews: (options: UseLazyModuleOptions) => ToolPanelViews | null;
   } | undefined;
   // セル / 行のコンテキストメニュー(バッチ②): controller の接続 + popover、右クリックの対象の解決。
-  contextMenu?: {
+  contextMenu?: FeatureLocaleDefaults & {
     useCellContextMenu: <T>(args: CellContextMenuFeatureArgs) => CellContextMenuFeatureResult<T>;
     buildBodyContextMenuParams: <T>(input: BodyContextMenuInput<T>) => GridContextMenuParams<T> | null;
     buildCellContextMenuParams: <T>(input: CellContextMenuInput<T>) => GridContextMenuParams<T> | null;

@@ -2196,6 +2196,10 @@ export type GridLocaleText = {
   pinnedTopRow: GridLocaleTextTemplate<{ row: number }>;
   /** 下の固定行の行見出しの読み上げの名前(`pinnedBottomRows`)。既定 `下に固定 {row}`、英語 `Pinned to bottom {row}`。 */
   pinnedBottomRow: GridLocaleTextTemplate<{ row: number }>;
+  /** 右クリックメニュー(`enableContextMenu`)をセルで開いたときの読み上げの名前。既定 `セルのメニュー`、英語 `Cell menu`。 */
+  contextMenuCell: string;
+  /** 同上(行番号で開いたとき)。既定 `行のメニュー`、英語 `Row menu`。 */
+  contextMenuRow: string;
   /** 合計行の左端の文字(`totalRow.label` を渡せばそちら)。既定 `合計`、英語 `Total`。 */
   totalRowLabel: string;
   /** 合計行 / グループ行の集計の種類。既定 `平均`、英語 `Avg`。 */

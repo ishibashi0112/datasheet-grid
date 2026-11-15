@@ -4,6 +4,7 @@
 //   - 右クリックで開いたメニューはパネルにフォーカスが移る(↓ で先頭、↑ で末尾の項目へ)。
 //   - 列メニューは role="menu" で、並び替えは menuitemradio + aria-checked、⋮ は aria-haspopup / aria-expanded。
 //   - ツールパネルは role="dialog" と名前を持ち、開くと選ばれているタブへフォーカスが移り、Tab はパネルの中で回る。
+//   - 右クリックメニューは読み上げの名前を持つ(セルで開くと「セルのメニュー」、行番号で開くと「行のメニュー」。1.2.0 / RV3-H2)。
 // @vitest-environment jsdom
 import { describe, it, expect, beforeAll, afterAll, afterEach, vi } from 'vitest';
 import { render, cleanup, act, fireEvent, screen } from '@testing-library/react';
@@ -11,6 +12,7 @@ import { createRef, StrictMode } from 'react';
 
 import { SpreadsheetGrid } from './SpreadsheetGrid';
 import { installJsdomLayoutStubs } from './testing';
+import { localeTextEn } from './locales/en';
 import type {
   GridColumn,
   GridContextMenuItem,
@@ -280,6 +282,46 @@ describe('キーボードで開く右クリックメニュー(AP-33)', () => {
     });
     expect(document.activeElement?.getAttribute('role')).toBe('menuitem');
     expect(document.activeElement?.textContent).toBe('削除');
+  });
+});
+
+describe('右クリックメニューの名前(RV3-H2)', () => {
+  let restore: () => void;
+  beforeAll(() => {
+    restore = installJsdomLayoutStubs();
+  });
+  afterAll(() => {
+    restore();
+  });
+  afterEach(() => {
+    cleanup();
+  });
+
+  it('セルで開くと「セルのメニュー」、行番号で開くと「行のメニュー」', () => {
+    const { container } = setup({ enableContextMenu: true, getContextMenuItems: menuItems });
+    const cell = container.querySelector<HTMLElement>('[data-row-index="0"] [data-ssg-col-key="name"]');
+    act(() => {
+      fireEvent.contextMenu(cell!, { clientX: 10, clientY: 10, button: 2 });
+    });
+    expect(screen.getByRole('menu', { name: 'セルのメニュー' })).toBe(menuPanel());
+    act(() => {
+      fireEvent.keyDown(menuPanel()!, { key: 'Escape' });
+    });
+    expect(menuPanel()).toBeNull();
+    const rowHeader = container.querySelector<HTMLElement>('[data-row-index="1"] .ssg-row-header-cell');
+    act(() => {
+      fireEvent.contextMenu(rowHeader!, { clientX: 10, clientY: 40, button: 2 });
+    });
+    expect(screen.getByRole('menu', { name: '行のメニュー' })).toBe(menuPanel());
+  });
+
+  it('localeText で変えられる(英語の文言では「Cell menu」)', () => {
+    const { container } = setup({ enableContextMenu: true, getContextMenuItems: menuItems, localeText: localeTextEn });
+    const cell = container.querySelector<HTMLElement>('[data-row-index="0"] [data-ssg-col-key="qty"]');
+    act(() => {
+      fireEvent.contextMenu(cell!, { clientX: 10, clientY: 10, button: 2 });
+    });
+    expect(screen.getByRole('menu', { name: 'Cell menu' })).toBe(menuPanel());
   });
 });
 
