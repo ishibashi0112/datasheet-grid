@@ -3018,8 +3018,10 @@ export type SpreadsheetGridHandle<T> = {
    * は履歴に積まず、今の履歴も消さない(株価のような外からのライブの更新)。そのときの元に戻す /
    * やり直すは、外からの更新を残したままグリッドでの編集だけを取り消す / やり直す(行は
    * `rowKeyGetter` で対応づける。無いときは位置なので、行を足す / 消す更新では `rowKeyGetter`
-   * を書く)。履歴が無効(`enableUndoRedo={false}` / `readOnly`)なら積まずに `onRowsChange` へ渡す。
-   * `onRowsChange` が無いとき・serverSide では何もしない(開発時に警告)。
+   * を書く。`rowKeyGetter` が無い表で行の数が変わったときと、行キーが重なっているときは、1.0
+   * と同じく編集の前の行をそのまま戻す = 外からの更新も戻る)。履歴が無効(`enableUndoRedo={false}` /
+   * `readOnly`)なら積まずに `onRowsChange` へ渡す。`onRowsChange` が無いとき・serverSide
+   * では何もしない(開発時に警告)。
    */
   applyRows: (nextRows: T[] | ((prev: T[]) => T[]), options?: GridApplyRowsOptions | undefined) => void;
 
@@ -4609,7 +4611,8 @@ export type SpreadsheetGridProps<T, F extends GridFrameworkTypes = GridFramework
   //   SSRM 未ロード行では開きません。ヘッダー右クリックは列メニュー(enableColumnMenu)が担当し、本メニューは
   //   ボディ(セル/行NO ガター)専用です。
   /**
-   * セル/行の**完全カスタム**コンテキストメニュー。右クリック時のみ呼ばれ、
+   * セル/行の**完全カスタム**コンテキストメニュー。右クリックと、アクティブセルでの `Shift+F10` /
+   * メニューキー(1.1.0)のときだけ呼ばれ(1 回の操作で 1 回)、
    * 返した項目でメニューを描画する(ライブラリは固定の既定項目を持たない)。opt-in は
    * `enableContextMenu={true}` かつ本コールバックの指定の両方。**未指定、または `[]`
    * を返したときはブラウザ標準の右クリックメニューへフォールスルー**(空パネルは出さない)。SSRM

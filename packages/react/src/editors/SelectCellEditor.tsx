@@ -95,7 +95,7 @@ export function SelectCellEditor({
   const [highlight, setHighlight] = useState(initialState.highlight);
   const [placement, setPlacement] = useState<SelectPopoverPlacement | null>(null);
   // 追加(DevBI の報告): 表で決まったトークン(--ssg-*)を候補のリストへ写します(body 直下のため継承で届かない)。
-  usePortalTokens(listRef, placement !== null, themeClassName);
+  usePortalTokens(listRef, placement !== null, themeClassName, { layout: placement });
   // 追加(1.1.0 / AP-07): 候補を描く場所(既定はグリッドを囲むダイアログの中、無ければ body)。
   const popupContainer = usePopupContainer(placement !== null);
   // 追加(validation): reject 列の検証 NG メッセージです(表示中も選択操作は継続できます)。

@@ -13,6 +13,12 @@
 //   その分だけずれます。syncPopupOrigin がその基準の原点を測り、ポップアップの `translate` で打ち消します(ポップアップが
 //   アニメーションに使う transform とは別のプロパティなので重なっても壊れない)。拡大縮小(scale)は打ち消しません。
 //   基準の要素が overflow で切る場合は、ポップアップもその中で切れます(そのときは popupContainer で別の場所を指定する)。
+// 変更(1.1.0 の見直し): 囲むダイアログ(`<dialog>` / popover 以外)が overflow で切り、しかも fixed の基準になる(transform など)
+//   ときは、その外側でいちばん近い position: fixed の祖先(body より内側で、自分は切らないもの)へ描きます。Mantine の Modal は
+//   中身の section(role="dialog" + aria-modal)に transform と overflow-y: auto があり、その中では列フィルターなどが枠で切れて
+//   いたため、外側の `.mantine-Modal-inner`(position: fixed)へ出します(Modal のスクロール止めとフォーカスの閉じ込めの範囲の中)。
+//   そうした祖先が無ければ(Radix のように中身自身が fixed)、囲むダイアログの中のまま。`<dialog>` / popover はトップレイヤーなので
+//   外へ出しません。ポップアップの root には pointer-events: auto を付けてあります(Mantine の inner は pointer-events: none)。
 
 import type { GridPopupContainer } from '../model/gridTypes.core';
 
@@ -32,10 +38,57 @@ const bodyOf = (element: Element | null | undefined): HTMLElement | null => {
   return doc?.body ?? null;
 };
 
+const CONTAINING_BLOCK_WILL_CHANGE = /transform|translate|scale|rotate|perspective|filter/;
+const CONTAINING_BLOCK_CONTAIN = /paint|layout|strict|content/;
+
+// fixed の子孫の基準になり(transform など)、しかも overflow で切る要素か。
+const isClippingContainingBlock = (element: HTMLElement): boolean => {
+  const view = element.ownerDocument.defaultView;
+  if (!view || typeof view.getComputedStyle !== 'function') {
+    return false;
+  }
+  const style = view.getComputedStyle(element);
+  const clips = (style.overflowX || 'visible') !== 'visible' || (style.overflowY || 'visible') !== 'visible';
+  if (!clips) {
+    return false;
+  }
+  const isNone = (value: string | undefined): boolean => !value || value === 'none';
+  return (
+    !isNone(style.transform) ||
+    !isNone(style.getPropertyValue('translate')) ||
+    !isNone(style.getPropertyValue('scale')) ||
+    !isNone(style.getPropertyValue('rotate')) ||
+    !isNone(style.filter) ||
+    !isNone(style.perspective) ||
+    !isNone(style.getPropertyValue('backdrop-filter')) ||
+    CONTAINING_BLOCK_WILL_CHANGE.test(style.willChange || '') ||
+    CONTAINING_BLOCK_CONTAIN.test(style.contain || '') ||
+    (style.getPropertyValue('container-type') || 'normal') !== 'normal'
+  );
+};
+
+// 囲むダイアログが切る基準のとき、その外側の position: fixed の祖先です(上の「変更(1.1.0 の見直し)」)。
+const escapeClippingHost = (host: HTMLElement): HTMLElement => {
+  if (host.matches('dialog, [popover]') || !isClippingContainingBlock(host)) {
+    return host;
+  }
+  const doc = host.ownerDocument;
+  const view = doc.defaultView;
+  for (let node = host.parentElement; node !== null && node !== doc.body && node !== doc.documentElement; node = node.parentElement) {
+    if (node.matches('dialog, [popover]')) {
+      return host;
+    }
+    if (view?.getComputedStyle(node).position === 'fixed') {
+      return isClippingContainingBlock(node) ? host : node;
+    }
+  }
+  return host;
+};
+
 // グリッドを囲むダイアログです(グリッド自身のポップアップは見ない = グリッドはポップアップの中に無い)。
 export function findPopupHost(element: Element): HTMLElement | null {
   const host = element.parentElement?.closest(POPUP_HOST_SELECTOR);
-  return isElementNode(host) ? host : null;
+  return isElementNode(host) ? escapeClippingHost(host) : null;
 }
 
 // 描く場所を決めます。グリッドの要素がまだ無いとき(描く前)は body。

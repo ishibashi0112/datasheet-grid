@@ -168,10 +168,11 @@ export function ColumnMenuPopover({
     setOpenSubmenuKey(null);
   }, [columnKey, isOpen]);
   // 追加(DevBI の報告): 表で決まったトークン(--ssg-*)をメニューへ写します(body 直下のため継承で届かない)。
-  usePortalTokens(popoverRef, isOpen && layout !== null, themeClassName);
+  usePortalTokens(popoverRef, isOpen && layout !== null, themeClassName, { layout });
   // 列の固定のサブメニューも同じトークンの既定値を持つ要素(.ssg-menu-panel)なので、外側のメニューからは継承されません。
   const pinSubmenuRef = useRef<HTMLDivElement>(null);
-  usePortalTokens(pinSubmenuRef, isOpen && layout !== null && openSubmenuKey === PIN_SUBMENU_KEY, themeClassName);
+  // 変更(1.1.0 / AP-07 の見直し): 小メニューはメニューの中に absolute で置くので、位置のずれの打ち消しはしません。
+  usePortalTokens(pinSubmenuRef, isOpen && layout !== null && openSubmenuKey === PIN_SUBMENU_KEY, themeClassName, { origin: false });
   // 追加(1.1.0 / AP-07): 描く場所(既定はグリッドを囲むダイアログの中、無ければ body)。
   const popupContainer = usePopupContainer(isOpen && layout !== null);
   // 追加(1.0.1 / 2026-11-09 実アプリの総点検 AP-31): キーボード(→ / Enter / Space)で開いたときは小メニューの先頭の項目へ

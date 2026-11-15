@@ -129,4 +129,31 @@ describe('popupContainer(AP-07)', () => {
     });
     expect(calls).toBe(0);
   });
+
+  // 追加(1.1.0 / AP-07 の見直し): transform のあるダイアログ(fixed の基準がダイアログになる)を、位置を測る要素
+  //   (position: fixed / 大きさ 0)の getBoundingClientRect で模す。パネルは打ち消し、メニューの中に absolute で置く
+  //   「列の固定」の小メニューは打ち消さない(打ち消すとパネルの画面の位置ぶん飛んでいた)。
+  it('ダイアログの中の列メニューは位置のずれを打ち消し、「列の固定」の小メニューは打ち消さない', () => {
+    const original = HTMLElement.prototype.getBoundingClientRect;
+    HTMLElement.prototype.getBoundingClientRect = function (this: HTMLElement) {
+      if (this.style.position === 'fixed' && this.style.width === '0px') {
+        return { left: 400, top: 150, right: 400, bottom: 150, width: 0, height: 0, x: 400, y: 150, toJSON: () => ({}) } as DOMRect;
+      }
+      return original.call(this);
+    };
+    try {
+      const { ref, shell } = renderIn('dialog');
+      const menu = openColumnMenu(ref, shell);
+      expect(menu?.style.getPropertyValue('translate')).toBe('-400px -150px');
+      const pin = Array.from(menu!.querySelectorAll<HTMLElement>('.ssg-menu-item')).find((item) => item.textContent?.includes('列の固定'));
+      act(() => {
+        fireEvent.click(pin!);
+      });
+      const submenu = menu!.querySelector<HTMLElement>('.ssg-menu-panel');
+      expect(submenu).not.toBeNull();
+      expect(submenu!.style.getPropertyValue('translate')).toBe('');
+    } finally {
+      HTMLElement.prototype.getBoundingClientRect = original;
+    }
+  });
 });

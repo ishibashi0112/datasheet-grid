@@ -40,7 +40,7 @@ export function CellContextMenuPopover({
   onRequestClose,
 }: CellContextMenuPopoverProps) {
   // 追加(DevBI の報告): 表で決まったトークン(--ssg-*)をメニューへ写します(body 直下のため継承で届かない)。
-  usePortalTokens(popoverRef, isOpen && layout !== null, themeClassName);
+  usePortalTokens(popoverRef, isOpen && layout !== null, themeClassName, { layout });
   // 追加(1.1.0 / AP-07): 描く場所(既定はグリッドを囲むダイアログの中、無ければ body)。
   const popupContainer = usePopupContainer(isOpen && layout !== null);
   if (!isOpen || !layout || !popupContainer) {

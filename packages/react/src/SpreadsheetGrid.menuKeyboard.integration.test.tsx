@@ -102,6 +102,39 @@ describe('キーボードで開く右クリックメニュー(AP-33)', () => {
     expect(document.activeElement?.textContent).toContain('コピー');
   });
 
+  it('キーで開いた直後のキーボードの contextmenu は、表の外が対象でも 1 回だけ止める(右クリックは止めない)', () => {
+    const { ref, shell } = setup({ enableContextMenu: true, getContextMenuItems: menuItems });
+    act(() => {
+      ref.current?.setActiveCell({ row: 0, col: 0 });
+    });
+    act(() => {
+      fireEvent.keyDown(shell, { key: 'ContextMenu' });
+    });
+    expect(menuPanel()).not.toBeNull();
+    // 右ボタンの contextmenu は止めない(見張りも外れる)。
+    const rightClick = new MouseEvent('contextmenu', { bubbles: true, cancelable: true, button: 2 });
+    document.body.dispatchEvent(rightClick);
+    expect(rightClick.defaultPrevented).toBe(false);
+    const late = new MouseEvent('contextmenu', { bubbles: true, cancelable: true, button: 0 });
+    document.body.dispatchEvent(late);
+    expect(late.defaultPrevented).toBe(false);
+
+    // もう一度キーで開くと、続けて表の外へ来たキーボードの contextmenu を 1 回だけ止める。
+    act(() => {
+      fireEvent.keyDown(shell, { key: 'Escape' });
+    });
+    shell.focus();
+    act(() => {
+      fireEvent.keyDown(shell, { key: 'ContextMenu' });
+    });
+    const keyup = new MouseEvent('contextmenu', { bubbles: true, cancelable: true, button: 0 });
+    document.body.dispatchEvent(keyup);
+    expect(keyup.defaultPrevented).toBe(true);
+    const second = new MouseEvent('contextmenu', { bubbles: true, cancelable: true, button: 0 });
+    document.body.dispatchEvent(second);
+    expect(second.defaultPrevented).toBe(false);
+  });
+
   it('メニューキー(ContextMenu)でも開く', () => {
     const getContextMenuItems = vi.fn<(params: GridContextMenuParams<Row>) => GridContextMenuItem[]>(menuItems);
     const { ref, shell } = setup({ enableContextMenu: true, getContextMenuItems });
@@ -131,7 +164,8 @@ describe('キーボードで開く右クリックメニュー(AP-33)', () => {
   });
 
   it('項目が無い・アクティブセルが無い・機能が無効のときは開かず、標準のメニューのまま', () => {
-    const empty = setup({ enableContextMenu: true, getContextMenuItems: () => [] });
+    const emptyItems = vi.fn<(params: GridContextMenuParams<Row>) => GridContextMenuItem[]>(() => []);
+    const empty = setup({ enableContextMenu: true, getContextMenuItems: emptyItems });
     act(() => {
       empty.ref.current?.setActiveCell({ row: 0, col: 0 });
     });
@@ -141,6 +175,13 @@ describe('キーボードで開く右クリックメニュー(AP-33)', () => {
     });
     expect(keydown.defaultPrevented).toBe(false);
     expect(menuPanel()).toBeNull();
+    // 続けて来るキーボードの contextmenu は標準のメニューのまま、項目も問い合わせ直さない(1 回の操作で 1 回)。
+    const followUp = new MouseEvent('contextmenu', { bubbles: true, cancelable: true, button: 0 });
+    act(() => {
+      empty.shell.dispatchEvent(followUp);
+    });
+    expect(followUp.defaultPrevented).toBe(false);
+    expect(emptyItems).toHaveBeenCalledTimes(1);
     cleanup();
 
     const noActive = setup({ enableContextMenu: true, getContextMenuItems: menuItems });
@@ -319,6 +360,28 @@ describe('ツールパネルのダイアログ(RV2-L2)', () => {
     expect(tab.defaultPrevented).toBe(true);
     expect(dialog.contains(document.activeElement)).toBe(true);
     expect(document.activeElement).not.toBe(last);
+  });
+
+  // 追加(1.1.0 / RV2-L2 の見直し): 列メニューを閉じたときの「グリッドへ戻す」(次のフレーム)が、続けて開いたツールパネルの
+  //   フォーカスを奪っていた。
+  it('列メニューの「並び替えを管理…」から開いたツールパネルは、次のフレームの後もフォーカスがパネルの中にある', async () => {
+    const { container } = setup();
+    const trigger = container.querySelector<HTMLElement>('[data-ssg-col-key="qty"] [aria-haspopup="menu"]');
+    act(() => {
+      fireEvent.pointerDown(trigger!, { button: 0, pointerId: 1 });
+      fireEvent.click(trigger!);
+    });
+    await nextFrame();
+    const item = screen.getByRole('menuitem', { name: /並び替えを管理/ });
+    act(() => {
+      fireEvent.pointerDown(item, { button: 0, pointerId: 1 });
+      item.focus();
+      fireEvent.click(item);
+    });
+    const dialog = screen.getByRole('dialog', { name: 'ツールパネル' });
+    await nextFrame();
+    await nextFrame();
+    expect(dialog.contains(document.activeElement)).toBe(true);
   });
 
   it('英語の文言では「Tool panel」', async () => {

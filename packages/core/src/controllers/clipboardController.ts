@@ -330,7 +330,6 @@ export const createClipboardController = <T extends object>(): ClipboardControll
       if (edits.length > 0) {
         applyServerSideCellEdits(edits);
       }
-      notifySkipped();
       const serverSideEndRow = clamp(
         lastTargetViewIndex,
         0,
@@ -347,6 +346,9 @@ export const createClipboardController = <T extends object>(): ClipboardControll
       );
       dispatch(gridActions.endSelection());
       dispatch(gridActions.activateCell(anchor));
+      // 変更(1.1.0 / AP-09 の見直し): clientSide と同じく、書き込みと選択を済ませてから知らせます(通知の中で選択を変えても
+      //   上書きされない)。
+      notifySkipped();
       return;
     }
     if (!onRowsChange) {

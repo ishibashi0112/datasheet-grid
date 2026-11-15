@@ -16,7 +16,7 @@ description: モーダルやポップオーバーの中にグリッドを置く�
 
 | 値 | 描く場所 |
 | --- | --- |
-| `'auto'`(既定) | グリッドを囲むいちばん近いダイアログ(`<dialog>` / `popover` 属性の要素 / `aria-modal="true"` / `role="dialog"` / `role="alertdialog"`)の中。無ければ `document.body` の直下 |
+| `'auto'`(既定) | グリッドを囲むいちばん近いダイアログ(`<dialog>` / `popover` 属性の要素 / `aria-modal="true"` / `role="dialog"` / `role="alertdialog"`)の中。無ければ `document.body` の直下。ダイアログが中を切る fixed の基準のとき(Mantine の Modal の中身)は、外側の `position: fixed` の祖先の中(下の「気をつけること」) |
 | `'body'` | いつも `document.body` の直下(1.0 までと同じ) |
 | 要素 | その要素の中 |
 | 関数 | グリッドの要素を受け取って描く場所を返す(`null` / `undefined` なら `document.body`)。ポップアップを開くたびに呼ぶ |
@@ -39,7 +39,7 @@ description: モーダルやポップオーバーの中にグリッドを置く�
 
 ## 気をつけること
 
-- **ずれの打ち消し**: 描く場所の祖先に `transform` / `translate` などがあると(shadcn/ui の DialogContent は `translate` で真ん中に置く)、`position: fixed` の基準がその要素になります。グリッドはそのずれを測り、ポップアップの `translate` で打ち消します(開いたとき)。拡大縮小(`scale`)は打ち消しません。
-- **ダイアログの枠で切れる**: その要素が `overflow` で中を切ると(`max-height` と `overflow-y: auto` のダイアログなど)、ポップアップもダイアログの枠で切れます。困るときは、切らない場所を要素か関数で渡してください(ダイアログがその外のポインタやフォーカスを止めないなら `'body'` でもかまいません)。
+- **ずれの打ち消し**: 描く場所の祖先に `transform` / `translate` などがあると(shadcn/ui の DialogContent は `translate` で真ん中に置く)、`position: fixed` の基準がその要素になります。グリッドはそのずれを測り、ポップアップの `translate` で打ち消します(開いたときと、位置を決め直すたび)。拡大縮小(`scale`)は打ち消しません。
+- **ダイアログの枠で切れる**: その要素が `overflow` で中を切り、しかも `transform` などで `position: fixed` の基準になると(`max-height` と `overflow-y: auto` と `transform` を持つダイアログ)、ポップアップもダイアログの枠で切れます。`'auto'` は、外側に `position: fixed` の祖先があればそこへ出します(Mantine の Modal は中身の外側の `.mantine-Modal-inner` へ出るので切れません)。外側に無いとき(中身自身が `position: fixed` で `overflow-y: auto` の DialogContent など)は切れるので、切らない場所を要素か関数で渡してください(ダイアログがその外のポインタやフォーカスを止めないなら `'body'` でもかまいません)。
 - **トークン**: 表で決めた CSS トークン(`--ssg-*`)は、これまでどおり開いたときにポップアップへ写します。`theme="class"` の `dark` のクラスは `<html>` か `<body>` に付けてください。
 - **Escape**: グリッドが使う `Escape`(編集の取り消し・メニューを閉じるなど)ではダイアログは閉じません。詳しくは [キーボード操作の「ダイアログの中のグリッド」](/docs/guides/keyboard#ダイアログの中のグリッド)。

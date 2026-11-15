@@ -1042,9 +1042,10 @@ export function useGridShell<T extends object>({
     features.contextMenu.useCellContextMenu<T>({ gridRootRef });
   const buildBodyContextMenuParams = features.contextMenu.buildBodyContextMenuParams;
   const buildCellContextMenuParams = features.contextMenu.buildCellContextMenuParams;
-  // 追加(1.1.0 / AP-33): キーボードで開いた時刻(ms)。続けてブラウザが送る contextmenu(Shift+F10 / メニューキーの既定の動作)で
-  //   標準のメニューを出さないために使います。
-  const keyboardContextMenuAtRef = useRef(0);
+  // 追加(1.1.0 / AP-33): キーボードで開こうとした時刻(ms)と開いたか。続けてブラウザが送る contextmenu(Shift+F10 / メニューキーの
+  //   既定の動作)で、開いたときは標準のメニューを止め、開かなかった(項目が無い)ときは標準のメニューのままにします(項目をもう一度
+  //   問い合わせない)。
+  const keyboardContextMenuRef = useRef<{ at: number; opened: boolean } | null>(null);
 
   // ── column widths sync ────────────────────────────────
   // 変更(監査 RD-5 / M-03): フル置換(resetColumnWidths。columns の参照が変わるたびに全列を column.width
@@ -1442,9 +1443,10 @@ export function useGridShell<T extends object>({
       if (!enableContextMenu || !getContextMenuItems || !root || !column) {
         return false;
       }
+      // 修正(1.1.0 の見直し): 展開行のカードの中の入れ子のグリッドのセルは数えません。
       const cellEl = Array.from(
         root.querySelectorAll<HTMLElement>(`[data-row-index="${cell.row}"] [data-ssg-col-key]`),
-      ).find((element) => element.dataset.ssgColKey === column.key);
+      ).find((element) => element.dataset.ssgColKey === column.key && !isInsideDetailCardOf(root, element));
       const rect = (cellEl ?? root).getBoundingClientRect();
       const params = buildCellContextMenuParams<T>({
         cell,
@@ -1462,7 +1464,6 @@ export function useGridShell<T extends object>({
       if (!items || items.length === 0) {
         return false;
       }
-      keyboardContextMenuAtRef.current = performance.now();
       onContextMenuOpen?.(params);
       openContextMenu(params, items, { focus: 'firstItem' });
       return true;
@@ -1480,6 +1481,32 @@ export function useGridShell<T extends object>({
     ],
   );
 
+  // 追加(1.1.0 / AP-33 の見直し): キーの操作(keydown)から開くときの入口です。開こうとしたことを控え、開いたときは続けて来る
+  //   キーボードの contextmenu(右ボタン以外)を 1 秒の間に 1 回だけ window の capture で止めます(Windows のメニューキーは keyup で
+  //   contextmenu を送り、フォーカスはもう表の外の項目かパネルへ移っているため、シェルの onContextMenu には届かないことがある)。
+  const openContextMenuFromKeyboard = useCallback(
+    (cell: CellCoord): boolean => {
+      const opened = openContextMenuForCell(cell);
+      keyboardContextMenuRef.current = { at: performance.now(), opened };
+      if (opened && typeof window !== 'undefined') {
+        const stop = (): void => {
+          window.removeEventListener('contextmenu', onContextMenu, true);
+          window.clearTimeout(timer);
+        };
+        const onContextMenu = (event: MouseEvent): void => {
+          stop();
+          if (event.button !== 2) {
+            event.preventDefault();
+          }
+        };
+        const timer = window.setTimeout(stop, 1000);
+        window.addEventListener('contextmenu', onContextMenu, true);
+      }
+      return opened;
+    },
+    [openContextMenuForCell],
+  );
+
   const handleBodyContextMenu = useCallback(
     (event: ReactMouseEvent<HTMLDivElement>) => {
       // opt-in 判定: マスタースイッチ OFF(既定)/ getContextMenuItems 未指定なら何もしません
@@ -1494,8 +1521,11 @@ export function useGridShell<T extends object>({
       const fromShellFocus =
         target !== null && (target === event.currentTarget || target.hasAttribute(IME_INPUT_ATTRIBUTE));
       if (event.nativeEvent.button !== 2 && fromShellFocus) {
-        if (performance.now() - keyboardContextMenuAtRef.current < 1000) {
-          event.preventDefault();
+        const fromKeyboard = keyboardContextMenuRef.current;
+        if (fromKeyboard && performance.now() - fromKeyboard.at < 1000) {
+          if (fromKeyboard.opened) {
+            event.preventDefault();
+          }
           return;
         }
         if (uiState.activeCell && openContextMenuForCell(uiState.activeCell)) {
@@ -1600,13 +1630,37 @@ export function useGridShell<T extends object>({
       if (!chips) {
         return null;
       }
+      const colIndex = orderedColumns.findIndex((candidate) => candidate.key === column.key);
+      const value = getCellValue(row, column);
+      // 変更(1.1.0 / 固定行の見直し): 固定行は負の index(-1 - 上 + 下の通し番号)で来るので、本体の rowModel を引かず、
+      //   描くときと同じ ctx(固定行の中の位置・行キー・pinned)を作ります(rowModel.getRowKey(-1) で rowKeyGetter が落ちていた)。
+      if (viewIndex < 0) {
+        const pinnedIndex = -1 - viewIndex;
+        const pinned = pinnedIndex < pinnedTopCount ? 'top' : 'bottom';
+        const index = pinned === 'top' ? pinnedIndex : pinnedIndex - pinnedTopCount;
+        const spec = autosizeChipFeature.resolveChipSpec(chips, {
+          row,
+          rowIndex: index,
+          sourceRowIndex: index,
+          rowKey: resolvedRowKeyGetter(row, index),
+          colIndex,
+          value,
+          column,
+          isActive: false,
+          isSelected: false,
+          isEditing: false,
+          readOnly: true,
+          pinned,
+        });
+        return spec ? { label: spec.label, icon: spec.icon !== false } : null;
+      }
       const spec = autosizeChipFeature.resolveChipSpec(chips, {
         row,
         rowIndex: viewIndex,
         sourceRowIndex: rowModel.getSourceIndex(viewIndex) ?? viewIndex,
         rowKey: rowModel.getRowKey(viewIndex) ?? viewIndex,
-        colIndex: orderedColumns.findIndex((candidate) => candidate.key === column.key),
-        value: getCellValue(row, column),
+        colIndex,
+        value,
         column,
         isActive: false,
         isSelected: false,
@@ -1615,7 +1669,7 @@ export function useGridShell<T extends object>({
       });
       return spec ? { label: spec.label, icon: spec.icon !== false } : null;
     };
-  }, [autosizeChipFeature, rowModel, orderedColumns]);
+  }, [autosizeChipFeature, rowModel, orderedColumns, pinnedTopCount, resolvedRowKeyGetter]);
   const columnAutosize = features.columnAutosize.useColumnAutosize<T>({
     rowModel,
     gridRootRef,
@@ -2549,8 +2603,9 @@ export function useGridShell<T extends object>({
     onUndoRedoStateChange,
     // 追加(undo/redo scroll): 復元後に復元先アクティブセルを可視化します。
     onAfterRestore: scrollRestoredCellIntoView,
-    // 追加(1.1.0 / AP-14): 外からの更新を挟んだ元に戻すで行を対応づけるキー。
-    rowKeyGetter: resolvedRowKeyGetter,
+    // 追加(1.1.0 / AP-14): 外からの更新を挟んだ元に戻すで行を対応づけるキー。未指定は位置(行の数が変わったら取り直さない)
+    //   ので、既定の index の getter ではなく利用側の prop をそのまま渡します。
+    rowKeyGetter,
   });
 
   // ── clear(Delete / Backspace)─────────────────────────
@@ -3077,7 +3132,7 @@ export function useGridShell<T extends object>({
     resolvePageRow,
     openColumnMenu: columnMenuEnabled ? openColumnMenuForCell : undefined,
     // 追加(1.1.0 / AP-33): Shift+F10 / メニューキーで右クリックメニュー。
-    openContextMenu: enableContextMenu && getContextMenuItems ? openContextMenuForCell : undefined,
+    openContextMenu: enableContextMenu && getContextMenuItems ? openContextMenuFromKeyboard : undefined,
     // 追加(段階 2 C-N2): 最終列の Tab をその行の展開行のカードへ。
     onTabPastLastColumn: handleTabPastLastColumn,
   });

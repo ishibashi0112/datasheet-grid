@@ -3,7 +3,7 @@
 import { describe, expect, it } from 'vitest';
 import type { GridColumn, GridSelectEditorOption } from '../model/gridTypes.unbound';
 import { formatCellClipboardText, resolveSelectLabelParser } from './selectLabels';
-import { resolveCellParser } from './editorValues';
+import { parseCommittedValue, resolveCellParser } from './editorValues';
 import { createGroupSubtotalLineGetter } from './groupExport';
 
 type Row = { id: number; kind: string; group?: string };
@@ -79,6 +79,45 @@ describe('resolveSelectLabelParser / resolveCellParser', () => {
     expect(resolveCellParser({ ...labelColumn, editor: { type: 'select', options: OPTIONS } })('交通費', row)).toBe('交通費');
     const parse = resolveCellParser({ ...labelColumn, parseClipboardValue: (raw) => `[${raw}]` });
     expect(parse('交通費', row)).toBe('[交通費]');
+  });
+
+  it('label を先に見る(ある候補の label が別の候補の value と同じ文字でも、コピーした label は元の値へ戻る)', () => {
+    const options: GridSelectEditorOption[] = [
+      { value: 'A', label: 'B' },
+      { value: 'B', label: 'C' },
+    ];
+    const column: GridColumn<Row> = { ...labelColumn, editor: { type: 'select', options, clipboard: 'label' } };
+    const parse = resolveCellParser(column);
+    expect(formatCellClipboardText(column, 'A', row)).toBe('B');
+    expect(parse('B', row)).toBe('A');
+    expect(parse('C', row)).toBe('B');
+    // label でない value はそのまま。
+    expect(parse('A', row)).toBe('A');
+    // エディタで選んだ候補の値(確定)は読み替えない。
+    expect(parseCommittedValue(column, 'B', row)).toBe('B');
+    expect(parseCommittedValue(column, 'A', row)).toBe('A');
+    expect(parseCommittedValue({ ...column, parseClipboardValue: (raw) => `[${raw}]` }, 'B', row)).toBe('[B]');
+  });
+
+  it('label の前後の空白は外して引く。空の label は読み替えに使わない', () => {
+    const options: GridSelectEditorOption[] = [
+      { value: 'x', label: ' 交通費 ' },
+      { value: 'none', label: '' },
+    ];
+    const parse = resolveCellParser({ ...labelColumn, editor: { type: 'select', options, clipboard: 'label' } });
+    expect(parse('交通費', row)).toBe('x');
+    expect(parse(' 交通費 ', row)).toBe('x');
+    expect(parse('', row)).toBe('');
+    expect(parse('  ', row)).toBe('  ');
+  });
+
+  it('同じ候補の配列へ後から足した候補も読む', () => {
+    const options: GridSelectEditorOption[] = [{ value: 'a', label: 'えー' }];
+    const parse = resolveCellParser({ ...labelColumn, editor: { type: 'select', options, clipboard: 'label' } });
+    expect(parse('えー', row)).toBe('a');
+    expect(parse('びー', row)).toBe('びー');
+    options.push({ value: 'b', label: 'びー' });
+    expect(parse('びー', row)).toBe('b');
   });
 });
 

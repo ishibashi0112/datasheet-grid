@@ -286,7 +286,9 @@ const rowFullyVisible = (g) =>
   await page.evaluate(() => window.__grid.scrollToBottom());
   await waitIdle(page, 400);
   const g = await geo(page, 999_999);
-  check('pinned: 100 万行で最後までスクロールしても最終行は下の固定行のすぐ上', near(g.rowBottom, g.bottomTop, 2) && rowFullyVisible(g), g);
+  // 100 万行は物理のスクロール 1px が約 2.4px なので 2px まで許す(Firefox は scrollTop が最大の 1px 手前で止まり、合計行だけの
+  //   ときも最終行が 1px ほど下へ重なる。1.0.2 から同じ)。
+  check('pinned: 100 万行で最後までスクロールしても最終行は下の固定行のすぐ上', near(g.rowBottom, g.bottomTop, 2) && g.rowTop >= g.topBottom - 1 && g.rowBottom <= g.bottomTop + 2, g);
   await page.evaluate(() => window.__grid.scrollToRow(500_000, { align: 'start' }));
   await waitIdle(page, 400);
   const gMid = await geo(page, 500_000);

@@ -503,6 +503,8 @@ function GridHost({ which, extra }: { which: 1 | 2; extra?: Partial<SpreadsheetG
 // 追加(1.1.0 / AP-07): ダイアログの中のグリッド。?host=native は素の <dialog> を showModal() で開く(トップレイヤー)。
 //   ?host=radixlike は Radix(shadcn/ui)の modal の Dialog と同じ振る舞いの模擬: role="dialog"(aria-modal なし)を translate で
 //   真ん中に置き、body に pointer-events: none、外へのフォーカスは中へ戻し、外側の pointerdown を記録する(本物は閉じる)。
+//   ?host=mantinelike は Mantine の Modal と同じ形の模擬(1.1.0 の見直し): position: fixed で pointer-events: none の inner の中に、
+//   transform と overflow-y: auto と max-height を持つ section(role="dialog" + aria-modal)。section の中ではポップアップが枠で切れる。
 function DialogHost() {
   const host = params.get('host') ?? 'native';
   const dialogRef = useRef<HTMLDialogElement>(null);
@@ -536,6 +538,49 @@ function DialogHost() {
     };
   }, [host]);
   const grid = <GridHost which={1} extra={{ height: 360 }} />;
+  if (host === 'mantinelike') {
+    return (
+      <div>
+        <div style={{ position: 'fixed', inset: 0, background: 'rgb(0 0 0 / 0.4)', zIndex: 199 }} />
+        <div
+          data-testid="host-layer"
+          style={{
+            position: 'fixed',
+            width: '100%',
+            top: 0,
+            bottom: 0,
+            zIndex: 200,
+            pointerEvents: 'none',
+            display: 'flex',
+            justifyContent: 'center',
+            alignItems: 'flex-start',
+            paddingTop: 40,
+            boxSizing: 'border-box',
+          }}
+        >
+          <section
+            role="dialog"
+            aria-modal="true"
+            tabIndex={-1}
+            data-testid="host-dialog"
+            style={{
+              pointerEvents: 'all',
+              transform: 'translateY(0)',
+              overflowY: 'auto',
+              maxHeight: 300,
+              width: 960,
+              maxWidth: '95vw',
+              padding: 16,
+              boxSizing: 'border-box',
+              background: '#fff',
+            }}
+          >
+            {grid}
+          </section>
+        </div>
+      </div>
+    );
+  }
   if (host === 'native') {
     return (
       <dialog ref={dialogRef} data-testid="host-dialog" style={{ width: 960, maxWidth: '95vw', padding: 16 }}>

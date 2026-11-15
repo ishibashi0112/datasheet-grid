@@ -11,6 +11,7 @@
 //   - 並び: 編集が並びを変えていなければ今の並び、変えていれば(行ドラッグなど)編集の前の並び(外で足した行は今の
 //     並びで直前にある行の後ろ)。
 //   何も変わらないときは current をそのまま返す。
+//   行キーが重なっているときは対応づけられないので before をそのまま返す(1.0 と同じ。外の更新も戻る)。
 
 type Fields = Record<string, unknown>;
 
@@ -70,6 +71,11 @@ export function revertRowsChange<T>(
   const b = keyRows(before);
   const a = keyRows(after);
   const c = keyRows(current);
+  // 変更(1.1.0 / AP-14 の見直し): 行キーが重なっていると行を対応づけられない(重なった行が 1 つにまとまって消える)ので、
+  //   編集の前の rows をそのまま戻します(1.0 と同じ。外からの更新も戻る)。
+  if (b.size !== before.length || a.size !== after.length || c.size !== current.length) {
+    return before;
+  }
   const bKeys = [...b.keys()];
   const cKeys = [...c.keys()];
   // 編集で足した行(after にあって before に無い)は除き、編集で消した行(before にあって after に無い)は今も無ければ戻す。

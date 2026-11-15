@@ -58,7 +58,7 @@ const columns: GridColumn<Sale>[] = [
 />
 ```
 
-- 固定行の ctx の `rowIndex` / `sourceRowIndex` は固定行の中の位置(0 から)、`isActive` / `isSelected` / `isEditing` は `false`、`readOnly` は `true` です。`renderCell` の `setValue` は何もしません。
+- 固定行の ctx の `rowIndex` / `sourceRowIndex` は固定行の中の位置(0 から)、`isActive` / `isSelected` / `isEditing` は `false`、`readOnly` は `true` です。`renderCell` の `setValue` は何もしません。展開行(`detailRow`)があっても ctx の `detail` は入りません(固定行は展開しない)。
 - 入力の検査の印(`validate`)とメモ(`cellNote`)は出しません。行ドラッグのハンドル / 展開のトグル / 自動グループ列のセルは空です。
 - 行の高さは `rowHeight` です(`autoHeight` の列も伸びず、1 行で省略します)。行見出しはピンの印です。
 

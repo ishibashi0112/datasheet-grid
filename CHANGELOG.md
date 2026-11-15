@@ -36,7 +36,7 @@
 
 ### 修正
 
-- モーダルの中のグリッドで、ポップアップを使えませんでした(素の `<dialog>` の `showModal()` ではダイアログの後ろに隠れ、Radix(shadcn/ui)・React Aria(HeroUI)・Headless UI のモーダルでは押せない・入力できない)。既定ではグリッドを囲むダイアログ(`<dialog>` / `popover` / `aria-modal="true"` / `role="dialog"` / `role="alertdialog"`)の中に描きます。祖先の `transform` / `translate` による位置のずれは打ち消します。これまでどおり `document.body` の直下にするには `popupContainer="body"`。
+- モーダルの中のグリッドで、ポップアップを使えませんでした(素の `<dialog>` の `showModal()` ではダイアログの後ろに隠れ、Radix(shadcn/ui)・React Aria(HeroUI)・Headless UI のモーダルでは押せない・入力できない)。既定ではグリッドを囲むダイアログ(`<dialog>` / `popover` / `aria-modal="true"` / `role="dialog"` / `role="alertdialog"`)の中に描きます。祖先の `transform` / `translate` による位置のずれは打ち消します。ダイアログが `overflow` で切り、しかも `transform` などで fixed の基準になるとき(Mantine の Modal)は、外側の `position: fixed` の祖先(`.mantine-Modal-inner`)へ描くので枠で切れません。これまでどおり `document.body` の直下にするには `popupContainer="body"`。
 
 ## 1.0.2 — 2026-11-15
 

@@ -23,19 +23,32 @@ export function usePopupContainer(active: boolean): HTMLElement | null {
   return getContainer?.() ?? document.body;
 }
 
+// options.origin: false で位置のずれの打ち消しをしません(ポップアップの中に absolute で置く小メニューなど、描く場所の
+//   直下に無い要素。打ち消すとパネル自身の打ち消しと二重になり、パネルの画面の位置ぶん飛んでいた)。
+// options.layout: ポップアップの位置(controller が測り直した値)。変わるたびに打ち消しを測り直します(ウィンドウの大きさや
+//   ダイアログの中のスクロールでダイアログが動くと、開いたときの値のままではずれていた)。
 export function usePortalTokens(
   portalRef: RefObject<HTMLElement | null>,
   active: boolean,
   modifierClassName: string | undefined,
+  options?: { origin?: boolean | undefined; layout?: unknown },
 ): void {
   const sourceRef = useContext(PortalTokenSourceContext);
+  const syncOrigin = options?.origin !== false;
+  const layout = options?.layout;
   useIsomorphicLayoutEffect(() => {
     const portal = portalRef.current;
     if (!active || !portal) {
       return undefined;
     }
-    // 追加(1.1.0 / AP-07): 描く場所の祖先に transform があるときの fixed の基準のずれを打ち消します(開いたとき)。
-    syncPopupOrigin(portal);
     return watchPortalTokens(() => sourceRef?.current, portal);
   }, [active, modifierClassName, sourceRef, portalRef]);
+  // 追加(1.1.0 / AP-07): 描く場所の祖先に transform があるときの fixed の基準のずれを打ち消します(開いたときと位置が
+  //   変わるたび)。
+  useIsomorphicLayoutEffect(() => {
+    const portal = portalRef.current;
+    if (active && portal && syncOrigin) {
+      syncPopupOrigin(portal);
+    }
+  }, [active, syncOrigin, layout, portalRef]);
 }

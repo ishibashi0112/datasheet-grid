@@ -3,8 +3,8 @@
 //   表示専用(押しても選択が動かない・ホバーを外す)、配置(sticky の器・本体の行は固定行の下から・行を見せる位置)、
 //   固定列の 3 ペイン、合計行との並び、エクスポート(includePinnedRows)を実コンポーネント越しに固定します。
 // @vitest-environment jsdom
-import { describe, it, expect, beforeAll, afterAll, afterEach } from 'vitest';
-import { render, cleanup, act, fireEvent } from '@testing-library/react';
+import { describe, it, expect, beforeAll, afterAll, afterEach, vi } from 'vitest';
+import { render, cleanup, act, fireEvent, waitFor } from '@testing-library/react';
 import { createRef, useState } from 'react';
 import type { Ref } from 'react';
 
@@ -163,6 +163,8 @@ describe('固定行(pinnedTopRows / pinnedBottomRows)', () => {
     expect(contexts.some((ctx) => ctx.pinned === undefined && ctx.value === 'alpha')).toBe(true);
     expect(pinnedRowsIn(container, 'bottom')[0]?.querySelector('[data-ssg-col-key="qty"]')?.classList.contains('is-bottom')).toBe(true);
     expect(pinnedRowsIn(container, 'top')[0]?.classList.contains('pinned-row')).toBe(true);
+    // 追加(1.1.0 / 固定行の見直し): 行見出しにも getRowClassName の class(本体の行と同じ)。
+    expect(pinnedRowsIn(container, 'top', 'left')[0]?.querySelector('[role="rowheader"]')?.classList.contains('pinned-row')).toBe(true);
     expect(rowPinned).toContain('top');
     expect(rowPinned).toContain('bottom');
     expect(rowPinned).toContain(undefined);
@@ -312,5 +314,42 @@ describe('固定行(pinnedTopRows / pinnedBottomRows)', () => {
     expect(pinnedRowsIn(container, 'bottom', 'left')[1]?.querySelector('[role="rowheader"]')?.getAttribute('aria-label')).toBe(
       'Pinned to bottom 2',
     );
+  });
+
+  // 追加(1.1.0 / 固定行の見直し): 固定行は負の index で列幅の自動調整へ渡るので、チップの ctx は固定行の位置で作る
+  //   (本体の rowModel を引くと rowKeyGetter(undefined) で落ちていた)。
+  it('チップの列があっても列幅の自動調整が固定行で止まらず、チップの関数には固定行の ctx が渡る', async () => {
+    const chipCalls: Array<{ pinned: string | undefined; rowKey: unknown; rowIndex: number }> = [];
+    const withChips: GridColumn<Row>[] = [
+      columns[0],
+      columns[1],
+      {
+        key: 'done',
+        title: 'Done',
+        width: 60,
+        conditionalFormat: {
+          chips: (ctx) => {
+            chipCalls.push({ pinned: ctx.pinned, rowKey: ctx.rowKey, rowIndex: ctx.rowIndex });
+            return ctx.value ? { label: '済み', tone: 'good' } : null;
+          },
+        },
+      },
+    ];
+    // jsdom には canvas が無いので、文字の幅を測る 2d の context を差し込む(無いと自動調整は何もしない)。
+    const getContext = vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockImplementation(
+      () => ({ font: '', measureText: (text: string) => ({ width: text.length * 7 }) }) as unknown as CanvasRenderingContext2D,
+    );
+    try {
+      const { ref } = setup({ columns: withChips, pinnedTopRows: top, pinnedBottomRows: bottom, autoSizeColumns: 'onMount' });
+      await waitFor(() => {
+        expect(ref.current?.getState().columnWidths.done).toBeDefined();
+      });
+      // 自動調整の中で、固定行のチップは固定行の ctx で決める(負の index のまま本体の行として扱わない)。
+      expect(chipCalls.every((call) => call.rowIndex >= 0)).toBe(true);
+      expect(chipCalls).toContainEqual({ pinned: 'top', rowKey: 'target', rowIndex: 0 });
+      expect(chipCalls).toContainEqual({ pinned: 'bottom', rowKey: 'avg', rowIndex: 1 });
+    } finally {
+      getContext.mockRestore();
+    }
   });
 });

@@ -92,4 +92,12 @@ describe('revertRowsChange', () => {
     const current = [r(1, 12, 'A'), r(2, 22)];
     expect(revertRowsChange(before, after, current, (_row, index) => index)).toEqual([r(1, 12, ''), r(2, 22)]);
   });
+
+  // 追加(1.1.0 / AP-14 の見直し)
+  it('行キーが重なっていると対応づけられないので、編集の前の配列をそのまま返す', () => {
+    const before = [r(1, 10), r(0, 20), r(0, 30)];
+    const after = [r(1, 10, 'A'), before[1] as Row, before[2] as Row];
+    const current = [r(1, 11, 'A'), r(0, 21), r(0, 31)];
+    expect(revertRowsChange(before, after, current, byId)).toBe(before);
+  });
 });

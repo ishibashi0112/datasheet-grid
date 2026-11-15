@@ -64,6 +64,11 @@ export const restoreGridFocus = (gridRootRef: ReadonlyElementRef): void => {
     if (active !== null && active !== root && root.contains(active) && active.closest('.ssg-cell-editor') !== null) {
       return;
     }
+    // 変更(1.1.0 / RV2-L2 の見直し): 閉じた後に別のポップアップ(列メニューから開いたツールパネル / 列フィルターなど)へ
+    //   フォーカスが移っていれば、そちらに残します(閉じたパネルはこの時点で外れているので、残っているのは新しく開いた方)。
+    if (active !== null && !root.contains(active) && active.closest(GRID_POPUP_SELECTOR) !== null) {
+      return;
+    }
     root.focus();
   });
 };

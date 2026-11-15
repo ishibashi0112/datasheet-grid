@@ -229,14 +229,22 @@ export const resolveCellParser = <T,>(
 // commit 値の共通規則です: string なら列パーサを通し(組み込みエディタのドラフトは
 //   常に文字列)、string 以外はドメイン値としてそのまま返します(カスタムエディタが
 //   ctx.commit(123) のように型付きの値を直接確定するための経路)。
+// 変更(1.1.0 / AP-08 の見直し): select エディタが確定するのは候補の value なので、`clipboard: 'label'` の読み替え(label を
+//   先に見る)は通さず、1.0 と同じく値のまま書きます(ある候補の label が別の候補の value と同じ文字でも、選んだ候補の値になる)。
+//   `parseClipboardValue` を書いた列は従来どおりそちらを通します。
 export const parseCommittedValue = <T,>(
   column: GridColumn<T>,
   committedValue: unknown,
   row: T,
-): unknown =>
-  typeof committedValue === 'string'
-    ? resolveCellParser(column)(committedValue, row)
-    : committedValue;
+): unknown => {
+  if (typeof committedValue !== 'string') {
+    return committedValue;
+  }
+  if (!column.parseClipboardValue && resolveSelectLabelParser(column)) {
+    return committedValue;
+  }
+  return resolveCellParser(column)(committedValue, row);
+};
 
 // 追加(1.0 前の最終チェック FC-09): 組み込みエディタをセルの値から開いたとき(F2 / Enter / ダブルクリック)の欄の文字列です。
 //   text はセル値の文字列、number は数値の表記に直した文字列(直せなければセル値の文字列のまま = NumberCellEditor が text で

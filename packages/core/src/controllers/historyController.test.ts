@@ -223,6 +223,45 @@ describe('historyController', () => {
       expect(c.canUndo()).toBe(false);
     });
 
+    // 追加(1.1.0 / AP-14 の見直し)
+    it('外からの更新の直後(親が描き直す前)に元に戻しても、その更新は残る', () => {
+      const { c, render } = makeLive();
+      c.handleRowsChange(render().map((row) => (row.id === 1 ? { ...row, memo: 'A' } : row)));
+      render();
+      c.applyRows((prev) => tick(prev, 1), { undoable: false });
+      c.undo();
+      expect(render()).toEqual([
+        { id: 1, price: 11, memo: '' },
+        { id: 2, price: 21, memo: '' },
+      ]);
+      c.redo();
+      expect(render()).toEqual([
+        { id: 1, price: 11, memo: 'A' },
+        { id: 2, price: 21, memo: '' },
+      ]);
+    });
+
+    it('rows の変わらない描き直し(グリッドだけが先に描かれる)でも、関数の形の prev は最後に渡した rows', () => {
+      const { c, onRowsChange, base } = makeLive();
+      c.applyRows((prev) => tick(prev, 1), { undoable: false });
+      c.update({ ...base });
+      c.applyRows((prev) => tick(prev, 1), { undoable: false });
+      expect(onRowsChange.mock.calls[1]?.[0].map((row) => row.price)).toEqual([12, 22]);
+    });
+
+    it('行キーが無い表で行の数が変わる編集は、取り直さずに編集の前の rows を戻す(値が別の行へずれない)', () => {
+      const { c, render, base } = makeLive();
+      base.rowKeyGetter = undefined;
+      c.update({ ...base });
+      const before = base.rows;
+      c.handleRowsChange(before.filter((row) => row.id !== 1));
+      render();
+      c.applyRows((prev) => tick(prev, 1), { undoable: false });
+      render();
+      c.undo();
+      expect(render()).toBe(before);
+    });
+
     it('履歴が無効なら onRowsChange へ渡すだけ', () => {
       const { c, onRowsChange, base } = makeLive();
       c.update({ ...base, enabled: false });

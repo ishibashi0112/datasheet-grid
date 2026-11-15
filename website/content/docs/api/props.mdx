@@ -103,7 +103,7 @@ description: SpreadsheetGridProps<T> の全 prop と既定値
 | `onSortChange` | `(sort: GridSortState) => void` | — | ソート状態が**実際に変化したとき**だけ、その複製を渡して呼ばれる(ORDER BY の組み立てなど)。規約は `onFiltersChange` と同じ。 |
 | `onScroll` | `(params: GridScrollEventParams) => void` | — | スクロール位置の変化通知(rAF で 1 フレーム 1 回に間引き・縦横どちらの変化でも発火)。`params` は `{ top, left, source }`(px)。`source: 'api'` は `setScrollPosition` / `scrollTo*` 系由来、`'user'` はそれ以外(ホイール / ドラッグ / キーボードのほか、絞り込みや行の高さの測り直しで表が縮み、ブラウザが位置を詰めた分も `'user'` で届く)。2 グリッドの双方向スクロール同期は `source === 'user'` のときだけ相手へ反映することでループを止められる。インライン関数可(latest-ref 経由)。 |
 | `enableContextMenu` | `boolean` | `false` | コンテキストメニュー機能の有効化(マスタースイッチ)。他機能の `enable*` と同じく**既定 OFF**。`false` のあいだは `getContextMenuItems` を渡しても発火せず、右クリックはブラウザ標準メニューのまま。現状はまだ機能 / UI に改善余地があるため既定 OFF で提供する(利用側で明示 opt-in)。 |
-| `getContextMenuItems` | `(params: GridContextMenuParams<T>) => GridContextMenuItem[]` | — | セル/行の**完全カスタム**コンテキストメニュー。右クリック時のみ呼ばれ、返した項目でメニューを描画する(ライブラリは固定の既定項目を持たない)。opt-in は `enableContextMenu={true}` かつ本コールバックの指定の両方。**未指定、または `[]` を返したときはブラウザ標準の右クリックメニューへフォールスルー**(空パネルは出さない)。SSRM 未ロード行では開かない。ヘッダー右クリックは列メニュー(`enableColumnMenu`)が担当し、本メニューはボディ(セル / 行NO ガター)専用。詳細は「コンテキストメニュー」節を参照。 |
+| `getContextMenuItems` | `(params: GridContextMenuParams<T>) => GridContextMenuItem[]` | — | セル/行の**完全カスタム**コンテキストメニュー。右クリックと、アクティブセルでの `Shift+F10` / メニューキー(1.1.0)のときだけ呼ばれ(1 回の操作で 1 回)、返した項目でメニューを描画する(ライブラリは固定の既定項目を持たない)。opt-in は `enableContextMenu={true}` かつ本コールバックの指定の両方。**未指定、または `[]` を返したときはブラウザ標準の右クリックメニューへフォールスルー**(空パネルは出さない)。SSRM 未ロード行では開かない。ヘッダー右クリックは列メニュー(`enableColumnMenu`)が担当し、本メニューはボディ(セル / 行NO ガター)専用。詳細は「コンテキストメニュー」節を参照。 |
 | `onContextMenuOpen` | `(params: GridContextMenuParams<T>) => void` | — | コンテキストメニューが実際に開いた直後の通知(項目が 1 件以上あり表示された場合のみ)。
 | `scrollHint` | `boolean \| ScrollHintOptions<T>` | —(無効) | **スクロール位置インジケーター**。スクロール中にスクロールバー脇へ行番号バブル(「行 N / 総行数」+ 任意の列値)と行目盛りルーラーを表示し、スクロールバー帯のホバーで「行 N へ」のジャンプ先プレビューを出す。`true` は全既定(`{ bubble: true, ruler: true, scrollbar: true, trigger: 'scroll', minRows: 0 }`)と同義。`minRows` で「表示行数がしきい値以上のときだけ有効」のデータ量ゲートも掛けられる。表示は総行数とスクロール位置のみで駆動されるため **clientSide / SSRM の全構成で動作**。オーバーレイは `pointer-events: none` で既存操作へ一切干渉しない。詳細は「スクロール位置インジケーター」節と[ガイド](/docs/guides/scroll-hint)を参照。 |
 | `detailRow` | `DetailRowOptions<T>` | —(無効) | **展開行(Master/Detail)**。マスター行の直下に、行順(view index)を変えずに全幅の帯を差し込み、その中(カード)へ `render` の返す任意の React 要素(自前のサブグリッド / フォーム / 集計パネル等)を描画する。指定時のみ有効で、未指定なら既存の描画・状態・イベント経路は一切変わらない。`{ render, height?, isExpandable?, showToggleColumn?, className? }`。clientSide / serverSide の両方で使える(serverSide の制約は節内)。詳細は「展開行(Master/Detail)」節と[ガイド](/docs/guides/detail-row)を参照。 |
@@ -903,7 +903,7 @@ const lastYear: Sale = { id: 'last-year', region: '前年', q1: 980, q2: 1110, q
 />
 ```
 
-- **表示**: セルは本体の行と同じ規則で描きます(列の `valueFormatter` / `renderCell` / `cellClassName` / `getRowClassName`、`editor: { type: 'checkbox' }` の印、条件付き書式の色とチップ。条件付き書式の最小 / 最大は本体の行で決まります)。`renderCell` / `cellClassName` の ctx と `getRowClassName` の ctx には `pinned`(`'top'` / `'bottom'`)が入り、`rowIndex` / `sourceRowIndex` は固定行の中の位置(0 から)、`isActive` / `isSelected` / `isEditing` は `false`、`readOnly` は `true` です。`renderCell` の `setValue` は何もしません。入力の検査の印(`validate`)とメモ(`cellNote`)は出しません。行ドラッグのハンドル / 展開のトグル / 自動グループ列のセルは空です。行の高さは `rowHeight` で、`autoHeight` の列も伸びません(1 行で省略)。行見出しはピンの印です。
+- **表示**: セルは本体の行と同じ規則で描きます(列の `valueFormatter` / `renderCell` / `cellClassName` / `getRowClassName`、`editor: { type: 'checkbox' }` の印、条件付き書式の色とチップ。条件付き書式の最小 / 最大は本体の行で決まります)。`renderCell` / `cellClassName` の ctx と `getRowClassName` の ctx には `pinned`(`'top'` / `'bottom'`)が入り、`rowIndex` / `sourceRowIndex` は固定行の中の位置(0 から)、`isActive` / `isSelected` / `isEditing` は `false`、`readOnly` は `true` です。`renderCell` の `setValue` は何もしません。展開行(`detailRow`)があっても `renderCell` の ctx の `detail` は入りません(固定行は展開しない)。入力の検査の印(`validate`)とメモ(`cellNote`)は出しません。行ドラッグのハンドル / 展開のトグル / 自動グループ列のセルは空です。行の高さは `rowHeight` で、`autoHeight` の列も伸びません(1 行で省略)。行見出しはピンの印です。
 - **位置**: 上の固定行は列見出しの下、下の固定行は表の下端(合計行があればそのすぐ上)に留まり、本体の行はその間を流れます。行が少ないときは、下の固定行は最後の行の直後に来ます。横スクロールと左右の固定列には通常の行と同じく付いていきます。キーボード操作 / `scrollToRow` / `scrollToCell` で行を見せるときは固定行の裏に隠しません(上へ見せる行は上の固定行の下、下へ見せる行は下の固定行の上)。
 - **表示専用**: セル選択 / 編集 / 貼り付け / コピー / クリア / 行選択 / 右クリックメニュー / 行のホバーの対象外です(押しても選択は動きません)。件数表示(下部バーの行数)・ビュー行 index・`getRowNumber`・選択範囲の集計・合計行の集計には数えません。値を変えるときは配列を作り直して渡します。
 - **エクスポート**: 既定では含みません。`exportCsv` / `getExportData` の `includePinnedRows: true` で、上の固定行を本体の行の前、下の固定行を本体の行の後(合計行の前)に出します(範囲の選択(scope `'selection'`)では出しません)。値の規則は本体の行と同じで、`getExportData` は `rowKinds` の `'pinned'` で判別できます。
@@ -1083,15 +1083,15 @@ WAI-ARIA の grid パターンに沿って、表・行・セルに役割と状�
 
 | 値 | 描く場所 |
 | --- | --- |
-| `'auto'`(既定) | グリッドを囲むいちばん近いダイアログ(`<dialog>` / `popover` 属性の要素 / `aria-modal="true"` / `role="dialog"` / `role="alertdialog"`)の中。無ければ `document.body` の直下。 |
+| `'auto'`(既定) | グリッドを囲むいちばん近いダイアログ(`<dialog>` / `popover` 属性の要素 / `aria-modal="true"` / `role="dialog"` / `role="alertdialog"`)の中。無ければ `document.body` の直下。そのダイアログが `overflow` で切り、しかも `transform` などで `position: fixed` の基準になるとき(Mantine の Modal の中身)は、その外側でいちばん近い `position: fixed` の祖先(Mantine の `.mantine-Modal-inner`)の中(`<dialog>` / `popover` は外へ出さない)。 |
 | `'body'` | いつも `document.body` の直下(1.0 までと同じ)。 |
 | 要素 | その要素の中。 |
 | 関数 | グリッドの要素(`.ssg-shell`)を受け取って描く場所を返す(`null` / `undefined` なら `document.body`)。ポップアップを開いている間の描画ごとに呼ぶ(閉じている間は呼ばない)。 |
 
 - 素の `<dialog>` の `showModal()` と `popover` はトップレイヤーなので、body の直下の要素はその後ろに隠れる。Radix(shadcn/ui)/ React Aria(HeroUI)/ Headless UI のモーダルは外側のポインタを止め(body に `pointer-events: none`)、フォーカスを中に閉じ込め、外側の押下で閉じるので、body の直下のポップアップは押せない・入力できない。Radix の Dialog と Popover は `aria-modal` を付けないので `role="dialog"` で見つける。
 - 場所はポップアップを開くたびに決める(グリッドを入れた `<dialog>` を後から `showModal()` で開いても、その中に出る)。ダイアログの最後の子として足し、閉じると外す。
-- 描く場所の祖先に `transform` / `translate` などがあると(shadcn/ui の DialogContent は `translate` で真ん中に置く)、`position: fixed` の基準がその要素になる。グリッドはそのずれを測り、ポップアップの `translate` で打ち消す(開いたとき。ツールチップとドラッグのゴーストは出すたび)。拡大縮小(`scale`)は打ち消さない。
-- その要素が `overflow` で中を切ると(`max-height` と `overflow-y: auto` のダイアログなど)、ポップアップもダイアログの枠で切れる。困るときは切らない場所を要素か関数で渡す(ダイアログがその外のポインタやフォーカスを止めないなら `'body'` でもよい)。
+- 描く場所の祖先に `transform` / `translate` などがあると(shadcn/ui の DialogContent は `translate` で真ん中に置く)、`position: fixed` の基準がその要素になる。グリッドはそのずれを測り、ポップアップの `translate` で打ち消す(開いたときと位置を決め直すたび。ツールチップとドラッグのゴーストは出すたび)。拡大縮小(`scale`)は打ち消さない。
+- その要素が `overflow` で中を切り、しかも `transform` などで `position: fixed` の基準になると、ポップアップもダイアログの枠で切れる。`'auto'` は外側の `position: fixed` の祖先があればそこへ出す(上の表。Mantine の Modal はこれで切れない)。無いとき(中身自身が `position: fixed` で `overflow-y: auto` の Radix の DialogContent など)は切れるので、切らない場所を要素か関数で渡す(ダイアログがその外のポインタやフォーカスを止めないなら `'body'` でもよい)。`overflow` だけ(`transform` が無い)なら fixed のポップアップは切れない。ポップアップの root は `pointer-events: auto`(`pointer-events: none` の要素の中へ描いても押せる)。
 - 表で決めた CSS トークン(`--ssg-*`)は、これまでどおり開いたときにポップアップへ写す(「CSS トークン」節)。`Escape` の扱いは「キーボード操作」節の「ダイアログの中のグリッド」。
 
 ## パーツ別スロット(`classNames` / `GridSlotProps`)

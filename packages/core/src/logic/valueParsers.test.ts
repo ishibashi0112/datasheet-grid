@@ -35,5 +35,10 @@ describe('numberParser', () => {
     expect(parse(' (0) ')).toBe(0);
     expect(parse('()')).toBe('()');
     expect(parse('1,200')).toBe(1200);
+    // 追加(1.1.0 / AP-09 の見直し): かっこの中に符号があるときは読まない(正の数にしない)
+    expect(parse('(-5)')).toBe('(-5)');
+    expect(parse('(−1,200)')).toBe('(−1,200)');
+    expect(parse('（ー３）')).toBe('（ー３）');
+    expect(parse('(+5)')).toBe('(+5)');
   });
 });

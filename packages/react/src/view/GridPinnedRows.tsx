@@ -155,7 +155,13 @@ function GridPinnedRowsInner<T>({
                   role="rowheader"
                   aria-colindex={1}
                   aria-label={formatLocaleText(position === 'top' ? texts.pinnedTopRow : texts.pinnedBottomRow, { row: index + 1 })}
-                  className={cx('ssg-header-cell', 'ssg-row-header-cell', 'ssg-pinned-row-header', slots?.rowHeaderCell?.className)}
+                  className={cx(
+                    'ssg-header-cell',
+                    'ssg-row-header-cell',
+                    'ssg-pinned-row-header',
+                    rowSlot.className,
+                    slots?.rowHeaderCell?.className,
+                  )}
                   style={{ ...slots?.rowHeaderCell?.style, ...rowSlot.style, ...rowHeaderCellStyle, height: rowHeight }}
                 >
                   {PIN_ICON}

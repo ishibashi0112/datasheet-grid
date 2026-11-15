@@ -48,6 +48,39 @@ describe('findPopupHost / resolvePopupContainer', () => {
     expect(resolvePopupContainer(plain, 'auto')).toBe(document.body);
   });
 
+  it('囲むダイアログが transform と overflow を持つ(Mantine の Modal)ときは、外側の position: fixed の祖先へ', () => {
+    const root = make(
+      '<div id="inner" style="position: fixed; pointer-events: none">' +
+        '<section id="content" role="dialog" aria-modal="true" style="transform: translateY(0); overflow-y: auto"><div id="grid"></div></section>' +
+        '</div>',
+    );
+    const grid = root.querySelector<HTMLElement>('#grid')!;
+    expect(resolvePopupContainer(grid, 'auto')).toBe(root.querySelector('#inner'));
+    expect(getPopupContainerFor(grid)).toBe(root.querySelector('#inner'));
+  });
+
+  it('切らない / fixed の基準にならないダイアログ、fixed の祖先が無い・切る、トップレイヤーのダイアログは中のまま', () => {
+    const cases = [
+      // transform だけ(shadcn の DialogContent)。
+      '<div style="position: fixed"><div id="host" role="dialog" style="translate: -50% -50%"><div id="grid"></div></div></div>',
+      // overflow だけ(fixed の基準ではないので切れない)。
+      '<div style="position: fixed"><div id="host" role="dialog" style="overflow: auto"><div id="grid"></div></div></div>',
+      // 中身自身が fixed(Radix)で、外側に fixed が無い。
+      '<div><div id="host" role="dialog" style="position: fixed; transform: translate(-50%, -50%); overflow-y: auto"><div id="grid"></div></div></div>',
+      // 外側の fixed も切る基準。
+      '<div style="position: fixed; transform: scale(1); overflow: hidden"><div id="host" role="dialog" style="transform: scale(1); overflow: auto"><div id="grid"></div></div></div>',
+      // <dialog> はトップレイヤーなので外へ出さない。
+      '<div style="position: fixed"><dialog id="host" style="transform: scale(1); overflow: auto"><div id="grid"></div></dialog></div>',
+      // 外側の fixed との間に <dialog>。
+      '<div style="position: fixed"><dialog><div id="host" role="dialog" style="transform: scale(1); overflow: auto"><div id="grid"></div></div></dialog></div>',
+    ];
+    for (const html of cases) {
+      const root = make(html);
+      expect(resolvePopupContainer(root.querySelector<HTMLElement>('#grid'), 'auto'), html).toBe(root.querySelector('#host'));
+      document.body.innerHTML = '';
+    }
+  });
+
   it("'body' / 要素 / 関数 / グリッドがまだ無いとき", () => {
     const root = make('<div role="dialog"><div id="grid"></div></div><div id="other"></div>');
     const grid = root.querySelector<HTMLElement>('#grid')!;

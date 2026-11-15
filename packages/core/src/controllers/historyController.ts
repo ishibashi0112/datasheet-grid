@@ -101,7 +101,12 @@ export const createHistoryController = <T,>(): HistoryController<T> => {
 
   const update = (next: HistoryControllerArgs<T>) => {
     args = next;
-    pendingRows = null;
+    // 変更(1.1.0 / AP-14 の見直し): 最後に渡した行(pendingRows)は、親が新しい rows を描いたときだけ消します。rows の
+    //   変わらない描き直し(スクロールなどでグリッドだけが先に描かれる)で消すと、続く関数の形の prev / 元に戻すが古い rows を
+    //   見て、渡したばかりの更新を上書きしていました。
+    if (next.rows !== lastRows) {
+      pendingRows = null;
+    }
     if (lastRows === null) {
       // 初回: 現在の rows を基準にするだけ(履歴は空のまま)。
       lastRows = next.rows;
@@ -210,7 +215,13 @@ export const createHistoryController = <T,>(): HistoryController<T> => {
     if (!rebaseNeeded || entry.after === current) {
       return entry.rows;
     }
-    return revertRowsChange(entry.rows, entry.after, current, args?.rowKeyGetter ?? ((_row: T, index: number) => index));
+    const rowKeyGetter = args?.rowKeyGetter;
+    // 変更(1.1.0 / AP-14 の見直し): 行キーが無い表(位置で対応づける)で行の数が変わっていると、位置がずれて値が別の行へ
+    //   移るので、1.0 と同じく編集の前の rows をそのまま戻します(外からの更新も戻る。ドキュメントに記載)。
+    if (!rowKeyGetter && (entry.rows.length !== entry.after.length || entry.after.length !== current.length)) {
+      return entry.rows;
+    }
+    return revertRowsChange(entry.rows, entry.after, current, rowKeyGetter ?? ((_row: T, index: number) => index));
   };
 
   const applyRestore = (
@@ -229,10 +240,11 @@ export const createHistoryController = <T,>(): HistoryController<T> => {
   };
 
   // 今の状態(やり直し / 元に戻すの反対側へ積む)。after は戻した後の rows。
-  const currentSnapshot = (after: T[]): GridHistoryEntry<T> | null =>
+  //   変更(1.1.0 / AP-14 の見直し): 今の rows は最後に渡した行(描き直しの前でも、渡したばかりの外からの更新を含む)。
+  const currentSnapshot = (current: T[], after: T[]): GridHistoryEntry<T> | null =>
     args === null
       ? null
-      : { rows: args.rows, after, selection: args.selection, activeCell: args.activeCell };
+      : { rows: current, after, selection: args.selection, activeCell: args.activeCell };
 
   const restoreWith = (
     entry: GridHistoryEntry<T> | undefined,
@@ -244,8 +256,11 @@ export const createHistoryController = <T,>(): HistoryController<T> => {
     if (!isActive() || args === null) {
       return;
     }
-    const target = resolveTarget(entry, args.rows);
-    const snapshot = target === null ? null : currentSnapshot(target);
+    // 変更(1.1.0 / AP-14 の見直し): 外からの更新の直後(親が描き直す前)の元に戻すで、その更新を消さないよう
+    //   最後に渡した行から戻します。
+    const current = pendingRows ?? args.rows;
+    const target = resolveTarget(entry, current);
+    const snapshot = target === null ? null : currentSnapshot(current, target);
     if (target === null || snapshot === null) {
       return;
     }

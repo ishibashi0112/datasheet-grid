@@ -724,11 +724,13 @@
   /* ── 追加(1.1.0 / 固定行): 表の上下に固定する行(pinnedTopRows / pinnedBottomRows) ── */
   /* 各ペインのボックスの中の sticky の器です(上は列見出しの直後 = top は列見出しの高さ、下は本体ぶんの空きの後 =
      bottom は合計行の高さ。どちらもインライン)。行は器の中に絶対配置します(top / height はインライン)。z-index は
-     ヘッダー行(6)より下・本体の行 / 選択枠 / エディタより前面(本体はこの下を流れる)。表示だけの行なので、
-     選択 / 編集 / ホバーの見た目は付きません。本体との境は濃い線(上の器は最後の行の下罫線、下の器は上辺の影)。 */
+     合計行・ヘッダー行と同じ 6(列見出しとは重ならない)で、本体の行 / 選択枠 / エディタ / フィルハンドル / ラベル行の固定の
+     帯(いずれも 5 以下)より前面(本体はこの下を流れる。5 だと DOM で後ろにあるエディタなどが上の器の上に出ていた)。
+     表示だけの行なので、選択 / 編集 / ホバーの見た目は付きません。本体との境は濃い線(上の器は最後の行の下罫線、
+     下の器は上辺の影)。 */
   .ssg-pinned-rows {
     position: sticky;
-    z-index: 5;
+    z-index: 6;
   }
   .ssg-pinned-rows--bottom {
     box-shadow: 0 -1px 0 var(--ssg-pinned-row-border);
@@ -3422,6 +3424,15 @@
   .ssg-popover,
   .ssg-dp-panel {
     animation: ssg-pop-in var(--ssg-motion-fast) var(--ssg-motion-ease);
+  }
+  /* 追加(1.1.0 の見直し): ポップアップの root は押せるようにします(Mantine の Modal の inner のように pointer-events: none の
+     要素の中へ描くことがあるため。popupContainer の 'auto')。 */
+  .ssg-menu-panel,
+  .ssg-filter-popover,
+  .ssg-select-editor-popover,
+  .ssg-popover,
+  .ssg-toolpanel {
+    pointer-events: auto;
   }
 
   .ssg-menu-panel {

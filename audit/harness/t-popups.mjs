@@ -2,15 +2,18 @@
 //   ?s=dialog&host=native  … 素の <dialog> を showModal() で開く(トップレイヤー。body の直下だとダイアログの後ろに隠れる)
 //   ?s=dialog&host=radixlike … Radix(shadcn/ui)の modal の Dialog の模擬(role="dialog" を translate で真ん中に、body に
 //                              pointer-events: none、外へのフォーカスは中へ戻す、外側の pointerdown を記録)
+//   ?s=dialog&host=mantinelike … Mantine の Modal の形の模擬(1.1.0 の見直し。pointer-events: none の fixed の inner の中に、
+//                              transform + overflow-y: auto の section)。ポップアップは inner へ出し、section の枠で切れない。
 //   1.0.2 までは、どちらも列メニューの項目・列フィルターの入力・右クリックメニューの項目・select の候補を押せなかった。
 //   見るもの: ポップアップがダイアログの中にあり、置いた場所が見出し / セルの近く(translate のずれを打ち消した)で、本物の
 //   マウスで押せる・打てる。ダイアログの外へのフォーカス / 押下が起きない。popupContainer="body" で 1.0 と同じ場所へ戻せる。
 import { open, check, summary, waitIdle, unexpectedPageErrors, header, cell, events, clearEvents } from './pw.mjs';
 
+// mantinelike は section の外側の inner(host-layer)の中。
 const inDialog = (page, selector) =>
   page.evaluate((selector) => {
     const el = document.querySelector(selector);
-    const dialog = document.querySelector('[data-testid="host-dialog"]');
+    const dialog = document.querySelector('[data-testid="host-layer"]') ?? document.querySelector('[data-testid="host-dialog"]');
     return el !== null && dialog !== null && dialog.contains(el);
   }, selector);
 
@@ -30,7 +33,7 @@ const rectOf = (page, selector) =>
     return rect ? { left: rect.left, top: rect.top, right: rect.right, bottom: rect.bottom } : null;
   }, selector);
 
-for (const host of ['native', 'radixlike']) {
+for (const host of process.env.SSG_POPUP_HOSTS?.split(',') ?? ['native', 'radixlike', 'mantinelike']) {
   const { page, close, pageErrors } = await open('dialog', { query: `host=${host}&n=60` });
   await waitIdle(page, 300);
   await clearEvents(page);
@@ -56,6 +59,19 @@ for (const host of ['native', 'radixlike']) {
   await page.mouse.click(filterBox.x + filterBox.width / 2, filterBox.y + filterBox.height / 2);
   await waitIdle(page, 400);
   check(`${host}: 列フィルターが開き、ダイアログの中`, await inDialog(page, '.ssg-filter-popover'));
+  if (host === 'mantinelike') {
+    // section の枠(max-height 300px)で切れず、下の端まで押せる。
+    const bottomHit = await page.evaluate(() => {
+      const el = document.querySelector('.ssg-filter-popover');
+      const section = document.querySelector('[data-testid="host-dialog"]');
+      if (!el || !section) return { ok: false };
+      const rect = el.getBoundingClientRect();
+      const box = section.getBoundingClientRect();
+      const hit = document.elementFromPoint(rect.left + rect.width / 2, rect.bottom - 6);
+      return { ok: hit !== null && el.contains(hit), popoverBottom: rect.bottom, sectionBottom: box.bottom, hit: hit?.className ?? null };
+    });
+    check('mantinelike: 列フィルターは section の枠で切れず、下の端まで押せる', bottomHit.ok && bottomHit.popoverBottom > bottomHit.sectionBottom, bottomHit);
+  }
   const input = page.locator('.ssg-filter-popover input[type="text"], .ssg-filter-popover input[type="number"], .ssg-filter-popover input:not([type])').first();
   const inputBox = await input.boundingBox();
   if (inputBox) {
@@ -135,6 +151,11 @@ for (const host of ['native', 'radixlike']) {
   );
 
   // ---- 列ドラッグのゴースト ----
+  // Firefox のヘッドレスは (hover: none) = タッチの扱いで、120px より細い見出しには grip を出さないので広げる(t-pinned と同じ)。
+  if (await page.evaluate(() => matchMedia('(hover: none)').matches)) {
+    await page.evaluate(() => window.__setColumns(window.__columns().map((c) => (c.key === 'qty' ? { ...c, width: 130 } : c))));
+    await waitIdle(page, 200);
+  }
   await page.mouse.move(headerBox.x + headerBox.width / 2, headerBox.y + headerBox.height / 2);
   await waitIdle(page, 100);
   const grip = header(page, 'qty').locator('.ssg-header-grip').first();
@@ -146,7 +167,7 @@ for (const host of ['native', 'radixlike']) {
     await waitIdle(page, 100);
     const ghost = await page.evaluate(() => {
       const el = document.querySelector('[data-grid-drag-ghost]');
-      const dialog = document.querySelector('[data-testid="host-dialog"]');
+      const dialog = document.querySelector('[data-testid="host-layer"]') ?? document.querySelector('[data-testid="host-dialog"]');
       const rect = el?.getBoundingClientRect();
       return el ? { inDialog: dialog?.contains(el) ?? false, left: rect.left, top: rect.top } : null;
     });
@@ -168,12 +189,27 @@ for (const host of ['native', 'radixlike']) {
   // ---- popupContainer="body" で 1.0 と同じ場所 ----
   await page.evaluate(() => window.__setProps({ popupContainer: 'body' }));
   await waitIdle(page, 100);
-  await page.mouse.click(headerBox.x + headerBox.width / 2, headerBox.y + headerBox.height / 2, { button: 'right' });
+  const headerBoxNow = await header(page, 'qty').boundingBox();
+  await page.mouse.click(headerBoxNow.x + headerBoxNow.width / 2, headerBoxNow.y + headerBoxNow.height / 2, { button: 'right' });
   await waitIdle(page, 200);
   const inBody = await page.evaluate(() => document.querySelector('.ssg-menu-panel')?.parentElement === document.body);
   check(`${host}: popupContainer="body" では body の直下`, inBody);
-  // 1.0.2 までと同じ場所では押せない(このハーネスが不具合を捉えていることの確かめ)。
-  check(`${host}: body の直下だと列メニューを押せない(1.0.2 までの不具合の再現)`, !(await hittable(page, '.ssg-menu-panel .ssg-menu-item')).ok, await hittable(page, '.ssg-menu-panel .ssg-menu-item'));
+  // 1.0.2 までと同じ場所では使えない(このハーネスが不具合を捉えていることの確かめ)。native はダイアログの後ろで押せない。
+  //   radixlike はポップアップの root が pointer-events: auto(1.1.0)なので押せるが、ダイアログの外の押下になる(本物は閉じる)。
+  //   mantinelike は body の直下でも押せる(inner が pointer-events: none)。
+  if (host === 'native') {
+    check(`${host}: body の直下だと列メニューを押せない(1.0.2 までの不具合の再現)`, !(await hittable(page, '.ssg-menu-panel .ssg-menu-item')).ok, await hittable(page, '.ssg-menu-panel .ssg-menu-item'));
+  } else if (host === 'radixlike') {
+    await clearEvents(page);
+    const item = await rectOf(page, '.ssg-menu-panel .ssg-menu-item');
+    if (item) {
+      await page.mouse.move(item.left + 8, item.top + 6);
+      await page.mouse.down();
+      await page.mouse.up();
+      await waitIdle(page, 150);
+    }
+    check(`${host}: body の直下だと押下がダイアログの外になる(1.0.2 までの不具合の再現)`, (await events(page, 'dialog-pointer-outside')).length > 0, { item, outside: (await events(page, 'dialog-pointer-outside')).length });
+  }
   await page.keyboard.press('Escape');
   await waitIdle(page, 150);
 

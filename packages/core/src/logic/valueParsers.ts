@@ -17,6 +17,8 @@ export type NumberParserOptions = {
 };
 
 const PARENTHESES_PATTERN = /^\s*[(（]([^()（）]*)[)）]\s*$/;
+// かっこの中の先頭の符号(半角 / 全角の + -、マイナス記号、IME の「ー」)。
+const SIGN_PREFIX_PATTERN = /^[\s\u3000]*[-+\u2212\uFF0D\uFF0B\u30FC]/;
 
 /**
  * 「文字列 → 数値」のパーサを作る(列の `parseClipboardValue` に渡す。貼り付け / Delete / エディタの確定で共通)。
@@ -40,6 +42,11 @@ export function numberParser(options: NumberParserOptions = {}): (raw: string) =
       const match = PARENTHESES_PATTERN.exec(text);
       if (match) {
         text = match[1] ?? '';
+        // 変更(1.1.0 / AP-09 の見直し): かっこの中に符号がある((-5) / (−1,200) / (+5))ときは、どちらの向きか決められないので
+        //   読めない文字として元の文字列を返します(符号が打ち消し合って正の数になっていた)。
+        if (SIGN_PREFIX_PATTERN.test(text)) {
+          return raw;
+        }
         negative = true;
       }
     }

@@ -80,7 +80,7 @@ export function ToolPanel({
   // 追加(audit V-14): タブ / タブパネルの id の基底。
   const tabIdBase = useId();
   // 追加(DevBI の報告): 表で決まったトークン(--ssg-*)をパネルへ写します(body 直下のため継承で届かない)。
-  usePortalTokens(panelRef, activeTab !== null && layout !== null, themeClassName);
+  usePortalTokens(panelRef, activeTab !== null && layout !== null, themeClassName, { layout });
   // 追加(1.1.0 / AP-07): 描く場所(既定はグリッドを囲むダイアログの中、無ければ body)。
   const popupContainer = usePopupContainer(activeTab !== null && layout !== null);
 
