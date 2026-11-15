@@ -28,6 +28,8 @@ export type FindChangeParams = {
   // 0 始まりのカレント(ヒットなしは null)。
   currentIndex: number | null;
   open: boolean;
+  // 追加(1.2.0 / G-15): ヒットを MAX_FIND_MATCHES で打ち切ったか。
+  truncated: boolean;
 };
 
 export type FindArgs<T> = {
@@ -131,13 +133,20 @@ export const createFindController = <T,>(): FindController<T> => {
   let lastNotified: FindChangeParams | null = null;
   const notify = () => {
     const s = store.getSnapshot();
-    const params: FindChangeParams = { query: s.query, matchCount: s.matches.length, currentIndex: s.currentIndex, open: s.open };
+    const params: FindChangeParams = {
+      query: s.query,
+      matchCount: s.matches.length,
+      currentIndex: s.currentIndex,
+      open: s.open,
+      truncated: s.truncated,
+    };
     if (
       lastNotified !== null &&
       lastNotified.query === params.query &&
       lastNotified.matchCount === params.matchCount &&
       lastNotified.currentIndex === params.currentIndex &&
-      lastNotified.open === params.open
+      lastNotified.open === params.open &&
+      lastNotified.truncated === params.truncated
     ) {
       return;
     }

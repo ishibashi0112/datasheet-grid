@@ -64,7 +64,7 @@ describe('F-2: セル内検索(find)', () => {
       { text: 'alpha', current: false, row: '2' },
     ]);
     expect(ref.current?.getActiveCell()).toEqual({ row: 0, col: 0 });
-    expect(onFindChange).toHaveBeenLastCalledWith({ query: 'alpha', matchCount: 2, currentIndex: 0, open: true });
+    expect(onFindChange).toHaveBeenLastCalledWith({ query: 'alpha', matchCount: 2, currentIndex: 0, open: true, truncated: false });
     expect(container.querySelector('.ssg-find-bar-count')?.textContent).toBe('1 / 2');
     act(() => {
       ref.current?.findNext();
@@ -84,7 +84,7 @@ describe('F-2: セル内検索(find)', () => {
     });
     expect(container.querySelector('.ssg-find-bar')).toBeNull();
     expect(marks(container)).toEqual([]);
-    expect(onFindChange).toHaveBeenLastCalledWith({ query: '', matchCount: 0, currentIndex: null, open: false });
+    expect(onFindChange).toHaveBeenLastCalledWith({ query: '', matchCount: 0, currentIndex: null, open: false, truncated: false });
   });
 
   it('Ctrl+F は find が有効なときだけ横取りし、入力で再走査する', async () => {

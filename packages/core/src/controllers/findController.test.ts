@@ -1,6 +1,6 @@
 // 追加(F-2 / セル内検索): findController のテストです(走査は時間分割なので await で流す)。
 import { describe, expect, it, vi } from 'vitest';
-import { createFindController } from './findController';
+import { createFindController, MAX_FIND_MATCHES } from './findController';
 import type { GridColumn, RowModel } from '../model/gridTypes.unbound';
 
 type Row = { id: number; name: string; qty: number };
@@ -42,7 +42,7 @@ describe('findController', () => {
     expect(s.currentIndex).toBe(0);
     expect(s.index.get(1)?.get(0)?.[0]).toEqual({ start: 5, length: 5, matchIndex: 1 });
     expect(onNavigate).toHaveBeenLastCalledWith(0, 0);
-    expect(onChange).toHaveBeenLastCalledWith({ query: 'alpha', matchCount: 2, currentIndex: 0, open: true });
+    expect(onChange).toHaveBeenLastCalledWith({ query: 'alpha', matchCount: 2, currentIndex: 0, open: true, truncated: false });
     // 順送り(循環)。
     controller.next();
     expect(controller.getSnapshot().currentIndex).toBe(1);
@@ -61,7 +61,30 @@ describe('findController', () => {
     // close でクエリと結果が消える。
     controller.close();
     expect(controller.getSnapshot()).toMatchObject({ open: false, query: '', matches: [], currentIndex: null });
-    expect(onChange).toHaveBeenLastCalledWith({ query: '', matchCount: 0, currentIndex: null, open: false });
+    expect(onChange).toHaveBeenLastCalledWith({ query: '', matchCount: 0, currentIndex: null, open: false, truncated: false });
+    controller.dispose();
+  });
+
+  // 追加(1.2.0 / G-15): 10,000 件で打ち切ったことを onChange の truncated で知らせる。
+  it('ヒットが MAX_FIND_MATCHES を超えると truncated: true で通知し、絞ると false に戻す(G-15)', async () => {
+    const many: Row[] = Array.from({ length: MAX_FIND_MATCHES + 5 }, (_, i) => ({ id: i, name: i === 0 ? 'only' : 'hit', qty: 0 }));
+    const controller = createFindController<Row>();
+    const onChange = vi.fn();
+    controller.update({ enabled: true, rowModel: makeRowModel(many), columns, caseSensitive: false, onNavigate: vi.fn(), onChange });
+    controller.open('hit');
+    for (let i = 0; i < 200 && (controller.getSnapshot().scanning || controller.getSnapshot().matches.length === 0); i += 1) {
+      await flush();
+    }
+    expect(controller.getSnapshot().truncated).toBe(true);
+    expect(onChange).toHaveBeenLastCalledWith({ query: 'hit', matchCount: MAX_FIND_MATCHES, currentIndex: 0, open: true, truncated: true });
+    controller.setQuery('only');
+    for (let i = 0; i < 200 && controller.getSnapshot().query !== 'only'; i += 1) {
+      await flush();
+    }
+    for (let i = 0; i < 200 && (controller.getSnapshot().scanning || controller.getSnapshot().matches.length !== 1); i += 1) {
+      await flush();
+    }
+    expect(onChange).toHaveBeenLastCalledWith({ query: 'only', matchCount: 1, currentIndex: 0, open: true, truncated: false });
     controller.dispose();
   });
 
@@ -212,13 +235,13 @@ describe('findController', () => {
     await flush();
     await flush();
     expect(onChange).toHaveBeenCalledTimes(1);
-    expect(onChange).toHaveBeenLastCalledWith({ query: 'alpha', matchCount: 2, currentIndex: 0, open: true });
+    expect(onChange).toHaveBeenLastCalledWith({ query: 'alpha', matchCount: 2, currentIndex: 0, open: true, truncated: false });
     expect(renders).toBe(2);
     // 中身が変われば通知する(next でカレントが動く / close)。
     controller.next();
-    expect(onChange).toHaveBeenLastCalledWith({ query: 'alpha', matchCount: 2, currentIndex: 1, open: true });
+    expect(onChange).toHaveBeenLastCalledWith({ query: 'alpha', matchCount: 2, currentIndex: 1, open: true, truncated: false });
     controller.close();
-    expect(onChange).toHaveBeenLastCalledWith({ query: '', matchCount: 0, currentIndex: null, open: false });
+    expect(onChange).toHaveBeenLastCalledWith({ query: '', matchCount: 0, currentIndex: null, open: false, truncated: false });
     expect(onChange).toHaveBeenCalledTimes(3);
     controller.dispose();
   });

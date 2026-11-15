@@ -47,6 +47,19 @@ number エディタの `min` / `max` / `integer: true` は、そのまま値の�
 - `validate` と一緒に書くと `validate` が先です。`validate` が通した値だけを範囲の検査にかけます。メッセージを変えたいときは、同じ条件を `validate` に書いて自分のメッセージを返します。
 - `step` は ↑↓ キーとスピナーの刻みだけで、検査には使いません。
 
+### 読めない数値と日付(`strict`)
+
+number と date のエディタは、数値 / 日付として読めない文字(「¥12,000」「2026年11月4日」など)も、そのまま文字で入れます。`strict: true` を付けると、読めない値に印が付きます(`'reject'` の列では書きません。1.2.0 から)。
+
+```tsx
+{ key: 'price', title: '単価', width: 120, editable: true, editor: { type: 'number', strict: true } }, // 「数値で入力してください」
+{ key: 'due', title: '納期', width: 140, editable: true, editor: { type: 'date', strict: true } },     // 「日付で入力してください」
+```
+
+- 日付として数えるのは有効な `Date` と、date の既定のパーサが読む文字列(`'2026-03-15'` / `'2026/3/15'` など)です。数字だけの文字列(Excel のシリアル値「45678」)・年の無い文字列(「11/2」)・ありえない日付(「2026/2/30」)は読めない値です。
+- number の `min` / `max` / `integer` があれば、`strict` を書かなくても「数値か」を検査します。
+- 空のセルは通します。`validate` と一緒に書くと `validate` が先です。
+
 ## 通らないときの動き(`validationMode`)
 
 | | `'mark'`(既定) | `'reject'` |

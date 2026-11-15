@@ -972,6 +972,15 @@ export type GridColumnEditor<T, F extends GridFrameworkTypes = GridFrameworkType
       max?: number | undefined;
       step?: number | undefined;
       integer?: boolean | undefined;
+      // 追加(1.2.0 / 2026-11-09 実アプリの総点検 A-07): true で、数値として読めない値に印を付けます(min / max / integer が
+      //   あれば書かなくても同じ検査をする)。
+      /**
+       * `true` で、数値として読めない値(「¥12,000」「十二」など)に「数値で入力してください」の印を付ける(`'reject'` の列では
+       * 書かない。1.2.0 から)。`min` / `max` / `integer` があれば書かなくても同じ検査をする。空は通す。
+       *
+       * @defaultValue `false`
+       */
+      strict?: boolean | undefined;
     }
   | {
       // select エディタ(候補ドロップダウン)。候補は静的配列 or 行依存の動的関数で指定します
@@ -999,6 +1008,15 @@ export type GridColumnEditor<T, F extends GridFrameworkTypes = GridFrameworkType
       //   既定パーサ: '' → null / 日付として解釈可能な文字列 → 'YYYY-MM-DD' へ正規化 /
       //   解釈不可 → 生文字列のまま(logic/editorValues.ts の toDateInputValue 参照)。
       type: 'date';
+      // 追加(1.2.0 / 2026-11-09 実アプリの総点検 A-07): true で、日付として読めない値に印を付けます(logic/validation.ts)。
+      /**
+       * `true` で、日付として読めない値(「2026年11月4日」「来週」「2026/2/30」など)に「日付で入力してください」の印を付ける
+       * (`'reject'` の列では書かない。1.2.0 から)。日付として数えるのは有効な `Date` と、既定のパーサが読む文字列
+       * (`'2026-03-15'` / `'2026/3/15'` など)。空は通す。
+       *
+       * @defaultValue `false`
+       */
+      strict?: boolean | undefined;
     }
   | {
       // checkbox エディタ(直接トグル方式)。編集セッションを開かず、クリック / Space で即トグル
@@ -1342,6 +1360,16 @@ export type GridColumn<T, F extends GridFrameworkTypes = GridFrameworkTypes> = {
    * @defaultValue `'value'`
    */
   groupLabel?: 'value' | 'formatted' | CellValueFormatter<T, F> | undefined;
+  // 追加(1.2.0 / 2026-11-09 実アプリの総点検 E-09): false で選択範囲の集計の合計 / 平均(と最小 / 最大)に数えません(データの個数には数える)。
+  /**
+   * `false` で、この列のセルを選択範囲の集計(`showSelectionAggregates`)の合計 / 平均(と
+   * `slotContext.selectionAggregates` の最小 / 最大)に数えない。データの個数には数える(1.2.0
+   * から)。JAN・郵便番号・社員番号のように数字の文字列でも数ではない列に使う。
+   * グループ集計と合計行(`aggFunc`)には効かない。
+   *
+   * @defaultValue `true`
+   */
+  selectionAggregate?: boolean | undefined;
   /**
    * 値アクセサ。`setValue` の無い列へ書き込むと値は `row[key]` へ入り、表示(`getValue`)
    * は変わらない。計算列は `editable: false` にするか `setValue` を渡す(開発時は、
@@ -3245,6 +3273,8 @@ export type FindChangeParams = {
   // 0 始まりのカレント(ヒットなしは null)。
   currentIndex: number | null;
   open: boolean;
+  // 追加(1.2.0 / G-15): ヒットを 10,000 件で打ち切ったか(組み込みのバーの「10000+」の「+」)。
+  truncated: boolean;
 };
 
 // 追加(motion-0): モーション(アニメーション / トランジション)の有効化です。'auto' は OS / ブラウザの
@@ -3790,8 +3820,10 @@ export type SpreadsheetGridProps<T, F extends GridFrameworkTypes = GridFramework
   find?: boolean | FindOptions | undefined;
   // 追加(F-2): 検索状態(クエリ / ヒット数 / カレント / 開閉)が変わったときの通知。
   /**
-   * セル内検索の状態(`{ query, matchCount, currentIndex, open }`)が変わったときの通知。
-   * `currentIndex` は 0 始まり(ヒットなしは `null`)。ツールバーに「3 / 12」を出す等に使う。
+   * セル内検索の状態(`{ query, matchCount, currentIndex, open, truncated }`)が変わったときの通知。
+   * `currentIndex` は 0 始まり(ヒットなしは `null`)。ヒットは 10,000 件で打ち切り、打ち切ったときは
+   * `truncated` が `true`(`matchCount` は 10000。組み込みのバーは「10000+」と出す。1.2.0 から)。
+   * ツールバーに「3 / 12」を出す等に使う。
    */
   onFindChange?: ((params: FindChangeParams) => void) | undefined;
   /**

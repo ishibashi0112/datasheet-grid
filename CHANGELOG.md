@@ -11,6 +11,14 @@
 
 詳しい使い方は[ドキュメントサイト](https://datasheet-grid.vercel.app)と [API リファレンス](./packages/react/API_REFERENCE.md)を参照してください。
 
+## 未リリース
+
+### 追加
+
+- `onFindChange` の引数に `truncated`(型 `FindChangeParams`)。ヒットを 10,000 件で打ち切ったときに `true` です(`matchCount` は 10000)。組み込みのバーは「10000+」と出していましたが、通知からは打ち切りが分からず、自作のツールバーで「+」を出せませんでした。
+- 列の `selectionAggregate`。`false` で、その列を選択範囲の集計の合計 / 平均(と `slotContext.selectionAggregates` の最小 / 最大)から外します(データの個数には数えます)。JAN のような数字の文字列の列を選ぶと「合計 14,700,000,000,100」のような意味の無い数が出ていました。
+- number と date のエディタの `strict`。`true` で、数値 / 日付として読めない値(「¥12,000」「2026年11月4日」など)に「数値で入力してください」「日付で入力してください」の印を付けます(`validationMode: 'reject'` の列では書きません。`getInvalidCells()` にも入ります)。これまでは、number の `min` / `max` / `integer` か自前の `validate` が無いと、読めない値は印も付かずに文字のまま入っていました。
+
 ## 1.1.0 — 2026-11-15
 
 ### 追加

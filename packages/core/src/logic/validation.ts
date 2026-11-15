@@ -9,14 +9,14 @@ import type {
   GridRowKey,
 } from '../model/gridTypes.unbound';
 import { getCellValue } from '../utils/permissions';
-import { parseNumberText } from './editorValues';
+import { parseNumberText, toDateInputValue } from './editorValues';
 import type { GridLocaleText } from '../model/gridTypes.core';
 import { DEFAULT_GRID_LOCALE_TEXT, formatLocaleText } from './localeText';
 
 // 追加(英語対応): 検査のメッセージの文言(localeText の一部)。未指定は日本語の既定です。
 export type ValidationLocaleText = Pick<
   GridLocaleText,
-  'invalidValue' | 'enterNumber' | 'enterInteger' | 'enterMin' | 'enterMax' | 'enterRange'
+  'invalidValue' | 'enterNumber' | 'enterInteger' | 'enterMin' | 'enterMax' | 'enterRange' | 'enterDate'
 >;
 
 // validate が false / 空メッセージを返した場合の既定メッセージです。
@@ -47,8 +47,27 @@ export const normalizeValidationResult = (
 //   (必須かどうかは validate で決める)。数値として数えるのは数値と、列の既定パーサが数値として読む文字列です
 //   (parseNumberText。初期データの '12' / '1,234' / '１２' も数値)。それ以外(数値として読めない文字列など)は NG です。
 //   検査の順番は 数値か → 整数か → 範囲 で、最初に引っかかったものを返します。min / max の null は未指定と同じ扱い。
+// 変更(1.2.0 / 2026-11-09 実アプリの総点検 A-07): `strict: true` だけでも「数値か」を検査します(min / max / integer が無い列で、
+//   数値として読めない文字が印も付かずに入っていたため)。
 const getNumberRules = <T,>({ editor }: GridColumn<T>) =>
-  editor?.type === 'number' && (editor.min != null || editor.max != null || editor.integer) ? editor : undefined;
+  editor?.type === 'number' && (editor.min != null || editor.max != null || editor.integer || editor.strict)
+    ? editor
+    : undefined;
+
+// 追加(1.2.0 / A-07): date エディタの `strict: true` の検査です。空(null / undefined / 空白だけの文字列)は通し、
+//   有効な Date と、列の既定パーサが日付として読む文字列(toDateInputValue。'2026/3/15' などの初期データも)だけを日付と
+//   みなします。それ以外(読めない文字列・数・真偽値など)は enterDate のメッセージです。
+const isDateRuleColumn = <T,>({ editor }: GridColumn<T>): boolean => editor?.type === 'date' && editor.strict === true;
+
+const getDateRuleMessage = <T,>(column: GridColumn<T>, value: unknown, texts: ValidationLocaleText): string | null => {
+  if (!isDateRuleColumn(column) || value == null || (typeof value === 'string' && !value.trim())) {
+    return null;
+  }
+  if ((value instanceof Date || typeof value === 'string') && toDateInputValue(value) !== '') {
+    return null;
+  }
+  return texts.enterDate;
+};
 
 // 変更(英語対応): メッセージは文言の表から作ります(enterNumber / enterInteger / enterMin / enterMax / enterRange)。
 const getNumberRuleMessage = <T,>(column: GridColumn<T>, value: unknown, texts: ValidationLocaleText): string | null => {
@@ -76,7 +95,9 @@ const getNumberRuleMessage = <T,>(column: GridColumn<T>, value: unknown, texts: 
 
 // 追加(数値の検査): 検査のある列か(validate か、number エディタの min / max / integer)。mark 表示と
 //   getInvalidCells の走査はこの列だけを評価します。
-export const hasCellValidation = <T,>(column: GridColumn<T>): boolean => !!(column.validate || getNumberRules(column));
+// 変更(1.2.0 / A-07): date エディタの strict も検査のある列です。
+export const hasCellValidation = <T,>(column: GridColumn<T>): boolean =>
+  !!(column.validate || getNumberRules(column) || isDateRuleColumn(column));
 
 // 検証 OK / 検査なしは null、NG はメッセージを返します(mark 表示・スキャン共用)。
 // 変更(数値の検査): validate が NG ならそのメッセージ、validate が通した(か無い)ときだけ組み込みの検査(数値か →
@@ -95,7 +116,7 @@ export const getInvalidMessage = <T,>(
       return normalized.message;
     }
   }
-  return getNumberRuleMessage(column, value, texts);
+  return getNumberRuleMessage(column, value, texts) ?? getDateRuleMessage(column, value, texts);
 };
 
 // 書き込み可否の判定です。validationMode 既定 'mark' は常に write(警告は表示側で導出)、

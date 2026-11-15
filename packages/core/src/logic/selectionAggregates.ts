@@ -41,8 +41,8 @@ export const resolveSelectionAggregateTarget = <T,>(
   return { startRow: range.startRow, endRow: range.endRow, columns };
 };
 
-// 2 つの集計対象が同じ範囲・同じ列か。集計が列から読むのは key と getValue だけなので、それ以外の列定義の
-//   違い(幅 / title など)は同じとみなします。
+// 2 つの集計対象が同じ範囲・同じ列か。集計が列から読むのは key と getValue と selectionAggregate だけなので、
+//   それ以外の列定義の違い(幅 / title など)は同じとみなします。
 export const isSameSelectionAggregateTarget = <T,>(
   a: SelectionAggregateTarget<T>,
   b: SelectionAggregateTarget<T>,
@@ -52,7 +52,12 @@ export const isSameSelectionAggregateTarget = <T,>(
   a.columns.length === b.columns.length &&
   a.columns.every((column, index) => {
     const other = b.columns[index];
-    return other !== undefined && column.key === other.key && column.getValue === other.getValue;
+    return (
+      other !== undefined &&
+      column.key === other.key &&
+      column.getValue === other.getValue &&
+      column.selectionAggregate === other.selectionAggregate
+    );
   });
 
 // 追加(見直し): 同じ範囲・同じ列なら前回の対象(参照)を返す関数を作ります。columns を毎回新しい配列で渡す
@@ -114,6 +119,10 @@ export const accumulateSelectionAggregateRow = <T,>(
       continue;
     }
     accumulator.count += 1;
+    // 追加(1.2.0 / E-09): selectionAggregate: false の列(JAN など数字の文字列でも数ではない列)は個数だけ数えます。
+    if (column.selectionAggregate === false) {
+      continue;
+    }
     const numeric = toAggregatableNumber(value);
     if (numeric === undefined) {
       continue;
