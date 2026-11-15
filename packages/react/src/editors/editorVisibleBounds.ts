@@ -1,3 +1,5 @@
+import { resolveGridVisibleBand } from '@ishibashi0112/spreadsheet-grid-core/internal/utils/gridVisibleBand';
+
 // 追加(1.0.2 / 2026-11-09 実アプリの総点検 A-09 / B-05): エディタの部品(日付の入力欄・エラーの吹き出し)が見えている横の範囲。
 //   グリッドのスクロールの枠の中で、中央のペインにあるときは左右の固定ペインの下を除きます(固定ペインが上に重なるため)。
 //   固定ペインにあるときはそのペインの中です(QA-2)。
@@ -40,23 +42,13 @@ export const resolveEditorVisibleX = (element: Element): { left: number; right: 
 //   上に固定した見出しの行と下に固定した合計行の下を除き、ウィンドウの中に限ります(見えている最後の行の吹き出しが合計行や
 //   枠の外 = 下部バーの裏に隠れていた)。jsdom など大きさの無い環境ではウィンドウだけ。
 export const resolveEditorVisibleY = (element: Element): { top: number; bottom: number } => {
-  let top = 0;
-  let bottom = window.innerHeight;
-  const container = element.closest('.ssg-scroll-container');
-  if (container && container.clientHeight > 0) {
-    const rect = container.getBoundingClientRect();
-    top = Math.max(top, rect.top + container.clientTop);
-    bottom = Math.min(bottom, rect.top + container.clientTop + container.clientHeight);
-    const header = container.querySelector('.ssg-header-row');
-    if (header) {
-      top = Math.max(top, header.getBoundingClientRect().bottom);
-    }
-    const total = container.querySelector('.ssg-total-row');
-    if (total) {
-      bottom = Math.min(bottom, total.getBoundingClientRect().top);
-    }
-  }
-  return { top, bottom };
+  // 変更(1.2.0 の見直し QH-6): 上と下の固定行(pinnedTopRows / pinnedBottomRows)の下も除きます(下の固定行は既定で合計行の
+  //   上にあり、見えている最後の行の吹き出しが固定行の下に隠れていた)。範囲は core の resolveGridVisibleBand(IME の入力受けと共用)。
+  const band = resolveGridVisibleBand(element);
+  return {
+    top: Math.max(0, band?.top ?? 0),
+    bottom: Math.min(window.innerHeight, band?.bottom ?? window.innerHeight),
+  };
 };
 
 // 要素を見えている範囲へ収めるために左へずらす量(px。0 = ずらさない)。右へはみ出した分だけ左へ、ただし左端を越えない。

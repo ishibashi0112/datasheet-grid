@@ -1072,7 +1072,8 @@ export type CellEditorContext<T, F extends GridFrameworkTypes = GridFrameworkTyp
   column: GridColumn<T, F>;
   // 編集開始時のセル生値です。
   value: unknown;
-  // 印字キー開始時はそのキー 1 文字 / それ以外は String(value ?? '') です。
+  // 印字キー開始時はそのキー 1 文字 / IME で確定して開いたとき(imeDirectInput: true の custom エディタ。1.2.0 から)は確定した
+  //   文字(何文字でも)/ それ以外は String(value ?? '') です。
   initialText: string;
   align?: 'left' | 'center' | 'right' | undefined;
   // 確定します。string は列パーサ(parseClipboardValue ?? editor 既定)を通し、非 string は
@@ -3331,7 +3332,9 @@ export type FindChangeParams = {
   currentIndex: number | null;
   open: boolean;
   // 追加(1.2.0 / G-15): ヒットを 10,000 件で打ち切ったか(組み込みのバーの「10000+」の「+」)。
-  truncated: boolean;
+  // 変更(1.2.0 の見直し QG-5): 省略可(グリッドはいつも入れる)。利用側が自分で作った値(useState の初期値など)を
+  //   上げた後も型エラーにしないため(onScroll の atBottom と同じ)。
+  truncated?: boolean | undefined;
 };
 
 // 追加(motion-0): モーション(アニメーション / トランジション)の有効化です。'auto' は OS / ブラウザの
@@ -3682,7 +3685,9 @@ export type SpreadsheetGridProps<T, F extends GridFrameworkTypes = GridFramework
    * スプレッドシートと同じ。1.2.0 から)。数えるのはデータ行(ラベル行・グループ行は飛ばす)
    * と合成列でない列。列 / 行の選択と、割り切れないとき・アクティブセルが範囲の外のときは 1
    * 回だけ貼る。書き込みの規則(編集できないセル・`'reject'` の列は飛ばす)と元に戻す 1
-   * 回は貼り付けと同じ。`false` で 1.1 までと同じく範囲の左上から 1 回だけ貼る。
+   * 回は貼り付けと同じ。serverSide で範囲にまだ読み込んでいない行があるときは 1
+   * 回だけ貼る(読み込んだ行にだけ書くと、全選択して貼っても大半の行が書かれないため)。`false`
+   * で 1.1 までと同じく範囲の左上から 1 回だけ貼る。
    *
    * @defaultValue `true`
    */
@@ -4369,12 +4374,13 @@ export type SpreadsheetGridProps<T, F extends GridFrameworkTypes = GridFramework
    * までと同じ)。`'row'` は押した行に付いていく(株価ボードのようにソートしたまま値が変わる表向け)。
    * `'row'` では、アクティブセルの行だけの範囲(同じ行の何列か / その行の行選択)は一緒に動き、
    * 何行かにまたがる範囲は外してアクティブセルの 1 セルにする(範囲の中の行が入れ替わり、
-   * 選んだつもりの無い行が入るため)。列選択はそのまま。
+   * 選んだつもりの無い行が入るため)。全部の行にまたがる範囲(`Ctrl+A` など)と列選択はそのまま。
    * 表はスクロールしない(画面の外へ動いたら矢印キーでそのセルまで動く)。
-   * 追う行が消えた・絞り込みで隠れたときは位置に残る。選択のドラッグ中は動かさない。
-   * `onActiveCellChange` は位置だけ動いたときは呼ばれない。clientSide だけ(serverSide
-   * は取り直すまで並びが変わらないので `'position'` のまま)。
-   * 編集中のセルはどちらでも行に付いていく。
+   * 追う行が消えた・絞り込みで隠れたときは位置に残る。選択のドラッグ中は動かさず、
+   * 離したときに付いていく。行の追加 / 削除で付いていくには `rowKeyGetter` が要る(無いと行のキーは
+   * `rows` の位置なので、上の行を消すと同じキーが別の行を指す)。`onActiveCellChange`
+   * は位置だけ動いたときは呼ばれない。clientSide だけ(serverSide は取り直すまで並びが変わらないので
+   * `'position'` のまま)。編集中のセルはどちらでも行に付いていく。
    *
    * @defaultValue `'position'`
    */

@@ -14,7 +14,7 @@ import type {
 //   正規化するために再利用します。grid 本体の reorder 経路と同じ関数で、適用結果の pane 連結を
 //   一致させます(視覚順 = 論理 index 空間の不変条件を applyState でも守るため)。
 import { isSyntheticColumnKey } from './detailRow';
-import { reorderColumnsByPane } from './geometry';
+import { reorderColumnsByPaneKeepingGroupOrder } from './geometry';
 
 // 追加(state #1): 列状態のシリアライズ(getState / applyState)の純ロジックです。ハンドル
 //   (SpreadsheetGridHandle)から呼ばれ、DOM や reducer には触れません(値の組み立て / 複製 /
@@ -521,7 +521,9 @@ export const applyColumnState = <T,>(
     ordered.push(applyOne(column, undefined));
   }
   // 3) pane 連結正規化(grid の reorder と同じ視覚順)。
-  return reorderColumnsByPane(ordered);
+  // 変更(1.2.0 の見直し QG-3): グループ元の列どうしの順(= グループ化の階層)は保存のまま保ちます(固定のペインごとに
+  //   並べ直すと、列メニューで「中央の列 → 左固定の列」の順にグループ化した階層が入れ替わり、開閉のキーも合わなくなっていた)。
+  return reorderColumnsByPaneKeepingGroupOrder(ordered);
 };
 
 // 追加(段階 2 の確かめ直し): 保存した状態(getState() の値)の列メタ(並び / 表示 / 固定)を列定義へ当てた新しい配列を返す

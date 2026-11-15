@@ -1015,6 +1015,30 @@ describe('行グルーピングの状態(H-04)', () => {
     ]);
   });
 
+  // 追加(1.2.0 の見直し QG-3): 列メニューで「中央の列 → 左固定の列」の順にグループ化した階層(配列 [カテゴリ, 部署(左)])を
+  //   戻しても、固定のペインごとの並べ直しで階層が入れ替わらない。グループ元でない列は今までどおりペインごとに並ぶ。
+  it('applyColumnState: グループ元の列どうしの順(階層)は固定のペインをまたいでも保存のまま', () => {
+    const defs = [
+      { key: 'dept', title: '部署', width: 80, pinned: 'left' as const },
+      { key: 'cat', title: 'カテゴリ', width: 80 },
+      { key: 'name', title: '名前', width: 80 },
+      { key: 'memo', title: 'メモ', width: 80, pinned: 'left' as const },
+    ];
+    const saved = [
+      { key: 'cat', rowGroup: true },
+      { key: 'name' },
+      { key: 'dept', pinned: 'left' as const, rowGroup: true },
+      { key: 'memo', pinned: 'left' as const },
+    ];
+    const next = applyColumnState(defs, saved, {});
+    // グループ元の 2 列は元の位置(cat → dept の順)のまま、ほかの列は残りの位置へ固定のペインごと(memo → name)。
+    expect(next.map((column) => column.key)).toEqual(['cat', 'memo', 'dept', 'name']);
+    expect(next.filter((column) => column.rowGroup === true).map((column) => column.key)).toEqual(['cat', 'dept']);
+    // 冪等。
+    const again = applyColumnState(next, extractColumnState(next, true), {});
+    expect(again.map((column) => column.key)).toEqual(['cat', 'memo', 'dept', 'name']);
+  });
+
   it('isSameGridState: 列の rowGroup と collapsedGroups(順は問わない)も比べる', () => {
     const base = buildGridState({}, emptyFilters(), [], [{ key: 'dept', rowGroup: true }], undefined, ['a', 'b']);
     expect(isSameGridState(base, buildGridState({}, emptyFilters(), [], [{ key: 'dept', rowGroup: true }], undefined, ['b', 'a']))).toBe(true);

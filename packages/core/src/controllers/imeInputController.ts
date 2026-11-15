@@ -23,6 +23,11 @@ import type { CellCoord } from '../model/gridTypes.unbound';
 import { isImeComposingKeyEvent } from '../logic/domGuards';
 import { isInsideDetailCardOf } from '../logic/detailRow';
 import { alignInputTextToTop } from '../utils/topAlignedInput';
+import { resolveGridVisibleBand } from '../utils/gridVisibleBand';
+import { resolveElementScale } from '../logic/elementScale';
+
+// 変換中の入力受けを見えている所へ寄せるときの最小の高さ(px。1 行の文字が収まる程度)。
+const MIN_VISIBLE_COMPOSING_HEIGHT = 24;
 
 type ReadonlyRef<V> = { readonly current: V };
 
@@ -114,14 +119,34 @@ export const createImeInputController = (): ImeInputController => {
     }
     const base = rootEl.getBoundingClientRect();
     const rect = cellEl.getBoundingClientRect();
-    input.style.left = `${rect.left - base.left - rootEl.clientLeft}px`;
-    input.style.top = `${rect.top - base.top - rootEl.clientTop}px`;
-    input.style.width = `${rect.width}px`;
-    input.style.height = `${rect.height}px`;
+    // 変更(1.2.0 の見直し QH-7): 祖先の transform: scale() の中では、画面の px をシェルの中の px へ戻します(これまでは
+    //   位置と大きさが二重に縮んでいた)。
+    const scale = resolveElementScale(rootEl, base);
+    // 変更(1.2.0 の見直し QH-3): 変換中は、セルのうち見えている所(見出しの行・固定行・合計行の下を除く)に置きます(背の高い
+    //   セルの上を見出しの下へ隠したまま打ち始めると、上にそろえた文字が見出しの上に重なって切れていた)。見えている所が
+    //   1 行ぶんも無いときはセルのまま。
+    let top = rect.top;
+    let bottom = rect.bottom;
+    if (composingView) {
+      const band = resolveGridVisibleBand(cellEl);
+      if (band !== null) {
+        const visibleTop = Math.max(top, band.top);
+        const visibleBottom = Math.min(bottom, band.bottom);
+        if (visibleBottom - visibleTop >= MIN_VISIBLE_COMPOSING_HEIGHT * scale.y) {
+          top = visibleTop;
+          bottom = visibleBottom;
+        }
+      }
+    }
+    const height = (bottom - top) / scale.y;
+    input.style.left = `${(rect.left - base.left) / scale.x - rootEl.clientLeft}px`;
+    input.style.top = `${(top - base.top) / scale.y - rootEl.clientTop}px`;
+    input.style.width = `${rect.width / scale.x}px`;
+    input.style.height = `${height}px`;
     input.style.textAlign = composingView && info.align ? info.align : '';
     // 追加(1.2.0): 背の高い行で上にそろえたセル(GridBodyLayer が .ssg-body-cell--valign-top を付ける)では、変換中の文字も
     //   セルの 1 行目にそろえます(開いたエディタと同じ。これまでは真ん中に出て、確定でエディタが開くと上へ動いていた)。
-    alignInputTextToTop(input, composingView && cellEl.classList.contains('ssg-body-cell--valign-top'), rect.height);
+    alignInputTextToTop(input, composingView && cellEl.classList.contains('ssg-body-cell--valign-top'), height);
     return true;
   };
 

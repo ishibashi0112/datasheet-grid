@@ -22,7 +22,9 @@ export type ActiveRowFollowArgs<T> = {
   enabled: boolean;
   activeCell: CellCoord | null;
   rowModel: RowModel<T>;
-  // 選択のドラッグ中 / 編集中(どちらも動かさない)。
+  // セル / 行の選択のドラッグ中 / 編集中(どちらも動かさない)。
+  // 変更(1.2.0 の見直し QG-4): ドラッグ中に並びが変わったときは、追う行を覚えたまま待ち、ドラッグが終わった描画で付いていく
+  //   (これまではその位置の行を覚え直していた)。列幅のドラッグなど選択でないドラッグは含めない(呼び出し側)。
   dragging: boolean;
   editing: boolean;
   dispatch: (action: GridUiAction) => void;
@@ -49,6 +51,8 @@ export const createActiveRowFollowController = <T,>(): ActiveRowFollowController
   let pending = false;
   // 動かした先(座標)。アクティブセルがほかの所へ動いたら外す。
   let followTarget: CellCoord | null = null;
+  // ドラッグ中に並びが変わって、付いていくのを待っているか。
+  let deferred = false;
   const indexCache = new Map<GridRowKey, number>();
 
   const keyAt = (rowModel: RowModel<T>, row: number): GridRowKey | typeof NO_KEY =>
@@ -69,28 +73,37 @@ export const createActiveRowFollowController = <T,>(): ActiveRowFollowController
       }
       if (!args.enabled || activeCell === null) {
         tracked = NO_KEY;
+        deferred = false;
         return;
       }
       if (activeChanged || tracked === NO_KEY) {
         tracked = keyAt(rowModel, activeCell.row);
+        deferred = false;
         return;
       }
-      if (!rowModelChanged || args.editing) {
+      if ((!rowModelChanged && !deferred) || args.editing) {
         return;
       }
       const here = keyAt(rowModel, activeCell.row);
       if (here !== NO_KEY && Object.is(here, tracked)) {
+        deferred = false;
         return;
       }
-      const row = args.dragging ? -1 : findViewRowIndexByKey(rowModel, tracked, indexCache);
+      if (args.dragging) {
+        // ドラッグ中: 動かさず、追う行は覚えたまま(終わった描画で付いていく)。
+        deferred = true;
+        return;
+      }
+      deferred = false;
+      const row = findViewRowIndexByKey(rowModel, tracked, indexCache);
       if (row < 0) {
-        // 追う行が消えた / 隠れた(またはドラッグ中): 位置に残し、その位置の行を覚え直す。
+        // 追う行が消えた / 隠れた: 位置に残し、その位置の行を覚え直す。
         tracked = here;
         return;
       }
       pending = true;
       followTarget = { row, col: activeCell.col };
-      args.dispatch(gridActions.followActiveRow(row));
+      args.dispatch(gridActions.followActiveRow(row, rowModel.getRowCount()));
     },
     isFollowPending: () => pending,
     isFollowMove: (cell) => followTarget !== null && isSameCoord(cell, followTarget),
@@ -100,6 +113,7 @@ export const createActiveRowFollowController = <T,>(): ActiveRowFollowController
       tracked = NO_KEY;
       pending = false;
       followTarget = null;
+      deferred = false;
       indexCache.clear();
     },
   };

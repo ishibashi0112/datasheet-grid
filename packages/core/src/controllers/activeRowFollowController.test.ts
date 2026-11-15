@@ -35,7 +35,7 @@ describe('createActiveRowFollowController', () => {
     const cell = { row: 1, col: 0 };
     controller.update(makeArgs(cell, model(['a', 'b', 'c']), dispatch));
     controller.update(makeArgs(cell, model(['b', 'c', 'a']), dispatch));
-    expect(dispatch).toHaveBeenCalledWith({ type: 'selection/followActiveRow', row: 0 });
+    expect(dispatch).toHaveBeenCalledWith({ type: 'selection/followActiveRow', row: 0, rowCount: 3 });
     expect(controller.isFollowPending()).toBe(true);
     // 動いた後の描画(アクティブセルが変わった)では覚え直すだけ。
     controller.update(makeArgs({ row: 0, col: 0 }, model(['b', 'c', 'a']), dispatch));
@@ -85,19 +85,32 @@ describe('createActiveRowFollowController', () => {
     expect(dispatch).not.toHaveBeenCalled();
     // 今度は c を追う。
     controller.update(makeArgs(cell, model(['c', 'a']), dispatch));
-    expect(dispatch).toHaveBeenCalledWith({ type: 'selection/followActiveRow', row: 0 });
+    expect(dispatch).toHaveBeenCalledWith({ type: 'selection/followActiveRow', row: 0, rowCount: 2 });
   });
 
-  it('選択のドラッグ中は動かさずその位置の行を覚え直す、編集中は動かさず覚えたまま', () => {
+  // 変更(1.2.0 の見直し QG-4): ドラッグ中に並びが変わったら、追う行を覚えたまま待ち、終わった描画で付いていく。
+  it('選択のドラッグ中は動かさず追う行を覚えたまま、終わった描画で付いていく。編集中は動かさず覚えたまま', () => {
     const controller = createActiveRowFollowController<Row>();
     const dispatch = vi.fn();
     const cell = { row: 0, col: 0 };
     controller.update(makeArgs(cell, model(['a', 'b']), dispatch));
-    controller.update(makeArgs(cell, model(['b', 'a']), dispatch, { dragging: true }));
+    const reordered = model(['b', 'a']);
+    controller.update(makeArgs(cell, reordered, dispatch, { dragging: true }));
     expect(dispatch).not.toHaveBeenCalled();
-    // ドラッグの後は b を追う。
-    controller.update(makeArgs(cell, model(['a', 'b']), dispatch));
-    expect(dispatch).toHaveBeenLastCalledWith({ type: 'selection/followActiveRow', row: 1 });
+    // ドラッグが終わった描画(行モデルは同じ)で a へ付いていく。
+    controller.update(makeArgs(cell, reordered, dispatch));
+    expect(dispatch).toHaveBeenLastCalledWith({ type: 'selection/followActiveRow', row: 1, rowCount: 2 });
+    expect(controller.isFollowPending()).toBe(true);
+
+    // ドラッグ中に元の並びへ戻ったら、終わっても動かさない。
+    const back = createActiveRowFollowController<Row>();
+    const dispatch3 = vi.fn();
+    back.update(makeArgs(cell, model(['a', 'b']), dispatch3));
+    back.update(makeArgs(cell, model(['b', 'a']), dispatch3, { dragging: true }));
+    const restored = model(['a', 'b']);
+    back.update(makeArgs(cell, restored, dispatch3, { dragging: true }));
+    back.update(makeArgs(cell, restored, dispatch3));
+    expect(dispatch3).not.toHaveBeenCalled();
 
     const editing = createActiveRowFollowController<Row>();
     const dispatch2 = vi.fn();

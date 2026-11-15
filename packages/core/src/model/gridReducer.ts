@@ -87,8 +87,10 @@ const clampUiStateToRowCount = (state: GridUiState, rowCount: number): GridUiSta
 //   - 何行かにまたがる範囲は外して、アクティブセルの 1 セルにする(並びが変わると範囲の中の行が入れ替わり、選んだつもりの
 //     無い行が入るため。2026-11-15 のユーザー判断の案 A)、
 //   - 列選択は行に依らないのでそのまま。
+//   - 変更(1.2.0 の見直し QG-1): 全部の行にまたがる範囲(Ctrl+A など。rowCount を渡したとき)は、中の行の集まりが変わらない
+//     ので、範囲はそのままにしてアクティブセルだけ動かす(株価ボードで Ctrl+A → Ctrl+C の間に更新が来ると 1 セルに縮んでいた)。
 //   選択のドラッグ中は呼ばない(controllers/activeRowFollowController)。同じ位置なら同一参照を返します。
-const followActiveRowInUiState = (state: GridUiState, row: number): GridUiState => {
+const followActiveRowInUiState = (state: GridUiState, row: number, rowCount: number | undefined): GridUiState => {
   const { activeCell, selection } = state;
   if (activeCell === null || activeCell.row === row) {
     return state;
@@ -96,16 +98,24 @@ const followActiveRowInUiState = (state: GridUiState, row: number): GridUiState 
   const from = activeCell.row;
   const nextActive = { row, col: activeCell.col };
   const single: GridSelection = { type: 'cell', range: { start: nextActive, end: nextActive } };
+  const coversAllRows = (a: number, b: number): boolean =>
+    rowCount !== undefined && rowCount > 0 && Math.min(a, b) <= 0 && Math.max(a, b) >= rowCount - 1;
   let nextSelection: GridSelection = selection;
   if (selection?.type === 'cell') {
     const { start, end } = selection.range;
     nextSelection =
       start.row === from && end.row === from
         ? { type: 'cell', range: { start: { row, col: start.col }, end: { row, col: end.col } } }
-        : single;
+        : coversAllRows(start.row, end.row)
+          ? selection
+          : single;
   } else if (selection?.type === 'row') {
     nextSelection =
-      selection.startRow === from && selection.endRow === from ? { type: 'row', startRow: row, endRow: row } : single;
+      selection.startRow === from && selection.endRow === from
+        ? { type: 'row', startRow: row, endRow: row }
+        : coversAllRows(selection.startRow, selection.endRow)
+          ? selection
+          : single;
   }
   return { ...state, activeCell: nextActive, selection: nextSelection };
 };
@@ -417,7 +427,7 @@ export const gridUiReducer = (
       };
 
     case 'selection/followActiveRow':
-      return followActiveRowInUiState(state, action.row);
+      return followActiveRowInUiState(state, action.row, action.rowCount);
 
     case 'selection/clampToRowCount': {
       const rowClamped = clampUiStateToRowCount(state, action.rowCount);

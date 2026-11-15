@@ -56,6 +56,8 @@ export function CellContextMenuPopover({
     left: layout.left,
     width: layout.width,
     zIndex: 1000,
+    // 追加(1.2.0 の見直し QH-2): 画面に収まらないときは高さを抑えてスクロール(列メニューと同じ)。
+    ...(layout.maxHeight !== undefined ? { maxHeight: layout.maxHeight, overflowY: 'auto' as const } : null),
   };
 
   const handlePointerDown = (event: PointerEvent<HTMLDivElement>) => {

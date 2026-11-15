@@ -26,6 +26,7 @@ import { usePopupContainer, usePortalTokens } from '../hooks/usePortalTokens';
 import { useIsomorphicLayoutEffect } from '../hooks/useController';
 import {
   computeSelectPopoverPlacement,
+  resolveSelectOptionRowHeight,
   createTypeaheadState,
   findOptionByComposedText,
   moveHighlight,
@@ -101,6 +102,8 @@ export function SelectCellEditor({
   const typeaheadRef = useRef(initialState.typeahead);
   const [highlight, setHighlight] = useState(initialState.highlight);
   const [placement, setPlacement] = useState<SelectPopoverPlacement | null>(null);
+  // 追加(1.2.0 の見直し QH-1): 候補の行の高さ(タッチが主の端末は 44px)。開いたときに 1 回だけ決めます。
+  const [optionRowHeight] = useState(resolveSelectOptionRowHeight);
   // 追加(DevBI の報告): 表で決まったトークン(--ssg-*)を候補のリストへ写します(body 直下のため継承で届かない)。
   usePortalTokens(listRef, placement !== null, themeClassName, { layout: placement });
   // 追加(1.1.0 / AP-07): 候補を描く場所(既定はグリッドを囲むダイアログの中、無ければ body)。
@@ -124,11 +127,12 @@ export function SelectCellEditor({
             options.length,
             window.innerWidth,
             window.innerHeight,
+            optionRowHeight,
           ),
         );
       }
     },
-    [options.length],
+    [options.length, optionRowHeight],
   );
 
   // resize / scroll(capture: グリッド内部の仮想スクロールにも追従)で配置を再計算します。
@@ -144,6 +148,7 @@ export function SelectCellEditor({
           options.length,
           window.innerWidth,
           window.innerHeight,
+          optionRowHeight,
         ),
       );
     };
@@ -153,7 +158,7 @@ export function SelectCellEditor({
       window.removeEventListener('resize', update);
       window.removeEventListener('scroll', update, true);
     };
-  }, [options.length]);
+  }, [options.length, optionRowHeight]);
 
   // ハイライト移動時に候補を可視範囲へスクロールします(jsdom は scrollIntoView 未実装のため
   //   optional call)。

@@ -20,6 +20,8 @@ export type CellContextMenuLayout = {
   top: number;
   left: number;
   width: number;
+  // 追加(1.2.0 の見直し QH-2): 上にも下にも収まらないときの高さの上限(view が overflow: auto で付ける)。収まるときは undefined。
+  maxHeight?: number | undefined;
 };
 
 export type CellContextMenuState<T> = {
@@ -55,6 +57,8 @@ export type ContextMenuController<T> = {
 const MENU_WIDTH = 220;
 const VIEWPORT_MARGIN = 8;
 // 実測前の見積もり(項目高さ × 件数 + パネルの上下 padding)。
+// 変更(1.2.0 の見直し QH-2): 開いた後(次のフレーム)にパネルの実高で置き直します(タッチが主の端末は項目が 44px になり、
+//   34px の見積もりのままだと下の項目が画面の外へ出ていた。項目の custom / 区切り / 見出しも高さが違う)。
 const ESTIMATED_ITEM_HEIGHT = 34;
 const PANEL_VPAD = 16;
 
@@ -80,7 +84,8 @@ export const createContextMenuController = <T,>(): ContextMenuController<T> => {
         next !== null &&
         current.layout.top === next.top &&
         current.layout.left === next.left &&
-        current.layout.width === next.width)
+        current.layout.width === next.width &&
+        current.layout.maxHeight === next.maxHeight)
     ) {
       return;
     }
@@ -92,18 +97,24 @@ export const createContextMenuController = <T,>(): ContextMenuController<T> => {
       setLayout(null);
       return;
     }
-    const estimatedHeight = itemCount * ESTIMATED_ITEM_HEIGHT + PANEL_VPAD;
+    const panel = panelRef.current;
+    const menuHeight = panel
+      ? panel.scrollHeight + (panel.offsetHeight - panel.clientHeight)
+      : itemCount * ESTIMATED_ITEM_HEIGHT + PANEL_VPAD;
     let left = anchorPoint.x;
     let top = anchorPoint.y;
-    const flipTop = anchorPoint.y - estimatedHeight;
+    const flipTop = anchorPoint.y - menuHeight;
     left = Math.max(VIEWPORT_MARGIN, left);
     left = Math.min(left, window.innerWidth - MENU_WIDTH - VIEWPORT_MARGIN);
-    // 下にはみ出すなら上へ反転。
-    if (top + estimatedHeight > window.innerHeight - VIEWPORT_MARGIN) {
+    const viewportBottom = window.innerHeight - VIEWPORT_MARGIN;
+    // 下にはみ出すなら上へ反転。上にも収まらないときは、広い方(下から始めて上端へ寄せる)に置いて高さを抑えます。
+    if (top + menuHeight > viewportBottom) {
       top = flipTop;
     }
     top = Math.max(VIEWPORT_MARGIN, top);
-    setLayout({ top, left, width: MENU_WIDTH });
+    const availableHeight = viewportBottom - top;
+    const maxHeight = menuHeight > availableHeight ? Math.max(availableHeight, 0) : undefined;
+    setLayout({ top, left, width: MENU_WIDTH, maxHeight });
   };
 
   const closeWith = (restoreFocus: boolean) => {
@@ -165,6 +176,8 @@ export const createContextMenuController = <T,>(): ContextMenuController<T> => {
     const focusMode = options?.focus ?? 'panel';
     focusFrame = requestAnimationFrame(() => {
       focusFrame = null;
+      // 追加(1.2.0 の見直し QH-2): 描かれたパネルの実高で置き直します。
+      updateLayout();
       const panel = panelRef.current;
       if (panel === null || panel.contains(panel.ownerDocument.activeElement)) {
         return;

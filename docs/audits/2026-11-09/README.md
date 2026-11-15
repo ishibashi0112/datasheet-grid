@@ -464,4 +464,26 @@ pack した 1.0.1 の候補(2026-11-09 の tarball と中身が同じ。レビ�
 | 別枠 | `isAtBottom()` | ハンドルの `isAtBottom()` と `onScroll` の `atBottom`(省略可の型。グリッドはいつも入れる)。判定は core `utils/scrollBottom` の `scrollHeight - scrollTop - clientHeight < 1`(DOM のスクロールの末尾 = scroll-space 仮想化でも物理の末尾が論理の末尾)。ガイド large-data に末尾を追う書き方 | 済(batch 10) |
 | 別枠 | RV3-要望 | prop `pinnedBottomRowsPlacement: 'aboveTotal' \| 'belowTotal'`(既定 'aboveTotal')。プレビューのおすすめ(選べる項目で合計行の下へ)。'belowTotal' は各ペインで 合計行 → 下の固定行 の順に描き、合計行の sticky の bottom を下の固定行の高さぶん上げ、本体ぶんの空きは合計行が持つ。下端に固定する高さ(footerHeight)は同じなので、スクロール / 行を見せる位置 / ヒットテストは変えない。aria-rowindex とエクスポート(core `logic/exportCsv` / `exportData` の `pinnedBottomAfterTotal`)も同じ並び。合計行が無ければ何もしない。ハーネス `t-pinned.mjs` に 7 項目(Chromium 38 / 38) | 済(batch 12) |
 | サイト | — | デモ: 株価ボード `LiveSortDemo`(ガイド「セル編集」。activeCellFollows の position / row を切り替え、1 秒ごとに `applyRows(fn, { undoable: false })`)・ログ `LogTailDemo`(ガイド「大量データと固定列」。isAtBottom / atBottom で末尾を追う)を新設、固定行のデモに「合計行の下に置く」、行ドラッグのデモに canDropRow、状態のデモに includeGroupingInState(「区分」の列メニューでグループ化)。プレイグラウンドに pasteFillsSelection / strict(登録日)/ activeCellFollows + ライブの更新 / pinnedBottomRowsPlacement。`next build` と本番ビルドのブラウザで確認 | 済(batch 13) |
-| 確かめ | — | 別視点のレビュー 2 系統、12 本のアプリでの確かめ直し、3 ブラウザのハーネス、サイズの上限(入れ終えた後の実測 + 0.5KB) | 未着手 |
+| レビューの修正 | QG-1〜7 / QH-1〜7 | 別視点のレビュー 2 系統(G = ロジックと状態 = 中 3 / 低 4、H = 画面・読み上げ・エディタ = 中 2 / 低 5。高は無し)の指摘を全部直した(下の表)。ハーネス `t-v120.mjs` に 15 項目(Chromium 41 / 41) | 済 |
+| 確かめ | — | 12 本のアプリでの確かめ直し、3 ブラウザのハーネス、サイズの上限(入れ終えた後の実測 + 0.5KB) | 未着手 |
+
+#### 1.2.0 の別視点のレビュー(2026-11-15)
+
+G = batch 1 / 2 / 4 / 5 / 10 / 11 / 12 のロジックと状態、H = batch 3 / 6〜9 / 12 の画面・読み上げ・エディタ(640bbcf..012a448)。
+
+| ID | 重要度 | 内容 | 対応 |
+| --- | --- | --- | --- |
+| QG-1 | 中 | `activeCellFollows: 'row'` で全選択(`Ctrl+A`)が並びの変化で 1 セルに縮む(全部の行の範囲は中の行が変わらない) | 直した(reducer `followActiveRow` に行の数を渡し、全部の行にまたがる範囲はそのまま) |
+| QG-2 | 中 | serverSide で範囲いっぱいに貼ると、読み込んだ行にだけ書かれ、残りは知らせも無い | 直した(範囲にまだ読み込んでいない行があれば 1 回だけ貼る。API リファレンス・ガイド・CHANGELOG に記載) |
+| QG-3 | 中 | `includeGroupingInState` で戻すと、固定のペインをまたいだグループ化の階層が入れ替わる(列のドラッグの並べ替えでも同じ。0.63.0 から) | 直した(core `logic/geometry` の `reorderColumnsByPaneKeepingGroupOrder`: グループ元の列が 2 つ以上なら、その列は元の位置のまま、残りの位置へほかの列を固定のペインごと。applyColumnState と列の並べ替えのコマンド) |
+| QG-4 | 低 | `'row'` で列幅のドラッグ中に並びが変わると、追っていた行を失う | 直した(止めるのはセル / 行の選択のドラッグだけ、ドラッグ中は追う行を覚えたまま待ち、終わった描画で付いていく) |
+| QG-5 | 低 | `FindChangeParams.truncated` が必須で、利用側が自分で作った値が型エラーになる | 直した(省略可。グリッドはいつも入れる) |
+| QG-6 / QG-7 | 低 | `'row'` で行の追加 / 削除に付いていくには `rowKeyGetter` が要ることが書いていない / 状態の説明の `GridColumnState` に `rowGroup?` が無い | 直した(API リファレンスとガイド) |
+| QH-1 | 中 | タッチ(候補 44px)で select エディタの一覧の高さを 28px の行で見積もり、スクロールが要る | 直した(core `resolveSelectOptionRowHeight` で開いたときに決める。あわせて一覧の高さに枠線 2px を足した = マウスでも 2px スクロールしていた) |
+| QH-2 | 中 | タッチ(項目 44px)で右クリックメニューの下の項目が画面の外に出る(34px の見積もりだけで置いていた)。フィルハンドルのメニューも同じ | 直した(右クリックメニューは描いた後のフレームで実際の高さで置き直し、収まらなければ maxHeight。フィルハンドルのメニューはタッチでは 2 項目 44px で見積もる) |
+| QH-3 | 低〜中 | 背の高いセルの上が見出しに隠れているとき、IME の変換中の文字が見出しの上に重なる(batch 9 から) | 直した(変換中の入力受けはセルの見えている所 = core `utils/gridVisibleBand` に置く) |
+| QH-4 | 低 | 右寄せの見出しで ⋮ の押せる範囲がつまみに食い込む | 直した(右寄せは広げる向きを逆に) |
+| QH-5 | 低 | タッチで大きくならない的(列フィルターの節の「クリア」・日付のプリセット・ツリーの開閉・カレンダーのボタン、ツールパネルの表示の切り替え) | 直した(32〜40px。日付の範囲の 2 つの入力欄はタッチでは縦に並べる = 16px の文字と 40px のボタンで「yyyy/」と切れたため。CHANGELOG とガイドの範囲も直した) |
+| QH-6 | 低 | 既定の並びで、見えている最後の行のエラーの吹き出しが下の固定行に隠れる(1.1.0 から) | 直した(見えている範囲に上下の固定行も入れる。core `utils/gridVisibleBand` を共用) |
+| QH-7 | 低 | `transform: scale()` の中で IME の変換中の入力受けの位置と大きさが二重に縮む(0.44.0 から) | 直した(倍率で割る) |
+| QH-メモ | 低 | `CellEditorContext.initialText` の開発メモが 1 文字のまま | 直した |

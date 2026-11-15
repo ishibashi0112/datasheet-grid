@@ -158,6 +158,12 @@ export type FillHandleController<T> = {
 
 const MENU_WIDTH = 168;
 const MENU_ESTIMATED_HEIGHT = 84;
+// 追加(1.2.0 の見直し QH-2): タッチが主の端末は項目が 44px(CSS の (pointer: coarse) の .ssg-menu-item)なので 2 項目 + 上下の余白と枠。
+const MENU_ESTIMATED_HEIGHT_COARSE = 106;
+const resolveMenuEstimatedHeight = (): number =>
+  typeof matchMedia === 'function' && matchMedia('(pointer: coarse)').matches
+    ? MENU_ESTIMATED_HEIGHT_COARSE
+    : MENU_ESTIMATED_HEIGHT;
 const VIEWPORT_MARGIN = 8;
 
 const IDLE: FillHandleSnapshot = { status: 'idle' };
@@ -563,8 +569,9 @@ export const createFillHandleController = <T,>(): FillHandleController<T> => {
     let left = Math.min(anchor.left, window.innerWidth - MENU_WIDTH - VIEWPORT_MARGIN);
     left = Math.max(VIEWPORT_MARGIN, left);
     let top = anchor.bottom + 4;
-    if (top + MENU_ESTIMATED_HEIGHT > window.innerHeight - VIEWPORT_MARGIN) {
-      top = Math.max(VIEWPORT_MARGIN, anchor.top - 4 - MENU_ESTIMATED_HEIGHT);
+    const menuHeight = resolveMenuEstimatedHeight();
+    if (top + menuHeight > window.innerHeight - VIEWPORT_MARGIN) {
+      top = Math.max(VIEWPORT_MARGIN, anchor.top - 4 - menuHeight);
     }
     setMenu({ top, left });
     menuBindings.attach();

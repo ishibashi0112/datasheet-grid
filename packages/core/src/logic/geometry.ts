@@ -104,6 +104,28 @@ export const reorderColumnsByPane = <T,>(
   return [...left, ...center, ...right];
 };
 
+// 追加(1.2.0 の見直し QG-3): reorderColumnsByPane と同じく固定列ごとに並べますが、行のグループ化の元の列(rowGroup: true)
+//   どうしの順は元の配列のまま保ちます(グループ化の階層は columns の並び順で決まり、列メニューのグループ化は固定のペインを
+//   またいで「左固定の列を中央の列の下の階層」に置くことがあるため。グループ元の列は表示から外れるので、ペインの中の位置は
+//   見た目に関係しない)。グループ元の列が 2 つ以上あるときは、グループ元の列は元の位置のまま置き、残りの位置へほかの列を
+//   固定のペインごとに並べます(何度かけても同じ)。グループ元の列が 1 つ以下なら reorderColumnsByPane と同じです。
+export const reorderColumnsByPaneKeepingGroupOrder = <T,>(
+  columns: GridColumn<T>[],
+): GridColumn<T>[] => {
+  let groupedCount = 0;
+  for (const column of columns) {
+    if (column.rowGroup === true) {
+      groupedCount += 1;
+    }
+  }
+  if (groupedCount < 2) {
+    return reorderColumnsByPane(columns);
+  }
+  const others = reorderColumnsByPane(columns.filter((column) => column.rowGroup !== true));
+  let next = 0;
+  return columns.map((column) => (column.rowGroup === true ? column : others[next++]!));
+};
+
 // 追加(10-A): 1 つのペイン内における列の座標情報です。
 //             paneLocalStart / paneLocalEnd はペイン内ローカル座標（0 始まり）です。
 //             logicalIndex は reorder 後の visibleColumns 配列上の index です。

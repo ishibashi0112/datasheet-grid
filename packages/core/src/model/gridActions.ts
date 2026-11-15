@@ -25,7 +25,7 @@ export type GridUiAction =
   | { type: 'selection/clampToRowCount'; rowCount: number; colCount?: number }
   // 追加(1.2.0 / 2026-11-09 実アプリの総点検 B-04): 並びが変わったとき、アクティブセルを追っている行の新しい位置へ動かします
   //   (activeCellFollows: 'row')。選択はアクティブセルの行だけの範囲なら一緒に動かし、何行かの範囲はアクティブセルの 1 セルにします。
-  | { type: 'selection/followActiveRow'; row: number }
+  | { type: 'selection/followActiveRow'; row: number; rowCount?: number | undefined }
   | { type: 'edit/start'; cell: CellCoord }
   | { type: 'edit/stop' }
   | {
@@ -152,7 +152,7 @@ export const gridActions = {
   //   範囲内へ詰めます(はみ出しが無ければ no-op)。
   //   変更(1.0.2 / 2026-11-09 実アプリの総点検 C-02): 列の数(colCount)を渡すと、列が減ったときのはみ出しも詰めます。
   // 追加(1.2.0 / B-04): アクティブセルを追っている行の新しい位置(ビュー行 index)へ動かします。
-  followActiveRow: (row: number): GridUiAction => ({ type: 'selection/followActiveRow', row }),
+  followActiveRow: (row: number, rowCount?: number): GridUiAction => ({ type: 'selection/followActiveRow', row, rowCount }),
   clampSelectionToRowCount: (rowCount: number, colCount?: number): GridUiAction => ({
     type: 'selection/clampToRowCount',
     rowCount,

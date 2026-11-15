@@ -131,6 +131,28 @@ export const resolvePasteAnchor = (selection: GridSelection, activeCell: CellCoo
 };
 
 // 追加(1.1.0 / AP-09): 書かなかったセル 1 つぶんの知らせを、onPasteSkipped の形へ直します。
+// 追加(1.2.0 の見直し QG-2): 選んだ範囲(セル範囲 / 行選択)に、まだ読み込んでいない行(serverSide のブロック)があるか。
+const selectionHasUnloadedRows = <T,>(selection: GridSelection, rowModel: RowModel<T>): boolean => {
+  let from: number;
+  let to: number;
+  if (selection?.type === 'cell') {
+    from = Math.min(selection.range.start.row, selection.range.end.row);
+    to = Math.max(selection.range.start.row, selection.range.end.row);
+  } else if (selection?.type === 'row') {
+    from = Math.min(selection.startRow, selection.endRow);
+    to = Math.max(selection.startRow, selection.endRow);
+  } else {
+    return false;
+  }
+  to = Math.min(to, rowModel.getRowCount() - 1);
+  for (let row = Math.max(from, 0); row <= to; row += 1) {
+    if (rowModel.getRow(row) == null && rowModel.getLabelRow?.(row) === undefined) {
+      return true;
+    }
+  }
+  return false;
+};
+
 const toSkippedCell = <T,>(skip: PasteSkip<T>, rowIndex: number, rowKey: GridRowKey): GridPasteSkippedCell<T> => {
   const cell: GridPasteSkippedCell<T> = {
     row: skip.row,
@@ -275,10 +297,15 @@ export const createClipboardController = <T extends object>(): ClipboardControll
     }
     // 追加(1.2.0 / A-08): 1 セル(と、範囲がコピーの大きさの倍数)のコピーは選んだ範囲いっぱいに繰り返します(Excel と同じ)。
     //   起点は今までどおり範囲の左上で、繰り返した文字はちょうど範囲のデータのセルに収まります(logic/pasteFill)。
+    const expandedMatrix = pasteFillsSelection
+      ? expandPasteMatrixToSelection(parsedMatrix, uiState.selection, uiState.activeCell, rowModel, visibleColumns)
+      : null;
+    // 変更(1.2.0 の見直し QG-2): serverSide で範囲にまだ読み込んでいない行があるときは埋めず、今までどおり 1 回だけ貼ります
+    //   (読み込んだ行にだけ書くと、全選択して貼ったのに大半の行が書かれず、知らせも無かった)。
     const matrix =
-      (pasteFillsSelection
-        ? expandPasteMatrixToSelection(parsedMatrix, uiState.selection, uiState.activeCell, rowModel, visibleColumns)
-        : null) ?? parsedMatrix;
+      expandedMatrix !== null && applyServerSideCellEdits && selectionHasUnloadedRows(uiState.selection, rowModel)
+        ? parsedMatrix
+        : (expandedMatrix ?? parsedMatrix);
     // 追加(1.1.0 / AP-09): 書かなかったセル(通知があるときだけ集める)。書き込みと選択を済ませてから 1 回だけ知らせます。
     const skipped: GridPasteSkippedCell<T>[] | null = onPasteSkipped ? [] : null;
     const notifySkipped = () => {

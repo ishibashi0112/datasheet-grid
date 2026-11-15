@@ -43,6 +43,22 @@ describe('gridUiReducer (selection/followActiveRow)', () => {
     });
   });
 
+  // 追加(1.2.0 の見直し QG-1): 全部の行にまたがる範囲(Ctrl+A など)は中の行が変わらないのでそのまま。
+  it('全部の行にまたがるセル範囲 / 行選択はそのまま(アクティブセルだけ動く)', () => {
+    const all = withState({ row: 0, col: 0 }, { type: 'cell', range: { start: { row: 0, col: 0 }, end: { row: 9, col: 4 } } });
+    const next = gridUiReducer(all, gridActions.followActiveRow(6, 10));
+    expect(next.activeCell).toEqual({ row: 6, col: 0 });
+    expect(next.selection).toBe(all.selection);
+    const allRows = withState({ row: 0, col: 0 }, { type: 'row', startRow: 9, endRow: 0 });
+    expect(gridUiReducer(allRows, gridActions.followActiveRow(6, 10)).selection).toBe(allRows.selection);
+    // 1 行足りない範囲は今までどおり 1 セル。
+    const most = withState({ row: 0, col: 0 }, { type: 'cell', range: { start: { row: 0, col: 0 }, end: { row: 8, col: 4 } } });
+    expect(gridUiReducer(most, gridActions.followActiveRow(6, 10)).selection).toEqual({
+      type: 'cell',
+      range: { start: { row: 6, col: 0 }, end: { row: 6, col: 0 } },
+    });
+  });
+
   it('列選択と選択なしはそのまま', () => {
     const col = withState({ row: 4, col: 2 }, { type: 'col', startCol: 2, endCol: 3 });
     const next = gridUiReducer(col, gridActions.followActiveRow(9));
