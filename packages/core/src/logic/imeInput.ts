@@ -1,7 +1,7 @@
 // 追加(G-2): IME オンのままの直接入力(imeDirectInput)の判定です(React 非依存の純関数)。
 //   入力受けで IME の変換が始まったとき、アクティブセルへそのまま入力(変換確定後に編集を開始)してよいかを決めます。
-//   対象は text エディタ(editor 未指定 / type 'text')と number エディタの編集可能なデータセルだけです。select /
-//   date / checkbox / custom の列、グループ行 / ラベル行 / 未ロード行、合成列(展開トグル・行ドラッグハンドル・自動
+//   対象は text エディタ(editor 未指定 / type 'text')と number エディタ、`imeDirectInput: true` の custom エディタの編集可能な
+//   データセルだけです。select / date / checkbox / それ以外の custom の列、グループ行 / ラベル行 / 未ロード行、合成列(展開トグル・行ドラッグハンドル・自動
 //   グループ列)では入力しません(変換は捨てる = 従来どおり何も入らない)。
 // 変更(全角数値): number エディタの列を対象に加えました(従来は変換を捨てていた)。確定した文字列は全角の数字・
 //   符号・小数点・3 桁区切りを半角へ直し、数値として読めるときだけ編集を始めます(resolveImeEditText。かな / 漢字
@@ -31,7 +31,15 @@ export const canStartImeEdit = <T,>(ctx: ImeEditTargetContext<T>, cell: CellCoor
   if (!column || isSyntheticColumnKey(column.key)) {
     return false;
   }
-  if (column.editor !== undefined && column.editor.type !== 'text' && column.editor.type !== 'number') {
+  // 変更(1.2.0 / 2026-11-09 実アプリの総点検 F-06): custom エディタは `imeDirectInput: true` を付けた列だけ入力します(確定した
+  //   文字は ctx.initialText へ。付けない列は従来どおり捨てる)。
+  const editor = column.editor;
+  if (
+    editor !== undefined &&
+    editor.type !== 'text' &&
+    editor.type !== 'number' &&
+    !(editor.type === 'custom' && editor.imeDirectInput === true)
+  ) {
     return false;
   }
   const row = rowModel.getRow(cell.row);

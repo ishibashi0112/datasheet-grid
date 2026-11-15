@@ -1033,6 +1033,16 @@ export type GridColumnEditor<T, F extends GridFrameworkTypes = GridFrameworkType
       //   キャンセルは ctx.commit / ctx.cancel を呼びます(組み込みの既定バインドは供給しません)。
       type: 'custom';
       render: (ctx: CellEditorContext<T, F>) => F['node'];
+      // 追加(1.2.0 / 2026-11-09 実アプリの総点検 F-06): グリッドの imeDirectInput が有効なとき、この列でも IME の変換を受け、
+      //   確定した文字を ctx.initialText に入れて開きます(logic/imeInput の canStartImeEdit)。
+      /**
+       * グリッドの `imeDirectInput` が有効なとき、この custom エディタの列でも IME の変換を受け、確定した文字を
+       * `ctx.initialText` に入れてエディタを開く(英字のキーで打ち始めたときにそのキーが入るのと同じ。1.2.0 から)。
+       * 付けなければ 1.1 までと同じく変換を捨てる。エディタは `ctx.initialText` を入力欄の初期値にする。
+       *
+       * @defaultValue `false`
+       */
+      imeDirectInput?: boolean | undefined;
     };
 
 // 追加(editor: custom): custom エディタの render へ渡すコンテキストです。
@@ -3983,12 +3993,13 @@ export type SpreadsheetGridProps<T, F extends GridFrameworkTypes = GridFramework
    * 変換を確定すると確定した文字列を初期値に編集を始める(もう一度 `Enter` でセルを確定して移動)。
    * number エディタの列では確定した全角の数字・符号・小数点・3
    * 桁区切りを半角に直して編集を始め(「１２．５」→ `12.5`)、数値として読めない変換は捨てる(「ー」
-   * 「。」だけの変換は `-` / `.` の打ち始めとして編集を始める)。それ以外の列(select / date /
-   * checkbox / custom)と読み取り専用セルでは変換を捨てる(従来どおり何も入らない)。キー操作 /
-   * コピー・貼り付け / `Tab` は従来どおり。既定 OFF の理由:
-   * 有効中はグリッドにフォーカスがあるあいだ `document.activeElement` が入力欄になり、
-   * 入力欄では反応しないアプリのショートカット(例: Mantine の `useHotkeys` の既定)
-   * が効かなくなるため。詳細は「IME オンのままの直接入力」節。
+   * 「。」だけの変換は `-` / `.` の打ち始めとして編集を始める)。custom エディタの列は、
+   * エディタの定義に `imeDirectInput: true` を付けたときだけ確定した文字を `ctx.initialText`
+   * に入れて編集を始める(1.2.0 から)。それ以外の列(select / date / checkbox / 付けていない custom)
+   * と読み取り専用セルでは変換を捨てる(従来どおり何も入らない)。キー操作 / コピー・貼り付け / `Tab`
+   * は従来どおり。既定 OFF の理由: 有効中はグリッドにフォーカスがあるあいだ
+   * `document.activeElement` が入力欄になり、入力欄では反応しないアプリのショートカット(例: Mantine
+   * の `useHotkeys` の既定)が効かなくなるため。詳細は「IME オンのままの直接入力」節。
    *
    * @defaultValue `false`
    */
