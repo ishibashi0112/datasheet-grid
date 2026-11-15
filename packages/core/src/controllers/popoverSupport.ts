@@ -83,7 +83,9 @@ export const handleMenuKeyNavigation = (
   itemSelector = '[role="menuitem"]',
 ): boolean => {
   const active = document.activeElement;
-  const focusInside = active instanceof HTMLElement && panel.contains(active);
+  // 変更(1.1.0 / AP-33 の回帰): パネルそのもの(マウスで開いたときのフォーカスの置き場)は「項目にフォーカスが無い」と同じに扱い、
+  //   ↓ で先頭・↑ で末尾の項目へ移ります(パネルを中の要素と数えて何もしなかった)。
+  const focusInside = active instanceof HTMLElement && active !== panel && panel.contains(active);
   if (focusInside && !active.matches(itemSelector)) {
     return false;
   }

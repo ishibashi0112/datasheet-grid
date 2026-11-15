@@ -188,17 +188,24 @@ describe('キーボードで開く右クリックメニュー(AP-33)', () => {
     expect(panel).not.toBeNull();
     await nextFrame();
     expect(document.activeElement).toBe(panel);
+    // パネルの textContent は全項目を含むので、項目(role="menuitem")へ移ったことまで確かめる。
     act(() => {
       fireEvent.keyDown(panel!, { key: 'ArrowDown' });
     });
-    expect(document.activeElement?.textContent).toContain('コピー');
+    expect(document.activeElement?.getAttribute('role')).toBe('menuitem');
+    expect(document.activeElement?.textContent).toBe('コピー');
+    act(() => {
+      fireEvent.keyDown(document.activeElement!, { key: 'ArrowDown' });
+    });
+    expect(document.activeElement?.textContent).toBe('削除');
     act(() => {
       panel!.focus();
     });
     act(() => {
       fireEvent.keyDown(panel!, { key: 'ArrowUp' });
     });
-    expect(document.activeElement?.textContent).toContain('削除');
+    expect(document.activeElement?.getAttribute('role')).toBe('menuitem');
+    expect(document.activeElement?.textContent).toBe('削除');
   });
 });
 
@@ -241,6 +248,34 @@ describe('列メニューの役割(AP-33)', () => {
     }
     const reopenedTrigger = container.querySelector<HTMLElement>('[data-ssg-col-key="qty"] [aria-haspopup="menu"]');
     expect(reopenedTrigger!.getAttribute('aria-expanded')).toBe('true');
+  });
+
+  it('⋮ を押して開いた列メニューは、パネルにフォーカスがあっても ↓ で先頭・↑ で末尾の項目へ', async () => {
+    const { container } = setup();
+    const trigger = container.querySelector<HTMLElement>('[data-ssg-col-key="qty"] [aria-haspopup="menu"]');
+    act(() => {
+      fireEvent.pointerDown(trigger!, { button: 0, pointerId: 1 });
+      fireEvent.click(trigger!);
+    });
+    const menu = screen.getByRole('menu', { name: 'Qty' });
+    await nextFrame();
+    const items = Array.from(menu.querySelectorAll<HTMLElement>('.ssg-menu-item:not(:disabled):not([aria-disabled="true"])'));
+    expect(items.length).toBeGreaterThan(1);
+    // マウスで開いてフォーカスがどこにも無いときの置き場(パネル)から
+    act(() => {
+      menu.focus();
+    });
+    act(() => {
+      fireEvent.keyDown(menu, { key: 'ArrowDown' });
+    });
+    expect(document.activeElement).toBe(items[0]);
+    act(() => {
+      menu.focus();
+    });
+    act(() => {
+      fireEvent.keyDown(menu, { key: 'ArrowUp' });
+    });
+    expect(document.activeElement).toBe(items[items.length - 1]);
   });
 });
 
