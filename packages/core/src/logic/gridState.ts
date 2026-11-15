@@ -157,6 +157,9 @@ const cloneColumnStateEntry = (entry: GridColumnState): GridColumnState => {
   if (entry.pinned !== undefined) {
     next.pinned = entry.pinned;
   }
+  if (entry.rowGroup !== undefined) {
+    next.rowGroup = entry.rowGroup;
+  }
   return next;
 };
 
@@ -166,8 +169,10 @@ const cloneColumnStateEntry = (entry: GridColumnState): GridColumnState => {
 //   - visible / pinned が未指定(undefined)のエントリは当該フィールドを省略し、JSON 往復後の形
 //     (フィールド absent)と一致させます。これにより isSameColumnStateArray の比較が対称になります。
 //   - flex / width は意図的に含めません(flex は grid UI で不変・width は columnWidths でカバー済み)。
+// 変更(1.2.0 / H-04): includeGrouping(includeGroupingInState)のときは、rowGroup を書いた列の rowGroup も入れます。
 export const extractColumnState = <T,>(
   columns: GridColumn<T>[],
+  includeGrouping = false,
 ): GridColumnState[] =>
   columns.map((column) => {
     const entry: GridColumnState = { key: column.key };
@@ -176,6 +181,9 @@ export const extractColumnState = <T,>(
     }
     if (column.pinned !== undefined) {
       entry.pinned = column.pinned;
+    }
+    if (includeGrouping && column.rowGroup !== undefined) {
+      entry.rowGroup = column.rowGroup;
     }
     return entry;
   });
@@ -186,24 +194,33 @@ export const extractColumnState = <T,>(
 //   保存できます。columns は extractColumnState で抽出済みの GridColumnState 配列を渡します
 //   (空配列でも version は v2 のまま=列メタ「全列なし」ではなく「空グリッド」の意。実運用では
 //   getState が常に全列を渡すため、空配列は列ゼロのグリッドだけです)。
+// 変更(1.2.0 / H-04): collapsedGroups(折りたたんだグループのキー)を渡したときだけ、その複製を入れます
+//   (includeGroupingInState のとき。渡さなければ 1.1 までと同じ形)。
 export const buildGridState = (
   columnWidths: Record<string, number>,
   filters: GridFilterState,
   sort: GridSortState,
   columns: GridColumnState[] = [],
   version: number = GRID_STATE_VERSION,
-): GridState => ({
-  version,
-  columnWidths: { ...columnWidths },
-  filters: {
-    globalText: filters.globalText,
-    columnFilters: cloneColumnFilters(filters.columnFilters),
-  },
-  // エントリ(columnKey / direction)も複製します。
-  sort: sort.map((entry) => ({ ...entry })),
-  // 列メタも 1 件ずつ新規オブジェクトへ複製します(呼び出し側が共有配列を渡しても安全)。
-  columns: columns.map(cloneColumnStateEntry),
-});
+  collapsedGroups?: Iterable<string>,
+): GridState => {
+  const state: GridState = {
+    version,
+    columnWidths: { ...columnWidths },
+    filters: {
+      globalText: filters.globalText,
+      columnFilters: cloneColumnFilters(filters.columnFilters),
+    },
+    // エントリ(columnKey / direction)も複製します。
+    sort: sort.map((entry) => ({ ...entry })),
+    // 列メタも 1 件ずつ新規オブジェクトへ複製します(呼び出し側が共有配列を渡しても安全)。
+    columns: columns.map(cloneColumnStateEntry),
+  };
+  if (collapsedGroups !== undefined) {
+    state.collapsedGroups = Array.from(collapsedGroups);
+  }
+  return state;
+};
 
 // applyState に渡る外部入力(localStorage 等の deserialize 結果)を、現行スキーマの GridState へ
 //   防御的に正規化します。型不一致 / 欠損フィールドは既定へ畳み、reducer が消費できる形へ揃えます。
@@ -305,18 +322,29 @@ export const migrateGridState = (input: unknown): GridState => {
       if (e.pinned === 'left' || e.pinned === 'right') {
         entry.pinned = e.pinned;
       }
+      // 追加(1.2.0 / H-04): rowGroup は boolean のときだけ採用します。
+      if (typeof e.rowGroup === 'boolean') {
+        entry.rowGroup = e.rowGroup;
+      }
       normalized.push(entry);
     }
     columns = normalized;
   }
 
-  return {
+  const state: GridState = {
     version: GRID_STATE_VERSION,
     columnWidths,
     filters: { globalText, columnFilters },
     sort,
     columns,
   };
+  // 追加(1.2.0 / H-04): collapsedGroups は配列のときだけ、文字列のキーを重なりなしで採用します。
+  if (Array.isArray(source.collapsedGroups)) {
+    state.collapsedGroups = Array.from(
+      new Set(source.collapsedGroups.filter((key): key is string => typeof key === 'string')),
+    );
+  }
+  return state;
 };
 
 // 追加(dogfood DU-06): applyState の入力を、渡されたスライスだけを持つ形へ正規化します(渡さないスライスは今のまま
@@ -330,6 +358,7 @@ export type NormalizedGridStatePatch = {
   filters?: { globalText?: string; columnFilters?: Record<string, ColumnFilterValue> };
   sort?: GridSortState;
   columns?: GridColumnState[];
+  collapsedGroups?: string[];
 };
 
 export const migrateGridStatePatch = (input: unknown): NormalizedGridStatePatch => {
@@ -365,6 +394,9 @@ export const migrateGridStatePatch = (input: unknown): NormalizedGridStatePatch 
   }
   if (full.columns !== undefined) {
     patch.columns = full.columns;
+  }
+  if (full.collapsedGroups !== undefined) {
+    patch.collapsedGroups = full.collapsedGroups;
   }
   return patch;
 };
@@ -459,6 +491,10 @@ export const applyColumnState = <T,>(
       // visible / pinned は保存値(undefined 含む)をそのまま反映=保存時のレイアウトへ復元。
       next.visible = meta.visible;
       next.pinned = meta.pinned;
+      // 追加(1.2.0 / H-04): rowGroup は保存にある列だけ戻します(includeGroupingInState で保存したとき。無ければ列定義のまま)。
+      if (meta.rowGroup !== undefined) {
+        next.rowGroup = meta.rowGroup;
+      }
     }
     if (hasSavedWidth) {
       next.width = savedWidth;
@@ -701,7 +737,8 @@ const isSameColumnStateArray = (
     if (
       a[i].key !== b[i].key ||
       a[i].visible !== b[i].visible ||
-      a[i].pinned !== b[i].pinned
+      a[i].pinned !== b[i].pinned ||
+      a[i].rowGroup !== b[i].rowGroup
     ) {
       return false;
     }
@@ -739,6 +776,18 @@ export const cloneFilterState = (filters: GridFilterState): GridFilterState => (
 });
 export const cloneSortState = (sort: GridSortState): GridSortState => sort.map((entry) => ({ ...entry }));
 
+// 追加(1.2.0 / H-04): 文字列の集まりの等しさ(順は問わない。片方だけ undefined なら違う)。
+const isSameStringSet = (a: string[] | undefined, b: string[] | undefined): boolean => {
+  if (a === undefined || b === undefined) {
+    return a === b;
+  }
+  if (a.length !== b.length) {
+    return false;
+  }
+  const set = new Set(a);
+  return b.every((key) => set.has(key));
+};
+
 export const isSameGridState = (a: GridState, b: GridState): boolean => {
   if (a.version !== b.version) {
     return false;
@@ -753,6 +802,10 @@ export const isSameGridState = (a: GridState, b: GridState): boolean => {
     return false;
   }
   if (!isSameColumnStateArray(a.columns, b.columns)) {
+    return false;
+  }
+  // 追加(1.2.0 / H-04): 折りたたんだグループのキー(順は問わない)。
+  if (!isSameStringSet(a.collapsedGroups, b.collapsedGroups)) {
     return false;
   }
   return true;

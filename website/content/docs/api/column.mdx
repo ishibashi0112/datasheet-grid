@@ -547,7 +547,7 @@ const columns: GridColumn<Order>[] = [
 - **見出しの文字**: グループ行の見出しは値の文字です(`'chubu'`)。列の `valueFormatter` の表示名にするときは `groupLabel: 'formatted'`、別の文字にするときは関数(1.1.0 から。「値と表示名が別の列」節)。
 - **clientSide 限定**: serverSide(`dataSource`)では `rowGroup` は無視されます(開発時警告)。
 
-グループ行の記述子は `GridGroupRow`(`groupKey` / `columnKey` / `value` / `label` / `level` / `leafCount` / `aggregates`)としてバレルから公開されます(`getGroupRows()` の返り値)。
+グループ行の記述子は `GridGroupRow`(`groupKey` / `columnKey` / `value` / `label` / `level` / `leafCount` / `aggregates` / `collapsed`)としてバレルから公開されます(`getGroupRows()` の返り値。`collapsed` は折りたたんでいるか = 1.2.0 から)。グループ化と開閉を保存するときは `includeGroupingInState` を付けます(「状態の保存 / 復元」節)。
 
 ### 値と表示名が別の列
 

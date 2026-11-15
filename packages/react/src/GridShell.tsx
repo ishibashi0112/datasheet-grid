@@ -495,6 +495,8 @@ export function useGridShell<T extends object>({
   // 追加(state #2): 永続スライス変化の通知口(保存タイミング signal)。発火規約は型定義のコメント参照。
   onStateChange,
   initialState,
+  // 追加(1.2.0 / H-04): 行グルーピングの列と折りたたんだグループを状態に入れるか。
+  includeGroupingInState = false,
   // 追加(change-callbacks): フィルター / ソートのスライス単位の変更通知。
   onFiltersChange,
   onSortChange,
@@ -4608,6 +4610,7 @@ export function useGridShell<T extends object>({
     orderedColumns,
     columns,
     onColumnsChange,
+    includeGroupingInState,
     uiState,
     // 追加(dogfood DU-06): applyState / getState が store の今の状態を読むため。
     getUiState: gridStore.getState,
@@ -4690,6 +4693,9 @@ export function useGridShell<T extends object>({
       sort: uiState.sort,
       dragState: uiState.dragState,
       columns,
+      // 追加(1.2.0 / H-04): 折りたたんだグループ(includeGroupingInState のときだけ状態に入る)。
+      collapsedGroupKeys: uiState.collapsedGroupKeys,
+      includeGroupingInState,
       onStateChange,
       onFiltersChange,
       onSortChange,

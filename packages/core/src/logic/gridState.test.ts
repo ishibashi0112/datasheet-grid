@@ -970,3 +970,56 @@ describe('dropUnknownColumnKeys(DF-04)', () => {
     });
   });
 });
+// 追加(1.2.0 / 2026-11-09 実アプリの総点検 H-04): includeGroupingInState のときの列の rowGroup と折りたたんだグループ。
+describe('行グルーピングの状態(H-04)', () => {
+  const columns: GridColumn<unknown>[] = [
+    { key: 'dept', title: '部署', width: 80, rowGroup: true },
+    { key: 'team', title: 'チーム', width: 80, rowGroup: false },
+    { key: 'name', title: '名前', width: 80 },
+  ];
+
+  it('extractColumnState: includeGrouping のときだけ、rowGroup を書いた列に rowGroup を入れる', () => {
+    expect(extractColumnState(columns)).toEqual([{ key: 'dept' }, { key: 'team' }, { key: 'name' }]);
+    expect(extractColumnState(columns, true)).toEqual([
+      { key: 'dept', rowGroup: true },
+      { key: 'team', rowGroup: false },
+      { key: 'name' },
+    ]);
+  });
+
+  it('buildGridState: collapsedGroups を渡したときだけ入れる(複製)', () => {
+    const keys = new Set(['a', 'b']);
+    const state = buildGridState({}, emptyFilters(), [], [], undefined, keys);
+    expect(state.collapsedGroups).toEqual(['a', 'b']);
+    expect('collapsedGroups' in buildGridState({}, emptyFilters(), [])).toBe(false);
+  });
+
+  it('migrateGridState / migrateGridStatePatch: rowGroup は boolean だけ、collapsedGroups は文字列だけを重なりなしで読む', () => {
+    const state = migrateGridState({
+      columns: [{ key: 'dept', rowGroup: true }, { key: 'team', rowGroup: 'yes' }],
+      collapsedGroups: ['x', 1, 'x', 'y'],
+    });
+    expect(state.columns).toEqual([{ key: 'dept', rowGroup: true }, { key: 'team' }]);
+    expect(state.collapsedGroups).toEqual(['x', 'y']);
+    expect(migrateGridStatePatch({ collapsedGroups: [] }).collapsedGroups).toEqual([]);
+    expect('collapsedGroups' in migrateGridStatePatch({ sort: [] })).toBe(false);
+    expect('collapsedGroups' in migrateGridStatePatch({ collapsedGroups: 'x' })).toBe(false);
+  });
+
+  it('applyColumnState: 保存に rowGroup がある列だけ戻し、無い列は列定義のまま', () => {
+    const next = applyColumnState(columns, [{ key: 'dept', rowGroup: false }, { key: 'team' }, { key: 'name', rowGroup: true }], {});
+    expect(next.map((column) => [column.key, column.rowGroup])).toEqual([
+      ['dept', false],
+      ['team', false],
+      ['name', true],
+    ]);
+  });
+
+  it('isSameGridState: 列の rowGroup と collapsedGroups(順は問わない)も比べる', () => {
+    const base = buildGridState({}, emptyFilters(), [], [{ key: 'dept', rowGroup: true }], undefined, ['a', 'b']);
+    expect(isSameGridState(base, buildGridState({}, emptyFilters(), [], [{ key: 'dept', rowGroup: true }], undefined, ['b', 'a']))).toBe(true);
+    expect(isSameGridState(base, buildGridState({}, emptyFilters(), [], [{ key: 'dept', rowGroup: false }], undefined, ['a', 'b']))).toBe(false);
+    expect(isSameGridState(base, buildGridState({}, emptyFilters(), [], [{ key: 'dept', rowGroup: true }], undefined, ['a']))).toBe(false);
+    expect(isSameGridState(base, buildGridState({}, emptyFilters(), [], [{ key: 'dept', rowGroup: true }]))).toBe(false);
+  });
+});

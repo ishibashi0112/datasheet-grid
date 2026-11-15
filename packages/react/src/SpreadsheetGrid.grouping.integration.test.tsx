@@ -10,8 +10,10 @@ import { createRef, useState } from 'react';
 
 import { SpreadsheetGrid } from './SpreadsheetGrid';
 import { GROUP_AUTO_COLUMN_KEY } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/grouping';
+import { restoreColumnsFromState } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/gridState';
 import type {
   GridColumn,
+  GridState,
   ServerSideDataSource,
   SpreadsheetGridHandle,
 } from './model/gridTypes';
@@ -892,5 +894,93 @@ describe('グルーピングの操作(dogfood)', () => {
       button.textContent?.includes('数量'),
     );
     expect(qtyToggle?.disabled).toBe(true);
+  });
+});
+
+// 追加(1.2.0 / 2026-11-09 実アプリの総点検 H-04): includeGroupingInState で、行グルーピングの列(rowGroup)と折りたたんだ
+//   グループを getState / onStateChange / applyState / initialState の対象に入れる。既定は 1.1 までと同じく入れない。
+describe('状態の保存に行グルーピングを入れる(includeGroupingInState・H-04)', () => {
+  it('既定では開閉で onStateChange を呼ばず、getState に collapsedGroups も rowGroup も入らない。getGroupRows に collapsed', () => {
+    const ref = createRef<SpreadsheetGridHandle<Row>>();
+    const onStateChange = vi.fn();
+    render(<SpreadsheetGrid ref={ref} columns={groupedColumns} rows={rows} onStateChange={onStateChange} />);
+    const firstKey = ref.current!.getGroupRows()[0]!.groupKey;
+    act(() => {
+      ref.current?.setGroupCollapsed(firstKey, true);
+    });
+    expect(onStateChange).not.toHaveBeenCalled();
+    const state = ref.current!.getState();
+    expect('collapsedGroups' in state).toBe(false);
+    expect(state.columns?.find((column) => column.key === 'region')).toEqual({ key: 'region' });
+    expect(ref.current?.getGroupRows().map((group) => group.collapsed)).toEqual([true, false, false, false]);
+  });
+
+  it('有効なら開閉で onStateChange を呼び、getState に列の rowGroup と collapsedGroups が入る', () => {
+    const ref = createRef<SpreadsheetGridHandle<Row>>();
+    const onStateChange = vi.fn();
+    render(
+      <SpreadsheetGrid ref={ref} columns={groupedColumns} rows={rows} onStateChange={onStateChange} includeGroupingInState />,
+    );
+    const firstKey = ref.current!.getGroupRows()[0]!.groupKey;
+    act(() => {
+      ref.current?.setGroupCollapsed(firstKey, true);
+    });
+    expect(onStateChange).toHaveBeenCalledTimes(1);
+    expect(onStateChange.mock.calls[0]?.[0].collapsedGroups).toEqual([firstKey]);
+    const state = ref.current!.getState();
+    expect(state.collapsedGroups).toEqual([firstKey]);
+    expect(state.columns?.map((column) => [column.key, column.rowGroup])).toEqual([
+      ['region', true],
+      ['rep', true],
+      ['qty', undefined],
+    ]);
+    // applyState で戻す(collapsedGroups を渡したときだけ変わる)。
+    act(() => {
+      ref.current?.applyState({ sort: [] });
+    });
+    expect(ref.current?.getState().collapsedGroups).toEqual([firstKey]);
+    act(() => {
+      ref.current?.applyState({ collapsedGroups: [] });
+    });
+    expect(ref.current?.getState().collapsedGroups).toEqual([]);
+    expect(onStateChange).toHaveBeenCalledTimes(2);
+  });
+
+  it('initialState の collapsedGroups で折りたたんだまま始まり、restoreColumnsFromState で列の rowGroup が戻る', () => {
+    const ref = createRef<SpreadsheetGridHandle<Row>>();
+    const { unmount } = render(
+      <SpreadsheetGrid ref={ref} columns={groupedColumns} rows={rows} includeGroupingInState />,
+    );
+    const firstKey = ref.current!.getGroupRows()[0]!.groupKey;
+    act(() => {
+      ref.current?.setGroupCollapsed(firstKey, true);
+    });
+    // 「担当」のグループ化を外した状態を保存する。
+    const saved = JSON.parse(
+      JSON.stringify({
+        ...ref.current!.getState(),
+        columns: ref.current!.getState().columns?.map((column) =>
+          column.key === 'rep' ? { ...column, rowGroup: false } : column,
+        ),
+      }),
+    ) as GridState;
+    unmount();
+
+    const restored = restoreColumnsFromState(groupedColumns, saved);
+    expect(restored.map((column) => [column.key, column.rowGroup])).toEqual([
+      ['region', true],
+      ['rep', false],
+      ['qty', undefined],
+    ]);
+    const ref2 = createRef<SpreadsheetGridHandle<Row>>();
+    const { container } = render(
+      <SpreadsheetGrid ref={ref2} columns={restored} rows={rows} initialState={saved} includeGroupingInState />,
+    );
+    expect(ref2.current?.getGroupRows().map((group) => [group.label, group.collapsed])).toEqual([
+      ['関東', true],
+      ['関西', false],
+    ]);
+    // 関東(折りたたみ)/ 関西 + その leaf 1 行。
+    expect(centerBodyRows(container)).toHaveLength(3);
   });
 });

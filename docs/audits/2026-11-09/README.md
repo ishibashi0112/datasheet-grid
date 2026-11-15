@@ -134,7 +134,7 @@
 | D-03 | `localeTextEn` でも number フィルターの raw が日本語 | 1.0.2 | 済(1.0.2。raw をグリッドの文言で作る。AI の答えから作る raw も) |
 | D-04 | SSRM の wire format に number の parsed の形が無い | 文書 | 済(文書) |
 | I-04 | notIn のチップに除いた値が出ない | 1.0.2 | 済(1.0.2。1〜2 件は値を並べて「を除外」= 文言 `filterExcludedValues` を追加) |
-| H-04 | グループ化と開閉が GridState に入らない | 文書(状態に足すのは 1.2.0) | 文書は済。状態に足すのは 1.2.0(2026-11-15 のユーザー判断で 1.1.0 から 1.2.0 へ) |
+| H-04 | グループ化と開閉が GridState に入らない | 文書(状態に足すのは 1.2.0) | 文書は済。状態に足すのは 1.2.0 で済(`includeGroupingInState`。1.2.0 の作業の表) |
 | H-06 | 入れ子で親の rows を差し替えると外の履歴が消える | 文書 | 済(文書) |
 | H-09 | 「この列でグループ化」が rowGroup の無い列にも出る | 文書 | 済(文書) |
 | E-06 | 行ドラッグのゴーストに 1 列目の生の値 | 1.0.2 | 済(1.0.2。値を文字で出す最初の列。`renderCell` の列は `valueFormatter` があるときだけ、チェックボックス / `showValue: false` のデータバーは飛ばす) |
@@ -455,7 +455,7 @@ pack した 1.0.1 の候補(2026-11-09 の tarball と中身が同じ。レビ�
 | 貼り付け | A-08 | 既定で、セルの範囲への貼り付けはコピーが範囲を割り切れれば範囲いっぱいに繰り返す(core `logic/pasteFill` の `expandPasteMatrixToSelection`。数えるのはデータ行と合成列でない列 = 貼り付けが飛ばすものと同じなので、繰り返した文字はちょうど範囲に収まる。列 / 行の選択・アクティブセルが範囲の外・行ごとの列数が違う文字は今までどおり 1 回。繰り返した行は配列を共有)。prop `pasteFillsSelection={false}` で 1.1 までと同じ。書き込み・飛ばす規則・`onPasteSkipped`・元に戻す 1 回は貼り付けのまま | 済 |
 | IME と custom エディタ | F-06 | custom エディタの定義の `imeDirectInput: true` で、確定した文字を `ctx.initialText` に入れて開く(core `logic/imeInput` の canStartImeEdit) | 済(batch 3) |
 | 行ドラッグ | E-07 | prop `canDropRow`(`RowDropParams` = `onRowMove` と同じ index + 落とした後のすぐ上 / 下の行 + 動かす前の rows)。core `rowDragController` の `canDropAt(from, slot)`(同じ from / スロットは聞き直さず、関数が変わったら控えを捨てる。離すときも確かめる)。'ghost' はガイド線を出さずゴーストを枠の外と同じ見た目に、'live' は落とせる最後の位置に留まる。`moveRow()` には効かない | 済(batch 4) |
-| 状態の保存 | H-04 | グループ化の列と閉じたグループを保存の形に入れる選べる形、`GridGroupRow.collapsed` | 未着手 |
+| 状態の保存 | H-04 | prop `includeGroupingInState`(既定 false = 1.1 と同じ)。`GridColumnState.rowGroup`(rowGroup を書いた列だけ)と `GridState.collapsedGroups`(core `logic/gridState` の extract / build / migrate / applyColumnState / isSame、`engine/gridApi` の getState / applyState、`engine/notifiers` の onStateChange、`createGridEngine` の initialState。保存の rowGroup が列定義と違えば initialState の警告)。`getGroupRows()` の記述子に `collapsed`(複製に付ける) | 済(batch 5) |
 | タッチ | L-12 | `pointer: coarse` でメニュー・候補・チェックの行を大きく、⋮ は押せる範囲だけ広げる | 未着手 |
 | ライブの並べ替え | B-04 | アクティブセルを行キーで追う選べる prop(複数行の範囲の扱いはプレビューで選ぶ) | 未着手 |
 | 別枠 | RV3-H2 / RV3-L2 / RV3-要望 / 1 行のエディタ / `isAtBottom()` | 右クリックメニューの名前の文言 / 固定行・合計行の行見出しの axe(見た目を変えない直し方を先に)/ 下の固定行を合計行の下に置ける選べる項目(プレビューで)/ 上にそろえた行の 1 行のエディタを上に / 末尾にいるかを返す `isAtBottom()` と `onScroll` の印 | 未着手 |

@@ -1200,6 +1200,9 @@ export type GridGroupRow = {
   // 列 key → 集計値です(aggFunc 指定列のみ。数値対象が 0 件の sum / avg / min / max は
   //   undefined = 空セル表示)。
   aggregates: Record<string, unknown>;
+  // 追加(1.2.0 / 2026-11-09 実アプリの総点検 H-04): 折りたたんでいるか。ハンドルの getGroupRows() が返す記述子に入ります
+  //   (グリッドの中の行モデルの記述子には入らない)。
+  collapsed?: boolean | undefined;
 };
 
 // 追加: 列定義です。将来のカスタムセル/カスタムヘッダー拡張を見据えています。
@@ -2747,6 +2750,9 @@ export type GridColumnState = {
   key: string;
   visible?: boolean | undefined;
   pinned?: GridColumnPinned | undefined;
+  // 追加(1.2.0 / 2026-11-09 実アプリの総点検 H-04): 行グルーピングの対象か(列の rowGroup)。includeGroupingInState のときだけ、
+  //   rowGroup を書いた列に入ります。applyState / restoreColumnsFromState は入っている列だけ戻します。
+  rowGroup?: boolean | undefined;
 };
 
 // 追加(state #1): 列状態のシリアライズ可能スナップショットです(getState / applyState の入出力)。
@@ -2765,6 +2771,9 @@ export type GridState = {
   // 追加(state v2): 列メタ(可視 / 順序 / ピン)。配列順 = 列順。undefined = 列メタ未適用(v1 後方互換)。
   //   applyState は onColumnsChange が指定されているときのみ反映します(getState は read-only で常に出力)。
   columns?: GridColumnState[] | undefined;
+  // 追加(1.2.0 / 2026-11-09 実アプリの総点検 H-04): 折りたたんでいるグループのキー(GridGroupRow.groupKey)。
+  //   includeGroupingInState のときだけ入ります(列の rowGroup は columns の各列の rowGroup)。
+  collapsedGroups?: string[] | undefined;
 };
 
 // 追加(dogfood DU-06): applyState に渡せる形です。渡したスライスだけを変え、渡さない(undefined の)スライスは今のまま
@@ -2780,6 +2789,7 @@ export type GridStatePatch = {
   filters?: Partial<GridFilterState> | undefined;
   sort?: GridSortState | undefined;
   columns?: GridColumnState[] | undefined;
+  collapsedGroups?: string[] | undefined;
 };
 
 // 追加(imperative API #1): ref ハンドル(SpreadsheetGridProps.ref で受け取る命令的 API)です。
@@ -3094,7 +3104,11 @@ export type SpreadsheetGridHandle<T> = {
   collapseAllGroups: () => void;
   // 追加(grouping ④): 全グループ行の記述子を DFS 順(表示順)で返します(開閉状態に
   //   関わらず全件。グルーピング無効時は空配列)。
-  /** 全グループ行の記述子(`GridGroupRow[]`)を DFS 順(表示順)で返す。開閉状態に関わらず全件。 */
+  /**
+   * 全グループ行の記述子(`GridGroupRow[]`)を DFS 順(表示順)で返す。開閉状態に関わらず全件。
+   * 各記述子の `collapsed` は折りたたんでいるか(1.2.0 から)。折りたたまれた中の行を見せたいときは、
+   * `columnKey` と `value` でグループを探して `setGroupCollapsed(groupKey, false)` を呼ぶ。
+   */
   getGroupRows: () => GridGroupRow[];
 
   // ── 展開行(detail) ──
@@ -3452,6 +3466,18 @@ export type SpreadsheetGridProps<T, F extends GridFrameworkTypes = GridFramework
    * 復元」節を参照。
    */
   onStateChange?: ((state: GridState) => void) | undefined;
+  // 追加(1.2.0 / 2026-11-09 実アプリの総点検 H-04): 行グルーピングの列(各列の rowGroup)と折りたたんだグループ(collapsedGroups)を
+  //   getState / onStateChange / applyState / initialState の対象に入れます(既定 false = 1.1 までと同じく入れない。グループの
+  //   開閉で onStateChange が呼ばれるようになるため選べる形にした)。
+  /**
+   * 行のグループ化(各列の `rowGroup`)と折りたたんだグループ(`collapsedGroups`)を状態に入れる(1.2.0
+   * から)。`getState()` / `onStateChange` の値に入り(グループの開閉でも `onStateChange`
+   * が呼ばれる)、`applyState` / `initialState` / `restoreColumnsFromState` で戻る。既定は 1.1
+   * までと同じく入れない。詳細は「状態の保存 / 復元」節。
+   *
+   * @defaultValue `false`
+   */
+  includeGroupingInState?: boolean | undefined;
   // 追加(段階 2 DU-12): 状態の初期値です(最初の 1 回 = マウント時だけ使う)。これまでは最初の描画の後に applyState を
   //   呼ぶしかなく、SSRM はまず条件なしで取りに行き、サーバーの描画には URL から戻した絞り込みが載らなかった。
   //   列メタ(columns)は columns prop の側で決めるので受けません。

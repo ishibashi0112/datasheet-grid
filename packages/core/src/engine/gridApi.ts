@@ -97,6 +97,8 @@ export type GridApiArgs<T> = {
   // getState の列メタ抽出 / applyState の列メタ適用に使う生 columns(consumer 宣言順)と onColumnsChange。
   columns: GridColumn<T>[];
   onColumnsChange: ((nextColumns: GridColumn<T>[]) => void) | undefined;
+  // 追加(1.2.0 / H-04): getState に行グルーピングの列と折りたたんだグループを入れるか(includeGroupingInState)。
+  includeGroupingInState?: boolean;
   uiState: GridUiState;
   // 追加(dogfood DU-02): focus() / startEditing() の委譲先(グリッドのキーを受ける要素へフォーカス / セルの編集を始めて
   //   始めたら true。編集できないセルは false)。
@@ -611,7 +613,16 @@ export const createGridApi = <T,>(features: Pick<GridCoreFeatures, 'export' | 'g
       // 永続スライス(手動リサイズ幅 / フィルター / ソート)+ 列メタ(可視 / 順序 / ピン)を純粋にスナップショット。
       // 変更(dogfood DU-06): store の今の状態を読みます(applyState の直後でも渡した値が返る)。
       const ui = currentUi(s);
-      return buildGridState(ui.columnWidths, ui.filters, ui.sort, extractColumnState(currentColumns(s)));
+      // 変更(1.2.0 / H-04): includeGroupingInState なら列の rowGroup と折りたたんだグループのキーも入れます。
+      const includeGrouping = s.includeGroupingInState === true;
+      return buildGridState(
+        ui.columnWidths,
+        ui.filters,
+        ui.sort,
+        extractColumnState(currentColumns(s), includeGrouping),
+        undefined,
+        includeGrouping ? ui.collapsedGroupKeys : undefined,
+      );
     },
 
     applyState: (state) => {
@@ -653,6 +664,10 @@ export const createGridApi = <T,>(features: Pick<GridCoreFeatures, 'export' | 'g
       }
       if (patch.sort) {
         s.dispatch(gridActions.setSort(patch.sort));
+      }
+      // 追加(1.2.0 / H-04): 折りたたんだグループ(渡したときだけ。includeGroupingInState に関わらず戻す)。
+      if (patch.collapsedGroups) {
+        s.dispatch(gridActions.setCollapsedGroupKeys(new Set(patch.collapsedGroups)));
       }
     },
 
@@ -770,7 +785,15 @@ export const createGridApi = <T,>(features: Pick<GridCoreFeatures, 'export' | 'g
     },
     getGroupRows: () => {
       const s = args;
-      return s?.groupTree ? collectAllGroupRows(s.groupTree) : [];
+      if (!s?.groupTree) {
+        return [];
+      }
+      // 変更(1.2.0 / H-04): 折りたたんでいるか(collapsed)を付けた複製を返します(木の記述子は書き換えない)。
+      const collapsedKeys = currentUi(s).collapsedGroupKeys;
+      return collectAllGroupRows(s.groupTree).map((groupRow) => ({
+        ...groupRow,
+        collapsed: collapsedKeys.has(groupRow.groupKey),
+      }));
     },
 
     // ── 展開行(detail)──

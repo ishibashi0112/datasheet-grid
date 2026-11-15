@@ -117,6 +117,9 @@ export type StateChangeNotifierArgs<T> = {
   dragState: GridUiState['dragState'];
   // 列メタ(可視 / 順序 / ピン)の変化検出用(snapshot にも含める)。
   columns: GridColumn<T>[];
+  // 追加(1.2.0 / H-04): 折りたたんだグループと、それを(列の rowGroup と一緒に)状態に入れるか(includeGroupingInState)。
+  collapsedGroupKeys?: GridUiState['collapsedGroupKeys'];
+  includeGroupingInState?: boolean;
   onStateChange: ((state: GridState) => void) | undefined;
   // 追加(change-callbacks): フィルター / ソートのスライスだけを追う通知です(onStateChange は列幅 / 列メタでも
   //   呼ばれるため)。直前の update 引数と構造比較し、実際に変化したときだけ複製を渡します。初回は非発火。
@@ -137,7 +140,9 @@ export const createStateChangeNotifier = <T,>(): StateChangeNotifier<T> => {
     Object.is(a.filters, b.filters) &&
     Object.is(a.sort, b.sort) &&
     Object.is(a.dragState, b.dragState) &&
-    Object.is(a.columns, b.columns);
+    Object.is(a.columns, b.columns) &&
+    Object.is(a.collapsedGroupKeys, b.collapsedGroupKeys) &&
+    a.includeGroupingInState === b.includeGroupingInState;
   return {
     update: (next) => {
       const prev = last;
@@ -159,7 +164,15 @@ export const createStateChangeNotifier = <T,>(): StateChangeNotifier<T> => {
       if (!next.onStateChange) {
         return;
       }
-      const current = buildGridState(next.columnWidths, next.filters, next.sort, extractColumnState(next.columns));
+      const includeGrouping = next.includeGroupingInState === true;
+      const current = buildGridState(
+        next.columnWidths,
+        next.filters,
+        next.sort,
+        extractColumnState(next.columns, includeGrouping),
+        undefined,
+        includeGrouping ? (next.collapsedGroupKeys ?? []) : undefined,
+      );
       const decision = decideStateChangeEmit(lastEmitted, current, next.dragState !== null);
       lastEmitted = decision.nextLast;
       if (decision.emit) {
