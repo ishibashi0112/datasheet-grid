@@ -574,4 +574,84 @@ if (!SUPPORTS.cdp) {
   await close();
 }
 
+// C-N1 / C-N2: 背の高い行の上にそろえたセルで、上が固定したラベル行の帯(と見出し)の下に隠れたまま編集を始めても、1 行の
+//   エディタの文字と IME の変換中の入力受けは見えている所(帯の下)に出る。
+{
+  const { page, pageErrors, close } = await open('label', { query: 'n=200' });
+  await page.evaluate(() => {
+    const src = window.__rows();
+    const out = [];
+    for (let i = 0; i < src.length; i += 1) {
+      if (i % 20 === 0) out.push({ ...src[i], id: 100000 + i, isLabel: true, label: `セクション ${i / 20 + 1}`, name: 'LABEL', qty: 999999 });
+      // 備考を長くして、auto-height で行を背の高い行にする。
+      out.push({ ...src[i], note: 'ながい備考の文章です。'.repeat(6) });
+    }
+    window.__setRows(out);
+    window.__setColumns(window.__columns().map((c) => (c.key === 'note' ? { ...c, autoHeight: true, width: 160 } : c)));
+    window.__setProps({ autoHeight: true, verticalAlign: 'top', imeDirectInput: true });
+  });
+  await waitIdle(page, 400);
+  await scrollTo(page, 600);
+  await waitIdle(page, 300);
+  // 帯のすぐ下にある本体の行を選び、その上を帯の下へ 30px 隠す。
+  const pick = await page.evaluate(() => {
+    const band = document.querySelector('.ssg-center-pane [data-ssg-sticky-label]')?.getBoundingClientRect().bottom ?? null;
+    if (band === null) return null;
+    for (const r of document.querySelectorAll('.ssg-center-pane .ssg-body-row[data-row-index]')) {
+      const rect = r.getBoundingClientRect();
+      if (rect.top >= band && rect.height > 90 && r.querySelector('.ssg-body-cell[data-ssg-col-key="name"]')) {
+        return { row: Number(r.getAttribute('data-row-index')), delta: rect.top - (band - 30) };
+      }
+    }
+    return null;
+  });
+  if (pick === null) {
+    check('C-N1: 帯のすぐ下の背の高い行が見つかる', false, pick);
+  } else {
+    // 見えているうちに押してアクティブセルにしてから、上を帯の下へ隠す(押すと見える所へスクロールするため)。
+    await page.locator(`.ssg-center-pane .ssg-body-row[data-row-index="${pick.row}"] .ssg-body-cell[data-ssg-col-key="name"]`).first().click();
+    await waitIdle(page, 200);
+    await page.evaluate((ri) => {
+      const band = document.querySelector('.ssg-center-pane [data-ssg-sticky-label]').getBoundingClientRect().bottom;
+      const c = document.querySelector(`.ssg-center-pane .ssg-body-row[data-row-index="${ri}"] .ssg-body-cell[data-ssg-col-key="name"]`).getBoundingClientRect();
+      document.querySelector('.ssg-scroll-container').scrollTop += c.top - (band - 30);
+    }, pick.row);
+    await waitIdle(page, 300);
+    await page.keyboard.press('F2');
+    await waitIdle(page, 300);
+    const edit = await page.evaluate((ri) => {
+      const band = document.querySelector('.ssg-center-pane [data-ssg-sticky-label]').getBoundingClientRect().bottom;
+      const c = document.querySelector(`.ssg-center-pane .ssg-body-row[data-row-index="${ri}"] .ssg-body-cell[data-ssg-col-key="name"]`).getBoundingClientRect();
+      const input = document.activeElement;
+      if (!(input instanceof HTMLInputElement)) return { band, cellTop: c.top, cellBottom: c.bottom, text: null };
+      const r = input.getBoundingClientRect();
+      const cs = getComputedStyle(input);
+      return { band, cellTop: c.top, cellBottom: c.bottom, text: r.top + parseFloat(cs.borderTopWidth) + parseFloat(cs.paddingTop) };
+    }, pick.row);
+    check(
+      'C-N1: 上が固定したラベル行の帯の下に隠れたセルでも、1 行のエディタの文字は帯の下(見えている所)に出る',
+      edit.text !== null && edit.cellTop < edit.band - 20 && edit.text >= edit.band - 1 && edit.text + 16 <= edit.cellBottom,
+      edit,
+    );
+    await page.keyboard.press('Escape');
+    await waitIdle(page, 200);
+    if (!SUPPORTS.cdp) {
+      skip('C-N2: IME の変換中の入力受けは固定したラベル行の帯に重ならない', 'CDP の IME の模擬が要る(Chromium だけ)');
+    } else {
+      const cdp = await page.context().newCDPSession(page);
+      await cdp.send('Input.imeSetComposition', { text: 'かんじ', selectionStart: 3, selectionEnd: 3 });
+      await waitIdle(page, 200);
+      const ime = await page.evaluate(() => ({
+        band: document.querySelector('.ssg-center-pane [data-ssg-sticky-label]').getBoundingClientRect().bottom,
+        top: document.querySelector('[data-ssg-ime-input]').getBoundingClientRect().top,
+      }));
+      check('C-N2: IME の変換中の入力受けは固定したラベル行の帯に重ならない(帯の下から出す)', ime.top >= ime.band - 1, ime);
+      await cdp.send('Input.insertText', { text: '' });
+      await page.keyboard.press('Escape');
+    }
+  }
+  check('C-N1 / C-N2: 予期しないページエラーなし', unexpectedPageErrors(pageErrors).length === 0, unexpectedPageErrors(pageErrors));
+  await close();
+}
+
 summary('t-v120');

@@ -37,6 +37,20 @@ describe('alignInputTextToTop', () => {
     input.remove();
   });
 
+  // 追加(1.2.0 の確かめ直し C-N1)。
+  it('上が隠れているときは、隠れた高さだけ文字を下げる(セルの下端より下へは出さない)', () => {
+    const input = makeInput(18);
+    alignInputTextToTop(input, true, 80, 30);
+    // 4 + 30 = 34、80 − 2 − 2 − 34 − 18 = 24
+    expect(input.style.paddingTop).toBe('34px');
+    expect(input.style.paddingBottom).toBe('24px');
+    alignInputTextToTop(input, true, 80, 70);
+    // 下げられるのは 80 − 2 − 2 − 18 = 58 まで
+    expect(input.style.paddingTop).toBe('58px');
+    expect(input.style.paddingBottom).toBe('0px');
+    input.remove();
+  });
+
   it('上にそろえないときはインラインの指定を外す', () => {
     const input = makeInput(18);
     alignInputTextToTop(input, true, 80);
