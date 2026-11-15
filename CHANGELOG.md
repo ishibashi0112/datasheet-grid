@@ -22,6 +22,7 @@
 - 行ドラッグで落とせる先を決める `canDropRow`(型 `RowDropParams`)。`false` を返した位置ではガイド線を出さず、離しても動かしません(`rowDragMotion: 'live'` は落とせる最後の位置に留まる)。ラベル行のまとまりの中だけで動かす、などに使えます。これまでは `onRowMove` の中で `undo()` を呼んで戻すしかなく、一度動いて見えてから戻り、中身の無いやり直しが 1 手残っていました。
 - 行のグループ化と開閉を状態に入れる `includeGroupingInState`。付けると、`getState()` / `onStateChange` の `columns` の各列に `rowGroup` が、`collapsedGroups` に折りたたんだグループのキーが入り(開閉でも `onStateChange` が呼ばれます)、`restoreColumnsFromState` / `initialState` / `applyState` で戻ります。これまではグループ化を自分で保存する必要があり、開閉は保存できませんでした。ハンドルの `getGroupRows()` の各グループに `collapsed`(折りたたんでいるか)も足しました。
 - 右クリックメニュー(`enableContextMenu`)の読み上げの名前。セルで開くと「セルのメニュー」、行番号で開くと「行のメニュー」です(文言 `localeText.contextMenuCell` / `contextMenuRow`、英語「Cell menu」「Row menu」)。これまではメニューに名前が無く、スクリーンリーダーで「メニュー」とだけ読まれていました。
+- ハンドルの `isAtBottom()` と `onScroll` の引数の `atBottom`。縦のスクロールが末尾(下端)にあるかを返します。ログのように行が増える表で末尾を追うときに、行を足す前に確かめて、末尾にいたら足した後に `scrollToBottom()` を呼べます(ガイド「大量データと固定列」の「行が増える表で末尾を追う」)。これまでは `.ssg-scroll-container` の `scrollHeight` を自分で読む必要がありました。
 - custom エディタの `imeDirectInput`: グリッドの `imeDirectInput` が有効なとき、エディタの定義に `imeDirectInput: true` を付けた custom の列でも IME の変換を受け、確定した文字を `ctx.initialText` に入れて開きます(付けない列は今までどおり変換を捨てます)。
 
 ### 変更

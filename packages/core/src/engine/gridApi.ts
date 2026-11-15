@@ -28,6 +28,7 @@ import { computeSinglePaneColumnExtent, type GridPaneLayout } from '../logic/geo
 import { logicalToPhysicalScrollTop, physicalToLogicalScrollTop, type RowMetrics } from '../logic/verticalGeometry';
 import { findDetailRowIndex, findViewRowIndexByKey, type DetailIndexCache } from '../logic/detailRow';
 import { resolveDataRowNumber } from '../logic/labelRows';
+import { isScrolledToBottom } from '../utils/scrollBottom';
 import {
   clearRowSelection,
   countSelectedRows,
@@ -397,6 +398,12 @@ export const createGridApi = <T,>(features: Pick<GridCoreFeatures, 'export' | 'g
     getScrollPosition: () => {
       const el = args?.scrollContainerRef.current ?? null;
       return el ? { top: el.scrollTop, left: el.scrollLeft } : null;
+    },
+
+    // 追加(1.2.0 / G-08 の続き): 縦のスクロールが末尾にあるか(未マウントは false)。
+    isAtBottom: () => {
+      const el = args?.scrollContainerRef.current ?? null;
+      return el ? isScrolledToBottom(el) : false;
     },
 
     setScrollPosition: (position, scrollOptions) => {

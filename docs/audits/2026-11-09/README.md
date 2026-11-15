@@ -461,5 +461,6 @@ pack した 1.0.1 の候補(2026-11-09 の tarball と中身が同じ。レビ�
 | 別枠 | RV3-H2 | 右クリックメニューの `aria-label`(セル「セルのメニュー」/ 行番号「行のメニュー」。文言 `contextMenuCell` / `contextMenuRow` は contextMenu の機能の表 core `DEFAULT_CONTEXT_MENU_LOCALE_TEXT`、英語の表にも) | 済(batch 7) |
 | 別枠 | RV3-L2 | 見た目を変えずに直した: 固定行は名前をピンの印(`role="img"` + `aria-label`)へ移す(axe の has-visible-text は中の要素の名前も数えるので、行見出しの名前は印から決まり同じまま)。合計行は見出しを先頭のデータ列に出すときそのセルを rowheader にし、行番号の欄は `aria-hidden`(ラベル行の RV2-L1 と同じ)。同じ形の 3 つ目 = 行選択のチェックボックスを出すときのグループ行の空の行番号の欄も `aria-hidden`。見えるセルが無いペインの行は隠す。axe 4.14 を実ブラウザで固定行 + 合計行 / 空の見出し / 行選択 / グループ化(+ 行選択)/ ラベル行に回して empty-table-header は 0(残るのは既知の L-08 の色だけ) | 済(batch 8) |
 | 別枠 | 1 行のエディタ | core `utils/topAlignedInput`: 入力欄の箱はセルのまま、上の余白 0.4em − 枠線(複数行と同じ)、`line-height: inherit`、下の余白で中身の箱を 1 行ぶん(height: auto で測る)。text / number / date / select のエディタ(`editors/useTopAlignedInput`、条件はシェルの editorAlignTop)と IME の変換中の入力受け(セルの `.ssg-body-cell--valign-top` を見る。変換中の見た目にしてから測る)。Chromium で背の高い行の 6 列と IME(CDP)を撮って、セルの 1 行目と同じ高さを確認 | 済(batch 9) |
-| 別枠 | RV3-要望 / `isAtBottom()` | 下の固定行を合計行の下に置ける選べる項目(プレビューで)/ 末尾にいるかを返す `isAtBottom()` と `onScroll` の印 | 未着手 |
+| 別枠 | `isAtBottom()` | ハンドルの `isAtBottom()` と `onScroll` の `atBottom`(省略可の型。グリッドはいつも入れる)。判定は core `utils/scrollBottom` の `scrollHeight - scrollTop - clientHeight < 1`(DOM のスクロールの末尾 = scroll-space 仮想化でも物理の末尾が論理の末尾)。ガイド large-data に末尾を追う書き方 | 済(batch 10) |
+| 別枠 | RV3-要望 | 下の固定行を合計行の下に置ける選べる項目(プレビューで) | 未着手 |
 | 確かめ | — | 別視点のレビュー 2 系統、12 本のアプリでの確かめ直し、3 ブラウザのハーネス、サイズの上限(入れ終えた後の実測 + 0.5KB) | 未着手 |

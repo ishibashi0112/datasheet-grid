@@ -2652,6 +2652,13 @@ export type GridScrollEventParams = {
   top: number;
   left: number;
   source: 'user' | 'api';
+  // 追加(1.2.0 / 2026-11-09 実アプリの総点検 G-08 の続き): 縦のスクロールが末尾にあるか(グリッドはいつも入れる。利用側が
+  //   この型の値を自分で作るときに書かなくてよいよう省略可)。
+  /**
+   * 縦のスクロールが末尾(下端)にあるか(中身が見える高さより低いときも `true`)。ログのように行が増えるたびに末尾を
+   * 見せる表で、末尾を追い続けるかの判定に使う(`source` では判定できない)。グリッドはいつも入れる。1.2.0 から。
+   */
+  atBottom?: boolean | undefined;
 };
 
 // 変更(export-scope 再編): エクスポートの対象範囲を「意味論ベース」の 4 値へ再編します。実利用で
@@ -2854,6 +2861,13 @@ export type SpreadsheetGridHandle<T> = {
    * `null`。
    */
   getScrollPosition: () => GridScrollPosition | null;
+  // 追加(1.2.0 / G-08 の続き): 縦のスクロールが末尾にあるか(未マウントは false)。
+  /**
+   * 縦のスクロールが末尾(下端)にあるか(`boolean`。中身が見える高さより低いときも `true`、1px
+   * 未満の差は末尾。未マウント時は `false`)。ログのように行が増えるたびに末尾を見せる表で、
+   * 行を足す前に呼んで末尾を追うかを決める。`onScroll` の `atBottom` も同じ判定。1.2.0 から。
+   */
+  isAtBottom: () => boolean;
   // 追加(proposals ⑧): スクロール位置(px)の設定です。top / left は省略側を現状維持し、
   //   スクロール可能範囲へクランプします。既定 behavior は 'auto'(即時)。
   //   2 グリッドの双方向同期では 'auto' を推奨します('smooth' は途中フレームの onScroll が
@@ -3521,8 +3535,9 @@ export type SpreadsheetGridProps<T, F extends GridFrameworkTypes = GridFramework
   //   インライン関数を渡しても問題ありません(latest-ref 経由で読むため)。
   /**
    * スクロール位置の変化通知(rAF で 1 フレーム 1 回に間引き・縦横どちらの変化でも発火)。`params` は
-   * `{ top, left, source }`(px)。`source: 'api'` は `setScrollPosition` / `scrollTo*` 系由来、
-   * `'user'` はそれ以外(ホイール / ドラッグ / キーボードのほか、
+   * `{ top, left, source, atBottom }`(px。`atBottom` は縦のスクロールが末尾にあるか = ハンドルの
+   * `isAtBottom()` と同じ判定。1.2.0 から)。`source: 'api'` は `setScrollPosition` / `scrollTo*`
+   * 系由来、`'user'` はそれ以外(ホイール / ドラッグ / キーボードのほか、
    * 絞り込みや行の高さの測り直しで表が縮み、ブラウザが位置を詰めた分も `'user'` で届く)。2
    * グリッドの双方向スクロール同期は `source === 'user'`
    * のときだけ相手へ反映することでループを止められる。インライン関数可(latest-ref 経由)。

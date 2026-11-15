@@ -130,7 +130,7 @@ describe('スクロール位置 API(proposals ⑧)', () => {
     });
     await flushAnimationFrame();
     expect(events).toHaveLength(1);
-    expect(events[0]).toEqual({ top: 200, left: 0, source: 'api' });
+    expect(events[0]).toEqual({ top: 200, left: 0, source: 'api', atBottom: false });
 
     // ユーザースクロール相当(位置を直接変えて scroll イベントを発火)。
     await act(async () => {
@@ -139,7 +139,7 @@ describe('スクロール位置 API(proposals ⑧)', () => {
     });
     await flushAnimationFrame();
     expect(events).toHaveLength(2);
-    expect(events[1]).toEqual({ top: 240, left: 0, source: 'user' });
+    expect(events[1]).toEqual({ top: 240, left: 0, source: 'user', atBottom: false });
 
     // scrollToTop(命令的 API)も 'api' として通知される。
     await act(async () => {
@@ -147,7 +147,7 @@ describe('スクロール位置 API(proposals ⑧)', () => {
     });
     await flushAnimationFrame();
     expect(events).toHaveLength(3);
-    expect(events[2]).toEqual({ top: 0, left: 0, source: 'api' });
+    expect(events[2]).toEqual({ top: 0, left: 0, source: 'api', atBottom: false });
   });
 
   it('位置が変わらない setScrollPosition は通知されず、次のユーザースクロールを api と誤判定しない', async () => {
@@ -171,6 +171,36 @@ describe('スクロール位置 API(proposals ⑧)', () => {
     expect(events[0].source).toBe('user');
   });
 
+  // 追加(1.2.0 / G-08 の続き): 末尾にいるか(scrollHeight 10000 − clientHeight 600 = 9400 が末尾。1px 未満の差は末尾)。
+  it('isAtBottom() と onScroll の atBottom は縦のスクロールが末尾にあるかを返す', async () => {
+    const events: GridScrollEventParams[] = [];
+    const { ref, scrollEl } = renderGrid((params) => events.push(params));
+    expect(ref.current?.isAtBottom()).toBe(false);
+    // scrollToBottom() は行の高さから末尾を決める(このスタブの scrollHeight とは合わない)ので、クランプで末尾へ送る。
+    await act(async () => {
+      ref.current?.setScrollPosition({ top: 999999 });
+    });
+    await flushAnimationFrame();
+    expect(scrollEl.scrollTop).toBe(9400);
+    expect(ref.current?.isAtBottom()).toBe(true);
+    expect(events.at(-1)).toEqual({ top: 9400, left: 0, source: 'api', atBottom: true });
+    // 人が少し上へ戻すと末尾ではない(1px 未満の差は末尾のまま)。
+    await act(async () => {
+      scrollEl.scrollTop = 9399.5;
+      scrollEl.dispatchEvent(new Event('scroll'));
+    });
+    await flushAnimationFrame();
+    expect(ref.current?.isAtBottom()).toBe(true);
+    expect(events.at(-1)?.atBottom).toBe(true);
+    await act(async () => {
+      scrollEl.scrollTop = 9300;
+      scrollEl.dispatchEvent(new Event('scroll'));
+    });
+    await flushAnimationFrame();
+    expect(ref.current?.isAtBottom()).toBe(false);
+    expect(events.at(-1)).toEqual({ top: 9300, left: 0, source: 'user', atBottom: false });
+  });
+
   it('同一フレームの連続イベントは rAF で 1 回に間引かれ、最後の位置で通知される', async () => {
     const events: GridScrollEventParams[] = [];
     const { scrollEl } = renderGrid((params) => events.push(params));
@@ -185,6 +215,6 @@ describe('スクロール位置 API(proposals ⑧)', () => {
     });
     await flushAnimationFrame();
     expect(events).toHaveLength(1);
-    expect(events[0]).toEqual({ top: 30, left: 0, source: 'user' });
+    expect(events[0]).toEqual({ top: 30, left: 0, source: 'user', atBottom: false });
   });
 });
