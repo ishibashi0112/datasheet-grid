@@ -461,11 +461,29 @@ pack した 1.0.1 の候補(2026-11-09 の tarball と中身が同じ。レビ�
 | 別枠 | RV3-H2 | 右クリックメニューの `aria-label`(セル「セルのメニュー」/ 行番号「行のメニュー」。文言 `contextMenuCell` / `contextMenuRow` は contextMenu の機能の表 core `DEFAULT_CONTEXT_MENU_LOCALE_TEXT`、英語の表にも) | 済(batch 7) |
 | 別枠 | RV3-L2 | 見た目を変えずに直した: 固定行は名前をピンの印(`role="img"` + `aria-label`)へ移す(axe の has-visible-text は中の要素の名前も数えるので、行見出しの名前は印から決まり同じまま)。合計行は見出しを先頭のデータ列に出すときそのセルを rowheader にし、行番号の欄は `aria-hidden`(ラベル行の RV2-L1 と同じ)。同じ形の 3 つ目 = 行選択のチェックボックスを出すときのグループ行の空の行番号の欄も `aria-hidden`。見えるセルが無いペインの行は隠す。axe 4.14 を実ブラウザで固定行 + 合計行 / 空の見出し / 行選択 / グループ化(+ 行選択)/ ラベル行に回して empty-table-header は 0(残るのは既知の L-08 の色だけ) | 済(batch 8) |
 | 別枠 | 1 行のエディタ | core `utils/topAlignedInput`: 入力欄の箱はセルのまま、上の余白 0.4em − 枠線(複数行と同じ)、`line-height: inherit`、下の余白で中身の箱を 1 行ぶん(height: auto で測る)。text / number / date / select のエディタ(`editors/useTopAlignedInput`、条件はシェルの editorAlignTop)と IME の変換中の入力受け(セルの `.ssg-body-cell--valign-top` を見る。変換中の見た目にしてから測る)。Chromium で背の高い行の 6 列と IME(CDP)を撮って、セルの 1 行目と同じ高さを確認 | 済(batch 9) |
-| 別枠 | `isAtBottom()` | ハンドルの `isAtBottom()` と `onScroll` の `atBottom`(省略可の型。グリッドはいつも入れる)。判定は core `utils/scrollBottom` の `scrollHeight - scrollTop - clientHeight < 1`(DOM のスクロールの末尾 = scroll-space 仮想化でも物理の末尾が論理の末尾)。ガイド large-data に末尾を追う書き方 | 済(batch 10) |
+| 別枠 | `isAtBottom()` | ハンドルの `isAtBottom()` と `onScroll` の `atBottom`(省略可の型。グリッドはいつも入れる)。判定は core `utils/scrollBottom` の `scrollHeight - scrollTop - clientHeight` が 2px 以下(DOM のスクロールの末尾 = scroll-space 仮想化でも物理の末尾が論理の末尾。はじめは 1px 未満にしたが、Firefox の 100 万行の表で `scrollToBottom()` の後も 2px 残ったので広げた = 確かめのハーネスで見つけた)。ガイド large-data に末尾を追う書き方 | 済(batch 10) |
 | 別枠 | RV3-要望 | prop `pinnedBottomRowsPlacement: 'aboveTotal' \| 'belowTotal'`(既定 'aboveTotal')。プレビューのおすすめ(選べる項目で合計行の下へ)。'belowTotal' は各ペインで 合計行 → 下の固定行 の順に描き、合計行の sticky の bottom を下の固定行の高さぶん上げ、本体ぶんの空きは合計行が持つ。下端に固定する高さ(footerHeight)は同じなので、スクロール / 行を見せる位置 / ヒットテストは変えない。aria-rowindex とエクスポート(core `logic/exportCsv` / `exportData` の `pinnedBottomAfterTotal`)も同じ並び。合計行が無ければ何もしない。ハーネス `t-pinned.mjs` に 7 項目(Chromium 38 / 38) | 済(batch 12) |
 | サイト | — | デモ: 株価ボード `LiveSortDemo`(ガイド「セル編集」。activeCellFollows の position / row を切り替え、1 秒ごとに `applyRows(fn, { undoable: false })`)・ログ `LogTailDemo`(ガイド「大量データと固定列」。isAtBottom / atBottom で末尾を追う)を新設、固定行のデモに「合計行の下に置く」、行ドラッグのデモに canDropRow、状態のデモに includeGroupingInState(「区分」の列メニューでグループ化)。プレイグラウンドに pasteFillsSelection / strict(登録日)/ activeCellFollows + ライブの更新 / pinnedBottomRowsPlacement。`next build` と本番ビルドのブラウザで確認 | 済(batch 13) |
-| レビューの修正 | QG-1〜7 / QH-1〜7 | 別視点のレビュー 2 系統(G = ロジックと状態 = 中 3 / 低 4、H = 画面・読み上げ・エディタ = 中 2 / 低 5。高は無し)の指摘を全部直した(下の表)。ハーネス `t-v120.mjs` に 15 項目(Chromium 41 / 41) | 済 |
+| レビューの修正 | QG-1〜7 / QH-1〜7 | 別視点のレビュー 2 系統(G = ロジックと状態 = 中 3 / 低 4、H = 画面・読み上げ・エディタ = 中 2 / 低 5。高は無し)の指摘を全部直した(下の表)。ハーネス `t-v120.mjs` に 15 項目(Chromium 41 / 41)。コミット 9960525 | 済 |
 | 確かめ | — | 12 本のアプリでの確かめ直し、3 ブラウザのハーネス、サイズの上限(入れ終えた後の実測 + 0.5KB) | 未着手 |
+
+#### 1.2.0 の 12 本のアプリでの確かめ直し(2026-11-15)
+
+手順は `audit/dogfood/2026-11-09/REVERIFY-BRIEF-1.2.0.md`(4 人 × 3 本。レビューの修正まで入れた版の tarball を 1.0.0 で作ったアプリへ入れ直し、渡した所見と 14 件の新しい機能を使ってみる)。渡した所見(G-15 / E-09 / A-07 / A-08 / F-06 / B-04 / H-04 / E-07 / L-12 / RV3-H2 / RV3-L2 / RV3-要望・1 行のエディタ・`isAtBottom()`・QG / QH)は QG-3 の一部を除いて直っていて、新しい機能はドキュメントどおり。1.1.0 からの回帰は C-N1(1 行のエディタの上ぞろえの副作用)だけ。G は 100 万行の末尾を追う(縮めたスクロール・行の高さを測る表)、H は本物の Mantine 8.3、I は TypeScript 7.0.2 の `/ai`、K は jsdom / happy-dom・Jest・Next.js 15・型のライブラリ、L はスマホ・タッチ・axe。
+
+| ID | 重要度 | アプリ | 内容 | 対応 |
+| --- | --- | --- | --- | --- |
+| RV4-H1 | 中 | H / D | QG-3 の直っていない経路: 列見出しのドラッグとツールパネルで並べ替えると、固定のペインをまたいだグループ化の階層が入れ替わり、閉じたグループも開く(CHANGELOG の修正の記述と合わない) | 直した(core `logic/geometry` の `keepGroupColumnOrder`: グループ元の列どうしの順を元の順に戻してからペインごとに並べる = 列の並べ替えのコマンド `applyColumnOrderAndPin`。22a04ce) |
+| RV4-B1 | 中 | B | `activeCellFollows: 'row'` で、アクティブセルの行は動かずに範囲の中のほかの行だけが入れ替わると、何行かにまたがる範囲が縮まず、コピー・Delete・貼り付けが選んでいない行に当たる | 直した(core `activeRowFollowController` が範囲の行の並びを比べ、変わったら reducer `selection/collapseToActiveCell`。全部の行の範囲と 1 行の範囲はそのまま。fdb9e27) |
+| RV4-C1 | 中 | C | 背の高い上ぞろえのセルの上が見出し・固定の帯に隠れたまま編集を始めると、1 行のエディタの文字が帯の下に入って見えない(batch 9 の副作用。1.1.0 は真ん中に出て見えていた) | 直した(core `utils/topAlignedInput` の `resolveHiddenTopOf`: 隠れている高さだけ文字を見えている所の 1 行目へ下げる。fec7a3c) |
+| RV4-C2 | 低 | C | 固定したラベル行の帯があると、IME の変換中の文字が帯に重なる(QH-3 の残り) | 直した(core `utils/gridVisibleBand` の上の帯に `[data-ssg-sticky-label]` を入れる。fec7a3c) |
+| RV4-J1 | 中 | J | 編集中に並びが変わると、エディタとアクティブセルは行に付いていくが、選択の範囲は元の位置に残り、Escape の後の `Ctrl+C` / `Delete` が別の行に当たる(1.1.0 から。`'position'` / `'row'` とも) | 直した(reducer `edit/retarget` でアクティブセルと選択もエディタのセルへそろえる。452b3eb) |
+| RV4-K1 | 低 | K | `'row'` でもソートの列そのものを編集して確定すると、確定の後の移動が確定した後の並びの位置で決まり、別の行を指す | 直した(core `editController` の `followsRow`: `Enter` は確定する前の並びで下にあった行へ、`Tab` は編集した行の隣へ。並びとアクティブセルが同時に変わったときは前の並びでアクティブセルの行に付いていく。API リファレンス・ガイド「セル編集」に記載。452b3eb) |
+| RV4-H2 | 低 | H | グループのキーの階層の区切りが NUL(`\u0000`)で、`includeGroupingInState` の状態を PostgreSQL の `jsonb` に保存できない(未確認) | 直した(区切りを `\u001e` に。キーの形は決めていないが CHANGELOG の「変更」に記載。a9f4a8e) |
+| RV4-L1 | 低 | L | スマホの縦で「列の固定」を押し、同じ所をもう一度押すと、小メニューを見せるスクロールで指の下へ来た「左に固定」が選ばれる(L-12 で項目が 44px になり、1.1.0 では収まっていた画面でも起きるようになった) | 直した(項目の下に開いた直後の 500ms 以内・24px 以内の 2 回目のタップ / クリックは項目を選ばない。f410b77) |
+| RV4-L2 | 低 | L | タッチでも小さいまま残る的(ツールパネルのタブ 24px・「すべての列を表示 / 非表示」18px・「初期状態に戻す」31px・カレンダーの「今日」「クリア」17px・日付の入力欄 30px)と、CHANGELOG とガイドの大きさの書き方の違い | 直した(タブ 36px・押せる範囲・40px・36px・36px、書き方を実際の値にそろえた。f410b77)。カレンダーの日の幅 28px(高さ 36px)は列フィルターの幅で決まるので記録だけ(WCAG 2.5.8 の 24px は満たす) |
+| RV4-文書 | 低 | G / D / H / I / A / E | ガイド large-data の末尾を追う例の `useRef(true)` の初期値と effect の依存の注意(G)/ 縮めたスクロールで行が増えたときの補正も `onScroll` の `'api'`(G)/ 状態のガイドの表に `rowGroup?` / `collapsedGroups`、`collapsedGroups` のキーが残ること、列のリセットの戻り先(D / H)/ 既定パーサは「4/11/2026」を月/日/年で読む(I)/ 打ち始めた date エディタは「2026年11月4日」や全角も読む(A)/ `/lite` の警告は機能を使い始める prop だけ(E) | 直した(API リファレンス(両方)とガイド。a9f4a8e) |
+| RV4-参考 | — | C / L / K | 46px の日付の列で select エディタの「夜勤」が切れる(C。1.1.0 から)/ スマホの縦で列メニュー(10 項目 + 閉じる)が画面に収まらず、中をスクロールして届く(L。1.1.0 から)/ `exactOptionalPropertyTypes` でアプリ側の自作の型が落ちる(K。1.0.2 の K-08 からの既知) | 記録だけ |
 
 #### 1.2.0 の別視点のレビュー(2026-11-15)
 
@@ -475,7 +493,7 @@ G = batch 1 / 2 / 4 / 5 / 10 / 11 / 12 のロジックと状態、H = batch 3 / 
 | --- | --- | --- | --- |
 | QG-1 | 中 | `activeCellFollows: 'row'` で全選択(`Ctrl+A`)が並びの変化で 1 セルに縮む(全部の行の範囲は中の行が変わらない) | 直した(reducer `followActiveRow` に行の数を渡し、全部の行にまたがる範囲はそのまま) |
 | QG-2 | 中 | serverSide で範囲いっぱいに貼ると、読み込んだ行にだけ書かれ、残りは知らせも無い | 直した(範囲にまだ読み込んでいない行があれば 1 回だけ貼る。API リファレンス・ガイド・CHANGELOG に記載) |
-| QG-3 | 中 | `includeGroupingInState` で戻すと、固定のペインをまたいだグループ化の階層が入れ替わる(列のドラッグの並べ替えでも同じ。0.63.0 から) | 直した(core `logic/geometry` の `reorderColumnsByPaneKeepingGroupOrder`: グループ元の列が 2 つ以上なら、その列は元の位置のまま、残りの位置へほかの列を固定のペインごと。applyColumnState と列の並べ替えのコマンド) |
+| QG-3 | 中 | `includeGroupingInState` で戻すと、固定のペインをまたいだグループ化の階層が入れ替わる(列のドラッグの並べ替えでも同じ。0.63.0 から) | 直した(core `logic/geometry` の `reorderColumnsByPaneKeepingGroupOrder`: グループ元の列が 2 つ以上なら、その列は元の位置のまま、残りの位置へほかの列を固定のペインごと。applyColumnState と列の並べ替えのコマンド)。見出しのドラッグとツールパネルの経路は確かめ直しで直っていなかった(RV4-H1。下の表) |
 | QG-4 | 低 | `'row'` で列幅のドラッグ中に並びが変わると、追っていた行を失う | 直した(止めるのはセル / 行の選択のドラッグだけ、ドラッグ中は追う行を覚えたまま待ち、終わった描画で付いていく) |
 | QG-5 | 低 | `FindChangeParams.truncated` が必須で、利用側が自分で作った値が型エラーになる | 直した(省略可。グリッドはいつも入れる) |
 | QG-6 / QG-7 | 低 | `'row'` で行の追加 / 削除に付いていくには `rowKeyGetter` が要ることが書いていない / 状態の説明の `GridColumnState` に `rowGroup?` が無い | 直した(API リファレンスとガイド) |
