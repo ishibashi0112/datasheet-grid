@@ -21,6 +21,7 @@ const makeArgs = (
 ): ActiveRowFollowArgs<Row> => ({
   enabled: true,
   activeCell,
+  selection: null,
   rowModel,
   dragging: false,
   editing: false,
@@ -117,5 +118,27 @@ describe('createActiveRowFollowController', () => {
     editing.update(makeArgs(cell, model(['a', 'b']), dispatch2));
     editing.update(makeArgs(cell, model(['b', 'a']), dispatch2, { editing: true }));
     expect(dispatch2).not.toHaveBeenCalled();
+  });
+  // 追加(1.2.0 の確かめ直し B): アクティブセルの行は動かず、範囲の中のほかの行だけが入れ替わったときも 1 セルにする。
+  it('何行かにまたがる範囲の中の行だけが入れ替わったら、範囲を外す(アクティブセルの行は動かさない)', () => {
+    const controller = createActiveRowFollowController<Row>();
+    const dispatch = vi.fn();
+    const cell = { row: 1, col: 0 };
+    const range = { type: 'cell' as const, range: { start: { row: 1, col: 0 }, end: { row: 3, col: 1 } } };
+    controller.update(makeArgs(cell, model(['a', 'b', 'c', 'd', 'e']), dispatch, { selection: range }));
+    // c が範囲の外(一番下)へ動いた。b は同じ位置。
+    controller.update(makeArgs(cell, model(['a', 'b', 'd', 'e', 'c']), dispatch, { selection: range }));
+    expect(dispatch).toHaveBeenCalledWith({ type: 'selection/collapseToActiveCell' });
+    // 範囲の外だけが変わったとき・全部の行の範囲・1 行の範囲・ドラッグ中は外さない。
+    const quiet = vi.fn();
+    const c2 = createActiveRowFollowController<Row>();
+    c2.update(makeArgs(cell, model(['a', 'b', 'c', 'd', 'e']), quiet, { selection: range }));
+    c2.update(makeArgs(cell, model(['a', 'b', 'c', 'd', 'x']), quiet, { selection: range }));
+    const all = { type: 'row' as const, startRow: 0, endRow: 4 };
+    c2.update(makeArgs(cell, model(['a', 'b', 'd', 'c', 'x']), quiet, { selection: all }));
+    const one = { type: 'cell' as const, range: { start: { row: 1, col: 0 }, end: { row: 1, col: 3 } } };
+    c2.update(makeArgs(cell, model(['a', 'b', 'c', 'd', 'x']), quiet, { selection: one }));
+    c2.update(makeArgs(cell, model(['a', 'b', 'd', 'c', 'x']), quiet, { selection: range, dragging: true }));
+    expect(quiet).not.toHaveBeenCalled();
   });
 });

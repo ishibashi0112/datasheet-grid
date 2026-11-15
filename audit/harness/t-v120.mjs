@@ -543,4 +543,35 @@ if (!SUPPORTS.cdp) {
   check('H(QG-3): 予期しないページエラーなし', unexpectedPageErrors(pageErrors).length === 0, unexpectedPageErrors(pageErrors));
   await close();
 }
+// B(B-04 の残り): 'row' で、アクティブセルの行は動かず範囲の中のほかの行だけが入れ替わったら、範囲を外して 1 セルにする。
+{
+  const { page, pageErrors, close } = await open('basic');
+  await page.evaluate(() => {
+    window.__setProps({ activeCellFollows: 'row' });
+    window.__grid.applyState({ sort: [{ columnKey: 'qty', direction: 'desc' }] });
+  });
+  await waitIdle(page, 300);
+  await cell(page, 1, 'qty').click();
+  await waitIdle(page, 150);
+  const qty = await page.evaluate(() => window.__grid.getColIndex('qty'));
+  await page.evaluate((c) => window.__grid.selectRange({ start: { row: 1, col: c }, end: { row: 3, col: c } }), qty);
+  await waitIdle(page, 150);
+  const before = await page.evaluate(() => ({ sel: window.__grid.getSelection(), active: window.__grid.getActiveCell() }));
+  const id1 = await viewIdAt(page, 1);
+  const id2 = await viewIdAt(page, 2);
+  // 範囲の中の 2 行目(表示の 2)を一番下の方へ。アクティブセルの行(表示の 1)は動かない。
+  await page.evaluate((id) => window.__setRows(window.__rows().map((row) => (row.id === id ? { ...row, qty: -1000 } : row))), id2);
+  await waitIdle(page, 300);
+  const after = await page.evaluate(() => ({ sel: window.__grid.getSelection(), active: window.__grid.getActiveCell() }));
+  const idActive = await viewIdAt(page, after.active.row);
+  const single = JSON.stringify(after.sel?.range ?? after.sel) === JSON.stringify({ start: after.active, end: after.active });
+  check(
+    "B(B-04): 'row' で範囲の中のほかの行だけが入れ替わったら、範囲を外してアクティブセルの 1 セルにする(アクティブセルの行はそのまま)",
+    idActive === id1 && after.active.row === 1 && single,
+    { before, after, id1, idActive },
+  );
+  check('B(B-04): 予期しないページエラーなし', unexpectedPageErrors(pageErrors).length === 0, unexpectedPageErrors(pageErrors));
+  await close();
+}
+
 summary('t-v120');

@@ -66,4 +66,14 @@ describe('gridUiReducer (selection/followActiveRow)', () => {
     expect(next.selection).toBe(col.selection);
     expect(gridUiReducer(withState({ row: 4, col: 2 }, null), gridActions.followActiveRow(9)).selection).toBeNull();
   });
+  // 追加(1.2.0 の確かめ直し B)。
+  it('selection/collapseToActiveCell: 範囲をアクティブセルの 1 セルにする(アクティブセルは同じ参照)。もう 1 セルなら同一参照', () => {
+    const s = withState({ row: 2, col: 1 }, { type: 'row', startRow: 1, endRow: 4 });
+    const next = gridUiReducer(s, gridActions.collapseSelectionToActiveCell());
+    expect(next.activeCell).toBe(s.activeCell);
+    expect(next.selection).toEqual({ type: 'cell', range: { start: { row: 2, col: 1 }, end: { row: 2, col: 1 } } });
+    expect(gridUiReducer(next, gridActions.collapseSelectionToActiveCell())).toBe(next);
+    const none = withState(null, null);
+    expect(gridUiReducer(none, gridActions.collapseSelectionToActiveCell())).toBe(none);
+  });
 });

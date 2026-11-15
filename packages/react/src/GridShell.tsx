@@ -2491,6 +2491,7 @@ export function useGridShell<T extends object>({
   useControllerLifecycle(engine.activeRowFollow, {
     enabled: activeRowFollowEnabled,
     activeCell: uiState.activeCell,
+    selection: uiState.selection,
     rowModel,
     // 変更(1.2.0 の見直し QG-4): セル / 行の選択のドラッグだけ(列幅のドラッグ中などは付いていく)。
     dragging: uiState.dragState?.type === 'selection' && uiState.dragState.selectionKind !== 'col',

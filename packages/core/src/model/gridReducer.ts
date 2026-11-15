@@ -429,6 +429,21 @@ export const gridUiReducer = (
     case 'selection/followActiveRow':
       return followActiveRowInUiState(state, action.row, action.rowCount);
 
+    case 'selection/collapseToActiveCell': {
+      const { activeCell, selection } = state;
+      if (
+        activeCell === null ||
+        (selection?.type === 'cell' &&
+          selection.range.start.row === activeCell.row &&
+          selection.range.end.row === activeCell.row &&
+          selection.range.start.col === activeCell.col &&
+          selection.range.end.col === activeCell.col)
+      ) {
+        return state;
+      }
+      return { ...state, selection: { type: 'cell', range: { start: activeCell, end: activeCell } } };
+    }
+
     case 'selection/clampToRowCount': {
       const rowClamped = clampUiStateToRowCount(state, action.rowCount);
       return action.colCount === undefined ? rowClamped : clampUiStateToColCount(rowClamped, action.colCount);
