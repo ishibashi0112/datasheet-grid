@@ -1,0 +1,100 @@
+---
+title: 選択とコピー・貼り付け
+description: セルの範囲選択・行の選択(チェックボックス)と、Excel と行き来できるコピー・貼り付けの決まり
+---
+
+グリッドの選択は 2 種類あります。セルを選ぶ**セルの範囲選択**(Excel と同じ。コピー・貼り付け・クリアの対象)と、行の先頭のチェックボックスで選ぶ**行の選択**(`enableRowSelection`。「選んだ行を削除」などアプリの操作の対象)です。2 つは別のもので、片方を変えてももう片方は変わりません。
+
+## デモ(注文の入力)
+
+<SelectionClipboardDemo />
+
+- セルを押してドラッグするか、`Shift+矢印` で範囲を選び、`Ctrl/Cmd+C` でコピーします。コピー元には点線が流れます(`Esc` で消える)。
+- 上の「貼り付け用の例」の文字をコピーしてセルを選び、`Ctrl/Cmd+V` で貼り付けます。表の末尾より下へはみ出した分は `createRow` で行を足します。
+- 行の先頭のチェックボックスで行を選び、「選んだ行を削除」を押すと消えます。`Ctrl/Cmd+Z` で戻せます(ハンドルの `applyRows` で渡しているため)。
+- 2 セル以上を選ぶと、下部バーに平均 / データの個数 / 合計が出ます。
+
+## セルの範囲選択
+
+| 操作 | 選ばれるもの |
+| --- | --- |
+| セルを押す | そのセル(アクティブセルになる) |
+| セルを押したままドラッグ / `Shift+矢印` | 範囲(ドラッグは端に近づくと自動でスクロール) |
+| `Shift` を押しながらセルを押す | 今の範囲の起点(無ければアクティブセル)から押したセルまで |
+| 行番号を押す / `Shift` を押しながら押す | その行 / 起点の行から押した行まで |
+| 列見出しを押す | その列(`Shift` を押しながら押すと、選択ではなくその列を並べ替えに足す) |
+| `Ctrl/Cmd+A` | 全体(もう一度押すと外す) |
+| `Escape` | 範囲を外す |
+
+- `enableRangeSelection={false}` にすると、押したセルだけを選びます(範囲を作らない)。
+- タッチの端末では、タップでセルを選び、スワイプはスクロールです(範囲選択はできません)。
+- 選んだ範囲はハンドルの `getSelection()` で読めます。`{ type: 'cell', range }` / `{ type: 'row', startRow, endRow }` / `{ type: 'col', startCol, endCol }` / `null` のどれかで、位置は並べ替え・絞り込みの後の**表示の位置**です。範囲に掛かる行のデータは `getSelectedRows()` です。
+- コードから選ぶときは `selectCell(viewRowIndex, colIndex)` / `selectRange(range)` / `clearSelection()` を使います。これらはフォーカスを移さないので、続けてキー操作を受けたいときは `focus()` も呼びます。行キーや列キーから位置を引くときは `getViewRowIndex(rowKey)` / `getColIndex(columnKey)` です。
+- 選択が変わったときの通知の prop はありません。アクティブセルの変化は [`onActiveCellChange`](/docs/guides/cell-events) で受けられ、自前のバー(`renderTopBar` / `renderBottomBar`)の `ctx.selection` には今の範囲が入っています。
+
+### 選択範囲の集計
+
+2 セル以上を選ぶと、下部バーの右側に平均 / データの個数 / 合計が出ます(Excel のステータスバーと同じ。既定で有効、`showSelectionAggregates={false}` で出さない)。数えるのは見えているデータ行 × データ列のセルで、合計と平均は数値と数値の文字列だけです。大きな範囲は時間を分けて数え、その間は「集計中…」と出ます。
+
+## 行の選択(チェックボックス)
+
+```tsx
+<SpreadsheetGrid
+  rows={rows}
+  columns={columns}
+  rowKeyGetter={(row) => row.id}   // 行の選択は行キーで覚える
+  enableRowSelection
+  onRowSelectionChange={() => setCount(gridRef.current?.getSelectedRowCount() ?? 0)}
+  ref={gridRef}
+/>
+```
+
+- `enableRowSelection` を付けると、行番号の欄がチェックボックスになります。複数選択(既定 `rowSelectionMode="multiple"`)では押すたびに切り替わり、`Shift` を押しながら押すかドラッグで範囲を選べます。`'single'` はいつも 1 行です。
+- 左上のチェックボックスは全選択です(`enableSelectAllRows`)。絞り込みで行が隠れている間は、**見えている行だけ**を選ぶ / 外します。隠れた行まで選ぶときはハンドルの `selectAllRows()` です。
+- 選んだ行はハンドルの `getSelectedRowKeys()` / `getSelectedRowData()` / `getSelectedRowCount()` / `isRowSelected(rowKey)` で読みます。`onRowSelectionChange` の中で呼んでも新しい選択が返ります。
+- 選択を自分で持つときは `rowSelection`(`{ type: 'include', rowKeys }` か、全選択から外す `{ type: 'exclude', rowKeys }`)か、簡単な形の `selectedRowKeys` を渡し、`onRowSelectionChange` で受け取った値を戻します。
+- serverSide(`dataSource`)では、`getSelectedRowKeys()` / `getSelectedRowData()` は読み込んだ行だけを返します。
+
+## コピー(`Ctrl/Cmd+C`)
+
+選んだ範囲を TSV(タブ区切り)でクリップボードへ書きます。Excel と Google スプレッドシートにそのまま貼れます。
+
+- **値は生の値**です(`valueFormatter` を通さない。`1234.5` は `1,234.5` ではなく `1234.5`)。画面と同じ書き方で出したい列は、列の `formatClipboardValue` に同じ整形を書きます。select エディタの列は `clipboard: 'label'` で、候補の値(コード)ではなく表示名(`label`)を出します(1.1.0 から。貼り付けた表示名は値に読み替えます。[値と表示名が別の列](/docs/guides/value-labels))。
+- 改行・タブ・`"` を含むセルは `"…"` で囲み、`"` は `""` にします(Excel と同じ)。最後の行のセルがすべて空なら、末尾に改行を 1 つ足します(Excel と同じ形で、貼り付けで最後の空の行が消えない)。
+- 出さないもの: ラベル行、グループ行、行ドラッグのハンドル列・展開トグル列・自動グループ列(TSV に空の列を作らない)、`isRowExportable` が `false` を返した行。
+- コピーした後はコピー元の範囲に点線が流れます(`showCopyRange`。既定で有効)。`Escape` と編集の開始で消えます。
+
+## 貼り付け(`Ctrl/Cmd+V`)
+
+```tsx
+<SpreadsheetGrid
+  rows={rows}
+  onRowsChange={setRows}
+  columns={columns}
+  createRow={() => ({ id: crypto.randomUUID(), name: '', qty: null })} // 末尾より下へはみ出した分の行
+/>
+```
+
+- **貼り始める位置**: 範囲を選んでいればその左上、列を選んでいれば列の先頭のデータ行、行を選んでいれば行の先頭の列からです(選択の外にアクティブセルがあるときはアクティブセルから)。貼るのはコピーした大きさだけで、1 つのセルの値を選んだ範囲いっぱいに広げることはしません(範囲を同じ値で埋めるときは[フィルハンドル](/docs/guides/fill-handle))。
+- **飛ばすもの**: 編集できないセル(`readOnly` / `editable: false` / `canEditCell`)、ラベル行とグループ行(飛ばして次のデータ行へ続けて貼る)、合成列(その右のデータ列から書く)、`validationMode: 'reject'` の列で検査に通らない値のセル。編集できないセルと検査に通らない値のセルは、`onPasteSkipped` で 1 回の貼り付けにつき 1 回まとめて知らせます(1.1.0 から。`cells[i].reason` は `'readOnly'` / `'invalid'`)。
+- **値の読み方**: 列の `parseClipboardValue` があればそれで、無ければエディタの種類の既定のパーサで文字列を値に直します(number は全角の数字や `1,234` も数値に、date は `2026/3/15` などを `'YYYY-MM-DD'` に、checkbox は `true` / `1` がチェックあり、空はチェックなし)。Delete での空にする操作とエディタの確定も同じパーサを通ります。Excel の通貨書式の「¥12,000」「(1,200)」は既定のパーサでは読めないので、`parseClipboardValue: numberParser({ strip: ['¥', '円'], negativeParentheses: true })` にします(1.1.0 から。[GridColumn の「貼り付けで読めない値」](/docs/api/column#貼り付けで読めない値numberparser--onpasteskipped))。
+- **はみ出したとき**: 表の末尾より下は `createRow` があるときだけ行を足し、無ければ捨てます。右端より右は `createOverflowColumn` と `onColumnsChange` があるときだけ列を足します。
+- 1 回の貼り付けは `onRowsChange` を 1 回呼び、元に戻すも 1 回です(足した行も一緒に戻る。足した列は戻らない)。
+- グリッド全体の `readOnly` では何もしません。エディタの中や、セルに置いた入力欄の中での貼り付けは、その入力欄のふつうの貼り付けです。
+- serverSide では、読み込んでいない行は飛ばし、行と列は足しません。書いた値は `dataSource.updateRows` で保存します。
+
+## グリッドの外のボタンで行を変える
+
+「選んだ行を削除」のようにグリッドの外から `rows` を変えるとき、`setRows` で直接差し替えると元に戻すの履歴が消えます(グリッドはその変更を知らないため)。元に戻せるようにしたいときは、ハンドルの `applyRows(next)` で渡します。
+
+```tsx
+const deleteSelected = () => {
+  const keys = new Set(gridRef.current?.getSelectedRowKeys() ?? []);
+  gridRef.current?.applyRows(rows.filter((row) => !keys.has(row.id)));
+};
+```
+
+- 関数の形 `applyRows((prev) => next)` も使えます(1.1.0 から)。`prev` は最後に渡した行なので、続けて呼んでも重なります。
+- 株価のように外から絶えず変わる表で、外からの更新を元に戻すの対象にしないときは `applyRows(next, { undoable: false })` です(1.1.0 から。今の履歴も消えず、元に戻すはグリッドでの編集だけを取り消します。[セル編集 の「外から絶えず変わる表」](/docs/guides/editing#外から絶えず変わる表ライブの更新))。
+
+ハンドルの全メソッドは [命令的 API](/docs/api/handle#選択--アクティブセル) を、キー操作の一覧は [キーボード / タッチ操作](/docs/guides/keyboard) を参照してください。

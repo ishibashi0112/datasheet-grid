@@ -1,0 +1,107 @@
+---
+title: 入力の検査
+description: validate と number エディタの範囲で値を検査し、印を出すか書き込みを止めるか(mark / reject)、保存前にまとめて確かめる
+---
+
+セルの値の検査は列に書きます。検査に通らないセルには印とメッセージを出すか(`'mark'`。既定)、書き込みそのものを止めます(`'reject'`)。保存の前にまとめて確かめるときは、ハンドルの `getInvalidCells()` で全行を調べます。
+
+## デモ(発注の入力 > 送信時にまとめて確かめる)
+
+<ValidationDemo />
+
+- 入力中は印を出しません。「送信」を押すと検査に通らないセルに印が付き、最初のセルへ移って、下にメッセージが並びます。
+- 品番は必須、数量は 1 以上の整数(number エディタの `min` / `integer`)、納期は今日より後(`validate`)です。直して「送信」を押し直すと印が消えます。
+- 「入力中も印を出す」を入れると、既定と同じく入力した時点で印が付きます。
+
+## 列に検査を書く
+
+```tsx
+const columns: GridColumn<Order>[] = [
+  {
+    key: 'code', title: '品番', width: 120,
+    validate: ({ value }) => String(value ?? '').trim() !== '' || '品番は必須です',
+    validationMode: 'reject',            // 通らない値は書き込まない(既定は 'mark')
+  },
+  {
+    key: 'qty', title: '数量', width: 100,
+    editor: { type: 'number', min: 1, integer: true },   // 1 以上の整数(validate を書かなくても検査になる)
+  },
+  {
+    key: 'due', title: '納期', width: 130, editor: { type: 'date' },
+    validate: ({ value, row }) =>
+      row.status === '見積' || (typeof value === 'string' && value > today) || '納期は今日より後の日付にしてください',
+  },
+];
+```
+
+- `validate` の戻り値は `true`(通る)/ `false`(通らない。既定のメッセージ)/ 文字列か `{ message }`(通らない + そのメッセージ)です。
+- 受け取るのは `{ value, row, column }` で、`row` は書き込む前の行です。ほかの列の値と組み合わせた検査(上の納期)も書けます。
+- `validate` は見えているセルを描くたびに呼ばれるので、軽い純粋な関数にします(外の API を呼ばない)。
+
+### 数値の範囲と整数
+
+number エディタの `min` / `max` / `integer: true` は、そのまま値の検査になります。
+
+- 検査の順番は「数値か → 整数か → 範囲内か」で、最初に引っかかったものがメッセージになります(「数値で入力してください」「整数で入力してください」「1 以上で入力してください」など)。
+- 数値として数えるのは数値と、列の既定のパーサが数値として読む文字列(`'12'` / `'1,234'` / `'１２'`)です。空のセルは通します(必須にするときは `validate` で)。
+- `validate` と一緒に書くと `validate` が先です。`validate` が通した値だけを範囲の検査にかけます。メッセージを変えたいときは、同じ条件を `validate` に書いて自分のメッセージを返します。
+- `step` は ↑↓ キーとスピナーの刻みだけで、検査には使いません。
+
+## 通らないときの動き(`validationMode`)
+
+| | `'mark'`(既定) | `'reject'` |
+| --- | --- | --- |
+| エディタで確定(`Enter` / `Tab`) | 書き込み、セルに印 | 確定せずに編集を続け、エラーの吹き出しを出す(フォーカスが外れたときは取り消す) |
+| 貼り付け / フィルハンドル | 書き込み、セルに印 | 通らないセルだけ飛ばす(ほかのセルは書く) |
+| `Delete` / `Backspace` で空にする | 書き込み、セルに印 | 空が通らなければ飛ばす(必須の列は空にできない) |
+| `renderCell` の `setValue` / checkbox の切り替え | 書き込み、セルに印 | 何もしない |
+
+- 印はセルの背景と右上の小さな三角です。メッセージは、マウスを乗せたときと、キーボード / タップでそのセルをアクティブセルにしたときに出ます。
+- 印は描くたびに今の値から決めるので、貼り付け・元に戻す・外からの `rows` の差し替えの後も、いつも今のデータと合っています(検査の結果を状態として持たない)。
+- 色はトークン `--ssg-invalid` / `--ssg-invalid-bg`、吹き出しの文字色は `--ssg-invalid-contrast` で変えられます。Windows のハイコントラストでは、背景の代わりにセルの内側の点線の枠で示します。
+- 支援技術には、通らないセルの `aria-invalid` と、メッセージの `aria-description` で伝えます。
+- 同じセルに[メモ](/docs/guides/customization#セルのメモcellnote)(`cellNote`)があるときは、エラーの三角がメモの三角の上に重なり、メッセージは「エラー → メモ」の順に出ます。
+
+## 印を出す時を決める(`showValidationMarks`)
+
+`showValidationMarks={false}` の間は印を出しません(見えているセルの `validate` も呼ばない)。検査のルールは列に書いたまま、印を出す時だけを state で決められます。`validationMode: 'reject'` の書き込みの止めと、そのときの吹き出しはこの設定に関係なく働きます。
+
+## 保存の前にまとめて確かめる(`getInvalidCells`)
+
+`getInvalidCells()` は、検査のある列 × 全行を呼んだときだけ調べ、通らないセルの一覧 `{ rowKey, sourceRowIndex, columnKey, message }[]` を返します。印を出していないとき(`showValidationMarks={false}`)も、見えていない列・絞り込みで隠れた行も調べます。
+
+```tsx
+const [showErrors, setShowErrors] = useState(false);
+
+const submit = () => {
+  const grid = gridRef.current;
+  const invalid = grid?.getInvalidCells() ?? [];
+  if (invalid.length > 0) {
+    setShowErrors(true);                                   // ここで初めて印を出す
+    // 最初のセルへ移る。位置は表示の位置なので、行キーと列キーから引き直す(絞り込みで隠れた行は飛ばす)
+    const first = invalid.find((cell) => (grid?.getViewRowIndex(cell.rowKey) ?? -1) >= 0);
+    if (grid && first) {
+      const row = grid.getViewRowIndex(first.rowKey);
+      const col = grid.getColIndex(first.columnKey);
+      if (col >= 0) {
+        grid.selectCell(row, col, { scrollIntoView: true });
+        grid.focus();                                      // selectCell はフォーカスを移さない
+      }
+    }
+    return;
+  }
+  setShowErrors(false);
+  save(rows);
+};
+
+<SpreadsheetGrid ref={gridRef} rows={rows} onRowsChange={setRows} columns={columns} showValidationMarks={showErrors} />
+```
+
+- メッセージに行番号を出すときは、画面の行番号の列と同じ番号を返す `getRowNumber(rowKey)` を使います(ラベル行があると表示の位置 + 1 とは違うため)。
+- `getInvalidCells()` は clientSide(`rows`)だけです。serverSide(`dataSource`)は全行を持たないので空の配列を返し、開発時に警告します。サーバーの検査で弾くときは `updateRows` を reject します(値は元に戻り、保存失敗のバーが出ます)。
+
+## メッセージの言語
+
+組み込みの検査のメッセージ(「数値で入力してください」など)は `localeText` の文言です。英語にするときは [英語と文言](/docs/guides/localization) の `localeTextEn` を渡します。`validate` が返すメッセージは書いたとおりに出ます。
+
+列の項目の一覧は [GridColumn の「バリデーション」](/docs/api/column#バリデーションvalidate--validationmode) を参照してください。

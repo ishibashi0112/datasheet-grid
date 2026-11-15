@@ -87,7 +87,7 @@ const columns: GridColumn<Row>[] = [
 
 ## dateSet の日付入力(既定 UI)
 
-`dateSet` 条件の日付入力は、v0.28 からネイティブ `<input type="date">` に代わり**内製の日付フィールド**になりました(ブラウザ依存の見た目・操作性の問題を解消)。
+`dateSet` 条件の日付入力は、ネイティブの `<input type="date">` ではなく**内製の日付フィールド**です(ブラウザごとに見た目と操作が違う問題を避けるため)。
 
 - **自由入力** — `2026/7/1` / `2026-07-01` など表記ゆれを受け付け、Enter / blur で正規化して確定します。解釈できない入力は赤枠のまま確定しません(適用済みの条件は保持)。
 - **カレンダー** — フィールド右のボタンで開閉。タイトルクリックで 日 → 月一覧 → 年一覧 とドリルアップでき、遠い年代へも素早く移動できます。フッターに「今日」「クリア」(月・年ビューでは選択せずに戻れる「← 戻る」も表示)。
@@ -119,7 +119,7 @@ import { DatePickerInput } from '@mantine/dates';
 
 - コンテキストは `{ value, onChange, ariaLabel, slot: 'single' | 'from' | 'to', columnKey }`。`onChange` は `Date` / `null`(クリア)/ `'2026/7/1'` のような表記ゆれ文字列も受け付け、内部で `'YYYY-MM-DD'` へ正規化されます(解釈できない値はクリア扱い)。値を変更するとプリセットチップの選択は解除されます。
 - **外側クリック対策**: フィルター popover は外側 pointerdown で閉じるため、ピッカーのカレンダーが body 直下ポータルに出ると操作で閉じてしまいます。①ポータル無効化で popover 内に描画(Mantine の `popoverProps={{ withinPortal: false }}` 等。推奨)、または ②ポップアップ要素へ `data-ssg-filter-keep-open` 属性を付与、のどちらかで回避してください。
-- HeroUI の例や詳細な契約は API リファレンス(パッケージ同梱の `API_REFERENCE.md`「日付入力の差し替え」節)を参照してください。
+- HeroUI の例や詳細な契約は [GridColumn の「日付入力の差し替え」](/docs/api/column#日付入力の差し替えrenderfilterdateinput)を参照してください。
 
 ## 種別の自動判定(`filterType: 'auto'`)
 
@@ -211,4 +211,6 @@ set / select / 複合(numberSet / textSet / dateSet)の候補は既定では `ro
 
 ## 状態を外から扱う
 
-ソート / フィルター状態はグリッド内部の reducer が持ちますが、`getState()` / `applyState()`(命令的ハンドル)で保存・復元、`onStateChange` で変更検知ができます。URL のクエリや保存した値から最初の状態を決めるときは、prop の `initialState` に渡します(最初の 1 回だけ使う。最初の描画・サーバーの描画・serverSide の最初の取得から効きます)。列の並び / 表示 / 固定も戻すときは、`restoreColumnsFromState(columns, saved)` で作った配列を `columns` に渡します。`applyState` は渡した部分だけを変えるので、`applyState({ sort: [{ columnKey: 'qty', direction: 'desc' }] })` のように並びだけ変えることもできます(列幅やフィルターはそのまま。今の `columns` に無い列の条件は捨てます)。フィルター / ソートだけを追いたい場合は `onFiltersChange` / `onSortChange`(該当スライスが実際に変化したときだけ発火)が使えます。詳細は [API リファレンス](/docs/api/handle) を参照してください。
+ソート / フィルターの状態は `getState()` / `applyState()`(命令的ハンドル)で保存・復元でき、`onStateChange` で変化を受け取れます。URL のクエリや保存した値から最初の状態を決めるときは prop の `initialState` に渡します。`applyState` は渡した部分だけを変えるので、`applyState({ sort: [{ columnKey: 'qty', direction: 'desc' }] })` のように並びだけ変えることもできます。フィルター / ソートだけを追いたいときは `onFiltersChange` / `onSortChange`(そのスライスが実際に変わったときだけ呼ばれる)を使います。
+
+保存と復元の手順(列幅・列の並びも含む、URL から戻す、列を変えた後の古い保存値)は [状態の保存と復元](/docs/guides/state) にまとめています。

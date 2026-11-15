@@ -1353,7 +1353,9 @@ export type GridColumn<T, F extends GridFrameworkTypes = GridFrameworkTypes> = {
   /** 値ライター(新しい行を返す)。 */
   setValue?: ((row: T, value: unknown) => T) | undefined;
   /**
-   * カスタムセル描画。
+   * カスタムセル描画。`detailRow` prop 有効時は
+   * `ctx.detail`(`{ expanded, expandable, toggle, setExpanded }`)
+   * で[展開行](https://datasheet-grid.vercel.app/docs/guides/detail-row)のトグルを自前配置できる。
    *
    * @defaultValue プレーン `<span>`
    */
@@ -4059,8 +4061,9 @@ export type SpreadsheetGridProps<T, F extends GridFrameworkTypes = GridFramework
   //   withinPortal 相当を無効化して popover 内に描画すること(どちらでも可)。
   /**
    * dateSet フィルター条件の日付入力を利用側コンポーネント(Mantine `DatePickerInput` 等)
-   * へ差し替えるスロット。既定は内製フィールド(自由入力 + ドリルアップカレンダー。下記「dateSet
-   * の日付入力(既定 UI)」節)。詳細は「日付入力の差し替え(renderFilterDateInput)」節。
+   * へ差し替えるスロット。既定は内製フィールド(自由入力 + ドリルアップカレンダー)。詳細は
+   * GridColumn の「dateSet の日付入力(既定 UI)」「日付入力の差し替え(renderFilterDateInput)」
+   * 節と[ソートとフィルター](https://datasheet-grid.vercel.app/docs/guides/filter-sort)。
    *
    * @defaultValue 内製の日付フィールド
    */
@@ -4477,7 +4480,8 @@ export type SpreadsheetGridProps<T, F extends GridFrameworkTypes = GridFramework
    * その中(カード)へ `render` の返す任意の React 要素(自前のサブグリッド / フォーム / 集計パネル等)
    * を描画する。指定時のみ有効で、未指定なら既存の描画・状態・イベント経路は一切変わらない。
    * `{ render, height?, isExpandable?, showToggleColumn?, className? }`。clientSide / serverSide
-   * の両方で使える(serverSide の制約は節内)。詳細は「展開行(Master/Detail)」節を参照。
+   * の両方で使える(serverSide の制約は節内)。詳細は「展開行(Master/Detail)」
+   * 節と[ガイド](https://datasheet-grid.vercel.app/docs/guides/detail-row)を参照。
    *
    * @defaultValue —(無効)
    */
@@ -4498,7 +4502,8 @@ export type SpreadsheetGridProps<T, F extends GridFrameworkTypes = GridFramework
    * フィルターは既定でラベル行から次のラベル行までの区間(セクション)に閉じる(`sortMode`)。
    * `sticky: true` で現在セクションのラベルを列ヘッダー直下に固定。
    * `{ isLabelRow, getLabel, render?, height?, className?, sticky?, sortMode?, keepEmptySections?, exportText? }`。
-   * 行グルーピング(`rowGroup`)とは別機能で併用不可。詳細は「ラベル行(見出し / 区切り行)」節。
+   * 行グルーピング(`rowGroup`)とは別機能で併用不可。詳細は「ラベル行(見出し / 区切り行)」
+   * 節と[ガイド](https://datasheet-grid.vercel.app/docs/guides/label-rows)。
    *
    * @defaultValue —(無効)
    */
@@ -4572,7 +4577,8 @@ export type SpreadsheetGridProps<T, F extends GridFrameworkTypes = GridFramework
    * `onRowsChange` へ移動後の**新配列**を渡し(履歴ラッパ経由 = undo/redo 対象)、続けて `onRowMove`
    * を呼ぶ。clientSide(`rows` + `onRowsChange`)専用で、`dataSource`(serverSide)/ 行グルーピング中 /
    * `onRowsChange` 未指定ではハンドル列を出さない。ソート / フィルター適用中はハンドルを淡色 +
-   * 理由ツールチップにして操作を無効化する(列は残る)。詳細は「行ドラッグ並び替え」節。
+   * 理由ツールチップにして操作を無効化する(列は残る)。詳細は「行ドラッグ並び替え」
+   * 節と[ガイド](https://datasheet-grid.vercel.app/docs/guides/row-drag)。
    *
    * @defaultValue `false`
    */
@@ -4640,7 +4646,8 @@ export type SpreadsheetGridProps<T, F extends GridFrameworkTypes = GridFramework
    * と同義。`minRows` で「表示行数がしきい値以上のときだけ有効」のデータ量ゲートも掛けられる。
    * 表示は総行数とスクロール位置のみで駆動されるため **clientSide / SSRM の全構成で動作**。
    * オーバーレイは `pointer-events: none` で既存操作へ一切干渉しない。
-   * 詳細は「スクロール位置インジケーター」節を参照。
+   * 詳細は「スクロール位置インジケーター」
+   * 節と[ガイド](https://datasheet-grid.vercel.app/docs/guides/scroll-hint)を参照。
    *
    * @defaultValue —(無効)
    */

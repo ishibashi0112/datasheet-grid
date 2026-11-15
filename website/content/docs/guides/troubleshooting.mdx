@@ -1,0 +1,115 @@
+---
+title: 困ったときは
+description: よくある質問(表が出ない・編集が残らない・元に戻せない・貼り付けた値が入らない・ダイアログの中でメニューが押せない・Next.js で 500 など)と、分かっている制限
+---
+
+よく聞かれることと、今の版でできないことをまとめます。ここに無いことは [GitHub の Issues](https://github.com/ishibashi0112/datasheet-grid/issues) で聞いてください。
+
+## 表示
+
+### 表が出ない / スクロールしない
+
+- **CSS を読み込んでいるか**: `import '@ishibashi0112/spreadsheet-grid/style.css'` が無いと、スタイルが当たらずスクロールもしません。
+- **高さ**: `height="100%"` は親の高さに合わせるので、親に確定した高さが要ります(親の高さが `auto` だと全行の高さまで伸びて、仮想化が効きません)。`height` も `maxHeight` も指定しないときは、スクロール領域が 480px までの高さになります。高さはルートの `style.height` ではなく `height` prop で決めます([列幅と高さ](/docs/guides/sizing))。
+- **タブやモーダルの中**: 隠れている(幅 0 の)間は大きさを測らず、見えた次のフレームで描き直します。見えた後も空のままなら、親の高さを確かめてください。
+
+### 列の幅が `width` どおりにならない
+
+`flex` を付けた列では `width` は使いません(最小の幅にもなりません)。縮ませたくない幅は `minWidth` で書きます。手で列幅を変えた列は、その列の `width` / `flex` / `pinned` を変えるか、列のリセットまで、その幅のままです。
+
+### 行を薄くしたら二重に薄くなった
+
+`getRowClassName` の class と style は、行と、行の中の各セルの両方に付きます。`opacity` などは class を返して `.ssg-body-row.my-muted { opacity: 0.5 }` のように行にだけ書きます。
+
+### ダイアログの中で列メニューやフィルターが隠れる / 押せない
+
+グリッドのポップアップ(列メニュー・列フィルター・右クリックメニュー・select の候補など)は、既定でグリッドを囲むダイアログ(`<dialog>` / `popover` 属性の要素 / `role="dialog"` / `aria-modal="true"` など)の中に出ます(1.1.0 から。1.0.x では `document.body` の直下に出て、モーダルの後ろに隠れたり押せなかったりしました)。ダイアログにその目印が無いときや、別の場所に出したいときは `popupContainer` で場所を渡します([ダイアログの中で使う](/docs/guides/dialogs))。
+
+### Tailwind のクラスを `classNames` に渡しても既定の見た目が変わらない
+
+`style.css` はレイヤーの外の CSS なので、`@layer` の中にある Tailwind v4 のユーティリティに必ず勝ちます。`style.layer.css` と Tailwind より前のレイヤー順の宣言にするか、`!rounded-none` のように `!` を付けます([インストール](/docs/installation#tailwind-css--heroui--mantine--stylex-との共存))。
+
+## 編集とデータ
+
+### 編集した値が残らない
+
+グリッドは自分で行を書き換えません。編集した結果は `onRowsChange` が新しい配列で返すので、それを `rows` に戻します。
+
+```tsx
+const [rows, setRows] = useState(initialRows);
+<SpreadsheetGrid rows={rows} onRowsChange={setRows} columns={columns} />
+```
+
+編集が始まらないときは、グリッドの `readOnly`、列の `editable: false`、`canEditCell` を確かめます。
+
+### 元に戻す(`Ctrl/Cmd+Z`)の履歴が消える
+
+グリッドの外から `rows` を差し替えると、グリッドはその変更を知らないので履歴を消します。`onRowsChange` で受け取った配列を `map` などで作り直してから戻したときも同じです(受け取った配列をそのまま戻します)。グリッドの外のボタンで行を変えて、それも元に戻せるようにしたいときは、ハンドルの `applyRows(next)` で渡します([選択とコピー・貼り付け](/docs/guides/selection-clipboard#グリッドの外のボタンで行を変える))。株価のように外から絶えず変わる表では `applyRows(next, { undoable: false })` で渡すと、外からの更新は履歴に積まず、今の履歴も消えません(1.1.0 から。[セル編集 の「外から絶えず変わる表」](/docs/guides/editing#外から絶えず変わる表ライブの更新))。serverSide(`dataSource`)では元に戻すは使えません。
+
+### 改行が消える
+
+既定の 1 行の入力欄はブラウザが改行を消すので、改行を含む値を直して確定すると改行が無くなります。その列は `editor: { type: 'text', multiline: true }` にします。改行どおりに表示するのは `autoHeight` の列だけです([編集](/docs/guides/editing#改行を含む値multiline))。
+
+### 貼り付けた値が入らない / 「¥12,000」が数値にならない
+
+貼り付けは、編集できないセルと、`validationMode: 'reject'` の列で検査に通らない値のセルを書かずに飛ばします。飛ばしたセルは `onPasteSkipped` で受け取れるので、件数をトーストで出すなどして知らせます(1.1.0 から)。
+
+Excel の通貨書式の「¥12,000」「12,000円」「(1,200)」は、number 列の既定のパーサでは数値として読めません。列の `parseClipboardValue` に `numberParser({ strip: ['¥', '円'], negativeParentheses: true })` を渡すと、記号を外して数値に読みます(1.1.0 から。[選択とコピー・貼り付け](/docs/guides/selection-clipboard#貼り付けctrlcmdv))。
+
+### 表示名で探しても見つからない / グループの見出しがコードのまま
+
+値はコード、画面は `valueFormatter` の表示名の列では、上部バーの検索とグループ行の見出しは、既定では値(コード)を使います。表示名でも探すのは `globalFilterMatch="both"`、グループの見出しを表示名にするのは列の `groupLabel: 'formatted'`、コピー・貼り付けを表示名にするのは select エディタの `clipboard: 'label'` です(どれも 1.1.0 から。[値と表示名が別の列](/docs/guides/value-labels))。
+
+### 1 つのセルの値を貼り付けても、選んだ範囲いっぱいに広がらない
+
+貼り付けはコピーした大きさだけを書きます。範囲を同じ値や連続データで埋めるときは [フィルハンドル](/docs/guides/fill-handle) を使います。
+
+### `selectCell` / `startEditing` で違う行が選ばれる
+
+位置は並べ替え・絞り込みの後の**表示の位置**で、列の位置はグリッドが足す列(行ドラッグのハンドル列など)も数えます。`rows.findIndex` ではなく、`getViewRowIndex(rowKey)` / `getColIndex(columnKey)` で引きます。
+
+### `getInvalidCells()` が空の配列を返す
+
+serverSide(`dataSource`)では全行を持たないので空です(開発時に警告します)。サーバーで検査して、通らなければ `updateRows` を reject します([入力の検査](/docs/guides/validation))。
+
+## React と Next.js
+
+### `ref` が `null` のまま(React 18)
+
+グリッドに直接 `ref` を渡すときは、React 18.3 / 19 のどちらでも `forwardRef` は要りません。グリッドを自分のコンポーネントで包み、その部品へ `ref` を渡すときは、React 18 では包む部品を `forwardRef` にします(型は通りますが、React 18 は `ref` を props として渡さないため)。
+
+### Next.js で開くと 500 になる / ビルドが止まる
+
+関数を含むもの(`valueFormatter` などを書いた列定義、`localeTextEn`、`/lite` で作ったグリッド)を、サーバーコンポーネントから props で渡しています。`'use client'` のファイルの中で作るか import します([Next.js と SSR](/docs/guides/nextjs))。
+
+### ハイドレーションの前は列が出ない
+
+サーバーの描画は、行番号と固定した列だけの骨組みです。固定していない列はハイドレーションの後に描きます([Next.js と SSR](/docs/guides/nextjs#サーバーの描画で出るもの))。
+
+## テストと開発時の警告
+
+### jsdom のテストで行が描かれない
+
+jsdom はレイアウトを計算しないので、グリッドの見える大きさが 0 になり、行も列も描かれません。`@ishibashi0112/spreadsheet-grid/testing` の `installJsdomLayoutStubs()` を呼びます。描かれるのはスタブの大きさに入る行・列だけです([テスト](/docs/guides/testing))。
+
+### 開発時にコンソールへ警告が出る
+
+グリッドは、書き間違いや効かない組み合わせを開発時だけ警告します(日本語の行と英語の行の 2 行。本番のビルドでは出ません)。たとえば、`/lite` で足りない機能(足す部品の名前を `filtering: filteringFeature` の形で書きます)、`columnHints` の列のキーの打ち間違い、`applyState` に今の列に無い列の条件が入っていたとき、などです。警告の文のとおりに直します。
+
+### 英語の画面にしたい
+
+グリッドが出す文言の既定は日本語です。`@ishibashi0112/spreadsheet-grid/locales/en` の `localeTextEn` を `localeText` に渡します([英語と文言](/docs/guides/localization))。
+
+## 分かっている制限
+
+今の版でできないことです。
+
+- **多段の列見出し**(複数の列をまとめる見出し)はまだありません。
+- **行のグループ化**(`rowGroup`)は clientSide だけです。serverSide では無視します。ラベル行(`labelRow`)とは一緒に使えません(グループ化している間はラベル行を出しません)。
+- **serverSide** では、元に戻す / やり直し、貼り付けではみ出した分の行と列の追加、行のドラッグは使えません。行の追加・削除はサーバーへ反映してから `refreshServerSide()` で読み直します([サーバーサイド行モデル](/docs/guides/ssrm#制約))。
+- **行のドラッグ**は、並べ替え・絞り込み・行のグループ化の間は使えません(画面の順と `rows` の順が合わないため)。
+- **行番号の右クリックメニュー**はキーボードでは開けません(セルのメニューはアクティブセルで `Shift+F10` / メニューキー。[アクセシビリティ](/docs/guides/accessibility#ポインタでしかできない操作))。
+- **行の移動のアニメーション**(`animateRows`)は、`autoHeight` の行と serverSide では自動で止まります。
+- **大きさ**: clientSide で約 100 万行までです。行数 × 行の高さが 15,000,000px を超えると、ブラウザの要素の高さの上限に収めるため、スクロールの位置を縮めて写します。全行の並べ替えと CSV の書き出しは時間を分けないので、100 万行では待ち時間が出ます([大量データ](/docs/guides/large-data))。
+- **サーバーの描画**は表の骨組みだけで、JavaScript が動かない環境では表の中身は出ません。
+- **対応ブラウザ**は Chrome / Edge 111 以上、Firefox 121 以上、Safari 16.4 以上です。Firefox では、カスタムの縦スクロールバー(`scrollHint`)を使っても、ブラウザの縦スクロールバーが残ります。

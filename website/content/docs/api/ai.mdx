@@ -66,7 +66,7 @@ export async function POST(req: Request) {
 }
 ```
 
-- ほかの AI でも、画面側(`ask`)はそのままで、サーバーで `system` / `prompt` / `schema` を渡す先が変わるだけ。各社のコード全体はガイド「[ことばで絞り込み(AI)](/docs/guides/ai-filter)」。
+- ほかの AI でも、画面側(`ask`)はそのままで、サーバーで `system` / `prompt` / `schema` を渡す先が変わるだけ。各社のコード全体はドキュメントサイトのガイド「[ことばで絞り込み(AI)](/docs/guides/ai-filter)」。
   - **OpenAI**(Responses API): `instructions` に `system`、`input` に `prompt`、`text: { format: { type: 'json_schema', name: 'grid_view', schema, strict: true } }`。答えは `response.output_text`。
   - **Gemini**(`@google/genai` の `models.generateContent`): `contents` に `prompt`、`config` に `{ systemInstruction: system, responseMimeType: 'application/json', responseJsonSchema: schema }`。答えは `response.text`。
   - **Vercel AI SDK**(AI Gateway): `generateText({ model: 'anthropic/claude-haiku-5.5', system, prompt, output: Output.object({ schema: jsonSchema(schema) }) })` の `output` を返す。`model` の文字列を替えるだけで、AI Gateway 経由でほかの会社の AI に切り替わる。

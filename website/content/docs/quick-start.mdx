@@ -66,35 +66,6 @@ import { SpreadsheetGrid } from '@ishibashi0112/spreadsheet-grid'
 import '@ishibashi0112/spreadsheet-grid/style.css'
 ```
 
-関数(`valueFormatter` / `renderCell` / `validate` / `getValue` など)を含む列定義は、`'use client'` のファイルに置きます。サーバーコンポーネントで作ってグリッドへ渡すと、関数はクライアントへ渡せないためページがエラー(500)になります。行のデータ(関数を含まない値)はサーバーで作って props で渡せます。
+関数(`valueFormatter` / `renderCell` / `validate` / `getValue` など)を含む列定義も `'use client'` のファイルに置きます。サーバーコンポーネントで作ってグリッドへ渡すと、関数はクライアントへ渡せないためページがエラー(500)になります。行のデータ(関数を含まない値)はサーバーで作って props で渡せます。
 
-```tsx
-// app/projects/columns.tsx
-'use client'
-
-import type { GridColumn } from '@ishibashi0112/spreadsheet-grid'
-import type { Project } from './types'
-
-export const columns: GridColumn<Project>[] = [
-  { key: 'budget', title: '予算', width: 140, valueFormatter: ({ value }) => `${Number(value).toLocaleString()} 円` },
-]
-```
-
-サーバーレンダリング(SSR / SSG)でもエラーや警告なく描けますが、サーバーで描く HTML は表の骨組みです: 行番号と固定した列(`pinned`)のセルだけで、固定していない列(横の仮想化の対象)はハイドレーションの後に描きます(固定列の無い表は、ハイドレーションまで行番号だけの表です)。JavaScript が動かない環境では表の中身は出ません。Next.js 16 の `cacheComponents` でも、グリッドだけなら `<Suspense>` で包まずに静的なページとして描けます(1.0.0 では描画中に今日の日付を読んでいて `next build` が止まりました。日付の列の条件(`dateSet` の `condition`)を `initialState` で入れて描くときは、条件を解く今日の日付を読むので `<Suspense>` で包みます)。`theme="auto"` の場合、サーバーでは light として描画され、ハイドレーション後にクライアントの配色設定へ追従します。`<html class="dark">`(next-themes など)でダークを切り替えるページでは `theme="class"` にすると、サーバーの描画からダークになります。
-
-Next.js 16(`cacheComponents`)の画面遷移で前のページへ戻ったとき、グリッドの状態(フィルター・選択・編集の途中)は残りますが、縦のスクロール位置は先頭に戻ることがあります(`<Link>` で移ったときなど、Next.js が隠したページの要素を入れ直すと、ブラウザがスクロール位置を捨てるため。素の `<Activity>` で隠して出すだけなら残ります)。位置も戻したいときは、`onScroll` で位置を覚えておき、ページが見えたときに `useLayoutEffect` でハンドルの `setScrollPosition` で戻します(`useEffect` では、戻す前に先頭へ戻った位置の `onScroll` が届き、覚えた位置を 0 で上書きすることがあります)。
-
-```tsx
-const gridRef = useRef<SpreadsheetGridHandle<Row>>(null);
-const scroll = useRef({ top: 0, left: 0 });
-// ページが見えたとき(レイアウトの effect はページが表示されるたびに走る)に、描く前に戻す
-useLayoutEffect(() => {
-  gridRef.current?.setScrollPosition(scroll.current);
-}, []);
-
-<SpreadsheetGrid
-  ref={gridRef}
-  onScroll={({ top, left }) => { scroll.current = { top, left }; }}
-  ...
-/>
-```
+サーバーの描画で出るもの、ダークモード(`theme="class"`)、URL から最初の状態を決める方法、前のページへ戻ったときのスクロール位置は [Next.js と SSR](/docs/guides/nextjs) にまとめています。

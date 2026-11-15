@@ -15,3 +15,29 @@ html > body[data-scroll-locked] {
   margin-right: 0px !important;
   --removed-body-scroll-bar-size: 0px !important;
 }
+
+/* 追加(ドキュメントの表): 表を本文の幅に収める。既定では列が中身の長さで同じくらいの幅に広がり、API リファレンスの
+   4 列の表(Name / Type / Default / Description)が本文より広くなって、説明の列を横にスクロールしないと読めなかった。
+   幅を本文いっぱいにし、セルの中の長い識別子(onExpandedDetailRowKeysChange など)は途中で折り返し、列ごとに
+   読める最小の幅を決める(スマホの幅では従来どおり表の中で横にスクロールする)。 */
+article table {
+  width: 100%;
+}
+article table td {
+  vertical-align: top;
+}
+article table td code {
+  overflow-wrap: anywhere;
+}
+article table :is(th, td):nth-child(1) {
+  min-width: 8rem;
+}
+article table :is(th, td):nth-child(2) {
+  min-width: 9rem;
+}
+article table :is(th, td):nth-child(3) {
+  min-width: 5rem;
+}
+article table :is(th, td):nth-child(4) {
+  min-width: 12rem;
+}

@@ -1,0 +1,135 @@
+---
+title: 状態の保存と復元
+description: 利用者が変えた列幅・フィルター・ソート・列の並び / 表示 / 固定を保存し、次に開いたときに戻す(getState / applyState / initialState / restoreColumnsFromState)
+---
+
+利用者が画面で作った「表の見方」は、`GridState` として取り出して保存し、次に開いたときに戻せます。入るのは次のものです。
+
+| 入るもの | 中身 |
+| --- | --- |
+| `columnWidths` | 幅が決まった列の幅(手で広げた / 自動調整した / `applyState` で入れた列だけ。`width` / `flex` のままの列は入らない) |
+| `filters` | 上部バーの検索の文字(`globalText`)と列フィルター(`columnFilters`) |
+| `sort` | 並べ替えの列と向き(複数の列も) |
+| `columns` | 列の並び / 表示 / 固定(`{ key, visible?, pinned? }[]`。配列の順 = 列の順) |
+
+入らないもの: アクティブセル・選択・スクロール位置・編集の途中・行の選択、行のグループ化(列の `rowGroup`)とグループの開閉。行のデータ(`rows`)はアプリが持つものなので、これとは別に保存します。
+
+## デモ(開き直すと戻る)
+
+<StateDemo />
+
+- 並べ替え(見出しの `⋮` か、`Shift` を押しながら見出しを押す)・絞り込み・列幅・列の並び(見出しのドラッグ)を変えると、`onStateChange` で受け取った値が下の「保存した値」に入ります。
+- 「表を開き直す」はグリッドを作り直し、保存した値を `initialState` と `restoreColumnsFromState` で戻します(戻す前の画面は出ません)。デモでは React の state に保存していますが、実際のアプリでは `localStorage` やサーバーに保存します。
+
+## 保存する(`onStateChange` / `getState`)
+
+```tsx
+<SpreadsheetGrid
+  rows={rows}
+  columns={columns}
+  onColumnsChange={setColumns}
+  onStateChange={(state) => localStorage.setItem('orders-grid', JSON.stringify(state))}
+/>
+```
+
+- `onStateChange` は、入るものが**実際に変わったときだけ**呼ばれます。列幅のドラッグの間は呼ばず、離したときに 1 回だけです。最初のマウントと、アクティブセルや選択の変化では呼びません。
+- 保存ボタンで保存するときは、ハンドルの `getState()` で今の値を取ります(新しいオブジェクトなので、そのまま `JSON.stringify` できます)。
+- フィルターとソートだけを追うとき(サーバーへの問い合わせを組み立てるときなど)は `onFiltersChange` / `onSortChange` を使います。列幅や列の並びの変化では呼ばれません。
+
+## 開くときに戻す(`initialState` / `restoreColumnsFromState`)
+
+```tsx
+const [initialState] = useState(() => {
+  const saved = localStorage.getItem('orders-grid');
+  return saved ? JSON.parse(saved) : undefined;
+});
+const [columns, setColumns] = useState(() => restoreColumnsFromState(defaultColumns, initialState));
+
+<SpreadsheetGrid
+  rows={rows}
+  columns={columns}
+  onColumnsChange={setColumns}
+  initialState={initialState}
+  onStateChange={(state) => localStorage.setItem('orders-grid', JSON.stringify(state))}
+/>
+```
+
+- `initialState` は**マウントのときに 1 回だけ**使います。最初の描画から効くので、戻す前の画面が一瞬出ることはありません(serverSide なら最初の `getRows` から効きます)。後から渡し直しても変わりません。
+- `initialState` は列の並び / 表示 / 固定(`columns`)を使いません。これらは `restoreColumnsFromState(columns, saved)` で列定義へ当てた配列を作り、`columns` prop に渡します。保存に無い列(後から足した列)は末尾に、今の列定義に無い保存の列は捨てます。保存した値が無い / 読めないときは、渡した配列をそのまま返します。
+- 列の並びを変えられるようにするには `onColumnsChange` が要ります(受け取った配列を `columns` へ戻す)。
+- 上の `localStorage` の例は、ブラウザだけで描く画面向けです。サーバーで描くページ(Next.js の App Router など)では、`localStorage` を描画中に読まず、URL やサーバーから渡します(下の「URL から戻す」)。
+
+## 後から戻す(`applyState`)
+
+マウントした後に戻すときは、ハンドルの `applyState(state)` です。「保存した見方を選ぶ」メニューや「元に戻す」ボタンに使えます。
+
+```tsx
+gridRef.current?.applyState(JSON.parse(saved));                    // 全部
+gridRef.current?.applyState({ sort: [{ columnKey: 'qty', direction: 'desc' }] }); // 並びだけ
+gridRef.current?.applyState({ filters: { columnFilters: {} } });   // 列フィルターだけ外す
+```
+
+- **渡したものだけを変えます**。省いたもの(`undefined`)は今のままです。`filters` も `globalText` / `columnFilters` の片方だけ渡せます。
+- 1 回の描画で反映します(フィルターと並べ替えを一度に渡しても、途中の画面を挟みません)。直後の `getState()` は新しい値を返します。
+- `columns`(列の並び / 表示 / 固定)は、`onColumnsChange` があるときだけ反映します。
+- `applyState` の後にも `onStateChange` は呼ばれます(同じ値を保存し直すことがありますが、害はありません)。
+
+## 列を変えたとき・壊れた値
+
+保存した値は、列定義を変えた後にも読み込まれます。グリッドは古い値に合わせて次のように扱います。
+
+- **今の列に無い列**の幅・列フィルター・ソートは捨てます(開発時に警告)。捨てても今の状態が変わらないときは `onStateChange` が呼ばれないので、古いキーは保存に残ります。消すときは、戻した後に `getState()` の値で保存し直します。
+- **壊れた値**(数でない幅、形の合わない列フィルター、未知の並べ替えの向き、重なった列のキー)は、その部分だけ捨てて残りを使います。手で書いた値や古い版の値を渡しても落ちません。
+- `version` は保存の形の版(今は `2`)です。`columns` の無い古い形(`version: 1`)は列の並びに触れずに読み込みます。
+- `custom` フィルターの値(`value`)はそのまま入るので、JSON にできる値にするのはアプリの側です。
+
+## URL から戻す
+
+並べ替えや絞り込みを URL に載せると、リンクを共有して同じ見方で開けます。`initialState` はサーバーの描画から効くので、Next.js の App Router ではサーバーコンポーネントで URL を読んで渡せます。
+
+```tsx
+// app/orders/page.tsx(サーバーコンポーネント。OrdersGrid は 'use client' で SpreadsheetGrid を描く)
+import { Suspense } from 'react';
+
+export default function Page({ searchParams }: { searchParams: Promise<{ sort?: string }> }) {
+  return (
+    <Suspense>
+      <Orders searchParams={searchParams} />
+    </Suspense>
+  );
+}
+
+async function Orders({ searchParams }: { searchParams: Promise<{ sort?: string }> }) {
+  const [columnKey, direction] = ((await searchParams).sort ?? '').split('.');
+  const initialState = columnKey
+    ? { sort: [{ columnKey, direction: direction === 'desc' ? ('desc' as const) : ('asc' as const) }] }
+    : undefined;
+  return <OrdersGrid initialState={initialState} />;
+}
+```
+
+- Next.js 16 の `cacheComponents` では、`searchParams` を読む部分を `<Suspense>` の中に置きます(Next.js の決まり)。`layout.tsx` ではなくページの中で包みます。
+- 利用者が並べ替えたときに URL を書き換えるなら、`onSortChange` / `onFiltersChange` で `router.replace` します。
+
+## 行のグループ化を保存する
+
+行のグループ化(列の `rowGroup`)は `GridState` に入りません。画面から(列メニューの「この列でグループ化」など)グループ化したものも保存したいときは、`onColumnsChange` で受け取った列定義から `rowGroup` の列キーを自分で保存し、次に開くときの列定義に書きます。
+
+```tsx
+const groupKeys = savedGroupKeys ?? [];
+const [columns, setColumns] = useState(() =>
+  restoreColumnsFromState(defaultColumns, initialState).map((c) => ({ ...c, rowGroup: groupKeys.includes(c.key) })),
+);
+
+<SpreadsheetGrid
+  columns={columns}
+  onColumnsChange={(next) => {
+    setColumns(next);
+    saveGroupKeys(next.filter((c) => c.rowGroup).map((c) => c.key));
+  }}
+/>
+```
+
+グループの開閉は保存できず、マウントのたびにすべて開いた状態に戻ります。
+
+メソッドと型の詳細は [命令的 API の「状態の保存 / 復元」](/docs/api/handle#状態の保存--復元) を参照してください。
