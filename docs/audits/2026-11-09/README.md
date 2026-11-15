@@ -114,7 +114,7 @@
 | G-13 | 展開行のカードが消えるとフォーカスが body へ | 1.0.2 | 済(1.0.2。カードが消えた後にフォーカスが body ならグリッドへ) |
 | J-10 | ページの外へ出たアクティブセルにページがついてこない | 1.0.2 | 済(1.0.2。キーボードで動かしたときはスクロールする親とページも最小限動かす。core `revealActiveCellInPage`) |
 | L-18 | PageDown / PageUp の移動量が 1 行ずれる(未確定) | 確かめる | 済(1.0.2。確かめたら 1 行ずれていた。上へも下へと同じ行数 = core `resolvePageTargetRow`) |
-| B-04 | ライブの並べ替えでアクティブセルと選択が位置に残る | 1.2.0 | 未着手(2026-11-15 のユーザー判断で 1.1.0 から 1.2.0 へ) |
+| B-04 | ライブの並べ替えでアクティブセルと選択が位置に残る | 1.2.0 | 1.2.0 で済(選べる prop `activeCellFollows: 'row'`。1.2.0 の作業の表) |
 | B-11 | `selectCell` / `setActiveCell` はフォーカスを移さない | 文書 | 済(文書) |
 | H-07 | `onRowSelectionChange` の中のハンドルが 1 つ前の値 | 1.0.2 | 済(1.0.2。通知の中では新しい選択を返す) |
 | C-02 | 列が減った / 貼り付けがはみ出したときアクティブセルが無い位置 | 1.0.2 | 済(1.0.2。列が減ったら行と同じく詰める。貼り付けの後の選択は書き込んだ範囲まで) |
@@ -457,7 +457,7 @@ pack した 1.0.1 の候補(2026-11-09 の tarball と中身が同じ。レビ�
 | 行ドラッグ | E-07 | prop `canDropRow`(`RowDropParams` = `onRowMove` と同じ index + 落とした後のすぐ上 / 下の行 + 動かす前の rows)。core `rowDragController` の `canDropAt(from, slot)`(同じ from / スロットは聞き直さず、関数が変わったら控えを捨てる。離すときも確かめる)。'ghost' はガイド線を出さずゴーストを枠の外と同じ見た目に、'live' は落とせる最後の位置に留まる。`moveRow()` には効かない | 済(batch 4) |
 | 状態の保存 | H-04 | prop `includeGroupingInState`(既定 false = 1.1 と同じ)。`GridColumnState.rowGroup`(rowGroup を書いた列だけ)と `GridState.collapsedGroups`(core `logic/gridState` の extract / build / migrate / applyColumnState / isSame、`engine/gridApi` の getState / applyState、`engine/notifiers` の onStateChange、`createGridEngine` の initialState。保存の rowGroup が列定義と違えば initialState の警告)。`getGroupRows()` の記述子に `collapsed`(複製に付ける) | 済(batch 5) |
 | タッチ | L-12 | `pointer: coarse` だけ: メニューの項目・select の候補 44px、列フィルターの候補の行(ColumnFilterPopover の仮想化の行の高さも 40px)・(すべて選択)・ツールパネルの列の行・ポップオーバーのボタン 40px 以上、リストの高さ 240px。見出しの ⋮ とポップオーバーの × は `::after` で押せる範囲だけ広げる(見出しの高さは変えない) | 済(batch 6) |
-| ライブの並べ替え | B-04 | アクティブセルを行キーで追う選べる prop(複数行の範囲の扱いはプレビューで選ぶ) | 未着手 |
+| ライブの並べ替え | B-04 | prop `activeCellFollows: 'position' \| 'row'`(既定 'position')。core `controllers/activeRowFollowController`(アクティブセルが並びの変化以外で動いたらその行のキーを覚え、並びだけ変わったら新しい位置へ = reducer `selection/followActiveRow`。消えた / 隠れたら位置に残って覚え直す、ドラッグ中・編集中は動かさない、serverSide は無効)。選択はプレビューのおすすめの案 A(アクティブセルの行だけの範囲は一緒に、何行かは 1 セル、列選択はそのまま)、スクロールは追わない(アクティブセルが動くと viewportSyncController がそこへスクロールしていたので、動かした先 = `isFollowMove` ではスクロールしない。実ブラウザの確認で見つけた)。onActiveCellChange は engine/notifiers が動かすと決めた描画の途中の位置を通知せず、'row' では行キー + 列キーで比べる。プレビューへのユーザーの答えは未着(おすすめで進めた) | 済(batch 11) |
 | 別枠 | RV3-H2 | 右クリックメニューの `aria-label`(セル「セルのメニュー」/ 行番号「行のメニュー」。文言 `contextMenuCell` / `contextMenuRow` は contextMenu の機能の表 core `DEFAULT_CONTEXT_MENU_LOCALE_TEXT`、英語の表にも) | 済(batch 7) |
 | 別枠 | RV3-L2 | 見た目を変えずに直した: 固定行は名前をピンの印(`role="img"` + `aria-label`)へ移す(axe の has-visible-text は中の要素の名前も数えるので、行見出しの名前は印から決まり同じまま)。合計行は見出しを先頭のデータ列に出すときそのセルを rowheader にし、行番号の欄は `aria-hidden`(ラベル行の RV2-L1 と同じ)。同じ形の 3 つ目 = 行選択のチェックボックスを出すときのグループ行の空の行番号の欄も `aria-hidden`。見えるセルが無いペインの行は隠す。axe 4.14 を実ブラウザで固定行 + 合計行 / 空の見出し / 行選択 / グループ化(+ 行選択)/ ラベル行に回して empty-table-header は 0(残るのは既知の L-08 の色だけ) | 済(batch 8) |
 | 別枠 | 1 行のエディタ | core `utils/topAlignedInput`: 入力欄の箱はセルのまま、上の余白 0.4em − 枠線(複数行と同じ)、`line-height: inherit`、下の余白で中身の箱を 1 行ぶん(height: auto で測る)。text / number / date / select のエディタ(`editors/useTopAlignedInput`、条件はシェルの editorAlignTop)と IME の変換中の入力受け(セルの `.ssg-body-cell--valign-top` を見る。変換中の見た目にしてから測る)。Chromium で背の高い行の 6 列と IME(CDP)を撮って、セルの 1 行目と同じ高さを確認 | 済(batch 9) |

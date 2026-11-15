@@ -249,6 +249,12 @@ export type ActiveCellNotifierArgs<T> = {
   rowModel: RowModel<T>;
   orderedColumns: readonly GridColumn<T>[];
   onActiveCellChange: ((cell: GridCellRef<T> | null) => void) | undefined;
+  // 追加(1.2.0 / 2026-11-09 実アプリの総点検 B-04): activeCellFollows: 'row' のとき true。並びが変わってアクティブセルが行に
+  //   付いて動いた(行キーと列キーが同じ)ときは通知しません(位置だけ動いたのはセルを動かしたことにならない)。
+  followsRow?: boolean;
+  // 追加(1.2.0 / B-04): この描画で、アクティブセルを行の新しい位置へ動かすと決めたか(controllers/activeRowFollowController。
+  //   次の描画で動く)。そのときは、動く前の途中の位置(同じ位置に来た別の行)を通知しません。
+  isRowFollowPending?: () => boolean;
 };
 
 export type ActiveCellNotifier<T> = {
@@ -288,6 +294,10 @@ const willFollowEditingCell = <T,>(
   return false;
 };
 
+// 追加(1.2.0 / B-04): 行キーと列キーが同じか(activeCellFollows: 'row' で、位置だけ動いたときを同じセルとみなす)。
+const isSameCellByKey = <T,>(a: GridCellRef<T> | null, b: GridCellRef<T> | null): boolean =>
+  a === null || b === null ? a === b : Object.is(a.rowKey, b.rowKey) && a.columnKey === b.columnKey;
+
 // 由来(クリック / キー操作 / handle / 表示行数の減少による詰め)を問わず、update の時点のアクティブセルを
 //   セル参照へ解決し、前回と「別のセル」(isSameGridCellRef)になったときだけ通知します。
 //   - 初回(マウント)は基準を記録するだけで通知しません。
@@ -317,7 +327,7 @@ export const createActiveCellNotifier = <T,>(): ActiveCellNotifier<T> => {
       if (
         prevInputs !== null &&
         Object.is(prevInputs.activeCell, next.activeCell) &&
-        willFollowEditingCell(next, lastRef)
+        (willFollowEditingCell(next, lastRef) || next.isRowFollowPending?.() === true)
       ) {
         return;
       }
@@ -325,7 +335,9 @@ export const createActiveCellNotifier = <T,>(): ActiveCellNotifier<T> => {
         next.activeCell === null
           ? null
           : resolveGridCellRef(next.rowModel, next.orderedColumns, next.activeCell);
-      const changed = prevInputs !== null && !isSameGridCellRef(lastRef, current);
+      const changed =
+        prevInputs !== null &&
+        !(next.followsRow === true ? isSameCellByKey(lastRef, current) : isSameGridCellRef(lastRef, current));
       lastRef = current;
       if (changed) {
         next.onActiveCellChange?.(current);

@@ -45,6 +45,9 @@ export type ViewportSyncArgs<T> = {
   footerHeight?: number;
   // 追加(段階 2 の確かめ直し N4-1): ラベル行の縦スクロール固定の帯。上へ動いた active cell を帯の裏に隠さない。
   stickyTopInset?: StickyTopInset;
+  // 追加(1.2.0 / B-04): アクティブセルが並びの変化に付いていって動いた先か(`activeCellFollows: 'row'`。
+  //   controllers/activeRowFollowController)。そのときは見える所へスクロールしない(見ている場所を勝手に動かさない)。
+  isRowFollowMove?: ((cell: CellCoord) => boolean) | undefined;
 };
 
 export type ViewportSyncController<T> = {
@@ -392,7 +395,10 @@ export const createViewportSyncController = <T,>(): ViewportSyncController<T> =>
         prevCell.row === activeCell.row &&
         prevCell.col === activeCell.col;
       lastEvaluatedCell = activeCell;
-      if (!coordUnchanged && args.scrollElement && args.activeCellRect && activeCell) {
+      if (!coordUnchanged && activeCell !== null && args.isRowFollowMove?.(activeCell) === true) {
+        // 並びの変化に付いていって動いた(B-04): スクロールせず、前のセルへの合わせ直しもやめる。
+        endFollow();
+      } else if (!coordUnchanged && args.scrollElement && args.activeCellRect && activeCell) {
         scrollCellIntoView(args.scrollElement, args.activeCellRect, args);
         revealActiveCellInPage(args.scrollElement, args.activeCellRect, args);
         startFollow(args.scrollElement, activeCell);

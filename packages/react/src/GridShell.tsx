@@ -497,6 +497,8 @@ export function useGridShell<T extends object>({
   initialState,
   // 追加(1.2.0 / H-04): 行グルーピングの列と折りたたんだグループを状態に入れるか。
   includeGroupingInState = false,
+  // 追加(1.2.0 / B-04): 並びが変わったときにアクティブセルを行に付いていかせるか。
+  activeCellFollows = 'position',
   // 追加(change-callbacks): フィルター / ソートのスライス単位の変更通知。
   onFiltersChange,
   onSortChange,
@@ -2378,6 +2380,8 @@ export function useGridShell<T extends object>({
     // 変更(1.0 前の最終チェック FC-01): 固定ペイン(左 / 右)の active cell も矩形を渡し、縦だけ追従させます(従来は中央ペイン
     //   だけで、固定列で ↓ / Enter と動くと画面の外へ出たまま打ち込めた)。横は中央ペインのときだけ合わせます。
     activeCellRect: activeCellPlacement?.rect ?? null,
+    // 追加(1.2.0 / B-04): 並びの変化に付いていって動いたアクティブセルへはスクロールしない。
+    isRowFollowMove: engine.activeRowFollow.isFollowMove,
     activeCellPinned: activeCellPlacement !== null && activeCellPlacement.pane !== 'center',
     // 追加(scroll-jump 対策): 可視化スクロールを「座標が変わったとき」に限定するための座標です
     //   (フィルター確定等のレイアウト再計算による rect 参照変化だけでは発火させない)。
@@ -2476,6 +2480,17 @@ export function useGridShell<T extends object>({
     onCellDoubleClick,
   });
   const handleCellClick = engine.cellEventNotifier.handleCellClick;
+  // 追加(1.2.0 / 2026-11-09 実アプリの総点検 B-04): activeCellFollows: 'row' のとき、並びが変わったらアクティブセルを行の新しい位置へ
+  //   動かします(core controllers/activeRowFollowController。レイアウト effect = 描く前に動く)。serverSide は対象外。
+  const activeRowFollowEnabled = activeCellFollows === 'row' && !isServerSide;
+  useControllerLifecycle(engine.activeRowFollow, {
+    enabled: activeRowFollowEnabled,
+    activeCell: uiState.activeCell,
+    rowModel,
+    dragging: uiState.dragState !== null,
+    editing: uiState.editingCell !== null,
+    dispatch,
+  });
   useControllerLifecycle(
     engine.activeCellNotifier,
     {
@@ -2484,6 +2499,8 @@ export function useGridShell<T extends object>({
       rowModel,
       orderedColumns,
       onActiveCellChange,
+      followsRow: activeRowFollowEnabled,
+      isRowFollowPending: engine.activeRowFollow.isFollowPending,
     },
     'passive',
   );

@@ -156,6 +156,18 @@ useEffect(() => {
 <SpreadsheetGrid ref={gridRef} rows={rows} onRowsChange={setRows} rowKeyGetter={(row) => row.symbol} columns={columns} />
 ```
 
+並べ替えたまま値が変わる表(前日比の大きい順の株価ボードなど)では、既定ではアクティブセルが表示位置(何行目か)に残るので、銘柄が入れ替わるたびに別の銘柄を指します(Excel と同じ)。押した銘柄に付いていかせるには `activeCellFollows="row"` を書きます(1.2.0 から)。
+
+```tsx
+<SpreadsheetGrid activeCellFollows="row" rowKeyGetter={(row) => row.symbol} /* ... */ />
+```
+
+- 同じ行の何列かの範囲は一緒に動き、何行かにまたがる範囲は外してアクティブセルの 1 セルにします(範囲の中の銘柄が入れ替わり、選んだつもりの無い銘柄がコピーや集計に入るため)。
+- 表はスクロールしません。画面の外へ動いたら、矢印キーを押すとそのセルまで動きます。
+- 追う行が消えた・絞り込みで隠れたときは位置に残ります。選択のドラッグ中は動かしません。
+- `onActiveCellChange` は位置だけ動いたときは呼ばれません(セルを動かしたときだけ)。
+- `rows` を渡す表(clientSide)だけです。serverSide は並べ替えがサーバーで、取り直すまで並びが変わらないので位置に残ります。編集中のセルは既定でも行に付いていきます。
+
 ## バリデーション
 
 ```tsx

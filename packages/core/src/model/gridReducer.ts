@@ -1,5 +1,5 @@
 import type { GridUiAction } from './gridActions';
-import type { GridRowKey, GridUiState } from './gridTypes.unbound';
+import type { GridRowKey, GridSelection, GridUiState } from './gridTypes.unbound';
 // 追加(監査 RD-5 / M-03): columns 変化時の列幅 state 整合(参照変化だけではエントリを消さない)。
 import { reconcileColumnWidths } from '../logic/columnWidthState';
 // 追加(行選択): 初期状態と同値判定(同値 set は no-op 化して無駄な再レンダーを避ける)。
@@ -79,6 +79,35 @@ const clampUiStateToRowCount = (state: GridUiState, rowCount: number): GridUiSta
     }
   }
   return next;
+};
+
+// 追加(1.2.0 / 2026-11-09 実アプリの総点検 B-04): 並びが変わったとき(activeCellFollows: 'row')、アクティブセルを追っている行の
+//   新しい位置(row)へ動かします(列はそのまま)。選択は、
+//   - アクティブセルの行だけのセル範囲 / 行選択は、同じ形のまま一緒に動かす、
+//   - 何行かにまたがる範囲は外して、アクティブセルの 1 セルにする(並びが変わると範囲の中の行が入れ替わり、選んだつもりの
+//     無い行が入るため。2026-11-15 のユーザー判断の案 A)、
+//   - 列選択は行に依らないのでそのまま。
+//   選択のドラッグ中は呼ばない(controllers/activeRowFollowController)。同じ位置なら同一参照を返します。
+const followActiveRowInUiState = (state: GridUiState, row: number): GridUiState => {
+  const { activeCell, selection } = state;
+  if (activeCell === null || activeCell.row === row) {
+    return state;
+  }
+  const from = activeCell.row;
+  const nextActive = { row, col: activeCell.col };
+  const single: GridSelection = { type: 'cell', range: { start: nextActive, end: nextActive } };
+  let nextSelection: GridSelection = selection;
+  if (selection?.type === 'cell') {
+    const { start, end } = selection.range;
+    nextSelection =
+      start.row === from && end.row === from
+        ? { type: 'cell', range: { start: { row, col: start.col }, end: { row, col: end.col } } }
+        : single;
+  } else if (selection?.type === 'row') {
+    nextSelection =
+      selection.startRow === from && selection.endRow === from ? { type: 'row', startRow: row, endRow: row } : single;
+  }
+  return { ...state, activeCell: nextActive, selection: nextSelection };
 };
 
 // 追加(1.0.2 / 2026-11-09 実アプリの総点検 C-02): 列の数が減ったとき、はみ出した activeCell / selection(と選択ドラッグの起点)を
@@ -386,6 +415,9 @@ export const gridUiReducer = (
         selection: null,
         dragState: null,
       };
+
+    case 'selection/followActiveRow':
+      return followActiveRowInUiState(state, action.row);
 
     case 'selection/clampToRowCount': {
       const rowClamped = clampUiStateToRowCount(state, action.rowCount);

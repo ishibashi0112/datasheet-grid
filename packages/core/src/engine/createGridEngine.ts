@@ -22,6 +22,7 @@ import {
 import type { AutoHeightMeasurer } from '../controllers/autoHeightMeasurer';
 import { createScrollSyncController, type ScrollSyncController } from '../controllers/scrollSyncController';
 import { createRowEnterController, type RowEnterController } from '../controllers/rowEnterController';
+import { createActiveRowFollowController, type ActiveRowFollowController } from '../controllers/activeRowFollowController';
 import type { ChangeHighlightController } from '../controllers/changeHighlightController';
 import type { SaveStatusController } from '../controllers/saveStatusController';
 import type { FindController } from '../controllers/findController';
@@ -112,6 +113,8 @@ export type GridEngine<T> = {
   // 追加(G-1): セル操作の通知(クリック / ダブルクリック = レイアウト effect で接続、アクティブセル = passive)。
   cellEventNotifier: CellEventNotifier<T>;
   activeCellNotifier: ActiveCellNotifier<T>;
+  // 追加(1.2.0 / B-04): アクティブセルを行に付いていかせる(activeCellFollows: 'row'。レイアウト effect で接続)。
+  activeRowFollow: ActiveRowFollowController<T>;
   // DOM / タイマーを持つコントローラ。
   autoHeightMeasurer: AutoHeightMeasurer<T>;
   scrollSync: ScrollSyncController;
@@ -305,6 +308,7 @@ export const createGridEngine = <T,>(init: GridEngineInit<T>): GridEngine<T> => 
     stateChangeNotifier: createStateChangeNotifier<T>(),
     cellEventNotifier: createCellEventNotifier<T>(),
     activeCellNotifier: createActiveCellNotifier<T>(),
+    activeRowFollow: createActiveRowFollowController<T>(),
     autoHeightMeasurer,
     scrollSync,
     rowEnter,
