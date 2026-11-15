@@ -113,7 +113,7 @@ const Grid = createSpreadsheetGrid({ features });
 
 ## 入れていない機能を使おうとしたとき
 
-入れていない機能の prop を渡したり、その機能のメソッドを呼んだりしても、何も起きません(エラーにもなりません)。開発ビルドでは、prop ごとに 1 回だけ、足すべき機能を名指しした警告が出ます(prop を持たないエクスポートとツールパネルは、`exportCsv()` / `openFilterManager()` などのメソッドを呼んだ時点で警告します。`openFilterManager()` はフィルタータブを開くので、`filtering` が無いときも警告します):
+入れていない機能の prop を渡したり、その機能のメソッドを呼んだりしても、何も起きません(エラーにもなりません)。開発ビルドでは、機能を使い始める prop(`fillHandle` / `enableRowDrag` / `pinnedBottomRows` など)ごとに 1 回だけ、足すべき機能を名指しした警告が出ます(その機能の上で働く細かい指定の `canDropRow` / `includeGroupingInState` / `pinnedBottomRowsPlacement` などは、機能が無いと警告せずに何もしません)(prop を持たないエクスポートとツールパネルは、`exportCsv()` / `openFilterManager()` などのメソッドを呼んだ時点で警告します。`openFilterManager()` はフィルタータブを開くので、`filtering` が無いときも警告します):
 
 ```text
 [spreadsheet-grid] prop `fillHandle` が渡されましたが、その機能が機能セットに入っていないため何もしません。createSpreadsheetGrid の features に `fillHandle: fillHandleFeature` を入れてください。
