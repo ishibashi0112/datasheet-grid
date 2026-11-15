@@ -500,4 +500,47 @@ if (!SUPPORTS.cdp) {
     await scaled.close();
   }
 }
+
+// ---------- 1.2.0 の確かめ直し ----------
+// H(QG-3 の残り): 中央の列 → 左固定の列 の階層でグループ化し、ほかの列を見出しのドラッグで並べ替えても階層は変わらない。
+{
+  const { page, pageErrors, close } = await open('basic');
+  await page.evaluate(() => {
+    const cols = window.__columns().map((c) =>
+      c.key === 'category' || c.key === 'status' ? { ...c, rowGroup: true } : c.key === 'active' ? { ...c, rowGroup: true, pinned: 'left' } : c,
+    );
+    // 階層は 区分 → 状態 → 有効(左固定)。
+    const order = ['id', 'name', 'qty', 'price', 'category', 'status', 'active', 'date', 'note', 'score', 'custom', 'secret'];
+    window.__setColumns(order.map((key) => cols.find((c) => c.key === key)).filter(Boolean).concat(cols.filter((c) => !order.includes(c.key))));
+  });
+  await waitIdle(page, 400);
+  const groupKeys = () => page.evaluate(() => window.__columns().filter((c) => c.rowGroup === true).map((c) => c.key));
+  const before = await groupKeys();
+  if (await page.evaluate(() => matchMedia('(hover: none)').matches)) {
+    await page.evaluate(() => window.__setColumns(window.__columns().map((c) => (c.key === 'price' ? { ...c, width: 130 } : c))));
+    await waitIdle(page, 200);
+  }
+  await header(page, 'price').hover();
+  await waitIdle(page, 100);
+  const gb = await header(page, 'price').locator('.ssg-header-grip').boundingBox();
+  const target = await header(page, 'name').boundingBox();
+  await page.mouse.move(gb.x + 3, gb.y + 5);
+  await page.mouse.down();
+  await page.mouse.move(gb.x - 20, gb.y + 5, { steps: 5 });
+  await page.mouse.move(target.x + 5, target.y + 10, { steps: 12 });
+  await waitIdle(page, 300);
+  await page.mouse.up();
+  await waitIdle(page, 600);
+  const after = await groupKeys();
+  const moved = await page.evaluate(() => window.__columns().filter((c) => c.rowGroup !== true).map((c) => c.key));
+  check(
+    'H(QG-3): 見出しのドラッグで列を並べ替えても、ペインをまたいだグループ化の階層(区分 → 状態 → 有効(左固定))は変わらない',
+    JSON.stringify(before) === JSON.stringify(['category', 'status', 'active']) &&
+      JSON.stringify(after) === JSON.stringify(before) &&
+      moved.indexOf('price') >= 0 && moved.indexOf('price') < moved.indexOf('name'),
+    { before, after, moved },
+  );
+  check('H(QG-3): 予期しないページエラーなし', unexpectedPageErrors(pageErrors).length === 0, unexpectedPageErrors(pageErrors));
+  await close();
+}
 summary('t-v120');

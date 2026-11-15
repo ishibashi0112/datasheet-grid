@@ -102,6 +102,42 @@ describe('createColumnCommands', () => {
     expect(onColumnsChange.mock.calls[0][0].map((column) => column.key)).toEqual(['c', 'a', 'b']);
   });
 
+  // 追加(1.2.0 の確かめ直し H): 見出しのドラッグ / ツールパネルの順はペインごとに並べ直して届くが、グループ化の階層
+  //   (グループ元の列どうしの順)はペインをまたいでも変えない。同じペインの中で入れ替えた順には従う。
+  it('並べ替え commit: グループ元の列どうしの順はペインをまたいでも保ち、同じペインの中の入れ替えには従う', () => {
+    type GroupRow = Record<string, string>;
+    const grouped: GridColumn<GroupRow>[] = [
+      { key: 'id', title: 'ID', width: 80, pinned: 'left' },
+      { key: 'name', title: '名前', width: 100 },
+      { key: 'team', title: 'チーム', width: 100, rowGroup: true },
+      { key: 'dept', title: '部署', width: 100, rowGroup: true },
+      { key: 'prio', title: '優先度', width: 100, pinned: 'left', rowGroup: true },
+      { key: 'note', title: 'メモ', width: 100 },
+    ];
+    const commands = createColumnCommands<GroupRow>();
+    const onColumnsChange = vi.fn<(next: GridColumn<GroupRow>[]) => void>();
+    commands.update({
+      ...(makeArgs().args as unknown as ColumnCommandsArgs<GroupRow>),
+      columns: grouped,
+      visibleColumns: grouped,
+      orderedColumns: grouped,
+      onColumnsChange,
+    });
+    const groupOrder = () =>
+      onColumnsChange.mock.calls.at(-1)![0].filter((column) => column.rowGroup === true).map((column) => column.key);
+    // 中央でメモを名前の前へ(見出しのドラッグの順 = 左固定 → 中央)。
+    commands.applyColumnOrderAndPin(['id', 'prio', 'note', 'name', 'team', 'dept']);
+    expect(onColumnsChange.mock.calls[0][0].filter((column) => column.rowGroup !== true).map((column) => column.key)).toEqual([
+      'id',
+      'note',
+      'name',
+    ]);
+    expect(groupOrder()).toEqual(['team', 'dept', 'prio']);
+    // 同じペインの中でグループ元の列を入れ替えた(ツールパネル)ときは、その順に従う。左固定の段はそのまま。
+    commands.applyColumnOrderAndPin(['id', 'prio', 'name', 'dept', 'team', 'note']);
+    expect(groupOrder()).toEqual(['dept', 'team', 'prio']);
+  });
+
   it('列リセット: 最初の update で退避した初期状態へ戻す(以後の columns 変化では更新しない)', () => {
     const commands = createColumnCommands<Row>();
     const { args, onColumnsChange } = makeArgs();

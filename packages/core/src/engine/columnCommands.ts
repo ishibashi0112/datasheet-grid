@@ -14,7 +14,7 @@
 //     更新しない = ユーザー操作後の状態を「初期」と誤認しない。Map の挿入順が初期の並び順)。
 import type { GridColumn, GridColumnPinned, GridSortState } from '../model/gridTypes.unbound';
 import { gridActions, type GridUiAction } from '../model/gridActions';
-import { reorderColumnsByPaneKeepingGroupOrder } from '../logic/geometry';
+import { keepGroupColumnOrder, reorderColumnsByPaneKeepingGroupOrder } from '../logic/geometry';
 import { buildResetColumns, type InitialColumnState } from '../logic/columnReset';
 import type { ToolPanelTab } from '../controllers/toolPanelController';
 import {
@@ -365,8 +365,9 @@ export const createColumnCommands = <T,>(): ColumnCommands<T> => {
       const pinnedChanged = (column.pinned ?? undefined) !== (nextPinned ?? undefined);
       return widthChanged || pinnedChanged ? { ...column, width: resolvedWidth, pinned: nextPinned } : column;
     });
-    // 変更(1.2.0 の見直し QG-3): グループ元の列どうしの順(グループ化の階層)は変えません。
-    const normalized = reorderColumnsByPaneKeepingGroupOrder(reordered);
+    // 変更(1.2.0 の見直し QG-3): グループ元の列どうしの順(グループ化の階層)は変えません(届いた順はペインごとに並べ直して
+    //   あるので、ペインをまたいだ階層は元の columns から戻す。1.2.0 の確かめ直し H)。
+    const normalized = reorderColumnsByPaneKeepingGroupOrder(keepGroupColumnOrder(columns, reordered));
     const isNoOp =
       normalized.length === columns.length &&
       normalized.every((column, index) => {
