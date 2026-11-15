@@ -1,6 +1,6 @@
 ---
-title: セル編集とバリデーション
-description: エディタ種別(text / number / select / date / checkbox / custom)と validate(mark / reject)
+title: セル編集
+description: エディタ種別(text / number / select / date / checkbox / custom)、改行を含む値、確定後の移動、コードからの編集、検査のあらまし
 ---
 
 列は既定で編集できます(`editable` を省略 = 編集可。止めるときは列の `editable: false` か `readOnly: true`、グリッド全体は `readOnly`、セル単位は `canEditCell`)。`column.editor` でエディタ種別を指定します(未指定 = `text`)。値の検証は `column.validate` で行い、`validationMode` で NG 時の動作(`'mark'` = 入るが表示で警告 / `'reject'` = 書き込み拒否)を選べます。
@@ -123,23 +123,8 @@ const deleteSelected = () => {
 }
 ```
 
-- **`'mark'`(既定)** — 値は書き込み、セルに警告表示(背景 + 右上マーカー + メッセージ。メッセージはマウスを乗せたときと、キーボード / タップでそのセルを選んだときに出ます)。判定は表示時に導出されるため、貼り付け・undo・外部からの `rows` 差し替え後も常に実データと整合します。
-- **`'reject'`** — 書き込み自体を拒否。エディタ確定は「拒否 + 編集継続 + エラーバブル」、貼り付け / クリア / [フィルハンドル](/docs/guides/fill-handle)は NG セルだけスキップされます。
+- **`'mark'`(既定)** — 値は書き込み、セルに印(背景 + 右上の三角 + メッセージ)を出します。
+- **`'reject'`** — 書き込み自体を止めます。エディタの確定は「止めて編集を続け、エラーの吹き出し」、貼り付け / クリア / [フィルハンドル](/docs/guides/fill-handle)は通らないセルだけ飛ばします。
+- number エディタの `min` / `max` / `integer: true` は、`validate` を書かなくてもそのまま値の検査になります。
 
-### 数値の範囲と整数(組み込みの検査)
-
-number エディタの `min` / `max` と `integer: true`(整数だけ)は、そのまま値の検査になります。`validate` を書かなくても、範囲外や小数のセルに印が付きます(`validationMode: 'reject'` なら書き込みません)。
-
-```tsx
-{ key: 'qty', title: '数量', width: 120, editable: true,
-  editor: { type: 'number', min: 0, integer: true } }       // 0 以上の整数
-{ key: 'rate', title: '割合', width: 120, editable: true,
-  editor: { type: 'number', min: 0, max: 1, step: 0.01 } }  // 0〜1(小数可)
-```
-
-- 検査の順番は「数値か → 整数か → 範囲内か」で、最初に引っかかったものがメッセージになります(「数値で入力してください」「整数で入力してください」「0 以上で入力してください」など)。
-- 空のセルは通します。必須にしたいときは `validate` で書きます。
-- `validate` と併用すると `validate` が先です。`validate` の NG はそのメッセージのまま出て、`validate` が通した値だけを組み込みの検査にかけます。
-- `step` は ↑↓ キーとスピナーの刻みだけで、検査には使いません。
-
-保存前の一括チェックは命令的ハンドルの `getInvalidCells()` を使います。マークを「送信時にだけ」表示する `showValidationMarks` prop と組み合わせた業務フォームのレシピは [API リファレンス](/docs/api/column#バリデーションvalidate--validationmode) を参照してください。
+印を出す時を決める `showValidationMarks`、保存前にまとめて確かめる `getInvalidCells()`、メッセージの言語などは [入力の検査](/docs/guides/validation) にまとめています。

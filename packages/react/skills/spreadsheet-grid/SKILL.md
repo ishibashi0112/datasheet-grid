@@ -99,3 +99,4 @@ export function Inventory() {
 
 - 型チェック(`tsc`)を通します。無い prop は型エラーになるので、`as any` で消さずに資料を確かめます。
 - 画面に何も出ないときは、親に高さがあるか、`style.css` を読み込んだかを先に見ます。
+- よくあるつまずき(編集が残らない・元に戻せない・Next.js で 500 など)と、今の版でできないことは https://datasheet-grid.vercel.app/docs/guides/troubleshooting にあります。

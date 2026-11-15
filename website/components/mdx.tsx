@@ -29,6 +29,9 @@ import { ConditionalFormatDemo } from '@/components/demo/conditional-format-demo
 import { LiteDemoLoader } from '@/components/demo/lite-demo-loader';
 import { AiFilterDemoLoader } from '@/components/demo/ai-filter-demo-loader';
 import { DesignSystemsDemo } from '@/components/demo/design-systems-demo';
+import { SelectionClipboardDemo } from '@/components/demo/selection-clipboard-demo';
+import { ValidationDemo } from '@/components/demo/validation-demo';
+import { StateDemo } from '@/components/demo/state-demo';
 
 export function getMDXComponents(components?: MDXComponents) {
   return {
@@ -63,6 +66,9 @@ export function getMDXComponents(components?: MDXComponents) {
     LiteDemo: LiteDemoLoader,
     AiFilterDemo: AiFilterDemoLoader,
     DesignSystemsDemo,
+    SelectionClipboardDemo,
+    ValidationDemo,
+    StateDemo,
     ...components,
   } satisfies MDXComponents;
 }

@@ -116,7 +116,7 @@ IME 変換中(`isComposing`)の `Enter` / `Escape` / `Tab` は **IME の操作�
 <SpreadsheetGrid ariaLabel="受注一覧" rows={rows} columns={columns} />
 ```
 
-付けている役割と属性の一覧は [API リファレンス](/docs/api/props#アクセシビリティ) を参照してください。
+付けている役割と属性の一覧は [API リファレンス](/docs/api/props#アクセシビリティ) を、ポインタでしかできない操作やアプリの側で気をつけることは [アクセシビリティ](/docs/guides/accessibility) を参照してください。
 
 ## タッチ操作(スマホ / タブレット)
 
@@ -139,4 +139,4 @@ IME 変換中(`isComposing`)の `Enter` / `Escape` / `Tab` は **IME の操作�
 - セルのコンテキストメニュー(右クリック)はタッチの長押しには対応していません(ブラウザが長押しを `contextmenu` として発火する環境では開きます)。
 - グリッド root には `touch-action: manipulation` を当てており、セル上のダブルタップがブラウザのズームに奪われません(パン / ピンチズームは有効のまま)。
 
-試すには[セル編集とバリデーション](/docs/guides/editing)や[ソートとフィルター](/docs/guides/filter-sort)のデモをどうぞ。
+試すには[セル編集](/docs/guides/editing)や[ソートとフィルター](/docs/guides/filter-sort)のデモをどうぞ。
