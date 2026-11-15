@@ -12,6 +12,8 @@ import { CustomCellsDemo } from '@/components/demo/custom-cells-demo';
 import { CustomBarsDemo } from '@/components/demo/custom-bars-demo';
 import { CustomEditorDemo } from '@/components/demo/custom-editor-demo';
 import { ContextMenuDemo } from '@/components/demo/context-menu-demo';
+import { DialogDemo } from '@/components/demo/dialog-demo';
+import { ValueLabelsDemo } from '@/components/demo/value-labels-demo';
 import { ScrollHintDemo } from '@/components/demo/scroll-hint-demo';
 import { DetailRowDemo } from '@/components/demo/detail-row-demo';
 import { RowDragDemo } from '@/components/demo/row-drag-demo';
@@ -19,6 +21,7 @@ import { ColumnDragDemo } from '@/components/demo/column-drag-demo';
 import { HeaderAlignDemo } from '@/components/demo/header-align-demo';
 import { LabelRowDemo } from '@/components/demo/label-row-demo';
 import { TotalRowDemo } from '@/components/demo/total-row-demo';
+import { PinnedRowsDemo } from '@/components/demo/pinned-rows-demo';
 import { FillHandleDemo } from '@/components/demo/fill-handle-demo';
 import { SizingDemo } from '@/components/demo/sizing-demo';
 import { CellEventsDemo } from '@/components/demo/cell-events-demo';
@@ -46,6 +49,8 @@ export function getMDXComponents(components?: MDXComponents) {
     CustomBarsDemo,
     CustomEditorDemo,
     ContextMenuDemo,
+    DialogDemo,
+    ValueLabelsDemo,
     ScrollHintDemo,
     DetailRowDemo,
     RowDragDemo,
@@ -53,6 +58,7 @@ export function getMDXComponents(components?: MDXComponents) {
     HeaderAlignDemo,
     LabelRowDemo,
     TotalRowDemo,
+    PinnedRowsDemo,
     FillHandleDemo,
     SizingDemo,
     CellEventsDemo,

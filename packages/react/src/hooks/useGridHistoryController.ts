@@ -21,9 +21,15 @@ export const useGridHistoryController = <T,>(args: HistoryControllerArgs<T>) => 
     () => (hasRowsChange ? controller.amendRowsChange : undefined),
     [controller, hasRowsChange],
   );
+  // 追加(1.1.0 / AP-14): 命令的 API の applyRows(関数の形 / undoable: false)。onRowsChange 未指定時は undefined。
+  const applyRows = useMemo(
+    () => (hasRowsChange ? controller.applyRows : undefined),
+    [controller, hasRowsChange],
+  );
   return {
     handleRowsChange,
     amendRowsChange,
+    applyRows,
     undo: controller.undo,
     redo: controller.redo,
     canUndo: controller.canUndo,

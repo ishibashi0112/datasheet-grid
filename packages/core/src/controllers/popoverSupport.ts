@@ -10,6 +10,7 @@
 //     capture / pointerdown / keydown capture)を attach / detach で管理します。判定(パネル内か・
 //     Escape の扱い)は各コントローラが handlers で与えます。
 import { isFocusInsideDetailCard } from '../logic/detailRow';
+import { IME_INPUT_ATTRIBUTE } from '../logic/domGuards';
 import { GRID_POPUP_SELECTOR } from './escapeClaimController';
 
 export type ReadonlyElementRef<E extends HTMLElement = HTMLElement> = {
@@ -64,6 +65,11 @@ export const restoreGridFocus = (gridRootRef: ReadonlyElementRef): void => {
     if (active !== null && active !== root && root.contains(active) && active.closest('.ssg-cell-editor') !== null) {
       return;
     }
+    // 変更(1.1.0 / RV2-L2 の見直し): 閉じた後に別のポップアップ(列メニューから開いたツールパネル / 列フィルターなど)へ
+    //   フォーカスが移っていれば、そちらに残します(閉じたパネルはこの時点で外れているので、残っているのは新しく開いた方)。
+    if (active !== null && !root.contains(active) && active.closest(GRID_POPUP_SELECTOR) !== null) {
+      return;
+    }
     root.focus();
   });
 };
@@ -83,7 +89,9 @@ export const handleMenuKeyNavigation = (
   itemSelector = '[role="menuitem"]',
 ): boolean => {
   const active = document.activeElement;
-  const focusInside = active instanceof HTMLElement && panel.contains(active);
+  // 変更(1.1.0 / AP-33 の回帰): パネルそのもの(マウスで開いたときのフォーカスの置き場)は「項目にフォーカスが無い」と同じに扱い、
+  //   ↓ で先頭・↑ で末尾の項目へ移ります(パネルを中の要素と数えて何もしなかった)。
+  const focusInside = active instanceof HTMLElement && active !== panel && panel.contains(active);
   if (focusInside && !active.matches(itemSelector)) {
     return false;
   }
@@ -115,6 +123,24 @@ export const handleMenuKeyNavigation = (
     return true;
   }
   return false;
+};
+
+// 追加(1.1.0 / 2026-11-09 実アプリの総点検 AP-33): マウスで開いたメニューのパネル(tabIndex=-1)にフォーカスを置きます。フォーカスが
+//   どこにも無い(body)ときだけで、ほかの要素(利用側の入力欄など)からは奪いません。
+// 変更(1.1.0 の確かめ直し): グリッドのシェル(と IME の入力受け)にあるときも置きます(列フィルターを開いたまま別の列の ⋮ を
+//   押すと、閉じた列フィルターがフォーカスをシェルへ戻した後にメニューが開き、パネルへ移らなかった)。
+export const focusPanelIfIdle = (panel: HTMLElement | null, gridRoot?: HTMLElement | null): void => {
+  if (panel === null || !panel.isConnected) {
+    return;
+  }
+  const active = panel.ownerDocument.activeElement;
+  const onGrid =
+    active !== null &&
+    gridRoot != null &&
+    (active === gridRoot || (gridRoot.contains(active) && active.hasAttribute(IME_INPUT_ATTRIBUTE)));
+  if (active === null || active === panel.ownerDocument.body || onGrid) {
+    panel.focus({ preventScroll: true });
+  }
 };
 
 export type PopoverWindowHandlers = {

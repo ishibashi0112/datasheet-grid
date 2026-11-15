@@ -64,6 +64,8 @@ type DefaultGridTopBarProps = {
   //   パネルのトグルを渡します)。指定時のみ chip を button 化し(.ssg-bar-chip--action)、
   //   未指定時は従来どおり非クリックの span です(フィルター機能無効時の互換)。
   onFilterSummaryClick?: () => void;
+  // 追加(1.1.0 の確かめ直し L-b): フィルター管理のパネルが開いているか(要約のボタンの aria-expanded)。
+  filterPanelOpen?: boolean;
   // 追加(slot-props): classNames.toolbar の解決済みスロット(既定バーの root .ssg-bar--top へ)。
   slot?: GridResolvedSlot;
 };
@@ -91,6 +93,7 @@ export function DefaultGridTopBar({
   globalFilterPlaceholder: globalFilterPlaceholderProp,
   globalFilterIcon,
   onFilterSummaryClick,
+  filterPanelOpen = false,
   slot,
 }: DefaultGridTopBarProps) {
   const texts = useGridLocaleText();
@@ -135,6 +138,8 @@ export function DefaultGridTopBar({
                   event.stopPropagation();
                 }}
                 onClick={onFilterSummaryClick}
+                aria-haspopup="dialog"
+                aria-expanded={filterPanelOpen}
                 data-ssg-tooltip={texts.toggleFilterPanel}
                 aria-labelledby={`${filterSummaryId}-text ${filterSummaryId}-action`}
               >

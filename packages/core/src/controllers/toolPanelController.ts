@@ -14,6 +14,7 @@ import {
   restoreGridFocus,
   type ReadonlyElementRef,
 } from './popoverSupport';
+import { GRID_POPUP_SELECTOR } from './escapeClaimController';
 
 export type ToolPanelTab = 'filter' | 'columns' | 'sort';
 
@@ -172,14 +173,36 @@ export const createToolPanelController = (): ToolPanelController => {
       resolveAvailableToolPanelTabs(args),
     ) !== null;
 
-  const closeWith = (restoreFocus: boolean) => {
+  // 追加(1.1.0 の確かめ直し L-b): 開いた部品(上部バーの絞り込みの要約・利用側のボタンなど)です。Escape / × / 開いた部品の
+  //   押し直しで閉じたときは、そこへフォーカスを戻します(ダイアログの慣例。1.1.0 からパネルがフォーカスを取るため)。
+  //   ポップアップの中(列メニューの項目)やどこにも無いときは、これまでどおりグリッドへ。
+  let opener: HTMLElement | null = null;
+  const closeWith = (restoreFocus: boolean, toOpener = false) => {
+    const target = opener;
+    opener = null;
     patch({ requestedTab: null, layout: null });
     syncOpenState();
-    if (args !== null && restoreFocus) {
-      restoreGridFocus(args.gridRootRef);
+    if (args === null || !restoreFocus) {
+      return;
     }
+    if (toOpener && target !== null && target.isConnected && target !== args.gridRootRef.current) {
+      // 変更(1.1.0 の確かめ直しの見直し): 開いた部品へ戻すのは、フォーカスがパネルの中か body にある(閉じると行き場を失う)
+      //   ときだけ。開いた部品にもうあれば(押し直し)そのまま、ほかの場所(命令的に開いたエディタなど)にあればこれまでどおり
+      //   グリッドへ戻す判定に任せます。開いた部品がフォーカスを受けられなかった(disabled / 非表示)ときもグリッドへ。
+      const active = document.activeElement;
+      if (active === target) {
+        return;
+      }
+      if (active === null || active === document.body || panelRef.current?.contains(active) === true) {
+        target.focus({ preventScroll: true });
+        if (document.activeElement === target) {
+          return;
+        }
+      }
+    }
+    restoreGridFocus(args.gridRootRef);
   };
-  const close = () => closeWith(true);
+  const close = () => closeWith(true, true);
 
   const bindings = createPopoverWindowBindings({
     onResize: updateLayout,
@@ -222,7 +245,18 @@ export const createToolPanelController = (): ToolPanelController => {
       return;
     }
     const current = store.getSnapshot();
-    blurForPopover(args.gridRootRef.current);
+    if (current.requestedTab === null) {
+      const active = document.activeElement;
+      opener =
+        active instanceof HTMLElement && active !== document.body && active.closest(GRID_POPUP_SELECTOR) === null
+          ? active
+          : null;
+    }
+    // 変更(1.1.0 の確かめ直し): 開いているパネルの中(タブの切り替え)ではフォーカスを外しません(外すと body へ落ち、
+    //   Tab がパネルの中で回らなくなっていた)。
+    if (panelRef.current?.contains(document.activeElement) !== true) {
+      blurForPopover(args.gridRootRef.current);
+    }
     patch({
       requestedTab: tab,
       // 既に開いているときの再 open はパネル枠をフラッシュ(tick を進める)。

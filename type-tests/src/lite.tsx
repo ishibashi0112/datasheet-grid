@@ -4,6 +4,7 @@ import {
   createSpreadsheetGrid,
   filteringFeature,
   findFeature,
+  pinnedRowsFeature,
   serverSideFeature,
   standardFeatures,
 } from '@ishibashi0112/spreadsheet-grid/lite';
@@ -13,6 +14,7 @@ import { assertType, expectAssignable, type Equal } from './expect.js';
 type Row = { id: number; name: string };
 
 assertType<Equal<typeof findFeature, GridFeature<'find'>>>();
+assertType<Equal<typeof pinnedRowsFeature, GridFeature<'pinnedRows'>>>();
 expectAssignable<GridFeatureName>('filtering');
 // @ts-expect-error 機能セットに無いキー
 expectAssignable<GridFeatureName>('charts');

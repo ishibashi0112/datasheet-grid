@@ -112,6 +112,156 @@ describe('viewportSyncController', () => {
     expect(scroll.scrollTo).toHaveBeenCalledTimes(3);
   });
 
+  it('スクロールした直後に同じセルの矩形が動いたら(行の高さを測り直した)合わせ直す。行の仮想化がスクロール位置を足しても続け、利用者の操作と 1 秒の後はしない', () => {
+    vi.useFakeTimers();
+    try {
+      const scroll = createScrollElement();
+      scroll.scrollTo.mockImplementation((target) => {
+        if (target.top !== undefined) scroll.raw.scrollTop = target.top;
+      });
+      const controller = createViewportSyncController();
+      const cell = { row: 99, col: 0 };
+      // 推定の位置(行 99 = 3564)へ飛ぶ。
+      controller.update({ ...baseArgs(scroll.element), activeCell: cell, activeCellRect: { left: 0, top: 3564, width: 80, height: 36 } });
+      expect(scroll.scrollTo).toHaveBeenCalledTimes(1);
+      const firstTop = scroll.raw.scrollTop;
+      // 描かれた行を測って最後の行が 480px 下へ動いた → 合わせ直す。
+      controller.update({
+        ...baseArgs(scroll.element),
+        physicalBodyHeight: 4080,
+        activeCell: { ...cell },
+        activeCellRect: { left: 0, top: 4044, width: 80, height: 36 },
+      });
+      expect(scroll.scrollTo).toHaveBeenCalledTimes(2);
+      expect(scroll.raw.scrollTop).toBe(firstTop + 480);
+      // 矩形が動かない描き直しでは何もしない。
+      controller.update({
+        ...baseArgs(scroll.element),
+        physicalBodyHeight: 4080,
+        activeCell: { ...cell },
+        activeCellRect: { left: 0, top: 4044, width: 80, height: 36 },
+      });
+      expect(scroll.scrollTo).toHaveBeenCalledTimes(2);
+      // 行の仮想化が測った高さの差をスクロール位置へ足した(上の行が伸びた)後にさらに動いても合わせ直す。
+      scroll.raw.scrollTop += 120;
+      controller.update({
+        ...baseArgs(scroll.element),
+        physicalBodyHeight: 4400,
+        activeCell: { ...cell },
+        activeCellRect: { left: 0, top: 4364, width: 80, height: 36 },
+      });
+      expect(scroll.scrollTo).toHaveBeenCalledTimes(3);
+      // 利用者が操作(ホイール)した後は合わせ直さない。
+      document.dispatchEvent(new WheelEvent('wheel', { deltaY: -300 }));
+      controller.update({
+        ...baseArgs(scroll.element),
+        physicalBodyHeight: 4500,
+        activeCell: { ...cell },
+        activeCellRect: { left: 0, top: 4464, width: 80, height: 36 },
+      });
+      expect(scroll.scrollTo).toHaveBeenCalledTimes(3);
+
+      // 1 秒の後は合わせ直さない。
+      const other = { row: 10, col: 0 };
+      controller.update({ ...baseArgs(scroll.element), activeCell: other, activeCellRect: { left: 0, top: 360, width: 80, height: 36 } });
+      const calls = scroll.scrollTo.mock.calls.length;
+      vi.advanceTimersByTime(1500);
+      controller.update({ ...baseArgs(scroll.element), activeCell: { ...other }, activeCellRect: { left: 0, top: 2000, width: 80, height: 36 } });
+      expect(scroll.scrollTo).toHaveBeenCalledTimes(calls);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('先に見える位置へスクロールしてあった(selectCell の後の scrollToCell)ときも、矩形が動いて見えなくなれば合わせ直す。横にスクロールしたらやめる', () => {
+    vi.useFakeTimers();
+    try {
+      const scroll = createScrollElement();
+      scroll.scrollTo.mockImplementation((target) => {
+        if (target.top !== undefined) scroll.raw.scrollTop = target.top;
+        if (target.left !== undefined) scroll.raw.scrollLeft = target.left;
+      });
+      const controller = createViewportSyncController();
+      scroll.raw.scrollTop = 3500;
+      const cell = { row: 99, col: 0 };
+      // もう見えている(スクロールしない)。
+      controller.update({ ...baseArgs(scroll.element), activeCell: cell, activeCellRect: { left: 0, top: 3564, width: 80, height: 36 } });
+      expect(scroll.scrollTo).not.toHaveBeenCalled();
+      // 測り直して見えなくなった → 合わせ直す。
+      controller.update({
+        ...baseArgs(scroll.element),
+        physicalBodyHeight: 4080,
+        activeCell: { ...cell },
+        activeCellRect: { left: 0, top: 4044, width: 80, height: 36 },
+      });
+      expect(scroll.scrollTo).toHaveBeenCalledTimes(1);
+      // 横にスクロールした後は合わせ直さない。
+      scroll.raw.scrollLeft = 400;
+      controller.update({
+        ...baseArgs(scroll.element),
+        physicalBodyHeight: 4400,
+        activeCell: { ...cell },
+        activeCellRect: { left: 0, top: 4364, width: 80, height: 36 },
+      });
+      expect(scroll.scrollTo).toHaveBeenCalledTimes(1);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  // 追加(1.1.0 の確かめ直しの見直し): 押したセル(ポインタ)・ドラッグの端の自動スクロール・命令的なスクロールには逆らわない。
+  it('ポインタを離す・ボタンを押したまま動かす・cancelFollow でやめる。ボタンを押していない動きではやめない。dispose でリスナーを外す', () => {
+    vi.useFakeTimers();
+    try {
+      const scroll = createScrollElement();
+      scroll.scrollTo.mockImplementation((target) => {
+        if (target.top !== undefined) scroll.raw.scrollTop = target.top;
+      });
+      const moved = (controller: ReturnType<typeof createViewportSyncController>, cell: { row: number; col: number }, top: number) =>
+        controller.update({
+          ...baseArgs(scroll.element),
+          physicalBodyHeight: 8000,
+          activeCell: { ...cell },
+          activeCellRect: { left: 0, top, width: 80, height: 36 },
+        });
+      const jump = (controller: ReturnType<typeof createViewportSyncController>, cell: { row: number; col: number }) => {
+        scroll.raw.scrollTop = 0;
+        moved(controller, cell, 3564);
+        return scroll.scrollTo.mock.calls.length;
+      };
+      const cases: Array<[string, (controller: ReturnType<typeof createViewportSyncController>) => void, boolean]> = [
+        ['ボタンなしの pointermove', () => document.dispatchEvent(new MouseEvent('pointermove', { buttons: 0 })), true],
+        ['ボタンありの pointermove', () => document.dispatchEvent(new MouseEvent('pointermove', { buttons: 1 })), false],
+        ['pointerup', () => document.dispatchEvent(new MouseEvent('pointerup')), false],
+        ['cancelFollow', (controller) => controller.cancelFollow(), false],
+        ['dispose', (controller) => controller.dispose(), false],
+      ];
+      for (const [name, act, keepsFollowing] of cases) {
+        const controller = createViewportSyncController();
+        const cell = { row: 99, col: 0 };
+        const calls = jump(controller, cell);
+        act(controller);
+        moved(controller, cell, 4044);
+        expect(scroll.scrollTo.mock.calls.length, name).toBe(keepsFollowing ? calls + 1 : calls);
+        controller.dispose();
+      }
+      // dispose はリスナーとタイマーを外す(外した後も update は使える)。
+      const removeSpy = vi.spyOn(document, 'removeEventListener');
+      const controller = createViewportSyncController();
+      jump(controller, { row: 50, col: 0 });
+      controller.dispose();
+      expect(removeSpy.mock.calls.filter(([type]) => type === 'wheel')).toHaveLength(1);
+      expect(vi.getTimerCount()).toBe(0);
+      const calls = jump(controller, { row: 60, col: 0 });
+      moved(controller, { row: 60, col: 0 }, 4044);
+      expect(scroll.scrollTo.mock.calls.length).toBe(calls + 1);
+      controller.dispose();
+      removeSpy.mockRestore();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it('スクロール要素が未マウント(null)なら DOM 系の処理はスキップする', () => {
     const controller = createViewportSyncController();
     expect(() =>

@@ -37,7 +37,7 @@ import {
 import { useVirtualizerCore } from './hooks/useVirtualizerCore';
 // 追加(本体分解 E-7): グリッドエンジン(リゾルバ / コマンド / 通知 / DOM コントローラ / store の束ね。React 非依存)。
 import { createGridEngine } from '@ishibashi0112/spreadsheet-grid-core/internal/engine/createGridEngine';
-import { useControllerLifecycle } from './hooks/useController';
+import { useControllerLifecycle, useIsomorphicLayoutEffect } from './hooks/useController';
 import {
   GRID_POPUP_SELECTOR,
   createEscapeClaimController,
@@ -57,7 +57,11 @@ import {
   isTabEdgeOfCard,
 } from '@ishibashi0112/spreadsheet-grid-core/internal/controllers/detailTabOrder';
 import { useGridStore, useGridViewState } from './hooks/useGridStore';
-import { PortalTokenSourceContext } from './hooks/usePortalTokens';
+import { PopupContainerContext, PortalTokenSourceContext } from './hooks/usePortalTokens';
+import {
+  registerPopupContainer,
+  resolvePopupContainer,
+} from '@ishibashi0112/spreadsheet-grid-core/internal/utils/popupContainer';
 import { GridLocaleTextContext, mergeFeatureLocaleDefaults } from './hooks/useGridLocaleText';
 import { DetailToggleButton } from './view/DetailToggleButton';
 import {
@@ -186,6 +190,8 @@ import type {
   // 追加(label-row ②): ラベル行の記述子 / スロット値の型です。
   GridLabelRow,
   GridSlotProps,
+  // 追加(1.1.0 / 固定行): 固定行の位置('top' / 'bottom')。
+  GridPinnedRowPosition,
   // 追加(DS-3-0): 行モデルのシーム契約型です(rowModel の構築に使います)。
   // 追加(記述子化): commit 経路で text/date/select/custom を記述子化する際の型です。
   // 追加(12-A): set フィルター値の構築に使います。
@@ -323,6 +329,8 @@ export function useGridShell<T extends object>({
   isRowExportable,
   createRow,
   createOverflowColumn,
+  // 追加(1.1.0 / AP-09): 貼り付けで書かなかったセルの通知。
+  onPasteSkipped,
   // 変更(THEME-2): rowHeight / headerHeight の既定は density プリセットから解決します(本体冒頭)。
   rowHeight: rowHeightProp,
   autoHeight = false,
@@ -334,6 +342,8 @@ export function useGridShell<T extends object>({
   theme = 'light',
   // 追加(motion-0): モーションの有効化('auto' = prefers-reduced-motion を尊重)。
   motion = 'auto',
+  // 追加(1.1.0 / AP-07): ポップアップを描く場所('auto' = グリッドを囲むダイアログの中、無ければ body)。
+  popupContainer = 'auto',
   // 追加(motion-3 / M-4・M-5): 行の並び替えアニメ(既定 true。auto-height / serverSide では自動 OFF)。
   animateRows = true,
   // 追加(motion-4 / M-3): コピー範囲の動く点線(既定 true)。
@@ -383,6 +393,8 @@ export function useGridShell<T extends object>({
   selectedRowKeys: selectedRowKeysProp,
   onRowSelectionChange,
   enableGlobalFilter = true,
+  // 追加(1.1.0 / AP-08): グローバルフィルターが照らし合わせる文字(既定 'value' = 値の文字)。
+  globalFilterMatch = 'value',
   enableColumnFilter = true,
   // 追加(date-input): dateSet 条件の日付入力を利用側コンポーネントへ差し替えるスロットです。
   renderFilterDateInput,
@@ -458,6 +470,9 @@ export function useGridShell<T extends object>({
   labelRow,
   // 追加(合計行 3A): 表の下端に固定する合計行。未指定 / false なら機能は完全に休眠します。
   totalRow,
+  // 追加(1.1.0 / 固定行): 表の上下に固定する行(表示だけ)。未指定 / 空なら機能は完全に休眠します。
+  pinnedTopRows,
+  pinnedBottomRows,
   // 追加(フィルハンドル 1A): 選択範囲の右下の四角を引いて埋める。未指定 / false なら機能は完全に休眠します。
   fillHandle,
   // 追加(row-drag ③): 行ドラッグ並び替え(既定 OFF)。
@@ -501,7 +516,9 @@ export function useGridShell<T extends object>({
 
   // 追加(THEME-2): density プリセットの既定寸法を解決します(明示 prop が常に優先)。
   const rowHeight = rowHeightProp ?? DENSITY_DIMENSIONS[density].rowHeight;
-  const headerHeight = headerHeightProp ?? DENSITY_DIMENSIONS[density].headerHeight;
+  // 変更(1.1.0 / 固定行): 列見出しの行の高さ。上の固定行があるときは、本体の上端(headerHeight)= 列見出し + 上の固定行
+  //   (下の合計行の後で決める)。列見出しの行そのものの高さが要るところ(GridHeaderRow ほか)はこちら。
+  const columnHeaderHeight = headerHeightProp ?? DENSITY_DIMENSIONS[density].headerHeight;
 
   // 追加(scrollHint): スクロール位置インジケーターのオプション解決です。
   //   null = 完全無効(オーバーレイ自体を描画しない)。boolean / オブジェクトの両形を吸収します。
@@ -515,6 +532,17 @@ export function useGridShell<T extends object>({
 
   // ── refs ──────────────────────────────────────────────
   const gridRootRef = useRef<HTMLDivElement | null>(null);
+  // 追加(1.1.0 / 2026-11-09 実アプリの総点検 AP-07): ポップアップを描く場所を決める関数です(core utils/popupContainer)。
+  //   React のポップアップは PopupContainerContext から開いている間の描画ごとに呼び、ツールチップとドラッグのゴースト
+  //   (core の命令的な要素)は表の要素の登録から引きます。
+  const getPopupContainer = useCallback(
+    () => resolvePopupContainer(gridRootRef.current, popupContainer),
+    [popupContainer],
+  );
+  useIsomorphicLayoutEffect(() => {
+    const shell = gridRootRef.current;
+    return registerPopupContainer([shell, shell?.closest('.ssg-root')], getPopupContainer);
+  }, [getPopupContainer]);
   const pointerClientRef = useRef<{ x: number; y: number } | null>(null);
   const autoScrollFrameRef = useRef<number | null>(null);
   const bodyScrollRef = useRef<HTMLDivElement | null>(null);
@@ -810,7 +838,20 @@ export function useGridShell<T extends object>({
   const totalRowLabel = totalRowOptions?.label ?? localeTexts.totalRowLabel;
   const totalRowValues = totalRowOptions?.values;
   const totalRowRenderCell = totalRowOptions?.renderCell;
-  const footerHeight = totalRowEnabled ? Math.max(0, totalRowOptions?.height ?? rowHeight) : 0;
+  const totalRowHeight = totalRowEnabled ? Math.max(0, totalRowOptions?.height ?? rowHeight) : 0;
+  // 追加(1.1.0 / 固定行): 表の上下に固定する行(表示だけ。選択 / 編集 / キー操作に入らない)。機能セットに pinnedRows が
+  //   無ければ無効(開発時に警告)。本体の上端(headerHeight)は列見出し + 上の固定行、下端に固定する高さ(footerHeight)は
+  //   下の固定行 + 合計行として、今までの幾何(スクロール / 行を見せる位置 / ヒットテスト / 選択枠)へそのまま通します。
+  const PinnedRows = features.pinnedRows?.PinnedRows;
+  const pinnedTop = PinnedRows && pinnedTopRows && pinnedTopRows.length > 0 ? pinnedTopRows : null;
+  const pinnedBottom = PinnedRows && pinnedBottomRows && pinnedBottomRows.length > 0 ? pinnedBottomRows : null;
+  const pinnedTopCount = pinnedTop?.length ?? 0;
+  const pinnedBottomCount = pinnedBottom?.length ?? 0;
+  const headerHeight = columnHeaderHeight + pinnedTopCount * rowHeight;
+  const footerHeight = totalRowHeight + pinnedBottomCount * rowHeight;
+  // ドラッグ(範囲選択 / フィルハンドル / 行ドラッグ)のヒットテストと上の自動スクロールの帯に渡す、上端に固定する高さ。
+  //   上の固定行があるときだけ(無ければ 0 = 従来どおり、列見出しの上端から 24px の帯)。
+  const stickyTopHeight = pinnedTopCount > 0 ? headerHeight : 0;
 
 
 
@@ -1000,6 +1041,11 @@ export function useGridShell<T extends object>({
   const { isContextMenuOpen, openContextMenu, renderContextMenuPopover } =
     features.contextMenu.useCellContextMenu<T>({ gridRootRef });
   const buildBodyContextMenuParams = features.contextMenu.buildBodyContextMenuParams;
+  const buildCellContextMenuParams = features.contextMenu.buildCellContextMenuParams;
+  // 追加(1.1.0 / AP-33): キーボードで開こうとした時刻(ms)と開いたか。続けてブラウザが送る contextmenu(Shift+F10 / メニューキーの
+  //   既定の動作)で、開いたときは標準のメニューを止め、開かなかった(項目が無い)ときは標準のメニューのままにします(項目をもう一度
+  //   問い合わせない)。
+  const keyboardContextMenuRef = useRef<{ at: number; opened: boolean } | null>(null);
 
   // ── column widths sync ────────────────────────────────
   // 変更(監査 RD-5 / M-03): フル置換(resetColumnWidths。columns の参照が変わるたびに全列を column.width
@@ -1134,6 +1180,7 @@ export function useGridShell<T extends object>({
       // 変更(1.0 前の最終チェック FC-08): 相対日付プリセットの見張りもグループ元列の列フィルターを含めて見ます。
       effectiveColumns: filterSortColumns,
       globalFilterText,
+      globalFilterMatch,
       // 追加(dogfood DF-18): applyState で入れた検索の文字も遅らせずに評価します。
       globalFilterUrgent: filtersUrgent,
       globalFilterEnabled,
@@ -1386,11 +1433,111 @@ export function useGridShell<T extends object>({
   //   未指定・項目空・SSRM 未ロード行ではブラウザ標準メニューへフォールスルーします(空パネルは出さない)。
   //   ヘッダーは [data-row-index] を持たないため必ず早期 return し、列メニューと自然排他になります。
   //   本ハンドラは常時再レンダーされる shell 上に置くため latest-ref 不要(参照安定は不問)です。
+  // 追加(1.1.0 / 2026-11-09 実アプリの総点検 AP-33): キーボード(Shift+F10 / メニューキー)でアクティブセルの右クリックメニューを
+  //   開きます。メニューはセルの左下に出し、先頭の項目へフォーカスを移します。項目が無い / 行が無い(SSRM の未ロード行など)ときは
+  //   開かず false(ブラウザの既定のまま)。セルが描かれていない(画面の外)ときは表の左上に出します。
+  const openContextMenuForCell = useCallback(
+    (cell: CellCoord): boolean => {
+      const root = gridRootRef.current;
+      const column = orderedColumns[cell.col];
+      if (!enableContextMenu || !getContextMenuItems || !root || !column) {
+        return false;
+      }
+      // 修正(1.1.0 の見直し): 展開行のカードの中の入れ子のグリッドのセルは数えません。
+      const cellEl = Array.from(
+        root.querySelectorAll<HTMLElement>(`[data-row-index="${cell.row}"] [data-ssg-col-key]`),
+      ).find((element) => element.dataset.ssgColKey === column.key && !isInsideDetailCardOf(root, element));
+      const rect = (cellEl ?? root).getBoundingClientRect();
+      const params = buildCellContextMenuParams<T>({
+        cell,
+        clientX: rect.left,
+        clientY: cellEl ? rect.bottom : rect.top,
+        rowModel,
+        orderedColumns,
+        selection: uiState.selection,
+        activeCell: uiState.activeCell,
+      });
+      if (!params) {
+        return false;
+      }
+      const items = getContextMenuItems(params);
+      if (!items || items.length === 0) {
+        return false;
+      }
+      onContextMenuOpen?.(params);
+      openContextMenu(params, items, { focus: 'firstItem' });
+      return true;
+    },
+    [
+      enableContextMenu,
+      getContextMenuItems,
+      onContextMenuOpen,
+      buildCellContextMenuParams,
+      rowModel,
+      orderedColumns,
+      uiState.selection,
+      uiState.activeCell,
+      openContextMenu,
+    ],
+  );
+
+  // 追加(1.1.0 / AP-33 の見直し): キーの操作(keydown)から開くときの入口です。開こうとしたことを控え、開いたときは続けて来る
+  //   キーボードの contextmenu(右ボタン以外)を 1 秒の間に 1 回だけ window の capture で止めます(Windows のメニューキーは keyup で
+  //   contextmenu を送り、フォーカスはもう表の外の項目かパネルへ移っているため、シェルの onContextMenu には届かないことがある)。
+  // 変更(1.1.0 の確かめ直し E): 次のキー操作かポインタの押し下げでも止めるのをやめます(keydown を止めたキーではブラウザが
+  //   contextmenu を送らないことがあり、メニューを閉じてすぐ上部のバーの入力欄で Shift+F10 を押すと、そちらの標準のメニューが
+  //   1 回止まっていた)。
+  const openContextMenuFromKeyboard = useCallback(
+    (cell: CellCoord): boolean => {
+      const opened = openContextMenuForCell(cell);
+      keyboardContextMenuRef.current = { at: performance.now(), opened };
+      if (opened && typeof window !== 'undefined') {
+        const stop = (): void => {
+          window.removeEventListener('contextmenu', onContextMenu, true);
+          window.removeEventListener('keydown', stop, true);
+          window.removeEventListener('pointerdown', stop, true);
+          window.clearTimeout(timer);
+        };
+        const onContextMenu = (event: MouseEvent): void => {
+          stop();
+          if (event.button !== 2) {
+            event.preventDefault();
+          }
+        };
+        const timer = window.setTimeout(stop, 1000);
+        window.addEventListener('contextmenu', onContextMenu, true);
+        window.addEventListener('keydown', stop, true);
+        window.addEventListener('pointerdown', stop, true);
+      }
+      return opened;
+    },
+    [openContextMenuForCell],
+  );
+
   const handleBodyContextMenu = useCallback(
     (event: ReactMouseEvent<HTMLDivElement>) => {
       // opt-in 判定: マスタースイッチ OFF(既定)/ getContextMenuItems 未指定なら何もしません
       //   (= ブラウザ標準メニュー)。両方そろって初めて独自メニューの検討に入ります。
       if (!enableContextMenu || !getContextMenuItems) {
+        return;
+      }
+      // 追加(1.1.0 / AP-33): キーボードから来た contextmenu(フォーカスを持つシェルか入力受けが対象で、右ボタンではない。
+      //   Chrome は button が -1)。直前にキーで開いたなら標準のメニューを止めるだけ、keydown を経ずに来た(OS がキーを
+      //   contextmenu に変える)ならここで開きます。検索欄などシェルの中の入力欄では標準のメニューのまま。
+      const target = event.target instanceof Element ? event.target : null;
+      const fromShellFocus =
+        target !== null && (target === event.currentTarget || target.hasAttribute(IME_INPUT_ATTRIBUTE));
+      if (event.nativeEvent.button !== 2 && fromShellFocus) {
+        const fromKeyboard = keyboardContextMenuRef.current;
+        if (fromKeyboard && performance.now() - fromKeyboard.at < 1000) {
+          if (fromKeyboard.opened) {
+            event.preventDefault();
+          }
+          return;
+        }
+        if (uiState.activeCell && openContextMenuForCell(uiState.activeCell)) {
+          event.preventDefault();
+        }
         return;
       }
       // 対象(セル / 行番号)の解決は機能側(features/contextMenu)。開かない対象なら null(標準メニューへ)。
@@ -1426,6 +1573,7 @@ export function useGridShell<T extends object>({
       uiState.selection,
       uiState.activeCell,
       openContextMenu,
+      openContextMenuForCell,
     ],
   );
 
@@ -1474,6 +1622,11 @@ export function useGridShell<T extends object>({
   // 追加(1.0.2 / 2026-11-09 実アプリの総点検 D-02): 列幅の自動調整で状態チップ(conditionalFormat.chips)のセルを
   //   チップの枠(余白とアイコン)ごと測るための中身です。セルの描画(renderCellContent)と同じ ctx でチップを決めます
   //   (選択などの状態は false)。条件付き書式の機能が無い構成では渡しません(チップを出さないので文字だけを測る)。
+  // 追加(1.1.0 / 固定行): 列幅の自動調整で測る固定行(上 + 下)。
+  const pinnedAutosizeRows = useMemo(
+    () => (pinnedTop || pinnedBottom ? [...(pinnedTop ?? []), ...(pinnedBottom ?? [])] : undefined),
+    [pinnedTop, pinnedBottom],
+  );
   const autosizeChipFeature = features.conditionalFormat;
   const autosizeChipOf = useMemo<AutosizeChipOf<T> | undefined>(() => {
     if (!autosizeChipFeature) {
@@ -1484,13 +1637,37 @@ export function useGridShell<T extends object>({
       if (!chips) {
         return null;
       }
+      const colIndex = orderedColumns.findIndex((candidate) => candidate.key === column.key);
+      const value = getCellValue(row, column);
+      // 変更(1.1.0 / 固定行の見直し): 固定行は負の index(-1 - 上 + 下の通し番号)で来るので、本体の rowModel を引かず、
+      //   描くときと同じ ctx(固定行の中の位置・行キー・pinned)を作ります(rowModel.getRowKey(-1) で rowKeyGetter が落ちていた)。
+      if (viewIndex < 0) {
+        const pinnedIndex = -1 - viewIndex;
+        const pinned = pinnedIndex < pinnedTopCount ? 'top' : 'bottom';
+        const index = pinned === 'top' ? pinnedIndex : pinnedIndex - pinnedTopCount;
+        const spec = autosizeChipFeature.resolveChipSpec(chips, {
+          row,
+          rowIndex: index,
+          sourceRowIndex: index,
+          rowKey: resolvedRowKeyGetter(row, index),
+          colIndex,
+          value,
+          column,
+          isActive: false,
+          isSelected: false,
+          isEditing: false,
+          readOnly: true,
+          pinned,
+        });
+        return spec ? { label: spec.label, icon: spec.icon !== false } : null;
+      }
       const spec = autosizeChipFeature.resolveChipSpec(chips, {
         row,
         rowIndex: viewIndex,
         sourceRowIndex: rowModel.getSourceIndex(viewIndex) ?? viewIndex,
         rowKey: rowModel.getRowKey(viewIndex) ?? viewIndex,
-        colIndex: orderedColumns.findIndex((candidate) => candidate.key === column.key),
-        value: getCellValue(row, column),
+        colIndex,
+        value,
         column,
         isActive: false,
         isSelected: false,
@@ -1499,7 +1676,7 @@ export function useGridShell<T extends object>({
       });
       return spec ? { label: spec.label, icon: spec.icon !== false } : null;
     };
-  }, [autosizeChipFeature, rowModel, orderedColumns]);
+  }, [autosizeChipFeature, rowModel, orderedColumns, pinnedTopCount, resolvedRowKeyGetter]);
   const columnAutosize = features.columnAutosize.useColumnAutosize<T>({
     rowModel,
     gridRootRef,
@@ -1507,6 +1684,8 @@ export function useGridShell<T extends object>({
     dispatch,
     totalRowTexts: totalRowAutosizeTexts,
     chipOf: autosizeChipOf,
+    // 追加(1.1.0 / 固定行): 固定行の値も測ります(本体の行の後)。
+    pinnedRows: pinnedAutosizeRows,
   });
   const { isAutosizing, runAutosize } = columnAutosize;
 
@@ -2173,7 +2352,7 @@ export function useGridShell<T extends object>({
     return scheduleActiveCellTooltip(activeCellDomId, gridRootRef.current);
   }, [tooltipActiveRow, tooltipActiveCol, tooltipEditing, activeCellDomId]);
 
-  useGridViewportSync({
+  const cancelActiveCellFollow = useGridViewportSync({
     scrollRef: scrollContainerRef,
     // 追加(1.0.1 / 2026-11-09 実アプリの総点検 AP-24): 縮めたスクロールで行の数が変わったときに見ている行を保つ(物理の
     //   位置を直したら view スライスへ書き、onScroll の source は 'api')。
@@ -2354,6 +2533,7 @@ export function useGridShell<T extends object>({
     headerHeight,
     // 追加(合計行 3A): 端の自動スクロールの下の帯 / ヒットテストを合計行の上端までにします(無効時 0)。
     footerHeight,
+    stickyTopHeight,
     // 変更(auto-height シーム): ヒットテストの行解決は rowMetrics 経由(uniform で従来式と一致)。
     rowMetrics,
     // 追加(scroll-space 仮想化): ヒットテスト clientY→row の物理→論理換算に使います。
@@ -2410,6 +2590,8 @@ export function useGridShell<T extends object>({
     handleRowsChange,
     // 追加(フィルハンドル 1A): 埋めたあとの選び直し(履歴を積まない差し替え)。
     amendRowsChange,
+    // 追加(1.1.0 / AP-14): 命令的 API の applyRows(関数の形 / undoable: false = 履歴を消さず積みもしない)。
+    applyRows: applyRowsWithHistory,
     undo: undoRows,
     redo: redoRows,
     canUndo: canUndoRows,
@@ -2428,6 +2610,9 @@ export function useGridShell<T extends object>({
     onUndoRedoStateChange,
     // 追加(undo/redo scroll): 復元後に復元先アクティブセルを可視化します。
     onAfterRestore: scrollRestoredCellIntoView,
+    // 追加(1.1.0 / AP-14): 外からの更新を挟んだ元に戻すで行を対応づけるキー。未指定は位置(行の数が変わったら取り直さない)
+    //   ので、既定の index の getter ではなく利用側の prop をそのまま渡します。
+    rowKeyGetter,
   });
 
   // ── clear(Delete / Backspace)─────────────────────────
@@ -2537,6 +2722,9 @@ export function useGridShell<T extends object>({
         }),
       createRow,
       createOverflowColumn,
+      // 追加(1.1.0 / AP-09): 貼り付けで書かなかったセルの通知と、そのメッセージの文言。
+      onPasteSkipped,
+      localeTexts,
       // 変更(undo/redo): paste の変更前 rows を履歴へ積むため、生の onRowsChange ではなく
       //   history controller のラッパを渡します(未指定時は undefined 素通しで挙動不変)。
       onRowsChange: handleRowsChange,
@@ -2570,6 +2758,7 @@ export function useGridShell<T extends object>({
     scrollContainerRef,
     gridRootRef,
     footerHeight,
+    stickyTopHeight,
     handleRowsChange,
     amendRowsChange,
     applyServerSideCellEdits,
@@ -2714,6 +2903,11 @@ export function useGridShell<T extends object>({
   const totalRowExport = useMemo(
     () => (totalRowEnabled ? { cells: totalRowCells, label: totalRowLabel } : undefined),
     [totalRowEnabled, totalRowCells, totalRowLabel],
+  );
+  // 追加(1.1.0 / 固定行): エクスポートの includePinnedRows で出す固定行(上 / 下)。
+  const pinnedRowsExport = useMemo(
+    () => (pinnedTop || pinnedBottom ? { top: pinnedTop ?? [], bottom: pinnedBottom ?? [] } : undefined),
+    [pinnedTop, pinnedBottom],
   );
   // ── 追加(F-2): セル内検索 ──
   //   実体は engine.find(controllers/findController。走査は時間分割)。React はスナップショットを購読し、既定セルの
@@ -2944,6 +3138,8 @@ export function useGridShell<T extends object>({
     onToggleDetailRow: detailRowEnabled ? toggleDetailRowFromKeyboard : undefined,
     resolvePageRow,
     openColumnMenu: columnMenuEnabled ? openColumnMenuForCell : undefined,
+    // 追加(1.1.0 / AP-33): Shift+F10 / メニューキーで右クリックメニュー。
+    openContextMenu: enableContextMenu && getContextMenuItems ? openContextMenuFromKeyboard : undefined,
     // 追加(段階 2 C-N2): 最終列の Tab をその行の展開行のカードへ。
     onTabPastLastColumn: handleTabPastLastColumn,
   });
@@ -3642,6 +3838,7 @@ export function useGridShell<T extends object>({
       rowMetrics,
       headerHeight,
       footerHeight,
+      stickyTopHeight,
       verticalScaleFactor,
       windowBaseOffsetPx: overlayBaseOffset,
       scrollContainerRef,
@@ -4026,13 +4223,14 @@ export function useGridShell<T extends object>({
         pane={pane}
         ownsRowHeader={ownsRowHeader}
         leadingWidth={leadingWidth}
-        bodyHeight={physicalBodyHeight}
-        height={footerHeight}
+        // 変更(1.1.0 / 固定行): 下の固定行があるときは本体ぶんの空きは固定行の器が持ちます(合計行はその直後)。
+        bodyHeight={pinnedBottom ? 0 : physicalBodyHeight}
+        height={totalRowHeight}
         renderEntries={renderEntries}
         cells={totalRowCells}
         label={totalRowLabel}
         labelColumnKey={totalRowLabelColumnKey}
-        ariaRowIndex={viewRowCount + 2}
+        ariaRowIndex={viewRowCount + 2 + pinnedTopCount + pinnedBottomCount}
         rowHeaderCellStyle={rowHeaderCellStyle}
         renderCell={totalRowRenderCell}
         rowClassName={totalRowSlot.className}
@@ -4041,6 +4239,40 @@ export function useGridShell<T extends object>({
         onPointerEnter={handleTotalRowPointerEnter}
       />
     ) : null;
+
+  // 追加(1.1.0 / 固定行): 上 / 下の固定行の器(各ペイン)。行見出しの読み上げは「上に固定 1」など。行に入ったら
+  //   行ホバーを外します(合計行と同じ)。
+  const renderPinnedRows = (
+    position: GridPinnedRowPosition,
+    pane: GridPaneKind,
+    ownsRowHeader: boolean,
+    leadingWidth: number,
+    renderEntries: PaneColumnEntry<T>[],
+  ) => {
+    const pinnedRows = position === 'top' ? pinnedTop : pinnedBottom;
+    return pinnedRows && PinnedRows ? (
+      <PinnedRows<T>
+        pane={pane}
+        position={position}
+        ownsRowHeader={ownsRowHeader}
+        leadingWidth={leadingWidth}
+        rows={pinnedRows}
+        rowHeight={rowHeight}
+        stickyOffset={position === 'top' ? columnHeaderHeight : totalRowHeight}
+        bodyHeight={position === 'top' ? 0 : physicalBodyHeight}
+        renderEntries={renderEntries}
+        rowKeyGetter={resolvedRowKeyGetter}
+        ariaRowIndexStart={position === 'top' ? 2 : viewRowCount + 2 + pinnedTopCount}
+        rowHeaderCellStyle={rowHeaderCellStyle}
+        getRowClassName={getRowClassName}
+        showCellOverflowTooltip={showCellOverflowTooltip}
+        conditionalFormat={conditionalFormatFeature}
+        conditionalFormatStats={conditionalFormatStats}
+        slots={slots}
+        onPointerEnter={handleTotalRowPointerEnter}
+      />
+    ) : null;
+  };
 
   const pinnedPaneStyle = (
     side: 'left' | 'right',
@@ -4314,6 +4546,7 @@ export function useGridShell<T extends object>({
         onFilterSummaryClick={
           columnFilterEnabled && toolPanelAvailable ? handleFilterSummaryChipClick : undefined
         }
+        filterPanelOpen={activeToolPanelTab === 'filter'}
       />
     ) : null;
 
@@ -4396,6 +4629,7 @@ export function useGridShell<T extends object>({
     labelViewIndexes: labelDisplay?.labelViewIndexes,
     // 追加(合計行 3A): 合計行のエクスポート(includeTotalRow)と、末尾 / 行を見せる位置の計算に使う高さ。
     totalRowExport,
+    pinnedRowsExport,
     footerHeight,
     // 追加(段階 2 の確かめ直し N4-1): scrollToRow / scrollToCell が上へ見せる行をラベル行の固定の帯の下に置く。
     stickyTopInset,
@@ -4409,15 +4643,20 @@ export function useGridShell<T extends object>({
     canUndoRows,
     canRedoRows,
     clearUndoHistory,
-    // 追加(段階 2 DU-21): applyRows の委譲先(履歴に積んでから onRowsChange)。
-    applyRowsChange: handleRowsChange,
+    // 追加(段階 2 DU-21): applyRows の委譲先(履歴に積んでから onRowsChange。1.1.0 から関数の形と undoable: false)。
+    applyRowsChange: applyRowsWithHistory,
     detailRowEnabled,
     detailIsExpandable,
     detailIndexCacheRef: detailIndexCacheHolder,
     moveRowByKey,
     commitRowSelection: rowSelectionCommands.commitRowSelection,
     pendingRowSelection: rowSelectionCommands.pendingRowSelection,
-    markApiScroll: scrollSync.markApiScroll,
+    // 変更(1.1.0 の確かめ直しの見直し): 命令的なスクロールでは、アクティブセルの合わせ直しをやめます(1 秒の間に
+    //   scrollToTop などを呼ぶと、行を測り直したときにアクティブセルへ引き戻していた)。
+    markApiScroll: () => {
+      cancelActiveCellFollow();
+      return scrollSync.markApiScroll();
+    },
   });
   useImperativeHandle(ref, () => gridApi.handle, [gridApi]);
 
@@ -4569,7 +4808,7 @@ export function useGridShell<T extends object>({
           role="grid"
           aria-label={ariaLabel}
           // 変更(合計行 3A): 合計行を表示しているときは 1 行足します(見出し行 + 表示行 + 合計行)。
-          aria-rowcount={viewRowCount + 1 + (totalRowEnabled ? 1 : 0)}
+          aria-rowcount={viewRowCount + 1 + pinnedTopCount + pinnedBottomCount + (totalRowEnabled ? 1 : 0)}
           aria-colcount={orderedColumns.length + 1}
           aria-multiselectable={enableRangeSelection || undefined}
           aria-readonly={readOnly || undefined}
@@ -4624,7 +4863,7 @@ export function useGridShell<T extends object>({
                   pane="left"
                   ownsRowHeader
                   leadingWidth={leftLeadingWidth}
-                  headerHeight={headerHeight}
+                  headerHeight={columnHeaderHeight}
                   rowHeaderCellStyle={rowHeaderCellStyle}
                   slots={slots}
                   isCornerHovered={isCornerHovered}
@@ -4653,6 +4892,8 @@ export function useGridShell<T extends object>({
                   onColumnHeaderContextMenu={openColumnMenuFromContextMenu}
                   onColumnDragHandlePointerDown={headerDragHandler}
                 />
+                {/* 追加(1.1.0 / 固定行): 上に固定する行(列見出しの直後の sticky の器)。 */}
+                {renderPinnedRows('top', 'left', true, leftLeadingWidth, leftRenderEntries)}
 
                 {/* 追加(10-D): 左固定ペイン内の overlay（ペインローカル座標）。*/}
                 {/*   active cell / 選択範囲が左固定列にあるときだけ矩形が出ます。*/}
@@ -4771,6 +5012,7 @@ export function useGridShell<T extends object>({
                   onGroupToggle={handleGroupToggle}
                   GroupRow={GroupRow}
                   rowHeaderCellStyle={rowHeaderCellStyle}
+                  ariaRowOffset={pinnedTopCount}
                   hoveredRowIndex={resolvedHoveredRowIndex}
                   isWholeGridSelected={isWholeGridSelected}
                   enableRowSelection={enableRowSelection}
@@ -4809,6 +5051,8 @@ export function useGridShell<T extends object>({
                   renderRowDropIndicator('left', 'ssg-row-drop-indicator ssg-row-drop-indicator--cap')}
                 </div>
                 {/* 追加(合計行 3A): 下端に固定する合計行(本体ぶんの空きの直後 = ボックスの下端の sticky 行)。 */}
+                {/* 追加(1.1.0 / 固定行): 下に固定する行(本体ぶんの空きの後。合計行はその後ろ)。 */}
+                {renderPinnedRows('bottom', 'left', true, leftLeadingWidth, leftRenderEntries)}
                 {renderTotalRow('left', true, leftLeadingWidth, leftRenderEntries)}
               </div>
             )}
@@ -4847,7 +5091,7 @@ export function useGridShell<T extends object>({
                 pane="center"
                 ownsRowHeader={centerOwnsRowHeader}
                 leadingWidth={centerLeadingWidth}
-                headerHeight={headerHeight}
+                headerHeight={columnHeaderHeight}
                 rowHeaderCellStyle={rowHeaderCellStyle}
                 slots={slots}
                 isCornerHovered={isCornerHovered}
@@ -4876,6 +5120,8 @@ export function useGridShell<T extends object>({
                 onColumnHeaderContextMenu={openColumnMenuFromContextMenu}
                 onColumnDragHandlePointerDown={headerDragHandler}
               />
+              {/* 追加(1.1.0 / 固定行): 上に固定する行(列見出しの直後の sticky の器)。 */}
+              {renderPinnedRows('top', 'center', centerOwnsRowHeader, centerLeadingWidth, centerRenderEntries)}
 
               {/* 変更(10-D): 中央ペインの overlay をペインローカル座標に切替。*/}
               {/*   leadingWidth は centerLeadingWidth（固定列なしのとき rowHeaderWidth）。*/}
@@ -4993,6 +5239,7 @@ export function useGridShell<T extends object>({
                   onGroupToggle={handleGroupToggle}
                   GroupRow={GroupRow}
                   rowHeaderCellStyle={rowHeaderCellStyle}
+                  ariaRowOffset={pinnedTopCount}
                   hoveredRowIndex={resolvedHoveredRowIndex}
                   isWholeGridSelected={isWholeGridSelected}
                   enableRowSelection={enableRowSelection}
@@ -5041,6 +5288,8 @@ export function useGridShell<T extends object>({
                   )}
               </div>
               {/* 追加(合計行 3A): 下端に固定する合計行(本体ぶんの空きの直後 = ボックスの下端の sticky 行)。 */}
+              {/* 追加(1.1.0 / 固定行): 下に固定する行(本体ぶんの空きの後。合計行はその後ろ)。 */}
+              {renderPinnedRows('bottom', 'center', centerOwnsRowHeader, centerLeadingWidth, centerRenderEntries)}
               {renderTotalRow('center', centerOwnsRowHeader, centerLeadingWidth, centerRenderEntries)}
 
               {/* 追加(13-B3-2): 中央ペインのドロップインジケータ(縦線)。
@@ -5073,7 +5322,7 @@ export function useGridShell<T extends object>({
                   pane="right"
                   ownsRowHeader={false}
                   leadingWidth={rightLeadingWidth}
-                  headerHeight={headerHeight}
+                  headerHeight={columnHeaderHeight}
                   rowHeaderCellStyle={rowHeaderCellStyle}
                   slots={slots}
                   isCornerHovered={isCornerHovered}
@@ -5102,6 +5351,8 @@ export function useGridShell<T extends object>({
                   onColumnHeaderContextMenu={openColumnMenuFromContextMenu}
                   onColumnDragHandlePointerDown={headerDragHandler}
                 />
+                {/* 追加(1.1.0 / 固定行): 上に固定する行(列見出しの直後の sticky の器)。 */}
+                {renderPinnedRows('top', 'right', false, rightLeadingWidth, rightRenderEntries)}
 
                 {/* 追加(10-D): 右固定ペイン内の overlay（ペインローカル座標）。*/}
                 {/* 変更(10-G): 左ペインと同様、overlay + body をまとめる絶対配置レイヤーです。*/}
@@ -5217,6 +5468,7 @@ export function useGridShell<T extends object>({
                   onGroupToggle={handleGroupToggle}
                   GroupRow={GroupRow}
                   rowHeaderCellStyle={rowHeaderCellStyle}
+                  ariaRowOffset={pinnedTopCount}
                   hoveredRowIndex={resolvedHoveredRowIndex}
                   isWholeGridSelected={isWholeGridSelected}
                   enableRowSelection={enableRowSelection}
@@ -5254,6 +5506,8 @@ export function useGridShell<T extends object>({
                 {rowDragAvailable && renderRowDropIndicator('right', 'ssg-row-drop-indicator')}
                 </div>
                 {/* 追加(合計行 3A): 下端に固定する合計行(本体ぶんの空きの直後 = ボックスの下端の sticky 行)。 */}
+                {/* 追加(1.1.0 / 固定行): 下に固定する行(本体ぶんの空きの後。合計行はその後ろ)。 */}
+                {renderPinnedRows('bottom', 'right', false, rightLeadingWidth, rightRenderEntries)}
                 {renderTotalRow('right', false, rightLeadingWidth, rightRenderEntries)}
               </div>
             )}
@@ -5388,7 +5642,9 @@ export function useGridShell<T extends object>({
   );
   return (
     <PortalTokenSourceContext.Provider value={gridRootRef}>
-      <GridLocaleTextContext.Provider value={localeTexts}>{shellElement}</GridLocaleTextContext.Provider>
+      <PopupContainerContext.Provider value={getPopupContainer}>
+        <GridLocaleTextContext.Provider value={localeTexts}>{shellElement}</GridLocaleTextContext.Provider>
+      </PopupContainerContext.Provider>
     </PortalTokenSourceContext.Provider>
   );
 }

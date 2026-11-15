@@ -93,7 +93,7 @@ import {
 //   ネイティブ <input type="date"> を置き換える既定 UI で、renderFilterDateInput
 //   (利用側スロット)指定時はそちらが優先されます。
 import { FilterDateField } from './FilterDateField';
-import { usePortalTokens } from '../hooks/usePortalTokens';
+import { usePopupContainer, usePortalTokens } from '../hooks/usePortalTokens';
 // 追加(filter-ext D): dateSet の年月日ツリー(平坦化された可視行)です。
 import {
   buildDateTreeRows,
@@ -1333,9 +1333,11 @@ export function ColumnFilterPopover({
   //   日付を跨いで開きっぱなしのケースは表示のみ僅かに stale になりますが許容します)。
   const [comboNow] = useState(() => new Date());
   // 追加(DevBI の報告): 表で決まったトークン(--ssg-*)をポップオーバーへ写します(body 直下のため継承で届かない)。
-  usePortalTokens(popoverRef, isOpen && layout !== null, themeClassName);
+  usePortalTokens(popoverRef, isOpen && layout !== null, themeClassName, { layout });
+  // 追加(1.1.0 / AP-07): 描く場所(既定はグリッドを囲むダイアログの中、無ければ body)。
+  const popupContainer = usePopupContainer(isOpen && layout !== null);
 
-  if (typeof document === 'undefined' || !isOpen || !layout) {
+  if (typeof document === 'undefined' || !isOpen || !layout || !popupContainer) {
     return null;
   }
 
@@ -1804,7 +1806,7 @@ export function ColumnFilterPopover({
         )}
       </div>
     </div>,
-    document.body,
+    popupContainer,
   );
 }
 

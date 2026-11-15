@@ -188,6 +188,9 @@ function HeaderActionButton({
       tabIndex={-1}
       data-ssg-tooltip={title}
       aria-label={ariaLabel ?? title}
+      // 追加(1.1.0 / 2026-11-09 実アプリの総点検 AP-33): 列メニューを開くボタンだと伝えます。
+      aria-haspopup="menu"
+      aria-expanded={isActive}
       onPointerDown={onPointerDown}
       onClick={onClick}
       className={cx(

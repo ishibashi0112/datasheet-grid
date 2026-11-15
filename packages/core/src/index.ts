@@ -18,6 +18,9 @@ export type { GridStore, GridViewState, GridViewStatePatch } from './model/gridS
 export { gridActions } from './model/gridActions';
 export type { GridUiAction } from './model/gridActions';
 export { numberFormatter } from './logic/valueFormatters';
+// 追加(1.1.0 / AP-09): 組み込みの数値のパーサ(列の parseClipboardValue に渡す。number エディタの既定と同じ読み方 + 通貨記号など)。
+export { numberParser } from './logic/valueParsers';
+export type { NumberParserOptions } from './logic/valueParsers';
 // 追加(段階 2 の確かめ直し): 保存した状態の列メタ(並び / 表示 / 固定)を列定義へ当てる(initialState と一緒に使う)。
 export { restoreColumnsFromState } from './logic/gridState';
 // 追加(ことばで絞り込み): AI に渡す頼みの組み立てと、AI の答えの検査(→ GridState)。グリッドは AI を呼ばず、利用側の
@@ -53,6 +56,7 @@ export {
   DEFAULT_FILTERING_LOCALE_TEXT,
   DEFAULT_FIND_LOCALE_TEXT,
   DEFAULT_GROUPING_LOCALE_TEXT,
+  DEFAULT_PINNED_ROWS_LOCALE_TEXT,
   DEFAULT_ROW_DRAG_LOCALE_TEXT,
   DEFAULT_SCROLL_HINT_LOCALE_TEXT,
   DEFAULT_SERVER_SIDE_LOCALE_TEXT,

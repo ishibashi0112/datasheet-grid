@@ -12,6 +12,7 @@
 import type {
   CellCoord,
   DetailRowOptions,
+  GridApplyRowsOptions,
   GridColumn,
   GridRowKey,
   GridUiState,
@@ -147,6 +148,8 @@ export type GridApiArgs<T> = {
   labelViewIndexes?: ArrayLike<number> | undefined;
   // 追加(合計行 3A): 合計行のエクスポート(includeTotalRow)の値と見出し(totalRow 無効時は undefined)。
   totalRowExport?: { cells: TotalRowCells; label: string } | undefined;
+  // 追加(1.1.0 / 固定行): 固定行のエクスポート(includePinnedRows)の行(固定行が無効なら undefined)。
+  pinnedRowsExport?: { top: readonly T[]; bottom: readonly T[] } | undefined;
   // 統合ツールパネル(openFilterManager / closeFilterManager の委譲先)。
   activeToolPanelTab: ToolPanelTab | null;
   openToolPanel: (tab: ToolPanelTab) => void;
@@ -156,7 +159,10 @@ export type GridApiArgs<T> = {
   // undo / redo(history controller)。
   undoRows: () => void;
   // 追加(段階 2 DU-21): applyRows の委譲先(履歴に積んでから onRowsChange。onRowsChange 未指定 / serverSide は undefined)。
-  applyRowsChange?: ((nextRows: T[]) => void) | undefined;
+  //   1.1.0(AP-14)から関数の形と undoable: false(履歴を消さず積みもしない)。
+  applyRowsChange?:
+    | ((nextRows: T[] | ((prev: T[]) => T[]), options?: GridApplyRowsOptions) => void)
+    | undefined;
   redoRows: () => void;
   canUndoRows: () => boolean;
   canRedoRows: () => boolean;
@@ -729,7 +735,7 @@ export const createGridApi = <T,>(features: Pick<GridCoreFeatures, 'export' | 'g
     clearUndoHistory: () => {
       args?.clearUndoHistory();
     },
-    applyRows: (nextRows) => {
+    applyRows: (nextRows, options) => {
       const s = args;
       if (!s) {
         return;
@@ -745,7 +751,7 @@ export const createGridApi = <T,>(features: Pick<GridCoreFeatures, 'export' | 'g
         }
         return;
       }
-      s.applyRowsChange(nextRows);
+      s.applyRowsChange(nextRows, options);
     },
 
     // ── 行グルーピング ──

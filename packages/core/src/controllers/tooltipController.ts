@@ -30,6 +30,7 @@ import { computeTooltipPlacement } from '../logic/tooltipGeometry';
 import { applySlotToElement, type AppliedSlot } from '../logic/slotDom';
 import type { GridResolvedSlot } from '../model/gridTypes.unbound';
 import { syncPortalTokens } from '../utils/portalTokens';
+import { appendToPopupContainer, getPopupContainerFor } from '../utils/popupContainer';
 
 const TOOLTIP_ATTRIBUTE = 'data-ssg-tooltip';
 const TOOLTIP_OVERFLOW_ATTRIBUTE = 'data-ssg-tooltip-overflow';
@@ -66,8 +67,12 @@ function syncTooltipSlot(el: HTMLDivElement) {
   appliedTooltipSlot = applySlotToElement(el, tooltipSlot, appliedTooltipSlot);
 }
 
-function ensureTooltipElement(): HTMLDivElement {
+// 変更(1.1.0 / 2026-11-09 実アプリの総点検 AP-07): 対象の表(またはポップアップ)の描く場所へ入れます(既定はグリッドを囲む
+//   ダイアログの中。core utils/popupContainer)。表ごとに違う場所なら、出すたびに移します。
+function ensureTooltipElement(target: Element): HTMLDivElement {
+  const container = getPopupContainerFor(target);
   if (tooltipEl !== null) {
+    appendToPopupContainer(tooltipEl, container);
     return tooltipEl;
   }
   const el = document.createElement('div');
@@ -76,7 +81,7 @@ function ensureTooltipElement(): HTMLDivElement {
   el.setAttribute('aria-hidden', 'true');
   appliedTooltipSlot = undefined;
   syncTooltipSlot(el);
-  document.body.appendChild(el);
+  appendToPopupContainer(el, container);
   tooltipEl = el;
   return el;
 }
@@ -152,7 +157,7 @@ function showTooltipFor(target: Element) {
   if (text === '') {
     return;
   }
-  const el = ensureTooltipElement();
+  const el = ensureTooltipElement(target);
   // 表示対象の祖先(.ssg-theme-dark)からテーマを解決します(複数グリッドがテーマ混在でも
   //   「hover した要素側のテーマ」で表示)。
   el.classList.toggle(

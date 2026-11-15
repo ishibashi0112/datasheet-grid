@@ -11,6 +11,37 @@
 
 詳しい使い方は[ドキュメントサイト](https://datasheet-grid.vercel.app)と [API リファレンス](./packages/react/API_REFERENCE.md)を参照してください。
 
+## 未リリース
+
+### 追加
+
+- 右クリックメニュー(`enableContextMenu`)を、アクティブセルで `Shift+F10` / メニューキー(Windows のアプリケーションキー)を押しても開けるようにしました。メニューはセルの左下に出て、先頭の項目にフォーカスがあります。`getContextMenuItems` に渡る `target` はアクティブセルです。項目が無いとき・アクティブセルが無いときはブラウザ標準のメニューのままです。
+- ツールパネルの読み上げの名前の文言 `localeText.toolPanelLabel`(既定「ツールパネル」、英語「Tool panel」)。
+- ポップアップ(列メニュー / 列フィルター / 右クリックメニュー / select エディタの候補 / ツールパネル / フィルハンドルのメニュー / ツールチップ / ドラッグのゴースト)を描く場所を選ぶ `popupContainer`(`'auto'` / `'body'` / 要素 / 関数。既定 `'auto'`)と型 `GridPopupContainer`。ガイド「ダイアログの中で使う」。
+- 値と表示名が別の列(値はコード、画面は `valueFormatter` の表示名)のための 3 つの選択肢。どれも既定は 1.0 と同じ(値の文字)です。ガイド「値と表示名が別の列」。
+  - 列の `groupLabel`(`'value'` / `'formatted'` / 関数): グループ行の見出しを列の `valueFormatter` の表示名にできます(これまではいつも値の文字で、「chubu (2,563件)」のように出ていました)。
+  - `globalFilterMatch`(`'value'` / `'display'` / `'both'`)と型 `GridGlobalFilterMatch`: グローバルフィルターで画面の文字(`valueFormatter` の結果)でも探せます(これまでは値の文字だけで、「関東」「43,340」で探すと 0 件でした)。clientSide だけです。
+  - select エディタの `clipboard: 'label'`: コピー・CSV / TSV・`getExportData` の `text` を候補の label にし、貼り付けた label を value へ読み替えます(これまでは貼り付けた表示名がそのまま値に入っていました)。
+- 列の `parseClipboardValue` に渡す組み込みの数値のパーサ `numberParser({ strip, negativeParentheses })` と型 `NumberParserOptions`(React 版の `.` / `/lite` と core の入口)。number エディタの既定のパーサと同じ読み方(全角の数字・3 桁区切り、空白だけは `null`、読めない文字は元のまま)に、通貨記号や単位を先に外す `strip`(`['¥', '円']` など)と、`(1,200)` を `-1200` と読む `negativeParentheses` を足せます(これまでは「¥12,000」を貼ると reject の列では黙って飛ばされ、自前のパーサを書くと全角の読み方が使えませんでした)。
+- ハンドルの `applyRows` に、履歴に積まない外からの更新 `applyRows(next, { undoable: false })` と型 `GridApplyRowsOptions`、関数の形 `applyRows((prev) => next)` を足しました。`undoable: false` は今の履歴も消さず、元に戻す / やり直すは外からの更新を残したままグリッドでの編集だけを取り消す / やり直します(株価のように絶えず変わる表で、これまでは `rows` を作り直すと履歴が消え、`applyRows` で渡すと更新が 1 つずつ履歴に積まれていました)。ガイド「セルの編集」の「外から絶えず変わる表」。
+- 貼り付けで書かなかったセルを知らせる `onPasteSkipped`(型 `GridPasteSkippedCell` / `GridPasteSkippedParams`)。編集できないセル(`reason: 'readOnly'`)と、`validationMode: 'reject'` の列で検査に通らなかった値(`'invalid'`。`message` は検査のメッセージ)を、1 回の貼り付けにつき 1 回まとめて渡します。clientSide と serverSide の両方です。
+- 表の上下に固定する行 `pinnedTopRows` / `pinnedBottomRows`(型 `GridPinnedRowPosition`、`/lite` の部品 `pinnedRowsFeature`)。目標値・前年の実績・平均のような比べる行を、本体の行とは別の配列で渡すと、列見出しのすぐ下 / 表の下端(合計行があればそのすぐ上)に留まります。表示だけの行で(選択 / 編集 / 貼り付け / コピー / キー操作 / 並べ替え / フィルターの対象外)、セルは列の `valueFormatter` / `renderCell` / `cellClassName` / 条件付き書式で描き、`renderCell` / `cellClassName` / `getRowClassName` の ctx の `pinned`(`'top'` / `'bottom'`)で見分けられます。エクスポートは `includePinnedRows: true` のときだけ(`getExportData` の `rowKinds` は `'pinned'`)。行見出しの読み上げの文言 `localeText.pinnedTopRow` / `pinnedBottomRow`、トークン `--ssg-pinned-row-bg` / `--ssg-pinned-row-border`。ガイド「固定行」。
+
+### 変更
+
+- 列メニューに役割を付けました。パネルは `role="menu"`(名前は列名)、項目は `role="menuitem"`、並び替えの昇順 / 降順と「列の固定」の小メニューの項目は `role="menuitemradio"` + `aria-checked`、列見出しの `⋮` は `aria-haspopup="menu"` / `aria-expanded` です。利用側のテストで列メニューの項目を `getByRole('button', { name: 'フィルター…' })` のように探していたら、`getByRole('menuitem', …)`(並び替えと「列の固定」の小メニューの項目は `menuitemradio`)に直してください(ガイド「テスト」)。
+- マウスで開いた列メニューと右クリックメニューは、パネルにフォーカスを移します(これまではフォーカスがページに残り、読み上げがメニューに入りませんでした)。`↓` で先頭、`↑` で末尾の項目へ移るのはこれまでどおりです。
+- ツールパネルは `role="dialog"` と名前を持ち、開くと選ばれているタブへフォーカスを移します。`Tab` / `Shift+Tab` はパネルの中で回り、`Escape` / `×` で閉じると開いた部品(上部バーの絞り込みの要約など)へフォーカスを戻します(これまではフォーカスが移らず、キーボードではパネルへ入りにくかった)。上部バーの絞り込みの要約は `aria-haspopup="dialog"` / `aria-expanded` を持ちます。「列」タブの検索欄へフォーカスを移すのは、開いている間にそのタブへ切り替えたときだけにしました(「列の表示」から開くと検索欄へ移り、タッチの端末ではキーボードが出ていた)。
+- ラベル行の行見出しを、文字の見える中身の欄(`role="rowheader"`)にしました。左の行番号の欄は読み上げから外します(文字の無い行見出しに axe が `empty-table-header` を出していました)。
+
+### 修正
+
+- モーダルの中のグリッドで、ポップアップを使えませんでした(素の `<dialog>` の `showModal()` ではダイアログの後ろに隠れ、Radix(shadcn/ui)・React Aria(HeroUI)・Headless UI のモーダルでは押せない・入力できない)。既定ではグリッドを囲むダイアログ(`<dialog>` / `popover` / `aria-modal="true"` / `role="dialog"` / `role="alertdialog"`)の中に描きます。祖先の `transform` / `translate` による位置のずれは打ち消します。ダイアログが `overflow` で切り、しかも `transform` などで fixed の基準になるとき(Mantine の Modal)は、外側の `position: fixed` の祖先(`.mantine-Modal-inner`)へ描くので枠で切れません。これまでどおり `document.body` の直下にするには `popupContainer="body"`。
+- 行の高さを測る列(`autoHeight`)がある表で、アクティブセルを遠くの行へ動かした最初の 1 回(`Ctrl+End` / `selectCell` など。`selectCell` の後の `scrollToCell` を含む)に、行を測り直して位置が動き、アクティブセルが画面の外や合計行・固定行の裏に残ることがありました(もう一度押すと見えた。1.0 から)。動かした直後の 1 秒の間は、測り直して動いた位置へ合わせ直します(ホイール・キー・ポインタの操作や、命令的なスクロール `scrollToTop` などがあればやめます)。アクティブセルを動かさない `scrollToCell` / `scrollToRow` だけでは合わせ直しません。
+- 画面の高さが足りず列メニューがパネルの中でスクロールするとき(スマートフォン・低い画面・ダイアログの中)、「列の固定 ›」の小メニューがパネルの枠で切れて押せませんでした(1.0 から)。このときは小メニューを項目の下に開きます。
+- 列見出しの右クリックで開いた列メニューが、画面に収まらずパネルの中でスクロールしたとき(ホイール・`↓` で見えていない項目へ移ったとき)に閉じていました(1.0 から)。メニュー自身のスクロールでは閉じません。
+- 拡大縮小(`transform: scale()`)の中のグリッドで、上部バーと列見出しの間に本体の行が 1px のぞくことがありました(1.0 から)。
+
 ## 1.0.2 — 2026-11-15
 
 ### 修正

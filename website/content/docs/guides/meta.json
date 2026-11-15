@@ -2,6 +2,7 @@
   "title": "ガイド",
   "pages": [
     "editing",
+    "value-labels",
     "fill-handle",
     "cell-events",
     "filter-sort",
@@ -16,6 +17,7 @@
     "detail-row",
     "label-rows",
     "total-row",
+    "pinned-rows",
     "row-drag",
     "column-drag",
     "export",
@@ -24,6 +26,7 @@
     "conditional-format",
     "theming",
     "design-systems",
+    "dialogs",
     "motion",
     "keyboard",
     "testing"

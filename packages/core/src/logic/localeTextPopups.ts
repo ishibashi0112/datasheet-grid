@@ -6,6 +6,8 @@ import { DEFAULT_FILTERING_LOCALE_TEXT } from './localeTextFeatures';
 
 export const DEFAULT_POPUP_LOCALE_TEXT = {
   apply: '適用',
+  // 追加(1.1.0 / RV2-L2): ツールパネル(role="dialog")の読み上げの名前。
+  toolPanelLabel: 'ツールパネル',
   columnsPinnedLeft: '左固定',
   columnsUnpinned: '固定なし',
   columnsPinnedRight: '右固定',

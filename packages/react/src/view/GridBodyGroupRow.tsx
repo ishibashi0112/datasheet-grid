@@ -37,6 +37,8 @@ type GridBodyGroupRowProps<T> = {
   rowHeight: number;
   renderEntries: PaneColumnEntry<T>[];
   rowHeaderCellStyle: CSSProperties;
+  // 追加(1.1.0 / 固定行): aria-rowindex に足す数(上の固定行の数)。
+  ariaRowOffset?: number;
   isRowHovered: boolean;
   // 追加: 行ヘッダの列幅を揃えるためのフラグです(グループ行は行選択対象外のため、
   //   チェックボックスは描画せず行番号を出します)。
@@ -78,6 +80,7 @@ function GridBodyGroupRowInner<T>({
   rowIndex,
   top,
   rowHeight,
+  ariaRowOffset = 0,
   renderEntries,
   rowHeaderCellStyle,
   isRowHovered,
@@ -102,7 +105,7 @@ function GridBodyGroupRowInner<T>({
       data-ssg-group-row=""
       // 追加(audit V-05): グループ行も ARIA の行(開閉状態は自動グループ列のボタンの aria-expanded)。
       role="row"
-      aria-rowindex={rowIndex + 2}
+      aria-rowindex={rowIndex + 2 + ariaRowOffset}
       className={cx(
         'ssg-body-row',
         slots?.bodyRow?.className,

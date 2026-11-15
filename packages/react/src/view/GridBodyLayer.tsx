@@ -120,6 +120,8 @@ type GridBodyRowProps<T> = {
   // 追加(label-row ③): 行ヘッダー「#」に出す番号(1 始まり)。ラベル行有効時はラベル行を飛ばした
   //   データ行の通し番号、それ以外は view index + 1(従来どおり)。プリミティブ = memo 安全。
   rowNumber: number;
+  // 追加(1.1.0 / 固定行): aria-rowindex に足す数(上の固定行の数。見出し行 = 1 の次から数える)。
+  ariaRowOffset?: number;
   row: T;
   // virtualRow.start(scrollMargin=headerHeight 込み)。行全体の translateY に使います。
   top: number;
@@ -218,6 +220,7 @@ function GridBodyRowInner<T>({
   activeCellDomId,
   cellEditorDomId,
   rowNumber,
+  ariaRowOffset = 0,
   row,
   top,
   renderEntries,
@@ -264,7 +267,7 @@ function GridBodyRowInner<T>({
       // 追加(audit V-05): ARIA の行(見出し行 = 1 のため view index + 2)。チェックボックス行選択が有効なら
       //   選択状態を aria-selected で公開します。
       role="row"
-      aria-rowindex={rowIndex + 2}
+      aria-rowindex={rowIndex + 2 + ariaRowOffset}
       aria-selected={showRowCheckbox ? isRowChecked : undefined}
       // 追加(motion-6 / M-2): 変更セルのフラッシュ(changeHighlightController)が rowKey で行を探すための目印。
       data-row-key={rowKey}
@@ -599,6 +602,8 @@ type GridBodySkeletonRowProps<T> = {
   rowIndex: number;
   top: number;
   rowHeight: number;
+  // 追加(1.1.0 / 固定行): aria-rowindex に足す数(上の固定行の数)。
+  ariaRowOffset?: number;
   renderEntries: PaneColumnEntry<T>[];
   rowHeaderCellStyle: CSSProperties;
   isRowHovered: boolean;
@@ -637,6 +642,7 @@ function GridBodySkeletonRowInner<T>({
   rowIndex,
   top,
   rowHeight,
+  ariaRowOffset = 0,
   renderEntries,
   rowHeaderCellStyle,
   isRowHovered,
@@ -655,7 +661,7 @@ function GridBodySkeletonRowInner<T>({
       data-skeleton-row=""
       // 追加(audit V-05): 読み込み中の行(aria-busy)。
       role="row"
-      aria-rowindex={rowIndex + 2}
+      aria-rowindex={rowIndex + 2 + ariaRowOffset}
       aria-busy="true"
       className={cx('ssg-body-row', slots?.bodyRow?.className)}
       style={{
@@ -798,6 +804,8 @@ type GridBodyLayerProps<T> = {
   //   通し番号になります(未指定 = view index + 1)。
   labelViewIndexes?: Int32Array;
   rowHeaderCellStyle: CSSProperties;
+  // 追加(1.1.0 / 固定行): 行の aria-rowindex に足す数(上の固定行の数。無ければ 0)。
+  ariaRowOffset?: number;
   hoveredRowIndex: number | null;
   isWholeGridSelected: boolean;
   // 追加(行選択): チェックボックス行選択の有効化と状態(参照は選択変化時のみ変わる)。
@@ -878,6 +886,7 @@ export function GridBodyLayer<T>({
   labelRowLayer,
   labelViewIndexes,
   rowHeaderCellStyle,
+  ariaRowOffset = 0,
   hoveredRowIndex,
   isWholeGridSelected,
   enableRowSelection,
@@ -930,6 +939,7 @@ export function GridBodyLayer<T>({
               rowIndex={rowIndex}
               top={virtualRow.start}
               rowHeight={rowSize}
+              ariaRowOffset={ariaRowOffset}
               renderEntries={renderEntries}
               rowHeaderCellStyle={rowHeaderCellStyle}
               isRowHovered={hoveredRowIndex === rowIndex}
@@ -963,6 +973,7 @@ export function GridBodyLayer<T>({
               rowKey={labelRowKey}
               top={virtualRow.start}
               rowHeight={rowSize}
+              ariaRowOffset={ariaRowOffset}
               rowHeaderCellStyle={rowHeaderCellStyle}
               labelRow={labelRow}
               renderContent={labelRowLayer.renderContent}
@@ -1003,6 +1014,7 @@ export function GridBodyLayer<T>({
               rowIndex={rowIndex}
               top={virtualRow.start}
               rowHeight={rowSize}
+              ariaRowOffset={ariaRowOffset}
               renderEntries={renderEntries}
               rowHeaderCellStyle={rowHeaderCellStyle}
               isRowHovered={hoveredRowIndex === rowIndex}
@@ -1085,6 +1097,7 @@ export function GridBodyLayer<T>({
             activeCellDomId={activeCellDomId}
             cellEditorDomId={cellEditorDomId}
             rowNumber={labelViewIndexes ? resolveDataRowNumber(labelViewIndexes, rowIndex) : rowIndex + 1}
+            ariaRowOffset={ariaRowOffset}
             row={row}
             top={virtualRow.start}
             renderEntries={renderEntries}

@@ -97,10 +97,11 @@ for (const key of ['category', 'date', 'name']) {
   await waitIdle(page, 200);
   const st = await page.evaluate(() => ({
     open: document.querySelector('[role="menu"].ssg-menu-panel') != null,
-    focused: document.activeElement?.textContent?.trim(),
+    // 変更(1.1.0): パネル(マウスで開いたときのフォーカスの置き場)の textContent は全項目を含むので、項目にフォーカスがあることまで見る。
+    focused: document.activeElement?.getAttribute('role') === 'menuitem' ? document.activeElement.textContent?.trim() : null,
     scrollTop: document.querySelector('.ssg-scroll-container').scrollTop,
   }));
-  check('DF-17 ↓ in the context menu focuses the first item and does not scroll', st.open && st.focused?.includes('ログ') && st.scrollTop === before, { ...st, before });
+  check('DF-17 ↓ in the context menu focuses the first item and does not scroll', st.open && st.focused === 'ログ' && st.scrollTop === before, { ...st, before });
   await page.keyboard.press('ArrowDown');
   await waitIdle(page, 100);
   await clearEvents(page);

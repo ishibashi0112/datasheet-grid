@@ -39,12 +39,14 @@ import type {
   GridLocaleText,
   GridUiState,
   GlobalFilterStatus,
+  GridGlobalFilterMatch,
   RowModel,
   SpreadsheetGridProps,
 } from '../model/gridTypes';
 import type { GridFindBar } from '../view/GridFindBar';
 import type { GridScrollHint } from '../view/GridScrollHint';
 import type { GridTotalRow } from '../view/GridTotalRow';
+import type { GridPinnedRows } from '../view/GridPinnedRows';
 import type { GridBodyLabelRow } from '../view/GridBodyLabelRow';
 import type { GridBodyGroupRow } from '../view/GridBodyGroupRow';
 import type { GridStickyLabelLayer } from '../view/GridStickyLabelLayer';
@@ -81,6 +83,7 @@ export type FillHandleFeatureArgs<T> = {
   scrollContainerRef: FillHandleControllerArgs<T>['scrollContainerRef'];
   gridRootRef: FillHandleControllerArgs<T>['gridRootRef'];
   footerHeight: number;
+  stickyTopHeight: number;
   handleRowsChange: FillHandleControllerArgs<T>['applyRowsChange'];
   amendRowsChange: FillHandleControllerArgs<T>['amendRowsChange'];
   applyServerSideCellEdits: FillHandleControllerArgs<T>['applyServerSideCellEdits'];
@@ -119,6 +122,8 @@ export type FilterOrderFeatureArgs<T> = {
   visibleColumns: GridColumn<T>[];
   effectiveColumns: GridColumn<T>[];
   globalFilterText: string;
+  // 追加(1.1.0 / AP-08): グローバルフィルターが照らし合わせる文字(globalFilterMatch。省略は 'value')。
+  globalFilterMatch?: GridGlobalFilterMatch | undefined;
   // 追加(dogfood DF-18): 検索の文字を遅らせずに評価するとき true(applyState で入れたフィルター)。
   globalFilterUrgent?: boolean | undefined;
   globalFilterEnabled: boolean;
@@ -262,7 +267,12 @@ export type CellContextMenuFeatureArgs = {
 };
 export type CellContextMenuFeatureResult<T> = {
   isContextMenuOpen: boolean;
-  openContextMenu: (params: GridContextMenuParams<T>, items: GridContextMenuItem[]) => void;
+  // 変更(1.1.0 / AP-33): options.focus = 開いた後のフォーカス('panel' = 右クリック / 'firstItem' = キーボード)。
+  openContextMenu: (
+    params: GridContextMenuParams<T>,
+    items: GridContextMenuItem[],
+    options?: { focus?: 'panel' | 'firstItem' },
+  ) => void;
   // ルートの末尾に置く popover(閉じているときは何も描かない)。
   renderContextMenuPopover: (slots: GridResolvedSlots, themeClassName: string | undefined) => ReactNode;
 };
@@ -272,6 +282,12 @@ export type BodyContextMenuInput<T> = {
   orderedColumns: GridColumn<T>[];
   selection: GridSelection;
   activeCell: CellCoord | null;
+};
+// 追加(1.1.0 / AP-33): キーボード(Shift+F10 / メニューキー)でアクティブセルのメニューを開くときの対象(セルの座標とメニューを出す位置)。
+export type CellContextMenuInput<T> = Omit<BodyContextMenuInput<T>, 'event'> & {
+  cell: CellCoord;
+  clientX: number;
+  clientY: number;
 };
 
 // 条件付き書式のうち本体の行(GridBodyLayer)が使う部品(データバーの幾何 / カラースケールの背景色)。
@@ -340,6 +356,10 @@ export type ReactGridFeatures = {
     resolveTotalRowCaption: typeof resolveTotalRowCaption;
     resolveTotalRowLabelColumnKey: typeof resolveTotalRowLabelColumnKey;
   } | undefined;
+  // 固定行(1.1.0 / pinnedTopRows / pinnedBottomRows): 表示だけの行を各ペインに描く部品。
+  pinnedRows?: FeatureLocaleDefaults & {
+    PinnedRows: typeof GridPinnedRows;
+  } | undefined;
   // 条件付き書式(F-3): min / max の集計(core)+ データバー / カラースケール(本体の行)+ 状態チップ(セル内容)。
   conditionalFormat?: NonNullable<GridCoreFeatures['conditionalFormat']> & ConditionalFormatCellResolvers & {
     resolveChipSpec: typeof resolveChipSpec;
@@ -370,6 +390,7 @@ export type ReactGridFeatures = {
   contextMenu?: {
     useCellContextMenu: <T>(args: CellContextMenuFeatureArgs) => CellContextMenuFeatureResult<T>;
     buildBodyContextMenuParams: <T>(input: BodyContextMenuInput<T>) => GridContextMenuParams<T> | null;
+    buildCellContextMenuParams: <T>(input: CellContextMenuInput<T>) => GridContextMenuParams<T> | null;
   } | undefined;
   // スクロール位置インジケーター(scrollHint): オプションの解決 + 描画部品。
   scrollHint?: FeatureLocaleDefaults & {

@@ -500,6 +500,119 @@ function GridHost({ which, extra }: { which: 1 | 2; extra?: Partial<SpreadsheetG
   );
 }
 
+// 追加(1.1.0 / AP-07): ダイアログの中のグリッド。?host=native は素の <dialog> を showModal() で開く(トップレイヤー)。
+//   ?host=radixlike は Radix(shadcn/ui)の modal の Dialog と同じ振る舞いの模擬: role="dialog"(aria-modal なし)を translate で
+//   真ん中に置き、body に pointer-events: none、外へのフォーカスは中へ戻し、外側の pointerdown を記録する(本物は閉じる)。
+//   ?host=mantinelike は Mantine の Modal と同じ形の模擬(1.1.0 の見直し): position: fixed で pointer-events: none の inner の中に、
+//   transform と overflow-y: auto と max-height を持つ section(role="dialog" + aria-modal)。section の中ではポップアップが枠で切れる。
+function DialogHost() {
+  const host = params.get('host') ?? 'native';
+  const dialogRef = useRef<HTMLDialogElement>(null);
+  const contentRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (host === 'native') {
+      dialogRef.current?.showModal();
+      return undefined;
+    }
+    const content = contentRef.current;
+    if (!content) return undefined;
+    const previous = document.body.style.pointerEvents;
+    document.body.style.pointerEvents = 'none';
+    const onFocusIn = (event: FocusEvent) => {
+      if (event.target instanceof Node && !content.contains(event.target)) {
+        window.__events.push({ type: 'dialog-focus-outside', t: performance.now() });
+        content.focus();
+      }
+    };
+    const onPointerDown = (event: PointerEvent) => {
+      if (event.target instanceof Node && !content.contains(event.target)) {
+        window.__events.push({ type: 'dialog-pointer-outside', t: performance.now() });
+      }
+    };
+    document.addEventListener('focusin', onFocusIn);
+    document.addEventListener('pointerdown', onPointerDown, true);
+    return () => {
+      document.body.style.pointerEvents = previous;
+      document.removeEventListener('focusin', onFocusIn);
+      document.removeEventListener('pointerdown', onPointerDown, true);
+    };
+  }, [host]);
+  const grid = <GridHost which={1} extra={{ height: 360 }} />;
+  if (host === 'mantinelike') {
+    return (
+      <div>
+        <div style={{ position: 'fixed', inset: 0, background: 'rgb(0 0 0 / 0.4)', zIndex: 199 }} />
+        <div
+          data-testid="host-layer"
+          style={{
+            position: 'fixed',
+            width: '100%',
+            top: 0,
+            bottom: 0,
+            zIndex: 200,
+            pointerEvents: 'none',
+            display: 'flex',
+            justifyContent: 'center',
+            alignItems: 'flex-start',
+            paddingTop: 40,
+            boxSizing: 'border-box',
+          }}
+        >
+          <section
+            role="dialog"
+            aria-modal="true"
+            tabIndex={-1}
+            data-testid="host-dialog"
+            style={{
+              pointerEvents: 'all',
+              transform: 'translateY(0)',
+              overflowY: 'auto',
+              maxHeight: 300,
+              width: 960,
+              maxWidth: '95vw',
+              padding: 16,
+              boxSizing: 'border-box',
+              background: '#fff',
+            }}
+          >
+            {grid}
+          </section>
+        </div>
+      </div>
+    );
+  }
+  if (host === 'native') {
+    return (
+      <dialog ref={dialogRef} data-testid="host-dialog" style={{ width: 960, maxWidth: '95vw', padding: 16 }}>
+        {grid}
+      </dialog>
+    );
+  }
+  return (
+    <div
+      ref={contentRef}
+      role="dialog"
+      tabIndex={-1}
+      data-testid="host-dialog"
+      style={{
+        position: 'fixed',
+        left: '50%',
+        top: '50%',
+        translate: '-50% -50%',
+        width: 960,
+        maxWidth: '95vw',
+        padding: 16,
+        background: '#fff',
+        boxShadow: '0 8px 32px rgb(0 0 0 / 0.3)',
+        pointerEvents: 'auto',
+        zIndex: 50,
+      }}
+    >
+      {grid}
+    </div>
+  );
+}
+
 function App() {
   const [mounted, setMounted] = useState(true);
   const [activityVisible, setActivityVisible] = useState(true);
@@ -519,6 +632,8 @@ function App() {
         </div>
       </div>
     );
+  } else if (scenario === 'dialog') {
+    body = <DialogHost />;
   } else if (scenario === 'height') {
     body = (
       <div className="parent-fixed">

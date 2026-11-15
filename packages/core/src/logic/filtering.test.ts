@@ -31,6 +31,7 @@ import {
   rowMatchesGlobalText,
   toDateKey,
   toDateSetKey,
+  toGlobalFilterColumns,
   type RowOrder,
 } from './filtering';
 // 追加(preset-opt): カスタムプリセット構成の正規化です(resolve の逆引きテストで使用)。
@@ -1213,5 +1214,47 @@ describe('resolveRelativeDateFilterKey(監査 L-15)', () => {
     } finally {
       vi.useRealTimers();
     }
+  });
+});
+
+// 追加(1.1.0 / 2026-11-09 実アプリの総点検 AP-08 / I-02): グローバルフィルターで画面の文字も照らし合わせる(globalFilterMatch)。
+describe('toGlobalFilterColumns', () => {
+  type CodeRow = { region: string; amount: number };
+  const NAMES: Record<string, string> = { kanto: '関東', chubu: '中部' };
+  const codeRows: CodeRow[] = [
+    { region: 'kanto', amount: 796000 },
+    { region: 'chubu', amount: 1200 },
+  ];
+  const columns: GridColumn<CodeRow>[] = [
+    { key: 'region', title: '地域', width: 100, valueFormatter: ({ value }) => NAMES[String(value)] ?? String(value) },
+    { key: 'amount', title: '金額', width: 100, valueFormatter: ({ value }) => Number(value).toLocaleString('en-US') },
+  ];
+  const plain: GridColumn<CodeRow>[] = [{ key: 'region', title: '地域', width: 100 }];
+  const matches = (match: 'value' | 'display' | 'both' | undefined, text: string) =>
+    Array.from(filterOrderByGlobalText(codeRows, createSourceOrder(2), toGlobalFilterColumns(columns, match), text));
+
+  it("既定と 'value' と valueFormatter の無い表は同じ列(参照も同じ)", () => {
+    expect(toGlobalFilterColumns(columns, undefined)).toBe(columns);
+    expect(toGlobalFilterColumns(columns, 'value')).toBe(columns);
+    expect(toGlobalFilterColumns(plain, 'both')).toBe(plain);
+  });
+
+  it("'value' は値の文字だけ、'display' は画面の文字だけ、'both' はどちらか", () => {
+    expect(matches('value', 'kanto')).toEqual([0]);
+    expect(matches('value', '関東')).toEqual([]);
+    expect(matches('value', '796,000')).toEqual([]);
+    expect(matches('display', '関東')).toEqual([0]);
+    expect(matches('display', 'kanto')).toEqual([]);
+    expect(matches('display', '796,000')).toEqual([0]);
+    expect(matches('both', '関東')).toEqual([0]);
+    expect(matches('both', 'CHUBU')).toEqual([1]);
+    expect(matches('both', '796000')).toEqual([0]);
+    expect(matches('both', '1,200')).toEqual([1]);
+  });
+
+  it("'both' は値と画面の文字の境目をまたいでは当たらない", () => {
+    // 値 'kanto' の末尾と表示名 '関東' の先頭をつないだ文字。
+    expect(matches('both', 'o関')).toEqual([]);
+    expect(rowMatchesGlobalText(codeRows[0], toGlobalFilterColumns(columns, 'both'), 'to関')).toBe(false);
   });
 });

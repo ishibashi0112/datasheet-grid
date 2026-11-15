@@ -24,9 +24,11 @@ import {
   AUTO_SCROLL_EDGE_THRESHOLD,
   AUTO_SCROLL_STEP,
   clampClientYAboveFooter,
+  clampClientYBelowHeader,
   computeNextScrollPosition,
   hasPointerLeftActivationRadius,
   resolveAutoScrollAxisDirection,
+  resolveTopAutoScrollStart,
   resolveScrollContentBox,
 } from '../logic/autoScrollGeometry';
 
@@ -84,6 +86,9 @@ export type PointerInteractionsArgs<T> = {
   // 追加(合計行 3A): 下端に固定する行(合計行)の高さ。端の自動スクロールの下の帯をその上端へ寄せ、ヒットテストは
   //   合計行の上を本体の見えている最後の行として扱います。既定 0(従来どおり)。
   footerHeight?: number;
+  // 追加(1.1.0 / 固定行): 上端に固定する高さ(列見出し + 上の固定行)。上の固定行があるときだけ渡します(既定 0 = 従来どおり)。
+  //   ヒットテストは固定行の上を本体の見えている最初の行として扱い、上の自動スクロールの帯を本体の行が見え始める位置まで広げます。
+  stickyTopHeight?: number;
   rowMetrics: RowMetrics;
   verticalScaleFactor: number;
   setHoveredRowIndex: (value: number | null) => void;
@@ -134,19 +139,25 @@ export const createPointerInteractionsController = <T,>(): PointerInteractionsCo
   let resizeScale: { drag: object; x: number } | null = null;
 
   // 追加(合計行 3A): 合計行の上のポインタは、本体の見えている最後の位置として扱います(合計行が無ければそのまま)。
+  //   変更(1.1.0 / 固定行): 上の固定行の上のポインタは、本体の見えている最初の位置として扱います(固定行が無ければそのまま)。
   const clampFooterClientY = (clientY: number): number => {
     const footerHeight = args?.footerHeight ?? 0;
+    const stickyTopHeight = args?.stickyTopHeight ?? 0;
     const scrollElement = args?.scrollContainerRef.current ?? null;
-    if (footerHeight <= 0 || !scrollElement) {
+    if ((footerHeight <= 0 && stickyTopHeight <= 0) || !scrollElement) {
       return clientY;
     }
     const rect = scrollElement.getBoundingClientRect();
     // 変更(1.0.1 / AP-29): 祖先の transform: scale() の中では、レイアウトの px を画面の px へ直して比べます。
     const scale = resolveElementScale(scrollElement, rect);
-    return clampClientYAboveFooter(
-      clientY,
-      rect.top + (scrollElement.clientTop + scrollElement.clientHeight) * scale.y,
-      footerHeight * scale.y,
+    return clampClientYBelowHeader(
+      clampClientYAboveFooter(
+        clientY,
+        rect.top + (scrollElement.clientTop + scrollElement.clientHeight) * scale.y,
+        footerHeight * scale.y,
+      ),
+      rect.top + scrollElement.clientTop * scale.y,
+      stickyTopHeight * scale.y,
     );
   };
 
@@ -384,6 +395,7 @@ export const createPointerInteractionsController = <T,>(): PointerInteractionsCo
       autoScrollArmed = true;
     }
     const rect = scrollElement.getBoundingClientRect();
+    const scale = resolveElementScale(scrollElement, rect);
     const contentBox = resolveScrollContentBox({
       rectLeft: rect.left,
       rectTop: rect.top,
@@ -391,17 +403,18 @@ export const createPointerInteractionsController = <T,>(): PointerInteractionsCo
       clientTop: scrollElement.clientTop,
       clientWidth: scrollElement.clientWidth,
       clientHeight: scrollElement.clientHeight,
-      scale: resolveElementScale(scrollElement, rect),
+      scale,
     });
     const current = dragState();
     const isColumnSelection = current?.type === 'selection' && current.selectionKind === 'col';
     const isRowSelection = current?.type === 'selection' && current.selectionKind === 'row';
     // 変更(合計行 3A): 下の帯は合計行の上端から(既定 footerHeight 0 = 従来どおり)。
+    //   変更(1.1.0 / 固定行): 上の固定行があるときは、上の帯を本体の行が見え始める位置まで広げます。
     const verticalDirection = isColumnSelection
       ? 0
       : resolveAutoScrollAxisDirection(
           pointer.y,
-          contentBox.top,
+          resolveTopAutoScrollStart(contentBox.top, (args.stickyTopHeight ?? 0) * scale.y, AUTO_SCROLL_EDGE_THRESHOLD),
           contentBox.bottom - (args.footerHeight ?? 0),
           AUTO_SCROLL_EDGE_THRESHOLD,
         );
@@ -464,6 +477,7 @@ export const createPointerInteractionsController = <T,>(): PointerInteractionsCo
         autoScrollArmed = true;
       }
       const rect = scrollElement.getBoundingClientRect();
+      const scale = resolveElementScale(scrollElement, rect);
       const contentBox = resolveScrollContentBox({
         rectLeft: rect.left,
         rectTop: rect.top,
@@ -471,11 +485,11 @@ export const createPointerInteractionsController = <T,>(): PointerInteractionsCo
         clientTop: scrollElement.clientTop,
         clientWidth: scrollElement.clientWidth,
         clientHeight: scrollElement.clientHeight,
-        scale: resolveElementScale(scrollElement, rect),
+        scale,
       });
       const verticalDirection = resolveAutoScrollAxisDirection(
         pointer.y,
-        contentBox.top,
+        resolveTopAutoScrollStart(contentBox.top, (args.stickyTopHeight ?? 0) * scale.y, AUTO_SCROLL_EDGE_THRESHOLD),
         contentBox.bottom - (args.footerHeight ?? 0),
         AUTO_SCROLL_EDGE_THRESHOLD,
       );

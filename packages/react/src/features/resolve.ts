@@ -69,6 +69,7 @@ const INERT_CONTEXT_MENU = {
 const inertContextMenuFeature: GridShellFeatures['contextMenu'] = {
   useCellContextMenu: () => INERT_CONTEXT_MENU,
   buildBodyContextMenuParams: () => null,
+  buildCellContextMenuParams: () => null,
 };
 
 // 列メニューが無い構成では閉じたままで(available: false)、シェルは ⋮ ボタンもヘッダーの右クリックも出しません

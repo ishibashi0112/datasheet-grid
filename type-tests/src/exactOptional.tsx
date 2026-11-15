@@ -29,6 +29,7 @@ export const grid = (
     density={compact ? 'compact' : undefined}
     detailRow={compact ? undefined : { render: () => null }}
     localeText={undefined}
+    pinnedTopRows={compact ? undefined : []}
   />
 );
 

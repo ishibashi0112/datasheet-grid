@@ -1,0 +1,54 @@
+---
+title: 値と表示名が別の列
+description: 値はコード、画面は表示名の列で、グループの見出し・全体フィルター・コピーと貼り付けを表示名にそろえる(groupLabel / globalFilterMatch / clipboard)
+---
+
+値はコード(`'kanto'` / `'transport'`)で、画面は表示名(「関東」「交通費」)の列は、`valueFormatter` で表示名を出します。そのうえで、次の 3 つで残りの場所も表示名にそろえられます(1.1.0 から)。どれも既定は 1.0 と同じ(値の文字)です。
+
+| 場所 | 既定 | 表示名にする |
+| --- | --- | --- |
+| グループ行の見出し | 値の文字(`kanto (8件)`) | 列の `groupLabel: 'formatted'` |
+| グローバルフィルター(上部バーの検索欄・`applyState` の `globalText`・`/ai` の検索) | 値の文字で探す | `globalFilterMatch="both"`(値でも表示名でも)/ `"display"`(表示名だけ) |
+| コピー・CSV・貼り付け(select 列) | 値の文字。貼り付けた表示名はそのまま入る | select エディタの `clipboard: 'label'` |
+
+## デモ(経費の表)
+
+<ValueLabelsDemo />
+
+- 地域と区分は値がコードです。`groupLabel` を `value` にすると、グループ行の見出しがコードに戻ります。
+- 上部バーの検索欄に「中部」と入れると、`globalFilterMatch` が `value` のときは 0 件、`both` / `display` なら中部の行が残ります。「chubu」は `both` / `value` で当たります。金額の「1,200」のような桁区切りも、画面の文字なので `both` / `display` で当たります。
+- 区分のセルをコピーすると、`clipboard` が `label` なら表示名(「交通費」)が出ます。表示名を貼り付けると値(`'transport'`)が入ります(`value` では文字のまま入り、セルにもその文字が出ます)。
+
+## 列定義
+
+```tsx
+import { SpreadsheetGrid, type GridColumn, type GridSelectEditorOption } from '@ishibashi0112/spreadsheet-grid';
+
+const REGIONS: GridSelectEditorOption[] = [
+  { value: 'kanto', label: '関東' },
+  { value: 'chubu', label: '中部' },
+];
+const regionLabel = new Map(REGIONS.map((o) => [o.value, o.label]));
+
+const columns: GridColumn<Expense>[] = [
+  {
+    key: 'region',
+    title: '地域',
+    width: 110,
+    editable: true,
+    editor: { type: 'select', options: REGIONS, clipboard: 'label' },
+    valueFormatter: ({ value }) => regionLabel.get(String(value)) ?? String(value ?? ''),
+    rowGroup: true,
+    groupLabel: 'formatted',
+  },
+  // ...
+];
+
+<SpreadsheetGrid rows={rows} columns={columns} globalFilterMatch="both" />;
+```
+
+## 細かい決まり
+
+- **`groupLabel`** — `'formatted'` は列の `valueFormatter`(無ければ値の文字)、関数はその返り値です(`({ value, row, column }) => string`。`row` はそのグループの最初の行)。空白のグループは「(空白)」のままです。`getGroupRows()` の `label` も同じ文字になります。エクスポートの小計の行(`includeGroupRows`)の見出しはコピーと同じ規則(`formatClipboardValue` / `clipboard: 'label'`)です。
+- **`globalFilterMatch`** — 画面の文字は `valueFormatter` の結果です。状態チップ(`conditionalFormat.chips`)の `label` と `renderCell` の中身は見ません。clientSide だけの設定で、serverSide(`dataSource`)ではグローバルフィルターの文字をサーバーへ渡すだけです(表示名でも探すかはサーバーで決める)。`manualFiltering` でも絞り込みません。セル内検索(`find`)はもともと画面の文字で探します。
+- **`clipboard: 'label'`** — コピー(`Ctrl` / `⌘+C`)・CSV / TSV・`getExportData` の `text` は候補の label です(`value` は値のまま。label が空の候補は値の文字)。貼り付けた文字は、候補の label(前後の空白は外して比べる)ならその value、value ならそのまま、どちらでもなければ生の文字のまま入ります(label を先に見るので、ある候補の label が別の候補の value と同じ文字でも、表の中でコピーして貼り付けた値は変わりません。エディタで選んだ候補は読み替えずにその value を書きます)(入れたくないときは列の `validate` で `'reject'`)。列に `formatClipboardValue` / `parseClipboardValue` があればそちらが勝ちます。select 以外の列(コードを `valueFormatter` で出すだけの列)は、`formatClipboardValue` / `parseClipboardValue` を書いて同じことをします。

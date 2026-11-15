@@ -500,7 +500,16 @@ export type CellRenderContext<T, F extends GridFrameworkTypes = GridFrameworkTyp
   //   自前のトグル UI を置くための口です(専用トグル列を使わない配置 = T2)。
   //   expandable が false の行では toggle / setExpanded は no-op です。
   detail?: CellDetailContext | undefined;
+  // 追加(1.1.0 / 固定行): 固定行(pinnedTopRows / pinnedBottomRows)のセルのときだけ 'top' / 'bottom'。
+  //   固定行では rowIndex / sourceRowIndex は帯の中の位置、isActive / isSelected / isEditing は false、readOnly は true、
+  //   setValue は何もしません(表示だけ)。
+  /** 固定行(`pinnedTopRows` / `pinnedBottomRows`)のセルのときだけ `'top'` / `'bottom'`(本体の行では無い)。 */
+  pinned?: GridPinnedRowPosition | undefined;
 };
+
+// 追加(1.1.0 / 固定行): 固定行の帯(上 / 下)。
+/** 固定行の帯。`'top'` は `pinnedTopRows`、`'bottom'` は `pinnedBottomRows`。 */
+export type GridPinnedRowPosition = 'top' | 'bottom';
 
 // 追加(detail ②): renderCell 側から展開行を操作するためのコンテキストです。
 export type CellDetailContext = {
@@ -847,6 +856,9 @@ export type CellStyleContext<T, F extends GridFrameworkTypes = GridFrameworkType
   isSelected: boolean;
   isEditing: boolean;
   readOnly: boolean;
+  // 追加(1.1.0 / 固定行): 固定行のセルのときだけ 'top' / 'bottom'(rowIndex / sourceRowIndex は帯の中の位置)。
+  /** 固定行(`pinnedTopRows` / `pinnedBottomRows`)のセルのときだけ `'top'` / `'bottom'`。 */
+  pinned?: GridPinnedRowPosition | undefined;
 };
 
 // 追加(audit RD-4): canEditCell の第 5 引数です。第 1 引数 rowIndex はビュー行 index(フィルター / ソート後の
@@ -874,6 +886,9 @@ export type RowStyleContext<T> = {
   sourceRowIndex: number;
   rowKey: GridRowKey;
   isSelected: boolean;
+  // 追加(1.1.0 / 固定行): 固定行のときだけ 'top' / 'bottom'(rowIndex / sourceRowIndex は帯の中の位置)。
+  /** 固定行(`pinnedTopRows` / `pinnedBottomRows`)のときだけ `'top'` / `'bottom'`。 */
+  pinned?: GridPinnedRowPosition | undefined;
 };
 
 // 追加(11-A): GridBodyRow がセルごとに算出し、renderCellContent へ引き渡す
@@ -966,6 +981,18 @@ export type GridColumnEditor<T, F extends GridFrameworkTypes = GridFrameworkType
       options:
         | GridSelectEditorOption[]
         | ((row: T) => GridSelectEditorOption[]);
+      // 追加(1.1.0 / 2026-11-09 実アプリの総点検 AP-08): クリップボードとのやり取りの文字です。'value'(既定)は値のまま、
+      //   'label' はコピー / CSV / getExportData の text を候補の label にし、貼り付けた文字が label なら value へ読み替えます
+      //   (value はそのまま通す。どちらでもない文字は生のまま)。列の formatClipboardValue / parseClipboardValue があれば
+      //   そちらが勝ちます(logic/selectLabels.ts)。
+      /**
+       * クリップボードとのやり取りの文字(1.1.0 から)。`'value'`(既定)は値のまま。`'label'` はコピー / CSV / TSV /
+       * `getExportData` の `text` を候補の label にし、貼り付けた文字が label ならその value へ読み替える(value はそのまま、
+       * どちらでもない文字は生のまま)。列の `formatClipboardValue` / `parseClipboardValue` があればそちらが勝つ。
+       *
+       * @defaultValue `'value'`
+       */
+      clipboard?: 'value' | 'label' | undefined;
     }
   | {
       // 日付エディタ(ネイティブ <input type="date">)。ドラフトは 'YYYY-MM-DD' | ''。
@@ -1044,6 +1071,48 @@ export type GridInvalidCell = {
   message: string;
 };
 
+// 追加(1.1.0 / 2026-11-09 実アプリの総点検 AP-14): 命令的 API の applyRows のオプション。
+/** `applyRows` のオプション。 */
+export type GridApplyRowsOptions = {
+  /**
+   * `false` で「元に戻す」の履歴に積まず、今の履歴も消さない(株価のような外からのライブの更新)。元に戻す / やり直すは、
+   * その後の外からの更新を残したまま、グリッドでの編集だけを取り消す / やり直す(行は `rowKeyGetter` で対応づける)。既定 `true`。
+   */
+  undoable?: boolean | undefined;
+};
+
+// 追加(1.1.0 / 2026-11-09 実アプリの総点検 AP-09): 貼り付けで書かなかったセル(onPasteSkipped)です。
+/**
+ * 貼り付けで書かなかったセル(`onPasteSkipped`)。`reason` は `'readOnly'`(編集できないセル = 列の `editable` /
+ * `canEditCell`)か `'invalid'`(`validationMode: 'reject'` の列で検査に通らなかった値)。
+ */
+export type GridPasteSkippedCell<T> = {
+  /** 貼り付け先の行(表の末尾に足した行を含む)。 */
+  row: T;
+  /** 行のキー(`rowKeyGetter`。無ければ `rows` の index)。 */
+  rowKey: GridRowKey;
+  /** ビュー行 index(フィルター / ソート後の位置。末尾に足した行は足した後の位置)。 */
+  rowIndex: number;
+  /** 列の key。 */
+  columnKey: string;
+  /** 表示列の index(合成列を含む画面の並び)。 */
+  colIndex: number;
+  /** 貼り付けた文字(そのセルの 1 つぶん)。 */
+  text: string;
+  /** 書かなかったわけ。 */
+  reason: 'readOnly' | 'invalid';
+  /** `'invalid'` のとき、列のパーサが読んだ値(`'readOnly'` では読まないので `undefined`)。 */
+  value?: unknown;
+  /** `'invalid'` のときの検査のメッセージ。 */
+  message?: string | undefined;
+};
+
+/** `onPasteSkipped` の引数。 */
+export type GridPasteSkippedParams<T> = {
+  /** 書かなかったセル(貼り付けた文字の順。行ごとに左から)。 */
+  cells: GridPasteSkippedCell<T>[];
+};
+
 // 追加(validation): エディタ commit の結果です。'rejected' は reject 列の検証 NG
 //   (確定拒否・エディタ継続)、'noop' は二重発火ガード等で何もしなかったことを表します。
 export type EditorCommitResult =
@@ -1081,6 +1150,7 @@ export type GridGroupRow = {
   // グループ値です(空白グループは null)。
   value: unknown;
   // 表示ラベルです(String(value)。空白グループは '(空白)')。
+  //   変更(1.1.0 / AP-08): 列の groupLabel が 'formatted' / 関数なら、その文字です。
   label: string;
   // グループ階層です(最上位 0)。
   level: number;
@@ -1260,6 +1330,18 @@ export type GridColumn<T, F extends GridFrameworkTypes = GridFrameworkTypes> = {
    * もないときは無視。
    */
   aggFunc?: GridAggFuncName | GridAggFunc<T, F> | undefined;
+  // 追加(1.1.0 / 2026-11-09 実アプリの総点検 AP-08): グループ行の見出しの文字です(既定 'value' = String(値))。
+  //   'formatted' は列の valueFormatter、関数はその返り値(row はそのグループの最初の行)。空白のグループは「(空白)」のまま。
+  /**
+   * 行グルーピングのグループ行の見出しの文字(1.1.0 から)。`'value'` は値の文字(1.0 までと同じ)、
+   * `'formatted'` は列の `valueFormatter`(セルと同じ表示名。無ければ値の文字)、
+   * 関数はその返り値(`row` はそのグループの最初の行)。空白のグループは「(空白)」のまま。
+   * エクスポートの小計の行の見出しはコピーと同じ規則(`formatClipboardValue`)。
+   * 詳細は「値と表示名が別の列」節。
+   *
+   * @defaultValue `'value'`
+   */
+  groupLabel?: 'value' | 'formatted' | CellValueFormatter<T, F> | undefined;
   /**
    * 値アクセサ。`setValue` の無い列へ書き込むと値は `row[key]` へ入り、表示(`getValue`)
    * は変わらない。計算列は `editable: false` にするか `setValue` を渡す(開発時は、
@@ -1347,7 +1429,9 @@ export type GridColumn<T, F extends GridFrameworkTypes = GridFrameworkTypes> = {
   //   組み込みの numberFormatter 等を渡せます(バレルから公開)。
   /**
    * セル表示値の整形(UI 表示のみ)。`renderCell` 未指定の既定セルが返り値を表示。組み込み
-   * `numberFormatter` 等を渡せる。元の値/編集/コピー/ソート/フィルターには影響しない。
+   * `numberFormatter` 等を渡せる。
+   * 元の値/編集/コピー/ソート/フィルターには影響しない(全体フィルターは `globalFilterMatch`、
+   * グループ行の見出しは `groupLabel: 'formatted'` で使える。1.1.0 から)。
    * グループ行の集計値と合計行の値の整形にも使い、そのときは元の行が無いので `row` は
    * `undefined`(型は `T | undefined`。`row` を読むときは `row?.x` と書く)。
    */
@@ -1450,12 +1534,17 @@ export type GridColumn<T, F extends GridFrameworkTypes = GridFrameworkTypes> = {
   /**
    * 「文字列 → セル値」のパーサ(貼り付け / クリア / エディタ commit
    * で共通)。**明示指定が常に優先**。未指定で `editor` が number / date / checkbox
-   * のときは種別の既定パーサが自動供給されます(「セルエディタ」節の表参照)。
+   * のときは種別の既定パーサが自動供給されます(「セルエディタ」節の表参照)。number
+   * の既定と同じ読み方に通貨記号などを足すときは組み込みの `numberParser({ strip })`(1.1.0 から。
+   * 「貼り付けで読めない値」節)。
    *
    * @defaultValue editor 既定パーサ
    */
   parseClipboardValue?: ((raw: string, row: T) => unknown) | undefined;
-  /** コピー時のフォーマッタ。 */
+  /**
+   * コピー時のフォーマッタ(CSV / TSV と `getExportData` の `text` も同じ)。未指定で select
+   * エディタの `clipboard: 'label'` の列は候補の label(1.1.0 から)。
+   */
   formatClipboardValue?: ((value: unknown, row: T) => string) | undefined;
 };
 
@@ -1717,6 +1806,8 @@ export type GridLocaleText = {
   toolPanelSort: string;
   /** ツールパネルのタブ。既定 `列`、英語 `Columns`。 */
   toolPanelColumns: string;
+  /** ツールパネル(ダイアログ)の読み上げの名前(1.1.0 から)。既定 `ツールパネル`、英語 `Tool panel`。 */
+  toolPanelLabel: string;
   /** 列のタブの見出し。既定 `左固定`、英語 `Pinned left`。 */
   columnsPinnedLeft: string;
   /** 列のタブの見出し。既定 `固定なし`、英語 `Not pinned`。 */
@@ -2045,6 +2136,10 @@ export type GridLocaleText = {
   saveFailed: GridLocaleTextTemplate<{ count: number }>;
   /** 同上の × の読み上げの名前。既定 `保存エラー通知を閉じる`、英語 `Dismiss the save error`。 */
   dismissSaveError: string;
+  /** 上の固定行の行見出しの読み上げの名前(`pinnedTopRows`)。既定 `上に固定 {row}`、英語 `Pinned to top {row}`。 */
+  pinnedTopRow: GridLocaleTextTemplate<{ row: number }>;
+  /** 下の固定行の行見出しの読み上げの名前(`pinnedBottomRows`)。既定 `下に固定 {row}`、英語 `Pinned to bottom {row}`。 */
+  pinnedBottomRow: GridLocaleTextTemplate<{ row: number }>;
   /** 合計行の左端の文字(`totalRow.label` を渡せばそちら)。既定 `合計`、英語 `Total`。 */
   totalRowLabel: string;
   /** 合計行 / グループ行の集計の種類。既定 `平均`、英語 `Avg`。 */
@@ -2427,7 +2522,7 @@ export type GridClassNames<F extends GridFrameworkTypes = GridFrameworkTypes> = 
   //   ツールパネル。document.body 直下に描画されるため .ssg-root の子孫ではありません)。
   /**
    * 付与先: ポータル系パネルの root(列メニュー / フィルター / コンテキストメニュー / select
-   * エディタ候補 / ツールパネル。`document.body` 直下)
+   * エディタ候補 / ツールパネル。表の外 = `popupContainer`)
    */
   popover?: GridSlotProps<F> | undefined;
   // メニュー項目(.ssg-menu-item。列メニュー / コンテキストメニュー)。
@@ -2436,7 +2531,7 @@ export type GridClassNames<F extends GridFrameworkTypes = GridFrameworkTypes> = 
   // カスタムツールチップ(.ssg-tooltip。body 直下のシングルトン。複数グリッド同居時は最後に
   //   マウント / 更新したグリッドの値が使われます)。
   /**
-   * 付与先: カスタムツールチップ `.ssg-tooltip`(body 直下のシングルトン。
+   * 付与先: カスタムツールチップ `.ssg-tooltip`(表の外のシングルトン。
    * 複数グリッド同居時は最後に更新したグリッドの値)
    */
   tooltip?: GridSlotProps<F> | undefined;
@@ -2531,6 +2626,9 @@ export type CsvExportOptions = {
   includeLabelRows?: boolean | undefined;
   // 追加(合計行 3A): 合計行(totalRow)を末尾に含めるか(既定 false)。scope 'view' のときだけ出力します。
   includeTotalRow?: boolean | undefined;
+  // 追加(1.1.0 / 固定行): 固定行(pinnedTopRows / pinnedBottomRows)を含めるか(既定 false)。上の固定行は見出しの次、
+  //   下の固定行は本体の行の後(合計行の前)。scope 'selection' では出しません。
+  includePinnedRows?: boolean | undefined;
   // 追加(段階 2 DU-10): 行グルーピング中に、各グループの先頭へ小計の行を入れるか(既定 false)。scope 'view' のときだけ。
   //   グループ元の列は祖先の値と「<ラベル> 小計」、集計のある列(aggFunc)はそのグループの集計値、ほかの列は空です。
   includeGroupRows?: boolean | undefined;
@@ -2548,6 +2646,9 @@ export type GridExportOptions = {
   // 追加(合計行 3A): 合計行(totalRow)を末尾に含めるか(既定 false)。scope 'view' のときだけ出力し、
   //   GridExportData.rowKinds の 'total' で判別できます。
   includeTotalRow?: boolean | undefined;
+  // 追加(1.1.0 / 固定行): 固定行(pinnedTopRows / pinnedBottomRows)を含めるか(既定 false)。上の固定行は先頭(見出しの次)、
+  //   下の固定行は本体の行の後(合計行の前)。scope 'selection' では出しません。GridExportData.rowKinds の 'pinned' で判別できます。
+  includePinnedRows?: boolean | undefined;
   // 追加(段階 2 DU-10): 行グルーピング中に、各グループの先頭へ小計の行を入れるか(既定 false。CsvExportOptions と同じ)。
   //   GridExportData.rowKinds の 'group' で判別できます。
   includeGroupRows?: boolean | undefined;
@@ -2575,7 +2676,8 @@ export type GridExportData = {
   //   'label' の行は labelRow.exportText 由来のセル列で、Excel 側で結合セル / 書式を当てる判定に使えます。
   //   追加(合計行 3A): 'total' は末尾の合計行です。
   //   追加(段階 2 DU-10): 'group' はグループの小計の行です(includeGroupRows のとき)。
-  rowKinds?: Array<'data' | 'label' | 'total' | 'group'> | undefined;
+  //   追加(1.1.0 / 固定行): 'pinned' は固定行です(includePinnedRows のとき)。
+  rowKinds?: Array<'data' | 'label' | 'total' | 'group' | 'pinned'> | undefined;
 };
 
 // 追加(state v2): 列メタのシリアライズ単位です(getState / applyState の GridState.columns 要素)。
@@ -2911,12 +3013,17 @@ export type SpreadsheetGridHandle<T> = {
   /**
    * 外からの変更(行の削除ボタン / 一括更新など)を「元に戻す」の履歴に積んでから `onRowsChange`
    * へ渡す(`Ctrl/Cmd+Z` / `undo()` で戻せる)。`rows` を外から直接差し替えると履歴は消えるので、
-   * 元に戻せるようにしたい変更はこれで渡す。履歴が無効(`enableUndoRedo={false}` / `readOnly`)
-   * なら積まずに `onRowsChange` へ渡す。`onRowsChange` が無いとき・serverSide
-   * では何もしない(開発時に警告)。渡すのは次の行の配列で、関数(`setRows((prev) => …)` の形)
-   * は受けない(今の `rows` から次の配列を作って渡す)。
+   * 元に戻せるようにしたい変更はこれで渡す。`nextRows` は次の行の配列か、関数(`(prev) => next`。
+   * `prev` は最後に渡した行で、続けて呼んでも重なる。1.1.0 から)。`undoable: false`(1.1.0 から)
+   * は履歴に積まず、今の履歴も消さない(株価のような外からのライブの更新)。そのときの元に戻す /
+   * やり直すは、外からの更新を残したままグリッドでの編集だけを取り消す / やり直す(行は
+   * `rowKeyGetter` で対応づける。無いときは位置なので、行を足す / 消す更新では `rowKeyGetter`
+   * を書く。`rowKeyGetter` が無い表で行の数が変わったときと、行キーが重なっているときは、1.0
+   * と同じく編集の前の行をそのまま戻す = 外からの更新も戻る)。履歴が無効(`enableUndoRedo={false}` /
+   * `readOnly`)なら積まずに `onRowsChange` へ渡す。`onRowsChange` が無いとき・serverSide
+   * では何もしない(開発時に警告)。
    */
-  applyRows: (nextRows: T[]) => void;
+  applyRows: (nextRows: T[] | ((prev: T[]) => T[]), options?: GridApplyRowsOptions | undefined) => void;
 
   // ── 行グルーピング ──
   // 追加(grouping ④): 指定グループの開閉を設定します(collapsed: true = 折りたたみ)。
@@ -3141,6 +3248,27 @@ export type FindChangeParams = {
 // 追加(motion-0): モーション(アニメーション / トランジション)の有効化です。'auto' は OS / ブラウザの
 //   prefers-reduced-motion: reduce を尊重して 'on' / 'off' に解決します(logic/motion.ts)。
 export type GridMotion = 'auto' | 'on' | 'off';
+
+// 追加(1.1.0 / 2026-11-09 実アプリの総点検 AP-07): ポップアップ(列メニュー / 列フィルター / 右クリックメニュー / select の候補 /
+//   ツールパネル / フィルハンドルのメニュー / ツールチップ / ドラッグのゴースト)を描く場所です(core utils/popupContainer)。
+/**
+ * ポップアップを描く場所(`popupContainer`)。`'auto'` はグリッドを囲むダイアログ(`<dialog>` / `popover` /
+ * `aria-modal="true"` / `role="dialog"` / `role="alertdialog"`)の中、無ければ `document.body`。`'body'` はいつも
+ * `document.body`。要素ならその中。関数はグリッドの要素を受け取って描く場所を返す(`null` / `undefined` なら
+ * `document.body`。ポップアップを描くたびに呼ぶ)。
+ */
+export type GridPopupContainer =
+  | 'auto'
+  | 'body'
+  | HTMLElement
+  | ((gridElement: HTMLElement) => HTMLElement | null | undefined);
+
+// 追加(1.1.0 / 2026-11-09 実アプリの総点検 AP-08): グローバルフィルターが照らし合わせる文字です。
+/**
+ * グローバルフィルターが照らし合わせる文字(`globalFilterMatch`)。`'value'` はセルの値の文字(1.0 までと同じ)、
+ * `'display'` は画面の文字(列の `valueFormatter` の結果。無い列は値の文字)、`'both'` はどちらか。
+ */
+export type GridGlobalFilterMatch = 'value' | 'display' | 'both';
 
 // 追加: データ投入時に全列幅を内容へ自動フィットさせる発火モードです。
 //   'onMount'      = 初回にデータが載った一度きり。
@@ -3432,6 +3560,18 @@ export type SpreadsheetGridProps<T, F extends GridFrameworkTypes = GridFramework
    * と一緒に使う)。
    */
   createOverflowColumn?: ((columnIndex: number) => GridColumn<T, F>) | undefined;
+  // 追加(1.1.0 / AP-09): 貼り付けで書かなかったセルの通知です(1 回の貼り付けで 1 回。書かなかったセルが無ければ呼ばない)。
+  /**
+   * 貼り付けで書かなかったセルの通知(1.1.0 から)。1 回の貼り付けで 1 回、
+   * 書かなかったセルがあるときだけ呼ぶ(書いたセルは書く)。`params.cells` の各セルは `row` /
+   * `rowKey` / `rowIndex`(ビュー行)/ `columnKey` / `colIndex` / `text`(貼り付けた文字)/
+   * `reason`(`'readOnly'` = 編集できないセル(列の `editable` / `canEditCell`)、`'invalid'` =
+   * `validationMode: 'reject'` の列で検査に通らない値)/ `value`(`'invalid'` のときパーサが読んだ値)
+   * / `message`(`'invalid'` のときの検査のメッセージ)。`validationMode: 'mark'`(既定)
+   * の列は書いて印を付けるので入らない。表の外(`createRow` / `createOverflowColumn`
+   * が無くて足せない行 / 列)・ラベル行・グループ行は数えない。詳細は「貼り付けで読めない値」節。
+   */
+  onPasteSkipped?: ((params: GridPasteSkippedParams<T>) => void) | undefined;
   // 変更(THEME-2): 未指定時の既定は density プリセットから解決します(standard: 36 /
   //   compact: 28 / comfortable: 44)。明示指定はプリセットより常に優先されます。
   /**
@@ -3499,9 +3639,10 @@ export type SpreadsheetGridProps<T, F extends GridFrameworkTypes = GridFramework
    * ・ドラッグゴースト・ツールチップへ適用。`'auto'` は `prefers-color-scheme` へ追従。`'class'`
    * は祖先の `class="dark"` か `data-theme="dark"` を CSS で見てダークにする(Tailwind / next-themes
    * / shadcn/ui / HeroUI のようなクラスによるダーク向け。サーバーの描画から正しい色になる。
-   * ポップアップ類は `document.body` の直下に出るので、`dark` のクラス / 属性は `<html>` か
-   * `<body>` に付ける)。Mantine のようにほかの方法でダークを決めるものは、利用側の解決値を
-   * `'light' | 'dark'` で渡す。個別の色調整はトークン(`--ssg-*`)の上書きで可能。
+   * ポップアップ類は表の外(既定は `document.body` の直下。`popupContainer`)に出るので、`dark`
+   * のクラス / 属性は `<html>` か `<body>` に付ける)。Mantine
+   * のようにほかの方法でダークを決めるものは、利用側の解決値を `'light' | 'dark'` で渡す。
+   * 個別の色調整はトークン(`--ssg-*`)の上書きで可能。
    *
    * @defaultValue `'light'`
    */
@@ -3521,6 +3662,19 @@ export type SpreadsheetGridProps<T, F extends GridFrameworkTypes = GridFramework
    * @defaultValue `'auto'`
    */
   motion?: GridMotion | undefined;
+  // 追加(1.1.0 / AP-07): ポップアップを描く場所です(既定 'auto' = グリッドを囲むダイアログの中、無ければ body)。
+  /**
+   * ポップアップ(列メニュー / 列フィルター / 右クリックメニュー / select の候補 / ツールパネル /
+   * フィルハンドルのメニュー / ツールチップ / ドラッグのゴースト)を描く場所(1.1.0 から)。`'auto'`
+   * はグリッドを囲むダイアログ(`<dialog>` / `popover` / `aria-modal="true"` / `role="dialog"` /
+   * `role="alertdialog"`)の中、無ければ `document.body`。`'body'` はいつも `document.body`(1.0
+   * までと同じ)。要素ならその中、関数はグリッドの要素を受け取って描く場所を返す(`null` /
+   * `undefined` なら `document.body`。ポップアップを開いている間の描画ごとに呼ぶ。
+   * 閉じている間は呼ばない)。詳細は「ダイアログの中のグリッド」節。
+   *
+   * @defaultValue `'auto'`
+   */
+  popupContainer?: GridPopupContainer | undefined;
   // 追加(motion-3 / M-4・M-5): 行の並び替え(ソート / フィルター / グループ開閉 / データ差し替え)で、描画中の行を
   //   新しい位置へ滑らせ、スクロールなしで現れた行をフェードインさせます(既定 true)。auto-height / serverSide では
   //   自動で無効(行高の実測 / ブロック到着と干渉するため)。motion の実効値が 'off' なら動きません。
@@ -3879,6 +4033,18 @@ export type SpreadsheetGridProps<T, F extends GridFrameworkTypes = GridFramework
    * @defaultValue `true`
    */
   enableGlobalFilter?: boolean | undefined;
+  // 追加(1.1.0 / AP-08): グローバルフィルターが照らし合わせる文字です(既定 'value' = 値の文字)。
+  /**
+   * グローバルフィルターが照らし合わせる文字(1.1.0 から)。`'value'` はセルの値の文字(1.0
+   * までと同じ)、`'display'` は画面の文字(列の `valueFormatter` の結果。無い列は値の文字)、`'both'`
+   * はどちらか(値と表示名が別の列で、コードでも表示名でも探せる)。状態チップの
+   * `label`・`renderCell` の中身は見ない。clientSide だけ(serverSide
+   * ではグローバルフィルターの文字をサーバーへ渡すだけ。`manualFiltering` でも絞り込まない)。
+   * 詳細は「値と表示名が別の列」節。
+   *
+   * @defaultValue `'value'`
+   */
+  globalFilterMatch?: GridGlobalFilterMatch | undefined;
   /**
    * 列ごとのフィルター。
    *
@@ -4292,8 +4458,10 @@ export type SpreadsheetGridProps<T, F extends GridFrameworkTypes = GridFramework
    * 行ごとの追加 class(または `{ className, style }`)。行コンテナ + 行ヘッダー「#」セル +
    * 各データセルに付与され、Tailwind / StyleX での行ハイライトに使える。`style`
    * はインラインで付与され、座標 / 寸法はグリッドが後勝ち(返した style は内容比較で memo される)。
-   * 第 3 引数 `ctx` は `{ row, rowIndex, sourceRowIndex, rowKey, isSelected }`(「補助型」節参照)。
-   * 既存の 2 引数関数もそのまま動く(後方互換)。グループ行は対象外。class と style
+   * 第 3 引数 `ctx` は `{ row, rowIndex, sourceRowIndex, rowKey, isSelected, pinned? }`(「補助型」
+   * 節参照)。固定行(`pinnedTopRows` / `pinnedBottomRows`)にも呼ばれ、そのときは `ctx.pinned` が
+   * `'top'` / `'bottom'`(`rowIndex` / `sourceRowIndex` は固定行の中の位置)。既存の 2
+   * 引数関数もそのまま動く(後方互換)。グループ行は対象外。class と style
    * は行と各セルの両方に付くので、`opacity` / `filter` のように重なる指定は style で返さず、class
    * を返して `.ssg-body-row.<class>` で行だけに当てる(style の `opacity: 0.5` は 0.25 になる)。
    */
@@ -4351,6 +4519,26 @@ export type SpreadsheetGridProps<T, F extends GridFrameworkTypes = GridFramework
    * @defaultValue —(無効)
    */
   totalRow?: boolean | TotalRowOptions<T, F> | undefined;
+  // ── 追加(1.1.0 / 固定行): 表の上下に固定する行(rows とは別の配列。表示だけ) ──
+  /**
+   * **固定行(上)**。列見出しのすぐ下に固定して表示する行(縦スクロールしても動かず、
+   * 横スクロールと左右の固定列には付いていく)。目標値・前年の実績・平均のような比べる行を、
+   * 本体の行とは別の配列で渡す(`rows` には入れない)。セルは列の `valueFormatter` /
+   * `renderCell`(`ctx.pinned` が `'top'`)/ `cellClassName` / 条件付き書式で描く。表示専用(選択 /
+   * 編集 / 貼り付け / コピー / キー操作 / セル内検索(`find`)の対象外。並べ替え /
+   * フィルターも効かない)。行の高さは `rowHeight`。エクスポートは `includePinnedRows: true`
+   * のときだけ。詳細は「固定行」節。
+   *
+   * @defaultValue —(無効)
+   */
+  pinnedTopRows?: T[] | undefined;
+  /**
+   * **固定行(下)**。表の下端(合計行(`totalRow`)があればそのすぐ上)に固定して表示する行。ほかは
+   * `pinnedTopRows` と同じ(`ctx.pinned` は `'bottom'`)。
+   *
+   * @defaultValue —(無効)
+   */
+  pinnedBottomRows?: T[] | undefined;
   // ── 追加(フィルハンドル 1A): 選択範囲の右下の四角を引いて連続データ / コピーで埋める ──
   //   指定時のみ有効な opt-in 機能です。詳細は FillHandleOptions を参照。
   /**
@@ -4424,7 +4612,8 @@ export type SpreadsheetGridProps<T, F extends GridFrameworkTypes = GridFramework
   //   SSRM 未ロード行では開きません。ヘッダー右クリックは列メニュー(enableColumnMenu)が担当し、本メニューは
   //   ボディ(セル/行NO ガター)専用です。
   /**
-   * セル/行の**完全カスタム**コンテキストメニュー。右クリック時のみ呼ばれ、
+   * セル/行の**完全カスタム**コンテキストメニュー。右クリックと、アクティブセルでの `Shift+F10` /
+   * メニューキー(1.1.0)のときだけ呼ばれ(1 回の操作で 1 回)、
    * 返した項目でメニューを描画する(ライブラリは固定の既定項目を持たない)。opt-in は
    * `enableContextMenu={true}` かつ本コールバックの指定の両方。**未指定、または `[]`
    * を返したときはブラウザ標準の右クリックメニューへフォールスルー**(空パネルは出さない)。SSRM

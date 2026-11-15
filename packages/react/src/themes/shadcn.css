@@ -61,7 +61,7 @@
   --ssg-selection-fill: color-mix(in srgb, var(--ssg-ds-accent) 8%, transparent);
   --ssg-col-hover-bg: color-mix(in srgb, var(--ssg-ds-text) 4%, transparent);
 
-  /* 見出し / グループ行 / ラベル行 / 合計行(見出しの文字は本文と控えめな文字の中間) */
+  /* 見出し / グループ行 / ラベル行 / 合計行 / 固定行(見出しの文字は本文と控えめな文字の中間) */
   --ssg-header-bg: var(--ssg-ds-surface-muted);
   --ssg-header-text: color-mix(in srgb, var(--ssg-ds-text) 50%, var(--ssg-ds-text-muted));
   --ssg-header-hover-bg: color-mix(in srgb, var(--ssg-ds-text) 8%, var(--ssg-ds-surface-muted));
@@ -70,6 +70,8 @@
   --ssg-label-row-bg: var(--ssg-ds-surface-muted);
   --ssg-label-row-text: var(--ssg-ds-text);
   --ssg-total-row-bg: var(--ssg-ds-surface-muted);
+  --ssg-pinned-row-bg: var(--ssg-ds-surface-muted);
+  --ssg-pinned-row-border: var(--ssg-ds-border-strong);
 
   /* 罫線 */
   --ssg-line: var(--ssg-ds-border);

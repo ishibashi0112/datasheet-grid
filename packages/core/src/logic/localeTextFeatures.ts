@@ -43,6 +43,12 @@ export const DEFAULT_ROW_DRAG_LOCALE_TEXT = {
   dragRowLabel: '行 {row}',
 } satisfies Partial<GridLocaleText>;
 
+// 追加(1.1.0): 固定行の行見出しの読み上げの名前(pinnedRows の機能)
+export const DEFAULT_PINNED_ROWS_LOCALE_TEXT = {
+  pinnedTopRow: '上に固定 {row}',
+  pinnedBottomRow: '下に固定 {row}',
+} satisfies Partial<GridLocaleText>;
+
 // スクロールの吹き出しとものさし(scrollHint の機能)
 export const DEFAULT_SCROLL_HINT_LOCALE_TEXT = {
   scrollHintRow: '行 {row}',

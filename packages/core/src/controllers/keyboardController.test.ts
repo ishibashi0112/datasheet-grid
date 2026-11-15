@@ -202,4 +202,40 @@ describe('keyboardController', () => {
     await c.handleKeyDown(plain);
     expect(plain.preventDefault).not.toHaveBeenCalled();
   });
+
+  it('Shift+F10 / メニューキー: openContextMenu がアクティブセルで開けたときだけ横取りする(AP-33)', async () => {
+    const rowModel: RowModel<Row> = {
+      getRow: (i) => rows[i],
+      getRowCount: () => rows.length,
+      getSourceIndex: (i) => i,
+      getRowKey: (i) => rows[i]?.id ?? i,
+    };
+    const c = createKeyboardController<Row>();
+    const t = makeArgs(rowModel);
+    const openContextMenu = vi.fn(() => true);
+    c.update({ ...t.args, openContextMenu });
+    const shiftF10 = { ...ev('F10'), shiftKey: true };
+    await c.handleKeyDown(shiftF10);
+    expect(shiftF10.preventDefault).toHaveBeenCalled();
+    expect(openContextMenu).toHaveBeenCalledWith({ row: 0, col: 0 });
+    const menuKey = ev('ContextMenu');
+    await c.handleKeyDown(menuKey);
+    expect(menuKey.preventDefault).toHaveBeenCalled();
+    expect(openContextMenu).toHaveBeenCalledTimes(2);
+    // F10 だけ・Ctrl 付きは対象外。
+    await c.handleKeyDown(ev('F10'));
+    await c.handleKeyDown({ ...ev('ContextMenu'), ctrlKey: true });
+    expect(openContextMenu).toHaveBeenCalledTimes(2);
+    // 開けなかった(項目が無い等)ときはブラウザの既定のまま。
+    const closed = vi.fn(() => false);
+    c.update({ ...t.args, openContextMenu: closed });
+    const notOpened = { ...ev('F10'), shiftKey: true };
+    await c.handleKeyDown(notOpened);
+    expect(closed).toHaveBeenCalledTimes(1);
+    expect(notOpened.preventDefault).not.toHaveBeenCalled();
+    // アクティブセルが無いときは呼ばない。
+    c.update({ ...t.args, uiState: { ...t.args.uiState, activeCell: null }, openContextMenu: closed });
+    await c.handleKeyDown({ ...ev('F10'), shiftKey: true });
+    expect(closed).toHaveBeenCalledTimes(1);
+  });
 });

@@ -1,10 +1,12 @@
 // 列定義・エディタ・書式・ラベル行の型。正しい書き方が通り、間違いが型エラーになることを確かめます。
-import { SpreadsheetGrid, numberFormatter, restoreColumnsFromState } from '@ishibashi0112/spreadsheet-grid';
+import { SpreadsheetGrid, numberFormatter, numberParser, restoreColumnsFromState } from '@ishibashi0112/spreadsheet-grid';
 import type {
   CellRenderContext,
+  GridPasteSkippedParams,
   CellValueFormatter,
   GridColumn,
   GridColumnPinned,
+  GridPinnedRowPosition,
   LabelRowOptions,
 } from '@ishibashi0112/spreadsheet-grid';
 import { assertType, expectAssignable, type Equal } from './expect.js';
@@ -25,6 +27,8 @@ export const saleColumns: GridColumn<Sale>[] = [
     width: 80,
     renderCell: (ctx) => {
       assertType<Equal<typeof ctx, CellRenderContext<Sale>>>();
+      // 追加(1.1.0 / 固定行): 固定行のセルでは 'top' / 'bottom'、本体の行では undefined。
+      assertType<Equal<typeof ctx.pinned, GridPinnedRowPosition | undefined>>();
       return <span>{ctx.row.id}</span>;
     },
   },
@@ -73,3 +77,61 @@ const baseColumns = [
 const restored = restoreColumnsFromState(baseColumns, null);
 assertType<Equal<typeof restored, (typeof baseColumns)[number][]>>();
 export const restoredColumns: GridColumn<Sale>[] = expectAssignable<GridColumn<Sale>[]>(restored);
+
+// 1.1.0: 値と表示名(groupLabel / select の clipboard / globalFilterMatch)、数値のパーサ(numberParser)、貼り付けで書かなかったセルの通知
+export const labelColumns: GridColumn<Sale>[] = [
+  {
+    key: 'name',
+    title: '区分',
+    width: 120,
+    editor: { type: 'select', options: [{ value: 'a', label: 'A' }], clipboard: 'label' },
+    groupLabel: 'formatted',
+  },
+  { key: 'amount', title: '金額', width: 120, parseClipboardValue: numberParser({ strip: ['¥', '円'], negativeParentheses: true }) },
+  { key: 'date', title: '日付', width: 120, groupLabel: ({ value, row }) => `${String(value)} ${row?.name ?? ''}` },
+  // @ts-expect-error clipboard は 'value' か 'label'
+  { key: 'id', title: 'ID', width: 80, editor: { type: 'select', options: [], clipboard: 'text' } },
+  // @ts-expect-error groupLabel は 'value' / 'formatted' / 関数
+  { key: 'id', title: 'ID', width: 80, groupLabel: 'display' },
+];
+export const otherAmount: GridColumn<Other> = { key: 'price', width: 100, parseClipboardValue: numberParser() };
+export const valueLabelGrid = (
+  <SpreadsheetGrid<Sale>
+    rows={[]}
+    columns={labelColumns}
+    globalFilterMatch="both"
+    onPasteSkipped={({ cells }: GridPasteSkippedParams<Sale>) => {
+      for (const cell of cells) {
+        assertType<Equal<typeof cell.row, Sale>>();
+        assertType<Equal<typeof cell.reason, 'readOnly' | 'invalid'>>();
+      }
+    }}
+  />
+);
+// @ts-expect-error globalFilterMatch は 'value' / 'display' / 'both'
+export const badMatch = <SpreadsheetGrid<Sale> rows={[]} columns={labelColumns} globalFilterMatch="label" />;
+// 1.1.0: ポップアップを描く場所(popupContainer)
+export const popupGrids = [
+  <SpreadsheetGrid<Sale> key="a" rows={[]} columns={labelColumns} popupContainer="body" />,
+  <SpreadsheetGrid<Sale> key="b" rows={[]} columns={labelColumns} popupContainer={(grid) => grid.closest('main')} />,
+  // @ts-expect-error popupContainer は 'auto' / 'body' / 要素 / 関数
+  <SpreadsheetGrid<Sale> key="c" rows={[]} columns={labelColumns} popupContainer="dialog" />,
+];
+
+// 追加(1.1.0 / 固定行): 固定行は本体と同じ行の型。違う型の行は渡せない。
+export const pinnedGrid = (
+  <SpreadsheetGrid<Sale>
+    rows={[]}
+    columns={saleColumns}
+    rowKeyGetter={(row) => row.id}
+    pinnedTopRows={[{ kind: 'sale', id: -1, name: '目標', amount: 100, date: '' }]}
+    pinnedBottomRows={[]}
+  />
+);
+export const pinnedPosition: GridPinnedRowPosition = 'bottom';
+// @ts-expect-error 固定行の位置は 'top' / 'bottom' だけ
+export const wrongPinnedPosition: GridPinnedRowPosition = 'left';
+export const wrongPinnedRows = (
+  // @ts-expect-error 固定行の行の型は本体の行の型と同じ
+  <SpreadsheetGrid<Sale> rows={[]} columns={saleColumns} rowKeyGetter={(row) => row.id} pinnedTopRows={[{ code: 'x', price: 1 }]} />
+);

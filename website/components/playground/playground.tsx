@@ -2,7 +2,7 @@
 
 // Props プレイグラウンド: 主要 props をその場で切り替えて挙動を試せる操作環境。
 // 選択内容は下部の JSX スニペットへリアルタイム反映される(コピー可)。
-import { useMemo, useState } from 'react';
+import { useMemo, useRef, useState } from 'react';
 import {
   SpreadsheetGrid,
   numberFormatter,
@@ -11,9 +11,11 @@ import {
   type GridCellRef,
   type GridColumn,
   type GridDensity,
+  type GridGlobalFilterMatch,
   type GridMotion,
   type GridTheme,
   type RowSelectionMode,
+  type SpreadsheetGridHandle,
 } from '@ishibashi0112/spreadsheet-grid';
 import { localeTextEn } from '@ishibashi0112/spreadsheet-grid/locales/en';
 import '@ishibashi0112/spreadsheet-grid/style.css';
@@ -91,6 +93,14 @@ function mulberry32(seed: number) {
 }
 
 // longNames: auto-height を試すとき、3 行に 1 行の商品名を長くする(列幅 180px で折り返して行が伸びる)。
+// 固定行(pinnedTopRows / pinnedBottomRows)の行。本体とは別の配列で、id は本体と重ならない負値。
+const PINNED_TOP_ROWS: Row[] = [
+  { id: -1001, name: '目標', category: '', status: '', qty: 300, price: 1500, registered: '', active: true },
+];
+const PINNED_BOTTOM_ROWS: Row[] = [
+  { id: -1002, name: '前年', category: '', status: '', qty: 240, price: 1350, registered: '', active: false },
+];
+
 function buildRows(count: number, longNames = false): Row[] {
   const rand = mulberry32(42);
   const rows: Row[] = new Array(count);
@@ -165,6 +175,8 @@ type Settings = {
   enableSorting: boolean;
   enableColumnFilter: boolean;
   enableGlobalFilter: boolean;
+  // グローバルフィルターが照らし合わせる文字(1.1.0)。'value'(既定)= 値の文字 / 'display' = 画面の文字(単価の「1,200」など)/ 'both'。
+  globalFilterMatch: GridGlobalFilterMatch;
   enableColumnMenu: boolean;
   enableRangeSelection: boolean;
   enableUndoRedo: boolean;
@@ -197,7 +209,7 @@ type Settings = {
   manualSorting: boolean;
   // 候補の非同期取得(getFilterOptions)。ON で set 列の候補を 700ms 遅延 + 先頭 3 件で打ち切って返す疑似 DB から取る。
   asyncFilterOptions: boolean;
-  // セル操作の通知(onCellClick / onCellDoubleClick / onActiveCellChange)。ON でグリッド下にイベントログを出す。
+  // セル操作の通知(onCellClick / onCellDoubleClick / onActiveCellChange / onPasteSkipped)。ON でグリッド下にイベントログを出す。
   cellEventLog: boolean;
   // セルのメモ(GridColumn.cellNote)。ON で単価 / 数量の列にメモ(右上の印 + ツールチップ)を出す。
   cellNote: boolean;
@@ -209,6 +221,8 @@ type Settings = {
   conditionalFormat: boolean;
   // 合計行。ON で表の下端に合計行を固定し、商品名 = 個数 / 数量 = 合計 / 単価 = 平均を出す(列の aggFunc)。
   totalRow: boolean;
+  // 固定行(1.1.0)。ON で上に「目標」、下に「前年」の行を固定する(表示だけ。本体とは別の配列 pinnedTopRows / pinnedBottomRows)。
+  pinnedRows: boolean;
   // フィルハンドル。ON で選択範囲の右下の四角を引いて連続データ / コピーで埋める(readOnly では出ない)。
   fillHandle: boolean;
   // 列見出しの寄せ(GridColumn.headerAlign)。'follow' は未指定(列の align に合わせる = 既定)、ほかは全列へ書く。
@@ -219,6 +233,11 @@ type Settings = {
   verticalAlign: 'unset' | 'top' | 'center';
   // 商品名の列を複数行のエディタで編集する(editor: { type: 'text', multiline: true, enterKey })。'off' は 1 行の入力欄(既定)。
   multilineEditor: 'off' | 'commit' | 'newline';
+  // ダイアログ(素の <dialog> の showModal())の中にグリッドを置く。ON でグリッドの代わりに「ダイアログで開く」ボタンを出す。
+  inDialog: boolean;
+  // ポップアップ(列メニュー / 列フィルター / 右クリック / select の候補 / ツールパネル / ツールチップ)を描く場所。
+  //   'auto'(既定)はグリッドを囲むダイアログの中、無ければ body。'body' はいつも body(ダイアログの後ろに隠れる)。
+  popupContainer: 'auto' | 'body';
 };
 
 const DEFAULTS: Settings = {
@@ -240,6 +259,7 @@ const DEFAULTS: Settings = {
   enableSorting: true,
   enableColumnFilter: true,
   enableGlobalFilter: true,
+  globalFilterMatch: 'value',
   enableColumnMenu: true,
   enableRangeSelection: true,
   enableUndoRedo: true,
@@ -267,11 +287,14 @@ const DEFAULTS: Settings = {
   find: false,
   conditionalFormat: false,
   totalRow: false,
+  pinnedRows: false,
   fillHandle: false,
   headerAlign: 'follow',
   autoHeight: false,
   verticalAlign: 'unset',
   multilineEditor: 'off',
+  inDialog: false,
+  popupContainer: 'auto',
 };
 
 function buildSnippet(s: Settings): string {
@@ -300,6 +323,7 @@ function buildSnippet(s: Settings): string {
     `  enableSorting={${s.enableSorting}}`,
     `  enableColumnFilter={${s.enableColumnFilter}}`,
     `  enableGlobalFilter={${s.enableGlobalFilter}}`,
+    ...(s.globalFilterMatch === 'value' ? [] : [`  globalFilterMatch="${s.globalFilterMatch}"`]),
     `  enableColumnMenu={${s.enableColumnMenu}}`,
     `  enableRangeSelection={${s.enableRangeSelection}}`,
     `  enableUndoRedo={${s.enableUndoRedo}}`,
@@ -310,6 +334,8 @@ function buildSnippet(s: Settings): string {
     ...(s.imeDirectInput ? ['  imeDirectInput'] : []),
     ...(s.find ? ['  find'] : []),
     ...(s.fillHandle ? ['  fillHandle'] : []),
+    // popupContainer は既定 'auto' のため、'body' のときだけ載せる。
+    ...(s.popupContainer === 'body' ? ['  popupContainer="body"'] : []),
     `  enableRowSelection={${s.enableRowSelection}}`,
   ];
   if (s.enableRowSelection) {
@@ -383,6 +409,7 @@ function buildSnippet(s: Settings): string {
       '  onCellClick={({ row, columnKey, event }) => log(\'click\', row.id, columnKey, event.ctrlKey)}',
       '  onCellDoubleClick={({ row, columnKey }) => log(\'dblclick\', row.id, columnKey)} // params.preventDefault() で編集開始を止める',
       '  onActiveCellChange={(cell) => log(\'active\', cell?.rowKey, cell?.columnKey)}',
+      '  onPasteSkipped={({ cells }) => log(\'pasteSkipped\', cells.length)} // 編集できないセル / reject の列で書かなかったセル',
     );
   }
   // labelRow は既定 OFF(undefined)のため、ON のときだけスニペットへ載せる。
@@ -402,7 +429,15 @@ function buildSnippet(s: Settings): string {
       '  totalRow',
     );
   }
+  // pinnedTopRows / pinnedBottomRows は既定 OFF(undefined)のため、ON のときだけスニペットへ載せる。
+  if (s.pinnedRows) {
+    lines.push("  pinnedTopRows={[{ id: -1001, name: '目標', qty: 300, price: 1500, … }]}", "  pinnedBottomRows={[{ id: -1002, name: '前年', qty: 240, price: 1350, … }]}");
+  }
   lines.push('/>');
+  if (s.inDialog) {
+    // ダイアログの中に置くときは、<dialog> で包んだ形にする(popupContainer の 'auto' はこの <dialog> の中へ描く)。
+    return ['<dialog ref={dialogRef}>', ...lines.map((line) => `  ${line}`), '</dialog>'].join('\n');
+  }
   return lines.join('\n');
 }
 
@@ -448,6 +483,9 @@ function PlaygroundGrid({ settings }: { settings: Settings }) {
   );
   const [rows, setRows] = useState<Row[]>(initialRows);
   const [columns, setColumns] = useState<GridColumn<Row>[]>(initialColumns);
+  const dialogRef = useRef<HTMLDialogElement>(null);
+  // 追加(1.1.0): 外部更新を applyRows(next, { undoable: false }) で渡すボタン用。
+  const gridRef = useRef<SpreadsheetGridHandle<Row>>(null);
   // セルのメモ(cellNote)と条件付き書式(conditionalFormat)。トグルに合わせて状態 / 単価 / 数量の列へ付け外しする(OFF では undefined に戻す)。
   //   数量に負の値を入れると入力エラーとメモが重なり、二重の三角とツールチップ(エラー → メモ)を確認できる。
   const gridColumns = useMemo(
@@ -542,23 +580,118 @@ function PlaygroundGrid({ settings }: { settings: Settings }) {
   );
 
   // highlightChanges の確認用: 先頭付近のデータ行から 3 セル(数量 / 単価)を書き換えた新配列で rows を差し替える。
-  const applyExternalUpdate = () =>
-    setRows((current) => {
-      const candidates: number[] = [];
-      for (let i = 0; i < current.length && candidates.length < 12; i++) {
-        if (current[i].kind !== 'label') candidates.push(i);
+  //   setRows で差し替えると元に戻すの履歴は消え、applyRows(…, { undoable: false })(1.1.0)なら履歴を残したまま。
+  const externalUpdate = (current: Row[]) => {
+    const candidates: number[] = [];
+    for (let i = 0; i < current.length && candidates.length < 12; i++) {
+      if (current[i].kind !== 'label') candidates.push(i);
+    }
+    const next = current.slice();
+    for (let n = 0; n < 3 && candidates.length > 0; n++) {
+      const index = candidates[Math.floor(Math.random() * candidates.length)];
+      const row = next[index];
+      next[index] =
+        Math.random() < 0.5
+          ? { ...row, qty: Math.floor(Math.random() * 500) }
+          : { ...row, price: (1 + Math.floor(Math.random() * 300)) * 10 };
+    }
+    return next;
+  };
+  const applyExternalUpdate = () => setRows(externalUpdate);
+  const applyExternalUpdateKeepingHistory = () => gridRef.current?.applyRows(externalUpdate, { undoable: false });
+
+  const grid = (
+    <SpreadsheetGrid
+      ref={gridRef}
+      rows={rows}
+      columns={gridColumns}
+      onColumnsChange={setColumns}
+      onRowsChange={setRows}
+      rowKeyGetter={(row) => row.id}
+      height={settings.height}
+      theme={settings.theme}
+      density={settings.density}
+      motion={settings.motion}
+      animateRows={settings.animateRows}
+      showCopyRange={settings.showCopyRange}
+      hoverHighlight={settings.hoverHighlight}
+      highlightChanges={settings.highlightChanges}
+      showTopBar={settings.showTopBar}
+      showBottomBar={settings.showBottomBar}
+      showSelectionAggregates={settings.showSelectionAggregates}
+      showFilterChipBar={settings.showFilterChipBar}
+      localeText={settings.english ? localeTextEn : undefined}
+      autoHeight={settings.autoHeight}
+      verticalAlign={settings.verticalAlign === 'unset' ? undefined : settings.verticalAlign}
+      enableSorting={settings.enableSorting}
+      enableColumnFilter={settings.enableColumnFilter}
+      enableGlobalFilter={settings.enableGlobalFilter}
+      globalFilterMatch={settings.globalFilterMatch}
+      enableColumnMenu={settings.enableColumnMenu}
+      enableRangeSelection={settings.enableRangeSelection}
+      enableUndoRedo={settings.enableUndoRedo}
+      enableClearOnDelete={settings.enableClearOnDelete}
+      readOnly={settings.readOnly}
+      dimReadOnlyCells={settings.dimReadOnlyCells}
+      showValidationMarks={settings.showValidationMarks}
+      imeDirectInput={settings.imeDirectInput}
+      find={settings.find}
+      fillHandle={settings.fillHandle}
+      enableRowSelection={settings.enableRowSelection}
+      rowSelectionMode={settings.rowSelectionMode}
+      enableSelectAllRows={settings.enableRowSelection && settings.enableSelectAllRows}
+      scrollHint={
+        settings.scrollHint
+          ? { hintColumn: 'name', minRows: settings.scrollHintMinRows }
+          : undefined
       }
-      const next = current.slice();
-      for (let n = 0; n < 3 && candidates.length > 0; n++) {
-        const index = candidates[Math.floor(Math.random() * candidates.length)];
-        const row = next[index];
-        next[index] =
-          Math.random() < 0.5
-            ? { ...row, qty: Math.floor(Math.random() * 500) }
-            : { ...row, price: (1 + Math.floor(Math.random() * 300)) * 10 };
+      detailRow={settings.detailRow ? playgroundDetailRow : undefined}
+      enableRowDrag={settings.enableRowDrag}
+      rowDragMotion={settings.rowDragMotion}
+      columnDragMotion={settings.columnDragMotion}
+      manualFiltering={settings.manualFiltering}
+      manualSorting={settings.manualSorting}
+      getFilterOptions={settings.asyncFilterOptions ? getFilterOptions : undefined}
+      totalRow={settings.totalRow}
+      pinnedTopRows={settings.pinnedRows ? PINNED_TOP_ROWS : undefined}
+      pinnedBottomRows={settings.pinnedRows ? PINNED_BOTTOM_ROWS : undefined}
+      labelRow={
+        settings.labelRow
+          ? {
+              isLabelRow: (row) => row.kind === 'label',
+              getLabel: (row) => row.name,
+              sticky: settings.labelRowSticky,
+            }
+          : undefined
       }
-      return next;
-    });
+      onCellClick={
+        settings.cellEventLog
+          ? (params) => pushEventLog(`onCellClick: ${describeCell(params)}${params.event.ctrlKey ? '(Ctrl)' : ''}`)
+          : undefined
+      }
+      onCellDoubleClick={
+        settings.cellEventLog ? (params) => pushEventLog(`onCellDoubleClick: ${describeCell(params)}`) : undefined
+      }
+      onActiveCellChange={
+        settings.cellEventLog
+          ? (cell) => pushEventLog(`onActiveCellChange: ${cell ? describeCell(cell) : 'null'}`)
+          : undefined
+      }
+      // 追加(1.1.0): 貼り付けで書かなかったセル(ID のような編集できない列へ貼ると 'readOnly')。
+      onPasteSkipped={
+        settings.cellEventLog
+          ? ({ cells }) =>
+              pushEventLog(
+                `onPasteSkipped: ${cells.length} セル(${cells
+                  .slice(0, 3)
+                  .map((cell) => `${cell.columnKey}#${String(cell.rowKey)} ${cell.reason}`)
+                  .join(', ')}${cells.length > 3 ? ' …' : ''})`,
+              )
+          : undefined
+      }
+      popupContainer={settings.popupContainer}
+    />
+  );
 
   return (
     <div className="flex flex-col gap-2">
@@ -571,82 +704,49 @@ function PlaygroundGrid({ settings }: { settings: Settings }) {
           >
             外部更新(先頭付近の 3 セルを書き換え)
           </button>
-          <span className="text-fd-muted-foreground">編集・貼り付け・undo でも変わったセルが光ります。</span>
+          <button
+            type="button"
+            className="rounded-md border border-fd-border px-2 py-1 hover:bg-fd-accent"
+            onClick={applyExternalUpdateKeepingHistory}
+          >
+            外部更新(元に戻すの履歴を残す)
+          </button>
+          <span className="text-fd-muted-foreground">
+            編集・貼り付け・undo でも変わったセルが光ります。右のボタンは applyRows(…, {'{'} undoable: false {'}'}) で渡すので、先に直したセルを
+            Ctrl+Z で戻せます。
+          </span>
         </div>
       ) : null}
-      <SpreadsheetGrid
-        rows={rows}
-        columns={gridColumns}
-        onColumnsChange={setColumns}
-        onRowsChange={setRows}
-        rowKeyGetter={(row) => row.id}
-        height={settings.height}
-        theme={settings.theme}
-        density={settings.density}
-        motion={settings.motion}
-        animateRows={settings.animateRows}
-        showCopyRange={settings.showCopyRange}
-        hoverHighlight={settings.hoverHighlight}
-        highlightChanges={settings.highlightChanges}
-        showTopBar={settings.showTopBar}
-        showBottomBar={settings.showBottomBar}
-        showSelectionAggregates={settings.showSelectionAggregates}
-        showFilterChipBar={settings.showFilterChipBar}
-        localeText={settings.english ? localeTextEn : undefined}
-        autoHeight={settings.autoHeight}
-        verticalAlign={settings.verticalAlign === 'unset' ? undefined : settings.verticalAlign}
-        enableSorting={settings.enableSorting}
-        enableColumnFilter={settings.enableColumnFilter}
-        enableGlobalFilter={settings.enableGlobalFilter}
-        enableColumnMenu={settings.enableColumnMenu}
-        enableRangeSelection={settings.enableRangeSelection}
-        enableUndoRedo={settings.enableUndoRedo}
-        enableClearOnDelete={settings.enableClearOnDelete}
-        readOnly={settings.readOnly}
-        dimReadOnlyCells={settings.dimReadOnlyCells}
-        showValidationMarks={settings.showValidationMarks}
-        imeDirectInput={settings.imeDirectInput}
-        find={settings.find}
-        fillHandle={settings.fillHandle}
-        enableRowSelection={settings.enableRowSelection}
-        rowSelectionMode={settings.rowSelectionMode}
-        enableSelectAllRows={settings.enableRowSelection && settings.enableSelectAllRows}
-        scrollHint={
-          settings.scrollHint
-            ? { hintColumn: 'name', minRows: settings.scrollHintMinRows }
-            : undefined
-        }
-        detailRow={settings.detailRow ? playgroundDetailRow : undefined}
-        enableRowDrag={settings.enableRowDrag}
-        rowDragMotion={settings.rowDragMotion}
-        columnDragMotion={settings.columnDragMotion}
-        manualFiltering={settings.manualFiltering}
-        manualSorting={settings.manualSorting}
-        getFilterOptions={settings.asyncFilterOptions ? getFilterOptions : undefined}
-        totalRow={settings.totalRow}
-        labelRow={
-          settings.labelRow
-            ? {
-                isLabelRow: (row) => row.kind === 'label',
-                getLabel: (row) => row.name,
-                sticky: settings.labelRowSticky,
-              }
-            : undefined
-        }
-        onCellClick={
-          settings.cellEventLog
-            ? (params) => pushEventLog(`onCellClick: ${describeCell(params)}${params.event.ctrlKey ? '(Ctrl)' : ''}`)
-            : undefined
-        }
-        onCellDoubleClick={
-          settings.cellEventLog ? (params) => pushEventLog(`onCellDoubleClick: ${describeCell(params)}`) : undefined
-        }
-        onActiveCellChange={
-          settings.cellEventLog
-            ? (cell) => pushEventLog(`onActiveCellChange: ${cell ? describeCell(cell) : 'null'}`)
-            : undefined
-        }
-      />
+      {settings.inDialog ? (
+        <div className="flex flex-wrap items-center gap-2 text-sm">
+          <button
+            type="button"
+            className="rounded-md border border-fd-border px-2 py-1 hover:bg-fd-accent"
+            onClick={() => dialogRef.current?.showModal()}
+          >
+            ダイアログで開く
+          </button>
+          <span className="text-fd-muted-foreground">
+            popupContainer=&quot;{settings.popupContainer}&quot;。&quot;body&quot; にすると、列メニューなどがダイアログの後ろに隠れます。
+          </span>
+        </div>
+      ) : null}
+      {settings.inDialog ? (
+        <dialog
+          ref={dialogRef}
+          className="w-[min(960px,94vw)] rounded-lg border border-fd-border bg-fd-background p-4 text-fd-foreground shadow-xl backdrop:bg-black/40"
+        >
+          <div className="mb-3 flex items-center justify-between">
+            <strong>ダイアログの中のグリッド</strong>
+            <button type="button" className="rounded px-2 py-1 text-sm hover:bg-fd-accent" onClick={() => dialogRef.current?.close()}>
+              閉じる
+            </button>
+          </div>
+          {grid}
+        </dialog>
+      ) : (
+        grid
+      )}
       {settings.cellEventLog ? (
         <div className="min-h-[7.5rem] rounded-lg border border-fd-border p-3 font-mono text-xs text-fd-muted-foreground">
           {eventLog.length === 0 ? <p className="m-0">(セルをクリック / ダブルクリック / 矢印キーで移動するとここに出ます)</p> : null}
@@ -812,6 +912,19 @@ export function Playground() {
           <Toggle label="enableSorting" checked={settings.enableSorting} onChange={(v) => set('enableSorting', v)} />
           <Toggle label="enableColumnFilter" checked={settings.enableColumnFilter} onChange={(v) => set('enableColumnFilter', v)} />
           <Toggle label="enableGlobalFilter" checked={settings.enableGlobalFilter} onChange={(v) => set('enableGlobalFilter', v)} />
+          <label className="flex items-center justify-between gap-2 text-sm">
+            <code className="text-xs">globalFilterMatch</code>
+            <select
+              className={selectClass}
+              value={settings.globalFilterMatch}
+              onChange={(e) => set('globalFilterMatch', e.target.value as GridGlobalFilterMatch)}
+              disabled={!settings.enableGlobalFilter}
+            >
+              <option value="value">value</option>
+              <option value="display">display</option>
+              <option value="both">both</option>
+            </select>
+          </label>
           <Toggle label="manualFiltering" checked={settings.manualFiltering} onChange={(v) => set('manualFiltering', v)} />
           <Toggle label="manualSorting" checked={settings.manualSorting} onChange={(v) => set('manualSorting', v)} />
           <Toggle label="getFilterOptions" checked={settings.asyncFilterOptions} onChange={(v) => set('asyncFilterOptions', v)} />
@@ -891,6 +1004,7 @@ export function Playground() {
             <Toggle label="labelRow.sticky" checked={settings.labelRowSticky} onChange={(v) => set('labelRowSticky', v)} />
           </label>
           <Toggle label="totalRow(合計行)" checked={settings.totalRow} onChange={(v) => set('totalRow', v)} />
+          <Toggle label="pinnedTopRows / pinnedBottomRows(固定行)" checked={settings.pinnedRows} onChange={(v) => set('pinnedRows', v)} />
           <Toggle label="scrollHint" checked={settings.scrollHint} onChange={(v) => set('scrollHint', v)} />
           <label className="flex items-center justify-between gap-2 text-sm">
             <code className="text-xs">scrollHint.minRows</code>
@@ -914,6 +1028,21 @@ export function Playground() {
           <Toggle label="imeDirectInput" checked={settings.imeDirectInput} onChange={(v) => set('imeDirectInput', v)} />
           <Toggle label="find(Ctrl+F)" checked={settings.find} onChange={(v) => set('find', v)} />
           <Toggle label="fillHandle(フィルハンドル)" checked={settings.fillHandle} onChange={(v) => set('fillHandle', v)} />
+        </Group>
+
+        <Group title="ダイアログ(popupContainer)">
+          <Toggle label="ダイアログの中に置く" checked={settings.inDialog} onChange={(v) => set('inDialog', v)} />
+          <label className="flex items-center justify-between gap-2 text-sm">
+            <code className="text-xs">popupContainer</code>
+            <select
+              className={selectClass}
+              value={settings.popupContainer}
+              onChange={(e) => set('popupContainer', e.target.value as 'auto' | 'body')}
+            >
+              <option value="auto">auto</option>
+              <option value="body">body</option>
+            </select>
+          </label>
         </Group>
 
         <Group title="行選択(チェックボックス)">
