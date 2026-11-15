@@ -64,6 +64,9 @@ export type SerializeRowsToCsvParams<T> = {
   // 追加(段階 2 DU-10): グループの小計の行です(includeGroupRows のとき呼び出し側が渡す)。getRow が undefined を
   //   返した index に対して getLabelLine より先に呼ばれ、値の列(エクスポート列順)を返せばその行を出力します。
   getGroupLine?: (rowIndex: number) => GroupSubtotalLine | undefined;
+  // 追加(1.1.0 / 固定行): 上の固定行(見出しの次)と下の固定行(本体の行の後・合計行の前)。
+  pinnedTop?: readonly T[] | undefined;
+  pinnedBottom?: readonly T[] | undefined;
 };
 
 // 追加(label-row ④): ラベル行 1 行ぶんの出力値です(列順)。
@@ -90,6 +93,8 @@ export const serializeRowsToCsv = <T,>({
   getLabelLine,
   totalLine,
   getGroupLine,
+  pinnedTop,
+  pinnedBottom,
 }: SerializeRowsToCsvParams<T>): string => {
   const lines: string[] = [];
   // 追加(audit L-20): セル(とラベル行)の値に適用する無害化。ヘッダーは consumer の列タイトルなので対象外です。
@@ -105,6 +110,13 @@ export const serializeRowsToCsv = <T,>({
     );
   }
 
+  // 追加(1.1.0 / 固定行): 固定行は本体の行と同じ規則のセル。
+  const pushPinned = (pinnedRows: readonly T[] | undefined) => {
+    for (const row of pinnedRows ?? []) {
+      lines.push(columns.map((column) => cellField(exportCellText(row, column))).join(delimiter));
+    }
+  };
+  pushPinned(pinnedTop);
   for (let rowIndex = startRow; rowIndex < endRow; rowIndex += 1) {
     const row = getRow(rowIndex);
     // SSRM 未ロード行(undefined)はスキップします。clientSide では常に行が存在します。
@@ -131,6 +143,7 @@ export const serializeRowsToCsv = <T,>({
     lines.push(cells.join(delimiter));
   }
 
+  pushPinned(pinnedBottom);
   // 追加(合計行 3A): 合計行は末尾に 1 行(値は生値の文字列表現。空値は空)。
   if (totalLine) {
     lines.push(columns.map((_, index) => cellField(totalExportCellText(totalLine[index]))).join(delimiter));

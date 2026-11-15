@@ -21,9 +21,11 @@ import {
   AUTO_SCROLL_EDGE_THRESHOLD,
   AUTO_SCROLL_STEP,
   clampClientYAboveFooter,
+  clampClientYBelowHeader,
   computeNextScrollPosition,
   hasPointerLeftActivationRadius,
   resolveAutoScrollAxisDirection,
+  resolveTopAutoScrollStart,
   resolveScrollContentBox,
 } from '../logic/autoScrollGeometry';
 import { resolveElementScale } from '../logic/elementScale';
@@ -45,6 +47,9 @@ export type RowDragArgs = {
   // 追加(合計行 3A): 下端に固定する行(合計行)の高さ。端の自動スクロールの下の帯をその上端へ寄せ、合計行の上の
   //   ポインタは本体の見えている最後の位置として扱います(合計行の裏の位置へ落とさない)。既定 0(従来どおり)。
   footerHeight?: number;
+  // 追加(1.1.0 / 固定行): 上端に固定する高さ(列見出し + 上の固定行)。上の固定行があるときだけ渡し、固定行の上のポインタは
+  //   本体の見えている最初の位置として扱い、上の帯を本体の行が見え始める位置まで広げます(既定 0 = 従来どおり)。
+  stickyTopHeight?: number;
   // 物理 → 論理 scrollTop の倍率(scroll-space 仮想化)。通常 1。
   verticalScaleFactor: number;
   // 行 / overlay の transform 層内で差し引く基準オフセット(overlayBaseOffset)。通常 0。
@@ -431,10 +436,11 @@ export const createRowDragController = (): RowDragController => {
 
     // 縦: 中央ペイン基準の物理 y → 論理 content-y(pointerInteractionsController と同じ換算)。
     //   変更(合計行 3A): 合計行の上のポインタは、本体の見えている最後の位置として扱います。
-    const hitClientY = clampClientYAboveFooter(
-      clientY,
-      r.top + containerEl.clientTop + containerEl.clientHeight,
-      args.footerHeight ?? 0,
+    //   変更(1.1.0 / 固定行): 上の固定行の上のポインタは、本体の見えている最初の位置として扱います。
+    const hitClientY = clampClientYBelowHeader(
+      clampClientYAboveFooter(clientY, r.top + containerEl.clientTop + containerEl.clientHeight, args.footerHeight ?? 0),
+      r.top + containerEl.clientTop,
+      args.stickyTopHeight ?? 0,
     );
     const centerRect = centerEl.getBoundingClientRect();
     const physicalY = centerEl.scrollTop + hitClientY - centerRect.top - headerHeight;
@@ -499,6 +505,7 @@ export const createRowDragController = (): RowDragController => {
       }
       if (autoScrollArmed) {
         const rect = el.getBoundingClientRect();
+        const scale = resolveElementScale(el, rect);
         const contentBox = resolveScrollContentBox({
           rectLeft: rect.left,
           rectTop: rect.top,
@@ -506,11 +513,11 @@ export const createRowDragController = (): RowDragController => {
           clientTop: el.clientTop,
           clientWidth: el.clientWidth,
           clientHeight: el.clientHeight,
-          scale: resolveElementScale(el, rect),
+          scale,
         });
         const direction = resolveAutoScrollAxisDirection(
           pointer.y,
-          contentBox.top,
+          resolveTopAutoScrollStart(contentBox.top, (args?.stickyTopHeight ?? 0) * scale.y, AUTO_SCROLL_EDGE_THRESHOLD),
           contentBox.bottom - (args?.footerHeight ?? 0),
           AUTO_SCROLL_EDGE_THRESHOLD,
         );

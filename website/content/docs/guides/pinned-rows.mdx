@@ -1,0 +1,121 @@
+---
+title: 固定行
+description: pinnedTopRows / pinnedBottomRows で目標値・前年の行を表の上下に固定する(表示だけ・本体とは別の配列)
+---
+
+`pinnedTopRows` / `pinnedBottomRows` に行の配列を渡すと、**列見出しのすぐ下**と**表の下端**に行を固定します。目標値・前年の実績・平均のように、本体の行と見比べたい行に使います。縦にスクロールしても動かず、横スクロールと左右の固定列には通常の行と同じく付いていきます。[合計行](/docs/guides/total-row)と一緒に使うと、下の固定行は合計行のすぐ上に並びます。
+
+## デモ(支店の売上 > 上に目標、下に前年と平均)
+
+<PinnedRowsDemo />
+
+- 上に「目標」、下に「前年」「支店の平均」を固定しています。縦にスクロールしても列見出しの下と合計行の上に留まります。
+- 月の数字を編集すると、「支店の平均」(下の固定行)と合計行が追従します。固定行は表示だけの行なので、平均は本体の行から作り直して渡しています。
+- 目標に届かないセルは赤い文字にしています(`cellClassName`)。同じ規則が固定行の「前年」「支店の平均」にも効きます。
+- 「支店」の列の太字は `renderCell` の `ctx.pinned` で固定行だけに付けています。
+- 固定行は押しても選択が動かず、編集 / 貼り付け / コピーの対象にもなりません。
+
+## 使い方
+
+```tsx
+const target: Sale = { id: 'target', branch: '目標', apr: 1200, may: 1250, jun: 1300, jul: 1350 };
+const lastYear: Sale = { id: 'last-year', branch: '前年', apr: 1020, may: 1080, jun: 1150, jul: 1190 };
+
+<SpreadsheetGrid
+  rows={rows}
+  columns={columns}
+  rowKeyGetter={(row) => row.id}
+  pinnedTopRows={[target]}
+  pinnedBottomRows={[lastYear]}
+/>
+```
+
+固定行は本体の行(`rows`)とは**別の配列**です。本体の件数・並べ替え・フィルター・ページの行番号には入りません。行の型は本体と同じ `T` で、列の定義をそのまま使います。
+
+## 描き方
+
+セルは本体の行と同じ規則で描きます。
+
+- 列の `valueFormatter` / `renderCell` / `cellClassName` / `getRowClassName`。
+- `editor: { type: 'checkbox' }` の列は読み取りだけの印。
+- [条件付き書式](/docs/guides/conditional-format)の色とチップ(最小 / 最大は本体の行で決まります)。
+
+固定行だけ見た目を変えたいときは、ctx の `pinned`(`'top'` / `'bottom'`。本体の行では `undefined`)で見分けます。
+
+```tsx
+const columns: GridColumn<Sale>[] = [
+  {
+    key: 'branch',
+    title: '支店',
+    renderCell: (ctx) => (ctx.pinned ? <strong>{String(ctx.value)}</strong> : String(ctx.value)),
+  },
+  // …
+];
+
+<SpreadsheetGrid
+  getRowClassName={(_row, _index, ctx) => (ctx.pinned === 'top' ? 'target-row' : undefined)}
+  // …
+/>
+```
+
+- 固定行の ctx の `rowIndex` / `sourceRowIndex` は固定行の中の位置(0 から)、`isActive` / `isSelected` / `isEditing` は `false`、`readOnly` は `true` です。`renderCell` の `setValue` は何もしません。
+- 入力の検査の印(`validate`)とメモ(`cellNote`)は出しません。行ドラッグのハンドル / 展開のトグル / 自動グループ列のセルは空です。
+- 行の高さは `rowHeight` です(`autoHeight` の列も伸びず、1 行で省略します)。行見出しはピンの印です。
+
+## 表示だけの行
+
+固定行は表示専用です。
+
+- セル選択 / 編集 / 貼り付け / コピー / クリア / 行選択 / 右クリックメニュー / 行のホバーの対象になりません。
+- 件数表示・ビュー行 index・`getRowNumber`・選択範囲の集計・合計行の集計には数えません。
+- 値を変えるときは配列を作り直して渡します(上のデモの「支店の平均」は `useMemo` で本体の行から作っています)。
+
+## 位置とスクロール
+
+- 上の固定行は列見出しの下、下の固定行は表の下端(合計行があればそのすぐ上)に留まり、本体の行はその間を流れます。行が少ないときは、下の固定行は最後の行の直後に来ます。
+- キーボード操作 / `scrollToRow` / `scrollToCell` で行を見せるときは固定行の裏に隠しません(上へ見せる行は上の固定行の下、下へ見せる行は下の固定行の上)。
+- 範囲選択のドラッグで固定行の上へポインタを動かすと、そちらへ自動でスクロールします。
+
+## エクスポート
+
+既定では含みません。`exportCsv` / `getExportData` に `includePinnedRows: true` を渡すと、上の固定行を本体の行の前、下の固定行を本体の行の後(合計行の前)に出します。範囲の選択(scope `'selection'`)では出しません。
+
+```ts
+grid.current?.exportCsv({ includePinnedRows: true, includeTotalRow: true });
+
+const data = grid.current?.getExportData({ includePinnedRows: true });
+data?.rowKinds; // ['pinned', 'data', 'data', …, 'pinned']
+```
+
+## 見た目
+
+| 対象 | クラス / 属性 / トークン |
+| --- | --- |
+| 上下の器 | `.ssg-pinned-rows`(`.ssg-pinned-rows--top` / `.ssg-pinned-rows--bottom`) |
+| 行 | `.ssg-pinned-row`(`data-ssg-pinned="top"` / `"bottom"`) |
+| セル | `.ssg-body-cell.ssg-pinned-cell` |
+| 背景 / 本体との境の線 | `--ssg-pinned-row-bg` / `--ssg-pinned-row-border` |
+
+```css
+.my-grid {
+  --ssg-pinned-row-bg: #fff8e6;
+  --ssg-pinned-row-border: #d9a400;
+}
+```
+
+[デザインシステムのテーマ](/docs/guides/design-systems)を使っているときは、背景はテーマの控えめな面の色、線は濃い罫線の色になります。
+
+## そのほか
+
+- **アクセシビリティ**: 表の行(`role="row"`)として読み上げ、`aria-rowcount` に数えます。上の固定行は見出し行の次、下の固定行はデータ行の後です。行見出しの名前は「上に固定 1」「下に固定 1」で、`localeText` の `pinnedTopRow` / `pinnedBottomRow` で変えられます(英語の表 `localeTextEn` では「Pinned to top 1」)。
+- **列幅の自動調整**: 固定行の値も収まる幅にします。
+- **serverSide(`dataSource`)**: そのまま使えます。固定行は渡した配列から描くので、サーバーから取り直しません。
+- **`/lite`**: 機能の部品は `pinnedRowsFeature` です。
+
+```tsx
+import { createSpreadsheetGrid, pinnedRowsFeature } from '@ishibashi0112/spreadsheet-grid/lite';
+
+const Grid = createSpreadsheetGrid({ features: { pinnedRows: pinnedRowsFeature } });
+```
+
+API の詳細は [Props](/docs/api/props) の「固定行」節にあります。

@@ -6,6 +6,7 @@ import type {
   CellValueFormatter,
   GridColumn,
   GridColumnPinned,
+  GridPinnedRowPosition,
   LabelRowOptions,
 } from '@ishibashi0112/spreadsheet-grid';
 import { assertType, expectAssignable, type Equal } from './expect.js';
@@ -26,6 +27,8 @@ export const saleColumns: GridColumn<Sale>[] = [
     width: 80,
     renderCell: (ctx) => {
       assertType<Equal<typeof ctx, CellRenderContext<Sale>>>();
+      // 追加(1.1.0 / 固定行): 固定行のセルでは 'top' / 'bottom'、本体の行では undefined。
+      assertType<Equal<typeof ctx.pinned, GridPinnedRowPosition | undefined>>();
       return <span>{ctx.row.id}</span>;
     },
   },
@@ -114,3 +117,21 @@ export const popupGrids = [
   // @ts-expect-error popupContainer は 'auto' / 'body' / 要素 / 関数
   <SpreadsheetGrid<Sale> key="c" rows={[]} columns={labelColumns} popupContainer="dialog" />,
 ];
+
+// 追加(1.1.0 / 固定行): 固定行は本体と同じ行の型。違う型の行は渡せない。
+export const pinnedGrid = (
+  <SpreadsheetGrid<Sale>
+    rows={[]}
+    columns={saleColumns}
+    rowKeyGetter={(row) => row.id}
+    pinnedTopRows={[{ kind: 'sale', id: -1, name: '目標', amount: 100, date: '' }]}
+    pinnedBottomRows={[]}
+  />
+);
+export const pinnedPosition: GridPinnedRowPosition = 'bottom';
+// @ts-expect-error 固定行の位置は 'top' / 'bottom' だけ
+export const wrongPinnedPosition: GridPinnedRowPosition = 'left';
+export const wrongPinnedRows = (
+  // @ts-expect-error 固定行の行の型は本体の行の型と同じ
+  <SpreadsheetGrid<Sale> rows={[]} columns={saleColumns} rowKeyGetter={(row) => row.id} pinnedTopRows={[{ code: 'x', price: 1 }]} />
+);

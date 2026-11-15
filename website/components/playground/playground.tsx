@@ -93,6 +93,14 @@ function mulberry32(seed: number) {
 }
 
 // longNames: auto-height を試すとき、3 行に 1 行の商品名を長くする(列幅 180px で折り返して行が伸びる)。
+// 固定行(pinnedTopRows / pinnedBottomRows)の行。本体とは別の配列で、id は本体と重ならない負値。
+const PINNED_TOP_ROWS: Row[] = [
+  { id: -1001, name: '目標', category: '', status: '', qty: 300, price: 1500, registered: '', active: true },
+];
+const PINNED_BOTTOM_ROWS: Row[] = [
+  { id: -1002, name: '前年', category: '', status: '', qty: 240, price: 1350, registered: '', active: false },
+];
+
 function buildRows(count: number, longNames = false): Row[] {
   const rand = mulberry32(42);
   const rows: Row[] = new Array(count);
@@ -213,6 +221,8 @@ type Settings = {
   conditionalFormat: boolean;
   // 合計行。ON で表の下端に合計行を固定し、商品名 = 個数 / 数量 = 合計 / 単価 = 平均を出す(列の aggFunc)。
   totalRow: boolean;
+  // 固定行(1.1.0)。ON で上に「目標」、下に「前年」の行を固定する(表示だけ。本体とは別の配列 pinnedTopRows / pinnedBottomRows)。
+  pinnedRows: boolean;
   // フィルハンドル。ON で選択範囲の右下の四角を引いて連続データ / コピーで埋める(readOnly では出ない)。
   fillHandle: boolean;
   // 列見出しの寄せ(GridColumn.headerAlign)。'follow' は未指定(列の align に合わせる = 既定)、ほかは全列へ書く。
@@ -277,6 +287,7 @@ const DEFAULTS: Settings = {
   find: false,
   conditionalFormat: false,
   totalRow: false,
+  pinnedRows: false,
   fillHandle: false,
   headerAlign: 'follow',
   autoHeight: false,
@@ -417,6 +428,10 @@ function buildSnippet(s: Settings): string {
       "  // columns: 商品名 aggFunc: 'count' / 数量 aggFunc: 'sum' / 単価 aggFunc: 'avg'",
       '  totalRow',
     );
+  }
+  // pinnedTopRows / pinnedBottomRows は既定 OFF(undefined)のため、ON のときだけスニペットへ載せる。
+  if (s.pinnedRows) {
+    lines.push("  pinnedTopRows={[{ id: -1001, name: '目標', qty: 300, price: 1500, … }]}", "  pinnedBottomRows={[{ id: -1002, name: '前年', qty: 240, price: 1350, … }]}");
   }
   lines.push('/>');
   if (s.inDialog) {
@@ -638,6 +653,8 @@ function PlaygroundGrid({ settings }: { settings: Settings }) {
       manualSorting={settings.manualSorting}
       getFilterOptions={settings.asyncFilterOptions ? getFilterOptions : undefined}
       totalRow={settings.totalRow}
+      pinnedTopRows={settings.pinnedRows ? PINNED_TOP_ROWS : undefined}
+      pinnedBottomRows={settings.pinnedRows ? PINNED_BOTTOM_ROWS : undefined}
       labelRow={
         settings.labelRow
           ? {
@@ -987,6 +1004,7 @@ export function Playground() {
             <Toggle label="labelRow.sticky" checked={settings.labelRowSticky} onChange={(v) => set('labelRowSticky', v)} />
           </label>
           <Toggle label="totalRow(合計行)" checked={settings.totalRow} onChange={(v) => set('totalRow', v)} />
+          <Toggle label="pinnedTopRows / pinnedBottomRows(固定行)" checked={settings.pinnedRows} onChange={(v) => set('pinnedRows', v)} />
           <Toggle label="scrollHint" checked={settings.scrollHint} onChange={(v) => set('scrollHint', v)} />
           <label className="flex items-center justify-between gap-2 text-sm">
             <code className="text-xs">scrollHint.minRows</code>

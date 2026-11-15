@@ -16,6 +16,7 @@ import { groupingFeature } from './grouping';
 import { imeDirectInputFeature } from './imeDirectInput';
 import { labelRowFeature } from './labelRow';
 import { motionExtrasFeature } from './motionExtras';
+import { pinnedRowsFeature } from './pinnedRows';
 import { rowDragFeature } from './rowDrag';
 import { scrollHintFeature } from './scrollHint';
 import { selectionAggregatesFeature } from './selectionAggregates';
@@ -32,6 +33,7 @@ export const fullGridFeatures = {
   scrollHint: scrollHintFeature,
   columnAutosize: columnAutosizeFeature,
   totalRow: totalRowFeature,
+  pinnedRows: pinnedRowsFeature,
   imeDirectInput: imeDirectInputFeature,
   contextMenu: contextMenuFeature,
   conditionalFormat: conditionalFormatFeature,

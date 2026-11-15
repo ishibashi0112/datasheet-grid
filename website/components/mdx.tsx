@@ -21,6 +21,7 @@ import { ColumnDragDemo } from '@/components/demo/column-drag-demo';
 import { HeaderAlignDemo } from '@/components/demo/header-align-demo';
 import { LabelRowDemo } from '@/components/demo/label-row-demo';
 import { TotalRowDemo } from '@/components/demo/total-row-demo';
+import { PinnedRowsDemo } from '@/components/demo/pinned-rows-demo';
 import { FillHandleDemo } from '@/components/demo/fill-handle-demo';
 import { SizingDemo } from '@/components/demo/sizing-demo';
 import { CellEventsDemo } from '@/components/demo/cell-events-demo';
@@ -57,6 +58,7 @@ export function getMDXComponents(components?: MDXComponents) {
     HeaderAlignDemo,
     LabelRowDemo,
     TotalRowDemo,
+    PinnedRowsDemo,
     FillHandleDemo,
     SizingDemo,
     CellEventsDemo,

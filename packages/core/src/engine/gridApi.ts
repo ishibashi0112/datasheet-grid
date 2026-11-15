@@ -148,6 +148,8 @@ export type GridApiArgs<T> = {
   labelViewIndexes?: ArrayLike<number> | undefined;
   // 追加(合計行 3A): 合計行のエクスポート(includeTotalRow)の値と見出し(totalRow 無効時は undefined)。
   totalRowExport?: { cells: TotalRowCells; label: string } | undefined;
+  // 追加(1.1.0 / 固定行): 固定行のエクスポート(includePinnedRows)の行(固定行が無効なら undefined)。
+  pinnedRowsExport?: { top: readonly T[]; bottom: readonly T[] } | undefined;
   // 統合ツールパネル(openFilterManager / closeFilterManager の委譲先)。
   activeToolPanelTab: ToolPanelTab | null;
   openToolPanel: (tab: ToolPanelTab) => void;

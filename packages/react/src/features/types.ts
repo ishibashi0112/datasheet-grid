@@ -46,6 +46,7 @@ import type {
 import type { GridFindBar } from '../view/GridFindBar';
 import type { GridScrollHint } from '../view/GridScrollHint';
 import type { GridTotalRow } from '../view/GridTotalRow';
+import type { GridPinnedRows } from '../view/GridPinnedRows';
 import type { GridBodyLabelRow } from '../view/GridBodyLabelRow';
 import type { GridBodyGroupRow } from '../view/GridBodyGroupRow';
 import type { GridStickyLabelLayer } from '../view/GridStickyLabelLayer';
@@ -82,6 +83,7 @@ export type FillHandleFeatureArgs<T> = {
   scrollContainerRef: FillHandleControllerArgs<T>['scrollContainerRef'];
   gridRootRef: FillHandleControllerArgs<T>['gridRootRef'];
   footerHeight: number;
+  stickyTopHeight: number;
   handleRowsChange: FillHandleControllerArgs<T>['applyRowsChange'];
   amendRowsChange: FillHandleControllerArgs<T>['amendRowsChange'];
   applyServerSideCellEdits: FillHandleControllerArgs<T>['applyServerSideCellEdits'];
@@ -353,6 +355,10 @@ export type ReactGridFeatures = {
     formatTotalRowCellText: typeof formatTotalRowCellText;
     resolveTotalRowCaption: typeof resolveTotalRowCaption;
     resolveTotalRowLabelColumnKey: typeof resolveTotalRowLabelColumnKey;
+  } | undefined;
+  // 固定行(1.1.0 / pinnedTopRows / pinnedBottomRows): 表示だけの行を各ペインに描く部品。
+  pinnedRows?: FeatureLocaleDefaults & {
+    PinnedRows: typeof GridPinnedRows;
   } | undefined;
   // 条件付き書式(F-3): min / max の集計(core)+ データバー / カラースケール(本体の行)+ 状態チップ(セル内容)。
   conditionalFormat?: NonNullable<GridCoreFeatures['conditionalFormat']> & ConditionalFormatCellResolvers & {

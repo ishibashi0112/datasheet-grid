@@ -2,10 +2,12 @@ import { describe, it, expect } from 'vitest';
 
 import {
   clampClientYAboveFooter,
+  clampClientYBelowHeader,
   computeNextScrollPosition,
   hasPointerLeftActivationRadius,
   resolveAutoScrollAxisDirection,
   resolveScrollContentBox,
+  resolveTopAutoScrollStart,
 } from './autoScrollGeometry';
 
 describe('resolveScrollContentBox', () => {
@@ -124,5 +126,26 @@ describe('clampClientYAboveFooter', () => {
     expect(clampClientYAboveFooter(95, 100, 30)).toBe(69);
     expect(clampClientYAboveFooter(150, 100, 30)).toBe(69);
     expect(clampClientYAboveFooter(50, 100, 30)).toBe(50);
+  });
+});
+
+describe('clampClientYBelowHeader / resolveTopAutoScrollStart(1.1.0 / 固定行)', () => {
+  it('stickyTopHeight 0(上の固定行なし)なら従来どおり', () => {
+    expect(clampClientYBelowHeader(10, 50, 0)).toBe(10);
+    expect(resolveTopAutoScrollStart(50, 0, 24)).toBe(50);
+  });
+  it('列見出しと上の固定行の上は本体の行が見え始める位置へ詰め、それより下はそのまま', () => {
+    // コンテンツ上端 50 / 列見出し 40 + 固定行 36 = 76 → 本体の行は 126 から見える
+    expect(clampClientYBelowHeader(60, 50, 76)).toBe(126);
+    expect(clampClientYBelowHeader(110, 50, 76)).toBe(126);
+    expect(clampClientYBelowHeader(140, 50, 76)).toBe(140);
+  });
+  it('上の帯は本体の行が見え始める位置まで(帯の始端 + threshold = その位置)', () => {
+    const start = resolveTopAutoScrollStart(50, 76, 24);
+    expect(start).toBe(102);
+    expect(resolveAutoScrollAxisDirection(125, start, 500, 24)).toBe(-1);
+    expect(resolveAutoScrollAxisDirection(126, start, 500, 24)).toBe(0);
+    // 固定する高さが帯より狭くても始端はコンテンツ上端より上へ出さない
+    expect(resolveTopAutoScrollStart(50, 10, 24)).toBe(50);
   });
 });

@@ -190,6 +190,8 @@ import type {
   // 追加(label-row ②): ラベル行の記述子 / スロット値の型です。
   GridLabelRow,
   GridSlotProps,
+  // 追加(1.1.0 / 固定行): 固定行の位置('top' / 'bottom')。
+  GridPinnedRowPosition,
   // 追加(DS-3-0): 行モデルのシーム契約型です(rowModel の構築に使います)。
   // 追加(記述子化): commit 経路で text/date/select/custom を記述子化する際の型です。
   // 追加(12-A): set フィルター値の構築に使います。
@@ -468,6 +470,9 @@ export function useGridShell<T extends object>({
   labelRow,
   // 追加(合計行 3A): 表の下端に固定する合計行。未指定 / false なら機能は完全に休眠します。
   totalRow,
+  // 追加(1.1.0 / 固定行): 表の上下に固定する行(表示だけ)。未指定 / 空なら機能は完全に休眠します。
+  pinnedTopRows,
+  pinnedBottomRows,
   // 追加(フィルハンドル 1A): 選択範囲の右下の四角を引いて埋める。未指定 / false なら機能は完全に休眠します。
   fillHandle,
   // 追加(row-drag ③): 行ドラッグ並び替え(既定 OFF)。
@@ -511,7 +516,9 @@ export function useGridShell<T extends object>({
 
   // 追加(THEME-2): density プリセットの既定寸法を解決します(明示 prop が常に優先)。
   const rowHeight = rowHeightProp ?? DENSITY_DIMENSIONS[density].rowHeight;
-  const headerHeight = headerHeightProp ?? DENSITY_DIMENSIONS[density].headerHeight;
+  // 変更(1.1.0 / 固定行): 列見出しの行の高さ。上の固定行があるときは、本体の上端(headerHeight)= 列見出し + 上の固定行
+  //   (下の合計行の後で決める)。列見出しの行そのものの高さが要るところ(GridHeaderRow ほか)はこちら。
+  const columnHeaderHeight = headerHeightProp ?? DENSITY_DIMENSIONS[density].headerHeight;
 
   // 追加(scrollHint): スクロール位置インジケーターのオプション解決です。
   //   null = 完全無効(オーバーレイ自体を描画しない)。boolean / オブジェクトの両形を吸収します。
@@ -831,7 +838,20 @@ export function useGridShell<T extends object>({
   const totalRowLabel = totalRowOptions?.label ?? localeTexts.totalRowLabel;
   const totalRowValues = totalRowOptions?.values;
   const totalRowRenderCell = totalRowOptions?.renderCell;
-  const footerHeight = totalRowEnabled ? Math.max(0, totalRowOptions?.height ?? rowHeight) : 0;
+  const totalRowHeight = totalRowEnabled ? Math.max(0, totalRowOptions?.height ?? rowHeight) : 0;
+  // 追加(1.1.0 / 固定行): 表の上下に固定する行(表示だけ。選択 / 編集 / キー操作に入らない)。機能セットに pinnedRows が
+  //   無ければ無効(開発時に警告)。本体の上端(headerHeight)は列見出し + 上の固定行、下端に固定する高さ(footerHeight)は
+  //   下の固定行 + 合計行として、今までの幾何(スクロール / 行を見せる位置 / ヒットテスト / 選択枠)へそのまま通します。
+  const PinnedRows = features.pinnedRows?.PinnedRows;
+  const pinnedTop = PinnedRows && pinnedTopRows && pinnedTopRows.length > 0 ? pinnedTopRows : null;
+  const pinnedBottom = PinnedRows && pinnedBottomRows && pinnedBottomRows.length > 0 ? pinnedBottomRows : null;
+  const pinnedTopCount = pinnedTop?.length ?? 0;
+  const pinnedBottomCount = pinnedBottom?.length ?? 0;
+  const headerHeight = columnHeaderHeight + pinnedTopCount * rowHeight;
+  const footerHeight = totalRowHeight + pinnedBottomCount * rowHeight;
+  // ドラッグ(範囲選択 / フィルハンドル / 行ドラッグ)のヒットテストと上の自動スクロールの帯に渡す、上端に固定する高さ。
+  //   上の固定行があるときだけ(無ければ 0 = 従来どおり、列見出しの上端から 24px の帯)。
+  const stickyTopHeight = pinnedTopCount > 0 ? headerHeight : 0;
 
 
 
@@ -1565,6 +1585,11 @@ export function useGridShell<T extends object>({
   // 追加(1.0.2 / 2026-11-09 実アプリの総点検 D-02): 列幅の自動調整で状態チップ(conditionalFormat.chips)のセルを
   //   チップの枠(余白とアイコン)ごと測るための中身です。セルの描画(renderCellContent)と同じ ctx でチップを決めます
   //   (選択などの状態は false)。条件付き書式の機能が無い構成では渡しません(チップを出さないので文字だけを測る)。
+  // 追加(1.1.0 / 固定行): 列幅の自動調整で測る固定行(上 + 下)。
+  const pinnedAutosizeRows = useMemo(
+    () => (pinnedTop || pinnedBottom ? [...(pinnedTop ?? []), ...(pinnedBottom ?? [])] : undefined),
+    [pinnedTop, pinnedBottom],
+  );
   const autosizeChipFeature = features.conditionalFormat;
   const autosizeChipOf = useMemo<AutosizeChipOf<T> | undefined>(() => {
     if (!autosizeChipFeature) {
@@ -1598,6 +1623,8 @@ export function useGridShell<T extends object>({
     dispatch,
     totalRowTexts: totalRowAutosizeTexts,
     chipOf: autosizeChipOf,
+    // 追加(1.1.0 / 固定行): 固定行の値も測ります(本体の行の後)。
+    pinnedRows: pinnedAutosizeRows,
   });
   const { isAutosizing, runAutosize } = columnAutosize;
 
@@ -2445,6 +2472,7 @@ export function useGridShell<T extends object>({
     headerHeight,
     // 追加(合計行 3A): 端の自動スクロールの下の帯 / ヒットテストを合計行の上端までにします(無効時 0)。
     footerHeight,
+    stickyTopHeight,
     // 変更(auto-height シーム): ヒットテストの行解決は rowMetrics 経由(uniform で従来式と一致)。
     rowMetrics,
     // 追加(scroll-space 仮想化): ヒットテスト clientY→row の物理→論理換算に使います。
@@ -2668,6 +2696,7 @@ export function useGridShell<T extends object>({
     scrollContainerRef,
     gridRootRef,
     footerHeight,
+    stickyTopHeight,
     handleRowsChange,
     amendRowsChange,
     applyServerSideCellEdits,
@@ -2812,6 +2841,11 @@ export function useGridShell<T extends object>({
   const totalRowExport = useMemo(
     () => (totalRowEnabled ? { cells: totalRowCells, label: totalRowLabel } : undefined),
     [totalRowEnabled, totalRowCells, totalRowLabel],
+  );
+  // 追加(1.1.0 / 固定行): エクスポートの includePinnedRows で出す固定行(上 / 下)。
+  const pinnedRowsExport = useMemo(
+    () => (pinnedTop || pinnedBottom ? { top: pinnedTop ?? [], bottom: pinnedBottom ?? [] } : undefined),
+    [pinnedTop, pinnedBottom],
   );
   // ── 追加(F-2): セル内検索 ──
   //   実体は engine.find(controllers/findController。走査は時間分割)。React はスナップショットを購読し、既定セルの
@@ -3742,6 +3776,7 @@ export function useGridShell<T extends object>({
       rowMetrics,
       headerHeight,
       footerHeight,
+      stickyTopHeight,
       verticalScaleFactor,
       windowBaseOffsetPx: overlayBaseOffset,
       scrollContainerRef,
@@ -4126,13 +4161,14 @@ export function useGridShell<T extends object>({
         pane={pane}
         ownsRowHeader={ownsRowHeader}
         leadingWidth={leadingWidth}
-        bodyHeight={physicalBodyHeight}
-        height={footerHeight}
+        // 変更(1.1.0 / 固定行): 下の固定行があるときは本体ぶんの空きは固定行の器が持ちます(合計行はその直後)。
+        bodyHeight={pinnedBottom ? 0 : physicalBodyHeight}
+        height={totalRowHeight}
         renderEntries={renderEntries}
         cells={totalRowCells}
         label={totalRowLabel}
         labelColumnKey={totalRowLabelColumnKey}
-        ariaRowIndex={viewRowCount + 2}
+        ariaRowIndex={viewRowCount + 2 + pinnedTopCount + pinnedBottomCount}
         rowHeaderCellStyle={rowHeaderCellStyle}
         renderCell={totalRowRenderCell}
         rowClassName={totalRowSlot.className}
@@ -4141,6 +4177,40 @@ export function useGridShell<T extends object>({
         onPointerEnter={handleTotalRowPointerEnter}
       />
     ) : null;
+
+  // 追加(1.1.0 / 固定行): 上 / 下の固定行の器(各ペイン)。行見出しの読み上げは「上に固定 1」など。行に入ったら
+  //   行ホバーを外します(合計行と同じ)。
+  const renderPinnedRows = (
+    position: GridPinnedRowPosition,
+    pane: GridPaneKind,
+    ownsRowHeader: boolean,
+    leadingWidth: number,
+    renderEntries: PaneColumnEntry<T>[],
+  ) => {
+    const pinnedRows = position === 'top' ? pinnedTop : pinnedBottom;
+    return pinnedRows && PinnedRows ? (
+      <PinnedRows<T>
+        pane={pane}
+        position={position}
+        ownsRowHeader={ownsRowHeader}
+        leadingWidth={leadingWidth}
+        rows={pinnedRows}
+        rowHeight={rowHeight}
+        stickyOffset={position === 'top' ? columnHeaderHeight : totalRowHeight}
+        bodyHeight={position === 'top' ? 0 : physicalBodyHeight}
+        renderEntries={renderEntries}
+        rowKeyGetter={resolvedRowKeyGetter}
+        ariaRowIndexStart={position === 'top' ? 2 : viewRowCount + 2 + pinnedTopCount}
+        rowHeaderCellStyle={rowHeaderCellStyle}
+        getRowClassName={getRowClassName}
+        showCellOverflowTooltip={showCellOverflowTooltip}
+        conditionalFormat={conditionalFormatFeature}
+        conditionalFormatStats={conditionalFormatStats}
+        slots={slots}
+        onPointerEnter={handleTotalRowPointerEnter}
+      />
+    ) : null;
+  };
 
   const pinnedPaneStyle = (
     side: 'left' | 'right',
@@ -4496,6 +4566,7 @@ export function useGridShell<T extends object>({
     labelViewIndexes: labelDisplay?.labelViewIndexes,
     // 追加(合計行 3A): 合計行のエクスポート(includeTotalRow)と、末尾 / 行を見せる位置の計算に使う高さ。
     totalRowExport,
+    pinnedRowsExport,
     footerHeight,
     // 追加(段階 2 の確かめ直し N4-1): scrollToRow / scrollToCell が上へ見せる行をラベル行の固定の帯の下に置く。
     stickyTopInset,
@@ -4669,7 +4740,7 @@ export function useGridShell<T extends object>({
           role="grid"
           aria-label={ariaLabel}
           // 変更(合計行 3A): 合計行を表示しているときは 1 行足します(見出し行 + 表示行 + 合計行)。
-          aria-rowcount={viewRowCount + 1 + (totalRowEnabled ? 1 : 0)}
+          aria-rowcount={viewRowCount + 1 + pinnedTopCount + pinnedBottomCount + (totalRowEnabled ? 1 : 0)}
           aria-colcount={orderedColumns.length + 1}
           aria-multiselectable={enableRangeSelection || undefined}
           aria-readonly={readOnly || undefined}
@@ -4724,7 +4795,7 @@ export function useGridShell<T extends object>({
                   pane="left"
                   ownsRowHeader
                   leadingWidth={leftLeadingWidth}
-                  headerHeight={headerHeight}
+                  headerHeight={columnHeaderHeight}
                   rowHeaderCellStyle={rowHeaderCellStyle}
                   slots={slots}
                   isCornerHovered={isCornerHovered}
@@ -4753,6 +4824,8 @@ export function useGridShell<T extends object>({
                   onColumnHeaderContextMenu={openColumnMenuFromContextMenu}
                   onColumnDragHandlePointerDown={headerDragHandler}
                 />
+                {/* 追加(1.1.0 / 固定行): 上に固定する行(列見出しの直後の sticky の器)。 */}
+                {renderPinnedRows('top', 'left', true, leftLeadingWidth, leftRenderEntries)}
 
                 {/* 追加(10-D): 左固定ペイン内の overlay（ペインローカル座標）。*/}
                 {/*   active cell / 選択範囲が左固定列にあるときだけ矩形が出ます。*/}
@@ -4871,6 +4944,7 @@ export function useGridShell<T extends object>({
                   onGroupToggle={handleGroupToggle}
                   GroupRow={GroupRow}
                   rowHeaderCellStyle={rowHeaderCellStyle}
+                  ariaRowOffset={pinnedTopCount}
                   hoveredRowIndex={resolvedHoveredRowIndex}
                   isWholeGridSelected={isWholeGridSelected}
                   enableRowSelection={enableRowSelection}
@@ -4909,6 +4983,8 @@ export function useGridShell<T extends object>({
                   renderRowDropIndicator('left', 'ssg-row-drop-indicator ssg-row-drop-indicator--cap')}
                 </div>
                 {/* 追加(合計行 3A): 下端に固定する合計行(本体ぶんの空きの直後 = ボックスの下端の sticky 行)。 */}
+                {/* 追加(1.1.0 / 固定行): 下に固定する行(本体ぶんの空きの後。合計行はその後ろ)。 */}
+                {renderPinnedRows('bottom', 'left', true, leftLeadingWidth, leftRenderEntries)}
                 {renderTotalRow('left', true, leftLeadingWidth, leftRenderEntries)}
               </div>
             )}
@@ -4947,7 +5023,7 @@ export function useGridShell<T extends object>({
                 pane="center"
                 ownsRowHeader={centerOwnsRowHeader}
                 leadingWidth={centerLeadingWidth}
-                headerHeight={headerHeight}
+                headerHeight={columnHeaderHeight}
                 rowHeaderCellStyle={rowHeaderCellStyle}
                 slots={slots}
                 isCornerHovered={isCornerHovered}
@@ -4976,6 +5052,8 @@ export function useGridShell<T extends object>({
                 onColumnHeaderContextMenu={openColumnMenuFromContextMenu}
                 onColumnDragHandlePointerDown={headerDragHandler}
               />
+              {/* 追加(1.1.0 / 固定行): 上に固定する行(列見出しの直後の sticky の器)。 */}
+              {renderPinnedRows('top', 'center', centerOwnsRowHeader, centerLeadingWidth, centerRenderEntries)}
 
               {/* 変更(10-D): 中央ペインの overlay をペインローカル座標に切替。*/}
               {/*   leadingWidth は centerLeadingWidth（固定列なしのとき rowHeaderWidth）。*/}
@@ -5093,6 +5171,7 @@ export function useGridShell<T extends object>({
                   onGroupToggle={handleGroupToggle}
                   GroupRow={GroupRow}
                   rowHeaderCellStyle={rowHeaderCellStyle}
+                  ariaRowOffset={pinnedTopCount}
                   hoveredRowIndex={resolvedHoveredRowIndex}
                   isWholeGridSelected={isWholeGridSelected}
                   enableRowSelection={enableRowSelection}
@@ -5141,6 +5220,8 @@ export function useGridShell<T extends object>({
                   )}
               </div>
               {/* 追加(合計行 3A): 下端に固定する合計行(本体ぶんの空きの直後 = ボックスの下端の sticky 行)。 */}
+              {/* 追加(1.1.0 / 固定行): 下に固定する行(本体ぶんの空きの後。合計行はその後ろ)。 */}
+              {renderPinnedRows('bottom', 'center', centerOwnsRowHeader, centerLeadingWidth, centerRenderEntries)}
               {renderTotalRow('center', centerOwnsRowHeader, centerLeadingWidth, centerRenderEntries)}
 
               {/* 追加(13-B3-2): 中央ペインのドロップインジケータ(縦線)。
@@ -5173,7 +5254,7 @@ export function useGridShell<T extends object>({
                   pane="right"
                   ownsRowHeader={false}
                   leadingWidth={rightLeadingWidth}
-                  headerHeight={headerHeight}
+                  headerHeight={columnHeaderHeight}
                   rowHeaderCellStyle={rowHeaderCellStyle}
                   slots={slots}
                   isCornerHovered={isCornerHovered}
@@ -5202,6 +5283,8 @@ export function useGridShell<T extends object>({
                   onColumnHeaderContextMenu={openColumnMenuFromContextMenu}
                   onColumnDragHandlePointerDown={headerDragHandler}
                 />
+                {/* 追加(1.1.0 / 固定行): 上に固定する行(列見出しの直後の sticky の器)。 */}
+                {renderPinnedRows('top', 'right', false, rightLeadingWidth, rightRenderEntries)}
 
                 {/* 追加(10-D): 右固定ペイン内の overlay（ペインローカル座標）。*/}
                 {/* 変更(10-G): 左ペインと同様、overlay + body をまとめる絶対配置レイヤーです。*/}
@@ -5317,6 +5400,7 @@ export function useGridShell<T extends object>({
                   onGroupToggle={handleGroupToggle}
                   GroupRow={GroupRow}
                   rowHeaderCellStyle={rowHeaderCellStyle}
+                  ariaRowOffset={pinnedTopCount}
                   hoveredRowIndex={resolvedHoveredRowIndex}
                   isWholeGridSelected={isWholeGridSelected}
                   enableRowSelection={enableRowSelection}
@@ -5354,6 +5438,8 @@ export function useGridShell<T extends object>({
                 {rowDragAvailable && renderRowDropIndicator('right', 'ssg-row-drop-indicator')}
                 </div>
                 {/* 追加(合計行 3A): 下端に固定する合計行(本体ぶんの空きの直後 = ボックスの下端の sticky 行)。 */}
+                {/* 追加(1.1.0 / 固定行): 下に固定する行(本体ぶんの空きの後。合計行はその後ろ)。 */}
+                {renderPinnedRows('bottom', 'right', false, rightLeadingWidth, rightRenderEntries)}
                 {renderTotalRow('right', false, rightLeadingWidth, rightRenderEntries)}
               </div>
             )}

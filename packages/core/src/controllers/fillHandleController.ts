@@ -49,6 +49,7 @@ import {
   computeNextScrollPosition,
   hasPointerLeftActivationRadius,
   resolveAutoScrollAxisDirection,
+  resolveTopAutoScrollStart,
   resolveScrollContentBox,
 } from '../logic/autoScrollGeometry';
 import { resolveElementScale } from '../logic/elementScale';
@@ -109,6 +110,9 @@ export type FillHandleControllerArgs<T> = {
   // 追加(見直し): 下端に固定する行(合計行)の高さ。端の自動スクロールの下の帯をその上端へ寄せます(既定 0)。
   //   合計行の上のポインタの扱いは hitTest(pointerInteractionsController)側で揃えています。
   footerHeight?: number;
+  // 追加(1.1.0 / 固定行): 上端に固定する高さ(列見出し + 上の固定行)。上の固定行があるときだけ渡し、上の帯を本体の行が
+  //   見え始める位置まで広げます(既定 0 = 従来どおり)。固定行の上のポインタの扱いは hitTest 側で揃えています。
+  stickyTopHeight?: number;
   // clientSide の書き込み(履歴付き)と、選び直しの差し替え(履歴を積まない)。
   applyRowsChange?: (nextRows: T[]) => void;
   amendRowsChange?: (nextRows: T[]) => void;
@@ -342,6 +346,7 @@ export const createFillHandleController = <T,>(): FillHandleController<T> => {
       active.armed = true;
     }
     const rect = scrollElement.getBoundingClientRect();
+    const scale = resolveElementScale(scrollElement, rect);
     const contentBox = resolveScrollContentBox({
       rectLeft: rect.left,
       rectTop: rect.top,
@@ -349,13 +354,13 @@ export const createFillHandleController = <T,>(): FillHandleController<T> => {
       clientTop: scrollElement.clientTop,
       clientWidth: scrollElement.clientWidth,
       clientHeight: scrollElement.clientHeight,
-      scale: resolveElementScale(scrollElement, rect),
+      scale,
     });
     const nextScrollTop = computeNextScrollPosition(
       scrollElement.scrollTop,
       resolveAutoScrollAxisDirection(
         active.pointer.y,
-        contentBox.top,
+        resolveTopAutoScrollStart(contentBox.top, (args.stickyTopHeight ?? 0) * scale.y, AUTO_SCROLL_EDGE_THRESHOLD),
         contentBox.bottom - (args.footerHeight ?? 0),
         AUTO_SCROLL_EDGE_THRESHOLD,
       ),

@@ -18,6 +18,7 @@ export { rowDragFeature } from './features/rowDrag';
 export { scrollHintFeature } from './features/scrollHint';
 export { columnAutosizeFeature } from './features/columnAutosize';
 export { totalRowFeature } from './features/totalRow';
+export { pinnedRowsFeature } from './features/pinnedRows';
 export { imeDirectInputFeature } from './features/imeDirectInput';
 export { contextMenuFeature } from './features/contextMenu';
 export { conditionalFormatFeature } from './features/conditionalFormat';

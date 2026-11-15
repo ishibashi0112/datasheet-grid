@@ -500,7 +500,16 @@ export type CellRenderContext<T, F extends GridFrameworkTypes = GridFrameworkTyp
   //   自前のトグル UI を置くための口です(専用トグル列を使わない配置 = T2)。
   //   expandable が false の行では toggle / setExpanded は no-op です。
   detail?: CellDetailContext | undefined;
+  // 追加(1.1.0 / 固定行): 固定行(pinnedTopRows / pinnedBottomRows)のセルのときだけ 'top' / 'bottom'。
+  //   固定行では rowIndex / sourceRowIndex は帯の中の位置、isActive / isSelected / isEditing は false、readOnly は true、
+  //   setValue は何もしません(表示だけ)。
+  /** 固定行(`pinnedTopRows` / `pinnedBottomRows`)のセルのときだけ `'top'` / `'bottom'`(本体の行では無い)。 */
+  pinned?: GridPinnedRowPosition | undefined;
 };
+
+// 追加(1.1.0 / 固定行): 固定行の帯(上 / 下)。
+/** 固定行の帯。`'top'` は `pinnedTopRows`、`'bottom'` は `pinnedBottomRows`。 */
+export type GridPinnedRowPosition = 'top' | 'bottom';
 
 // 追加(detail ②): renderCell 側から展開行を操作するためのコンテキストです。
 export type CellDetailContext = {
@@ -847,6 +856,9 @@ export type CellStyleContext<T, F extends GridFrameworkTypes = GridFrameworkType
   isSelected: boolean;
   isEditing: boolean;
   readOnly: boolean;
+  // 追加(1.1.0 / 固定行): 固定行のセルのときだけ 'top' / 'bottom'(rowIndex / sourceRowIndex は帯の中の位置)。
+  /** 固定行(`pinnedTopRows` / `pinnedBottomRows`)のセルのときだけ `'top'` / `'bottom'`。 */
+  pinned?: GridPinnedRowPosition | undefined;
 };
 
 // 追加(audit RD-4): canEditCell の第 5 引数です。第 1 引数 rowIndex はビュー行 index(フィルター / ソート後の
@@ -874,6 +886,9 @@ export type RowStyleContext<T> = {
   sourceRowIndex: number;
   rowKey: GridRowKey;
   isSelected: boolean;
+  // 追加(1.1.0 / 固定行): 固定行のときだけ 'top' / 'bottom'(rowIndex / sourceRowIndex は帯の中の位置)。
+  /** 固定行(`pinnedTopRows` / `pinnedBottomRows`)のときだけ `'top'` / `'bottom'`。 */
+  pinned?: GridPinnedRowPosition | undefined;
 };
 
 // 追加(11-A): GridBodyRow がセルごとに算出し、renderCellContent へ引き渡す
@@ -2121,6 +2136,10 @@ export type GridLocaleText = {
   saveFailed: GridLocaleTextTemplate<{ count: number }>;
   /** 同上の × の読み上げの名前。既定 `保存エラー通知を閉じる`、英語 `Dismiss the save error`。 */
   dismissSaveError: string;
+  /** 上の固定行の行見出しの読み上げの名前(`pinnedTopRows`)。既定 `上に固定 {row}`、英語 `Pinned to top {row}`。 */
+  pinnedTopRow: GridLocaleTextTemplate<{ row: number }>;
+  /** 下の固定行の行見出しの読み上げの名前(`pinnedBottomRows`)。既定 `下に固定 {row}`、英語 `Pinned to bottom {row}`。 */
+  pinnedBottomRow: GridLocaleTextTemplate<{ row: number }>;
   /** 合計行の左端の文字(`totalRow.label` を渡せばそちら)。既定 `合計`、英語 `Total`。 */
   totalRowLabel: string;
   /** 合計行 / グループ行の集計の種類。既定 `平均`、英語 `Avg`。 */
@@ -2607,6 +2626,9 @@ export type CsvExportOptions = {
   includeLabelRows?: boolean | undefined;
   // 追加(合計行 3A): 合計行(totalRow)を末尾に含めるか(既定 false)。scope 'view' のときだけ出力します。
   includeTotalRow?: boolean | undefined;
+  // 追加(1.1.0 / 固定行): 固定行(pinnedTopRows / pinnedBottomRows)を含めるか(既定 false)。上の固定行は見出しの次、
+  //   下の固定行は本体の行の後(合計行の前)。scope 'selection' では出しません。
+  includePinnedRows?: boolean | undefined;
   // 追加(段階 2 DU-10): 行グルーピング中に、各グループの先頭へ小計の行を入れるか(既定 false)。scope 'view' のときだけ。
   //   グループ元の列は祖先の値と「<ラベル> 小計」、集計のある列(aggFunc)はそのグループの集計値、ほかの列は空です。
   includeGroupRows?: boolean | undefined;
@@ -2624,6 +2646,9 @@ export type GridExportOptions = {
   // 追加(合計行 3A): 合計行(totalRow)を末尾に含めるか(既定 false)。scope 'view' のときだけ出力し、
   //   GridExportData.rowKinds の 'total' で判別できます。
   includeTotalRow?: boolean | undefined;
+  // 追加(1.1.0 / 固定行): 固定行(pinnedTopRows / pinnedBottomRows)を含めるか(既定 false)。上の固定行は先頭(見出しの次)、
+  //   下の固定行は本体の行の後(合計行の前)。scope 'selection' では出しません。GridExportData.rowKinds の 'pinned' で判別できます。
+  includePinnedRows?: boolean | undefined;
   // 追加(段階 2 DU-10): 行グルーピング中に、各グループの先頭へ小計の行を入れるか(既定 false。CsvExportOptions と同じ)。
   //   GridExportData.rowKinds の 'group' で判別できます。
   includeGroupRows?: boolean | undefined;
@@ -2651,7 +2676,8 @@ export type GridExportData = {
   //   'label' の行は labelRow.exportText 由来のセル列で、Excel 側で結合セル / 書式を当てる判定に使えます。
   //   追加(合計行 3A): 'total' は末尾の合計行です。
   //   追加(段階 2 DU-10): 'group' はグループの小計の行です(includeGroupRows のとき)。
-  rowKinds?: Array<'data' | 'label' | 'total' | 'group'> | undefined;
+  //   追加(1.1.0 / 固定行): 'pinned' は固定行です(includePinnedRows のとき)。
+  rowKinds?: Array<'data' | 'label' | 'total' | 'group' | 'pinned'> | undefined;
 };
 
 // 追加(state v2): 列メタのシリアライズ単位です(getState / applyState の GridState.columns 要素)。
@@ -4430,8 +4456,10 @@ export type SpreadsheetGridProps<T, F extends GridFrameworkTypes = GridFramework
    * 行ごとの追加 class(または `{ className, style }`)。行コンテナ + 行ヘッダー「#」セル +
    * 各データセルに付与され、Tailwind / StyleX での行ハイライトに使える。`style`
    * はインラインで付与され、座標 / 寸法はグリッドが後勝ち(返した style は内容比較で memo される)。
-   * 第 3 引数 `ctx` は `{ row, rowIndex, sourceRowIndex, rowKey, isSelected }`(「補助型」節参照)。
-   * 既存の 2 引数関数もそのまま動く(後方互換)。グループ行は対象外。class と style
+   * 第 3 引数 `ctx` は `{ row, rowIndex, sourceRowIndex, rowKey, isSelected, pinned? }`(「補助型」
+   * 節参照)。固定行(`pinnedTopRows` / `pinnedBottomRows`)にも呼ばれ、そのときは `ctx.pinned` が
+   * `'top'` / `'bottom'`(`rowIndex` / `sourceRowIndex` は固定行の中の位置)。既存の 2
+   * 引数関数もそのまま動く(後方互換)。グループ行は対象外。class と style
    * は行と各セルの両方に付くので、`opacity` / `filter` のように重なる指定は style で返さず、class
    * を返して `.ssg-body-row.<class>` で行だけに当てる(style の `opacity: 0.5` は 0.25 になる)。
    */
@@ -4489,6 +4517,25 @@ export type SpreadsheetGridProps<T, F extends GridFrameworkTypes = GridFramework
    * @defaultValue —(無効)
    */
   totalRow?: boolean | TotalRowOptions<T, F> | undefined;
+  // ── 追加(1.1.0 / 固定行): 表の上下に固定する行(rows とは別の配列。表示だけ) ──
+  /**
+   * **固定行(上)**。列見出しのすぐ下に固定して表示する行(縦スクロールしても動かず、
+   * 横スクロールと左右の固定列には付いていく)。目標値・前年の実績・平均のような比べる行を、
+   * 本体の行とは別の配列で渡す(`rows` には入れない)。セルは列の `valueFormatter` /
+   * `renderCell`(`ctx.pinned` が `'top'`)/ `cellClassName` / 条件付き書式で描く。表示専用(選択 /
+   * 編集 / 貼り付け / コピー / キー操作の対象外。並べ替え / フィルターも効かない)。行の高さは
+   * `rowHeight`。エクスポートは `includePinnedRows: true` のときだけ。詳細は「固定行」節。
+   *
+   * @defaultValue —(無効)
+   */
+  pinnedTopRows?: T[] | undefined;
+  /**
+   * **固定行(下)**。表の下端(合計行(`totalRow`)があればそのすぐ上)に固定して表示する行。ほかは
+   * `pinnedTopRows` と同じ(`ctx.pinned` は `'bottom'`)。
+   *
+   * @defaultValue —(無効)
+   */
+  pinnedBottomRows?: T[] | undefined;
   // ── 追加(フィルハンドル 1A): 選択範囲の右下の四角を引いて連続データ / コピーで埋める ──
   //   指定時のみ有効な opt-in 機能です。詳細は FillHandleOptions を参照。
   /**

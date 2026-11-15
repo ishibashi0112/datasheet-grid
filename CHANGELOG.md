@@ -25,6 +25,7 @@
 - 列の `parseClipboardValue` に渡す組み込みの数値のパーサ `numberParser({ strip, negativeParentheses })` と型 `NumberParserOptions`(React 版の `.` / `/lite` と core の入口)。number エディタの既定のパーサと同じ読み方(全角の数字・3 桁区切り、空白だけは `null`、読めない文字は元のまま)に、通貨記号や単位を先に外す `strip`(`['¥', '円']` など)と、`(1,200)` を `-1200` と読む `negativeParentheses` を足せます(これまでは「¥12,000」を貼ると reject の列では黙って飛ばされ、自前のパーサを書くと全角の読み方が使えませんでした)。
 - ハンドルの `applyRows` に、履歴に積まない外からの更新 `applyRows(next, { undoable: false })` と型 `GridApplyRowsOptions`、関数の形 `applyRows((prev) => next)` を足しました。`undoable: false` は今の履歴も消さず、元に戻す / やり直すは外からの更新を残したままグリッドでの編集だけを取り消す / やり直します(株価のように絶えず変わる表で、これまでは `rows` を作り直すと履歴が消え、`applyRows` で渡すと更新が 1 つずつ履歴に積まれていました)。ガイド「セルの編集」の「外から絶えず変わる表」。
 - 貼り付けで書かなかったセルを知らせる `onPasteSkipped`(型 `GridPasteSkippedCell` / `GridPasteSkippedParams`)。編集できないセル(`reason: 'readOnly'`)と、`validationMode: 'reject'` の列で検査に通らなかった値(`'invalid'`。`message` は検査のメッセージ)を、1 回の貼り付けにつき 1 回まとめて渡します。clientSide と serverSide の両方です。
+- 表の上下に固定する行 `pinnedTopRows` / `pinnedBottomRows`(型 `GridPinnedRowPosition`、`/lite` の部品 `pinnedRowsFeature`)。目標値・前年の実績・平均のような比べる行を、本体の行とは別の配列で渡すと、列見出しのすぐ下 / 表の下端(合計行があればそのすぐ上)に留まります。表示だけの行で(選択 / 編集 / 貼り付け / コピー / キー操作 / 並べ替え / フィルターの対象外)、セルは列の `valueFormatter` / `renderCell` / `cellClassName` / 条件付き書式で描き、`renderCell` / `cellClassName` / `getRowClassName` の ctx の `pinned`(`'top'` / `'bottom'`)で見分けられます。エクスポートは `includePinnedRows: true` のときだけ(`getExportData` の `rowKinds` は `'pinned'`)。行見出しの読み上げの文言 `localeText.pinnedTopRow` / `pinnedBottomRow`、トークン `--ssg-pinned-row-bg` / `--ssg-pinned-row-border`。ガイド「固定行」。
 
 ### 変更
 

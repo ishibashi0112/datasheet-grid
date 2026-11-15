@@ -312,6 +312,12 @@ export const createExportCommands = <T,>(
       ? createGroupSubtotalLineGetter({ ...resolved.groupDisplay, columns: exportColumns, texts: getArgs()?.localeTexts })
       : undefined;
 
+  // 追加(1.1.0 / 固定行): 固定行(includePinnedRows のとき。範囲の選択 'selection' には入れない)。
+  const resolvePinned = (scope: CsvExportScope, includePinnedRows: boolean | undefined) => {
+    const pinned = getArgs()?.pinnedRowsExport;
+    return includePinnedRows === true && pinned && scope !== 'selection' ? pinned : undefined;
+  };
+
   const buildCsv = (options?: CsvExportOptions): string => {
     const scope = toKnownExportScope(options?.scope);
     const resolved = resolveExportScope(scope, options?.includeLabelRows === true, options?.includeGroupRows === true);
@@ -319,6 +325,7 @@ export const createExportCommands = <T,>(
       return options?.bom ? '\uFEFF' : '';
     }
     const exportColumns = stripSyntheticColumns(resolved.columns);
+    const pinned = resolvePinned(scope, options?.includePinnedRows);
     return serializeRowsToCsv({
       getRow: resolved.getRow,
       startRow: resolved.startRow,
@@ -332,6 +339,8 @@ export const createExportCommands = <T,>(
       getLabelLine: resolved.getLabelLine,
       totalLine: resolveTotalLine(scope, options?.includeTotalRow, exportColumns),
       getGroupLine: resolveGroupLine(resolved, options?.includeGroupRows, exportColumns),
+      pinnedTop: pinned?.top,
+      pinnedBottom: pinned?.bottom,
     });
   };
 
@@ -342,6 +351,7 @@ export const createExportCommands = <T,>(
       return { columns: [], rows: [] };
     }
     const exportColumns = stripSyntheticColumns(resolved.columns);
+    const pinned = resolvePinned(scope, options?.includePinnedRows);
     return buildGridExportData({
       getRow: resolved.getRow,
       startRow: resolved.startRow,
@@ -351,6 +361,8 @@ export const createExportCommands = <T,>(
       getLabelLine: resolved.getLabelLine,
       totalLine: resolveTotalLine(scope, options?.includeTotalRow, exportColumns),
       getGroupLine: resolveGroupLine(resolved, options?.includeGroupRows, exportColumns),
+      pinnedTop: pinned?.top,
+      pinnedBottom: pinned?.bottom,
     });
   };
 

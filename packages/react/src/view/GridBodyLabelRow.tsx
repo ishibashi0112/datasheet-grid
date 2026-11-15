@@ -30,6 +30,8 @@ type GridBodyLabelRowProps<T> = {
   rowIndex: number;
   rowKey: GridRowKey;
   top: number;
+  // 追加(1.1.0 / 固定行): aria-rowindex に足す数(上の固定行の数)。
+  ariaRowOffset?: number;
   rowHeight: number;
   rowHeaderCellStyle: CSSProperties;
   labelRow: GridLabelRow<T>;
@@ -51,6 +53,7 @@ function GridBodyLabelRowInner<T>({
   rowKey,
   top,
   rowHeight,
+  ariaRowOffset = 0,
   rowHeaderCellStyle,
   labelRow,
   renderContent,
@@ -66,7 +69,7 @@ function GridBodyLabelRowInner<T>({
       data-row-index={rowIndex}
       data-ssg-label-row=""
       role="row"
-      aria-rowindex={rowIndex + 2}
+      aria-rowindex={rowIndex + 2 + ariaRowOffset}
       aria-label={labelRow.label}
       // 追加(audit V-05): 行番号セルも中身も持たないペイン(右固定など)の帯は見た目だけなので支援技術から隠します
       //   (セルの無い row は ARIA の構造違反になるため)。

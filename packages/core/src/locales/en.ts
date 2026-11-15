@@ -92,6 +92,8 @@ const GRID_LOCALE_TEXT_EN = {
   dragRow: 'Drag to move the row',
   dragRowDisabled: 'Rows can\'t be moved while the table is sorted or filtered',
   dragRowLabel: 'Row {row}',
+  pinnedTopRow: 'Pinned to top {row}',
+  pinnedBottomRow: 'Pinned to bottom {row}',
   scrollHintRow: 'Row {row}',
   scrollHintJump: 'Go to row {row}',
   scrollHintJumpSeparator: '·',

@@ -66,6 +66,9 @@
     --ssg-total-row-bg: #f2f5fa;
     --ssg-total-row-text: var(--ssg-cell-text);
     --ssg-total-row-border: var(--ssg-divider);
+    /* 追加(1.1.0 / 固定行): 上下に固定する行(pinnedTopRows / pinnedBottomRows)の背景と、本体との境の線。 */
+    --ssg-pinned-row-bg: #f1f4f8;
+    --ssg-pinned-row-border: #8b97a8;
     --ssg-checkbox-border: #94a3b8;
     --ssg-checkbox-bg: #ffffff;
     --ssg-checkbox-checked-bg: var(--ssg-accent);
@@ -293,6 +296,9 @@
     --ssg-label-row-accent: var(--ssg-accent);
     /* 追加(合計行 3A): 合計行の背景(文字色・区切り線は既定の var() 参照で追従)。 */
     --ssg-total-row-bg: #222429;
+    /* 追加(1.1.0 / 固定行): 固定行の背景と、本体との境の線。 */
+    --ssg-pinned-row-bg: #1f2530;
+    --ssg-pinned-row-border: #6b778a;
     --ssg-checkbox-border: #5c5f66;
     --ssg-checkbox-bg: #1a1b1e;
     --ssg-checkbox-checked-mark: #141517;
@@ -713,6 +719,40 @@
   .ssg-total-label {
     overflow: hidden;
     text-overflow: ellipsis;
+  }
+
+  /* ── 追加(1.1.0 / 固定行): 表の上下に固定する行(pinnedTopRows / pinnedBottomRows) ── */
+  /* 各ペインのボックスの中の sticky の器です(上は列見出しの直後 = top は列見出しの高さ、下は本体ぶんの空きの後 =
+     bottom は合計行の高さ。どちらもインライン)。行は器の中に絶対配置します(top / height はインライン)。z-index は
+     ヘッダー行(6)より下・本体の行 / 選択枠 / エディタより前面(本体はこの下を流れる)。表示だけの行なので、
+     選択 / 編集 / ホバーの見た目は付きません。本体との境は濃い線(上の器は最後の行の下罫線、下の器は上辺の影)。 */
+  .ssg-pinned-rows {
+    position: sticky;
+    z-index: 5;
+  }
+  .ssg-pinned-rows--bottom {
+    box-shadow: 0 -1px 0 var(--ssg-pinned-row-border);
+  }
+  .ssg-pinned-row {
+    position: absolute;
+    left: 0;
+    width: 100%;
+  }
+  .ssg-pinned-cell,
+  .ssg-pinned-row-header {
+    background-color: var(--ssg-pinned-row-bg);
+  }
+  .ssg-pinned-rows--top > .ssg-pinned-row:last-child > .ssg-body-cell,
+  .ssg-pinned-rows--top > .ssg-pinned-row:last-child > .ssg-row-header-cell {
+    border-bottom-color: var(--ssg-pinned-row-border);
+  }
+  .ssg-pinned-row-header {
+    color: var(--ssg-glyph);
+  }
+  .ssg-pinned-row-icon {
+    width: 13px;
+    height: 13px;
+    fill: currentColor;
   }
 
   /* ── 展開行(detail / Master-Detail) ── */

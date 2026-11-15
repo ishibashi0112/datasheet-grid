@@ -17,6 +17,7 @@
     "detail-row",
     "label-rows",
     "total-row",
+    "pinned-rows",
     "row-drag",
     "column-drag",
     "export",

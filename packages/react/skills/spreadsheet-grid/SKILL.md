@@ -87,6 +87,7 @@ export function Inventory() {
 | フィルターとソートの保存・復元 | 「状態の保存 / 復元」 |
 | サーバーから少しずつ読む(SSRM) | 「serverSide モード」「dataSource とパラメータ」「セル編集の書き戻し」 |
 | グループと集計、合計行 | 「行グルーピング + 集計」「合計行」 |
+| 目標値・前年の行を表の上下に固定する(`pinnedTopRows` / `pinnedBottomRows`) | 「固定行」 |
 | 展開行、見出し行、行のドラッグ | 「展開行(Master/Detail)」「ラベル行」「行ドラッグ並び替え」 |
 | CSV / Excel への出力 | 「CSV エクスポート」「Excel / スプレッドシート エクスポート」 |
 | スクロール・選択・undo をコードから | 「命令的 API」 |

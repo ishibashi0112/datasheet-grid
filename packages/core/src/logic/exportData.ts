@@ -30,6 +30,9 @@ export type BuildGridExportDataParams<T> = {
   totalLine?: ReadonlyArray<unknown>;
   // 追加(段階 2 DU-10): グループの小計の行(serializeRowsToCsv と同じ契約)。指定時は rowKinds も返します。
   getGroupLine?: (rowIndex: number) => GroupSubtotalLine | undefined;
+  // 追加(1.1.0 / 固定行): 上の固定行(見出しの次)と下の固定行(本体の行の後・合計行の前)。指定時は rowKinds も返します。
+  pinnedTop?: readonly T[] | undefined;
+  pinnedBottom?: readonly T[] | undefined;
 };
 
 // 行レンジ × 列集合から、列メタ(key / title)と 2 次元セル(value / text)を生成します。
@@ -42,6 +45,8 @@ export const buildGridExportData = <T,>({
   getLabelLine,
   totalLine,
   getGroupLine,
+  pinnedTop,
+  pinnedBottom,
 }: BuildGridExportDataParams<T>): GridExportData => {
   // 列メタは key(オブジェクト系ライブラリ用)と title(ヘッダー表示用)の双方を持たせます。
   const exportColumns = columns.map((column) => ({
@@ -55,7 +60,20 @@ export const buildGridExportData = <T,>({
   //   追加(合計行 3A): 合計行を出すとき(totalLine)も付けます。
   //   追加(段階 2 DU-10): 小計の行を出すとき(getGroupLine)も付けます。
   const rowKinds: NonNullable<GridExportData['rowKinds']> | undefined =
-    getLabelLine || totalLine || getGroupLine ? [] : undefined;
+    getLabelLine || totalLine || getGroupLine || pinnedTop || pinnedBottom ? [] : undefined;
+  const dataCells = (row: T) =>
+    columns.map((column) => {
+      const value = getCellValue(row, column);
+      return { value, text: formatCellClipboardText(column, value, row) };
+    });
+  // 追加(1.1.0 / 固定行): 固定行は本体の行と同じ規則のセル(行種は 'pinned')。
+  const pushPinned = (pinnedRows: readonly T[] | undefined) => {
+    for (const row of pinnedRows ?? []) {
+      rows.push(dataCells(row));
+      rowKinds?.push('pinned');
+    }
+  };
+  pushPinned(pinnedTop);
   for (let rowIndex = startRow; rowIndex < endRow; rowIndex += 1) {
     const row = getRow(rowIndex);
     // SSRM 未ロード行(undefined)はスキップします。clientSide では常に行が存在します。
@@ -86,13 +104,9 @@ export const buildGridExportData = <T,>({
       continue;
     }
     rowKinds?.push('data');
-    rows.push(
-      columns.map((column) => {
-        const value = getCellValue(row, column);
-        return { value, text: formatCellClipboardText(column, value, row) };
-      }),
-    );
+    rows.push(dataCells(row));
   }
+  pushPinned(pinnedBottom);
 
   // 追加(合計行 3A): 合計行は末尾に 1 行(value は生値。見出しは文字列)。
   if (totalLine) {
