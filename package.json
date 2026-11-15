@@ -22,6 +22,8 @@
     "typecheck:test": "tsc --noEmit -p tsconfig.vitest.json",
     "docs:jsdoc": "node scripts/sync-api-jsdoc.mjs",
     "docs:jsdoc:check": "node scripts/sync-api-jsdoc.mjs --check",
+    "docs:api": "node scripts/sync-api-pages.mjs",
+    "docs:api:check": "node scripts/sync-api-pages.mjs --check",
     "size": "node scripts/measure-size.mjs",
     "size:check": "node scripts/measure-size.mjs --check",
     "examples:check": "node scripts/check-examples.mjs",

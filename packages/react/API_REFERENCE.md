@@ -57,7 +57,7 @@
 | `onRowSelectionChange` | `(model: RowSelectionModel) => void` | — | 行選択変化の通知(controlled/uncontrolled いずれでも発火)。通知の中でハンドルの `getSelectedRowKeys()` / `getSelectedRowData()` / `getSelectedRowCount()` などを呼ぶと、新しい選択を返す。 |
 | `enableGlobalFilter` | `boolean` | `true` | グローバルフィルター**機能**の有効化。`false` で機能が無効になり、既定トップバーのフィルター入力欄も出ない(summary は `showTopBarSummary` に従う。トップバー自体を消すには `showTopBar=false`)。 |
 | `enableColumnFilter` | `boolean` | `true` | 列ごとのフィルター。 |
-| `renderFilterDateInput` | `(ctx: FilterDateInputContext) => ReactNode` | 内製の日付フィールド | dateSet フィルター条件の日付入力を利用側コンポーネント(Mantine `DatePickerInput` 等)へ差し替えるスロット。既定は内製フィールド(自由入力 + ドリルアップカレンダー。下記「dateSet の日付入力(既定 UI)」節)。詳細は「日付入力の差し替え(renderFilterDateInput)」節。 |
+| `renderFilterDateInput` | `(ctx: FilterDateInputContext) => ReactNode` | 内製の日付フィールド | dateSet フィルター条件の日付入力を利用側コンポーネント(Mantine `DatePickerInput` 等)へ差し替えるスロット。既定は内製フィールド(自由入力 + ドリルアップカレンダー)。詳細は GridColumn の「dateSet の日付入力(既定 UI)」「日付入力の差し替え(renderFilterDateInput)」節と[ソートとフィルター](https://datasheet-grid.vercel.app/docs/guides/filter-sort)。 |
 | `getFilterOptions` | `(params: GetFilterOptionsParams<T>) => Promise<{ options: GridSelectFilterOption[]; truncated?: boolean }>` | — | set / select / 複合(numberSet / textSet / dateSet)列の候補を**非同期に供給**する(DB の DISTINCT など)。popover を開くたびに `{ columnKey, column, columnFilters(自列を除く他列の有効フィルター), globalText, signal }` で呼ばれ、閉じる / 列切替で `signal` が abort される(ライブラリはキャッシュしない)。読み込み中 / 失敗(再試行)/ 打ち切り(`truncated`)の表示は popover が持つ。優先順位は `column.filterOptions`(静的)> `getFilterOptions` > rows 自動収集。非同期候補の列は反転(exclude)可。clientSide / serverSide 両対応。詳細は「ソートとフィルター」ガイド。 |
 | `enableSorting` | `boolean` | `true` | ソート機能の有効化。ソートは列メニュー(⋮)の「昇順 / 降順で並び替え」と「並び替えを管理…」パネルから行う(ヘッダー本体のクリックは列範囲選択。`Shift` を押しながら見出しを押すと、選ぶのではなくその列を並べ替えに足す = 押すたびに昇順 → 降順 → 外す)。`false` でメニューのソート項目が消え、`applyState` 等で載った `sort` も適用されない。ソート順は値で決まり、数値として解釈できる値 → 文字列(日本語照合・数字は数値順)→ 空白セル(null / undefined / 空文字)の順。**空白セルは昇順でも降順でも末尾**(Excel と同じ)。 |
 | `manualFiltering` | `boolean` | `false` | 列 / グローバルフィルターの**絞り込みをグリッドで行わない**(手動フィルターモード)。フィルター UI(popover / チップバー / フィルター管理 / フィルター中の印)と状態(`GridState.filters` / `onStateChange`)は従来どおり動き、`rows` は渡した件数・順のまま表示される(絞り込みはサーバ側 WHERE 等の外部責務)。`rows` が 0 件でフィルターが載っているときは `noMatchingRowsText` を表示。serverSide(`dataSource`)では無視。詳細は「ソートとフィルター」ガイド。 |
@@ -102,13 +102,13 @@
 | `enableContextMenu` | `boolean` | `false` | コンテキストメニュー機能の有効化(マスタースイッチ)。他機能の `enable*` と同じく**既定 OFF**。`false` のあいだは `getContextMenuItems` を渡しても発火せず、右クリックはブラウザ標準メニューのまま。現状はまだ機能 / UI に改善余地があるため既定 OFF で提供する(利用側で明示 opt-in)。 |
 | `getContextMenuItems` | `(params: GridContextMenuParams<T>) => GridContextMenuItem[]` | — | セル/行の**完全カスタム**コンテキストメニュー。右クリック時のみ呼ばれ、返した項目でメニューを描画する(ライブラリは固定の既定項目を持たない)。opt-in は `enableContextMenu={true}` かつ本コールバックの指定の両方。**未指定、または `[]` を返したときはブラウザ標準の右クリックメニューへフォールスルー**(空パネルは出さない)。SSRM 未ロード行では開かない。ヘッダー右クリックは列メニュー(`enableColumnMenu`)が担当し、本メニューはボディ(セル / 行NO ガター)専用。詳細は「コンテキストメニュー」節を参照。 |
 | `onContextMenuOpen` | `(params: GridContextMenuParams<T>) => void` | — | コンテキストメニューが実際に開いた直後の通知(項目が 1 件以上あり表示された場合のみ)。
-| `scrollHint` | `boolean \| ScrollHintOptions<T>` | —(無効) | **スクロール位置インジケーター**。スクロール中にスクロールバー脇へ行番号バブル(「行 N / 総行数」+ 任意の列値)と行目盛りルーラーを表示し、スクロールバー帯のホバーで「行 N へ」のジャンプ先プレビューを出す。`true` は全既定(`{ bubble: true, ruler: true, scrollbar: true, trigger: 'scroll', minRows: 0 }`)と同義。`minRows` で「表示行数がしきい値以上のときだけ有効」のデータ量ゲートも掛けられる。表示は総行数とスクロール位置のみで駆動されるため **clientSide / SSRM の全構成で動作**。オーバーレイは `pointer-events: none` で既存操作へ一切干渉しない。詳細は「スクロール位置インジケーター」節を参照。 |
-| `detailRow` | `DetailRowOptions<T>` | —(無効) | **展開行(Master/Detail)**。マスター行の直下に、行順(view index)を変えずに全幅の帯を差し込み、その中(カード)へ `render` の返す任意の React 要素(自前のサブグリッド / フォーム / 集計パネル等)を描画する。指定時のみ有効で、未指定なら既存の描画・状態・イベント経路は一切変わらない。`{ render, height?, isExpandable?, showToggleColumn?, className? }`。clientSide / serverSide の両方で使える(serverSide の制約は節内)。詳細は「展開行(Master/Detail)」節を参照。 |
+| `scrollHint` | `boolean \| ScrollHintOptions<T>` | —(無効) | **スクロール位置インジケーター**。スクロール中にスクロールバー脇へ行番号バブル(「行 N / 総行数」+ 任意の列値)と行目盛りルーラーを表示し、スクロールバー帯のホバーで「行 N へ」のジャンプ先プレビューを出す。`true` は全既定(`{ bubble: true, ruler: true, scrollbar: true, trigger: 'scroll', minRows: 0 }`)と同義。`minRows` で「表示行数がしきい値以上のときだけ有効」のデータ量ゲートも掛けられる。表示は総行数とスクロール位置のみで駆動されるため **clientSide / SSRM の全構成で動作**。オーバーレイは `pointer-events: none` で既存操作へ一切干渉しない。詳細は「スクロール位置インジケーター」節と[ガイド](https://datasheet-grid.vercel.app/docs/guides/scroll-hint)を参照。 |
+| `detailRow` | `DetailRowOptions<T>` | —(無効) | **展開行(Master/Detail)**。マスター行の直下に、行順(view index)を変えずに全幅の帯を差し込み、その中(カード)へ `render` の返す任意の React 要素(自前のサブグリッド / フォーム / 集計パネル等)を描画する。指定時のみ有効で、未指定なら既存の描画・状態・イベント経路は一切変わらない。`{ render, height?, isExpandable?, showToggleColumn?, className? }`。clientSide / serverSide の両方で使える(serverSide の制約は節内)。詳細は「展開行(Master/Detail)」節と[ガイド](https://datasheet-grid.vercel.app/docs/guides/detail-row)を参照。 |
 | `onExpandedDetailRowKeysChange` | `(keys: GridRowKey[]) => void` | — | 展開中の展開行のマスター行キー集合が**変化したとき**に呼ばれる(開閉の永続化・外部同期用)。初回マウントでは発火しない。インライン関数可(latest-ref 経由)。 |
-| `labelRow` | `LabelRowOptions<T, L>` | —(無効) | **ラベル行(見出し / 区切り行)**。`rows` の中で `isLabelRow(row)` が true の行を「行数に数えない見出し」として、3 ペインを跨ぐ全幅の帯で描画する(中身は `render` で任意の React 要素に差し替え可。横スクロールしても左端に留まる)。編集 / 選択 / コピー / エクスポートの既定対象外で、行番号も消費しない。ソート / フィルターは既定でラベル行から次のラベル行までの区間(セクション)に閉じる(`sortMode`)。`sticky: true` で現在セクションのラベルを列ヘッダー直下に固定。`{ isLabelRow, getLabel, render?, height?, className?, sticky?, sortMode?, keepEmptySections?, exportText? }`。行グルーピング(`rowGroup`)とは別機能で併用不可。詳細は「ラベル行(見出し / 区切り行)」節。 |
+| `labelRow` | `LabelRowOptions<T, L>` | —(無効) | **ラベル行(見出し / 区切り行)**。`rows` の中で `isLabelRow(row)` が true の行を「行数に数えない見出し」として、3 ペインを跨ぐ全幅の帯で描画する(中身は `render` で任意の React 要素に差し替え可。横スクロールしても左端に留まる)。編集 / 選択 / コピー / エクスポートの既定対象外で、行番号も消費しない。ソート / フィルターは既定でラベル行から次のラベル行までの区間(セクション)に閉じる(`sortMode`)。`sticky: true` で現在セクションのラベルを列ヘッダー直下に固定。`{ isLabelRow, getLabel, render?, height?, className?, sticky?, sortMode?, keepEmptySections?, exportText? }`。行グルーピング(`rowGroup`)とは別機能で併用不可。詳細は「ラベル行(見出し / 区切り行)」節と[ガイド](https://datasheet-grid.vercel.app/docs/guides/label-rows)。 |
 | `totalRow` | `boolean \| TotalRowOptions<T>` | —(無効) | **合計行**。表の下端に合計行を固定表示する(縦スクロールしても動かず、横スクロールと左右の固定列には付いていく)。列ごとの集計は `GridColumn.aggFunc`(行グルーピングと共通)で決め、フィルター後のデータ行で計算し直す(ラベル行は数えず、グルーピング中は折りたたんだ行も数える)。合計以外の組み込み集計は値の前に種類(平均 / 最小 / 最大 / 個数)を出す。表示専用(選択 / 編集 / 貼り付け / コピーの対象外)。`true` で既定値、オブジェクトで `{ label?, values?, renderCell?, height?, className? }`。serverSide は計算せず `values` の値だけを出す。エクスポートは `includeTotalRow: true` のときだけ末尾に含める。詳細は「合計行」節。 |
 | `fillHandle` | `boolean \| FillHandleOptions<T>` | —(無効) | **フィルハンドル**。選択範囲(無ければアクティブセル)の右下に小さな四角を出し、引いた先のセルを**連続データ**(1, 2, 3 … / 日付 / 曜日・月の名前 / `P-001` のような末尾の数)か**セルのコピー**で埋める(Excel のオートフィル)。ドラッグ中は埋める範囲を点線で、いちばん遠いセルへ入る値をポインタの近くに出し、`Ctrl`(Mac は `⌘`)で埋め方を入れ替え、`Escape` でやめる。離したあとは右下のボタンで「連続データ / セルのコピー」を選び直せる(元に戻す 1 回で埋める前へ)。ハンドルのダブルクリックで隣の列に値が続くところまで下へ埋める。書き込みは貼り付けと同じ規則(編集できないセル・`validate` の reject は飛ばす / undo の対象)。`readOnly` や書き込み先が無い(`onRowsChange` も `dataSource.updateRows` も無い)ときは出さない。`true` で既定、オブジェクトで `{ getFillValue? }`。詳細は「フィルハンドル」節。 |
-| `enableRowDrag` | `boolean` | `false` | **行ドラッグ並び替え**。先頭にドラッグハンドル列(幅 28px・タイトル無しの合成列。左固定列があれば左固定側)を挿入し、ハンドル(⋮⋮)を掴んで行を上下へ動かせる。確定時は `onRowsChange` へ移動後の**新配列**を渡し(履歴ラッパ経由 = undo/redo 対象)、続けて `onRowMove` を呼ぶ。clientSide(`rows` + `onRowsChange`)専用で、`dataSource`(serverSide)/ 行グルーピング中 / `onRowsChange` 未指定ではハンドル列を出さない。ソート / フィルター適用中はハンドルを淡色 + 理由ツールチップにして操作を無効化する(列は残る)。詳細は「行ドラッグ並び替え」節。 |
+| `enableRowDrag` | `boolean` | `false` | **行ドラッグ並び替え**。先頭にドラッグハンドル列(幅 28px・タイトル無しの合成列。左固定列があれば左固定側)を挿入し、ハンドル(⋮⋮)を掴んで行を上下へ動かせる。確定時は `onRowsChange` へ移動後の**新配列**を渡し(履歴ラッパ経由 = undo/redo 対象)、続けて `onRowMove` を呼ぶ。clientSide(`rows` + `onRowsChange`)専用で、`dataSource`(serverSide)/ 行グルーピング中 / `onRowsChange` 未指定ではハンドル列を出さない。ソート / フィルター適用中はハンドルを淡色 + 理由ツールチップにして操作を無効化する(列は残る)。詳細は「行ドラッグ並び替え」節と[ガイド](https://datasheet-grid.vercel.app/docs/guides/row-drag)。 |
 | `isRowDraggable` | `(row: T, ctx: RowDragContext) => boolean` | 全行可 | 行ごとのドラッグ可否。`false` の行にはハンドルを描画しない。`ctx = { rowKey, sourceRowIndex }`。 |
 | `onRowMove` | `(params: RowMoveParams<T>) => void` | — | 行移動の確定後(`onRowsChange` の直後)に呼ばれる。`params = { rowKey, fromIndex, toIndex, rows }`(index は元 `rows` 配列基準、`rows` は `onRowsChange` と同じ新配列参照)。ハンドルの `moveRow()` による移動でも呼ばれる。 |
 
@@ -773,17 +773,17 @@ const gridRef = useRef<SpreadsheetGridHandle<Row>>(null);
 
 | 効果 | 既定 | トークン | 備考 |
 | --- | --- | --- | --- |
-| アクティブセル枠 / 選択範囲の追従(M-1) | 有効 | `--ssg-motion-fast` | キーボード移動 / クリックで枠が新しい位置へ滑る。スクロール中とポインタでの範囲ドラッグ中は瞬時に追従(漂って見えるのを避ける)。 |
-| ポップオーバー / メニューの出現(M-7) | 有効 | `--ssg-motion-fast` | 列メニュー / コンテキストメニュー / フィルター / ツールパネル / select 候補 / 日付パネルが 4px 上からフェードイン。出現のみ(閉じるのは即時)。 |
-| ソート / フィルター / グループ開閉の行移動(M-4 / M-5) | 有効(`animateRows`) | `--ssg-motion-base` | 描画中の行が新しい位置へ滑る(FLIP 相当。行要素の transform の transition)。auto-height / SSRM では自動 OFF。 |
-| スクロールなしで現れた行のフェードイン(M-4 / M-5) | 有効(`animateRows`) | `--ssg-motion-base` | ソートで窓に入ってきた行、展開したグループの子行、差し替えた `rows` の行が上から順に(約 23ms 刻み)3px 下からフェードイン。スクロールで出入りする行は対象外。前に行が現れてから 1 秒たたずに現れた行(値が頻繁に変わる並べ替え中の表など)はフェードインせずにすぐ出す(1.0.2 から。ちらつかないように)。 |
-| コピー範囲の動く点線(M-3) | 有効(`showCopyRange`) | — | `Ctrl/Cmd+C` 後、コピー元の範囲に点線が流れる(0.6s 周期)。`motion` が `'off'` では止まった点線。 |
-| ホバーのクロスヘア(M-6) | opt-in(`hoverHighlight: 'cross'`) | — | ポインタの行に加えて列ヘッダー・行番号・同じ列の他セルを薄く染める(動きはなく、静的な強調)。 |
-| 変更セルのフラッシュ + 数値トゥイーン(M-2) | opt-in(`highlightChanges`) | `--ssg-motion-slow` / `--ssg-motion-base` | 値が変わったセルがアクセント色から 600ms でフェードし、数値は 260ms でカウントアップ。 |
-| セル単位の保存状態(M-9) | 有効(`showSaveStatus`、SSRM の書き戻し時) | `--ssg-motion-base` / `--ssg-motion-slow` | 保存中の斜線 + スピナー → ✓ バッジ、失敗は揺れ + 赤いフラッシュ + ✕ とチップ。`motion` が `'off'` では静的な印だけ。 |
-| 行ドラッグの live 退避(M-11) | opt-in(`rowDragMotion: 'live'`) | 160ms 固定 | 掴んだ行がポインタに追従し、通る先の行がその場で退避。ドロップ後は従来どおりスライドで収まる。 |
-| 列ドラッグの live 退避(M-12) | opt-in(`columnDragMotion: 'live'`) | 160ms 固定 | 掴んだ列がポインタに追従し、通る先の列がその場で左右へ退避。固定ペインをまたぐときは列の複製(浮かぶ列)が付いてきて元のペインは詰まり、移動先は縦線 + 見出しのアイコン(ピン / 移動の矢印)で示す。ドロップ後は従来どおりスライドで収まる(またいだときは浮かぶ列が新しい位置へ滑り込む)。 |
-| 読み込み中のシマーと到着行のフェードイン(M-8) | 有効 | `--ssg-motion-base` | SSRM の取得中はスケルトンに光の帯が流れ、ブロックが到着して差し替わった行のセルが上から順に(約 23ms 刻み)3px 下からフェードイン。スクロールで出入りする行は対象外。clientSide では発生しない。 |
+| アクティブセル枠 / 選択範囲の追従 | 有効 | `--ssg-motion-fast` | キーボード移動 / クリックで枠が新しい位置へ滑る。スクロール中とポインタでの範囲ドラッグ中は瞬時に追従(漂って見えるのを避ける)。 |
+| ポップオーバー / メニューの出現 | 有効 | `--ssg-motion-fast` | 列メニュー / コンテキストメニュー / フィルター / ツールパネル / select 候補 / 日付パネルが 4px 上からフェードイン。出現のみ(閉じるのは即時)。 |
+| ソート / フィルター / グループ開閉の行移動 | 有効(`animateRows`) | `--ssg-motion-base` | 描画中の行が新しい位置へ滑る(FLIP 相当。行要素の transform の transition)。auto-height / SSRM では自動 OFF。 |
+| スクロールなしで現れた行のフェードイン | 有効(`animateRows`) | `--ssg-motion-base` | ソートで窓に入ってきた行、展開したグループの子行、差し替えた `rows` の行が上から順に(約 23ms 刻み)3px 下からフェードイン。スクロールで出入りする行は対象外。前に行が現れてから 1 秒たたずに現れた行(値が頻繁に変わる並べ替え中の表など)はフェードインせずにすぐ出す(1.0.2 から。ちらつかないように)。 |
+| コピー範囲の動く点線 | 有効(`showCopyRange`) | — | `Ctrl/Cmd+C` 後、コピー元の範囲に点線が流れる(0.6s 周期)。`motion` が `'off'` では止まった点線。 |
+| ホバーのクロスヘア | opt-in(`hoverHighlight: 'cross'`) | — | ポインタの行に加えて列ヘッダー・行番号・同じ列の他セルを薄く染める(動きはなく、静的な強調)。 |
+| 変更セルのフラッシュ + 数値トゥイーン | opt-in(`highlightChanges`) | `--ssg-motion-slow` / `--ssg-motion-base` | 値が変わったセルがアクセント色から 600ms でフェードし、数値は 260ms でカウントアップ。 |
+| セル単位の保存状態 | 有効(`showSaveStatus`、SSRM の書き戻し時) | `--ssg-motion-base` / `--ssg-motion-slow` | 保存中の斜線 + スピナー → ✓ バッジ、失敗は揺れ + 赤いフラッシュ + ✕ とチップ。`motion` が `'off'` では静的な印だけ。 |
+| 行ドラッグの live 退避 | opt-in(`rowDragMotion: 'live'`) | 160ms 固定 | 掴んだ行がポインタに追従し、通る先の行がその場で退避。ドロップ後は従来どおりスライドで収まる。 |
+| 列ドラッグの live 退避 | opt-in(`columnDragMotion: 'live'`) | 160ms 固定 | 掴んだ列がポインタに追従し、通る先の列がその場で左右へ退避。固定ペインをまたぐときは列の複製(浮かぶ列)が付いてきて元のペインは詰まり、移動先は縦線 + 見出しのアイコン(ピン / 移動の矢印)で示す。ドロップ後は従来どおりスライドで収まる(またいだときは浮かぶ列が新しい位置へ滑り込む)。 |
+| 読み込み中のシマーと到着行のフェードイン | 有効 | `--ssg-motion-base` | SSRM の取得中はスケルトンに光の帯が流れ、ブロックが到着して差し替わった行のセルが上から順に(約 23ms 刻み)3px 下からフェードイン。スクロールで出入りする行は対象外。clientSide では発生しない。 |
 | 細かな遷移 | 有効 | `--ssg-motion-fast` | ヘッダー操作アイコンのフェード、チェックボックス、タブのインジケータ、ツールチップ、スクロール位置インジケーター。 |
 
 ### セル内検索(`find`)
@@ -892,7 +892,7 @@ WAI-ARIA の grid パターンに沿って、表・行・セルに役割と状�
 | `aggFunc` | `'sum' \| 'min' \| 'max' \| 'avg' \| 'count' \| GridAggFunc<T>` | — | グルーピング時と合計行(`totalRow`)のこの列の集計。組み込みは数値と数値の文字列だけを数える集計(空値・空白だけの文字列・`true` / `false`・`Date`・配列などは対象外、`count` は配下 leaf 行数 / 合計行では対象の行数)。関数でカスタム集計可(返り値がグループ行 / 合計行に表示)。`rowGroup` 列も `totalRow` もないときは無視。 |
 | `getValue` | `(row: T) => unknown` | `row[key]` | 値アクセサ。`setValue` の無い列へ書き込むと値は `row[key]` へ入り、表示(`getValue`)は変わらない。計算列は `editable: false` にするか `setValue` を渡す(開発時は、行に無いプロパティを足した列ごとに 1 回 console.warn)。 |
 | `setValue` | `(row: T, value: unknown) => T` | — | 値ライター(新しい行を返す)。 |
-| `renderCell` | `(ctx: CellRenderContext<T>) => ReactNode` | プレーン `<span>` | カスタムセル描画。 |
+| `renderCell` | `(ctx: CellRenderContext<T>) => ReactNode` | プレーン `<span>` | カスタムセル描画。`detailRow` prop 有効時は `ctx.detail`(`{ expanded, expandable, toggle, setExpanded }`)で[展開行](https://datasheet-grid.vercel.app/docs/guides/detail-row)のトグルを自前配置できる。 |
 | `align` | `'left' \| 'center' \| 'right'` | `'left'` | セル内容の水平寄せ(UI 表示のみ・元の値は不変)。セル表示と編集 input に反映。 |
 | `headerAlign` | `'left' \| 'center' \| 'right'` | `align` と同じ | 列見出しの水平寄せ(書かなければ `align` に合わせる。見出しだけ変えたい列に書く)。`'right'` は並びを鏡写しにする(並べ替えの矢印とフィルターの印をラベルの左、ホバーで出る grip と ⋮ も左)。`'center'` は文字だけ中央で、印と操作は右(印が出ているときは印を除いた幅の中で中央)。`renderHeader` の中身にも効く(器の `text-align`)。列幅の自動調整の見出しの幅は変わらない。 |
 | `valueFormatter` | `(params: CellValueFormatterParams<T>) => string` | — | セル表示値の整形(UI 表示のみ)。`renderCell` 未指定の既定セルが返り値を表示。組み込み `numberFormatter` 等を渡せる。元の値/編集/コピー/ソート/フィルターには影響しない。グループ行の集計値と合計行の値の整形にも使い、そのときは元の行が無いので `row` は `undefined`(型は `T \| undefined`。`row` を読むときは `row?.x` と書く)。 |
@@ -954,12 +954,12 @@ WAI-ARIA の grid パターンに沿って、表・行・セルに役割と状�
 
 ### dateSet の日付入力(既定 UI)
 
-dateSet フィルター条件の日付入力は、v0.28 からネイティブ `<input type="date">` に代わり**内製の日付フィールド**になりました(ブラウザ依存の見た目・操作性の問題の解消。プレビュー合意のドリルアップ案)。
+dateSet フィルター条件の日付入力は、ネイティブの `<input type="date">` ではなく**内製の日付フィールド**です(ブラウザごとに見た目と操作が違う問題を避けるため)。
 
 - **自由入力**: `2026/7/1` / `2026-07-01` など表記ゆれを受け付け、Enter / blur で `'YYYY-MM-DD'` へ正規化して確定します。解釈できない入力は赤枠(`aria-invalid`)のまま確定しません(適用済みの条件は保持)。
 - **カレンダー**: フィールド右のボタンで開閉。タイトルクリックで 日 → 月一覧 → 年一覧 とドリルアップし、年 / 月を選ぶと下の段へ戻ります(12 年 / ページ)。月・年ビューのフッターには選択せずに 1 段戻れる「← 戻る」も出ます。今日は枠線・選択日は塗り表示。フッターに「今日」「クリア」。日を選ぶと即確定して閉じます。
 - **Escape**: カレンダー表示中はカレンダーだけを閉じ、非表示なら popover を閉じます(従来挙動の踏襲)。
-- ダークテーマ / compact 密度のトークンへ追従します。カレンダーは popover 内に描画されるため、外側クリック判定やはみ出しクランプ(FIT-1)に影響しません。
+- ダークテーマ / compact 密度のトークンへ追従します。カレンダーは popover 内に描画されるため、外側クリックの判定や、画面からはみ出さない位置への調整に影響しません。
 - セルエディタ `editor: { type: 'date' }` は従来どおりネイティブ input です(スコープ外)。
 - **セル値の日付の解釈**(フィルター / 候補 / 条件付き書式で共通): `Date` インスタンスはブラウザの**ローカル時刻**の年月日、文字列は先頭の `YYYY-MM-DD` / `YYYY/M/D` 部分をそのまま使います(後ろの時刻 / タイムゾーン表記は見ません)。`new Date('2026-07-01')` は UTC 0 時の値のため、UTC より遅れたタイムゾーン(米国など)ではローカルの年月日が前日(`2026-06-30`)になります。サーバーから日付だけを受け取る場合は、`Date` に変換せず文字列のまま `rows` に入れるのが確実です。
 
@@ -1445,7 +1445,7 @@ const columns: GridColumn<Order>[] = [
 
 ### ラベル行(見出し / 区切り行)(`labelRow`)
 
-`labelRow` prop を渡すと、`rows` の中の特定の行を「見出し(区切り)行」として扱えます。Excel のシートに置く節見出しの行と同じもので、データ行の間に置いた**その位置**に全幅の帯として描画され、行数には数えません。行の型 `T` も `rows` / `onRowsChange` の型も変わらないため、Excel / CSV 取り込みデータの形そのままで使えます。
+`labelRow` prop を渡すと、`rows` の中の特定の行を「見出し(区切り)行」として扱えます。Excel のシートに置く節見出しの行と同じもので、データ行の間に置いた**その位置**に全幅の帯として描画され、行数には数えません。行の型 `T` も `rows` / `onRowsChange` の型も変わらないため、Excel / CSV 取り込みデータの形そのままで使えます([ガイド](https://datasheet-grid.vercel.app/docs/guides/label-rows))。
 
 **行グルーピングとの違い**
 
@@ -1564,7 +1564,7 @@ const gridRef = useRef<SpreadsheetGridHandle<Row>>(null);
 | `getScrollPosition()` | 現在のスクロール位置 `{ top, left }`(px)。値はスクロールコンテナの生の `scrollTop` / `scrollLeft` で、`setScrollPosition` / `onScroll` と同一基準(往復で一貫)。未マウント時は `null`。 |
 | `setScrollPosition({ top?, left? }, { behavior? })` | スクロール位置の設定(px)。省略側は現状維持・スクロール可能範囲へクランプ。`behavior` は `'auto'`(既定・即時)/ `'smooth'`。2 グリッドの双方向同期では `'auto'` を推奨(`'smooth'` は途中フレームの `onScroll` が `source:'user'` になり得る)。 |
 
-スクロール変化の**通知**は props 側の `onScroll` で受け取る(`{ top, left, source }`・rAF で 1 フレーム 1 回に間引き)。`source: 'api'` は `setScrollPosition` / `scrollTo*` 系由来、`'user'` はそれ以外(ホイール / ドラッグ / キーボード等。絞り込みや行の高さの測り直しで表が縮み、ブラウザが位置を詰めた分も `'user'` で届くので、「人が動かした」の判定には使えない)。2 グリッドの双方向スクロール同期は「`onScroll` で `source === 'user'` のときだけ相手の `setScrollPosition` を呼ぶ」ことでループを止められる(proposals ⑧)。 末尾を追う(ログのように行が増えるたびに末尾を見せる)ときは、行を足す前に末尾にいるかを `.ssg-scroll-container` の `scrollHeight - scrollTop - clientHeight < 1` で確かめ、末尾にいたら足した後に `scrollToBottom()` を呼ぶ(`onScroll` の `source` では判定しない)。絞り込みを外して表が伸びたときのように、行を足す以外で末尾から離れたときも追い続けるなら、その後に `scrollToBottom()` を呼ぶ。
+スクロール変化の**通知**は props 側の `onScroll` で受け取る(`{ top, left, source }`・rAF で 1 フレーム 1 回に間引き)。`source: 'api'` は `setScrollPosition` / `scrollTo*` 系由来、`'user'` はそれ以外(ホイール / ドラッグ / キーボード等。絞り込みや行の高さの測り直しで表が縮み、ブラウザが位置を詰めた分も `'user'` で届くので、「人が動かした」の判定には使えない)。2 グリッドの双方向スクロール同期は「`onScroll` で `source === 'user'` のときだけ相手の `setScrollPosition` を呼ぶ」ことでループを止められる。 末尾を追う(ログのように行が増えるたびに末尾を見せる)ときは、行を足す前に末尾にいるかを `.ssg-scroll-container` の `scrollHeight - scrollTop - clientHeight < 1` で確かめ、末尾にいたら足した後に `scrollToBottom()` を呼ぶ(`onScroll` の `source` では判定しない)。絞り込みを外して表が伸びたときのように、行を足す以外で末尾から離れたときも追い続けるなら、その後に `scrollToBottom()` を呼ぶ。
 
 ### 選択 / アクティブセル
 
@@ -1821,7 +1821,7 @@ const buffer = await writeXlsx({
 | `findNext()` | 次のヒットへ(循環)。カレントのヒットへアクティブセルとスクロールが追従する。 |
 | `findPrev()` | 前のヒットへ(循環)。 |
 
-### ツールチップ(TT-1)
+### ツールチップ
 
 グリッド内・ポータル内の操作ヒント / 切り詰めテキスト全文表示は、`title` 属性ではなく**カスタムツールチップ**(`.ssg-tooltip`・body 直下シングルトン)で表示される。表示対象は `data-ssg-tooltip="文言"` 属性で、window の pointerover / focusin 委譲で拾うため、**利用側が自前の要素(カスタムセル / renderHeader 等)へ同属性を付けても同じ見た目のツールチップが出る**。配色は `--ssg-tooltip-bg / --ssg-tooltip-text / --ssg-tooltip-shadow` トークンで調整可能。
 
@@ -1910,11 +1910,11 @@ async function Orders({ searchParams }: { searchParams: Promise<{ sort?: string 
 }
 ```
 
-## serverSide モード(SSRM / DS-4 ②)
+## serverSide モード(SSRM)
 
 `dataSource` を渡すと serverSide モードになり、総行数ぶんの縦スクロール空間を保ったまま、可視窓に近いブロックだけを `getRows` で取得する(取得範囲を定数で縛りメモリを有界化)。未ロード行はスケルトン行として描画され、到着後に実データへ差し替わる。`rows`(clientSide)と `dataSource`(serverSide)は排他。セル編集は `dataSource.updateRows` を指定した場合のみ有効(楽観更新つきの書き戻し。「セル編集の書き戻し」節)。
 
-### query 配線(stage ②)
+### query 配線
 
 clientSide の操作状態(グローバルフィルター・列フィルター・ソート)を `ServerSideQuery` に組み立て、`getRows` の `params.query` として送出する(フィルター/ソートの実行はサーバへ委ねる)。
 
@@ -1953,14 +1953,14 @@ set / select / 複合(numberSet / textSet / dateSet)の候補集合はクライ�
 
 ### サーバ最新の取り直し(`refreshServerSide()` / `serverSideRefreshToken`)
 
-サーバ側のデータが外部で更新された場合など、**クエリは変えずにサーバの最新を取り直したい**ときは、命令的ハンドルの **`refreshServerSide()`** を呼ぶ(batch 8 で追加)。宣言的に扱いたい場合(状態管理側で「更新すべき」を signal として持ち回る設計)は **`serverSideRefreshToken`**(`number`)を増やしても同じ挙動になる(どちらも内部の同一ソフトリフレッシュに委譲)。
+サーバ側のデータが外部で更新された場合など、**クエリは変えずにサーバの最新を取り直したい**ときは、命令的ハンドルの **`refreshServerSide()`** を呼ぶ。宣言的に扱いたい場合(状態管理側で「更新すべき」を signal として持ち回る設計)は **`serverSideRefreshToken`**(`number`)を増やしても同じ挙動になる(どちらも内部の同一ソフトリフレッシュに委譲)。
 
 - **`queryKey` 変化との違い**: フィルター/ソート/グローバルフィルターの変更は結果セットの総入れ替えなので**先頭へスクロールリセット**してキャッシュを全破棄し block 0 から取り直す。一方ソフトリフレッシュは**スクロール位置を保持**したままキャッシュを破棄し、**現在の可視レンジ**を即時(debounce なし)取り直す。
 - **件数**: リフレッシュ時に件数はリセットせず、到着ブロックの `totalRowCount` で更新する。外部更新で件数が増減していれば縦スクロール空間が追従する。可視レンジ未確立や件数 0(空結果)からのリフレッシュでは block 0 をブートストラップとして取り直す(空になったテーブルがサーバ側でデータを得た後も復帰できる)。
 - **挙動メモ**: 取り直し中は対象行が一瞬スケルトン表示になる(purge → 再取得)。`refreshToken` は単調増加で運用する(値が変わったときだけ取り直す)。初回 mount では発火しない。
 - **用途**: 外部での編集/追加削除(mutation)後の反映トリガーとして使う想定。グリッド上の**セル編集**は `dataSource.updateRows`(下の「セル編集の書き戻し」節)で直接書き戻せるため本機能は不要。**行の追加削除**は書き戻し API を持たないため、「サーバへ反映 → `refreshServerSide()`」の運用に寄せる(AG Grid も実質この形)。
 
-### getRows 失敗時のエラー表示とリトライ(batch 9)
+### getRows 失敗時のエラー表示とリトライ
 
 `getRows` が reject する(abort 以外。Promise を返す前に同期で throw したときも同じ)と、失敗ブロックの行はスケルトンのまま残り、グリッド下部中央に**エラーバー**(「行の取得に失敗しました(N ブロック)」+ 再試行 / 閉じる)が表示される。
 
@@ -2070,7 +2070,7 @@ export const OrdersTable = () => <Grid columns={columns} dataSource={dataSource}
 
 ## ポップオーバー部品の遅延読み込み(`preloadGridPopups`)
 
-列フィルターのポップオーバーと、ツールパネル(フィルター管理 / 列の表示 / 並び替え)の部品は本体と別のチャンクに分かれていて、初期の読み込みに含まれない(lazy-popups。初期の JS が約 1 割小さくなる。props / ハンドルは不変)。
+列フィルターのポップオーバーと、ツールパネル(フィルター管理 / 列の表示 / 並び替え)の部品は本体と別のチャンクに分かれていて、初期の読み込みに含まれない(初期の JS が約 1 割小さくなる。props / ハンドルは同じ)。
 
 - グリッドはマウント後、ブラウザが暇なとき(`requestIdleCallback`。無い環境では約 200ms 後)に、その機能が使えるときだけ部品を先読みする(列フィルター = `enableColumnFilter` かつ `filterType` を持つ列がある / ツールパネル = フィルター・列メニュー・ソートのどれかが使える)。
 - 先読みの前に開かれたときはその場で読み込み、読み込みが終わるまで部品は出ない(出たあと入力欄へフォーカスが入る。読み込み中も Escape で閉じられる)。先読みが終わっただけではグリッドは再描画しない。
@@ -2350,7 +2350,7 @@ if (result.ok && result.changed) {
 
 ## テスト支援(`/testing` サブパス)
 
-jsdom はレイアウトを計算しないため、素の jsdom では実グリッドの行・列が 1 本も描画されない(縦: スクロール要素の `clientHeight` / `clientWidth` が 0。横: 列仮想化(`@tanstack/virtual-core`)が **ResizeObserver の通知**から矩形を得るため、no-op スタブでは幅 0 のまま)。`@ishibashi0112/spreadsheet-grid/testing` の `installJsdomLayoutStubs()` がこれをまとめて解決する(proposals ③)。
+jsdom はレイアウトを計算しないため、素の jsdom では実グリッドの行・列が 1 本も描画されない(縦: スクロール要素の `clientHeight` / `clientWidth` が 0。横: 列仮想化(`@tanstack/virtual-core`)が **ResizeObserver の通知**から矩形を得るため、no-op スタブでは幅 0 のまま)。`@ishibashi0112/spreadsheet-grid/testing` の `installJsdomLayoutStubs()` がこれをまとめて解決する。
 
 ```ts
 // @vitest-environment jsdom
@@ -2470,7 +2470,7 @@ function Grid(props: SpreadsheetGridProps<Row>) {
 
 ## スタイリング用の状態クラス(公開契約)
 
-`cellClassName` / `getRowClassName` の返すクラスは、下記の内部付与クラスと連結セレクタで組み合わせて使える(例: `.ssg-body-cell.my-diff` で基底に勝たせ、`.ssg-body-cell.my-diff.ssg-body-cell--row-hovered` でホバー時色を切替)。以下は**公開契約**とし、変更時は breaking 扱いにする(proposals ⑥)。
+`cellClassName` / `getRowClassName` の返すクラスは、下記の内部付与クラスと連結セレクタで組み合わせて使える(例: `.ssg-body-cell.my-diff` で基底に勝たせ、`.ssg-body-cell.my-diff.ssg-body-cell--row-hovered` でホバー時色を切替)。以下は**公開契約**とし、変更時は breaking 扱いにする。
 
 - 下の 2 つの表(クラスと属性)と、次の節のトークン(`--ssg-*`)が CSS の公開範囲。名前を消す・変える、付く要素や条件を変えるのは破壊的変更(方針はドキュメントの[バージョンと互換性](https://datasheet-grid.vercel.app/docs/versioning))。
 - 表に無い `ssg-*` クラス、DOM の入れ子の形、グリッドが付けるインライン style は非公開の実装詳細で、予告なく変わり得る。セレクタで依存しないこと。

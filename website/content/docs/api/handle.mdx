@@ -290,7 +290,7 @@ const buffer = await writeXlsx({
 | `findNext()` | 次のヒットへ(循環)。カレントのヒットへアクティブセルとスクロールが追従する。 |
 | `findPrev()` | 前のヒットへ(循環)。 |
 
-### ツールチップ(TT-1)
+### ツールチップ
 
 グリッド内・ポータル内の操作ヒント / 切り詰めテキスト全文表示は、`title` 属性ではなく**カスタムツールチップ**(`.ssg-tooltip`・body 直下シングルトン)で表示される。表示対象は `data-ssg-tooltip="文言"` 属性で、window の pointerover / focusin 委譲で拾うため、**利用側が自前の要素(カスタムセル / renderHeader 等)へ同属性を付けても同じ見た目のツールチップが出る**。配色は `--ssg-tooltip-bg / --ssg-tooltip-text / --ssg-tooltip-shadow` トークンで調整可能。
 
@@ -378,4 +378,3 @@ async function Orders({ searchParams }: { searchParams: Promise<{ sort?: string 
   return <OrdersGrid initialState={initialState} />;
 }
 ```
-

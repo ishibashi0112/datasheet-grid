@@ -1,0 +1,43 @@
+---
+title: preloadGridPopups と /testing
+description: ポップオーバー部品の先読みと、jsdom でグリッドを描くためのテスト支援
+---
+
+## ポップオーバー部品の遅延読み込み(`preloadGridPopups`)
+
+列フィルターのポップオーバーと、ツールパネル(フィルター管理 / 列の表示 / 並び替え)の部品は本体と別のチャンクに分かれていて、初期の読み込みに含まれない(初期の JS が約 1 割小さくなる。props / ハンドルは同じ)。
+
+- グリッドはマウント後、ブラウザが暇なとき(`requestIdleCallback`。無い環境では約 200ms 後)に、その機能が使えるときだけ部品を先読みする(列フィルター = `enableColumnFilter` かつ `filterType` を持つ列がある / ツールパネル = フィルター・列メニュー・ソートのどれかが使える)。
+- 先読みの前に開かれたときはその場で読み込み、読み込みが終わるまで部品は出ない(出たあと入力欄へフォーカスが入る。読み込み中も Escape で閉じられる)。先読みが終わっただけではグリッドは再描画しない。
+- 読み込みに失敗したときは `console.error` に出して閉じる(次に開いたときに読み直しを試みるが、ブラウザによっては失敗した動的 import をページの再読み込みまで覚えている)。
+- 動的 import(`import()`)に対応したバンドラー(Vite / webpack / Next.js / Rollup / esbuild など)が前提。CJS ビルドは `require` で読み込む。
+
+```ts
+import { preloadGridPopups } from '@ishibashi0112/spreadsheet-grid';
+```
+
+| 関数 | 説明 |
+| --- | --- |
+| `preloadGridPopups(): Promise<void>` | 部品を先に読み込む。通常は不要(グリッドが自動で先読みする)。テストでポップオーバーを開いた直後に同期で中身を確かめるとき(`beforeAll` で `await`)や、画面遷移の前に読み込んでおきたいときに使う。 |
+
+## テスト支援(`/testing` サブパス)
+
+jsdom はレイアウトを計算しないため、素の jsdom では実グリッドの行・列が 1 本も描画されない(縦: スクロール要素の `clientHeight` / `clientWidth` が 0。横: 列仮想化(`@tanstack/virtual-core`)が **ResizeObserver の通知**から矩形を得るため、no-op スタブでは幅 0 のまま)。`@ishibashi0112/spreadsheet-grid/testing` の `installJsdomLayoutStubs()` がこれをまとめて解決する。
+
+```ts
+// @vitest-environment jsdom
+import { installJsdomLayoutStubs } from '@ishibashi0112/spreadsheet-grid/testing';
+
+beforeAll(() => {
+  installJsdomLayoutStubs(); // 既定 1200×600。{ width, height } で変更可
+});
+```
+
+- インストール内容: `HTMLElement.prototype.clientHeight` / `clientWidth`(固定 getter)、`Element.prototype.getBoundingClientRect`(固定矩形)、`globalThis.ResizeObserver`(**observe 時に即時コールバック**するスタブ)、`Element.prototype.scrollTo`(無ければ no-op)。
+- 返り値はインストール前へ戻す restore 関数(`afterAll(restore)` 用・任意)。
+- React 非依存の小さなモジュールで、本体バンドルとは独立(`dist/testing.js`)。
+- スタブを 2 回入れたときは、入れたのと逆の順に戻す(同じ順に戻すと先のスタブの値が残る)。
+- これで `.ssg-body-row` / `.ssg-body-cell` の描画・付与クラス・セル文字列を DOM で検証できる(本体の `SpreadsheetGrid.jsdomLayoutStubs.integration.test.tsx` が動作保証)。仮想化はそのまま効くので、描かれるのはスタブの大きさに入る行・列(と先読みの分)だけ(既定の 1200×600、行の高さ 36px、幅 120px の列で約 38 行・約 18 列。グリッドの `height` では変わらない)。全部を描くときはスタブを大きくする(`{ width: 3000, height: 4000 }` など)か、`.ssg-scroll-container` の `scrollTop` / `scrollLeft` を書いて `fireEvent.scroll` を出す。ハンドルの `scrollToRow` / `scrollToCell` は jsdom では何もしない(スタブの `scrollTo` は no-op)。行は固定ペインにも描かれ、行番号「#」は左のペインの行にあるので(0.63.0 から、左固定列が無い表でも)、行を数える / n 番目の行のセルを引くときは中央のペインの行(`[data-pane="center"].ssg-body-row`)を使う。
+- 列フィルターのポップオーバー / ツールパネルを開いた直後に**同期で**中身を確かめるテストでは、部品の遅延読み込みが終わっていないと出ていない。`beforeAll(() => preloadGridPopups())`(本体から import。`/lite` のグリッドなら `/lite` から)で先に読み込むか、`findBy*` / `waitFor` で待つ([ポップオーバー部品の遅延読み込み](#ポップオーバー部品の遅延読み込みpreloadgridpopups))。
+- よく書く操作: 貼り付けは paste イベントの `clipboardData` を読むので user-event の `user.paste('a\tb')` か `fireEvent.paste(shell, { clipboardData: { getData: () => 'a\tb' } })`(`Ctrl+V` のキーだけでは貼り付かない)。コピーは `navigator.clipboard.writeText` で書く(`userEvent.setup()` の後なら `navigator.clipboard.readText()` で読める)。範囲選択は jsdom に座標が無いので `Shift+矢印` / `Shift+クリック` / `selectRange`。確定・取り消しの後のアクティブセルの移動と次の編集の受け付けはその後のマイクロタスクなので、fireEvent で同期に続けるときは `await act(async () => {})` を挟む。date エディタはネイティブの `<input type="date">` なので `fireEvent.change`。`selectCell` / `setActiveCell` はフォーカスを移さないので、続けてキーを送るときは `focus()` を呼ぶ。列フィルターのポップオーバーの入力欄へフォーカスが移るのは開いてから 2 フレーム後(位置が決まってから)なので `await waitFor(() => expect(input).toHaveFocus())` で待つ(閉じたときはその場でグリッドへ戻る。1.0.2)。
+- Jest: CommonJS の入口があるのでそのまま読める。CSS の import は `moduleNameMapper: { '\\.css$': 'identity-obj-proxy' }` などで読み替える。 Jest 30 の jsdom(26)には `PointerEvent` が無く、`fireEvent` だけではセルが選ばれないので、セルを押す操作は user-event か、ハンドルの `selectCell` + `focus()` で書く。

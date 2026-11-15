@@ -3,11 +3,11 @@ title: serverSide モード(SSRM)
 description: dataSource / クエリ配線 / リフレッシュ / エラー処理 / 書き戻し
 ---
 
-## serverSide モード(SSRM / DS-4 ②)
+## serverSide モード(SSRM)
 
 `dataSource` を渡すと serverSide モードになり、総行数ぶんの縦スクロール空間を保ったまま、可視窓に近いブロックだけを `getRows` で取得する(取得範囲を定数で縛りメモリを有界化)。未ロード行はスケルトン行として描画され、到着後に実データへ差し替わる。`rows`(clientSide)と `dataSource`(serverSide)は排他。セル編集は `dataSource.updateRows` を指定した場合のみ有効(楽観更新つきの書き戻し。「セル編集の書き戻し」節)。
 
-### query 配線(stage ②)
+### query 配線
 
 clientSide の操作状態(グローバルフィルター・列フィルター・ソート)を `ServerSideQuery` に組み立て、`getRows` の `params.query` として送出する(フィルター/ソートの実行はサーバへ委ねる)。
 
@@ -28,7 +28,7 @@ clientSide の操作状態(グローバルフィルター・列フィルター�
 
 ### set / select フィルターの候補(SSRM)
 
-set / select の候補集合はクライアントが供給する必要がある。**clientSide** は `rows` 全件から自動収集できるが、**serverSide** はクライアントが全件を持たないため自動収集できず候補が空になる。
+set / select / 複合(numberSet / textSet / dateSet)の候補集合はクライアントが供給する必要がある。**clientSide** は `rows` 全件から自動収集できるが、**serverSide** はクライアントが全件を持たないため自動収集できず候補が空になる(複合の条件欄は候補に依存しないため serverSide でも常に機能する)。
 
 - **低カーディナリティ列**(状態・区分など): 列定義に `filterOptions` を静的指定する(serverSide でも set として機能する)。
 - **空白のセル**: 候補(`filterOptions` / `getFilterOptions` の戻り値)に `''` が無いと「(空白)」の項目が出ず、`'include'` の選択(`filterOptions` のある列で値を外したとき / 検索して Enter など)には空白が入らないので、空白の行も消える。空白の行を残せるようにするには、候補に `{ value: '', label: '(空白)' }` を入れる(サーバは `''` を NULL / 空文字に読み替える)。
@@ -46,14 +46,14 @@ set / select の候補集合はクライアントが供給する必要がある�
 
 ### サーバ最新の取り直し(`refreshServerSide()` / `serverSideRefreshToken`)
 
-サーバ側のデータが外部で更新された場合など、**クエリは変えずにサーバの最新を取り直したい**ときは、命令的ハンドルの **`refreshServerSide()`** を呼ぶ(batch 8 で追加)。宣言的に扱いたい場合(状態管理側で「更新すべき」を signal として持ち回る設計)は **`serverSideRefreshToken`**(`number`)を増やしても同じ挙動になる(どちらも内部の同一ソフトリフレッシュに委譲)。
+サーバ側のデータが外部で更新された場合など、**クエリは変えずにサーバの最新を取り直したい**ときは、命令的ハンドルの **`refreshServerSide()`** を呼ぶ。宣言的に扱いたい場合(状態管理側で「更新すべき」を signal として持ち回る設計)は **`serverSideRefreshToken`**(`number`)を増やしても同じ挙動になる(どちらも内部の同一ソフトリフレッシュに委譲)。
 
 - **`queryKey` 変化との違い**: フィルター/ソート/グローバルフィルターの変更は結果セットの総入れ替えなので**先頭へスクロールリセット**してキャッシュを全破棄し block 0 から取り直す。一方ソフトリフレッシュは**スクロール位置を保持**したままキャッシュを破棄し、**現在の可視レンジ**を即時(debounce なし)取り直す。
 - **件数**: リフレッシュ時に件数はリセットせず、到着ブロックの `totalRowCount` で更新する。外部更新で件数が増減していれば縦スクロール空間が追従する。可視レンジ未確立や件数 0(空結果)からのリフレッシュでは block 0 をブートストラップとして取り直す(空になったテーブルがサーバ側でデータを得た後も復帰できる)。
 - **挙動メモ**: 取り直し中は対象行が一瞬スケルトン表示になる(purge → 再取得)。`refreshToken` は単調増加で運用する(値が変わったときだけ取り直す)。初回 mount では発火しない。
 - **用途**: 外部での編集/追加削除(mutation)後の反映トリガーとして使う想定。グリッド上の**セル編集**は `dataSource.updateRows`(下の「セル編集の書き戻し」節)で直接書き戻せるため本機能は不要。**行の追加削除**は書き戻し API を持たないため、「サーバへ反映 → `refreshServerSide()`」の運用に寄せる(AG Grid も実質この形)。
 
-### getRows 失敗時のエラー表示とリトライ(batch 9)
+### getRows 失敗時のエラー表示とリトライ
 
 `getRows` が reject する(abort 以外。Promise を返す前に同期で throw したときも同じ)と、失敗ブロックの行はスケルトンのまま残り、グリッド下部中央に**エラーバー**(「行の取得に失敗しました(N ブロック)」+ 再試行 / 閉じる)が表示される。
 
@@ -95,4 +95,3 @@ const dataSource: ServerSideDataSource<Row> = {
 ### clientSide ↔ serverSide の切替(remount 契約)
 
 `initialRowCount` と内部の行数 state は mount 時に確定する。そのため **実行時にモードを切り替える場合は `key` を変えてグリッドを再マウントすること**(clientSide で mount 後に `dataSource` を後付けしても件数が初期化されない)。serverSide で直接 mount する通常利用ではこの限りではない。
-
