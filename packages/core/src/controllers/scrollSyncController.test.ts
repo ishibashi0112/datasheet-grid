@@ -248,7 +248,7 @@ describe('createScrollSyncController', () => {
     controller.dispose();
   });
 
-  // 追加(1.2.0 / G-08 の続き): onScroll の atBottom は縦のスクロールが末尾にあるか(1px 未満の差は末尾)。
+  // 追加(1.2.0 / G-08 の続き): onScroll の atBottom は縦のスクロールが末尾にあるか(2px 以下の差は末尾)。
   it('onScroll の atBottom は末尾にいるか', () => {
     const controller = createScrollSyncController();
     const onScroll = vi.fn();

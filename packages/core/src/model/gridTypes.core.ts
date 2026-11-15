@@ -2866,8 +2866,9 @@ export type SpreadsheetGridHandle<T> = {
   getScrollPosition: () => GridScrollPosition | null;
   // 追加(1.2.0 / G-08 の続き): 縦のスクロールが末尾にあるか(未マウントは false)。
   /**
-   * 縦のスクロールが末尾(下端)にあるか(`boolean`。中身が見える高さより低いときも `true`、1px
-   * 未満の差は末尾。未マウント時は `false`)。ログのように行が増えるたびに末尾を見せる表で、
+   * 縦のスクロールが末尾(下端)にあるか(`boolean`。中身が見える高さより低いときも `true`、2px
+   * 以下の差は末尾(拡大縮小の小数や、Firefox が 100 万行の表の高さを丸める分)。未マウント時は
+   * `false`)。ログのように行が増えるたびに末尾を見せる表で、
    * 行を足す前に呼んで末尾を追うかを決める。`onScroll` の `atBottom` も同じ判定。1.2.0 から。
    */
   isAtBottom: () => boolean;
