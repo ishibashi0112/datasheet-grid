@@ -55,6 +55,35 @@ describe('createRowSelectionCommands', () => {
     expect(onRowSelectionChange).toHaveBeenCalledTimes(2);
   });
 
+  // 追加(1.0.2 / 2026-11-09 実アプリの総点検 H-07): コールバックの中でハンドルを読むと 1 つ前の値が返っていた。
+  it('通知の間だけ pendingRowSelection が新しい選択を返す。uncontrolled は通知より先に反映する(H-07)', () => {
+    const seen: Array<{ pending: RowSelectionState | null; dispatched: number }> = [];
+    const holder: { commands: ReturnType<typeof createRowSelectionCommands<Row>> | null; actions: GridUiAction[] } = {
+      commands: null,
+      actions: [],
+    };
+    const onRowSelectionChange = vi.fn(() => {
+      seen.push({ pending: holder.commands?.pendingRowSelection() ?? null, dispatched: holder.actions.length });
+    });
+    const { commands, actions } = setup({ onRowSelectionChange });
+    holder.commands = commands;
+    holder.actions = actions;
+    commands.handleGutterRowSelect(1, { shiftKey: false });
+    expect(seen).toHaveLength(1);
+    expect(seen[0]?.dispatched).toBe(1);
+    expect(seen[0]?.pending).toEqual(lastState(actions));
+    expect(commands.pendingRowSelection()).toBeNull();
+
+    // controlled: 反映はしないが、通知の間は新しい選択を見せる。
+    seen.length = 0;
+    const controlled = setup({ onRowSelectionChange, controlledRowSelectionModel: { type: 'include', rowKeys: [] } });
+    holder.commands = controlled.commands;
+    holder.actions = controlled.actions;
+    controlled.commands.handleGutterRowSelect(2, { shiftKey: false });
+    expect(seen[0]?.pending).toEqual(rowSelectionFromModel({ type: 'include', rowKeys: [3] }));
+    expect(controlled.commands.pendingRowSelection()).toBeNull();
+  });
+
   it('single: 常に単一選択、ドラッグもポインタ下の行を単一選択', () => {
     const { commands, onRowSelectionChange } = setup({ rowSelectionMode: 'single' });
     commands.handleGutterRowSelect(1, { shiftKey: true });

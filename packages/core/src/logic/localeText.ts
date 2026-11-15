@@ -63,6 +63,7 @@ export const DEFAULT_GRID_LOCALE_TEXT = {
   enterMin: '{min} 以上で入力してください',
   enterMax: '{max} 以下で入力してください',
   enterRange: '{min}〜{max} で入力してください',
+  enterDate: '日付で入力してください(例: 2026/3/15)',
   saveFailedCell: '保存に失敗しました。値を戻しました',
   totalRowLabel: '合計',
   totalAverage: '平均',

@@ -431,6 +431,9 @@ const widthAuto = (await header(page, 'name').boundingBox()).width;
 check('dblclick resize handle autosizes (width changed)', widthAuto !== widthAfter, { widthAfter, widthAuto });
 // 列 DnD: name を price の後ろへ(grip を掴む)
 const grip = header(page, 'name').locator('.ssg-header-grip');
+// 変更(1.0.2 / C-07・F-11): 幅 120px 以上の見出しはホバーで操作を文字と印の間へ並べるので、ホバーしてから grip の位置を測る。
+await header(page, 'name').hover();
+await waitIdle(page, 100);
 const gb = await grip.boundingBox();
 const target = await header(page, 'price').boundingBox();
 await clearEvents(page);

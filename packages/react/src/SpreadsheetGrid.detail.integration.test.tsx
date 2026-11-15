@@ -707,15 +707,18 @@ describe('展開行のカードと Tab(C-N2)', () => {
     expect(document.activeElement).toBe(last);
   });
 
-  it('カードが 1 枚も無いときは目印を Tab の順番に入れず、最終列の Tab は従来どおり既定動作(フォーカスを動かさない)', () => {
+  // 変更(1.0.2 / F-10): カードが無いときも、最終列の Tab は表の直後の目印へ移してから既定動作で外へ出す(セルやラベル行の
+  //   中のボタンへ DOM の順に入らない)。目印は Tab の順番には入れない。
+  it('カードが 1 枚も無いときは目印を Tab の順番に入れず、最終列の Tab は目印へ移して既定動作で外へ', () => {
     const { ref, container, shell } = renderGrid([]);
-    expect(container.querySelector<HTMLElement>('.ssg-tab-exit')?.tabIndex).toBe(-1);
+    const exit = container.querySelector<HTMLElement>('.ssg-tab-exit');
+    expect(exit?.tabIndex).toBe(-1);
     act(() => {
       ref.current?.setActiveCell({ row: 2, col: LAST_COL });
     });
     shell.focus();
     expect(fireEvent.keyDown(shell, { key: 'Tab' })).toBe(true);
-    expect(document.activeElement).toBe(shell);
+    expect(document.activeElement).toBe(exit);
   });
 
   // 追加(段階 2 の確かめ直し): カードの中にフォーカスがあるまま閉じると(キーボードで「閉じる」を押す)、カードと一緒に
@@ -798,9 +801,10 @@ describe('展開行のカードと Tab(C-N2)', () => {
     expect(ref.current?.getActiveCell()).toEqual({ row: 1, col: 1 });
   });
 
-  it('detailRow が無ければ目印を描かない', () => {
+  // 変更(1.0.2 / F-10): detailRow が無くても最終列の Tab の行き先として目印を描く(Tab の順番には入れない)。
+  it('detailRow が無くても目印は描くが、Tab の順番には入れない', () => {
     const { container } = render(<SpreadsheetGrid columns={columns} rows={rows} rowKeyGetter={rowKeyGetter} />);
-    expect(container.querySelector('.ssg-tab-exit')).toBeNull();
+    expect(container.querySelector<HTMLElement>('.ssg-tab-exit')?.tabIndex).toBe(-1);
   });
 });
 

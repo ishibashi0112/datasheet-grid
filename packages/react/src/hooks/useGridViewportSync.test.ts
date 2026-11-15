@@ -36,6 +36,9 @@ const createScrollElement = () => {
     clientWidth: 300,
     clientHeight: 200,
     scrollTo,
+    // アクティブセルをページでも見せる処理(1.0.2 / J-10)が読む(グリッドの外なので何もしない)。
+    ownerDocument: document,
+    closest: () => null,
   };
   return {
     element: element as unknown as HTMLDivElement,

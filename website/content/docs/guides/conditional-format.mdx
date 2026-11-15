@@ -35,7 +35,7 @@ const columns: GridColumn<Row>[] = [
 
 ## 状態チップ(`chips`)
 
-値(`String(value)`)→ 色味のマップ、またはセルのコンテキスト(`cellClassName` の関数版と同じ)からチップを返す関数です。色味は `'neutral' | 'info' | 'good' | 'warning' | 'critical'` で、チップはアイコン + ラベルのピル(色だけで意味を運びません)。
+値(`String(value)`)→ 色味のマップ、またはセルのコンテキスト(`cellClassName` の関数版と同じ)からチップを返す関数です。色味は `'neutral' | 'info' | 'good' | 'warning' | 'critical'` で、チップはアイコン + ラベルのピル(色だけで意味を運びません)。80px より細い列では、余白を詰めてアイコンを外し、文字を優先します(1.0.2 から)。
 
 ```tsx
 chips: {
@@ -48,7 +48,7 @@ chips: {
 chips: ({ row }) => (row.stock === 0 ? 'critical' : null)
 ```
 
-`label` 省略時はセルの表示文字列(`valueFormatter` 適用後。[セル内検索](/docs/guides/find)の強調もそのまま)。マップに載っていない値はふつうの文字のままです。
+`label` 省略時はセルの表示文字列(`valueFormatter` 適用後。[セル内検索](/docs/guides/find)の強調もそのまま)。`label` を書いたときは、セル内検索も画面に出ている `label` を探します。マップに載っていない値はふつうの文字のままです。
 
 ## 見た目と影響範囲
 

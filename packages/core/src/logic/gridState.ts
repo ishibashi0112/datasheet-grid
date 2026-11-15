@@ -497,7 +497,11 @@ export const applyColumnState = <T,>(
 //   型は C[] にします(グリッドは columns を書き換えない)。
 // 変更(1.0 の準備): pinned の型は公開型の GridColumnPinned で書きます(内部用の束縛の GridColumn から引くと、利用側が
 //   推論のまま export したときの d.ts が core の内部のパスを指すため)。
-export const restoreColumnsFromState = <C extends { key: string; visible?: boolean; pinned?: GridColumnPinned }>(
+// 変更(1.0.2 の確かめ直し): 省略可の項目に `| undefined` を足します(K-08。利用側の exactOptionalPropertyTypes で、
+//   GridColumn<T>[](visible / pinned が `X | undefined`)を渡すと型エラーになっていた)。
+export const restoreColumnsFromState = <
+  C extends { key: string; visible?: boolean | undefined; pinned?: GridColumnPinned | undefined },
+>(
   columns: readonly C[],
   state: unknown,
 ): C[] => {

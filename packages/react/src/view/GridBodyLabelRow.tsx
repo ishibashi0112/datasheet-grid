@@ -90,6 +90,8 @@ function GridBodyLabelRowInner<T>({
         <div
           role="rowheader"
           aria-colindex={1}
+          // 追加(1.0.2 / 2026-11-09 実アプリの総点検 L-08): 中身の無い行見出しにも行と同じ名前を付けます(空の見出しにしない)。
+          aria-label={labelRow.label}
           className={cx(
             'ssg-header-cell',
             'ssg-row-header-cell',

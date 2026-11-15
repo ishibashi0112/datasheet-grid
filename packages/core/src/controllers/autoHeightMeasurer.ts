@@ -73,7 +73,16 @@ const measureAutoHeightCell = (cell: HTMLElement, minRowHeight: number): number 
     (parseFloat(style.borderBottomWidth) || 0) +
     (parseFloat(style.paddingTop) || 0) +
     (parseFloat(style.paddingBottom) || 0);
-  return Math.max(Math.ceil(contentHeight + chrome), minRowHeight);
+  const height = Math.ceil(contentHeight + chrome);
+  if (height <= minRowHeight) {
+    return minRowHeight;
+  }
+  // 追加(1.0.2 / 2026-11-09 実アプリの総点検 G-12): 器の上下の余白(styles.css)は折り返して背が高くなる行のためのもので、
+  //   余白を除いた中身が基準の行の高さに収まる行(1 行の行)は基準の高さのままにします(余白で 1 行の行まで背が高く
+  //   ならないように。rowHeight を小さくした表など)。
+  const contentStyle = getComputedStyle(content);
+  const padding = (parseFloat(contentStyle.paddingTop) || 0) + (parseFloat(contentStyle.paddingBottom) || 0);
+  return Math.ceil(contentHeight - padding + chrome) <= minRowHeight ? minRowHeight : height;
 };
 
 export const createAutoHeightMeasurer = <T,>(): AutoHeightMeasurer<T> => {

@@ -225,7 +225,15 @@ const fmtNumber = (page, v) =>
   const { page, pageErrors, close } = await open('basic');
   await page.evaluate(() => window.__setProps({ totalRow: true, columnDragMotion: 'live' }));
   await waitIdle(page, 200);
+  // 追加(1.0.2 / L-11): Firefox のヘッドレスは (hover: none) = タッチの扱いで、120px より細い見出しには grip を出さないので広げる。
+  if (await page.evaluate(() => matchMedia('(hover: none)').matches)) {
+    await page.evaluate(() => window.__setColumns(window.__columns().map((c) => (c.key === 'qty' ? { ...c, width: 130 } : c))));
+    await waitIdle(page, 200);
+  }
   const grip = header(page, 'qty').locator('.ssg-header-grip');
+  // 変更(1.0.2 / C-07・F-11): ホバーで操作の位置が変わる見出しがあるので、ホバーしてから grip の位置を測る。
+  await header(page, 'qty').hover();
+  await waitIdle(page, 100);
   const gb = await grip.boundingBox();
   const target = await header(page, 'category').boundingBox();
   await page.mouse.move(gb.x + 3, gb.y + 5);

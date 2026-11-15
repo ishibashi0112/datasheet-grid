@@ -8,6 +8,7 @@ export const DEFAULT_FILTER_LOCALE_TEXT = {
   filterNone: 'フィルターなし',
   filterCustom: 'カスタム条件',
   filterExcluded: '{count} 件を除外',
+  filterExcludedValues: '{values} を除外',
   filterSelected: '{count} 件を選択',
   filterMatches: '"{value}" に一致',
   filterBoth: '{condition} かつ {set}',

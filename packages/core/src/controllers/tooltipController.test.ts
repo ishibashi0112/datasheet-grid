@@ -272,6 +272,36 @@ describe('アクティブセルのツールチップ(AP-35)', () => {
     controller.dispose();
   });
 
+  // 追加(1.0.2 / 2026-11-09 実アプリの総点検 RV-D2): Escape / ホイールで閉じた後、同じアクティブセルを押し直しても出なかった。
+  it('閉じた後に同じアクティブセルを押し直したら出し直す。編集を始めた(hideActiveCellTooltip)後は出さない(RV-D2)', () => {
+    root.classList.add('ssg-shell');
+    const controller = acquireTooltipController();
+    const press = (target: Element) => {
+      target.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, pointerType: 'mouse' }));
+      target.dispatchEvent(new PointerEvent('pointerup', { bubbles: true, pointerType: 'mouse' }));
+    };
+    scheduleActiveCellTooltip('active-cell', root);
+    vi.advanceTimersByTime(100);
+    expect(isVisible()).toBe(true);
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }));
+    expect(isVisible()).toBe(false);
+    press(cell);
+    vi.advanceTimersByTime(100);
+    expect(isVisible()).toBe(true);
+
+    // 押し直して待っている間に編集を始めたら(アクティブセルの控えが消えたら)出さない。
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }));
+    press(cell);
+    hideActiveCellTooltip(root);
+    vi.advanceTimersByTime(100);
+    expect(isVisible()).toBe(false);
+    // 控えが消えた後(アクティブセルが無い / 編集中)の押し直しでも出さない。
+    press(cell);
+    vi.advanceTimersByTime(100);
+    expect(isVisible()).toBe(false);
+    controller.dispose();
+  });
+
   it('コントローラが無い(どのグリッドもマウントしていない)ときは何もしない', () => {
     scheduleActiveCellTooltip('active-cell', root);
     vi.advanceTimersByTime(100);

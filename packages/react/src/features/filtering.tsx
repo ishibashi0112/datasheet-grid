@@ -212,6 +212,9 @@ const useFilterPopover = <T,>({
 
 const useFilterPopoverViews = (options: UseLazyModuleOptions) => useLazyModule(filterPopoverModule, options);
 
+// 追加(1.0.2 / B-08): 候補を固定していないときの空の rows(参照を安定させる)。
+const NO_OPTION_ROWS: readonly never[] = [];
+
 const useFilterPopoverContent = <T,>({
   filterPopover,
   views,
@@ -249,16 +252,35 @@ const useFilterPopoverContent = <T,>({
   // 修正(audit L-06): dateSet 列は照合と同じ正規化日付キー(toDateSetKey)で候補を集めます。Date 値のセルが
   //   String(Date)('Thu Jul 02 2026 …')の候補になり、年月日ツリーに出ず選んでも一致しなかったため。
   //   文字列セルは後段の normalizeDateSetOptions と同じキーになるだけで結果は変わりません。
+  // 追加(1.0.2 / 2026-11-09 実アプリの総点検 B-08): 開いている間は、候補を開いたときの rows から集めたまま固定します。
+  //   rows がよく変わる表(株価ボードのように毎秒など)では、開いている間も候補の一覧が作り直されて並びが動き、押した値と
+  //   違う値のチェックを外すことがありました。開いたときに rows が空だった(読み込み中)ときは、行が来た時点の rows で
+  //   固定します。閉じたら離します(古い rows を持ち続けない)。
+  const openedOptionsKey = openedFilterColumn ? String(openedFilterColumn.key) : null;
+  const [optionRowsHold, setOptionRowsHold] = useState<{ key: string | null; rows: readonly T[] }>(() => ({
+    key: null,
+    rows: NO_OPTION_ROWS,
+  }));
+  let optionRows: readonly T[] = rows;
+  if (openedOptionsKey === null) {
+    if (optionRowsHold.key !== null) {
+      setOptionRowsHold({ key: null, rows: NO_OPTION_ROWS });
+    }
+  } else if (optionRowsHold.key !== openedOptionsKey || (optionRowsHold.rows.length === 0 && rows.length > 0)) {
+    setOptionRowsHold({ key: openedOptionsKey, rows });
+  } else {
+    optionRows = optionRowsHold.rows;
+  }
   const openedFilterIsDateSet = openedFilterType === 'dateSet';
   const getOpenedColumnRawValueAt = useCallback(
     (index: number): unknown => {
       if (!openedFilterColumn) {
         return undefined;
       }
-      const value = getCellValue(rows[index], openedFilterColumn);
+      const value = getCellValue(optionRows[index], openedFilterColumn);
       return openedFilterIsDateSet ? toDateSetKey(value) : value;
     },
-    [rows, openedFilterColumn, openedFilterIsDateSet],
+    [optionRows, openedFilterColumn, openedFilterIsDateSet],
   );
 
   // 変更(DS-4 #1): 候補収集を「通常規模=同期 / 大規模(>閾値)=時間分割の非同期」へ。
@@ -284,7 +306,7 @@ const useFilterPopoverContent = <T,>({
   });
   const collectedSelectOptions = useColumnSelectOptionsCollector({
     column: openedColumnUsesAsyncOptions ? null : openedFilterColumn,
-    rowCount: rows.length,
+    rowCount: optionRows.length,
     getRawValueAt: getOpenedColumnRawValueAt,
     numeric: openedFilterType === 'numberSet',
   });
@@ -338,6 +360,7 @@ const useFilterPopoverContent = <T,>({
       updateNumberDraft: updateFilterPopoverNumberDraft,
       updateTextDraft: updateFilterPopoverTextDraft,
       updateDateDraft: updateFilterPopoverDateDraft,
+      filterTexts: localeTexts,
     },
   );
   const {

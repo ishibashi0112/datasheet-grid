@@ -66,6 +66,15 @@ describe('GridFilterChipBar', () => {
     expect(hiddenLabel.disabled).toBe(true);
   });
 
+  // 追加(1.0.2 / 2026-11-09 実アプリの総点検 L-08): 見えている文字が読み上げの名前に入る(WCAG 2.5.3)。
+  it('チップの名前は見えている「列名 + 要約」で始まり、操作の説明が続く(getByLabelText の操作の説明でも見つかる)', () => {
+    render(<GridFilterChipBar {...makeProps()} />);
+    const chip = screen.getByRole('button', { name: '単価 >= 1000 単価 のフィルターを編集' });
+    expect(screen.getByLabelText('単価 のフィルターを編集')).toBe(chip);
+    expect(chip.hasAttribute('aria-label')).toBe(false);
+    expect(chip.textContent).toBe('単価>= 1000');
+  });
+
   it('× で onClearFilter(columnKey) を呼ぶ(非表示列でも可)', () => {
     const props = makeProps();
     render(<GridFilterChipBar {...props} />);

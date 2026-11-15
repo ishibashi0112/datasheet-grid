@@ -84,8 +84,8 @@ describe('SelectCellEditor', () => {
     const optionElements = popover.querySelectorAll('[role="option"]');
     expect(optionElements).toHaveLength(3);
     expect(optionElements[1].getAttribute('aria-selected')).toBe('true');
-    // インセル input は readOnly でハイライト中の label を表示します。
-    expect(input.readOnly).toBe(true);
+    // インセル input はハイライト中の label を表示します(1.0.2 から readOnly ではなく、ソフトキーボードは inputMode="none" で出さない)。
+    expect(input.getAttribute('inputmode')).toBe('none');
     expect(input.value).toBe('Banana');
   });
 
@@ -182,5 +182,34 @@ describe('SelectCellEditor', () => {
     fireEvent.keyDown(input, { key: 'Enter' });
     expect(onCommit).not.toHaveBeenCalled();
     expect(onCancel).toHaveBeenCalledTimes(1);
+  });
+
+  // 追加(1.0.2 / 2026-11-09 実アプリの総点検 E-08): IME で確定した文字で候補へ移る。
+  it('IME で確定した文字で始まる(無ければ含む)候補へ移り、変換中は入力欄に変換の文字を出す', () => {
+    const { input, popover } = renderSelectEditor({
+      editorOptions: [
+        { value: 'a', label: '東京電機' },
+        { value: 'b', label: '大阪製作所' },
+        { value: 'c', label: '名古屋工業' },
+      ],
+      value: 'a',
+    });
+    expect(input.readOnly).toBe(false);
+    expect(input.getAttribute('inputmode')).toBe('none');
+    fireEvent.compositionStart(input, { data: '' });
+    fireEvent.change(input, { target: { value: 'なご' }, nativeEvent: { isComposing: true } });
+    fireEvent.compositionEnd(input, { data: '名古' });
+    expect(input.value).toBe('名古屋工業');
+    expect(popover.querySelector('.ssg-select-editor-option--highlighted')?.textContent).toBe('名古屋工業');
+    fireEvent.compositionStart(input, { data: '' });
+    fireEvent.compositionEnd(input, { data: '製作' });
+    expect(input.value).toBe('大阪製作所');
+  });
+
+  it('変換でない入力(Backspace など)では名前を変えない', () => {
+    const { input } = renderSelectEditor();
+    const before = input.value;
+    fireEvent.change(input, { target: { value: '' } });
+    expect(input.value).toBe(before);
   });
 });

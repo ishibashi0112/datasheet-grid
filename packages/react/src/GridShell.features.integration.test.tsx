@@ -370,7 +370,7 @@ describe('差し込み式: toolPanel', () => {
     const { container } = render(
       <ColumnMenuFilteringGrid ref={ref} rows={rows} columns={filterColumns} rowKeyGetter={(r) => r.id} onColumnsChange={() => {}} />,
     );
-    expect(container.querySelector('[aria-label="フィルター管理パネルを開閉"]')).toBeNull();
+    expect(container.querySelector('.ssg-bar-chip--action')).toBeNull();
     openColumnMenu(container);
     expect(menuLabels()).toContain('昇順で並び替え');
     expect(menuLabels()).toContain('列のリセット');
@@ -430,7 +430,7 @@ describe('差し込み式: toolPanel', () => {
     const { container } = render(
       <ColumnMenuToolPanelGrid ref={ref} rows={rows} columns={filterColumns} rowKeyGetter={(r) => r.id} onColumnsChange={() => {}} />,
     );
-    expect(container.querySelector('[aria-label="フィルター管理パネルを開閉"]')).not.toBeNull();
+    expect(container.querySelector('.ssg-bar-chip--action')).not.toBeNull();
     openColumnMenu(container);
     expect(menuLabels()).toContain('並び替えを管理…');
     expect(menuLabels()).toContain('フィルターを管理…');
@@ -452,7 +452,7 @@ describe('差し込み式: toolPanel', () => {
     );
     // 列メニューの機能は無いので ⋮ ボタンは出ない。
     expect(view.container.querySelector('[data-ssg-tooltip="列メニュー"]')).toBeNull();
-    const chip = view.container.querySelector<HTMLElement>('[aria-label="フィルター管理パネルを開閉"]');
+    const chip = view.container.querySelector<HTMLElement>('.ssg-bar-chip--action');
     expect(chip).not.toBeNull();
     act(() => {
       chip?.click();
@@ -469,7 +469,7 @@ describe('差し込み式: toolPanel', () => {
         onColumnsChange={() => {}}
       />,
     );
-    const chip2 = document.querySelector<HTMLElement>('[aria-label="フィルター管理パネルを開閉"]');
+    const chip2 = document.querySelector<HTMLElement>('.ssg-bar-chip--action');
     act(() => {
       chip2?.click();
     });

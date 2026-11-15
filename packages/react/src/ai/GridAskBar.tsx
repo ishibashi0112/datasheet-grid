@@ -12,15 +12,15 @@ import { useGridAsk, type UseGridAskOptions } from './useGridAsk';
 
 export type GridAskBarProps<T> = UseGridAskOptions<T> & {
   /** 入力欄の下に出す例の文(押すとその文で聞く)。 */
-  examples?: readonly string[];
+  examples?: readonly string[] | undefined;
   /** 入力欄のプレースホルダー(既定は文言の `placeholder`)。 */
-  placeholder?: string;
+  placeholder?: string | undefined;
   /** 入力欄のラベル(読み上げ用。既定は文言の `label`)。 */
-  label?: string;
+  label?: string | undefined;
   /** バーの root に足すクラス。 */
-  className?: string;
+  className?: string | undefined;
   /** 配色(グリッドの `theme` と同じ値を渡す)。 */
-  theme?: GridTheme;
+  theme?: GridTheme | undefined;
 };
 
 const cx = (...names: (string | false | null | undefined)[]): string => names.filter(Boolean).join(' ');

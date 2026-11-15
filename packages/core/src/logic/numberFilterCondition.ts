@@ -134,7 +134,8 @@ export const buildParsedNumberFilterFromDraft = (
 //   現在値表示にそのまま出ます)。演算子ラベルとの対応を保つこと。
 // 変更(dogfood DU-07): 数値の書き方を任意で受けます(チップ / 管理パネルで列の valueFormatter を当てるため。
 //   raw として保存する文字列は従来どおり書き方なし)。
-// 変更(英語対応): 文言を任意で受けます(チップ / 管理パネルは localeText の文言。raw は言語によらず既定 = 日本語)。
+// 変更(英語対応): 文言を任意で受けます(チップ / 管理パネルは localeText の文言)。
+// 変更(1.0.2 / D-03): raw もグリッドの文言で作ります(既定は日本語)。
 export const formatParsedNumberFilter = (
   parsed: ParsedNumberFilter,
   formatNumber: (value: number) => string = String,
@@ -169,14 +170,17 @@ export const formatParsedNumberFilter = (
 };
 
 // draft から number 記述子を構築します。null = フィルターなし(clearColumn へ倒す)。
+// 変更(1.0.2 / 2026-11-09 実アプリの総点検 D-03): raw をグリッドの文言(localeText)で作ります。これまでは言語に
+//   よらず日本語で、英語のアプリでも `getRows` の query や URL に「100 以上」が入っていました。
 export const buildNumberColumnFilterValueFromDraft = (
   draft: NumberFilterConditionDraft,
+  texts?: FilterLocaleText,
 ): NumberColumnFilterValue | null => {
   const parsed = buildParsedNumberFilterFromDraft(draft);
   if (parsed === null) {
     return null;
   }
-  return { kind: 'number', raw: formatParsedNumberFilter(parsed), parsed };
+  return { kind: 'number', raw: formatParsedNumberFilter(parsed, String, texts), parsed };
 };
 
 // 追加(filter-ext B): 候補連動 ── Set 候補一覧を数値条件で絞ります(条件 null は素通し)。

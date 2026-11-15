@@ -172,6 +172,31 @@ describe('columnHeaderDragController', () => {
     controller.dispose();
   });
 
+  it('祖先の transform: scale() の中でも、落とし先は画面の px をレイアウトの px へ戻して決める(1.0.2 / RB-7)', () => {
+    const controller = createColumnHeaderDragController<Row>();
+    const args = makeArgs();
+    // 倍率 0.5: 表の枠のレイアウトは 400 × 300、画面では 200 × 150。中央ペインも画面では半分。
+    const scrollContainer = makeElement(makeRect(0, 0, 200, 150));
+    Object.defineProperty(scrollContainer, 'clientWidth', { value: 400 });
+    Object.defineProperty(scrollContainer, 'clientHeight', { value: 300 });
+    Object.defineProperty(scrollContainer, 'scrollWidth', { value: 400 });
+    Object.defineProperty(scrollContainer, 'offsetWidth', { value: 400 });
+    Object.defineProperty(scrollContainer, 'offsetHeight', { value: 300 });
+    controller.update({
+      ...args,
+      scrollContainerRef: { current: scrollContainer },
+      bodyScrollRef: { current: makeElement(makeRect(0, 0, 150, 150)) },
+    });
+
+    controller.onColumnDragHandlePointerDown(columns[0], gripEvent({ clientX: 20, clientY: 5 }));
+    // 画面の x=140 はレイアウトの 280 = 列 d(200..300)の後半 = slot 3(末尾。倍率を見ないと 140 = 列 b の後半 = slot 2)。
+    dispatchPointer('pointermove', 1, 140, 5);
+    expect(args.centerIndicatorRef.current?.style.left).toBe('300px');
+    dispatchPointer('pointerup', 1, 140, 5);
+    expect(args.applyColumnOrderAndPin.mock.calls[0][0]).toEqual(['b', 'c', 'd', 'a']);
+    controller.dispose();
+  });
+
   it('枠外で離すと commit しない、enabled=false では開始しない', () => {
     const controller = createColumnHeaderDragController<Row>();
     const args = makeArgs();

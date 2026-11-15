@@ -31,7 +31,7 @@ semver の対象は次のものです。
 
 ## TypeScript
 
-- 対応するのは TypeScript 5.8 以上です。`moduleResolution` は `bundler`(Vite / Next.js などのバンドラ)か `nodenext`(ESM と CommonJS)。古い `node`(`node10`)は `/lite` などの入口のパスを解決できないので対象外です。
+- 対応するのは TypeScript 5.8 以上です。`moduleResolution` は `bundler`(Vite / Next.js などのバンドラ)か `nodenext`(ESM と CommonJS)。古い `node`(`node10`)は `/lite` などの入口のパスを解決できないので対象外です。`strict` と `exactOptionalPropertyTypes`(@tsconfig/strictest など)を有効にした設定でも型の検査をしています(省略可の項目へ `undefined` を渡せます。1.0.2 から)。
 - 公開した型は、公開する前にこの組み合わせ(TypeScript の下限・最新、React 18 / 19 の型、npm / pnpm)で型の検査をしています。
 
 ### React 版の上にライブラリを作るとき

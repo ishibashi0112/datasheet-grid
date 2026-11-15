@@ -28,7 +28,7 @@ describe('columnMenuController', () => {
     c.update({ visibleColumns: [column], enableColumnMenu: true, gridRootRef: { current: null } });
     c.openFromContextMenu(column, ctx(100, 760));
     const layout = c.getSnapshot().layout;
-    expect(layout?.width).toBe(200);
+    expect(layout?.width).toBe(220);
     // 反転(760 - 289 = 471)。
     expect(layout?.top).toBe(471);
     window.dispatchEvent(new Event('scroll'));
@@ -45,7 +45,7 @@ describe('columnMenuController', () => {
     } as DOMRect);
     c.openFromButton(column, { button: 0, pointerType: 'mouse', currentTarget: button, preventDefault: vi.fn(), stopPropagation: vi.fn() });
     const layout = c.getSnapshot().layout;
-    expect(layout?.left).toBe(200);
+    expect(layout?.left).toBe(180);
     // 下(720 + 6 + 289 > 760)にも上(700 - 289 - 6 = 405 ≥ 8)へ反転できる → 反転。
     expect(layout?.top).toBe(405);
     c.dispose();

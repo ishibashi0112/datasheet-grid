@@ -7,6 +7,7 @@ import { createKeyboardController, type KeyboardControllerArgs } from './keyboar
 import { createInitialGridUiState } from '../model/gridReducer';
 import type { GridUiAction } from '../model/gridActions';
 import type { GridColumn, GridGroupRow, RowModel } from '../model/gridTypes.unbound';
+import { ROW_DRAG_HANDLE_COLUMN_KEY } from '../logic/rowReorder';
 
 type Row = { id: number; name: string };
 const columns: GridColumn<Row>[] = [{ key: 'name', title: '名前', width: 100 }];
@@ -145,6 +146,35 @@ describe('keyboardController', () => {
     const shiftTab = { ...ev('Tab'), shiftKey: true };
     await c.handleKeyDown(shiftTab);
     expect(shiftTab.preventDefault).toHaveBeenCalled();
+    expect(t.dispatch).toHaveBeenCalled();
+  });
+
+  // 追加(1.0.2 / 2026-11-09 実アプリの総点検 F-04): 先頭のデータ列の Shift+Tab は行ドラッグのハンドル列(合成列)に止まらず外へ。
+  it('Shift+Tab: 先頭の端は操作用の合成列を飛ばした最初の列(F-04)', async () => {
+    const withHandle: GridColumn<Row>[] = [
+      { key: ROW_DRAG_HANDLE_COLUMN_KEY, title: '', width: 28 },
+      { key: 'id', title: 'ID', width: 60 },
+      { key: 'name', title: '名前', width: 100 },
+    ];
+    const rowModel: RowModel<Row> = {
+      getRow: (i) => rows[i],
+      getRowCount: () => rows.length,
+      getSourceIndex: (i) => i,
+      getRowKey: (i) => rows[i]?.id ?? i,
+    };
+    const c = createKeyboardController<Row>();
+    const t = makeArgs(rowModel);
+    const at = (col: number) =>
+      c.update({ ...t.args, visibleColumns: withHandle, uiState: { ...t.args.uiState, activeCell: { row: 1, col } } });
+    at(1);
+    const shiftTab = { ...ev('Tab'), shiftKey: true };
+    await c.handleKeyDown(shiftTab);
+    expect(shiftTab.preventDefault).not.toHaveBeenCalled();
+    expect(t.dispatch).not.toHaveBeenCalled();
+    at(2);
+    const shiftTabFromName = { ...ev('Tab'), shiftKey: true };
+    await c.handleKeyDown(shiftTabFromName);
+    expect(shiftTabFromName.preventDefault).toHaveBeenCalled();
     expect(t.dispatch).toHaveBeenCalled();
   });
 

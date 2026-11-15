@@ -5,6 +5,7 @@ import {
   isNumberInputPrefix,
   parseCommittedValue,
   resolveCellParser,
+  normalizeTypedDateText,
   toDateInputValue,
   toNumberInputText,
   writeRowsCell,
@@ -219,6 +220,24 @@ describe('toDateInputValue', () => {
     expect(toDateInputValue('01-Nov')).toBe('');
     expect(toDateInputValue('Nov 26')).toBe('');
     expect(toDateInputValue('November 9')).toBe('');
+  });
+});
+
+// 追加(1.0.2 / レビュー QA-5): date エディタに打った文字の寄せ方(IME をオンのままの全角・年月日)。
+describe('normalizeTypedDateText', () => {
+  it('全角の数字・記号、長音、年月日を寄せて日付として読める形にする', () => {
+    expect(toDateInputValue(normalizeTypedDateText('２０２６／３／１５'))).toBe('2026-03-15');
+    expect(toDateInputValue(normalizeTypedDateText('２０２６－０３－１５'))).toBe('2026-03-15');
+    expect(toDateInputValue(normalizeTypedDateText('2026ー3ー15'))).toBe('2026-03-15');
+    expect(toDateInputValue(normalizeTypedDateText('2026年3月15日'))).toBe('2026-03-15');
+    expect(toDateInputValue(normalizeTypedDateText('２０２６年 ３月 １５日'))).toBe('2026-03-15');
+    expect(toDateInputValue(normalizeTypedDateText('　2026/3/15　'))).toBe('2026-03-15');
+  });
+
+  it('年の無い文字・数字だけ・ありえない日付は読まない(貼り付けと同じ)', () => {
+    expect(toDateInputValue(normalizeTypedDateText('3月15日'))).toBe('');
+    expect(toDateInputValue(normalizeTypedDateText('２０２６０３１５'))).toBe('');
+    expect(toDateInputValue(normalizeTypedDateText('2026年2月30日'))).toBe('');
   });
 });
 

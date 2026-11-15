@@ -1,5 +1,5 @@
 // 監査用ハーネス: URL の ?s=<scenario> でシナリオを切り替え、window.__* にハンドル / 状態 / ログを公開する。
-import { StrictMode, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { Activity, StrictMode, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { createRoot } from 'react-dom/client';
 import {
   SpreadsheetGrid,
@@ -32,6 +32,8 @@ declare global {
     __setColumns: (cols: GridColumn<Row>[]) => void;
     __columns: () => GridColumn<Row>[];
     __mount: (on: boolean) => void;
+    // 追加(1.0.2 / RV-D3): Next.js の画面遷移と同じく <Activity> で隠す / 見せる。
+    __activity: (visible: boolean) => void;
     __ssrm: SsrmControl;
     __ready: boolean;
     __renderCount: number;
@@ -500,8 +502,10 @@ function GridHost({ which, extra }: { which: 1 | 2; extra?: Partial<SpreadsheetG
 
 function App() {
   const [mounted, setMounted] = useState(true);
+  const [activityVisible, setActivityVisible] = useState(true);
   useEffect(() => {
     window.__mount = (on) => setMounted(on);
+    window.__activity = (visible) => setActivityVisible(visible);
   }, []);
   let body: ReactNode;
   if (scenario === 'two') {
@@ -524,7 +528,11 @@ function App() {
   } else {
     body = <GridHost which={1} />;
   }
-  return <div>{mounted ? body : <div data-testid="unmounted">unmounted</div>}</div>;
+  return (
+    <div>
+      {mounted ? <Activity mode={activityVisible ? 'visible' : 'hidden'}>{body}</Activity> : <div data-testid="unmounted">unmounted</div>}
+    </div>
+  );
 }
 
 const root = createRoot(document.getElementById('root')!);

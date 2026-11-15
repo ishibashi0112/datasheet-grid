@@ -52,6 +52,7 @@ import {
   resolveScrollContentBox,
 } from '../logic/autoScrollGeometry';
 import { resolveElementScale } from '../logic/elementScale';
+import { beginEscapeCancelableDrag } from './escapeClaimController';
 import {
   createPopoverWindowBindings,
   isInsideGridRoot,
@@ -769,6 +770,8 @@ export const createFillHandleController = <T,>(): FillHandleController<T> => {
     window.addEventListener('keydown', handleKey, true);
     window.addEventListener('keyup', handleKey, true);
     window.addEventListener('blur', handleBlur);
+    // 追加(1.0.2 / RA-6): ドラッグの間の Escape はグリッドが使う(ダイアログを閉じない)。
+    const releaseEscape = beginEscapeCancelableDrag();
     const origin = { x: event.clientX, y: event.clientY };
     drag = {
       pointerId,
@@ -788,6 +791,7 @@ export const createFillHandleController = <T,>(): FillHandleController<T> => {
         window.removeEventListener('keydown', handleKey, true);
         window.removeEventListener('keyup', handleKey, true);
         window.removeEventListener('blur', handleBlur);
+        releaseEscape();
       },
     };
     pointerStore.setSnapshot(origin);

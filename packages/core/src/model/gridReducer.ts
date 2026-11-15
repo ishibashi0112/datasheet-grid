@@ -81,6 +81,95 @@ const clampUiStateToRowCount = (state: GridUiState, rowCount: number): GridUiSta
   return next;
 };
 
+// 追加(1.0.2 / 2026-11-09 実アプリの総点検 C-02): 列の数が減ったとき、はみ出した activeCell / selection(と選択ドラッグの起点)を
+//   範囲内へ詰めます(行と同じ考え方。列は最終列へ寄せ、範囲は切り詰める)。0 列になったら activeCell とセル / 列選択を
+//   解除します(行選択は列に依存しないため保持)。はみ出しが無ければ同一参照を返します。
+const clampUiStateToColCount = (state: GridUiState, colCount: number): GridUiState => {
+  const { activeCell, selection, dragState } = state;
+  if (colCount <= 0) {
+    const clearSelection = selection !== null && selection.type !== 'row';
+    const clearDrag = dragState?.type === 'selection' && dragState.selectionKind !== 'row';
+    if (activeCell === null && !clearSelection && !clearDrag) {
+      return state;
+    }
+    return {
+      ...state,
+      activeCell: null,
+      selection: clearSelection ? null : selection,
+      dragState: clearDrag ? null : dragState,
+    };
+  }
+  const maxCol = colCount - 1;
+  let next = state;
+  if (activeCell !== null && activeCell.col > maxCol) {
+    next = { ...next, activeCell: { row: activeCell.row, col: maxCol } };
+  }
+  if (selection?.type === 'cell') {
+    const { start, end } = selection.range;
+    if (start.col > maxCol || end.col > maxCol) {
+      next = {
+        ...next,
+        selection: {
+          type: 'cell',
+          range: {
+            start: { row: start.row, col: Math.min(start.col, maxCol) },
+            end: { row: end.row, col: Math.min(end.col, maxCol) },
+          },
+        },
+      };
+    }
+  } else if (selection?.type === 'col') {
+    if (selection.startCol > maxCol || selection.endCol > maxCol) {
+      next = {
+        ...next,
+        selection: { type: 'col', startCol: Math.min(selection.startCol, maxCol), endCol: Math.min(selection.endCol, maxCol) },
+      };
+    }
+  }
+  if (dragState?.type === 'selection') {
+    if (dragState.selectionKind === 'cell' && dragState.anchor.col > maxCol) {
+      next = { ...next, dragState: { ...dragState, anchor: { row: dragState.anchor.row, col: maxCol } } };
+    } else if (dragState.selectionKind === 'col' && dragState.anchorCol > maxCol) {
+      next = { ...next, dragState: { ...dragState, anchorCol: maxCol } };
+    }
+  }
+  return next;
+};
+
+// 追加(1.0.2 / 2026-11-09 実アプリの総点検 C-03): columns から消えた列(前の columns にあって今の columns に無い列)の
+//   列フィルターとソートを捨てます(幅と同じ扱い。applyState とそろえる)。残すと、絞り込んでいないのに上部バーに
+//   「絞り込み: 1 列」と出て、フィルターの管理画面からは外せず、列が戻ると黙って絞り込み直していた。前の columns に
+//   無かった列(初めから無い列。initialState で先に入れた条件など)は触りません。変化が無ければ同一参照。
+const dropRemovedColumnFiltersAndSort = (
+  state: GridUiState,
+  prevColumns: readonly { key: string }[] | null,
+  nextColumns: readonly { key: string }[],
+): GridUiState => {
+  if (prevColumns === null) {
+    return state;
+  }
+  const nextKeys = new Set(nextColumns.map((column) => column.key));
+  const removed = new Set(prevColumns.filter((column) => !nextKeys.has(column.key)).map((column) => column.key));
+  if (removed.size === 0) {
+    return state;
+  }
+  let next = state;
+  const columnFilters = state.filters.columnFilters;
+  if (Object.keys(columnFilters).some((key) => removed.has(key))) {
+    const kept: typeof columnFilters = {};
+    for (const [key, value] of Object.entries(columnFilters)) {
+      if (!removed.has(key)) {
+        kept[key] = value;
+      }
+    }
+    next = { ...next, filters: { ...next.filters, columnFilters: kept } };
+  }
+  if (state.sort.some((entry) => removed.has(entry.columnKey))) {
+    next = { ...next, sort: state.sort.filter((entry) => !removed.has(entry.columnKey)) };
+  }
+  return next;
+};
+
 // 追加: reducer 初期 state を生成します。
 // 変更(監査 RD-5 / M-03): 列幅 state を空で始めるため columns 引数は不要になりました。
 export const createInitialGridUiState = (): GridUiState => ({
@@ -298,8 +387,10 @@ export const gridUiReducer = (
         dragState: null,
       };
 
-    case 'selection/clampToRowCount':
-      return clampUiStateToRowCount(state, action.rowCount);
+    case 'selection/clampToRowCount': {
+      const rowClamped = clampUiStateToRowCount(state, action.rowCount);
+      return action.colCount === undefined ? rowClamped : clampUiStateToColCount(rowClamped, action.colCount);
+    }
 
     case 'edit/start':
       return {
@@ -396,7 +487,8 @@ export const gridUiReducer = (
         action.prevColumns,
         action.nextColumns,
       );
-      return columnWidths === state.columnWidths ? state : { ...state, columnWidths };
+      const withWidths = columnWidths === state.columnWidths ? state : { ...state, columnWidths };
+      return dropRemovedColumnFiltersAndSort(withWidths, action.prevColumns, action.nextColumns);
     }
 
     case 'filter/setGlobal':

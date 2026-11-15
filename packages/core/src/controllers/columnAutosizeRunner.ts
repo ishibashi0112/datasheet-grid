@@ -10,6 +10,7 @@
 import {
   canMeasureAutosize,
   createColumnWidthAccumulator,
+  type AutosizeChipOf,
   type AutosizeTotalRowTexts,
 } from '../logic/columnAutosize';
 import { runChunked } from '../logic/chunkedLoop';
@@ -31,6 +32,8 @@ export type ColumnAutosizeRunnerArgs<T> = {
   dispatch: (action: ReturnType<typeof gridActions.syncColumnWidths>) => void;
   // 追加(見直し): 合計行の表示(列の key → 文字列と見出し)。幅に収めます。合計行が無ければ省略(従来どおり)。
   totalRowTexts?: AutosizeTotalRowTexts;
+  // 追加(1.0.2 / 2026-11-09 実アプリの総点検 D-02): 状態チップのセルの中身(条件付き書式の機能があるときだけ)。
+  chipOf?: AutosizeChipOf<T> | undefined;
 };
 
 export type ColumnAutosizeRunner<T> = {
@@ -64,13 +67,13 @@ export const createColumnAutosizeRunner = <T,>(): ColumnAutosizeRunner<T> => {
     if (args === null || columns.length === 0 || !canMeasureAutosize()) {
       return;
     }
-    const { rowModel, gridRootRef, columnWidths: currentWidths, dispatch, totalRowTexts } = args;
+    const { rowModel, gridRootRef, columnWidths: currentWidths, dispatch, totalRowTexts, chipOf } = args;
     const myGeneration = (runGeneration += 1);
     clearOverlayTimer();
 
     const viewRowCount = rowModel.getRowCount();
     const gridRoot = gridRootRef.current;
-    const accumulator = createColumnWidthAccumulator(columns);
+    const accumulator = createColumnWidthAccumulator(columns, chipOf);
 
     overlayTimer = setTimeout(() => {
       if (runGeneration === myGeneration) {
@@ -84,7 +87,7 @@ export const createColumnAutosizeRunner = <T,>(): ColumnAutosizeRunner<T> => {
         (viewIndex) => {
           const row = rowModel.getRow(viewIndex);
           if (row) {
-            accumulator.collect(row);
+            accumulator.collect(row, viewIndex);
           }
         },
         {
@@ -96,7 +99,7 @@ export const createColumnAutosizeRunner = <T,>(): ColumnAutosizeRunner<T> => {
       if (!completed) {
         return;
       }
-      const nextWidths = accumulator.finalize({ gridRoot, currentWidths, totalRowTexts });
+      const nextWidths = accumulator.finalize({ gridRoot, currentWidths, totalRowTexts, chipOf });
       if (Object.keys(nextWidths).length > 0) {
         dispatch(gridActions.syncColumnWidths(nextWidths));
       }

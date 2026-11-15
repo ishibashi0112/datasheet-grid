@@ -40,6 +40,10 @@ export const ROW_ENTER_INDEX_VAR = '--ssg-row-enter-index';
 export const ROW_ENTER_STAGGER_CAP = 12;
 // animationend が届かないときのフォールバック(stagger 上限 + 継続時間の余裕)。
 export const ROW_ENTER_FALLBACK_MS = 1500;
+// 追加(1.0.2 / 2026-11-09 実アプリの総点検 B-07): 前に行が現れてからこの時間(ms)のうちに現れた行は、animateRows の
+//   フェードインをしません(値が頻繁に変わる並べ替え中の表 = ライブの表で、窓に入った行が毎回 0.3 秒ほど透明になり
+//   ちらついていた)。SSRM のブロック到着(skeleton → 実行)は対象外(いつもフェードイン)。
+export const ROW_ENTER_LIVE_WINDOW_MS = 1000;
 
 const rowIndexOf = (el: HTMLElement): number => Number(el.getAttribute('data-row-index'));
 
@@ -66,6 +70,8 @@ export const createRowEnterController = (): RowEnterController => {
   let observedAttributes = false;
   let modes = { skeletonEnter: false, mountEnter: false };
   const timers = new Map<HTMLElement, ReturnType<typeof setTimeout>>();
+  // 追加(1.0.2 / B-07): 最後に animateRows の対象の行が現れた時刻(ライブの表の判定)。
+  let lastMountAt = Number.NEGATIVE_INFINITY;
 
   const clear = (el: HTMLElement) => {
     el.classList.remove(ROW_ENTER_CLASS_NAME);
@@ -171,9 +177,16 @@ export const createRowEnterController = (): RowEnterController => {
     if (modes.mountEnter && !scrolling) {
       restartMovedRowTransitions(addedRows.filter((el) => movedRows.has(el)), previousStyleByRow);
     }
+    // 追加(1.0.2 / B-07): 前に行が現れてから間もなければ(ライブの表)、animateRows のフェードインはしません。
+    let mountEnter = modes.mountEnter && !scrolling;
+    if (mountEnter && addedRows.some((el) => !movedRows.has(el))) {
+      const now = Date.now();
+      mountEnter = now - lastMountAt >= ROW_ENTER_LIVE_WINDOW_MS;
+      lastMountAt = now;
+    }
     const entering = addedRows.filter(
       (el) =>
-        (modes.mountEnter && !scrolling && !movedRows.has(el)) ||
+        (mountEnter && !movedRows.has(el)) ||
         (modes.skeletonEnter && removedSkeletonIndexes.has(rowIndexOf(el))),
     );
     if (entering.length === 0) {

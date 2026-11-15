@@ -117,6 +117,33 @@ describe('clipboardController', () => {
     expect(writeText).toHaveBeenLastCalledWith('b');
   });
 
+  // 追加(1.0.2 / レビュー QA-10): 全体の選択のコピーも、最後の行がすべて空なら末尾に改行を足す(RV-C1 と同じ)。
+  it('全選択のコピーで最後の行が空なら末尾に改行を足す(1 列の表で最後の空の行が貼り付けで消えない)', async () => {
+    type One = { name: string };
+    const oneRows: One[] = [{ name: 'x' }, { name: '' }];
+    const c = createClipboardController<One>();
+    c.update({
+      rows: oneRows,
+      rowModel: {
+        getRowCount: () => oneRows.length,
+        getRow: (i) => oneRows[i],
+        getSourceIndex: (i) => i,
+        getRowKey: (i) => i,
+      },
+      visibleColumns: [{ key: 'name', title: 'Name', width: 120 }],
+      uiState: {
+        ...createInitialGridUiState(),
+        selection: { type: 'cell', range: { start: { row: 0, col: 0 }, end: { row: 1, col: 0 } } },
+      },
+      readOnly: false,
+      canEditCell: undefined,
+      onRowsChange: vi.fn(),
+      dispatch: vi.fn(),
+    });
+    await c.handleCopy();
+    expect(writeText).toHaveBeenLastCalledWith('x\n\n');
+  });
+
   it('構造的イベント型でペーストでき、clipboardData が null なら何もしない', () => {
     const c = createClipboardController<Row>();
     const t = makeArgs({
@@ -206,6 +233,26 @@ describe('clipboardController', () => {
     const written = (t.args.onRowsChange as ReturnType<typeof vi.fn>).mock.calls[0][0] as Row[];
     expect(written[1]).toMatchObject({ id: 'b', name: 'c' });
     expect(t.dispatch).toHaveBeenCalledWith({ type: 'selection/update', cell: { row: 1, col: 1 } });
+  });
+
+  // 追加(1.0.2 / 2026-11-09 実アプリの総点検 C-02): 行 / 列を足せないときに表の外へはみ出す貼り付けは、選択範囲を書いた範囲まで。
+  it('行 / 列を足せないとき、貼り付け後の選択範囲は表の中まで(C-02)', () => {
+    const c = createClipboardController<Row>();
+    const t = makeArgs({
+      uiState: { ...createInitialGridUiState(), activeCell: { row: 1, col: 1 } },
+    });
+    c.update(t.args);
+    c.handlePaste({ clipboardData: { getData: () => 'x\ty\tz\np\tq\tr' }, preventDefault: vi.fn() });
+    expect(t.dispatch).toHaveBeenCalledWith({ type: 'selection/update', cell: { row: 1, col: 1 } });
+
+    // createRow があれば足した行まで選ぶ(従来どおり)。
+    const withCreate = makeArgs({
+      uiState: { ...createInitialGridUiState(), activeCell: { row: 1, col: 1 } },
+      createRow: () => ({ id: 9, name: '' }),
+    });
+    c.update(withCreate.args);
+    c.handlePaste({ clipboardData: { getData: () => 'x\ny\nz' }, preventDefault: vi.fn() });
+    expect(withCreate.dispatch).toHaveBeenCalledWith({ type: 'selection/update', cell: { row: 3, col: 1 } });
   });
 
   // 追加(audit RD-2): 編集中 / 入力要素が発火元の paste はグリッドが横取りしない。

@@ -206,16 +206,18 @@ export function CellEditorLayer<T>({
       />
     );
   } else if (editor?.type === 'date') {
-    // date は印字キー開始の initialText を無視し、常に現セル値から開始します
-    //   (editorSession 不在時のみ initialValue でフォールバック)。
+    // date は現セル値から開始します(editorSession 不在時のみ initialValue でフォールバック)。
+    // 変更(1.0.2 / 2026-11-09 実アプリの総点検 J-12): 文字から打ち始めたとき(初期値がセル値の文字列と違う。select の initialText と
+    //   同じ判定)は、その文字を initialText で渡し、エディタは文字の欄で開きます(これまでは捨てていた)。
     editorNode = (
       <DateCellEditor
         key={sessionId}
         ariaLabel={editLabel}
         enterMove={enterMove}
-        initialValue={toDateInputValue(
-          editorSession ? editorSession.value : initialValue,
-        )}
+        initialValue={toDateInputValue(editorSession ? editorSession.value : initialValue)}
+        initialText={
+          editorSession && initialValue !== String(editorSession.value ?? '') ? initialValue : undefined
+        }
         onCommit={onCommit}
         onCancel={onCancel}
         align={align}

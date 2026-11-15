@@ -68,7 +68,7 @@ describe('useColumnMenuController(特性テスト)', () => {
     expect(t.result.current.isColumnMenuOpen).toBe(true);
     expect(t.result.current.openedMenuColumnKey).toBe('a');
     expect(t.result.current.openedMenuColumn?.key).toBe('a');
-    expect(t.result.current.columnMenuLayout).toMatchObject({ width: 200 });
+    expect(t.result.current.columnMenuLayout).toMatchObject({ width: 220 });
     act(() => {
       t.result.current.openColumnMenuFromButton(columns[0], pointerEvent(button));
     });

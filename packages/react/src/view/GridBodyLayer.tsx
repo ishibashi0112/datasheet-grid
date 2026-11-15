@@ -58,6 +58,10 @@ import type { GridPaneKind } from './GridHeaderRow';
 import { getCellValue, isCellEditable } from '@ishibashi0112/spreadsheet-grid-core/internal/utils/permissions';
 // 追加(UI CSS移行): className 合成ヘルパー。
 import { cx } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/cx';
+
+// 追加(1.0.2 / 2026-11-09 実アプリの総点検 C-04): 状態チップの余白を詰めてアイコンを外す列の幅(px。これより細い列)。
+//   チップの枠(余白 14 + アイコン 12 + 間 5)とセルの余白で、46px の列では 1 文字も入らず切れていました。
+const CHIP_COMPACT_MAX_WIDTH = 80;
 import type { GridResolvedSlots, GridSlotProps } from '../model/gridTypes';
 import { arePropsEqualWithStyleKeys, resolveSlotProps } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/slotProps';
 import { useGridLocaleText } from '../hooks/useGridLocaleText';
@@ -449,6 +453,8 @@ function GridBodyRowInner<T>({
           cellNote !== null && 'ssg-body-cell--has-note',
           dataBar !== null && 'ssg-body-cell--cf-bar',
           scaleBackground !== null && 'ssg-body-cell--cf-scale',
+          // 追加(1.0.2 / 2026-11-09 実アプリの総点検 C-04): 細い列の状態チップは余白を詰めてアイコンを外します(styles.css)。
+          conditionalFormat?.chips !== undefined && size < CHIP_COMPACT_MAX_WIDTH && 'ssg-body-cell--chip-compact',
           isRowHovered && 'ssg-body-cell--row-hovered',
           rowClassName,
           conditionalCell.className,

@@ -296,7 +296,7 @@ The preset drives the default `rowHeight` / `headerHeight` (compact: 28/32, stan
 
 ## Smaller bundles (`/lite`, 0.54.0+)
 
-`SpreadsheetGrid` includes every feature (about 136KB gzip of initial JS). `@ishibashi0112/spreadsheet-grid/lite` builds a grid with only the features you pass, and leaves the rest out of your bundle:
+`SpreadsheetGrid` includes every feature (about 140KB gzip of initial JS). `@ishibashi0112/spreadsheet-grid/lite` builds a grid with only the features you pass, and leaves the rest out of your bundle:
 
 ```tsx
 import { createSpreadsheetGrid, standardFeatures, serverSideFeature } from '@ishibashi0112/spreadsheet-grid/lite';
@@ -308,9 +308,9 @@ const Grid = createSpreadsheetGrid({ features: { ...standardFeatures, serverSide
 
 | Setup | Initial JS (gzip) |
 | --- | --- |
-| `SpreadsheetGrid` (everything) | ~136KB |
-| `/lite`, no features | ~77KB |
-| `/lite` + `standardFeatures` (filters, column menu, tool panel, column autosize, export) | ~99KB |
+| `SpreadsheetGrid` (everything) | ~140KB |
+| `/lite`, no features | ~80KB |
+| `/lite` + `standardFeatures` (filters, column menu, tool panel, column autosize, export) | ~102KB |
 
 Props, the `ref` handle and types are the same as `SpreadsheetGrid`. Props of features you did not pass do nothing, and in development a `console.warn` names the feature to add. See the [`/lite` section of the API reference](packages/react/API_REFERENCE.md#機能を選んで組み込むlite-サブパス) for the 20 features and their sizes.
 
@@ -331,7 +331,7 @@ const ask: GridAsk = async (request, { signal }) => {
 <SpreadsheetGrid ref={gridRef} columns={columns} rows={rows} />
 ```
 
-It is a separate entry (~13.8KB gzip), so `SpreadsheetGrid` and `/lite` do not grow. Server code for Claude, OpenAI, Gemini and the Vercel AI SDK (AI Gateway) is in the [guide with a live demo](https://datasheet-grid.vercel.app/docs/guides/ai-filter); the full API and the list of what the AI can change are in the [`/ai` section of the API reference](packages/react/API_REFERENCE.md#ことばで絞り込みai-サブパス).
+It is a separate entry (~14.0KB gzip), so `SpreadsheetGrid` and `/lite` do not grow. Server code for Claude, OpenAI, Gemini and the Vercel AI SDK (AI Gateway) is in the [guide with a live demo](https://datasheet-grid.vercel.app/docs/guides/ai-filter); the full API and the list of what the AI can change are in the [`/ai` section of the API reference](packages/react/API_REFERENCE.md#ことばで絞り込みai-サブパス).
 
 ## Server-side mode (SSRM)
 
@@ -723,7 +723,7 @@ flex column の残り（ページヘッダーの下など）を埋める:
 
 ### バンドルを小さくする(`/lite`、0.54.0 から)
 
-`SpreadsheetGrid` は全機能入りです(初期読み込みの JS が約 136KB gzip)。`@ishibashi0112/spreadsheet-grid/lite` では、渡した機能だけを入れたグリッドを作れます。渡さなかった機能はバンドルに入りません:
+`SpreadsheetGrid` は全機能入りです(初期読み込みの JS が約 140KB gzip)。`@ishibashi0112/spreadsheet-grid/lite` では、渡した機能だけを入れたグリッドを作れます。渡さなかった機能はバンドルに入りません:
 
 ```tsx
 import { createSpreadsheetGrid, standardFeatures, serverSideFeature } from '@ishibashi0112/spreadsheet-grid/lite';
@@ -735,9 +735,9 @@ const Grid = createSpreadsheetGrid({ features: { ...standardFeatures, serverSide
 
 | 構成 | 初期 JS(gzip) |
 | --- | --- |
-| `SpreadsheetGrid`(全部入り) | 約 136KB |
-| `/lite` 機能なし | 約 77KB |
-| `/lite` + `standardFeatures`(フィルター・列メニュー・ツールパネル・列幅の自動調整・エクスポート) | 約 99KB |
+| `SpreadsheetGrid`(全部入り) | 約 140KB |
+| `/lite` 機能なし | 約 80KB |
+| `/lite` + `standardFeatures`(フィルター・列メニュー・ツールパネル・列幅の自動調整・エクスポート) | 約 102KB |
 
 props・`ref` ハンドル・型は `SpreadsheetGrid` と同じです。渡していない機能の prop は何もせず、開発時は足すべき機能を `console.warn` で知らせます。20 の機能とサイズは [API リファレンスの `/lite` の節](packages/react/API_REFERENCE.md#機能を選んで組み込むlite-サブパス)にあります。
 
@@ -758,7 +758,7 @@ const ask: GridAsk = async (request, { signal }) => {
 <SpreadsheetGrid ref={gridRef} columns={columns} rows={rows} />
 ```
 
-別の入口(約 13.8KB gzip)なので、`SpreadsheetGrid` と `/lite` の大きさは変わりません。Claude・OpenAI・Gemini・Vercel AI SDK(AI Gateway)のサーバー側のコードは[デモ付きのガイド](https://datasheet-grid.vercel.app/docs/guides/ai-filter)に、API の全体と AI が変えられるものの一覧は [API リファレンスの `/ai` の節](packages/react/API_REFERENCE.md#ことばで絞り込みai-サブパス)にあります。
+別の入口(約 14.0KB gzip)なので、`SpreadsheetGrid` と `/lite` の大きさは変わりません。Claude・OpenAI・Gemini・Vercel AI SDK(AI Gateway)のサーバー側のコードは[デモ付きのガイド](https://datasheet-grid.vercel.app/docs/guides/ai-filter)に、API の全体と AI が変えられるものの一覧は [API リファレンスの `/ai` の節](packages/react/API_REFERENCE.md#ことばで絞り込みai-サブパス)にあります。
 
 ### サーバーサイドモード（SSRM）
 

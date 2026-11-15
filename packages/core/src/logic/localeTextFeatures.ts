@@ -64,12 +64,12 @@ export const DEFAULT_COLUMN_MENU_LOCALE_TEXT = {
   menuPinNone: '固定しない',
   menuPinLeft: '左に固定',
   menuPinRight: '右に固定',
-  menuPinUnavailable: 'onColumnsChange 未指定のため固定状態を変更できません',
+  menuPinUnavailable: 'この表では列の固定を変えられません',
   menuAutosize: 'この列の幅を自動調整',
   menuAutosizeAll: 'すべての列の幅を自動調整',
   menuColumns: '列の表示',
   menuResetColumns: '列のリセット',
-  menuResetUnavailable: 'onColumnsChange 未指定のため列をリセットできません',
+  menuResetUnavailable: 'この表では列をリセットできません',
 } satisfies Partial<GridLocaleText>;
 
 // セル内検索のバー(find の機能)

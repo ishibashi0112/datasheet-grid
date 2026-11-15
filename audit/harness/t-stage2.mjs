@@ -148,8 +148,10 @@ import { open, check, summary, waitIdle, unexpectedPageErrors, header, cell } fr
       const content = cell?.querySelector('[data-autoheight-content]');
       if (!ta || !cell || !content) return null;
       const taTop = ta.getBoundingClientRect().top + ta.clientTop + parseFloat(getComputedStyle(ta).paddingTop);
+      // 変更(1.0.2 / G-12): 器には上下の余白があるので、セルの文字の上端は器の上端 + 上の余白。
+      const textTop = content.getBoundingClientRect().top + parseFloat(getComputedStyle(content).paddingTop);
       return {
-        textOffset: Math.round((taTop - content.getBoundingClientRect().top) * 10) / 10,
+        textOffset: Math.round((taTop - textTop) * 10) / 10,
         extraHeight: Math.round(ta.getBoundingClientRect().height - cell.getBoundingClientRect().height),
       };
     }, row);

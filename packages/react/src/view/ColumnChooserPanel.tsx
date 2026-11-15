@@ -166,7 +166,9 @@ function CheckBox({
           <path
             d="M2.5 6.2 4.7 8.4 9.5 3.6"
             // 変更(TH-DK-1): stroke も属性では var() 不可のため style で指定します。
-            style={{ stroke: 'var(--ssg-panel-accent-contrast)' }}
+            // 変更(1.0.2 / 2026-11-09 実アプリの総点検 L-09): 無効のときは灰色の地に濃い灰色のチェック(これまでは薄い灰色の
+            //   地に白で、チェックがほぼ見えず外れているように見えた。onColumnsChange が無い表では全部の列がこの見た目)。
+            style={{ stroke: disabled ? 'var(--ssg-panel-text-muted)' : 'var(--ssg-panel-accent-contrast)' }}
             strokeWidth="1.8"
             strokeLinecap="round"
             strokeLinejoin="round"
@@ -505,9 +507,11 @@ export function ColumnChooserPanel({
           <DragHandleGlyph disabled={!canDrag} />
         </span>
 
+        {/* 変更(1.0.2 / L-09): 表示中かどうかを aria-pressed で伝えます(押せないときも今の状態を読み上げる)。 */}
         <button
           type="button"
           disabled={disabled}
+          aria-pressed={item.visible && !item.grouped}
           data-ssg-tooltip={
             item.grouped ? texts.columnsGroupedHint : undefined
           }
@@ -566,7 +570,9 @@ export function ColumnChooserPanel({
       </div>
 
       {/* ── 列一覧(スクロール) ── */}
-      <div ref={listRef} className="ssg-chooser-list">
+      {/* 変更(1.0.2 / 2026-11-09 実アプリの総点検 L-08): onColumnsChange が無い表では中の項目がすべて押せない(フォーカスが
+          入らない)ので、スクロールする一覧そのものに Tab で止まれるようにします(キーボードでも一覧を送れるように)。 */}
+      <div ref={listRef} className="ssg-chooser-list" tabIndex={canToggle ? undefined : 0}>
         {filteredItems.length === 0 ? (
           <div className="ssg-chooser-empty">{texts.columnsNoMatches}</div>
         ) : (

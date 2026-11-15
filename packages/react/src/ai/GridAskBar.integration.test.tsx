@@ -4,7 +4,7 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi, beforeAll, afterEach } from 'vitest';
 import { render, cleanup, act, fireEvent, screen, within } from '@testing-library/react';
-import { Activity, createRef, useState, type RefObject } from 'react';
+import { Activity, createRef, StrictMode, useState, type RefObject } from 'react';
 
 import { SpreadsheetGrid } from '../SpreadsheetGrid';
 import { GridAskBar, type GridAsk, type GridAskBarProps } from '../ai';
@@ -85,11 +85,15 @@ type Harness = {
   columnsLog: GridColumn<Row>[][];
 };
 
-const setup = (ask: GridAsk, props: Partial<GridAskBarProps<Row>> = {}): Harness => {
+const setup = (
+  ask: GridAsk,
+  props: Partial<GridAskBarProps<Row>> = {},
+  initialColumns: GridColumn<Row>[] = baseColumns,
+): Harness => {
   const grid = createRef<SpreadsheetGridHandle<Row>>();
   const columnsLog: GridColumn<Row>[][] = [];
   function App() {
-    const [columns, setColumns] = useState(baseColumns);
+    const [columns, setColumns] = useState(initialColumns);
     return (
       <>
         <GridAskBar grid={grid} columns={columns} ask={ask} {...props} />
@@ -533,6 +537,22 @@ describe('GridAskBar(結合)', () => {
     expect(columnsLog).toHaveLength(2);
   });
 
+  // 追加(1.0.2 / 2026-11-09 実アプリの総点検 I-05。文書): 列を隠す / 元に戻すと、applyState の規則(M-09)どおり columns の
+  //   配列は固定列ごとに並べ直される(画面の並びは同じ)。ドキュメントに書いた挙動を固定する。
+  it('途中の列を固定した表で列を隠すと、columns の配列は固定列ごとの順になる(applyState の規則)', async () => {
+    const pinnedMiddle = baseColumns.map((column) => (column.key === 'warehouse' ? { ...column, pinned: 'left' as const } : column));
+    const { columnsLog } = setup(async () => answerOf({ hide: ['stock'] }), { allowColumnVisibility: true }, pinnedMiddle);
+    typeAndEnter(screen.getByRole('textbox', { name: 'ことばで絞り込み' }) as HTMLInputElement, '在庫数の列を隠して');
+    await flush();
+    fireEvent.click(screen.getByRole('button', { name: '元に戻す' }));
+    expect(columnsLog).toHaveLength(2);
+    for (const next of columnsLog) {
+      expect(next.map((column) => column.key)).toEqual(['warehouse', 'id', 'name', 'stock']);
+    }
+    expect(columnsLog[0].find((column) => column.key === 'stock')?.visible).toBe(false);
+    expect(columnsLog[1].find((column) => column.key === 'stock')?.visible).toBeUndefined();
+  });
+
   it('列の表示を許していなければ隠さない', async () => {
     const { grid, input, columnsLog } = setup(async () => answerOf({ hide: ['stock'] }));
     typeAndEnter(input, '在庫数の列を隠して');
@@ -681,6 +701,27 @@ describe('GridAskBar(結合)', () => {
         warn.mockClear();
         rerender(<HintsHost hints={{ stock: '個' }} />);
         expect(warn).not.toHaveBeenCalled();
+      } finally {
+        warn.mockRestore();
+      }
+    });
+
+    // 追加(1.0.2 / 2026-11-09 実アプリの総点検 I-11): StrictMode(Next.js の開発時の既定)では、effect の付け直しで 2 回以上出ていた。
+    it('StrictMode でも、同じ打ち間違いの警告は 1 回だけ', () => {
+      const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+      try {
+        const { rerender } = render(
+          <StrictMode>
+            <HintsHost hints={{ stok: false }} />
+          </StrictMode>,
+        );
+        rerender(
+          <StrictMode>
+            <HintsHost hints={{ stok: false }} />
+          </StrictMode>,
+        );
+        const count = warn.mock.calls.filter(([message]) => String(message).includes('columnHints')).length;
+        expect(count).toBe(1);
       } finally {
         warn.mockRestore();
       }

@@ -1,4 +1,5 @@
-import { memo, type CSSProperties, type KeyboardEvent, type ReactNode, type SyntheticEvent } from 'react';
+import { memo, useRef, type CSSProperties, type HTMLAttributes, type KeyboardEvent, type ReactNode, type SyntheticEvent } from 'react';
+import { useIsomorphicLayoutEffect } from '../hooks/useController';
 import type { VerticalRow } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/verticalGeometry';
 import { cx } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/cx';
 import { mergeStyles } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/slotProps';
@@ -44,7 +45,39 @@ type GridDetailLayerProps = {
   // 追加(段階 2 C-N2): カードの中の keydown(グリッド本体へは伝えない)。カードの端の Tab / Shift+Tab の行き先を決めます
   //   (最後の要素の Tab は表の外へ、最初の要素の Shift+Tab はその行の最終列のセルへ)。
   onCardKeyDown?: (event: KeyboardEvent<HTMLDivElement>, viewRowIndex: number) => void;
+  // 追加(1.0.2 / 2026-11-09 実アプリの総点検 G-13): フォーカスを持ったカードが消えた(スクロールや絞り込みで描画窓の外へ出た /
+  //   閉じた)とき。フォーカスが body に落ちていたらグリッドへ戻すのに使います。
+  onCardFocusLost?: () => void;
 };
+
+// 追加(1.0.2 / G-13): カードが消えるとき(アンマウントの直前。DOM はまだある)に中にフォーカスがあれば、消えた後でフォーカスが
+//   どこにも無い(body)ときだけ onFocusLost を呼びます(消える前にフォーカスを別の場所へ移した操作は邪魔しない)。
+function DetailCard({
+  onFocusLost,
+  children,
+  ...props
+}: { onFocusLost?: () => void; children: ReactNode } & Omit<HTMLAttributes<HTMLDivElement>, 'children'>) {
+  const cardRef = useRef<HTMLDivElement | null>(null);
+  useIsomorphicLayoutEffect(() => {
+    const card = cardRef.current;
+    return () => {
+      if (!onFocusLost || !card || !card.contains(document.activeElement)) {
+        return;
+      }
+      queueMicrotask(() => {
+        const active = document.activeElement;
+        if (!card.isConnected && (active === null || active === document.body)) {
+          onFocusLost();
+        }
+      });
+    };
+  }, [onFocusLost]);
+  return (
+    <div ref={cardRef} {...props}>
+      {children}
+    </div>
+  );
+}
 
 // イベント境界: グリッド本体(shell)の onKeyDown / onPaste / onContextMenu / onDragStart や
 //   セル側のダブルクリック編集開始へ、カード内の操作を伝播させません。
@@ -62,6 +95,7 @@ function GridDetailLayerInner({
   slots,
   renderCard,
   onCardKeyDown,
+  onCardFocusLost,
 }: GridDetailLayerProps) {
   if (entries.length === 0) {
     return null;
@@ -99,7 +133,8 @@ function GridDetailLayerInner({
                 className="ssg-detail-card-holder"
                 style={{ left: cardStickyLeft, width: cardWidth }}
               >
-                <div
+                <DetailCard
+                  onFocusLost={onCardFocusLost}
                   className={cx(
                     'ssg-detail-card',
                     slots?.detailCard?.className,
@@ -120,7 +155,7 @@ function GridDetailLayerInner({
                   onDoubleClick={stopPropagation}
                 >
                   {renderCard(entry)}
-                </div>
+                </DetailCard>
               </div>
             )}
           </div>

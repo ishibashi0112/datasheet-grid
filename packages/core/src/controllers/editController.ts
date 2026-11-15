@@ -23,7 +23,7 @@ import type {
 import { isUnchangedEditorCommit, parseCommittedValue, writeRowsCell } from '../logic/editorValues';
 import { decideCellWrite, type ValidationLocaleText } from '../logic/validation';
 import { clamp } from '../logic/geometry';
-import { isFocusInsideDetailCard } from '../logic/detailRow';
+import { isFocusInsideDetailCard, resolveFirstDataColIndex } from '../logic/detailRow';
 import { getCellValue, isViewCellEditable } from '../utils/permissions';
 import type { ServerSideCellEditInput } from '../logic/serverSideEdits';
 
@@ -331,7 +331,9 @@ export const createEditController = <T extends object>(): EditController<T> => {
           : direction === 'right'
             ? { row: editingCell.row, col: editingCell.col + 1 }
             : direction === 'left'
-              ? { row: editingCell.row, col: editingCell.col - 1 }
+              ? // 変更(1.0.2 / 2026-11-09 実アプリの総点検 F-04): 左は操作用の合成列(行ドラッグのハンドル列・展開トグル列)へ
+                //   入りません(先頭のデータ列の Shift+Tab / custom の commit(v, 'left') で、ハンドル列に止まっていた)。
+                { row: editingCell.row, col: Math.max(editingCell.col - 1, resolveFirstDataColIndex(visibleColumns)) }
               : editingCell;
 
     const column = visibleColumns[editingCell.col];

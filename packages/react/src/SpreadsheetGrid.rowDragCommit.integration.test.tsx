@@ -8,10 +8,10 @@
 // @vitest-environment jsdom
 import { describe, it, expect, beforeAll, afterEach } from 'vitest';
 import { render, cleanup, act, fireEvent } from '@testing-library/react';
-import { useState } from 'react';
+import { createRef, useState } from 'react';
 
 import { SpreadsheetGrid } from './SpreadsheetGrid';
-import type { GridColumn, RowMoveParams } from './model/gridTypes';
+import type { GridColumn, RowMoveParams, SpreadsheetGridHandle } from './model/gridTypes';
 
 const ROW_HEIGHT = 30;
 const HEADER_HEIGHT = 40;
@@ -420,5 +420,56 @@ describe('離した後の行のホバー', () => {
     dragRow(container, 0, lowerHalfY(2));
     expect(centerRows(container).length).toBeGreaterThan(0);
     expect(hovered.at(-1)).toBeNull();
+  });
+});
+
+// 追加(1.0.2 / 2026-11-09 実アプリの総点検 RV-F3): ドラッグの後、フォーカスはグリッドに入るのにアクティブセルが無く、
+//   続けて ↓ を押すと表の先頭へ飛んでいた。
+describe('行ドラッグの後のアクティブセル(RV-F3)', () => {
+  const renderWithRef = () => {
+    const ref = createRef<SpreadsheetGridHandle<Row>>();
+    const Wrapped = () => {
+      const [rows, setRows] = useState(initialRows);
+      return (
+        <SpreadsheetGrid
+          ref={ref}
+          columns={columns}
+          rows={rows}
+          rowKeyGetter={(row: Row) => row.id}
+          onRowsChange={setRows}
+          enableRowDrag
+          rowDragMotion="ghost"
+          motion="off"
+          rowHeight={ROW_HEIGHT}
+          headerHeight={HEADER_HEIGHT}
+        />
+      );
+    };
+    const view = render(<Wrapped />);
+    return { ...view, ref };
+  };
+
+  it('離した行(動かした先)の先頭のデータ列がアクティブセルになり、↓ で次の行へ', () => {
+    const { container, ref } = renderWithRef();
+    dragRow(container, 2, upperHalfY(0));
+    const firstDataCol = ref.current?.getColIndex('id');
+    expect(firstDataCol).toBeGreaterThan(0);
+    expect(ref.current?.getActiveCell()).toEqual({ row: 0, col: firstDataCol });
+    const shell = container.querySelector<HTMLElement>('.ssg-shell') as HTMLElement;
+    expect(document.activeElement).toBe(shell);
+    act(() => {
+      fireEvent.keyDown(shell, { key: 'ArrowDown' });
+    });
+    expect(ref.current?.getActiveCell()).toEqual({ row: 1, col: firstDataCol });
+  });
+
+  it('アクティブセルがデータ列にあればその列を保つ', () => {
+    const { container, ref } = renderWithRef();
+    const nameCol = ref.current?.getColIndex('name') ?? -1;
+    act(() => {
+      ref.current?.selectCell(1, nameCol);
+    });
+    dragRow(container, 0, lowerHalfY(2));
+    expect(ref.current?.getActiveCell()).toEqual({ row: 2, col: nameCol });
   });
 });

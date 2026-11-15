@@ -166,4 +166,17 @@ describe('computeHorizontalScrollTarget', () => {
       }),
     ).toBe(0);
   });
+
+  it('auto: 見える幅より広い列は左端に合わせる(右へ動くときも)', () => {
+    // 可視帯 = 800 - 56 = 744。列の幅 2000 は可視帯より広い。
+    expect(
+      computeHorizontalScrollTarget({
+        ...H,
+        cellLeft: 300,
+        cellWidth: 2000,
+        currentScrollLeft: 0,
+        align: 'auto',
+      }),
+    ).toBe(244); // 300 - 56
+  });
 });

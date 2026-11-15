@@ -2,11 +2,13 @@
 //   仕様固定です。
 //   - text / date: 「"x" を含む」(trim 後)。select: 「"x" に一致」。number: raw 式そのまま。
 //   - set: include 1〜2 件は値列挙(空文字は「(空白)」)/ 3 件以上・0 件は「N 件を選択」/
-//     exclude は「N 件を除外」/ mode 省略は include 扱い(後方互換)。
+//     exclude は 1〜2 件が「"x" を除外」(1.0.2 の I-04)、3 件以上・0 件が「N 件を除外」/ mode 省略は include 扱い(後方互換)。
 //   - custom: 非空 string は「"x"」(trim)、それ以外は「カスタム条件」。
 import { describe, it, expect } from 'vitest';
 import { createColumnFilterDescribeOptions, describeColumnFilterValue } from './filterSummary';
 import { numberFormatter } from './valueFormatters';
+import { localeTextEn } from '../locales/en';
+import { DEFAULT_FILTER_LOCALE_TEXT } from './localeTextFilters';
 import type { GridColumn } from '../model/gridTypes.unbound';
 
 describe('describeColumnFilterValue', () => {
@@ -36,6 +38,13 @@ describe('describeColumnFilterValue', () => {
     expect(
       describeColumnFilterValue({ kind: 'number', raw: 'abc', parsed: null }),
     ).toBe('abc');
+  });
+
+  // 追加(1.0.2 / D-03): raw をグリッドの文言で作るので、英語の文言の書き方どおりの raw も、数の書き方を当てて作り直す。
+  it('number: 今の文言の書き方どおりの raw は作り直す(英語)', () => {
+    const value = { kind: 'number' as const, raw: '≥ 1000', parsed: { mode: 'comparison' as const, operator: '>=' as const, value: 1000 } };
+    expect(describeColumnFilterValue(value, { texts: localeTextEn })).toBe('≥ 1000');
+    expect(describeColumnFilterValue(value, { texts: localeTextEn, formatNumber: (n) => n.toLocaleString('en-US') })).toBe('≥ 1,000');
   });
 
   it('set(include)1〜2 件は値を列挙し、空文字は「(空白)」と表示する', () => {
@@ -74,10 +83,20 @@ describe('describeColumnFilterValue', () => {
     ).toBe('0 件を選択');
   });
 
-  it('set(exclude)は件数に依らず「N 件を除外」(1 件でも列挙しない)', () => {
+  // 変更(1.0.2 / 2026-11-09 実アプリの総点検 I-04): 1〜2 件は include と同じく値を並べます(ラベル・空白も同じ)。
+  it('set(exclude)は 1〜2 件なら値を並べて「を除外」、3 件以上は「N 件を除外」', () => {
     expect(
       describeColumnFilterValue({ kind: 'set', mode: 'exclude', values: ['A'] }),
-    ).toBe('1 件を除外');
+    ).toBe('"A" を除外');
+    expect(
+      describeColumnFilterValue(
+        { kind: 'set', mode: 'exclude', values: ['', 'east'] },
+        { labelOf: (value) => (value === 'east' ? '東日本' : undefined) },
+      ),
+    ).toBe('(空白), "東日本" を除外');
+    expect(
+      describeColumnFilterValue({ kind: 'set', mode: 'exclude', values: ['A', 'B'] }, { texts: localeTextEn }),
+    ).toBe('Excluding "A", "B"');
     expect(
       describeColumnFilterValue({
         kind: 'set',
@@ -85,6 +104,19 @@ describe('describeColumnFilterValue', () => {
         values: ['A', 'B', 'C'],
       }),
     ).toBe('3 件を除外');
+  });
+
+  // 追加(1.0.2 / レビュー QB-3): 自前の言語の表で filterExcluded だけを訳しているとき(1.0.2 で足した filterExcludedValues が無い)は、
+  //   1〜2 件でも訳した件数の文言を使う(既定の日本語に戻らない)。
+  it('filterExcluded だけを訳した表では、1〜2 件も件数の文言', () => {
+    const texts = { ...DEFAULT_FILTER_LOCALE_TEXT, filterExcluded: '{count}개 제외' };
+    expect(describeColumnFilterValue({ kind: 'set', mode: 'exclude', values: ['A'] }, { texts })).toBe('1개 제외');
+    expect(
+      describeColumnFilterValue(
+        { kind: 'set', mode: 'exclude', values: ['A'] },
+        { texts: { ...texts, filterExcludedValues: '{values} 제외' } },
+      ),
+    ).toBe('"A" 제외');
   });
 
   // 追加(filter-ext B): numberSet(条件 AND 選択)の複合要約です。
@@ -102,7 +134,7 @@ describe('describeColumnFilterValue', () => {
         condition: { mode: 'range', min: 10, max: 20 },
         set: { mode: 'exclude', values: ['12'] },
       }),
-    ).toBe('10 〜 20 かつ 1 件を除外');
+    ).toBe('10 〜 20 かつ "12" を除外');
   });
 
   it('numberSet は片方だけでも要約でき、set 部分は kind:set と同じ規則(1〜2 件は列挙)', () => {
@@ -138,7 +170,7 @@ describe('describeColumnFilterValue', () => {
         condition: { mode: 'contains', value: 'ボルト' },
         set: { mode: 'exclude', values: ['六角ボルト M8'] },
       }),
-    ).toBe('"ボルト" を含む かつ 1 件を除外');
+    ).toBe('"ボルト" を含む かつ "六角ボルト M8" を除外');
     expect(
       describeColumnFilterValue({
         kind: 'textSet',
@@ -163,7 +195,7 @@ describe('describeColumnFilterValue', () => {
         condition: { mode: 'range', from: '2026-01-01', to: '2026-03-31' },
         set: { mode: 'exclude', values: ['2026-02-04'] },
       }),
-    ).toBe('2026-01-01 〜 2026-03-31 かつ 1 件を除外');
+    ).toBe('2026-01-01 〜 2026-03-31 かつ "2026-02-04" を除外');
     expect(
       describeColumnFilterValue({
         kind: 'dateSet',
