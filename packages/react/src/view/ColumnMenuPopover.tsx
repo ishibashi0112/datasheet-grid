@@ -19,6 +19,7 @@ import { cx } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/cx';
 import type {
   CSSProperties,
   KeyboardEvent,
+  MouseEvent,
   PointerEvent,
   RefObject,
 } from 'react';
@@ -54,6 +55,18 @@ const VIEWPORT_MARGIN = 8;
 //             openSubmenuKey(string | null) との比較で開閉を判定します。
 //             13-B 後続でサブメニュー持ち項目を増やす場合はキーを追加します。
 const PIN_SUBMENU_KEY = 'pin';
+// 追加(1.2.0 の確かめ直し L): 項目の下に開いた小メニューを開いた直後の、同じ所への 2 回目のタップは項目を選ばせません
+//   (スマートフォンで「列の固定」をダブルタップすると、開いた小メニューを見せるためにパネルがスクロールし、指の下へ来た
+//   「左に固定」を 2 回目のタップが選んでいた。1.1.0 から)。ダブルタップの間隔と指のぶれの範囲です。
+const REPEAT_TAP_MS = 500;
+const REPEAT_TAP_PX = 24;
+type TapPoint = { x: number; y: number; at: number };
+const isRepeatTap = (first: TapPoint | null, event: MouseEvent): boolean =>
+  first !== null &&
+  event.detail > 0 &&
+  event.timeStamp - first.at < REPEAT_TAP_MS &&
+  Math.abs(event.clientX - first.x) <= REPEAT_TAP_PX &&
+  Math.abs(event.clientY - first.y) <= REPEAT_TAP_PX;
 
 type ColumnMenuPopoverProps = {
   isOpen: boolean;
@@ -194,6 +207,7 @@ export function ColumnMenuPopover({
   // 追加(1.0.1 / 2026-11-09 実アプリの総点検 AP-31): キーボード(→ / Enter / Space)で開いたときは小メニューの先頭の項目へ
   //   フォーカスを移します(開いた後の描画で)。← で閉じて「列の固定」へ戻ります。
   const pinButtonRef = useRef<HTMLButtonElement>(null);
+  const pinOpenTap = useRef<TapPoint | null>(null);
   // 追加(1.1.0 / AP-33): 固定できないときの注記を、小メニューの項目の説明として読ませます(メニューの中の素の文は読まれにくい)。
   const pinNoteId = useId();
   const focusPinSubmenuOnOpen = useRef(false);
@@ -544,6 +558,8 @@ export function ColumnMenuPopover({
               setOpenSubmenuKey(null);
               return;
             }
+            pinOpenTap.current =
+              event.detail > 0 ? { x: event.clientX, y: event.clientY, at: event.timeStamp } : null;
             setOpenSubmenuKey(PIN_SUBMENU_KEY);
           }}
           onKeyDown={(event) => {
@@ -612,8 +628,8 @@ export function ColumnMenuPopover({
                   role="menuitemradio"
                   aria-checked={isSelected}
                   aria-describedby={canChangePinned ? undefined : pinNoteId}
-                  onClick={() => {
-                    if (!canChangePinned) {
+                  onClick={(event) => {
+                    if (!canChangePinned || (submenuInline && isRepeatTap(pinOpenTap.current, event))) {
                       return;
                     }
                     // 注記: 現在値と同じ項目を選んでも閉じるだけになります

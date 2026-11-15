@@ -4819,4 +4819,29 @@
     .ssg-chooser-toggle {
       min-height: 40px;
     }
+    /* 追加(1.2.0 の確かめ直し L): ツールパネルのタブ・「列」タブの「すべての列を表示 / 非表示」と「初期状態に戻す」、
+       カレンダーの「今日」「クリア」、日付の入力欄(とカレンダーのボタン)の高さも大きくします。 */
+    .ssg-toolpanel-seg-btn {
+      min-height: 36px;
+    }
+    .ssg-chooser-master-btn {
+      position: relative;
+    }
+    /* 右は検索欄なので、右へは隙間のぶんだけ広げます。 */
+    .ssg-chooser-master-btn::after {
+      content: '';
+      position: absolute;
+      inset: -11px -6px -11px -11px;
+    }
+    .ssg-chooser-reset-btn {
+      min-height: 40px;
+    }
+    .ssg-dp-field {
+      min-height: 36px;
+    }
+    .ssg-dp-foot-btn {
+      min-height: 36px;
+      padding: 0 10px;
+      font-size: 12.5px;
+    }
   }

@@ -417,10 +417,11 @@ if (!SUPPORTS.cdp) {
         chip: min('.ssg-filter-preset-chip', 'height'),
         treeToggle: min('.ssg-filter-tree-toggle', 'width'),
         calBtn: min('.ssg-dp-cal-btn', 'width'),
+        dpField: min('.ssg-dp-field', 'height'),
       };
     });
     const present = Object.values(sizes).filter((v) => v !== null).length;
-    check('QH-5: タッチの列フィルターの節の「クリア」・プリセット 32px 以上、ツリーの開閉 32px 以上、カレンダーのボタン 40px 以上', coarse && present >= 3 && (sizes.secClear ?? 99) >= 32 && (sizes.chip ?? 99) >= 32 && (sizes.treeToggle ?? 99) >= 32 && (sizes.calBtn ?? 99) >= 40, { coarse, sizes });
+    check('QH-5: タッチの列フィルターの節の「クリア」・プリセット 32px 以上、ツリーの開閉 32px 以上、カレンダーのボタン 40px 以上・日付の入力欄 36px 以上', coarse && present >= 3 && (sizes.secClear ?? 99) >= 32 && (sizes.chip ?? 99) >= 32 && (sizes.treeToggle ?? 99) >= 32 && (sizes.calBtn ?? 99) >= 40 && (sizes.dpField ?? 99) >= 36, { coarse, sizes });
     await page.keyboard.press('Escape');
     await waitIdle(page, 200);
     // ツールパネルの「列」のタブの表示の切り替え。
@@ -433,7 +434,81 @@ if (!SUPPORTS.cdp) {
       return els.length === 0 ? null : Math.min(...els.map((el) => el.getBoundingClientRect().height));
     });
     check('QH-5: タッチのツールパネルの列の表示の切り替えは 40px 以上', coarse && toggle !== null && toggle >= 40, { coarse, toggle });
+    // 確かめ直し L: タブ・「初期状態に戻す」・「すべての列を表示 / 非表示」のチェックの押せる範囲。
+    const panel = await page.evaluate(() => {
+      const min = (sel) => {
+        const els = [...document.querySelectorAll(`.ssg-toolpanel ${sel}`)];
+        return els.length === 0 ? null : Math.min(...els.map((el) => el.getBoundingClientRect().height));
+      };
+      const master = document.querySelector('.ssg-toolpanel .ssg-chooser-master-btn');
+      let masterHit = null;
+      if (master) {
+        const r = master.getBoundingClientRect();
+        const hit = (x, y) => master.contains(document.elementFromPoint(x, y));
+        masterHit = { w: r.width, above: hit(r.left + r.width / 2, r.top - 8), below: hit(r.left + r.width / 2, r.bottom + 8), left: hit(r.left - 8, r.top + r.height / 2) };
+      }
+      return { tab: min('[role="tab"]'), reset: min('.ssg-chooser-reset-btn'), masterHit };
+    });
+    check('確かめ直し L: タッチのツールパネルのタブ 36px 以上・「初期状態に戻す」40px 以上・「すべての列を表示 / 非表示」は上下左右 8px 外でも押せる', coarse && (panel.tab ?? 0) >= 36 && (panel.reset ?? 0) >= 40 && panel.masterHit !== null && panel.masterHit.above && panel.masterHit.below && panel.masterHit.left, { coarse, panel });
     check('QH-1 / QH-4 / QH-5: 予期しないページエラーなし', unexpectedPageErrors(pageErrors).length === 0, unexpectedPageErrors(pageErrors));
+    await close();
+  }
+
+  // 確かめ直し L: 低い画面(列メニューがスクロールし「列の固定」の小メニューが項目の下に開く)で「列の固定」をすばやく
+  //   2 回タップしても、2 回目が指の下へ来た小メニューの項目を選ばない。間を空けたタップでは選べる。
+  {
+    const { page, pageErrors, close } = await open('basic', { viewport: { width: 390, height: 520 } });
+    const coarse = await emulateTouch(page);
+    // タップの代わりにクリック(CDP のタッチの模擬だけではタッチから click が作られないため。守りはタップとクリックで同じ)。
+    const tap = (x, y) => page.mouse.click(x, y);
+    // 狭い画面で見えている(押せる)見出しの ⋮ の列。
+    const colKey = await page.evaluate(() => {
+      for (const btn of document.querySelectorAll('.ssg-header-cell[data-ssg-col-key] .ssg-header-actions .ssg-icon-btn')) {
+        const r = btn.getBoundingClientRect();
+        if (r.width > 0 && btn.contains(document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2))) {
+          return btn.closest('.ssg-header-cell').getAttribute('data-ssg-col-key');
+        }
+      }
+      return null;
+    });
+    const openMenu = async () => {
+      const b = await header(page, colKey).locator('.ssg-header-actions .ssg-icon-btn').boundingBox();
+      await tap(b.x + b.width / 2, b.y + b.height / 2);
+      await waitIdle(page, 400);
+      // 「列の固定」をパネルの下端へ(開いた小メニューを見せるためにパネルがスクロールする位置)。
+      return page.evaluate(() => {
+        const btn = [...document.querySelectorAll('.ssg-menu-panel [role="menuitem"][aria-haspopup="menu"]')][0];
+        if (!btn) return null;
+        btn.scrollIntoView({ block: 'end' });
+        const r = btn.getBoundingClientRect();
+        return { x: r.left + r.width / 2, y: r.top + r.height / 2 };
+      });
+    };
+    const pinnedOf = () => page.evaluate((key) => window.__columns().find((c) => c.key === key)?.pinned ?? null, colKey);
+    const before = await pinnedOf();
+    const pin = colKey === null ? null : await openMenu();
+    if (pin === null || !coarse) {
+      skip('確かめ直し L: 「列の固定」のダブルタップ', `列メニューが開かない / タッチにならない(${coarse})`);
+    } else {
+      await tap(pin.x, pin.y);
+      await page.waitForTimeout(150);
+      const under = await page.evaluate(({ x, y }) => {
+        const el = document.elementFromPoint(x, y)?.closest('[role="menuitemradio"]');
+        return el ? el.textContent.trim() : null;
+      }, pin);
+      await tap(pin.x, pin.y);
+      await waitIdle(page, 400);
+      const afterDouble = await pinnedOf();
+      const stillOpen = await page.evaluate(() => document.querySelector('.ssg-menu-panel [role="menuitemradio"]') !== null);
+      check('確かめ直し L: 低い画面で「列の固定」をすばやく 2 回タップしても、指の下へ来た小メニューの項目を選ばない', under !== null && afterDouble === before && stillOpen, { under, before, afterDouble, stillOpen });
+      // 間を空けて、指の下の項目をタップすると選べる。
+      await page.waitForTimeout(600);
+      await tap(pin.x, pin.y);
+      await waitIdle(page, 400);
+      const afterSlow = await pinnedOf();
+      check('確かめ直し L: 間を空けたタップでは小メニューの項目を選べる', afterSlow !== before, { under, before, afterSlow });
+    }
+    check('確かめ直し L(ダブルタップ): 予期しないページエラーなし', unexpectedPageErrors(pageErrors).length === 0, unexpectedPageErrors(pageErrors));
     await close();
   }
 
