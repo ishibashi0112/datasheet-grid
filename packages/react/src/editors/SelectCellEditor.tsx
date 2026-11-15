@@ -21,6 +21,7 @@ import type {
 } from '../model/gridTypes';
 import { resolveEnterDirection } from './editorKeyBindings';
 import { CellEditorErrorBubble } from './CellEditorErrorBubble';
+import { useTopAlignedInput } from './useTopAlignedInput';
 import { usePopupContainer, usePortalTokens } from '../hooks/usePortalTokens';
 import { useIsomorphicLayoutEffect } from '../hooks/useController';
 import {
@@ -61,6 +62,9 @@ type SelectCellEditorProps = {
   // 追加(audit RD-9): 印字キー / IME 確定で編集を始めたときの文字列です。開いた時点でタイプアヘッドに 1 回
   //   使い、label がその文字列で始まる最初の候補をハイライトします(一致が無ければ現在値のまま)。
   initialText?: string;
+  // 追加(1.2.0): セルの高さと、上にそろえて描かれているか(背の高い行の 1 行のエディタの文字をセルの 1 行目にそろえる)。
+  cellHeight?: number;
+  alignTop?: boolean;
 };
 
 export function SelectCellEditor({
@@ -74,10 +78,13 @@ export function SelectCellEditor({
   popoverSlot,
   enterMove,
   initialText,
+  cellHeight = 0,
+  alignTop = false,
 }: SelectCellEditorProps) {
   // 追加(英語対応): 文言(localeText)。
   const texts = useGridLocaleText();
   const inputRef = useRef<HTMLInputElement | null>(null);
+  useTopAlignedInput(inputRef, alignTop, cellHeight);
   const listRef = useRef<HTMLDivElement | null>(null);
   // 追加(1.0.1 / AP-34): 候補の一覧と候補の id(aria-controls / aria-activedescendant)。
   const listId = useId();

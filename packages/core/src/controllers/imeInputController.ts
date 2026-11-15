@@ -22,6 +22,7 @@
 import type { CellCoord } from '../model/gridTypes.unbound';
 import { isImeComposingKeyEvent } from '../logic/domGuards';
 import { isInsideDetailCardOf } from '../logic/detailRow';
+import { alignInputTextToTop } from '../utils/topAlignedInput';
 
 type ReadonlyRef<V> = { readonly current: V };
 
@@ -118,6 +119,9 @@ export const createImeInputController = (): ImeInputController => {
     input.style.width = `${rect.width}px`;
     input.style.height = `${rect.height}px`;
     input.style.textAlign = composingView && info.align ? info.align : '';
+    // 追加(1.2.0): 背の高い行で上にそろえたセル(GridBodyLayer が .ssg-body-cell--valign-top を付ける)では、変換中の文字も
+    //   セルの 1 行目にそろえます(開いたエディタと同じ。これまでは真ん中に出て、確定でエディタが開くと上へ動いていた)。
+    alignInputTextToTop(input, composingView && cellEl.classList.contains('ssg-body-cell--valign-top'), rect.height);
     return true;
   };
 
@@ -126,6 +130,7 @@ export const createImeInputController = (): ImeInputController => {
       input.classList.remove(IME_INPUT_COMPOSING_CLASS);
       input.value = '';
       input.style.textAlign = '';
+      alignInputTextToTop(input, false, 0);
     }
   };
 
@@ -150,9 +155,10 @@ export const createImeInputController = (): ImeInputController => {
     composing = { cell, allowed };
     pointerInterrupted = false;
     if (allowed) {
+      // 変更(1.2.0): 見た目(枠線と文字の大きさ)を変換中のものにしてから位置を合わせます(上にそろえる余白を測るため)。
+      input?.classList.add(IME_INPUT_COMPOSING_CLASS);
       positionAt(cell, true);
       positionedCell = cell;
-      input?.classList.add(IME_INPUT_COMPOSING_CLASS);
     }
   };
 

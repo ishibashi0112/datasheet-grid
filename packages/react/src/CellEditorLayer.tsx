@@ -203,6 +203,8 @@ export function CellEditorLayer<T>({
         onCommit={onCommit}
         onCancel={onCancel}
         align={align}
+        cellHeight={rect.height}
+        alignTop={alignTop}
       />
     );
   } else if (editor?.type === 'date') {
@@ -221,6 +223,8 @@ export function CellEditorLayer<T>({
         onCommit={onCommit}
         onCancel={onCancel}
         align={align}
+        cellHeight={rect.height}
+        alignTop={alignTop}
       />
     );
   } else if (editor?.type === 'custom') {
@@ -271,6 +275,8 @@ export function CellEditorLayer<T>({
         onCancel={onCancel}
         align={align}
         themeClassName={themeClassName}
+        cellHeight={rect.height}
+        alignTop={alignTop}
       />
     );
   } else {

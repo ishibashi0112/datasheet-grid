@@ -14,6 +14,7 @@ import type {
 } from '../model/gridTypes';
 import { createEditorKeyDownHandler } from './editorKeyBindings';
 import { CellEditorErrorBubble } from './CellEditorErrorBubble';
+import { useTopAlignedInput } from './useTopAlignedInput';
 import { cx } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/cx';
 import {
   isNumberInputPrefix,
@@ -36,6 +37,9 @@ type NumberCellEditorProps = {
   align?: 'left' | 'center' | 'right';
   // 追加(enter-move ②): Enter 確定後の移動先です(未指定 = 'down')。
   enterMove?: EditorEnterMove;
+  // 追加(1.2.0): セルの高さと、上にそろえて描かれているか(背の高い行の 1 行のエディタの文字をセルの 1 行目にそろえる)。
+  cellHeight?: number;
+  alignTop?: boolean;
 };
 
 export function NumberCellEditor({
@@ -48,8 +52,11 @@ export function NumberCellEditor({
   onCancel,
   align,
   enterMove,
+  cellHeight = 0,
+  alignTop = false,
 }: NumberCellEditorProps) {
   const inputRef = useRef<HTMLInputElement | null>(null);
+  useTopAlignedInput(inputRef, alignTop, cellHeight);
   // 変更(1.0 前の最終チェック FC-17): 初期値は type="number" が表示できる半角の数値表記に直します('1,234' / '１２' の
   //   文字列の値 → '1234' / '12')。数値に直せない初期値(英字や空白から打ち始めた / 数値でない文字列の値)は text で開き、
   //   その文字をそのまま見せます(type="number" は value に入れると空に見えるのに、確定ではその文字が書かれていた。
