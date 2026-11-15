@@ -21,7 +21,7 @@ import type {
 } from '@ishibashi0112/spreadsheet-grid-core/internal/controllers/fillHandleController';
 import type { GridFillKind } from '../model/gridTypes';
 import type { SelectionOverlayRect } from '../SelectionOverlay';
-import { usePortalTokens } from '../hooks/usePortalTokens';
+import { usePopupContainer, usePortalTokens } from '../hooks/usePortalTokens';
 import { useFeatureLocaleText } from '../hooks/useGridLocaleText';
 import type { DEFAULT_FILL_HANDLE_LOCALE_TEXT } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/localeTextFeatures';
 import { formatLocaleText } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/localeText';
@@ -188,6 +188,8 @@ export function FillOptionsMenu({
   }, [panelRef]);
   // 追加(DevBI の報告): 表で決まったトークン(--ssg-*)をメニューへ写します(body 直下のため継承で届かない)。
   usePortalTokens(panelRef, true, themeClassName);
+  // 追加(1.1.0 / AP-07): 描く場所(既定はグリッドを囲むダイアログの中、無ければ body)。
+  const popupContainer = usePopupContainer(true);
   const handleKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
     if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
       event.preventDefault();
@@ -204,6 +206,9 @@ export function FillOptionsMenu({
     // ポータル内のキーはグリッドへ流しません(Escape は controller の window keydown が閉じる)。
     event.stopPropagation();
   };
+  if (!popupContainer) {
+    return null;
+  }
   return createPortal(
     <div
       ref={panelRef}
@@ -234,7 +239,7 @@ export function FillOptionsMenu({
         );
       })}
     </div>,
-    document.body,
+    popupContainer,
   );
 }
 
@@ -259,7 +264,8 @@ export function FillTooltip({
   // 追加(DevBI の報告): 表で決まったトークン(--ssg-*)をツールチップへ写します(body 直下のため継承で届かない)。
   const tooltipRef = useRef<HTMLDivElement | null>(null);
   usePortalTokens(tooltipRef, pointer !== null, themeClassName);
-  if (!pointer) {
+  const popupContainer = usePopupContainer(pointer !== null);
+  if (!pointer || !popupContainer) {
     return null;
   }
   return createPortal(
@@ -272,6 +278,6 @@ export function FillTooltip({
     >
       {text}
     </div>,
-    document.body,
+    popupContainer,
   );
 }

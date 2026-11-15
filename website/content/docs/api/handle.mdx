@@ -292,7 +292,7 @@ const buffer = await writeXlsx({
 
 ### ツールチップ(TT-1)
 
-グリッド内・ポータル内の操作ヒント / 切り詰めテキスト全文表示は、`title` 属性ではなく**カスタムツールチップ**(`.ssg-tooltip`・body 直下シングルトン)で表示される。表示対象は `data-ssg-tooltip="文言"` 属性で、window の pointerover / focusin 委譲で拾うため、**利用側が自前の要素(カスタムセル / renderHeader 等)へ同属性を付けても同じ見た目のツールチップが出る**。配色は `--ssg-tooltip-bg / --ssg-tooltip-text / --ssg-tooltip-shadow` トークンで調整可能。
+グリッド内・ポータル内の操作ヒント / 切り詰めテキスト全文表示は、`title` 属性ではなく**カスタムツールチップ**(`.ssg-tooltip`・表の外のシングルトン。`popupContainer`)で表示される。表示対象は `data-ssg-tooltip="文言"` 属性で、window の pointerover / focusin 委譲で拾うため、**利用側が自前の要素(カスタムセル / renderHeader 等)へ同属性を付けても同じ見た目のツールチップが出る**。配色は `--ssg-tooltip-bg / --ssg-tooltip-text / --ssg-tooltip-shadow` トークンで調整可能。
 
 **ボディセルの省略時ツールチップ**: グリッド prop `showCellOverflowTooltip`(既定 `false`)を `true` にすると、**既定テキストセルが省略(…)されているときだけ**ホバーで全文ツールチップが出る。実装は上記機構の派生で、セルへ `data-ssg-tooltip-overflow` マーカーを付け、表示可否は**ホバー時**に `scrollWidth > clientWidth` を判定(実際にクリップされているセルのみ表示)、文言はセルの表示テキスト(`textContent`)をそのまま使用する。`renderCell` 列(テキストとは限らない)と `autoHeight` 折り返し列(クリップされない)は対象外。特定列だけ全文表示したい / させたくない場合は、`renderCell` で自前要素へ `data-ssg-tooltip="…"`(常時)や `data-ssg-tooltip-overflow`(省略時)を付ける運用も可能。
 

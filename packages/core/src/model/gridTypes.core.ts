@@ -2429,7 +2429,7 @@ export type GridClassNames<F extends GridFrameworkTypes = GridFrameworkTypes> = 
   //   ツールパネル。document.body 直下に描画されるため .ssg-root の子孫ではありません)。
   /**
    * 付与先: ポータル系パネルの root(列メニュー / フィルター / コンテキストメニュー / select
-   * エディタ候補 / ツールパネル。`document.body` 直下)
+   * エディタ候補 / ツールパネル。表の外 = `popupContainer`)
    */
   popover?: GridSlotProps<F> | undefined;
   // メニュー項目(.ssg-menu-item。列メニュー / コンテキストメニュー)。
@@ -2438,7 +2438,7 @@ export type GridClassNames<F extends GridFrameworkTypes = GridFrameworkTypes> = 
   // カスタムツールチップ(.ssg-tooltip。body 直下のシングルトン。複数グリッド同居時は最後に
   //   マウント / 更新したグリッドの値が使われます)。
   /**
-   * 付与先: カスタムツールチップ `.ssg-tooltip`(body 直下のシングルトン。
+   * 付与先: カスタムツールチップ `.ssg-tooltip`(表の外のシングルトン。
    * 複数グリッド同居時は最後に更新したグリッドの値)
    */
   tooltip?: GridSlotProps<F> | undefined;
@@ -3144,6 +3144,20 @@ export type FindChangeParams = {
 //   prefers-reduced-motion: reduce を尊重して 'on' / 'off' に解決します(logic/motion.ts)。
 export type GridMotion = 'auto' | 'on' | 'off';
 
+// 追加(1.1.0 / 2026-11-09 実アプリの総点検 AP-07): ポップアップ(列メニュー / 列フィルター / 右クリックメニュー / select の候補 /
+//   ツールパネル / フィルハンドルのメニュー / ツールチップ / ドラッグのゴースト)を描く場所です(core utils/popupContainer)。
+/**
+ * ポップアップを描く場所(`popupContainer`)。`'auto'` はグリッドを囲むダイアログ(`<dialog>` / `popover` /
+ * `aria-modal="true"` / `role="dialog"` / `role="alertdialog"`)の中、無ければ `document.body`。`'body'` はいつも
+ * `document.body`。要素ならその中。関数はグリッドの要素を受け取って描く場所を返す(`null` / `undefined` なら
+ * `document.body`。ポップアップを描くたびに呼ぶ)。
+ */
+export type GridPopupContainer =
+  | 'auto'
+  | 'body'
+  | HTMLElement
+  | ((gridElement: HTMLElement) => HTMLElement | null | undefined);
+
 // 追加: データ投入時に全列幅を内容へ自動フィットさせる発火モードです。
 //   'onMount'      = 初回にデータが載った一度きり。
 //   'onDataChange' = rows(参照)が変わるたび(= データ差し替えのたび)。手動リサイズは上書きされます。
@@ -3501,9 +3515,10 @@ export type SpreadsheetGridProps<T, F extends GridFrameworkTypes = GridFramework
    * ・ドラッグゴースト・ツールチップへ適用。`'auto'` は `prefers-color-scheme` へ追従。`'class'`
    * は祖先の `class="dark"` か `data-theme="dark"` を CSS で見てダークにする(Tailwind / next-themes
    * / shadcn/ui / HeroUI のようなクラスによるダーク向け。サーバーの描画から正しい色になる。
-   * ポップアップ類は `document.body` の直下に出るので、`dark` のクラス / 属性は `<html>` か
-   * `<body>` に付ける)。Mantine のようにほかの方法でダークを決めるものは、利用側の解決値を
-   * `'light' | 'dark'` で渡す。個別の色調整はトークン(`--ssg-*`)の上書きで可能。
+   * ポップアップ類は表の外(既定は `document.body` の直下。`popupContainer`)に出るので、`dark`
+   * のクラス / 属性は `<html>` か `<body>` に付ける)。Mantine
+   * のようにほかの方法でダークを決めるものは、利用側の解決値を `'light' | 'dark'` で渡す。
+   * 個別の色調整はトークン(`--ssg-*`)の上書きで可能。
    *
    * @defaultValue `'light'`
    */
@@ -3523,6 +3538,19 @@ export type SpreadsheetGridProps<T, F extends GridFrameworkTypes = GridFramework
    * @defaultValue `'auto'`
    */
   motion?: GridMotion | undefined;
+  // 追加(1.1.0 / AP-07): ポップアップを描く場所です(既定 'auto' = グリッドを囲むダイアログの中、無ければ body)。
+  /**
+   * ポップアップ(列メニュー / 列フィルター / 右クリックメニュー / select の候補 / ツールパネル /
+   * フィルハンドルのメニュー / ツールチップ / ドラッグのゴースト)を描く場所(1.1.0 から)。`'auto'`
+   * はグリッドを囲むダイアログ(`<dialog>` / `popover` / `aria-modal="true"` / `role="dialog"` /
+   * `role="alertdialog"`)の中、無ければ `document.body`。`'body'` はいつも `document.body`(1.0
+   * までと同じ)。要素ならその中、関数はグリッドの要素を受け取って描く場所を返す(`null` /
+   * `undefined` なら `document.body`。ポップアップを描くたびに呼ぶ)。
+   * 詳細は「ダイアログの中のグリッド」節。
+   *
+   * @defaultValue `'auto'`
+   */
+  popupContainer?: GridPopupContainer | undefined;
   // 追加(motion-3 / M-4・M-5): 行の並び替え(ソート / フィルター / グループ開閉 / データ差し替え)で、描画中の行を
   //   新しい位置へ滑らせ、スクロールなしで現れた行をフェードインさせます(既定 true)。auto-height / serverSide では
   //   自動で無効(行高の実測 / ブロック到着と干渉するため)。motion の実効値が 'off' なら動きません。

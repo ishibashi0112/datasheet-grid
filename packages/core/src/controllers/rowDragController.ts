@@ -32,6 +32,7 @@ import { beginEscapeCancelableDrag } from './escapeClaimController';
 import { syncPortalTokens } from '../utils/portalTokens';
 import { applySlotToElement } from '../logic/slotDom';
 import type { GridResolvedSlot } from '../model/gridTypes.unbound';
+import { appendToPopupContainer, getPopupContainerFor } from '../utils/popupContainer';
 
 type ReadonlyRef<V> = { readonly current: V };
 
@@ -280,7 +281,9 @@ export const createRowDragController = (): RowDragController => {
     text.textContent = label;
     el.appendChild(icon);
     el.appendChild(text);
-    document.body.appendChild(el);
+    // 変更(1.1.0 / 2026-11-09 実アプリの総点検 AP-07): 表のポップアップと同じ場所へ入れます(既定はグリッドを囲むダイアログの
+    //   中。`<dialog>.showModal()` の中では body の直下だとダイアログの後ろに隠れていた)。
+    appendToPopupContainer(el, getPopupContainerFor(args?.scrollContainerRef.current));
     // 追加(DevBI の報告): 表で決まったトークン(--ssg-*)をゴーストへ写します(body 直下のため継承で届かない)。
     syncPortalTokens(args?.scrollContainerRef.current, el);
 

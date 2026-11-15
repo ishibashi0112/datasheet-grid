@@ -22,7 +22,7 @@ import type {
 } from '../hooks/useToolPanelController';
 // ヘッダーを掴んでパネルを移動する共有フックです(FM-4)。
 import { usePanelHeaderDrag } from '../hooks/usePanelHeaderDrag';
-import { usePortalTokens } from '../hooks/usePortalTokens';
+import { usePopupContainer, usePortalTokens } from '../hooks/usePortalTokens';
 import type { GridResolvedSlot } from '../model/gridTypes';
 import { usePopupLocaleText } from '../hooks/usePopupLocaleText';
 
@@ -81,6 +81,8 @@ export function ToolPanel({
   const tabIdBase = useId();
   // 追加(DevBI の報告): 表で決まったトークン(--ssg-*)をパネルへ写します(body 直下のため継承で届かない)。
   usePortalTokens(panelRef, activeTab !== null && layout !== null, themeClassName);
+  // 追加(1.1.0 / AP-07): 描く場所(既定はグリッドを囲むダイアログの中、無ければ body)。
+  const popupContainer = usePopupContainer(activeTab !== null && layout !== null);
 
   // 追加(1.1.0 / 2026-11-09 実アプリの総点検 RV2-L2): 開いたら選ばれているタブへフォーカスを移します(これまでは body の
   //   ままで、キーボードではパネルに入れなかった)。開いている間に開き直したとき(枠のフラッシュ)は動かしません。
@@ -124,7 +126,7 @@ export function ToolPanel({
     };
   }, [flashTick, panelRef]);
 
-  if (activeTab === null || !layout) {
+  if (activeTab === null || !layout || !popupContainer) {
     return null;
   }
 
@@ -258,7 +260,7 @@ export function ToolPanel({
         {children}
       </div>
     </div>,
-    document.body,
+    popupContainer,
   );
 }
 

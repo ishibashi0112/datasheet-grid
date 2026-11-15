@@ -1,0 +1,45 @@
+---
+title: ダイアログの中で使う
+description: モーダルやポップオーバーの中にグリッドを置くときのポップアップの場所(popupContainer)と Escape
+---
+
+モーダル(shadcn/ui・Radix・Headless UI・HeroUI・Mantine の Modal / Dialog、素の `<dialog>`)やポップオーバーの中にグリッドを置けます。列メニュー・列フィルター・右クリックメニュー・select エディタの候補・ツールパネル・フィルハンドルのメニュー・ツールチップ・ドラッグのゴーストは、**グリッドを囲むダイアログの中**に出ます(1.1.0 から)。
+
+## デモ(顧客を選ぶダイアログ)
+
+<DialogDemo />
+
+- 「ダイアログで開く」で素の `<dialog>` を `showModal()` で開きます。列見出しの ⋮ の列メニュー、「地域」のダブルクリックの候補、右クリックメニューはダイアログの中に出て、そのまま押せます。
+- `popupContainer="body"` にすると、ポップアップは `document.body` の直下に出て、ダイアログ(トップレイヤー)の後ろに隠れて見えません(1.0.2 までの動き)。
+
+## ポップアップの場所(`popupContainer`)
+
+| 値 | 描く場所 |
+| --- | --- |
+| `'auto'`(既定) | グリッドを囲むいちばん近いダイアログ(`<dialog>` / `popover` 属性の要素 / `aria-modal="true"` / `role="dialog"` / `role="alertdialog"`)の中。無ければ `document.body` の直下 |
+| `'body'` | いつも `document.body` の直下(1.0 までと同じ) |
+| 要素 | その要素の中 |
+| 関数 | グリッドの要素を受け取って描く場所を返す(`null` / `undefined` なら `document.body`)。ポップアップを開くたびに呼ぶ |
+
+`document.body` の直下では、モーダルの中で使えないことがあります。素の `<dialog>` の `showModal()` と `popover` はトップレイヤーに出るので、body の直下の要素はその後ろに隠れます。Radix(shadcn/ui)・React Aria(HeroUI)・Headless UI のモーダルは、外側のポインタを止め(body に `pointer-events: none`)、フォーカスを中に閉じ込め、外側の押下で閉じるので、body の直下のポップアップは押せず、入力もできません。Radix の Dialog と Popover は `aria-modal` を付けないので、`role="dialog"` で見つけます。
+
+```tsx
+// shadcn/ui の Dialog: 何も書かなくても、ポップアップは DialogContent の中に出る
+<Dialog>
+  <DialogContent>
+    <SpreadsheetGrid rows={rows} columns={columns} />
+  </DialogContent>
+</Dialog>
+
+// 描く場所を自分で決める
+<SpreadsheetGrid rows={rows} columns={columns} popupContainer={(grid) => grid.closest<HTMLElement>('.sheet-frame')} />
+```
+
+場所はポップアップを開くたびに決めます。グリッドを入れた `<dialog>` を後から `showModal()` で開いても、その中に出ます。ポップアップはダイアログの最後の子として足し、閉じると外します。
+
+## 気をつけること
+
+- **ずれの打ち消し**: 描く場所の祖先に `transform` / `translate` などがあると(shadcn/ui の DialogContent は `translate` で真ん中に置く)、`position: fixed` の基準がその要素になります。グリッドはそのずれを測り、ポップアップの `translate` で打ち消します(開いたとき)。拡大縮小(`scale`)は打ち消しません。
+- **ダイアログの枠で切れる**: その要素が `overflow` で中を切ると(`max-height` と `overflow-y: auto` のダイアログなど)、ポップアップもダイアログの枠で切れます。困るときは、切らない場所を要素か関数で渡してください(ダイアログがその外のポインタやフォーカスを止めないなら `'body'` でもかまいません)。
+- **トークン**: 表で決めた CSS トークン(`--ssg-*`)は、これまでどおり開いたときにポップアップへ写します。`theme="class"` の `dark` のクラスは `<html>` か `<body>` に付けてください。
+- **Escape**: グリッドが使う `Escape`(編集の取り消し・メニューを閉じるなど)ではダイアログは閉じません。詳しくは [キーボード操作の「ダイアログの中のグリッド」](/docs/guides/keyboard#ダイアログの中のグリッド)。

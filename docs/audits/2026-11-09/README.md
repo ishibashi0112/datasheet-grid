@@ -375,8 +375,8 @@ pack した 1.0.1 の候補(2026-11-09 の tarball と中身が同じ。レビ�
 
 | まとまり | 所見 | 内容 | 状況 |
 | --- | --- | --- | --- |
-| 読み上げとキーボード | AP-33 / RV2-L1 / RV2-L2 | `Shift+F10` / メニューキーでアクティブセルの右クリックメニュー(core `keyboardController` の `openContextMenu`、シェルの `openContextMenuForCell` = セルの左下、先頭の項目へフォーカス。続けて来るキーボードの contextmenu(Chrome は button が -1、対象はシェルか入力受け)は止めるだけ、keydown なしで来たらそこで開く)。マウスで開いた列メニュー / 右クリックメニューはパネルへフォーカス(core `popoverSupport` の `focusPanelIfIdle`)。列メニューに `role="menu"` / `menuitem` / `menuitemradio` + `aria-checked` / `separator`、`⋮` に `aria-haspopup` / `aria-expanded`。ツールパネルは `role="dialog"` + `localeText.toolPanelLabel`、開いたら選ばれているタブへ、`Tab` は中で回す。ラベル行は中身の欄を `role="rowheader"`、行番号の欄と中身の無いペインの帯は `aria-hidden` | 作業中 |
-| ダイアログの中のポップアップ | AP-07 | ポップアップを描く場所を選ぶ prop と、モーダルの中なら自動でその中へ | 未着手 |
+| 読み上げとキーボード | AP-33 / RV2-L1 / RV2-L2 | `Shift+F10` / メニューキーでアクティブセルの右クリックメニュー(core `keyboardController` の `openContextMenu`、シェルの `openContextMenuForCell` = セルの左下、先頭の項目へフォーカス。続けて来るキーボードの contextmenu(Chrome は button が -1、対象はシェルか入力受け)は止めるだけ、keydown なしで来たらそこで開く)。マウスで開いた列メニュー / 右クリックメニューはパネルへフォーカス(core `popoverSupport` の `focusPanelIfIdle`)。列メニューに `role="menu"` / `menuitem` / `menuitemradio` + `aria-checked` / `separator`、`⋮` に `aria-haspopup` / `aria-expanded`。ツールパネルは `role="dialog"` + `localeText.toolPanelLabel`、開いたら選ばれているタブへ、`Tab` は中で回す。ラベル行は中身の欄を `role="rowheader"`、行番号の欄と中身の無いペインの帯は `aria-hidden` | 済(16c26e8) |
+| ダイアログの中のポップアップ | AP-07 | prop `popupContainer`(型 `GridPopupContainer` = `'auto'`(既定)/ `'body'` / 要素 / 関数)。`'auto'` はグリッドを囲む `<dialog>` / `[popover]` / `aria-modal="true"` / `role="dialog"`・`"alertdialog"` の中へ、無ければ今までどおり body(core `utils/popupContainer`)。React のポップアップ 7 つは `PopupContainerContext` + `usePopupContainer` で createPortal の先を、ツールチップとドラッグのゴーストはシェルが登録した表から引く。描く場所の祖先の transform で fixed の基準がずれる分は `translate` で打ち消す(`syncPopupOrigin`。拡大縮小は打ち消さない)。ガイド guides/dialogs + デモ。ハーネス `t-popups.mjs`(素の `<dialog>` と Radix の模擬、Chromium 37 / 37) | 作業中 |
 | 値と表示名 | AP-08 | グループの見出しに列の書式 / 全体フィルターを画面の文字でも当てる / select の表示名を貼り付けで値へ戻す(既定は変えない) | 未着手 |
 | 数値の読み取りと貼り付け | AP-09 | 数値パーサの公開 + 貼り付けで飛ばしたセルの通知 | 未着手 |
 | 外からの更新と元に戻す | AP-14 | `applyRows` に履歴に積まない選択肢 | 未着手 |

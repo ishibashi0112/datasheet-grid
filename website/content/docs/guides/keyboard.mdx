@@ -56,6 +56,8 @@ description: グリッド本体・編集エディタのキーバインド一覧�
 
 グリッドは表示されている間、window の capture で `Escape` を聞き、使う `Escape` だけ `preventDefault()` します(Mantine の Modal には要素の `data-mantine-stop-propagation` で、React のイベントで閉じるモーダルにはグリッドのルートで伝播を止めて知らせます)。グリッドより先に window の capture へ付いたリスナーで閉じるダイアログ(グリッドより後に開いた別のダイアログなど)は、先に閉じることがあります。
 
+列メニューやフィルターなどのポップアップは、グリッドを囲むダイアログの中に出ます(1.1.0 から)。描く場所の決め方と変え方(`popupContainer`)は [ダイアログの中で使う](/docs/guides/dialogs) を参照してください。
+
 ## IME(日本語入力)
 
 IME 変換中(`isComposing`)の `Enter` / `Escape` / `Tab` は **IME の操作としてのみ**扱われ、セル編集の確定・キャンセルには使われません。変換確定の Enter でセルが誤確定することはありません。

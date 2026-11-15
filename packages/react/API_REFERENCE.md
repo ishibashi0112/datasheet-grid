@@ -25,8 +25,9 @@
 | `estimateRowHeight` | `number` | `rowHeight` | 未測定行の推定行高(px)。 |
 | `headerHeight` | `number` | density 依存(standard: `40`) | ヘッダー行の高さ(px)。未指定時は density プリセット(compact: `32` / comfortable: `48`)から解決。明示指定が常に優先。 |
 | `density` | `'compact' \| 'standard' \| 'comfortable'` | `'standard'` | 密度プリセット。rowHeight / headerHeight の既定値と寸法トークン(セル横 padding / バー padding / アイコンボタン寸法 / セル文字の相対拡縮)を一括切替。`'standard'` は従来と同値。個別調整はトークン(`--ssg-cell-pad-x` 等)の上書きで可能。popover / menu 等のポータルは対象外。 |
-| `theme` | `'light' \| 'dark' \| 'auto' \| 'class'` | `'light'` | カラーテーマ。`'dark'` でダークプリセット(`.ssg-theme-dark` のトークン一括上書き。Mantine dark 系パレット)をグリッド本体・全ポータル(popover / menu / panel)・ドラッグゴースト・ツールチップへ適用。`'auto'` は `prefers-color-scheme` へ追従。`'class'` は祖先の `class="dark"` か `data-theme="dark"` を CSS で見てダークにする(Tailwind / next-themes / shadcn/ui / HeroUI のようなクラスによるダーク向け。サーバーの描画から正しい色になる。ポップアップ類は `document.body` の直下に出るので、`dark` のクラス / 属性は `<html>` か `<body>` に付ける)。Mantine のようにほかの方法でダークを決めるものは、利用側の解決値を `'light' \| 'dark'` で渡す。個別の色調整はトークン(`--ssg-*`)の上書きで可能。 |
+| `theme` | `'light' \| 'dark' \| 'auto' \| 'class'` | `'light'` | カラーテーマ。`'dark'` でダークプリセット(`.ssg-theme-dark` のトークン一括上書き。Mantine dark 系パレット)をグリッド本体・全ポータル(popover / menu / panel)・ドラッグゴースト・ツールチップへ適用。`'auto'` は `prefers-color-scheme` へ追従。`'class'` は祖先の `class="dark"` か `data-theme="dark"` を CSS で見てダークにする(Tailwind / next-themes / shadcn/ui / HeroUI のようなクラスによるダーク向け。サーバーの描画から正しい色になる。ポップアップ類は表の外(既定は `document.body` の直下。`popupContainer`)に出るので、`dark` のクラス / 属性は `<html>` か `<body>` に付ける)。Mantine のようにほかの方法でダークを決めるものは、利用側の解決値を `'light' \| 'dark'` で渡す。個別の色調整はトークン(`--ssg-*`)の上書きで可能。 |
 | `motion` | `'auto' \| 'on' \| 'off'` | `'auto'` | モーション(アニメーション / トランジション)の有効化。`'auto'` は OS / ブラウザの「視差効果を減らす」(`prefers-reduced-motion: reduce`)が有効なら `'off'`、それ以外は `'on'` として扱う。`'off'` では root と全ポータル(popover / menu / panel)・ドラッグゴースト・ツールチップへ `.ssg-motion-off` が付き、継続時間トークン(`--ssg-motion-fast` / `--ssg-motion-base` / `--ssg-motion-slow`)が 0 になって動きが止まる(表示結果は同じ)。`'on'` は OS 設定に関わらず動かす。速さの調整はトークンの上書き。詳細は「モーション」節。 |
+| `popupContainer` | `'auto' \| 'body' \| HTMLElement \| ((gridElement: HTMLElement) => HTMLElement \| null \| undefined)` | `'auto'` | ポップアップ(列メニュー / 列フィルター / 右クリックメニュー / select の候補 / ツールパネル / フィルハンドルのメニュー / ツールチップ / ドラッグのゴースト)を描く場所(1.1.0 から)。`'auto'` はグリッドを囲むダイアログ(`<dialog>` / `popover` / `aria-modal="true"` / `role="dialog"` / `role="alertdialog"`)の中、無ければ `document.body`。`'body'` はいつも `document.body`(1.0 までと同じ)。要素ならその中、関数はグリッドの要素を受け取って描く場所を返す(`null` / `undefined` なら `document.body`。ポップアップを描くたびに呼ぶ)。詳細は「ダイアログの中のグリッド」節。 |
 | `animateRows` | `boolean` | `true` | 行の並び替えアニメ。ソート / フィルター / グループ開閉 / `rows` の差し替えで、描画中の行が新しい位置へ滑り(`--ssg-motion-base`)、スクロールなしで現れた行は上から順にフェードインする。スクロール中の仮想化による出入りは対象外。auto-height 行と serverSide(SSRM)では自動で無効。`motion` の実効値が `'off'` なら動かない。詳細は「モーション」節。 |
 | `showCopyRange` | `boolean` | `true` | `Ctrl/Cmd+C` のあと、コピー元の範囲に Excel と同じ「動く点線」を残す(`.ssg-copy-range-overlay`。`motion` が `'off'` なら静的な点線)。`Esc` と編集開始で消え、ソート / フィルター / グループ開閉 / 行数 / 列の変化で描画しなくなる(貼り付けでは残る)。`false` で点線を出さない(コピー自体は従来どおり)。 |
 | `hoverHighlight` | `'row' \| 'cross'` | `'row'` | ホバーの強調範囲。`'row'` はポインタの行だけ(従来)。`'cross'` はその行に加えて、ポインタの列(列ヘッダー + 同じ列の他セルに薄い帯 `.ssg-col-hover-overlay`)と行番号も染めるクロスヘア表示。色はトークン `--ssg-col-hover-bg`(帯)/ `--ssg-select-bg`(ヘッダー・行番号)。横に長い表で「この値はどの列か」を視線移動なしで答えるため。 |
@@ -834,7 +835,7 @@ const gridRef = useRef<SpreadsheetGridHandle<Row>>(null);
 
 確定 / キャンセル後のフォーカス: `Enter` / `Tab` / `Escape` で確定・キャンセルしたときはグリッドへ戻る(`imeDirectInput` 有効時は入力受けへ)。フォーカスアウトで確定したときは、フォーカスの移り先がグリッド外の要素(グリッドの上のフォームの入力欄 / 上部バーのグローバルフィルター等)ならそこに残し、グリッドへ奪い返さない(クリックした入力欄へそのまま入力できる)。グリッド内の別のセルをクリックしたとき・移り先がないとき(フォーカスを取らない余白のクリック等)はグリッドへ戻る。展開行カード内のフォーカスは奪わない。
 
-ダイアログの中のグリッド: グリッドが使う `Escape`(編集の取り消し・グリッドのメニューやポップオーバーを閉じる・範囲の選択を外す・コピー範囲の点線を消す・行 / 列 / フィルハンドルのドラッグをやめる(1.0.2))では、グリッドを入れたモーダル(Radix / Headless UI / Mantine / HeroUI の Modal / Dialog、素の `<dialog>`)は閉じない(グリッドは表示中、window の capture で `Escape` を聞いて `preventDefault()` し、Mantine の Modal が見る `data-mantine-stop-propagation` をその要素へ一時的に付け、グリッドのルートで伝播を止める)。グリッドが使わない `Escape`(1 セルを選んでいるだけ・上部バーの入力欄など)はそのままダイアログへ届く。グリッドより先に window の capture へ付いたリスナー(グリッドより後に開いたダイアログなど)では先に閉じうる。
+ダイアログの中のグリッド(ポップアップを描く場所は「ダイアログの中のグリッド(`popupContainer`)」節): グリッドが使う `Escape`(編集の取り消し・グリッドのメニューやポップオーバーを閉じる・範囲の選択を外す・コピー範囲の点線を消す・行 / 列 / フィルハンドルのドラッグをやめる(1.0.2))では、グリッドを入れたモーダル(Radix / Headless UI / Mantine / HeroUI の Modal / Dialog、素の `<dialog>`)は閉じない(グリッドは表示中、window の capture で `Escape` を聞いて `preventDefault()` し、Mantine の Modal が見る `data-mantine-stop-propagation` をその要素へ一時的に付け、グリッドのルートで伝播を止める)。グリッドが使わない `Escape`(1 セルを選んでいるだけ・上部バーの入力欄など)はそのままダイアログへ届く。グリッドより先に window の capture へ付いたリスナー(グリッドより後に開いたダイアログなど)では先に閉じうる。
 
 確定後のアクティブセル: 方向なしの確定(フォーカスアウト / select の候補クリック / custom エディタの `commit(value)` / `editorEnterMove: 'none'` の `Enter`)の後は、編集していたセルが単一選択になる。ただし確定のきっかけがグリッド内の別のセルや行・列ヘッダーの押下だった場合は、押した操作(そのセルのアクティブ化 / ドラッグでの範囲選択 / 行・列の選択)を優先し、編集していたセルへ戻さない。`Enter` / `Tab` など方向付きの確定は従来どおり隣のセルへ移る。
 
@@ -871,6 +872,23 @@ WAI-ARIA の grid パターンに沿って、表・行・セルに役割と状�
 - 仮想化で描画していない行・列は DOM に無いため、表全体の中の位置は `aria-rowindex` / `aria-colindex` / `aria-rowcount` / `aria-colcount` で伝える。
 - 制約: 固定列(`pinned`)があると、1 つの行が左 / 中央 / 右のペインごとの `role="row"` に分かれる(どれも同じ `aria-rowindex`。読み上げの順は DOM 順でペインごと)。展開行(`detailRow`)の帯は `aria-rowindex` を持たない(データ行の番号をずらさないため)。縦固定で複製したラベル行(`labelRow.sticky`)は `aria-hidden` で、中のボタン等は `tabindex="-1"`(Tab で止まらない。マウスでは押せる。本物のラベル行はそのまま)。
 - 編集中は、axe などの検査ツールが表(`role="grid"`)に `aria-required-children` を出すことがある。エディタは行の外に描いて編集中のセルから `aria-owns` でつないでおり、ブラウザのアクセシビリティツリーではセルの子(Chrome で確認)だが、検査ツールは `aria-owns` で移した要素を元の親の子としても数えるため。
+
+### ダイアログの中のグリッド(`popupContainer`)
+
+ポップアップ(列メニュー / 列フィルター / 右クリックメニュー / select エディタの候補 / ツールパネル / フィルハンドルのメニューと値のツールチップ / ツールチップ / ドラッグのゴースト)は表の外に描く。既定(`popupContainer="auto"`)では、グリッドを囲むダイアログの中、無ければ `document.body` の直下(1.1.0 から。1.0.2 まではいつも `document.body` の直下で、モーダルの中では押せない・後ろに隠れることがあった)。
+
+| 値 | 描く場所 |
+| --- | --- |
+| `'auto'`(既定) | グリッドを囲むいちばん近いダイアログ(`<dialog>` / `popover` 属性の要素 / `aria-modal="true"` / `role="dialog"` / `role="alertdialog"`)の中。無ければ `document.body` の直下。 |
+| `'body'` | いつも `document.body` の直下(1.0 までと同じ)。 |
+| 要素 | その要素の中。 |
+| 関数 | グリッドの要素(`.ssg-shell`)を受け取って描く場所を返す(`null` / `undefined` なら `document.body`)。ポップアップを開いている間の描画ごとに呼ぶ(閉じている間は呼ばない)。 |
+
+- 素の `<dialog>` の `showModal()` と `popover` はトップレイヤーなので、body の直下の要素はその後ろに隠れる。Radix(shadcn/ui)/ React Aria(HeroUI)/ Headless UI のモーダルは外側のポインタを止め(body に `pointer-events: none`)、フォーカスを中に閉じ込め、外側の押下で閉じるので、body の直下のポップアップは押せない・入力できない。Radix の Dialog と Popover は `aria-modal` を付けないので `role="dialog"` で見つける。
+- 場所はポップアップを開くたびに決める(グリッドを入れた `<dialog>` を後から `showModal()` で開いても、その中に出る)。ダイアログの最後の子として足し、閉じると外す。
+- 描く場所の祖先に `transform` / `translate` などがあると(shadcn/ui の DialogContent は `translate` で真ん中に置く)、`position: fixed` の基準がその要素になる。グリッドはそのずれを測り、ポップアップの `translate` で打ち消す(開いたとき。ツールチップとドラッグのゴーストは出すたび)。拡大縮小(`scale`)は打ち消さない。
+- その要素が `overflow` で中を切ると(`max-height` と `overflow-y: auto` のダイアログなど)、ポップアップもダイアログの枠で切れる。困るときは切らない場所を要素か関数で渡す(ダイアログがその外のポインタやフォーカスを止めないなら `'body'` でもよい)。
+- 表で決めた CSS トークン(`--ssg-*`)は、これまでどおり開いたときにポップアップへ写す(「CSS トークン」節)。`Escape` の扱いは「キーボード操作」節の「ダイアログの中のグリッド」。
 
 ## GridColumn props (`GridColumn<T>`)
 
@@ -1068,7 +1086,7 @@ const columns = [
 | --- | --- | --- | --- |
 | `'text'` | 従来のテキスト input(既定)。`multiline: true` で複数行の入力欄(textarea。中身に合わせて下へ伸び、表の見える範囲の下端で止まって中でスクロール。行の間隔、1 行目の位置と折り返し = 列の `wordBreak` / `lineBreak` はセルと同じ) | `multiline` / `enterKey`(`multiline` のときの `Enter`。`'commit'`(既定。Excel と同じ)= `Enter` で確定、`Alt+Enter` と `Ctrl` / `⌘+Enter` で改行 / `'newline'`(メモ帳やチャットに近い)= `Enter`(`Shift` / `Alt` 付きも)で改行、`Ctrl` / `⌘+Enter` で確定。スマートフォンのソフトキーボードでは `Alt` / `Ctrl` を押せないので、モバイルで改行させたい列は `'newline'`(確定はフォーカスアウト)) | パススルー(生文字列のまま) |
 | `'number'` | `<input type="number">`(スピナー / ↑↓ステップ / 不正文字抑止)。セルを選んで `-` / `+` / `.` から打ち始めたときは、その文字を消さないよう文字の入力欄(`inputmode="decimal"`)で開き、確定した文字列を列のパーサで数値に直す(`-5`→`-5`、`.5`→`0.5`、`-` だけなら空。数値として読めない文字列は貼り付けと同じくそのまま)。英字など数値にならない文字から打ち始めたとき・数値でない文字列の値を開いたときも文字の入力欄で開き、その文字をそのまま見せる。数値の文字列の値(`'1,234'` / `'１２'`)は半角の数値(`1234` / `12`)で開く | `min` / `max` / `step` / `integer`(`min` / `max` / `integer` は値の検査にも使う。「バリデーション」節) | `''`・空白だけ→`null` / 有限数値文字列→`number`(全角の数字・符号・小数点と 3 桁区切りも読む: `'１，２３４'`→`1234`、`'ー５'`→`-5`)/ 非数値→生文字列のまま(mark が拾う) |
-| `'select'` | 候補ドロップダウン(body 直下ポータル)。↑↓=ハイライト移動 / Enter=確定(下へ)/ Tab=確定(左右へ)/ クリック=確定 / 印字キー=label 前方一致のタイプアヘッド(約 700ms でリセット)/ IME で確定した文字(日本語の名前など)= その文字で始まる候補、無ければ含む候補へ(1.0.2) | `options: GridSelectEditorOption[] \| (row) => GridSelectEditorOption[]`(静的 or 行依存。関数はレンダー中に呼ばれるため純粋であること) | パススルー(`option.value` は string。型変換したい場合は `parseClipboardValue` を併用) |
+| `'select'` | 候補ドロップダウン(表の外のポータル。`popupContainer`)。↑↓=ハイライト移動 / Enter=確定(下へ)/ Tab=確定(左右へ)/ クリック=確定 / 印字キー=label 前方一致のタイプアヘッド(約 700ms でリセット)/ IME で確定した文字(日本語の名前など)= その文字で始まる候補、無ければ含む候補へ(1.0.2) | `options: GridSelectEditorOption[] \| (row) => GridSelectEditorOption[]`(静的 or 行依存。関数はレンダー中に呼ばれるため純粋であること) | パススルー(`option.value` は string。型変換したい場合は `parseClipboardValue` を併用) |
 | `'date'` | ネイティブ `<input type="date">`。ドラフトは `'YYYY-MM-DD' \| ''`。入力欄は中身(年 / 月 / 日)より狭くせず、細い列ではセルからはみ出して開く。セルを選んで文字から打ち始めたときは、その文字を消さないよう文字の入力欄で開き、確定するときに日付として読む(`2026/3/15`・`2026-03-15` など。読み方は既定パーサと同じ)。読めなければ「日付で入力してください」を出して編集を続ける(フォーカスが外れたら取り消し。1.0.2) | — | `''`→`null` / 解釈可能→`'YYYY-MM-DD'` へ正規化 / 解釈不可→生文字列のまま(数字だけの文字列 = Excel の日付のシリアル値「45678」や「5」と、年が 4 桁にならない文字列、年の無い文字列(「11/2」「Nov 1」)、ありえない日付(「2026/2/30」)も解釈不可。翌月へ繰り越さない) |
 | `'checkbox'` | **直接トグル**(編集セッションなし)。チェックボックスそのものを押すか、アクティブセルで Space を押すと即トグル(セルのチェックボックスの外を押したときはアクティブセルになるだけ。ダブルクリックでも切り替わらない)。Enter / F2 / ダブルクリックではエディタが開かない | `checkedValue`(既定 `true`)/ `uncheckedValue`(既定 `false`)。checked 判定は `Object.is(value, checkedValue)` のみ | `''`→unchecked / checked・unchecked の文字列表現→対応値 / `'true'`・`'1'`→checked / その他→unchecked |
 | `'custom'` | `render(ctx)` の返り値を編集オーバーレイ内に描画。**フォーカス管理・キーバインドは利用側の責務**(開いたままグリッドの中の別のセルを押したときに値を残す / エディタを閉じるには、入力欄の `onBlur` で `ctx.commit` か `ctx.cancel` を呼ぶ。呼ばないとエディタが開いたまま残り、グリッドのキー操作が効かない) | `render: (ctx: CellEditorContext<T>) => ReactNode` | パススルー |
@@ -1828,7 +1846,7 @@ const buffer = await writeXlsx({
 
 ### ツールチップ(TT-1)
 
-グリッド内・ポータル内の操作ヒント / 切り詰めテキスト全文表示は、`title` 属性ではなく**カスタムツールチップ**(`.ssg-tooltip`・body 直下シングルトン)で表示される。表示対象は `data-ssg-tooltip="文言"` 属性で、window の pointerover / focusin 委譲で拾うため、**利用側が自前の要素(カスタムセル / renderHeader 等)へ同属性を付けても同じ見た目のツールチップが出る**。配色は `--ssg-tooltip-bg / --ssg-tooltip-text / --ssg-tooltip-shadow` トークンで調整可能。
+グリッド内・ポータル内の操作ヒント / 切り詰めテキスト全文表示は、`title` 属性ではなく**カスタムツールチップ**(`.ssg-tooltip`・表の外のシングルトン。`popupContainer`)で表示される。表示対象は `data-ssg-tooltip="文言"` 属性で、window の pointerover / focusin 委譲で拾うため、**利用側が自前の要素(カスタムセル / renderHeader 等)へ同属性を付けても同じ見た目のツールチップが出る**。配色は `--ssg-tooltip-bg / --ssg-tooltip-text / --ssg-tooltip-shadow` トークンで調整可能。
 
 **ボディセルの省略時ツールチップ**: グリッド prop `showCellOverflowTooltip`(既定 `false`)を `true` にすると、**既定テキストセルが省略(…)されているときだけ**ホバーで全文ツールチップが出る。実装は上記機構の派生で、セルへ `data-ssg-tooltip-overflow` マーカーを付け、表示可否は**ホバー時**に `scrollWidth > clientWidth` を判定(実際にクリップされているセルのみ表示)、文言はセルの表示テキスト(`textContent`)をそのまま使用する。`renderCell` 列(テキストとは限らない)と `autoHeight` 折り返し列(クリップされない)は対象外。特定列だけ全文表示したい / させたくない場合は、`renderCell` で自前要素へ `data-ssg-tooltip="…"`(常時)や `data-ssg-tooltip-overflow`(省略時)を付ける運用も可能。
 
@@ -2387,7 +2405,7 @@ type GridSlotProps = string | { className?: string; style?: CSSProperties };
 - `style` は当該パーツのルート要素へインラインで付与される。グリッドが位置決めに使う座標 / 寸法(`left` / `top` / `width` / `height` / `transform` 等)はグリッド側が後勝ちで上書きするため、レイアウトは壊せない。
 - インライン style は状態クラス(選択 / ホバー等の背景)にも勝つ。状態で切り替えたい装飾は className 側で行う。
 - `classNames` はレンダー毎に新しいオブジェクトを渡してもよい(内容の署名で memo され、行 / ヘッダーの再レンダーは増えない)。`getRowClassName` が返す style も内容比較で memo される。
-- `tooltip` / `dragGhost` は命令的 DOM(`document.body` 直下)のため、style の数値は単位なしのまま設定される(px が必要な値は `'12px'` のように文字列で)。
+- `tooltip` / `dragGhost` は命令的 DOM(表の外。`popupContainer`)のため、style の数値は単位なしのまま設定される(px が必要な値は `'12px'` のように文字列で)。
 
 | スロット | 付与先 |
 | --- | --- |
@@ -2401,9 +2419,9 @@ type GridSlotProps = string | { className?: string; style?: CSSProperties };
 | `labelRow` / `labelRowContent` | ラベル行(見出し / 区切り行)の行要素 `.ssg-body-row[data-ssg-label-row]`(`bodyRow` / `labelRow.className` に加えて付与。縦固定の複製にも付く)/ 中身の器 `.ssg-label-row-content` |
 | `totalRow` / `totalCell` | 合計行の行要素 `.ssg-total-row`(3 ペイン分。`totalRow.className` に加えて付与)/ 合計行のセル `.ssg-total-cell`(`bodyCell` に加えて付与) |
 | `iconButton` | ヘッダーのアイコンボタン `.ssg-icon-btn` |
-| `popover` | ポータル系パネルの root(列メニュー / フィルター / コンテキストメニュー / select エディタ候補 / ツールパネル。`document.body` 直下) |
+| `popover` | ポータル系パネルの root(列メニュー / フィルター / コンテキストメニュー / select エディタ候補 / ツールパネル。表の外 = `popupContainer`) |
 | `menuItem` | メニュー項目 `.ssg-menu-item`(列メニュー / コンテキストメニュー) |
-| `tooltip` | カスタムツールチップ `.ssg-tooltip`(body 直下のシングルトン。複数グリッド同居時は最後に更新したグリッドの値) |
+| `tooltip` | カスタムツールチップ `.ssg-tooltip`(表の外のシングルトン。複数グリッド同居時は最後に更新したグリッドの値) |
 | `dragGhost` | 列 / 行ドラッグのゴースト `[data-grid-drag-ghost]` |
 | `checkbox` | 行選択 / checkbox 列のチェックボックス glyph `.ssg-row-checkbox` |
 | `cellEditor` | セルエディタの枠 `.ssg-cell-editor` |
@@ -2531,14 +2549,14 @@ function Grid(props: SpreadsheetGridProps<Row>) {
 | `.ssg-total-row` / `.ssg-total-cell` | 合計行(`totalRow`)の行 / セル(セルは `.ssg-body-cell` にも付く。種類の見出しは `.ssg-total-caption`、その文字は `.ssg-total-label`)。 |
 | `.ssg-fill-handle` / `.ssg-fill-preview` / `.ssg-fill-options` / `.ssg-fill-menu` / `.ssg-fill-tooltip` | フィルハンドル(`fillHandle`)のハンドル / ドラッグ中の点線 / 埋めたあとのボタン / メニュー / 値のツールチップ。 |
 | `.ssg-menu-panel` / `.ssg-menu-item` | 列メニュー / コンテキストメニュー / フィルハンドルのメニューのパネル / 項目。 |
-| `.ssg-tooltip` | カスタムツールチップ(`document.body` 直下のシングルトン)。 |
+| `.ssg-tooltip` | カスタムツールチップ(表の外のシングルトン。`popupContainer`)。 |
 | `.ssg-ask` | `GridAskBar`(入口 `/ai`)のルート。中は `.ssg-ask-form`(入力の行)/ `.ssg-ask-input`(入力欄)/ `.ssg-ask-examples`(例の文)/ `.ssg-ask-chips` / `.ssg-ask-chip`(入れた条件のチップ)/ `.ssg-ask-note`(注意やエラーの文)。 |
 
 ### 属性
 
 | 属性 | 付く要素 / 意味 |
 | --- | --- |
-| `[data-grid-drag-ghost]` | 列 / 行ドラッグのゴースト(`document.body` 直下。`classNames.dragGhost`)。 |
+| `[data-grid-drag-ghost]` | 列 / 行ドラッグのゴースト(表の外。`popupContainer`。`classNames.dragGhost`)。 |
 | `[data-ssg-col-dragging="live"]` | `columnDragMotion="live"` で掴んでいる列のセル。 |
 | `[data-ssg-row-dragging]` | ドラッグ中の行(`.ssg-body-row`)。 |
 | `[data-ssg-label-row]` | ラベル行の行要素(`.ssg-body-row`)。 |
@@ -2554,7 +2572,7 @@ function Grid(props: SpreadsheetGridProps<Row>) {
 
 見た目を変える主な手段。`style.css` が `.ssg-root` と各ポータル(ポップオーバー / メニュー / ドラッグのゴースト / ツールチップ)と `GridAskBar` の `.ssg-ask` に `:where`(特異度 0)で定義しているため、利用側の上書きは読み込み順に関係なく既定値・ダークのプリセット(`.ssg-theme-dark`)・`themes/*.css` に勝つ。
 
-`document.body` の直下に出す部品(列メニュー / 列フィルター / 右クリックメニュー / select エディタの候補 / ツールパネル / フィルハンドルのメニューと値のツールチップ / ツールチップ / ドラッグのゴースト)は表の中に無いので、表やその祖先に書いたトークンは継承では届かない。グリッドは部品を出すときに、表の root で決まったトークンの値をその部品の root へインラインで写す。
+表の外(既定は `document.body` の直下、グリッドを囲むダイアログがあればその中。`popupContainer`)に出す部品(列メニュー / 列フィルター / 右クリックメニュー / select エディタの候補 / ツールパネル / フィルハンドルのメニューと値のツールチップ / ツールチップ / ドラッグのゴースト)は表の中に無いので、表やその祖先に書いたトークンは継承では届かない。グリッドは部品を出すときに、表の root で決まったトークンの値をその部品の root へインラインで写す。
 
 - `.ssg-root { … }` / `className` のクラス / `.card .ssg-root { … }` のような祖先のセレクタ / 祖先の変数を使った値(`--ssg-panel-bg: var(--card-head)`)も、部品に同じ値で出る。
 - 部品の側で決めた値は写さない(`classNames.popover` / `classNames.tooltip` / `classNames.dragGhost` の style や、`.ssg-menu-panel { … }` / `.ssg-tooltip { … }` のように部品だけに当てた指定がそのまま効く)。ただし部品だけに当てた CSS の値が既定値と同じだと区別できず、表の値が写る(部品を既定の色のままにしたいときは `classNames.popover` などの style で書く。style は既定値と同じ値でも残る)。

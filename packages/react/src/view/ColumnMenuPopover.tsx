@@ -24,7 +24,7 @@ import type {
 import type { GridColumnPinned, GridSortDirection } from '../model/gridTypes';
 import type { ColumnMenuLayout } from '../hooks/useColumnMenuController';
 import type { GridResolvedSlots } from '../model/gridTypes';
-import { usePortalTokens } from '../hooks/usePortalTokens';
+import { usePopupContainer, usePortalTokens } from '../hooks/usePortalTokens';
 import { useFeatureLocaleText } from '../hooks/useGridLocaleText';
 import type { DEFAULT_COLUMN_MENU_LOCALE_TEXT } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/localeTextFeatures';
 
@@ -172,6 +172,8 @@ export function ColumnMenuPopover({
   // 列の固定のサブメニューも同じトークンの既定値を持つ要素(.ssg-menu-panel)なので、外側のメニューからは継承されません。
   const pinSubmenuRef = useRef<HTMLDivElement>(null);
   usePortalTokens(pinSubmenuRef, isOpen && layout !== null && openSubmenuKey === PIN_SUBMENU_KEY, themeClassName);
+  // 追加(1.1.0 / AP-07): 描く場所(既定はグリッドを囲むダイアログの中、無ければ body)。
+  const popupContainer = usePopupContainer(isOpen && layout !== null);
   // 追加(1.0.1 / 2026-11-09 実アプリの総点検 AP-31): キーボード(→ / Enter / Space)で開いたときは小メニューの先頭の項目へ
   //   フォーカスを移します(開いた後の描画で)。← で閉じて「列の固定」へ戻ります。
   const pinButtonRef = useRef<HTMLButtonElement>(null);
@@ -189,7 +191,7 @@ export function ColumnMenuPopover({
     focusFirstPinItem();
   }, [openSubmenuKey]);
 
-  if (!isOpen || !layout) {
+  if (!isOpen || !layout || !popupContainer) {
     return null;
   }
 
@@ -722,7 +724,7 @@ export function ColumnMenuPopover({
         </button>
       </div>
     </div>,
-    document.body,
+    popupContainer,
   );
 }
 

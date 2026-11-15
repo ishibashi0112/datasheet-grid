@@ -37,7 +37,7 @@ import {
 import { useVirtualizerCore } from './hooks/useVirtualizerCore';
 // 追加(本体分解 E-7): グリッドエンジン(リゾルバ / コマンド / 通知 / DOM コントローラ / store の束ね。React 非依存)。
 import { createGridEngine } from '@ishibashi0112/spreadsheet-grid-core/internal/engine/createGridEngine';
-import { useControllerLifecycle } from './hooks/useController';
+import { useControllerLifecycle, useIsomorphicLayoutEffect } from './hooks/useController';
 import {
   GRID_POPUP_SELECTOR,
   createEscapeClaimController,
@@ -57,7 +57,11 @@ import {
   isTabEdgeOfCard,
 } from '@ishibashi0112/spreadsheet-grid-core/internal/controllers/detailTabOrder';
 import { useGridStore, useGridViewState } from './hooks/useGridStore';
-import { PortalTokenSourceContext } from './hooks/usePortalTokens';
+import { PopupContainerContext, PortalTokenSourceContext } from './hooks/usePortalTokens';
+import {
+  registerPopupContainer,
+  resolvePopupContainer,
+} from '@ishibashi0112/spreadsheet-grid-core/internal/utils/popupContainer';
 import { GridLocaleTextContext, mergeFeatureLocaleDefaults } from './hooks/useGridLocaleText';
 import { DetailToggleButton } from './view/DetailToggleButton';
 import {
@@ -334,6 +338,8 @@ export function useGridShell<T extends object>({
   theme = 'light',
   // 追加(motion-0): モーションの有効化('auto' = prefers-reduced-motion を尊重)。
   motion = 'auto',
+  // 追加(1.1.0 / AP-07): ポップアップを描く場所('auto' = グリッドを囲むダイアログの中、無ければ body)。
+  popupContainer = 'auto',
   // 追加(motion-3 / M-4・M-5): 行の並び替えアニメ(既定 true。auto-height / serverSide では自動 OFF)。
   animateRows = true,
   // 追加(motion-4 / M-3): コピー範囲の動く点線(既定 true)。
@@ -515,6 +521,17 @@ export function useGridShell<T extends object>({
 
   // ── refs ──────────────────────────────────────────────
   const gridRootRef = useRef<HTMLDivElement | null>(null);
+  // 追加(1.1.0 / 2026-11-09 実アプリの総点検 AP-07): ポップアップを描く場所を決める関数です(core utils/popupContainer)。
+  //   React のポップアップは PopupContainerContext から開いている間の描画ごとに呼び、ツールチップとドラッグのゴースト
+  //   (core の命令的な要素)は表の要素の登録から引きます。
+  const getPopupContainer = useCallback(
+    () => resolvePopupContainer(gridRootRef.current, popupContainer),
+    [popupContainer],
+  );
+  useIsomorphicLayoutEffect(() => {
+    const shell = gridRootRef.current;
+    return registerPopupContainer([shell, shell?.closest('.ssg-root')], getPopupContainer);
+  }, [getPopupContainer]);
   const pointerClientRef = useRef<{ x: number; y: number } | null>(null);
   const autoScrollFrameRef = useRef<number | null>(null);
   const bodyScrollRef = useRef<HTMLDivElement | null>(null);
@@ -5459,7 +5476,9 @@ export function useGridShell<T extends object>({
   );
   return (
     <PortalTokenSourceContext.Provider value={gridRootRef}>
-      <GridLocaleTextContext.Provider value={localeTexts}>{shellElement}</GridLocaleTextContext.Provider>
+      <PopupContainerContext.Provider value={getPopupContainer}>
+        <GridLocaleTextContext.Provider value={localeTexts}>{shellElement}</GridLocaleTextContext.Provider>
+      </PopupContainerContext.Provider>
     </PortalTokenSourceContext.Provider>
   );
 }

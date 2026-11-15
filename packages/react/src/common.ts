@@ -189,6 +189,8 @@ export type {
   UndoRedoState,
   // 追加(motion-0): モーションの有効化('auto' | 'on' | 'off')。
   GridMotion,
+  // 追加(1.1.0 / AP-07): ポップアップを描く場所(popupContainer)。
+  GridPopupContainer,
   // 追加(F-2): セル内検索のオプションと通知引数。
   FindOptions,
   FindChangeParams,
