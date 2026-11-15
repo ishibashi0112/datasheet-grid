@@ -8,7 +8,7 @@ import {
 import { getCellValue, setCellValue } from './permissions';
 import { resolveCellParser } from '../logic/editorValues';
 import { formatCellClipboardText } from '../logic/selectLabels';
-import { decideCellWrite } from '../logic/validation';
+import { decideCellWrite, type ValidationLocaleText } from '../logic/validation';
 import { isSyntheticColumnKey } from '../logic/detailRow';
 
 // 追加: TSV の行列データ型です。
@@ -248,6 +248,21 @@ export const serializeSelectionToTsv = <T,>(
   return joinTsvLines(lines);
 };
 
+// 追加(1.1.0 / 2026-11-09 実アプリの総点検 AP-09): 貼り付けで書かなかったセル 1 つぶんの知らせです(呼び出し側が
+//   onPasteSkipped の GridPasteSkippedCell へ直します)。rowIndex は貼り付け先の行位置(clientSide は filteredRowIndex、
+//   serverSide はビュー行 index)。'readOnly' はパーサを呼ばない(value は undefined)。
+export type PasteSkip<T> = {
+  rowIndex: number;
+  sourceRowIndex: number | undefined;
+  colIndex: number;
+  row: T;
+  column: GridColumn<T>;
+  text: string;
+  reason: 'readOnly' | 'invalid';
+  value?: unknown;
+  message?: string | undefined;
+};
+
 // 追加: 貼り付け matrix を rows へ適用します。
 export const applyClipboardMatrixToRows = <T extends object,>(
   rows: T[],
@@ -268,6 +283,9 @@ export const applyClipboardMatrixToRows = <T extends object,>(
     column: GridColumn<T>,
     filteredRowIndex: number,
   ) => boolean,
+  // 追加(1.1.0 / AP-09): 書かなかったセルの知らせ(省略可)と、そのメッセージの文言(localeText。省略は日本語の既定)。
+  onSkip?: (skip: PasteSkip<T>) => void,
+  validationTexts?: ValidationLocaleText,
 ): T[] => {
   if (matrix.length === 0) {
     return rows;
@@ -303,18 +321,39 @@ export const applyClipboardMatrixToRows = <T extends object,>(
         continue;
       }
 
+      const rawValue = matrix[rowOffset][colOffset];
       if (!canWriteCell(originalRowIndex, colIndex, currentRow, column, filteredRowIndex)) {
+        onSkip?.({
+          rowIndex: filteredRowIndex,
+          sourceRowIndex: originalRowIndex,
+          colIndex,
+          row: currentRow,
+          column,
+          text: rawValue,
+          reason: 'readOnly',
+        });
         continue;
       }
 
-      const rawValue = matrix[rowOffset][colOffset];
       // 変更(editor 基盤): パーサ解決を logic/editorValues.ts の共通規則へ集約しました。
       const parsedValue = resolveCellParser(column)(rawValue, currentRow);
 
       // 追加(validation): reject 列は検証 NG のセルのみスキップします(readonly セルの
       //   canWriteCell skip と同じ意味論 — reject 列の「不正値は決して入らない」契約を
       //   ペースト経由でも維持します)。mark 列(既定)はそのまま書き込みます。
-      if (decideCellWrite(column, currentRow, parsedValue).action === 'reject') {
+      const decision = decideCellWrite(column, currentRow, parsedValue, validationTexts);
+      if (decision.action === 'reject') {
+        onSkip?.({
+          rowIndex: filteredRowIndex,
+          sourceRowIndex: originalRowIndex,
+          colIndex,
+          row: currentRow,
+          column,
+          text: rawValue,
+          reason: 'invalid',
+          value: parsedValue,
+          message: decision.message,
+        });
         continue;
       }
 
@@ -349,6 +388,9 @@ export const buildClipboardCellEdits = <T extends object,>(
     row: T,
     column: GridColumn<T>,
   ) => boolean,
+  // 追加(1.1.0 / AP-09): 書かなかったセルの知らせ(省略可。rowIndex はビュー行 index)と、そのメッセージの文言。
+  onSkip?: (skip: PasteSkip<T>) => void,
+  validationTexts?: ValidationLocaleText,
 ): ServerSideCellEditInput<T>[] => {
   const edits: ServerSideCellEditInput<T>[] = [];
   // 変更(FC-03): 列オフセット → 列 index は合成列を飛ばして数えます(clientSide 版と同じ)。
@@ -369,14 +411,25 @@ export const buildClipboardCellEdits = <T extends object,>(
       if (!column) {
         continue;
       }
+      const rawValue = matrix[rowOffset][colOffset];
       if (!canWriteCell(viewIndex, colIndex, row, column)) {
+        onSkip?.({ rowIndex: viewIndex, sourceRowIndex: undefined, colIndex, row, column, text: rawValue, reason: 'readOnly' });
         continue;
       }
-      const parsedValue = resolveCellParser(column)(
-        matrix[rowOffset][colOffset],
-        row,
-      );
-      if (decideCellWrite(column, row, parsedValue).action === 'reject') {
+      const parsedValue = resolveCellParser(column)(rawValue, row);
+      const decision = decideCellWrite(column, row, parsedValue, validationTexts);
+      if (decision.action === 'reject') {
+        onSkip?.({
+          rowIndex: viewIndex,
+          sourceRowIndex: undefined,
+          colIndex,
+          row,
+          column,
+          text: rawValue,
+          reason: 'invalid',
+          value: parsedValue,
+          message: decision.message,
+        });
         continue;
       }
       edits.push({ viewIndex, column, value: parsedValue });

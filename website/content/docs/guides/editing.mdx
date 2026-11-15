@@ -39,6 +39,20 @@ const columns: GridColumn<Row>[] = [
 
 `number` / `date` / `checkbox` には既定の「文字列 → 値」パーサが付き、**貼り付け / Delete クリア / エディタ確定で共通**に効きます(例: number 列を Delete でクリアすると `null` になる)。number 列は全角の数字・符号・小数点と 3 桁区切りも数値として読みます(`１，２３４` や Excel の `1,234` を貼り付けると `1234`)。セルを選んで `-5` や `.5` のようにマイナス / 小数点から打ち始めても、そのまま数値(`-5` / `0.5`)になります。明示の `parseClipboardValue` は常に優先されます。
 
+Excel の通貨や会計の書式のセル(`¥12,000` / `12,000円` / `(1,200)`)を貼り付ける列は、組み込みの数値のパーサ `numberParser` を `parseClipboardValue` に渡します。読み方は number 列の既定と同じ(全角・3 桁区切りも読む)で、`strip` の文字を先に外し、`negativeParentheses` でかっこの数を負の数として読みます(1.1.0 から)。貼り付けで書かなかったセル(編集できないセルと、`validationMode: 'reject'` の列で検査に通らなかった値)は `onPasteSkipped` で 1 回の貼り付けにつき 1 回まとめて受け取れるので、「3 セルは書きませんでした」のように知らせられます。
+
+```tsx
+import { numberParser } from '@ishibashi0112/spreadsheet-grid';
+
+{ key: 'amount', title: '金額', width: 120, editable: true,
+  editor: { type: 'number', min: 0 }, validationMode: 'reject',
+  parseClipboardValue: numberParser({ strip: ['¥', '￥', '円'], negativeParentheses: true }) }
+
+<SpreadsheetGrid
+  onPasteSkipped={({ cells }) => toast(`${cells.length} セルは書きませんでした(${cells[0]?.message ?? '編集できないセル'})`)}
+/>
+```
+
 値と表示名が別の select 列(値 `'transport'` / 表示名「交通費」)は、select エディタに `clipboard: 'label'` を書くと、コピーと CSV が表示名になり、Excel から貼り付けた表示名は値へ読み替えます(値はそのまま、どちらでもない文字は生のまま。1.1.0 から)。セルの表示名は `valueFormatter` で出します([値と表示名が別の列](/docs/guides/value-labels))。
 
 ```tsx

@@ -10,6 +10,7 @@ import { gridActions, type GridUiAction } from '../model/gridActions';
 import type {
   CellCoord,
   GridColumn,
+  GridPasteSkippedCell,
   GridRowKey,
   GridSelection,
   GridUiState,
@@ -28,11 +29,13 @@ import {
   joinTsvLines,
   joinTsvRow,
   parseClipboardText,
+  type PasteSkip,
   resolvePasteColumnIndexes,
   serializeSelectionToTsv,
   writeTextToClipboard,
 } from '../utils/clipboard';
 import type { ServerSideCellEditInput } from '../logic/serverSideEdits';
+import type { ValidationLocaleText } from '../logic/validation';
 import { findFirstPasteRow, resolvePasteTargetViewIndexes } from '../logic/labelRows';
 
 export type ClipboardEventLike = {
@@ -63,6 +66,10 @@ export type ClipboardControllerArgs<T extends object> = {
   applyServerSideCellEdits?: (edits: ServerSideCellEditInput<T>[]) => number;
   isRowExportable?: SpreadsheetGridProps<T>['isRowExportable'];
   dispatch: (action: GridUiAction) => void;
+  // 追加(1.1.0 / 2026-11-09 実アプリの総点検 AP-09): 貼り付けで書かなかったセルの通知(1 回の貼り付けで 1 回。無ければ
+  //   呼ばない)と、そのメッセージの文言(localeText。省略は日本語の既定)。
+  onPasteSkipped?: SpreadsheetGridProps<T>['onPasteSkipped'];
+  localeTexts?: ValidationLocaleText;
   // 追加(motion-4 / M-3): コピーが成功したとき(クリップボードへ書けたとき)に、コピー元の選択を通知します。
   //   シェルはこれで view スライスの copiedRange(動く点線)を立てます。
   onCopied?: (selection: NonNullable<GridSelection>) => void;
@@ -117,6 +124,24 @@ export const resolvePasteAnchor = (selection: GridSelection, activeCell: CellCoo
     return { row: Math.min(selection.startRow, selection.endRow), col: 0 };
   }
   return activeCell;
+};
+
+// 追加(1.1.0 / AP-09): 書かなかったセル 1 つぶんの知らせを、onPasteSkipped の形へ直します。
+const toSkippedCell = <T,>(skip: PasteSkip<T>, rowIndex: number, rowKey: GridRowKey): GridPasteSkippedCell<T> => {
+  const cell: GridPasteSkippedCell<T> = {
+    row: skip.row,
+    rowKey,
+    rowIndex,
+    columnKey: skip.column.key,
+    colIndex: skip.colIndex,
+    text: skip.text,
+    reason: skip.reason,
+  };
+  if (skip.reason === 'invalid') {
+    cell.value = skip.value;
+    cell.message = skip.message;
+  }
+  return cell;
 };
 
 export const createClipboardController = <T extends object>(): ClipboardController<T> => {
@@ -213,6 +238,8 @@ export const createClipboardController = <T extends object>(): ClipboardControll
       onRowsChange,
       onColumnsChange,
       applyServerSideCellEdits,
+      onPasteSkipped,
+      localeTexts,
       dispatch,
     } = args;
     // 追加(audit RD-2): セル編集中、またはエディタ / renderCell / renderHeader 内の入力要素が発火元の
@@ -241,6 +268,13 @@ export const createClipboardController = <T extends object>(): ClipboardControll
     if (matrix.length === 0) {
       return;
     }
+    // 追加(1.1.0 / AP-09): 書かなかったセル(通知があるときだけ集める)。書き込みと選択を済ませてから 1 回だけ知らせます。
+    const skipped: GridPasteSkippedCell<T>[] | null = onPasteSkipped ? [] : null;
+    const notifySkipped = () => {
+      if (skipped !== null && skipped.length > 0) {
+        onPasteSkipped?.({ cells: skipped });
+      }
+    };
 
     const maxPasteWidth = matrix.reduce(
       (max, currentRow) => Math.max(max, currentRow.length),
@@ -285,10 +319,18 @@ export const createClipboardController = <T extends object>(): ClipboardControll
         startColIndexForEdits,
         (viewIndex, colIndex, row, column) =>
           isViewCellEditable({ readOnly, canEditCell }, rowModel, targetViewIndex(viewIndex), colIndex, row, column),
+        skipped
+          ? (skip) => {
+              const viewIndex = targetViewIndex(skip.rowIndex);
+              skipped.push(toSkippedCell(skip, viewIndex, rowModel.getRowKey(viewIndex) ?? viewIndex));
+            }
+          : undefined,
+        localeTexts,
       ).map((edit) => ({ ...edit, viewIndex: targetViewIndex(edit.viewIndex) }));
       if (edits.length > 0) {
         applyServerSideCellEdits(edits);
       }
+      notifySkipped();
       const serverSideEndRow = clamp(
         lastTargetViewIndex,
         0,
@@ -360,6 +402,12 @@ export const createClipboardController = <T extends object>(): ClipboardControll
       }
     }
 
+    // 貼り付け先の行キー(末尾へ足す行は rowKeyGetter か rows の index)。
+    const pasteRowKey = (viewIndex: number, row: T, originalRowIndex: number): GridRowKey =>
+      (viewIndex < viewRowCountForPaste
+        ? rowModel.getRowKey(viewIndex)
+        : (rowKeyGetter?.(row, originalRowIndex) ?? originalRowIndex)) ?? originalRowIndex;
+
     const nextRows = applyClipboardMatrixToRows(
       workingRows,
       resolveSourceIndex,
@@ -371,15 +419,19 @@ export const createClipboardController = <T extends object>(): ClipboardControll
       //   追加後の位置(view 行数以降)と、元 rows の index / rowKeyGetter の値を渡します。
       (originalRowIndex, colIndex, row, column, filteredRowIndex) => {
         const viewIndex = targetViewIndex(filteredRowIndex);
-        const rowKey =
-          viewIndex < viewRowCountForPaste
-            ? rowModel.getRowKey(viewIndex)
-            : (rowKeyGetter?.(row, originalRowIndex) ?? originalRowIndex);
         return isCellEditable({ readOnly, canEditCell }, viewIndex, colIndex, row, column, {
           sourceRowIndex: originalRowIndex,
-          rowKey: rowKey ?? originalRowIndex,
+          rowKey: pasteRowKey(viewIndex, row, originalRowIndex),
         });
       },
+      skipped
+        ? (skip) => {
+            const viewIndex = targetViewIndex(skip.rowIndex);
+            const sourceIndex = skip.sourceRowIndex ?? viewIndex;
+            skipped.push(toSkippedCell(skip, viewIndex, pasteRowKey(viewIndex, skip.row, sourceIndex)));
+          }
+        : undefined,
+      localeTexts,
     );
 
     // 変更(1.0.2 / 2026-11-09 実アプリの総点検 C-02): 選択範囲は実際に書いた範囲まで。行を足せない(createRow が無い)・列を
@@ -398,6 +450,7 @@ export const createClipboardController = <T extends object>(): ClipboardControll
     dispatch(gridActions.updateSelection({ row: endRow, col: endCol }));
     dispatch(gridActions.endSelection());
     dispatch(gridActions.activateCell(anchor));
+    notifySkipped();
   };
 
   return { update, handleCopy, handlePaste };

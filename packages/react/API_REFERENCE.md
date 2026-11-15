@@ -19,6 +19,7 @@
 | `isRowExportable` | `(row: T, ctx: { viewRowIndex: number; rowKey: GridRowKey }) => boolean` | 全行 true | コピー(`Ctrl/Cmd+C` の TSV)/ `exportCsv` / `getExportData` の対象行フィルタ。`false` の行は出力から**行ごと**除く(行単位のみ。全体選択かの判定と貼り付けには影響しない)。`ctx.viewRowIndex` はフィルター / ソート適用後のビュー行 index(scope `'raw'` のみ rows 配列のソース index)、`ctx.rowKey` は `rowKeyGetter` の値。用途: プレースホルダ行など表示上の詰め物を出力から除く。 |
 | `createRow` | `() => T` | — | 貼り付けが表の末尾より下へはみ出したとき、足りない行を作る新規行ファクトリ(はみ出した行数だけ呼ぶ)。グリッドが行を足すのはこのときだけで、無ければはみ出した分は捨てる。ボタンなどで行を足すときは、利用側が `rows` に行を足す(グリッドは `createRow` を呼ばない。serverSide では使わない)。 |
 | `createOverflowColumn` | `(columnIndex: number) => GridColumn<T>` | — | 貼り付けが右端の列よりはみ出したとき、足りない列を作る列ファクトリ(`onColumnsChange` と一緒に使う)。 |
+| `onPasteSkipped` | `(params: GridPasteSkippedParams<T>) => void` | — | 貼り付けで書かなかったセルの通知(1.1.0 から)。1 回の貼り付けで 1 回、書かなかったセルがあるときだけ呼ぶ(書いたセルは書く)。`params.cells` の各セルは `row` / `rowKey` / `rowIndex`(ビュー行)/ `columnKey` / `colIndex` / `text`(貼り付けた文字)/ `reason`(`'readOnly'` = 編集できないセル(列の `editable` / `canEditCell`)、`'invalid'` = `validationMode: 'reject'` の列で検査に通らない値)/ `value`(`'invalid'` のときパーサが読んだ値)/ `message`(`'invalid'` のときの検査のメッセージ)。`validationMode: 'mark'`(既定)の列は書いて印を付けるので入らない。表の外(`createRow` / `createOverflowColumn` が無くて足せない行 / 列)・ラベル行・グループ行は数えない。詳細は「貼り付けで読めない値」節。 |
 | `rowHeight` | `number` | density 依存(standard: `36`) | uniform 行の行高(px)。未指定時は density プリセット(compact: `28` / comfortable: `44`)から解決。明示指定が常に優先。 |
 | `autoHeight` | `boolean` | `false` | auto-height 行(可変行高)を有効化する**大本のスイッチ**。これに加えて**少なくとも1列に `column.autoHeight: true`** が必要(その列が折り返して行高を駆動)。両方 true かつ**行数 ≤ 50,000**のとき有効(超過時は uniform `rowHeight` へフォールバック)。詳細は「auto-height 行」節。 |
 | `verticalAlign` | `'top' \| 'center'` | — | auto-height で伸びた行(基準の `rowHeight` より高い行)での、セルの中身の縦の揃え。書かなければ `autoHeight` の列は上(折り返した文章の 1 行目)、ほかの列は真ん中。`'top'` で全部の列を上に、`'center'` で全部の列を真ん中にそろえる(列ごとの指定は `GridColumn.verticalAlign` が優先)。1 行の行と、auto-height を使わないグリッドではどれも真ん中。詳細は「auto-height 行」節。 |
@@ -932,7 +933,7 @@ WAI-ARIA の grid パターンに沿って、表・行・セルに役割と状�
 | `editor` | `GridColumnEditor<T>` | text 相当 | セルエディタ種別(判別共用体)。`{ type: 'text' \| 'number' \| 'select' \| 'date' \| 'checkbox' \| 'custom', ... }`。詳細は「セルエディタ」節。 |
 | `validate` | `(ctx: CellValidationContext<T>) => CellValidationResult` | — | セル値の検証。`true`=有効 / `false`=無効(既定メッセージ)/ `string`・`{ message }`=無効+メッセージ。**純粋・軽量であること**(描画中の可視セルごとに毎レンダー評価。`cellClassName` 関数と同コスト階級)。number エディタの `min` / `max` / `integer` の検査は `validate` の後(`validate` の NG はそのメッセージ、通した値だけ組み込みの検査)。詳細は「バリデーション」節。 |
 | `validationMode` | `'mark' \| 'reject'` | `'mark'` | 検証 NG 時の動作。`'mark'`=値は入るがセルに invalid 表示 / `'reject'`=書き込み自体を拒否。 |
-| `parseClipboardValue` | `(raw: string, row: T) => unknown` | editor 既定パーサ | 「文字列 → セル値」のパーサ(貼り付け / クリア / エディタ commit で共通)。**明示指定が常に優先**。未指定で `editor` が number / date / checkbox のときは種別の既定パーサが自動供給されます(「セルエディタ」節の表参照)。 |
+| `parseClipboardValue` | `(raw: string, row: T) => unknown` | editor 既定パーサ | 「文字列 → セル値」のパーサ(貼り付け / クリア / エディタ commit で共通)。**明示指定が常に優先**。未指定で `editor` が number / date / checkbox のときは種別の既定パーサが自動供給されます(「セルエディタ」節の表参照)。number の既定と同じ読み方に通貨記号などを足すときは組み込みの `numberParser({ strip })`(1.1.0 から。「貼り付けで読めない値」節)。 |
 | `formatClipboardValue` | `(value: unknown, row: T) => string` | — | コピー時のフォーマッタ(CSV / TSV と `getExportData` の `text` も同じ)。未指定で select エディタの `clipboard: 'label'` の列は候補の label(1.1.0 から)。 |
 
 ### filterType: 'auto'(自動判定)
@@ -1079,6 +1080,41 @@ const columns = [
   { key: 'amount', title: '金額', width: 140, align: 'right', valueFormatter: numberFormatter() },
 ];
 ```
+
+### 貼り付けで読めない値(`numberParser` / `onPasteSkipped`)
+
+Excel の通貨書式のセル(「¥12,000」「12,000円」「(1,200)」)は、number 列の既定のパーサでは数値として読めません。読めない文字は、`validationMode: 'mark'`(既定)の列では文字のまま入って印が付き、`'reject'` の列では書きません。1.1.0 から、次の 2 つで扱えます。
+
+- **`numberParser(options?)`** — number エディタの既定のパーサと同じ読み方(空・空白だけは `null`、全角の数字・符号・小数点と 3 桁区切りも読む、読めない文字は元の文字のまま)の「文字列 → 数値」のパーサを作ります。列の `parseClipboardValue` に渡します(貼り付け / Delete / エディタの確定で共通)。`strip` に先に外す文字(通貨記号や単位)、`negativeParentheses: true` でかっこの数(`(1,200)` / `（1,200）`)を負の数として読みます。
+- **`onPasteSkipped`** — 貼り付けで書かなかったセル(編集できないセルと、`'reject'` の列で検査に通らない値)を、1 回の貼り付けで 1 回知らせます。トーストで件数を出す、メッセージを並べる、などに使います。
+
+```tsx
+import { SpreadsheetGrid, numberParser } from '@ishibashi0112/spreadsheet-grid';
+
+const columns: GridColumn<Expense>[] = [
+  {
+    key: 'amount',
+    title: '金額',
+    width: 120,
+    align: 'right',
+    editable: true,
+    editor: { type: 'number', min: 0 },
+    validationMode: 'reject',
+    parseClipboardValue: numberParser({ strip: ['¥', '￥', '円'], negativeParentheses: true }),
+  },
+];
+
+<SpreadsheetGrid
+  columns={columns}
+  onPasteSkipped={({ cells }) => {
+    toast(`${cells.length} 個のセルは書きませんでした`); // cells[i].reason: 'readOnly' | 'invalid'、message は検査のメッセージ
+  }}
+  ...
+/>;
+```
+
+- `numberParser` は `numberFormatter` と同じく型引数なしで使い回せます(`(raw: string) => unknown`)。
+- `onPasteSkipped` の `cells` は貼り付けた文字の順(行ごとに左から)です。`rowIndex` はビュー行(フィルター / ソート後の位置)、`rowKey` は `rowKeyGetter` の値です。serverSide(`dataSource`)では、読み込み済みの行のセルを知らせます(書いたセルは `updateRows` へ)。フィルハンドル・`Delete` で書かなかったセルは入りません。
 
 ### セルエディタ(editor)
 
@@ -2082,7 +2118,7 @@ export const OrdersTable = () => <Grid columns={columns} dataSource={dataSource}
 | `standardFeatures` | よく使う組み合わせ(プリセット): `filtering` / `columnMenu` / `toolPanel` / `columnAutosize` / `export`。ほかの機能は `{ ...standardFeatures, find: findFeature }` のように広げて足す。 |
 | `xxxFeature`(20 個) | 機能の部品。名前は「キー + `Feature`」(下の表)。中身は内部の部品なので、そのまま `features` に渡す(自分で作ったり書き換えたりしない)。 |
 | 型 `GridFeatures` / `GridFeature<K>` / `GridFeatureName` / `CreateSpreadsheetGridOptions` | `GridFeatures` は `features` の型(`{ [K in GridFeatureName]?: GridFeature<K> }`)。`GridFeature<K>` は機能の部品の型で、中身は型からは見えない(`K` はその部品を入れるキーで、違うキーへ入れると型エラー)。`GridFeatureName` は機能セットのキー(`'find'` / `'filtering'` など)。`CreateSpreadsheetGridOptions` は `createSpreadsheetGrid` の引数の型。機能の組み合わせを変数にして export するときは、`GridFeatures` を注釈してもしなくてもよい(0.65.0 から。注釈しなくても `declaration: true` の d.ts が書ける)。 |
-| `numberFormatter` / `preloadGridPopups` / `restoreColumnsFromState` と公開型すべて | 全部入りの入口と同じ名前・使い方。`preloadGridPopups` は同じ入口のグリッドの部品を読み込むので、`/lite` のグリッドには `/lite` から import したものを使う。 |
+| `numberFormatter` / `numberParser` / `preloadGridPopups` / `restoreColumnsFromState` と公開型すべて | 全部入りの入口と同じ名前・使い方。`preloadGridPopups` は同じ入口のグリッドの部品を読み込むので、`/lite` のグリッドには `/lite` から import したものを使う。 |
 
 - **props・ref ハンドル・型は全部入りと共通**。差し込んでいない機能の prop を渡したり、その機能のメソッドを呼んだりしても何もしない(落ちない)。開発ビルドでだけ、prop ごとに 1 回 `console.warn` で「`features` に `fillHandle: fillHandleFeature` を入れてください」のように足すべき機能を知らせる(本番ビルドでは出さない)。prop を持たない機能のメソッド(`exportCsv` / `downloadCsv` / `getExportData` と、`toolPanel` か `filtering` が無いときの `openFilterManager`)は、呼ばれた時点で同じように知らせる。ほかの機能のメソッド(`openFind` など)は全部入りでもその機能の prop が無いと動かないので、prop の警告で知らせる。列定義を機能違いのグリッドで共有するときは、`filtering` の無い方に `enableColumnFilter={false}` を書けば列の `filterType` の警告は出ない。
 - **全部入りで既定オンの機能は、差し込んだときだけ既定オン**: 列フィルター / グローバルフィルター(`filtering`)、列メニュー(`columnMenu`)、列のドラッグ並べ替え(`columnReorder`。`onColumnsChange` 指定時)、列境界のダブルクリックでの幅の自動調整(`columnAutosize`)、選択範囲の集計(`selectionAggregates`)、コピー範囲の点線(`motionExtras`)。これらは prop を書かずに効くので、入れなくても開発時の警告は出ない。全部入りと同じ既定の動きにするなら `{ ...standardFeatures, columnReorder: columnReorderFeature, selectionAggregates: selectionAggregatesFeature, motionExtras: motionExtrasFeature }`(`standardFeatures` に入っていないのは後ろの 3 つ)。

@@ -200,7 +200,7 @@ type Settings = {
   manualSorting: boolean;
   // 候補の非同期取得(getFilterOptions)。ON で set 列の候補を 700ms 遅延 + 先頭 3 件で打ち切って返す疑似 DB から取る。
   asyncFilterOptions: boolean;
-  // セル操作の通知(onCellClick / onCellDoubleClick / onActiveCellChange)。ON でグリッド下にイベントログを出す。
+  // セル操作の通知(onCellClick / onCellDoubleClick / onActiveCellChange / onPasteSkipped)。ON でグリッド下にイベントログを出す。
   cellEventLog: boolean;
   // セルのメモ(GridColumn.cellNote)。ON で単価 / 数量の列にメモ(右上の印 + ツールチップ)を出す。
   cellNote: boolean;
@@ -397,6 +397,7 @@ function buildSnippet(s: Settings): string {
       '  onCellClick={({ row, columnKey, event }) => log(\'click\', row.id, columnKey, event.ctrlKey)}',
       '  onCellDoubleClick={({ row, columnKey }) => log(\'dblclick\', row.id, columnKey)} // params.preventDefault() で編集開始を止める',
       '  onActiveCellChange={(cell) => log(\'active\', cell?.rowKey, cell?.columnKey)}',
+      '  onPasteSkipped={({ cells }) => log(\'pasteSkipped\', cells.length)} // 編集できないセル / reject の列で書かなかったセル',
     );
   }
   // labelRow は既定 OFF(undefined)のため、ON のときだけスニペットへ載せる。
@@ -651,6 +652,18 @@ function PlaygroundGrid({ settings }: { settings: Settings }) {
       onActiveCellChange={
         settings.cellEventLog
           ? (cell) => pushEventLog(`onActiveCellChange: ${cell ? describeCell(cell) : 'null'}`)
+          : undefined
+      }
+      // 追加(1.1.0): 貼り付けで書かなかったセル(ID のような編集できない列へ貼ると 'readOnly')。
+      onPasteSkipped={
+        settings.cellEventLog
+          ? ({ cells }) =>
+              pushEventLog(
+                `onPasteSkipped: ${cells.length} セル(${cells
+                  .slice(0, 3)
+                  .map((cell) => `${cell.columnKey}#${String(cell.rowKey)} ${cell.reason}`)
+                  .join(', ')}${cells.length > 3 ? ' …' : ''})`,
+              )
           : undefined
       }
       popupContainer={settings.popupContainer}

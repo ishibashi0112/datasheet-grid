@@ -1056,6 +1056,38 @@ export type GridInvalidCell = {
   message: string;
 };
 
+// 追加(1.1.0 / 2026-11-09 実アプリの総点検 AP-09): 貼り付けで書かなかったセル(onPasteSkipped)です。
+/**
+ * 貼り付けで書かなかったセル(`onPasteSkipped`)。`reason` は `'readOnly'`(編集できないセル = 列の `editable` /
+ * `canEditCell`)か `'invalid'`(`validationMode: 'reject'` の列で検査に通らなかった値)。
+ */
+export type GridPasteSkippedCell<T> = {
+  /** 貼り付け先の行(表の末尾に足した行を含む)。 */
+  row: T;
+  /** 行のキー(`rowKeyGetter`。無ければ `rows` の index)。 */
+  rowKey: GridRowKey;
+  /** ビュー行 index(フィルター / ソート後の位置。末尾に足した行は足した後の位置)。 */
+  rowIndex: number;
+  /** 列の key。 */
+  columnKey: string;
+  /** 表示列の index(合成列を含む画面の並び)。 */
+  colIndex: number;
+  /** 貼り付けた文字(そのセルの 1 つぶん)。 */
+  text: string;
+  /** 書かなかったわけ。 */
+  reason: 'readOnly' | 'invalid';
+  /** `'invalid'` のとき、列のパーサが読んだ値(`'readOnly'` では読まないので `undefined`)。 */
+  value?: unknown;
+  /** `'invalid'` のときの検査のメッセージ。 */
+  message?: string | undefined;
+};
+
+/** `onPasteSkipped` の引数。 */
+export type GridPasteSkippedParams<T> = {
+  /** 書かなかったセル(貼り付けた文字の順。行ごとに左から)。 */
+  cells: GridPasteSkippedCell<T>[];
+};
+
 // 追加(validation): エディタ commit の結果です。'rejected' は reject 列の検証 NG
 //   (確定拒否・エディタ継続)、'noop' は二重発火ガード等で何もしなかったことを表します。
 export type EditorCommitResult =
@@ -1477,7 +1509,9 @@ export type GridColumn<T, F extends GridFrameworkTypes = GridFrameworkTypes> = {
   /**
    * 「文字列 → セル値」のパーサ(貼り付け / クリア / エディタ commit
    * で共通)。**明示指定が常に優先**。未指定で `editor` が number / date / checkbox
-   * のときは種別の既定パーサが自動供給されます(「セルエディタ」節の表参照)。
+   * のときは種別の既定パーサが自動供給されます(「セルエディタ」節の表参照)。number
+   * の既定と同じ読み方に通貨記号などを足すときは組み込みの `numberParser({ strip })`(1.1.0 から。
+   * 「貼り付けで読めない値」節)。
    *
    * @defaultValue editor 既定パーサ
    */
@@ -3485,6 +3519,18 @@ export type SpreadsheetGridProps<T, F extends GridFrameworkTypes = GridFramework
    * と一緒に使う)。
    */
   createOverflowColumn?: ((columnIndex: number) => GridColumn<T, F>) | undefined;
+  // 追加(1.1.0 / AP-09): 貼り付けで書かなかったセルの通知です(1 回の貼り付けで 1 回。書かなかったセルが無ければ呼ばない)。
+  /**
+   * 貼り付けで書かなかったセルの通知(1.1.0 から)。1 回の貼り付けで 1 回、
+   * 書かなかったセルがあるときだけ呼ぶ(書いたセルは書く)。`params.cells` の各セルは `row` /
+   * `rowKey` / `rowIndex`(ビュー行)/ `columnKey` / `colIndex` / `text`(貼り付けた文字)/
+   * `reason`(`'readOnly'` = 編集できないセル(列の `editable` / `canEditCell`)、`'invalid'` =
+   * `validationMode: 'reject'` の列で検査に通らない値)/ `value`(`'invalid'` のときパーサが読んだ値)
+   * / `message`(`'invalid'` のときの検査のメッセージ)。`validationMode: 'mark'`(既定)
+   * の列は書いて印を付けるので入らない。表の外(`createRow` / `createOverflowColumn`
+   * が無くて足せない行 / 列)・ラベル行・グループ行は数えない。詳細は「貼り付けで読めない値」節。
+   */
+  onPasteSkipped?: ((params: GridPasteSkippedParams<T>) => void) | undefined;
   // 変更(THEME-2): 未指定時の既定は density プリセットから解決します(standard: 36 /
   //   compact: 28 / comfortable: 44)。明示指定はプリセットより常に優先されます。
   /**

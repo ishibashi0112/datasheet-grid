@@ -22,6 +22,8 @@
   - 列の `groupLabel`(`'value'` / `'formatted'` / 関数): グループ行の見出しを列の `valueFormatter` の表示名にできます(これまではいつも値の文字で、「chubu (2,563件)」のように出ていました)。
   - `globalFilterMatch`(`'value'` / `'display'` / `'both'`)と型 `GridGlobalFilterMatch`: グローバルフィルターで画面の文字(`valueFormatter` の結果)でも探せます(これまでは値の文字だけで、「関東」「43,340」で探すと 0 件でした)。clientSide だけです。
   - select エディタの `clipboard: 'label'`: コピー・CSV / TSV・`getExportData` の `text` を候補の label にし、貼り付けた label を value へ読み替えます(これまでは貼り付けた表示名がそのまま値に入っていました)。
+- 列の `parseClipboardValue` に渡す組み込みの数値のパーサ `numberParser({ strip, negativeParentheses })` と型 `NumberParserOptions`(React 版の `.` / `/lite` と core の入口)。number エディタの既定のパーサと同じ読み方(全角の数字・3 桁区切り、空白だけは `null`、読めない文字は元のまま)に、通貨記号や単位を先に外す `strip`(`['¥', '円']` など)と、`(1,200)` を `-1200` と読む `negativeParentheses` を足せます(これまでは「¥12,000」を貼ると reject の列では黙って飛ばされ、自前のパーサを書くと全角の読み方が使えませんでした)。
+- 貼り付けで書かなかったセルを知らせる `onPasteSkipped`(型 `GridPasteSkippedCell` / `GridPasteSkippedParams`)。編集できないセル(`reason: 'readOnly'`)と、`validationMode: 'reject'` の列で検査に通らなかった値(`'invalid'`。`message` は検査のメッセージ)を、1 回の貼り付けにつき 1 回まとめて渡します。clientSide と serverSide の両方です。
 
 ### 変更
 

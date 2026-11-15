@@ -44,7 +44,7 @@ description: 列定義(GridColumn<T>)・エディタ・バリデーション・�
 | `editor` | `GridColumnEditor<T>` | text 相当 | セルエディタ種別(判別共用体)。`{ type: 'text' \| 'number' \| 'select' \| 'date' \| 'checkbox' \| 'custom', ... }`。詳細は「セルエディタ」節。 |
 | `validate` | `(ctx: CellValidationContext<T>) => CellValidationResult` | — | セル値の検証。`true`=有効 / `false`=無効(既定メッセージ)/ `string`・`{ message }`=無効+メッセージ。**純粋・軽量であること**(描画中の可視セルごとに毎レンダー評価。`cellClassName` 関数と同コスト階級)。number エディタの `min` / `max` / `integer` の検査は `validate` の後(`validate` の NG はそのメッセージ、通した値だけ組み込みの検査)。詳細は「バリデーション」節。 |
 | `validationMode` | `'mark' \| 'reject'` | `'mark'` | 検証 NG 時の動作。`'mark'`=値は入るがセルに invalid 表示 / `'reject'`=書き込み自体を拒否。 |
-| `parseClipboardValue` | `(raw: string, row: T) => unknown` | editor 既定パーサ | 「文字列 → セル値」のパーサ(貼り付け / クリア / エディタ commit で共通)。**明示指定が常に優先**。未指定で `editor` が number / date / checkbox のときは種別の既定パーサが自動供給されます(「セルエディタ」節の表参照)。 |
+| `parseClipboardValue` | `(raw: string, row: T) => unknown` | editor 既定パーサ | 「文字列 → セル値」のパーサ(貼り付け / クリア / エディタ commit で共通)。**明示指定が常に優先**。未指定で `editor` が number / date / checkbox のときは種別の既定パーサが自動供給されます(「セルエディタ」節の表参照)。number の既定と同じ読み方に通貨記号などを足すときは組み込みの `numberParser({ strip })`(1.1.0 から。「貼り付けで読めない値」節)。 |
 | `formatClipboardValue` | `(value: unknown, row: T) => string` | — | コピー時のフォーマッタ(CSV / TSV と `getExportData` の `text` も同じ)。未指定で select エディタの `clipboard: 'label'` の列は候補の label(1.1.0 から)。 |
 
 ### 値フォーマッタ(UI 表示)
@@ -62,6 +62,41 @@ const columns = [
   { key: 'amount', title: '金額', width: 140, align: 'right', valueFormatter: numberFormatter() },
 ];
 ```
+
+### 貼り付けで読めない値(`numberParser` / `onPasteSkipped`)
+
+Excel の通貨書式のセル(「¥12,000」「12,000円」「(1,200)」)は、number 列の既定のパーサでは数値として読めません。読めない文字は、`validationMode: 'mark'`(既定)の列では文字のまま入って印が付き、`'reject'` の列では書きません。1.1.0 から、次の 2 つで扱えます。
+
+- **`numberParser(options?)`** — number エディタの既定のパーサと同じ読み方(空・空白だけは `null`、全角の数字・符号・小数点と 3 桁区切りも読む、読めない文字は元の文字のまま)の「文字列 → 数値」のパーサを作ります。列の `parseClipboardValue` に渡します(貼り付け / Delete / エディタの確定で共通)。`strip` に先に外す文字(通貨記号や単位)、`negativeParentheses: true` でかっこの数(`(1,200)` / `（1,200）`)を負の数として読みます。
+- **`onPasteSkipped`** — 貼り付けで書かなかったセル(編集できないセルと、`'reject'` の列で検査に通らない値)を、1 回の貼り付けで 1 回知らせます。トーストで件数を出す、メッセージを並べる、などに使います。
+
+```tsx
+import { SpreadsheetGrid, numberParser } from '@ishibashi0112/spreadsheet-grid';
+
+const columns: GridColumn<Expense>[] = [
+  {
+    key: 'amount',
+    title: '金額',
+    width: 120,
+    align: 'right',
+    editable: true,
+    editor: { type: 'number', min: 0 },
+    validationMode: 'reject',
+    parseClipboardValue: numberParser({ strip: ['¥', '￥', '円'], negativeParentheses: true }),
+  },
+];
+
+<SpreadsheetGrid
+  columns={columns}
+  onPasteSkipped={({ cells }) => {
+    toast(`${cells.length} 個のセルは書きませんでした`); // cells[i].reason: 'readOnly' | 'invalid'、message は検査のメッセージ
+  }}
+  ...
+/>;
+```
+
+- `numberParser` は `numberFormatter` と同じく型引数なしで使い回せます(`(raw: string) => unknown`)。
+- `onPasteSkipped` の `cells` は貼り付けた文字の順(行ごとに左から)です。`rowIndex` はビュー行(フィルター / ソート後の位置)、`rowKey` は `rowKeyGetter` の値です。serverSide(`dataSource`)では、読み込み済みの行のセルを知らせます(書いたセルは `updateRows` へ)。フィルハンドル・`Delete` で書かなかったセルは入りません。
 
 ### セルエディタ(editor)
 

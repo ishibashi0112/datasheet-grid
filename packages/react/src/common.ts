@@ -4,6 +4,8 @@
 //   読み込みます。
 // 値フォーマッタ(UI 表示のみ)の組み込みファクタ。利用側も CellValueFormatter で自作可。
 export { numberFormatter } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/valueFormatters';
+// 追加(1.1.0 / AP-09): 組み込みの数値のパーサ(列の parseClipboardValue に渡す)。
+export { numberParser } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/valueParsers';
 // 追加(段階 2 の確かめ直し): 保存した状態(getState() の値)の列の並び / 表示 / 固定を列定義へ当てます(initialState と一緒に使う)。
 export { restoreColumnsFromState } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/gridState';
 // 追加(lazy-popups): 列フィルターポップオーバー / ツールパネルの部品(別チャンク)を先に読み込みます
@@ -193,6 +195,9 @@ export type {
   GridPopupContainer,
   // 追加(1.1.0 / AP-08): グローバルフィルターが照らし合わせる文字(globalFilterMatch)。
   GridGlobalFilterMatch,
+  // 追加(1.1.0 / AP-09): 貼り付けで書かなかったセルの通知(onPasteSkipped)。
+  GridPasteSkippedCell,
+  GridPasteSkippedParams,
   // 追加(F-2): セル内検索のオプションと通知引数。
   FindOptions,
   FindChangeParams,
@@ -218,3 +223,4 @@ export type {
   ScrollHintRenderArgs,
 } from './model/gridTypes';
 export type { NumberFormatterOptions } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/valueFormatters';
+export type { NumberParserOptions } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/valueParsers';

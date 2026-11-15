@@ -54,14 +54,14 @@
 | AP-04 | H-02 | グループ行をまたいで貼ると値が落ちてずれる(ラベル行だけ飛ばしている) | 1.0.1 | 済(貼り付けと選択) |
 | AP-05 | K-01 | 速い入力で Enter / Tab の直後のキーが消える(次のフレームまでフォーカスが body) | 1.0.1 | 済(フォーカスとキー操作) |
 | AP-06 | D-01 / D-05 | Next.js 16 の既定(cacheComponents)で Suspense の外だと `next build` が止まる(`createDateRolloverStore` の `new Date()`) | 1.0.1 | 済(日付の境目) |
-| AP-07 | J-01 | モーダルの Dialog の中でポップアップを押せない / 後ろに隠れる | 1.1.0 | 未着手 |
+| AP-07 | J-01 | モーダルの Dialog の中でポップアップを押せない / 後ろに隠れる | 1.1.0 | 済(1.1.0 の作業の表) |
 
 ### 中(31 件)
 
 | ID | 元の ID | 内容 | 対応 | 版 | 状況 |
 | --- | --- | --- | --- | --- | --- |
-| AP-08 | A-03 / I-01 / I-02 | 値と表示名が別の列: グループの見出しがコード、全体フィルターが表示の文字で当たらない、表示名を貼るとそのまま入る | 選択肢を足す | 1.1.0 | 未着手 |
-| AP-09 | A-06 | number 列に「¥12,000」等を貼ると黙って飛ばす / 文字列で入る | 数値パーサの公開 + 飛ばしたセルの通知 | 1.1.0 | 未着手 |
+| AP-08 | A-03 / I-01 / I-02 | 値と表示名が別の列: グループの見出しがコード、全体フィルターが表示の文字で当たらない、表示名を貼るとそのまま入る | 選択肢を足す | 1.1.0 | 済(1.1.0 の作業の表) |
+| AP-09 | A-06 | number 列に「¥12,000」等を貼ると黙って飛ばす / 文字列で入る | 数値パーサの公開 + 飛ばしたセルの通知 | 1.1.0 | 済(1.1.0 の作業の表) |
 | AP-10 | F-01 | 右クリックメニューの `onSelect` で `startEditing()` が開かない | 直す | 1.0.1 | 済(フォーカスとキー操作) |
 | AP-11 | E-03 | custom エディタを開いたまま別のセルを押すとエディタが残り、キーが効かない | 直す → 文書 | 1.0.1 | 文書(押したときに終える修正はレビューの RA-3 で戻した。onBlur で非同期に確定する作りの値が消えるため。custom エディタは onBlur で `ctx.commit` / `ctx.cancel` を呼ぶ、とドキュメントに。遅れた確定も受ける形は 1.1.0 で検討) |
 | AP-12 | J-04 | 編集中のアンマウントで打っていた値が捨てられる(隠したときは確定) | 直す → 文書 | 1.0.1 | 文書(外れたら確定する修正はレビューの RA-1 で戻した。外れたグリッドは親の新しい rows を知らないため。外す前に `blur()` で確定する書き方を editing ガイドに) |
@@ -377,8 +377,8 @@ pack した 1.0.1 の候補(2026-11-09 の tarball と中身が同じ。レビ�
 | --- | --- | --- | --- |
 | 読み上げとキーボード | AP-33 / RV2-L1 / RV2-L2 | `Shift+F10` / メニューキーでアクティブセルの右クリックメニュー(core `keyboardController` の `openContextMenu`、シェルの `openContextMenuForCell` = セルの左下、先頭の項目へフォーカス。続けて来るキーボードの contextmenu(Chrome は button が -1、対象はシェルか入力受け)は止めるだけ、keydown なしで来たらそこで開く)。マウスで開いた列メニュー / 右クリックメニューはパネルへフォーカス(core `popoverSupport` の `focusPanelIfIdle`)。列メニューに `role="menu"` / `menuitem` / `menuitemradio` + `aria-checked` / `separator`、`⋮` に `aria-haspopup` / `aria-expanded`。ツールパネルは `role="dialog"` + `localeText.toolPanelLabel`、開いたら選ばれているタブへ、`Tab` は中で回す。ラベル行は中身の欄を `role="rowheader"`、行番号の欄と中身の無いペインの帯は `aria-hidden` | 済(16c26e8) |
 | ダイアログの中のポップアップ | AP-07 | prop `popupContainer`(型 `GridPopupContainer` = `'auto'`(既定)/ `'body'` / 要素 / 関数)。`'auto'` はグリッドを囲む `<dialog>` / `[popover]` / `aria-modal="true"` / `role="dialog"`・`"alertdialog"` の中へ、無ければ今までどおり body(core `utils/popupContainer`)。React のポップアップ 7 つは `PopupContainerContext` + `usePopupContainer` で createPortal の先を、ツールチップとドラッグのゴーストはシェルが登録した表から引く。描く場所の祖先の transform で fixed の基準がずれる分は `translate` で打ち消す(`syncPopupOrigin`。拡大縮小は打ち消さない)。ガイド guides/dialogs + デモ。ハーネス `t-popups.mjs`(素の `<dialog>` と Radix の模擬、Chromium 37 / 37) | 済(900ac6d) |
-| 値と表示名 | AP-08 | 既定は変えずに 3 つ: 列の `groupLabel`(`'formatted'` = valueFormatter / 関数。core `logic/grouping` の `resolveGroupLabel`)、prop `globalFilterMatch`(`'display'` / `'both'`。valueFormatter のある列の getValue を照らし合わせる文字に替えた列 = core `logic/filtering` の `toGlobalFilterColumns`、フィルターの機能の hook で掛ける。clientSide だけ)、select エディタの `clipboard: 'label'`(core `logic/selectLabels`。コピー / CSV / getExportData / 小計の行の文字と貼り付けのパーサ。formatClipboardValue / parseClipboardValue が勝つ)。ガイド guides/value-labels + デモ、プレイグラウンドに globalFilterMatch | 作業中 |
-| 数値の読み取りと貼り付け | AP-09 | 数値パーサの公開 + 貼り付けで飛ばしたセルの通知 | 未着手 |
+| 値と表示名 | AP-08 | 既定は変えずに 3 つ: 列の `groupLabel`(`'formatted'` = valueFormatter / 関数。core `logic/grouping` の `resolveGroupLabel`)、prop `globalFilterMatch`(`'display'` / `'both'`。valueFormatter のある列の getValue を照らし合わせる文字に替えた列 = core `logic/filtering` の `toGlobalFilterColumns`、フィルターの機能の hook で掛ける。clientSide だけ)、select エディタの `clipboard: 'label'`(core `logic/selectLabels`。コピー / CSV / getExportData / 小計の行の文字と貼り付けのパーサ。formatClipboardValue / parseClipboardValue が勝つ)。ガイド guides/value-labels + デモ、プレイグラウンドに globalFilterMatch | 済(8403bb6) |
+| 数値の読み取りと貼り付け | AP-09 | 列の `parseClipboardValue` に渡す組み込みのパーサ `numberParser({ strip, negativeParentheses })`(core `logic/valueParsers`。number エディタの既定と同じ読み方 = 全角・3 桁区切り、空白だけは null、読めない文字は元のまま。core の入口と React 版の `.` / `/lite` から公開)。prop `onPasteSkipped({ cells })`(型 `GridPasteSkippedCell` / `GridPasteSkippedParams`): 1 回の貼り付けで書かなかったセル(`'readOnly'` = 編集できない / `'invalid'` = reject の列で検査に通らない。`value` は読み替えた値、`message` は検査のメッセージ = `localeText` の言語)を 1 回だけ知らせる。core `utils/clipboard` の `applyClipboardMatrixToRows` / `buildClipboardCellEdits` の `onSkip`、`controllers/clipboardController` が clientSide(足した行を含む)と serverSide で集める。フィルハンドルと Delete は対象外(文書)。プレイグラウンドのイベントログ | 済(この表を更新したコミット) |
 | 外からの更新と元に戻す | AP-14 | `applyRows` に履歴に積まない選択肢 | 未着手 |
 | ピン留め行 | — | `pinnedRows`(上 / 下に固定する別のデータの行。表示だけ)、デモ・プレイグラウンド・ガイド | 未着手 |
 | 確かめ | — | 別視点のレビュー 2 系統・3 ブラウザのハーネス・12 本のアプリで確かめ直し・サイズの上限を実測 + 0.5KB へ | 未着手 |
