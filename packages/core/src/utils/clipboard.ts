@@ -7,6 +7,7 @@ import {
 } from '../model/gridSelectors';
 import { getCellValue, setCellValue } from './permissions';
 import { resolveCellParser } from '../logic/editorValues';
+import { formatCellClipboardText } from '../logic/selectLabels';
 import { decideCellWrite } from '../logic/validation';
 import { isSyntheticColumnKey } from '../logic/detailRow';
 
@@ -136,10 +137,9 @@ export const resolvePasteColumnIndexes = <T,>(
 };
 
 // コピーするセルの文字列(formatClipboardValue があればその返り値、無ければ生値の文字列)。
-export const formatClipboardCell = <T,>(row: T, column: GridColumn<T>): string => {
-  const rawValue = getCellValue(row, column);
-  return column.formatClipboardValue ? column.formatClipboardValue(rawValue, row) : String(rawValue ?? '');
-};
+// 変更(1.1.0 / AP-08): select エディタの `clipboard: 'label'` の列は候補の label(logic/selectLabels)。
+export const formatClipboardCell = <T,>(row: T, column: GridColumn<T>): string =>
+  formatCellClipboardText(column, getCellValue(row, column), row);
 
 // 追加(FC-03): 全体選択のコピー(と行選択)で出す列。合成列を除きます。
 export const filterClipboardColumns = <T,>(columns: GridColumn<T>[]): GridColumn<T>[] =>

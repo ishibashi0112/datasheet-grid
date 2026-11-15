@@ -39,6 +39,7 @@ import type {
   GridLocaleText,
   GridUiState,
   GlobalFilterStatus,
+  GridGlobalFilterMatch,
   RowModel,
   SpreadsheetGridProps,
 } from '../model/gridTypes';
@@ -119,6 +120,8 @@ export type FilterOrderFeatureArgs<T> = {
   visibleColumns: GridColumn<T>[];
   effectiveColumns: GridColumn<T>[];
   globalFilterText: string;
+  // 追加(1.1.0 / AP-08): グローバルフィルターが照らし合わせる文字(globalFilterMatch。省略は 'value')。
+  globalFilterMatch?: GridGlobalFilterMatch | undefined;
   // 追加(dogfood DF-18): 検索の文字を遅らせずに評価するとき true(applyState で入れたフィルター)。
   globalFilterUrgent?: boolean | undefined;
   globalFilterEnabled: boolean;

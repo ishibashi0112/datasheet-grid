@@ -966,6 +966,18 @@ export type GridColumnEditor<T, F extends GridFrameworkTypes = GridFrameworkType
       options:
         | GridSelectEditorOption[]
         | ((row: T) => GridSelectEditorOption[]);
+      // 追加(1.1.0 / 2026-11-09 実アプリの総点検 AP-08): クリップボードとのやり取りの文字です。'value'(既定)は値のまま、
+      //   'label' はコピー / CSV / getExportData の text を候補の label にし、貼り付けた文字が label なら value へ読み替えます
+      //   (value はそのまま通す。どちらでもない文字は生のまま)。列の formatClipboardValue / parseClipboardValue があれば
+      //   そちらが勝ちます(logic/selectLabels.ts)。
+      /**
+       * クリップボードとのやり取りの文字(1.1.0 から)。`'value'`(既定)は値のまま。`'label'` はコピー / CSV / TSV /
+       * `getExportData` の `text` を候補の label にし、貼り付けた文字が label ならその value へ読み替える(value はそのまま、
+       * どちらでもない文字は生のまま)。列の `formatClipboardValue` / `parseClipboardValue` があればそちらが勝つ。
+       *
+       * @defaultValue `'value'`
+       */
+      clipboard?: 'value' | 'label' | undefined;
     }
   | {
       // 日付エディタ(ネイティブ <input type="date">)。ドラフトは 'YYYY-MM-DD' | ''。
@@ -1081,6 +1093,7 @@ export type GridGroupRow = {
   // グループ値です(空白グループは null)。
   value: unknown;
   // 表示ラベルです(String(value)。空白グループは '(空白)')。
+  //   変更(1.1.0 / AP-08): 列の groupLabel が 'formatted' / 関数なら、その文字です。
   label: string;
   // グループ階層です(最上位 0)。
   level: number;
@@ -1260,6 +1273,18 @@ export type GridColumn<T, F extends GridFrameworkTypes = GridFrameworkTypes> = {
    * もないときは無視。
    */
   aggFunc?: GridAggFuncName | GridAggFunc<T, F> | undefined;
+  // 追加(1.1.0 / 2026-11-09 実アプリの総点検 AP-08): グループ行の見出しの文字です(既定 'value' = String(値))。
+  //   'formatted' は列の valueFormatter、関数はその返り値(row はそのグループの最初の行)。空白のグループは「(空白)」のまま。
+  /**
+   * 行グルーピングのグループ行の見出しの文字(1.1.0 から)。`'value'` は値の文字(1.0 までと同じ)、
+   * `'formatted'` は列の `valueFormatter`(セルと同じ表示名。無ければ値の文字)、
+   * 関数はその返り値(`row` はそのグループの最初の行)。空白のグループは「(空白)」のまま。
+   * エクスポートの小計の行の見出しはコピーと同じ規則(`formatClipboardValue`)。
+   * 詳細は「値と表示名が別の列」節。
+   *
+   * @defaultValue `'value'`
+   */
+  groupLabel?: 'value' | 'formatted' | CellValueFormatter<T, F> | undefined;
   /**
    * 値アクセサ。`setValue` の無い列へ書き込むと値は `row[key]` へ入り、表示(`getValue`)
    * は変わらない。計算列は `editable: false` にするか `setValue` を渡す(開発時は、
@@ -1347,7 +1372,9 @@ export type GridColumn<T, F extends GridFrameworkTypes = GridFrameworkTypes> = {
   //   組み込みの numberFormatter 等を渡せます(バレルから公開)。
   /**
    * セル表示値の整形(UI 表示のみ)。`renderCell` 未指定の既定セルが返り値を表示。組み込み
-   * `numberFormatter` 等を渡せる。元の値/編集/コピー/ソート/フィルターには影響しない。
+   * `numberFormatter` 等を渡せる。
+   * 元の値/編集/コピー/ソート/フィルターには影響しない(全体フィルターは `globalFilterMatch`、
+   * グループ行の見出しは `groupLabel: 'formatted'` で使える。1.1.0 から)。
    * グループ行の集計値と合計行の値の整形にも使い、そのときは元の行が無いので `row` は
    * `undefined`(型は `T | undefined`。`row` を読むときは `row?.x` と書く)。
    */
@@ -1455,7 +1482,10 @@ export type GridColumn<T, F extends GridFrameworkTypes = GridFrameworkTypes> = {
    * @defaultValue editor 既定パーサ
    */
   parseClipboardValue?: ((raw: string, row: T) => unknown) | undefined;
-  /** コピー時のフォーマッタ。 */
+  /**
+   * コピー時のフォーマッタ(CSV / TSV と `getExportData` の `text` も同じ)。未指定で select
+   * エディタの `clipboard: 'label'` の列は候補の label(1.1.0 から)。
+   */
   formatClipboardValue?: ((value: unknown, row: T) => string) | undefined;
 };
 
@@ -3158,6 +3188,13 @@ export type GridPopupContainer =
   | HTMLElement
   | ((gridElement: HTMLElement) => HTMLElement | null | undefined);
 
+// 追加(1.1.0 / 2026-11-09 実アプリの総点検 AP-08): グローバルフィルターが照らし合わせる文字です。
+/**
+ * グローバルフィルターが照らし合わせる文字(`globalFilterMatch`)。`'value'` はセルの値の文字(1.0 までと同じ)、
+ * `'display'` は画面の文字(列の `valueFormatter` の結果。無い列は値の文字)、`'both'` はどちらか。
+ */
+export type GridGlobalFilterMatch = 'value' | 'display' | 'both';
+
 // 追加: データ投入時に全列幅を内容へ自動フィットさせる発火モードです。
 //   'onMount'      = 初回にデータが載った一度きり。
 //   'onDataChange' = rows(参照)が変わるたび(= データ差し替えのたび)。手動リサイズは上書きされます。
@@ -3909,6 +3946,18 @@ export type SpreadsheetGridProps<T, F extends GridFrameworkTypes = GridFramework
    * @defaultValue `true`
    */
   enableGlobalFilter?: boolean | undefined;
+  // 追加(1.1.0 / AP-08): グローバルフィルターが照らし合わせる文字です(既定 'value' = 値の文字)。
+  /**
+   * グローバルフィルターが照らし合わせる文字(1.1.0 から)。`'value'` はセルの値の文字(1.0
+   * までと同じ)、`'display'` は画面の文字(列の `valueFormatter` の結果。無い列は値の文字)、`'both'`
+   * はどちらか(値と表示名が別の列で、コードでも表示名でも探せる)。状態チップの
+   * `label`・`renderCell` の中身は見ない。clientSide だけ(serverSide
+   * ではグローバルフィルターの文字をサーバーへ渡すだけ。`manualFiltering` でも絞り込まない)。
+   * 詳細は「値と表示名が別の列」節。
+   *
+   * @defaultValue `'value'`
+   */
+  globalFilterMatch?: GridGlobalFilterMatch | undefined;
   /**
    * 列ごとのフィルター。
    *

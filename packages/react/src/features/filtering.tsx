@@ -29,6 +29,7 @@ import {
   isSetColumnFilterValue,
   resolveRelativeDateFilterKey,
   toDateSetKey,
+  toGlobalFilterColumns,
 } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/filtering';
 import {
   createColumnFilterDescribeOptions,
@@ -74,6 +75,7 @@ const useFilterOrder = <T,>({
   visibleColumns,
   effectiveColumns,
   globalFilterText,
+  globalFilterMatch,
   globalFilterUrgent,
   globalFilterEnabled,
   columnFilterEnabled,
@@ -83,6 +85,12 @@ const useFilterOrder = <T,>({
   isServerSide,
   dateRollover,
 }: FilterOrderFeatureArgs<T>): FilterOrderFeatureResult => {
+  // 追加(1.1.0 / 2026-11-09 実アプリの総点検 AP-08): 'display' / 'both' では valueFormatter の画面の文字でも照らし合わせます
+  //   (core logic/filtering の toGlobalFilterColumns。'value' と valueFormatter の無い表は列の参照も同じ = 結果の控えが続く)。
+  const globalFilterColumns = useMemo(
+    () => toGlobalFilterColumns(visibleColumns, globalFilterMatch),
+    [visibleColumns, globalFilterMatch],
+  );
   // 変更(F-async): globalFilteredOrder の同期 useMemo を時間分割フックへ差し替えます。
   //   返り値の order は「現在表示すべきビュー順」で、計算中は前回確定 order を維持します
   //   (= 下流 columnFiltered / sorted / rowModel は order 参照が安定する限りスキップ＝
@@ -95,7 +103,7 @@ const useFilterOrder = <T,>({
   } = useGlobalFilteredOrder({
     rows,
     baseOrder,
-    columns: visibleColumns,
+    columns: globalFilterColumns,
     globalText: globalFilterText,
     // 追加(dogfood DF-18): applyState で入れた検索は遅らせずに評価します。
     urgent: globalFilterUrgent,

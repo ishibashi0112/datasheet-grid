@@ -57,6 +57,7 @@
 | `selectedRowKeys` | `GridRowKey[]` | — | controlled 簡易版(`{ type:'include', rowKeys }` の糖衣)。`rowSelection` と併用時は `rowSelection` を優先。全選択(exclude)は表現不可。 |
 | `onRowSelectionChange` | `(model: RowSelectionModel) => void` | — | 行選択変化の通知(controlled/uncontrolled いずれでも発火)。通知の中でハンドルの `getSelectedRowKeys()` / `getSelectedRowData()` / `getSelectedRowCount()` などを呼ぶと、新しい選択を返す。 |
 | `enableGlobalFilter` | `boolean` | `true` | グローバルフィルター**機能**の有効化。`false` で機能が無効になり、既定トップバーのフィルター入力欄も出ない(summary は `showTopBarSummary` に従う。トップバー自体を消すには `showTopBar=false`)。 |
+| `globalFilterMatch` | `'value' \| 'display' \| 'both'` | `'value'` | グローバルフィルターが照らし合わせる文字(1.1.0 から)。`'value'` はセルの値の文字(1.0 までと同じ)、`'display'` は画面の文字(列の `valueFormatter` の結果。無い列は値の文字)、`'both'` はどちらか(値と表示名が別の列で、コードでも表示名でも探せる)。状態チップの `label`・`renderCell` の中身は見ない。clientSide だけ(serverSide ではグローバルフィルターの文字をサーバーへ渡すだけ。`manualFiltering` でも絞り込まない)。詳細は「値と表示名が別の列」節。 |
 | `enableColumnFilter` | `boolean` | `true` | 列ごとのフィルター。 |
 | `renderFilterDateInput` | `(ctx: FilterDateInputContext) => ReactNode` | 内製の日付フィールド | dateSet フィルター条件の日付入力を利用側コンポーネント(Mantine `DatePickerInput` 等)へ差し替えるスロット。既定は内製フィールド(自由入力 + ドリルアップカレンダー。下記「dateSet の日付入力(既定 UI)」節)。詳細は「日付入力の差し替え(renderFilterDateInput)」節。 |
 | `getFilterOptions` | `(params: GetFilterOptionsParams<T>) => Promise<{ options: GridSelectFilterOption[]; truncated?: boolean }>` | — | set / select / 複合(numberSet / textSet / dateSet)列の候補を**非同期に供給**する(DB の DISTINCT など)。popover を開くたびに `{ columnKey, column, columnFilters(自列を除く他列の有効フィルター), globalText, signal }` で呼ばれ、閉じる / 列切替で `signal` が abort される(ライブラリはキャッシュしない)。読み込み中 / 失敗(再試行)/ 打ち切り(`truncated`)の表示は popover が持つ。優先順位は `column.filterOptions`(静的)> `getFilterOptions` > rows 自動収集。非同期候補の列は反転(exclude)可。clientSide / serverSide 両対応。詳細は「ソートとフィルター」ガイド。 |
@@ -913,12 +914,13 @@ WAI-ARIA の grid パターンに沿って、表・行・セルに役割と状�
 | `pinned` | `'left' \| 'right'` | undefined = 中央スクロール | 列固定の方向。固定列(行番号の列を含む)の合計が広すぎて中央に 120px を残せない間は、右の固定列の内側から、次に左の固定列の内側から順に、表示の上だけ固定を外して中央でスクロールさせる(`columns` の `pinned` は変えず、広くなれば固定に戻る。スマホの幅で右の固定列が左の固定列に重なり、中央が見えなかったため。1.0.1 から)。列の合計幅が表の幅より狭いときは、右の固定列は表の右端ではなく中央の列のすぐ右に付く(右端に置きたいときは中央の列のどれかに `flex` を付けて余りの幅を埋める)。 |
 | `rowGroup` | `boolean` | — | `true` でこの列を行グルーピングの対象にする(複数指定時は `columns` 配列の出現順が階層順)。有効時はグループ元列が表示から外れ、先頭に自動グループ列(ツリー表示)が注入される。**clientSide 限定**(serverSide では無視 + 開発時警告)。列のどれかに `rowGroup` を書いている(`false` を含む)表では、列メニューに「この列でグループ化」/「グループ化を外す」が出る(`onColumnsChange` が要る。`rowGroup` を書いた列だけでなく、集計のある列と最後のデータ列を除くすべての列に出る)。詳細は「行グルーピング + 集計」節。 |
 | `aggFunc` | `'sum' \| 'min' \| 'max' \| 'avg' \| 'count' \| GridAggFunc<T>` | — | グルーピング時と合計行(`totalRow`)のこの列の集計。組み込みは数値と数値の文字列だけを数える集計(空値・空白だけの文字列・`true` / `false`・`Date`・配列などは対象外、`count` は配下 leaf 行数 / 合計行では対象の行数)。関数でカスタム集計可(返り値がグループ行 / 合計行に表示)。`rowGroup` 列も `totalRow` もないときは無視。 |
+| `groupLabel` | `'value' \| 'formatted' \| CellValueFormatter<T>` | `'value'` | 行グルーピングのグループ行の見出しの文字(1.1.0 から)。`'value'` は値の文字(1.0 までと同じ)、`'formatted'` は列の `valueFormatter`(セルと同じ表示名。無ければ値の文字)、関数はその返り値(`row` はそのグループの最初の行)。空白のグループは「(空白)」のまま。エクスポートの小計の行の見出しはコピーと同じ規則(`formatClipboardValue`)。詳細は「値と表示名が別の列」節。 |
 | `getValue` | `(row: T) => unknown` | `row[key]` | 値アクセサ。`setValue` の無い列へ書き込むと値は `row[key]` へ入り、表示(`getValue`)は変わらない。計算列は `editable: false` にするか `setValue` を渡す(開発時は、行に無いプロパティを足した列ごとに 1 回 console.warn)。 |
 | `setValue` | `(row: T, value: unknown) => T` | — | 値ライター(新しい行を返す)。 |
 | `renderCell` | `(ctx: CellRenderContext<T>) => ReactNode` | プレーン `<span>` | カスタムセル描画。 |
 | `align` | `'left' \| 'center' \| 'right'` | `'left'` | セル内容の水平寄せ(UI 表示のみ・元の値は不変)。セル表示と編集 input に反映。 |
 | `headerAlign` | `'left' \| 'center' \| 'right'` | `align` と同じ | 列見出しの水平寄せ(書かなければ `align` に合わせる。見出しだけ変えたい列に書く)。`'right'` は並びを鏡写しにする(並べ替えの矢印とフィルターの印をラベルの左、ホバーで出る grip と ⋮ も左)。`'center'` は文字だけ中央で、印と操作は右(印が出ているときは印を除いた幅の中で中央)。`renderHeader` の中身にも効く(器の `text-align`)。列幅の自動調整の見出しの幅は変わらない。 |
-| `valueFormatter` | `(params: CellValueFormatterParams<T>) => string` | — | セル表示値の整形(UI 表示のみ)。`renderCell` 未指定の既定セルが返り値を表示。組み込み `numberFormatter` 等を渡せる。元の値/編集/コピー/ソート/フィルターには影響しない。グループ行の集計値と合計行の値の整形にも使い、そのときは元の行が無いので `row` は `undefined`(型は `T \| undefined`。`row` を読むときは `row?.x` と書く)。 |
+| `valueFormatter` | `(params: CellValueFormatterParams<T>) => string` | — | セル表示値の整形(UI 表示のみ)。`renderCell` 未指定の既定セルが返り値を表示。組み込み `numberFormatter` 等を渡せる。元の値/編集/コピー/ソート/フィルターには影響しない(全体フィルターは `globalFilterMatch`、グループ行の見出しは `groupLabel: 'formatted'` で使える。1.1.0 から)。グループ行の集計値と合計行の値の整形にも使い、そのときは元の行が無いので `row` は `undefined`(型は `T \| undefined`。`row` を読むときは `row?.x` と書く)。 |
 | `cellClassName` | `GridSlotProps \| ((ctx: CellStyleContext<T>) => GridSlotProps \| undefined)` | — | セルへ付与する追加 class(条件付きスタイル)。`GridSlotProps` = `string \| { className?, style? }` で、StyleX の `stylex.props(...)` をそのまま返せる(`style` はセルへインライン付与。座標 / 寸法はグリッドが後勝ち)。関数版は値 / 状態に応じて返せる。`ctx` には view の `rowIndex` に加え source 基準の `sourceRowIndex` / `rowKey` が入る(ソート / フィルター ON でも source 行基準のデータと突き合わせ可能。「補助型」節参照)。基底 `.ssg-body-cell` は未レイヤー・特異度 (0,1,0)。確実な上書きは `.ssg-body-cell.my-class` の連結を推奨。 |
 | `cellNote` | `(ctx: CellStyleContext<T>) => string \| null \| undefined` | — | セルのメモ(FarPoint SPREAD のセルメモ / Excel のメモ相当)。文字列を返したセルの右上に印(10px の三角。色はトークン `--ssg-note-indicator`)を出し、マウスを乗せるとその文字列をツールチップで表示する(`\n` で改行)。`undefined` / `null` / 空文字(空白だけを含む)なら何も出さない。`ctx` は `cellClassName` の関数版と同じ。入力エラー(`validate` の mark)と同じセルでは、エラーの 6px の赤い三角がメモの三角の上に重なって両方見え、ツールチップは「エラー → 改行 → メモ」の順。描画中のセルだけ評価する(`cellClassName` 関数と同じコスト階級)。CSV / TSV / クリップボード / `getExportData` には含めない。詳細は「セルのメモ(`cellNote`)」節。 |
 | `conditionalFormat` | `GridConditionalFormat<T>` | — | **条件付き書式**。既定セルの描画に、値の「量」/「向き」/「状態」を重ねる。`dataBar`(背景の帯。`min` / `max` 省略時はビュー行 = フィルター / ソート適用後の数値から自動集計、負の値は 0 の軸から左へ。`color` / `negativeColor` / `showValue: false` で帯だけ)/ `colorScale`(セル背景を段階的に染める。`type: 'sequential'`(既定。淡 → 濃)/ `'diverging'`(`mid` を中立色に負側 / 正側を別の色相で。`colors` で色の段を差し替え)/ `chips`(値 → 色味 `'neutral' \| 'info' \| 'good' \| 'warning' \| 'critical'` か `{ tone, label, icon, color }` のマップ、または `ctx` から返す関数。アイコン + ラベルのピル)。複数を同時指定可。表示だけで、エクスポート / コピー / ソート / フィルターには影響しない。色はトークン `--ssg-cf-*`。詳細は「条件付き書式(`conditionalFormat`)」節。 |
@@ -931,7 +933,7 @@ WAI-ARIA の grid パターンに沿って、表・行・セルに役割と状�
 | `validate` | `(ctx: CellValidationContext<T>) => CellValidationResult` | — | セル値の検証。`true`=有効 / `false`=無効(既定メッセージ)/ `string`・`{ message }`=無効+メッセージ。**純粋・軽量であること**(描画中の可視セルごとに毎レンダー評価。`cellClassName` 関数と同コスト階級)。number エディタの `min` / `max` / `integer` の検査は `validate` の後(`validate` の NG はそのメッセージ、通した値だけ組み込みの検査)。詳細は「バリデーション」節。 |
 | `validationMode` | `'mark' \| 'reject'` | `'mark'` | 検証 NG 時の動作。`'mark'`=値は入るがセルに invalid 表示 / `'reject'`=書き込み自体を拒否。 |
 | `parseClipboardValue` | `(raw: string, row: T) => unknown` | editor 既定パーサ | 「文字列 → セル値」のパーサ(貼り付け / クリア / エディタ commit で共通)。**明示指定が常に優先**。未指定で `editor` が number / date / checkbox のときは種別の既定パーサが自動供給されます(「セルエディタ」節の表参照)。 |
-| `formatClipboardValue` | `(value: unknown, row: T) => string` | — | コピー時のフォーマッタ。 |
+| `formatClipboardValue` | `(value: unknown, row: T) => string` | — | コピー時のフォーマッタ(CSV / TSV と `getExportData` の `text` も同じ)。未指定で select エディタの `clipboard: 'label'` の列は候補の label(1.1.0 から)。 |
 
 ### filterType: 'auto'(自動判定)
 
@@ -1086,7 +1088,7 @@ const columns = [
 | --- | --- | --- | --- |
 | `'text'` | 従来のテキスト input(既定)。`multiline: true` で複数行の入力欄(textarea。中身に合わせて下へ伸び、表の見える範囲の下端で止まって中でスクロール。行の間隔、1 行目の位置と折り返し = 列の `wordBreak` / `lineBreak` はセルと同じ) | `multiline` / `enterKey`(`multiline` のときの `Enter`。`'commit'`(既定。Excel と同じ)= `Enter` で確定、`Alt+Enter` と `Ctrl` / `⌘+Enter` で改行 / `'newline'`(メモ帳やチャットに近い)= `Enter`(`Shift` / `Alt` 付きも)で改行、`Ctrl` / `⌘+Enter` で確定。スマートフォンのソフトキーボードでは `Alt` / `Ctrl` を押せないので、モバイルで改行させたい列は `'newline'`(確定はフォーカスアウト)) | パススルー(生文字列のまま) |
 | `'number'` | `<input type="number">`(スピナー / ↑↓ステップ / 不正文字抑止)。セルを選んで `-` / `+` / `.` から打ち始めたときは、その文字を消さないよう文字の入力欄(`inputmode="decimal"`)で開き、確定した文字列を列のパーサで数値に直す(`-5`→`-5`、`.5`→`0.5`、`-` だけなら空。数値として読めない文字列は貼り付けと同じくそのまま)。英字など数値にならない文字から打ち始めたとき・数値でない文字列の値を開いたときも文字の入力欄で開き、その文字をそのまま見せる。数値の文字列の値(`'1,234'` / `'１２'`)は半角の数値(`1234` / `12`)で開く | `min` / `max` / `step` / `integer`(`min` / `max` / `integer` は値の検査にも使う。「バリデーション」節) | `''`・空白だけ→`null` / 有限数値文字列→`number`(全角の数字・符号・小数点と 3 桁区切りも読む: `'１，２３４'`→`1234`、`'ー５'`→`-5`)/ 非数値→生文字列のまま(mark が拾う) |
-| `'select'` | 候補ドロップダウン(表の外のポータル。`popupContainer`)。↑↓=ハイライト移動 / Enter=確定(下へ)/ Tab=確定(左右へ)/ クリック=確定 / 印字キー=label 前方一致のタイプアヘッド(約 700ms でリセット)/ IME で確定した文字(日本語の名前など)= その文字で始まる候補、無ければ含む候補へ(1.0.2) | `options: GridSelectEditorOption[] \| (row) => GridSelectEditorOption[]`(静的 or 行依存。関数はレンダー中に呼ばれるため純粋であること) | パススルー(`option.value` は string。型変換したい場合は `parseClipboardValue` を併用) |
+| `'select'` | 候補ドロップダウン(表の外のポータル。`popupContainer`)。↑↓=ハイライト移動 / Enter=確定(下へ)/ Tab=確定(左右へ)/ クリック=確定 / 印字キー=label 前方一致のタイプアヘッド(約 700ms でリセット)/ IME で確定した文字(日本語の名前など)= その文字で始まる候補、無ければ含む候補へ(1.0.2) | `options: GridSelectEditorOption[] \| (row) => GridSelectEditorOption[]`(静的 or 行依存。関数はレンダー中に呼ばれるため純粋であること)/ `clipboard: 'value' \| 'label'`(既定 `'value'`。`'label'` でコピー・CSV は label、貼り付けた label は value へ。1.1.0) | パススルー(`option.value` は string。型変換したい場合は `parseClipboardValue` を併用)。`clipboard: 'label'` なら、貼り付けた文字が候補の value ならそのまま、label(前後の空白は外して比べる)ならその value、どちらでもなければ生文字列のまま |
 | `'date'` | ネイティブ `<input type="date">`。ドラフトは `'YYYY-MM-DD' \| ''`。入力欄は中身(年 / 月 / 日)より狭くせず、細い列ではセルからはみ出して開く。セルを選んで文字から打ち始めたときは、その文字を消さないよう文字の入力欄で開き、確定するときに日付として読む(`2026/3/15`・`2026-03-15` など。読み方は既定パーサと同じ)。読めなければ「日付で入力してください」を出して編集を続ける(フォーカスが外れたら取り消し。1.0.2) | — | `''`→`null` / 解釈可能→`'YYYY-MM-DD'` へ正規化 / 解釈不可→生文字列のまま(数字だけの文字列 = Excel の日付のシリアル値「45678」や「5」と、年が 4 桁にならない文字列、年の無い文字列(「11/2」「Nov 1」)、ありえない日付(「2026/2/30」)も解釈不可。翌月へ繰り越さない) |
 | `'checkbox'` | **直接トグル**(編集セッションなし)。チェックボックスそのものを押すか、アクティブセルで Space を押すと即トグル(セルのチェックボックスの外を押したときはアクティブセルになるだけ。ダブルクリックでも切り替わらない)。Enter / F2 / ダブルクリックではエディタが開かない | `checkedValue`(既定 `true`)/ `uncheckedValue`(既定 `false`)。checked 判定は `Object.is(value, checkedValue)` のみ | `''`→unchecked / checked・unchecked の文字列表現→対応値 / `'true'`・`'1'`→checked / その他→unchecked |
 | `'custom'` | `render(ctx)` の返り値を編集オーバーレイ内に描画。**フォーカス管理・キーバインドは利用側の責務**(開いたままグリッドの中の別のセルを押したときに値を残す / エディタを閉じるには、入力欄の `onBlur` で `ctx.commit` か `ctx.cancel` を呼ぶ。呼ばないとエディタが開いたまま残り、グリッドのキー操作が効かない) | `render: (ctx: CellEditorContext<T>) => ReactNode` | パススルー |
@@ -1096,6 +1098,7 @@ const columns = [
 - **既定パーサはエディタ commit / 貼り付け / Delete クリアで共通**に効きます(例: number 列は Delete クリアで `null` になる)。明示の `parseClipboardValue` が常に優先です。
 - **number の `min` / `max` / `integer`(`true` で整数だけ)は値の検査にも使います**(`validate` を書かなくても、範囲外や小数のセルに印が付く / `'reject'` なら書き込まない)。`step` は ↑↓ キーとスピナーの刻みだけで、検査には使いません。詳細は「バリデーション」節の「数値の組み込みの検査」。
 - **改行を含む値の列は `editor: { type: 'text', multiline: true }` にします**。1 行の入力欄(既定)はブラウザが改行を消すので、改行を含む値を開いて確定すると改行が無くなります(値を変えずに確定したときは書き込まないので、開いて閉じるだけなら消えない)。表示は `autoHeight` の列なら改行どおり、それ以外の列は 1 行に並びます。
+- **値と表示名が別の select 列は `clipboard: 'label'`**(1.1.0 から): Excel から表示名(「交通費」)を貼り付けると値(`'transport'`)が入り、コピーと CSV は表示名で出ます。セルの表示名は今までどおり `valueFormatter` で出します。「値と表示名が別の列」節。
 - **select の blur は cancel**(値不変)です。text / number / date の blur = 確定と非対称ですが、select は「選択 = 即確定」でドラフト概念がないためです。
 - **date の Tab はグリッド流(確定 + 移動)**です。ピッカー内のセグメント移動は ← → 矢印で行えます。
 - **checkbox のダブルクリックは click 2 回**(トグル往復)として扱われます(Excel / AG Grid と同様)。`renderCell` 指定時はそちらが優先され、組み込みチェックボックスセルは描画されません。
@@ -1383,9 +1386,42 @@ const columns: GridColumn<Order>[] = [
 - **開閉**: シェブロン click / グループ行 double-click / グループ行上の `Enter`・`Space`。グループ行のセルを押すとそのセルがアクティブセルになるので、押してから `Enter` / `Space` でも開閉できます(矢印キーでグループ行へ移ったときと同じ)。命令的 API(下記)からも操作できます。開閉状態は UI 状態で、undo/redo・`getState()` の対象外です。
 - **並び / フィルター**: グループの並びは「ソート適用後の初出順」です(グループ元列をソートすればグループごと並び替わる)。集計のある列(`aggFunc`)で並べ替えると、同じ親の下のグループもその集計値の順に並びます(0.63.0 から。金額の降順なら合計の大きいグループが上)。並べ替えの条件は先頭から見て、その階層のグループ元の列の条件が先にあればその列の順、集計のある列の条件が先なら集計値の順(空の集計値は末尾、同じ値は次の条件、それでも同じなら初出順)で、`manualSorting` では並べ替えません。グループ元列は表示から外れますが、そのソートと列フィルターは効きます(「並び替えを管理…」パネルの候補にはグループ元列が入り、自動グループ列は入りません。列フィルターはフィルターの管理パネルの「+ フィルターを追加…」に「地域(グループ化中)」のように出て、選ぶと自動グループ列の見出しの下に開きます。掛けたフィルターは管理パネルとチップバーに「(グループ化中)」として出て、✎ で開き直し、× で外せます)。フィルターは leaf 行に適用され、0 件になったグループは表示から消えます。グローバルフィルター(`enableGlobalFilter`)はグループ元列の値も探します(「関東」でその地域の行が残る)。ツールパネルの「列」タブではグループ元列を「(グループ化中)」として出し、表示 / 非表示は切り替えられません(値は自動グループ列に出るため)。ドラッグで並べ替えると階層の順番も入れ替わります(階層は `columns` の並び順)。空値は 1 つの「(空白)」グループへ集約されます。
 - **leaf 限定の各機能**: グループ行は編集 / ペースト / クリア / コピー / 行選択 / エクスポートの対象外です(すべて leaf 行のみが対象)。エクスポート(scope `'view'`)は開閉状態に関わらず、フィルター / ソート後の leaf 行をすべて出力します(折りたたんだグループの配下も含む。`isRowExportable` の `ctx.viewRowIndex` は全展開時のビュー行 index)。表示から外れているグループ元の列は出力の先頭に入り(どの行がどのグループか分かる平らな表)、`includeGroupRows: true` で各グループの先頭に小計の行も入ります(帳票向け)。件数表示(bar の Rows / 行選択件数)も leaf 基準です。
+- **見出しの文字**: グループ行の見出しは値の文字です(`'chubu'`)。列の `valueFormatter` の表示名にするときは `groupLabel: 'formatted'`、別の文字にするときは関数(1.1.0 から。「値と表示名が別の列」節)。
 - **clientSide 限定**: serverSide(`dataSource`)では `rowGroup` は無視されます(開発時警告)。
 
 グループ行の記述子は `GridGroupRow`(`groupKey` / `columnKey` / `value` / `label` / `level` / `leafCount` / `aggregates`)としてバレルから公開されます(`getGroupRows()` の返り値)。
+
+### 値と表示名が別の列
+
+値はコード(`'transport'` / `'chubu'`)、画面は表示名(「交通費」「中部」)の列は、`valueFormatter` で表示名を出し、次の 3 つ(1.1.0 から)で残りもそろえます。どれも既定は 1.0 と同じ(値の文字)です。
+
+```tsx
+const REGIONS = [
+  { value: 'kanto', label: '関東' },
+  { value: 'chubu', label: '中部' },
+];
+const regionLabel = new Map(REGIONS.map((o) => [o.value, o.label]));
+
+const columns: GridColumn<Order>[] = [
+  {
+    key: 'region',
+    title: '地域',
+    width: 120,
+    editable: true,
+    editor: { type: 'select', options: REGIONS, clipboard: 'label' }, // コピー・CSV は表示名、貼り付けた表示名は値へ
+    valueFormatter: ({ value }) => regionLabel.get(String(value)) ?? String(value ?? ''), // セルは表示名
+    groupLabel: 'formatted', // グループ行の見出しも表示名
+    rowGroup: true,
+  },
+  // ...
+];
+
+<SpreadsheetGrid columns={columns} globalFilterMatch="both" ... /> // 「中部」でも「chubu」でも探せる
+```
+
+- **グループ行の見出し**(`groupLabel`): `'formatted'` で列の `valueFormatter`、関数でその返り値(`row` はそのグループの最初の行)。集計値は今までどおり列の書式です。
+- **グローバルフィルター**(`globalFilterMatch`): `'display'` は画面の文字(`valueFormatter` の結果。`numberFormatter()` の列なら「43,340」)だけ、`'both'` は値の文字と画面の文字のどちらか。セル内検索(`find`)は今までどおり画面の文字です。clientSide だけで、serverSide ではサーバーへ渡す文字は変わりません(サーバーで表示名でも探す)。
+- **コピー / 貼り付け / CSV**(select エディタの `clipboard: 'label'`): コピー・CSV / TSV・`getExportData` の `text` は候補の label、貼り付けた文字は value ならそのまま、label ならその value、どちらでもなければ生文字列(印は列の `validate` で)。`formatClipboardValue` / `parseClipboardValue` を書いた列はそちらが勝ちます。select 以外の列(コードを `valueFormatter` で出すだけの列)は、`formatClipboardValue` / `parseClipboardValue` で同じことをします。
 
 ### 合計行(`totalRow`)
 

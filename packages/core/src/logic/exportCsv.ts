@@ -1,6 +1,7 @@
 import type { GridColumn } from '../model/gridTypes.unbound';
 import type { GroupSubtotalLine } from './groupExport';
 import { getCellValue } from '../utils/permissions';
+import { formatCellClipboardText } from './selectLabels';
 
 // 追加(imperative API #1): CSV エクスポートの純ロジックです。ハンドル(SpreadsheetGridHandle の
 //   exportCsv / downloadCsv)から呼ばれ、DOM や副作用には一切触れません(文字列を返すだけ)。
@@ -30,13 +31,9 @@ const PLAIN_NUMBER = /^[+-]?(?:\d+\.?\d*|\.\d+)(?:e[+-]?\d+)?$/i;
 export const escapeCsvFormula = (value: string): string =>
   FORMULA_TRIGGER.test(value) && !PLAIN_NUMBER.test(value) ? `'${value}` : value;
 
-// セル 1 個ぶんのエクスポート文字列を、コピーと同じ規則で求めます。
-const exportCellText = <T,>(row: T, column: GridColumn<T>): string => {
-  const raw = getCellValue(row, column);
-  return column.formatClipboardValue
-    ? column.formatClipboardValue(raw, row)
-    : String(raw ?? '');
-};
+// セル 1 個ぶんのエクスポート文字列を、コピーと同じ規則で求めます(1.1.0 から select の `clipboard: 'label'` も同じ)。
+const exportCellText = <T,>(row: T, column: GridColumn<T>): string =>
+  formatCellClipboardText(column, getCellValue(row, column), row);
 
 export type SerializeRowsToCsvParams<T> = {
   // 行モデルシーム。viewIndex の行を引きます(SSRM 未ロード行は undefined → スキップ)。

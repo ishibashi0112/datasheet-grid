@@ -11,6 +11,7 @@ import {
   type GridCellRef,
   type GridColumn,
   type GridDensity,
+  type GridGlobalFilterMatch,
   type GridMotion,
   type GridTheme,
   type RowSelectionMode,
@@ -165,6 +166,8 @@ type Settings = {
   enableSorting: boolean;
   enableColumnFilter: boolean;
   enableGlobalFilter: boolean;
+  // グローバルフィルターが照らし合わせる文字(1.1.0)。'value'(既定)= 値の文字 / 'display' = 画面の文字(単価の「1,200」など)/ 'both'。
+  globalFilterMatch: GridGlobalFilterMatch;
   enableColumnMenu: boolean;
   enableRangeSelection: boolean;
   enableUndoRedo: boolean;
@@ -245,6 +248,7 @@ const DEFAULTS: Settings = {
   enableSorting: true,
   enableColumnFilter: true,
   enableGlobalFilter: true,
+  globalFilterMatch: 'value',
   enableColumnMenu: true,
   enableRangeSelection: true,
   enableUndoRedo: true,
@@ -307,6 +311,7 @@ function buildSnippet(s: Settings): string {
     `  enableSorting={${s.enableSorting}}`,
     `  enableColumnFilter={${s.enableColumnFilter}}`,
     `  enableGlobalFilter={${s.enableGlobalFilter}}`,
+    ...(s.globalFilterMatch === 'value' ? [] : [`  globalFilterMatch="${s.globalFilterMatch}"`]),
     `  enableColumnMenu={${s.enableColumnMenu}}`,
     `  enableRangeSelection={${s.enableRangeSelection}}`,
     `  enableUndoRedo={${s.enableUndoRedo}}`,
@@ -599,6 +604,7 @@ function PlaygroundGrid({ settings }: { settings: Settings }) {
       enableSorting={settings.enableSorting}
       enableColumnFilter={settings.enableColumnFilter}
       enableGlobalFilter={settings.enableGlobalFilter}
+      globalFilterMatch={settings.globalFilterMatch}
       enableColumnMenu={settings.enableColumnMenu}
       enableRangeSelection={settings.enableRangeSelection}
       enableUndoRedo={settings.enableUndoRedo}
@@ -860,6 +866,19 @@ export function Playground() {
           <Toggle label="enableSorting" checked={settings.enableSorting} onChange={(v) => set('enableSorting', v)} />
           <Toggle label="enableColumnFilter" checked={settings.enableColumnFilter} onChange={(v) => set('enableColumnFilter', v)} />
           <Toggle label="enableGlobalFilter" checked={settings.enableGlobalFilter} onChange={(v) => set('enableGlobalFilter', v)} />
+          <label className="flex items-center justify-between gap-2 text-sm">
+            <code className="text-xs">globalFilterMatch</code>
+            <select
+              className={selectClass}
+              value={settings.globalFilterMatch}
+              onChange={(e) => set('globalFilterMatch', e.target.value as GridGlobalFilterMatch)}
+              disabled={!settings.enableGlobalFilter}
+            >
+              <option value="value">value</option>
+              <option value="display">display</option>
+              <option value="both">both</option>
+            </select>
+          </label>
           <Toggle label="manualFiltering" checked={settings.manualFiltering} onChange={(v) => set('manualFiltering', v)} />
           <Toggle label="manualSorting" checked={settings.manualSorting} onChange={(v) => set('manualSorting', v)} />
           <Toggle label="getFilterOptions" checked={settings.asyncFilterOptions} onChange={(v) => set('asyncFilterOptions', v)} />

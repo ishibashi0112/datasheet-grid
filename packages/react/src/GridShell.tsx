@@ -389,6 +389,8 @@ export function useGridShell<T extends object>({
   selectedRowKeys: selectedRowKeysProp,
   onRowSelectionChange,
   enableGlobalFilter = true,
+  // 追加(1.1.0 / AP-08): グローバルフィルターが照らし合わせる文字(既定 'value' = 値の文字)。
+  globalFilterMatch = 'value',
   enableColumnFilter = true,
   // 追加(date-input): dateSet 条件の日付入力を利用側コンポーネントへ差し替えるスロットです。
   renderFilterDateInput,
@@ -1155,6 +1157,7 @@ export function useGridShell<T extends object>({
       // 変更(1.0 前の最終チェック FC-08): 相対日付プリセットの見張りもグループ元列の列フィルターを含めて見ます。
       effectiveColumns: filterSortColumns,
       globalFilterText,
+      globalFilterMatch,
       // 追加(dogfood DF-18): applyState で入れた検索の文字も遅らせずに評価します。
       globalFilterUrgent: filtersUrgent,
       globalFilterEnabled,

@@ -2,6 +2,7 @@
   "title": "ガイド",
   "pages": [
     "editing",
+    "value-labels",
     "fill-handle",
     "cell-events",
     "filter-sort",

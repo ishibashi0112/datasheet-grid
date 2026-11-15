@@ -191,6 +191,8 @@ export type {
   GridMotion,
   // 追加(1.1.0 / AP-07): ポップアップを描く場所(popupContainer)。
   GridPopupContainer,
+  // 追加(1.1.0 / AP-08): グローバルフィルターが照らし合わせる文字(globalFilterMatch)。
+  GridGlobalFilterMatch,
   // 追加(F-2): セル内検索のオプションと通知引数。
   FindOptions,
   FindChangeParams,

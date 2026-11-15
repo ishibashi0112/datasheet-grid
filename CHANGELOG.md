@@ -18,6 +18,10 @@
 - 右クリックメニュー(`enableContextMenu`)を、アクティブセルで `Shift+F10` / メニューキー(Windows のアプリケーションキー)を押しても開けるようにしました。メニューはセルの左下に出て、先頭の項目にフォーカスがあります。`getContextMenuItems` に渡る `target` はアクティブセルです。項目が無いとき・アクティブセルが無いときはブラウザ標準のメニューのままです。
 - ツールパネルの読み上げの名前の文言 `localeText.toolPanelLabel`(既定「ツールパネル」、英語「Tool panel」)。
 - ポップアップ(列メニュー / 列フィルター / 右クリックメニュー / select エディタの候補 / ツールパネル / フィルハンドルのメニュー / ツールチップ / ドラッグのゴースト)を描く場所を選ぶ `popupContainer`(`'auto'` / `'body'` / 要素 / 関数。既定 `'auto'`)と型 `GridPopupContainer`。ガイド「ダイアログの中で使う」。
+- 値と表示名が別の列(値はコード、画面は `valueFormatter` の表示名)のための 3 つの選択肢。どれも既定は 1.0 と同じ(値の文字)です。ガイド「値と表示名が別の列」。
+  - 列の `groupLabel`(`'value'` / `'formatted'` / 関数): グループ行の見出しを列の `valueFormatter` の表示名にできます(これまではいつも値の文字で、「chubu (2,563件)」のように出ていました)。
+  - `globalFilterMatch`(`'value'` / `'display'` / `'both'`)と型 `GridGlobalFilterMatch`: グローバルフィルターで画面の文字(`valueFormatter` の結果)でも探せます(これまでは値の文字だけで、「関東」「43,340」で探すと 0 件でした)。clientSide だけです。
+  - select エディタの `clipboard: 'label'`: コピー・CSV / TSV・`getExportData` の `text` を候補の label にし、貼り付けた label を value へ読み替えます(これまでは貼り付けた表示名がそのまま値に入っていました)。
 
 ### 変更
 

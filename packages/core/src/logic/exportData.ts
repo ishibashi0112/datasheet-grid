@@ -1,6 +1,7 @@
 import type { GridColumn, GridExportData } from '../model/gridTypes.unbound';
 import type { GroupSubtotalLine } from './groupExport';
 import { getCellValue } from '../utils/permissions';
+import { formatCellClipboardText } from './selectLabels';
 import { labelExportCellText, totalExportCellText, type LabelExportLine } from './exportCsv';
 
 // 追加(imperative API: getExportData): エクスポート用「整形済みデータ」の純ロジックです。ハンドル
@@ -88,10 +89,7 @@ export const buildGridExportData = <T,>({
     rows.push(
       columns.map((column) => {
         const value = getCellValue(row, column);
-        const text = column.formatClipboardValue
-          ? column.formatClipboardValue(value, row)
-          : String(value ?? '');
-        return { value, text };
+        return { value, text: formatCellClipboardText(column, value, row) };
       }),
     );
   }

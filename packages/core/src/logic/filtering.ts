@@ -3,6 +3,7 @@ import type {
   DateFilterPreset,
   DateSetColumnFilterValue,
   GridColumn,
+  GridGlobalFilterMatch,
   NumberColumnFilterValue,
   NumberSetColumnFilterValue,
   ParsedDateFilter,
@@ -898,6 +899,34 @@ export const rowMatchesGlobalText = <T,>(
     }
   }
   return false;
+};
+
+// 追加(1.1.0 / 2026-11-09 実アプリの総点検 AP-08 / I-02): グローバルフィルターで画面の文字(valueFormatter の結果)も
+//   照らし合わせる列です(globalFilterMatch)。'display' / 'both' のときだけ、valueFormatter のある列の getValue を
+//   「照らし合わせる文字」に差し替えた列を返します('both' は値の文字と画面の文字を、検索語に入らない \u0000 でつなぐ =
+//   どちらかに当たれば一致、境目をまたいでは当たらない)。'value'(既定)と valueFormatter の無い列はそのまま(参照も同じ)。
+//   照らし合わせ(rowMatchesGlobalText)は文字にしてから小文字で比べるので、ここでは文字を返すだけです。
+export const toGlobalFilterColumns = <T,>(
+  columns: GridColumn<T>[],
+  match: GridGlobalFilterMatch | undefined,
+): GridColumn<T>[] => {
+  if ((match !== 'display' && match !== 'both') || !columns.some((column) => column.valueFormatter)) {
+    return columns;
+  }
+  return columns.map((column) => {
+    const format = column.valueFormatter;
+    if (!format) {
+      return column;
+    }
+    return {
+      ...column,
+      getValue: (row: T) => {
+        const value = getCellValue(row, column);
+        const text = format({ value, row, column });
+        return match === 'both' ? `${String(value ?? '')}\u0000${text}` : text;
+      },
+    };
+  });
 };
 
 // 追加(DS-1): グローバルフィルタの index 版です(columns.some の部分一致)。
