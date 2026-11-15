@@ -15,6 +15,7 @@ import { columnAutosizeFeature } from './features/columnAutosize';
 import { columnMenuFeature } from './features/columnMenu';
 import { toolPanelFeature } from './features/toolPanel';
 import { totalRowFeature } from './features/totalRow';
+import { pinnedRowsFeature } from './features/pinnedRows';
 import { imeDirectInputFeature } from './features/imeDirectInput';
 import { contextMenuFeature } from './features/contextMenu';
 import { conditionalFormatFeature } from './features/conditionalFormat';
@@ -60,6 +61,7 @@ const ColumnMenuAutosizeGrid = createSpreadsheetGrid({
   features: { columnMenu: columnMenuFeature, columnAutosize: columnAutosizeFeature },
 });
 const TotalRowOnlyGrid = createSpreadsheetGrid({ features: { totalRow: totalRowFeature } });
+const PinnedRowsOnlyGrid = createSpreadsheetGrid({ features: { pinnedRows: pinnedRowsFeature } });
 const ImeOnlyGrid = createSpreadsheetGrid({ features: { imeDirectInput: imeDirectInputFeature } });
 const ContextMenuOnlyGrid = createSpreadsheetGrid({ features: { contextMenu: contextMenuFeature } });
 const ConditionalFormatOnlyGrid = createSpreadsheetGrid({ features: { conditionalFormat: conditionalFormatFeature } });
@@ -507,6 +509,44 @@ describe('差し込み式: totalRow', () => {
     );
     expect(container.querySelector('.ssg-total-row')).not.toBeNull();
     expect(Array.from(container.querySelectorAll('.ssg-total-value')).map((el) => el.textContent)).toContain('5');
+  });
+});
+
+describe('差し込み式: pinnedRows', () => {
+  const MinimalPinnedGrid = createSpreadsheetGrid({ features: {} });
+  const top: Row[] = [{ id: 100, name: '目標' }];
+  const bottom: Row[] = [{ id: 101, name: '前年' }];
+
+  it('機能セットに無ければ pinnedTopRows / pinnedBottomRows を渡しても固定行を出さず、開発時に 1 回ずつ警告する', () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const { container } = render(
+      <MinimalPinnedGrid rows={rows} columns={columns} rowKeyGetter={(r) => r.id} pinnedTopRows={top} pinnedBottomRows={bottom} />,
+    );
+    expect(container.querySelector('.ssg-pinned-row')).toBeNull();
+    const messages = warn.mock.calls.map(([message]) => String(message));
+    expect(messages.filter((message) => message.includes('`pinnedTopRows`'))).toHaveLength(1);
+    expect(messages.filter((message) => message.includes('`pinnedBottomRows`'))).toHaveLength(1);
+    expect(messages.some((message) => message.includes('pinnedRows: pinnedRowsFeature'))).toBe(true);
+  });
+
+  it('空の配列は警告しない', () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    render(<MinimalPinnedGrid rows={rows} columns={columns} rowKeyGetter={(r) => r.id} pinnedTopRows={[]} />);
+    expect(warn.mock.calls.filter(([message]) => String(message).includes('pinnedTopRows'))).toHaveLength(0);
+  });
+
+  it('pinnedRows だけを入れた構成では上下に固定行が出る', () => {
+    const { container } = render(
+      <PinnedRowsOnlyGrid rows={rows} columns={columns} rowKeyGetter={(r) => r.id} pinnedTopRows={top} pinnedBottomRows={bottom} />,
+    );
+    expect(
+      Array.from(container.querySelectorAll('.ssg-pinned-row[data-pane="center"]')).map((row) => row.getAttribute('data-ssg-pinned')),
+    ).toEqual([
+      'top',
+      'bottom',
+    ]);
+    expect(container.querySelector('.ssg-pinned-rows--top .ssg-pinned-cell')?.textContent).toBe('目標');
+    expect(container.querySelector('.ssg-pinned-rows--top [role="rowheader"]')?.getAttribute('aria-label')).toBe('上に固定 1');
   });
 });
 

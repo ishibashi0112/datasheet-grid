@@ -11,6 +11,7 @@ import { DEFAULT_FILL_HANDLE_LOCALE_TEXT } from '../logic/localeTextFeatures';
 import { DEFAULT_FILTERING_LOCALE_TEXT } from '../logic/localeTextFeatures';
 import { DEFAULT_FIND_LOCALE_TEXT } from '../logic/localeTextFeatures';
 import { DEFAULT_GROUPING_LOCALE_TEXT } from '../logic/localeTextFeatures';
+import { DEFAULT_PINNED_ROWS_LOCALE_TEXT } from '../logic/localeTextFeatures';
 import { DEFAULT_ROW_DRAG_LOCALE_TEXT } from '../logic/localeTextFeatures';
 import { DEFAULT_SCROLL_HINT_LOCALE_TEXT } from '../logic/localeTextFeatures';
 import { DEFAULT_SERVER_SIDE_LOCALE_TEXT } from '../logic/localeTextFeatures';
@@ -45,6 +46,7 @@ const DEFAULT_TABLES = {
   filtering: DEFAULT_FILTERING_LOCALE_TEXT,
   find: DEFAULT_FIND_LOCALE_TEXT,
   grouping: DEFAULT_GROUPING_LOCALE_TEXT,
+  pinnedRows: DEFAULT_PINNED_ROWS_LOCALE_TEXT,
   rowDrag: DEFAULT_ROW_DRAG_LOCALE_TEXT,
   scrollHint: DEFAULT_SCROLL_HINT_LOCALE_TEXT,
   serverSide: DEFAULT_SERVER_SIDE_LOCALE_TEXT,

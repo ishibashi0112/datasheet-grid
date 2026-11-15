@@ -31,6 +31,10 @@ const FEATURE_PROPS: { [K in FeatureName]-?: readonly FeaturePropCheck[] } = {
   scrollHint: [{ prop: 'scrollHint', isUsed: (props) => props.scrollHint !== undefined && props.scrollHint !== false }],
   imeDirectInput: [{ prop: 'imeDirectInput', isUsed: (props) => props.imeDirectInput === true }],
   totalRow: [{ prop: 'totalRow', isUsed: (props) => props.totalRow !== undefined && props.totalRow !== false }],
+  pinnedRows: [
+    { prop: 'pinnedTopRows', isUsed: (props) => (props.pinnedTopRows?.length ?? 0) > 0 },
+    { prop: 'pinnedBottomRows', isUsed: (props) => (props.pinnedBottomRows?.length ?? 0) > 0 },
+  ],
   columnAutosize: [
     {
       prop: 'autoSizeColumns',

@@ -530,3 +530,83 @@ describe('applyRows()(DU-21)', () => {
     expect(gridRef.current?.canUndo()).toBe(false);
   });
 });
+
+// 追加(1.1.0 / 2026-11-09 実アプリの総点検 AP-14): 外からのライブの更新と「元に戻す」の両立。
+//   applyRows(next, { undoable: false }) は履歴を消さず積みもせず、元に戻すはグリッドでの編集だけを取り消します。
+describe('applyRows の undoable: false と関数の形(AP-14)', () => {
+  let liveRows: Row[] = initialRows;
+  function LiveHarness({ gridRef }: { gridRef: Ref<SpreadsheetGridHandle<Row>> }) {
+    const [rows, setRows] = useState<Row[]>(initialRows);
+    useEffect(() => {
+      liveRows = rows;
+    }, [rows]);
+    return <SpreadsheetGrid ref={gridRef} columns={columns} rows={rows} onRowsChange={setRows} rowKeyGetter={(row) => row.id} />;
+  }
+  const tick = (gridRef: RefObject<SpreadsheetGridHandle<Row> | null>) => {
+    act(() => {
+      gridRef.current?.applyRows((prev) => prev.map((row) => ({ ...row, qty: row.qty + 1 })), { undoable: false });
+    });
+  };
+
+  it('編集の後に外の更新を挟んでも、Ctrl+Z は編集だけを戻す(外の更新は残り、やり直しもできる)', () => {
+    const gridRef = createRef<SpreadsheetGridHandle<Row>>();
+    const { container } = render(<LiveHarness gridRef={gridRef} />);
+    pasteIntoCell(container, gridRef, { row: 1, col: 1 }, 'BETA');
+    expect(liveRows[1]?.name).toBe('BETA');
+    tick(gridRef);
+    tick(gridRef);
+    expect(liveRows.map((row) => row.qty)).toEqual([12, 22, 32]);
+    expect(gridRef.current?.canUndo()).toBe(true);
+    act(() => {
+      fireEvent.keyDown(getShell(container), { key: 'z', ctrlKey: true });
+    });
+    expect(liveRows.map((row) => [row.name, row.qty])).toEqual([
+      ['alpha', 12],
+      ['beta', 22],
+      ['gamma', 32],
+    ]);
+    tick(gridRef);
+    act(() => {
+      gridRef.current?.redo();
+    });
+    expect(liveRows.map((row) => [row.name, row.qty])).toEqual([
+      ['alpha', 13],
+      ['BETA', 23],
+      ['gamma', 33],
+    ]);
+  });
+
+  it('外の更新で行が増えたり消えたりしても、消した行の取り消しは前の位置へ戻す', () => {
+    const gridRef = createRef<SpreadsheetGridHandle<Row>>();
+    render(<LiveHarness gridRef={gridRef} />);
+    // 元に戻せる変更(既定): 2 を消す。
+    act(() => {
+      gridRef.current?.applyRows((prev) => prev.filter((row) => row.id !== 2));
+    });
+    // 外: 4 を足し、3 を消す。
+    act(() => {
+      gridRef.current?.applyRows((prev) => [...prev.filter((row) => row.id !== 3), { id: 4, name: 'delta', qty: 40 }], {
+        undoable: false,
+      });
+    });
+    expect(liveRows.map((row) => row.id)).toEqual([1, 4]);
+    act(() => {
+      gridRef.current?.undo();
+    });
+    expect(liveRows.map((row) => row.id)).toEqual([1, 2, 4]);
+  });
+
+  it('関数の形は最後に渡した行を受け取る(続けて呼んでも重なる)', () => {
+    const gridRef = createRef<SpreadsheetGridHandle<Row>>();
+    render(<LiveHarness gridRef={gridRef} />);
+    act(() => {
+      gridRef.current?.applyRows((prev) => prev.slice(1));
+      gridRef.current?.applyRows((prev) => prev.slice(1));
+    });
+    expect(liveRows.map((row) => row.id)).toEqual([3]);
+    act(() => {
+      gridRef.current?.undo();
+    });
+    expect(liveRows.map((row) => row.id)).toEqual([2, 3]);
+  });
+});

@@ -14,6 +14,7 @@ import { getCellValue } from '@ishibashi0112/spreadsheet-grid-core/internal/util
 import type { GridContextMenuItem, GridContextMenuParams, GridContextMenuTarget } from '../model/gridTypes';
 import type {
   BodyContextMenuInput,
+  CellContextMenuInput,
   CellContextMenuFeatureArgs,
   CellContextMenuFeatureResult,
   GridFeature,
@@ -86,8 +87,6 @@ const buildBodyContextMenuParams = <T,>({
   const rowKey = rowModel.getRowKey(rowIndex) ?? rowIndex;
 
   // セル(data-ssg-col-key あり)か、行NO ガター(なし)かで target を分けます。
-  let target: GridContextMenuTarget<T>;
-  let isTargetSelected: boolean;
   const cellEl = targetEl.closest<HTMLElement>('[data-ssg-col-key]');
   const colKey = cellEl?.dataset.ssgColKey;
   if (cellEl && colKey !== undefined) {
@@ -95,8 +94,48 @@ const buildBodyContextMenuParams = <T,>({
     if (colIndex < 0) {
       return null;
     }
-    const column = orderedColumns[colIndex];
-    target = {
+    return buildCellContextMenuParams({
+      cell: { row: rowIndex, col: colIndex },
+      clientX: event.clientX,
+      clientY: event.clientY,
+      rowModel,
+      orderedColumns,
+      selection,
+      activeCell,
+    });
+  }
+  const target: GridContextMenuTarget<T> = { type: 'rowHeader', rowIndex, rowKey, row };
+  return {
+    target,
+    clientX: event.clientX,
+    clientY: event.clientY,
+    selection,
+    activeCell,
+    isTargetSelected: isContextMenuRowSelected(selection, rowIndex),
+  };
+};
+
+// 追加(1.1.0 / 2026-11-09 実アプリの総点検 AP-33): セルの座標から params を作ります(右クリックのセルと、キーボードで開く
+//   アクティブセルで共通)。行が無い(SSRM の未ロード行・グループ行・ラベル行・範囲外)ときは null(開かない)。
+const buildCellContextMenuParams = <T,>({
+  cell,
+  clientX,
+  clientY,
+  rowModel,
+  orderedColumns,
+  selection,
+  activeCell,
+}: CellContextMenuInput<T>): GridContextMenuParams<T> | null => {
+  const rowIndex = cell.row;
+  const colIndex = cell.col;
+  const row = rowModel.getRow(rowIndex);
+  const column = orderedColumns[colIndex];
+  if (!row || !column) {
+    return null;
+  }
+  const rowKey = rowModel.getRowKey(rowIndex) ?? rowIndex;
+  return {
+    target: {
       type: 'cell',
       rowIndex,
       colIndex,
@@ -104,24 +143,17 @@ const buildBodyContextMenuParams = <T,>({
       row,
       column,
       value: getCellValue(row, column),
-    };
-    isTargetSelected = isContextMenuCellSelected(selection, rowIndex, colIndex);
-  } else {
-    target = { type: 'rowHeader', rowIndex, rowKey, row };
-    isTargetSelected = isContextMenuRowSelected(selection, rowIndex);
-  }
-
-  return {
-    target,
-    clientX: event.clientX,
-    clientY: event.clientY,
+    },
+    clientX,
+    clientY,
     selection,
     activeCell,
-    isTargetSelected,
+    isTargetSelected: isContextMenuCellSelected(selection, rowIndex, colIndex),
   };
 };
 
 export const contextMenuFeature = {
   useCellContextMenu: useCellContextMenuFeature,
   buildBodyContextMenuParams,
+  buildCellContextMenuParams,
 } satisfies GridFeatureParts<'contextMenu'> as unknown as GridFeature<'contextMenu'>;

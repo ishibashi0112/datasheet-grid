@@ -30,6 +30,10 @@ export const useGridViewportSync = <T,>({
   useEffect(() => {
     controller.update({ ...args, scrollElement: scrollRef.current });
   });
+  // 追加(1.1.0 の確かめ直しの見直し): 外すときにアクティブセルの合わせ直しのリスナーとタイマーを外します。
+  useEffect(() => () => controller.dispose(), [controller]);
+  // 命令的なスクロールの前に呼ぶ(合わせ直しをやめる)。
+  return controller.cancelFollow;
 };
 
 export default useGridViewportSync;

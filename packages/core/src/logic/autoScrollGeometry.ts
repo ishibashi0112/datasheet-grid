@@ -71,6 +71,19 @@ export const resolveScrollContentBox = ({
 export const clampClientYAboveFooter = (clientY: number, contentBottom: number, footerHeight: number): number =>
   footerHeight > 0 ? Math.min(clientY, contentBottom - footerHeight - 1) : clientY;
 
+// 追加(1.1.0 / 固定行): 上端に固定した高さ(列見出し + 上の固定行。stickyTopHeight)の扱い。上の固定行があるときだけ
+//   シェルが 0 より大きい値を渡します(無ければ 0 = 従来どおり)。
+//   - ヒットテスト: ポインタが列見出し / 上の固定行の上にあっても、本体の行が見えている最初の位置として扱います
+//     (固定行の裏に隠れた行を選ばない / そこへ落とさない)。
+//   - 上の自動スクロールの帯: 本体の行が見え始める位置より上をすべて帯にします(固定行の上へ動かすと上へスクロール)。
+//     0 なら contentTop(従来どおり、上端から threshold の帯)。
+//   stickyTopHeight は画面の px(祖先の transform: scale() の倍率を掛けた値)で渡します。
+export const clampClientYBelowHeader = (clientY: number, contentTop: number, stickyTopHeight: number): number =>
+  stickyTopHeight > 0 ? Math.max(clientY, contentTop + stickyTopHeight) : clientY;
+
+export const resolveTopAutoScrollStart = (contentTop: number, stickyTopHeight: number, threshold: number): number =>
+  stickyTopHeight > 0 ? contentTop + Math.max(0, stickyTopHeight - threshold) : contentTop;
+
 // ポインタの 1 軸座標が端帯(edgeThreshold)へ入っているかを判定し、スクロール方向を返します。
 //   start / end はコンテンツ領域の始端/終端(横なら left/right、縦なら top/bottom)です。
 //   境界ちょうど(start + threshold / end - threshold)は帯外(0)です。

@@ -293,3 +293,23 @@ describe('serializeRowsToCsv × 合計行(totalLine)', () => {
     expect(csv).toBe(`"a,b",'=1+1`);
   });
 });
+// 追加(1.1.0 / 固定行): 上の固定行は見出しの次(本体の行の前)、下の固定行は本体の行の後・合計行の前。
+describe('serializeRowsToCsv × 固定行(pinnedTop / pinnedBottom)', () => {
+  it('上は本体の前、下は合計行の前に出す(本体の行が 0 件でも)', () => {
+    const csv = serializeRowsToCsv({
+      getRow,
+      startRow: 0,
+      endRow: 1,
+      columns,
+      includeHeaders: false,
+      pinnedTop: [rows[1] as (typeof rows)[number]],
+      pinnedBottom: [rows[0] as (typeof rows)[number]],
+      totalLine: ['合計', 3],
+    });
+    expect(csv.split('\r\n')).toHaveLength(4);
+    expect(csv.split('\r\n')[0]).toBe(serializeRowsToCsv({ getRow, startRow: 1, endRow: 2, columns, includeHeaders: false }));
+    expect(csv.split('\r\n').at(-1)).toBe('合計,3');
+    const empty = serializeRowsToCsv({ getRow, startRow: 0, endRow: 0, columns, pinnedTop: [rows[0] as (typeof rows)[number]] });
+    expect(empty.split('\r\n')).toHaveLength(2);
+  });
+});

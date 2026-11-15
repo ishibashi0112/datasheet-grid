@@ -8,6 +8,7 @@ import type { GridContextMenuItem, GridContextMenuParams } from '../model/gridTy
 import { createValueStore } from '../logic/valueStore';
 import {
   blurForPopover,
+  focusPanelIfIdle,
   handleMenuKeyNavigation,
   createPopoverWindowBindings,
   isInsideGridRoot,
@@ -31,6 +32,10 @@ export type ContextMenuSnapshot<T> = {
   layout: CellContextMenuLayout | null;
 };
 
+export type ContextMenuOpenOptions = {
+  focus?: 'panel' | 'firstItem';
+};
+
 export type ContextMenuControllerArgs = {
   gridRootRef: ReadonlyElementRef;
 };
@@ -40,7 +45,9 @@ export type ContextMenuController<T> = {
   subscribe: (listener: () => void) => () => void;
   getSnapshot: () => ContextMenuSnapshot<T>;
   panelRef: { current: HTMLDivElement | null };
-  open: (params: GridContextMenuParams<T>, items: GridContextMenuItem[]) => void;
+  // 変更(1.1.0 / 2026-11-09 実アプリの総点検 AP-33): focus = 開いた後のフォーカスの置き場所。'panel'(既定。右クリック)はパネル
+  //   (↓ で先頭、↑ で末尾の項目へ)、'firstItem'(キーボードの Shift+F10 / メニューキー)は先頭の使える項目。
+  open: (params: GridContextMenuParams<T>, items: GridContextMenuItem[], options?: ContextMenuOpenOptions) => void;
   close: () => void;
   dispose: () => void;
 };
@@ -57,6 +64,13 @@ export const createContextMenuController = <T,>(): ContextMenuController<T> => {
   const panelRef: { current: HTMLDivElement | null } = { current: null };
   let anchorPoint: { x: number; y: number } | null = null;
   let itemCount = 0;
+  let focusFrame: number | null = null;
+  const cancelFocusFrame = () => {
+    if (focusFrame !== null) {
+      cancelAnimationFrame(focusFrame);
+      focusFrame = null;
+    }
+  };
 
   const setLayout = (next: CellContextMenuLayout | null) => {
     const current = store.getSnapshot();
@@ -93,6 +107,7 @@ export const createContextMenuController = <T,>(): ContextMenuController<T> => {
   };
 
   const closeWith = (restoreFocus: boolean) => {
+    cancelFocusFrame();
     store.setSnapshot({ state: null, layout: null });
     anchorPoint = null;
     itemCount = 0;
@@ -126,7 +141,11 @@ export const createContextMenuController = <T,>(): ContextMenuController<T> => {
       }
       if (event.key === 'Tab') {
         const active = document.activeElement;
-        if (!(active instanceof HTMLElement && panel.contains(active)) || active.getAttribute('role') === 'menuitem') {
+        if (
+          !(active instanceof HTMLElement && panel.contains(active)) ||
+          active === panel ||
+          active.getAttribute('role') === 'menuitem'
+        ) {
           event.preventDefault();
           close();
         }
@@ -134,13 +153,31 @@ export const createContextMenuController = <T,>(): ContextMenuController<T> => {
     },
   });
 
-  const open = (params: GridContextMenuParams<T>, items: GridContextMenuItem[]) => {
+  const open = (params: GridContextMenuParams<T>, items: GridContextMenuItem[], options?: ContextMenuOpenOptions) => {
     blurForPopover(args?.gridRootRef.current ?? null);
     anchorPoint = { x: params.clientX, y: params.clientY };
     itemCount = items.length;
     store.setSnapshot({ ...store.getSnapshot(), state: { params, items } });
     updateLayout();
     bindings.attach();
+    // 追加(1.1.0 / AP-33): 描かれた後(次のフレーム)にフォーカスを移します。それまでに ↓ などで項目へ移っていれば何もしません。
+    cancelFocusFrame();
+    const focusMode = options?.focus ?? 'panel';
+    focusFrame = requestAnimationFrame(() => {
+      focusFrame = null;
+      const panel = panelRef.current;
+      if (panel === null || panel.contains(panel.ownerDocument.activeElement)) {
+        return;
+      }
+      if (focusMode === 'firstItem') {
+        const first = panel.querySelector<HTMLElement>('[role="menuitem"]:not(:disabled):not([aria-disabled="true"])');
+        if (first !== null) {
+          first.focus({ preventScroll: true });
+          return;
+        }
+      }
+      focusPanelIfIdle(panel, args?.gridRootRef.current ?? null);
+    });
   };
 
   return {
@@ -153,6 +190,7 @@ export const createContextMenuController = <T,>(): ContextMenuController<T> => {
     open,
     close,
     dispose: () => {
+      cancelFocusFrame();
       bindings.detach();
     },
   };

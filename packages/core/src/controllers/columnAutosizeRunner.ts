@@ -34,6 +34,8 @@ export type ColumnAutosizeRunnerArgs<T> = {
   totalRowTexts?: AutosizeTotalRowTexts;
   // 追加(1.0.2 / 2026-11-09 実アプリの総点検 D-02): 状態チップのセルの中身(条件付き書式の機能があるときだけ)。
   chipOf?: AutosizeChipOf<T> | undefined;
+  // 追加(1.1.0 / 固定行): 固定行(pinnedTopRows / pinnedBottomRows)。本体の行と同じく幅に収めます。
+  pinnedRows?: readonly T[] | undefined;
 };
 
 export type ColumnAutosizeRunner<T> = {
@@ -67,7 +69,7 @@ export const createColumnAutosizeRunner = <T,>(): ColumnAutosizeRunner<T> => {
     if (args === null || columns.length === 0 || !canMeasureAutosize()) {
       return;
     }
-    const { rowModel, gridRootRef, columnWidths: currentWidths, dispatch, totalRowTexts, chipOf } = args;
+    const { rowModel, gridRootRef, columnWidths: currentWidths, dispatch, totalRowTexts, chipOf, pinnedRows } = args;
     const myGeneration = (runGeneration += 1);
     clearOverlayTimer();
 
@@ -99,6 +101,7 @@ export const createColumnAutosizeRunner = <T,>(): ColumnAutosizeRunner<T> => {
       if (!completed) {
         return;
       }
+      pinnedRows?.forEach((row, index) => accumulator.collect(row, -1 - index));
       const nextWidths = accumulator.finalize({ gridRoot, currentWidths, totalRowTexts, chipOf });
       if (Object.keys(nextWidths).length > 0) {
         dispatch(gridActions.syncColumnWidths(nextWidths));

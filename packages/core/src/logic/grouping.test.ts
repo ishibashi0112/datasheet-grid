@@ -15,6 +15,7 @@ import {
   groupIndexOfOrderValue,
   groupRowKey,
   isGroupOrderValue,
+  resolveGroupLabel,
 } from './grouping';
 import { createSourceOrder } from './filtering';
 import type { GridColumn, GridGroupRow } from '../model/gridTypes.unbound';
@@ -340,5 +341,53 @@ describe('補助 API', () => {
     const key = groupRowKey(tree.roots[0].groupRow);
     expect(typeof key).toBe('string');
     expect(String(key).startsWith(GROUP_ROW_KEY_PREFIX)).toBe(true);
+  });
+});
+
+// 追加(1.1.0 / 2026-11-09 実アプリの総点検 AP-08 / I-01): グループ行の見出しの文字(列の groupLabel)。
+describe('groupLabel', () => {
+  type CodeRow = { region: string | null; amount: number };
+  const NAMES: Record<string, string> = { kanto: '関東', chubu: '中部' };
+  const codeRows: CodeRow[] = [
+    { region: 'kanto', amount: 1 },
+    { region: 'chubu', amount: 2 },
+    { region: null, amount: 3 },
+  ];
+  const regionColumn = (extra: Partial<GridColumn<CodeRow>>): GridColumn<CodeRow> => ({
+    key: 'region',
+    title: '地域',
+    width: 100,
+    rowGroup: true,
+    valueFormatter: ({ value }) => NAMES[String(value)] ?? String(value ?? ''),
+    ...extra,
+  });
+  const labelsOf = (column: GridColumn<CodeRow>) =>
+    buildGroupTree(codeRows, createSourceOrder(codeRows.length), [column], []).roots.map((node) => node.groupRow.label);
+
+  it("既定と 'value' は値の文字(1.0 と同じ)。空白のグループは「(空白)」", () => {
+    expect(labelsOf(regionColumn({}))).toEqual(['kanto', 'chubu', GROUP_EMPTY_LABEL]);
+    expect(labelsOf(regionColumn({ groupLabel: 'value' }))).toEqual(['kanto', 'chubu', GROUP_EMPTY_LABEL]);
+  });
+
+  it("'formatted' は列の valueFormatter(無ければ値の文字)", () => {
+    expect(labelsOf(regionColumn({ groupLabel: 'formatted' }))).toEqual(['関東', '中部', GROUP_EMPTY_LABEL]);
+    expect(labelsOf(regionColumn({ groupLabel: 'formatted', valueFormatter: undefined }))).toEqual([
+      'kanto',
+      'chubu',
+      GROUP_EMPTY_LABEL,
+    ]);
+  });
+
+  it('関数はその返り値。row はそのグループの最初の行', () => {
+    const seen: unknown[] = [];
+    const column = regionColumn({
+      groupLabel: ({ value, row }) => {
+        seen.push(row);
+        return `${String(value)}(${row?.amount ?? '-'})`;
+      },
+    });
+    expect(labelsOf(column)).toEqual(['kanto(1)', 'chubu(2)', GROUP_EMPTY_LABEL]);
+    expect(seen).toEqual([codeRows[0], codeRows[1]]);
+    expect(resolveGroupLabel(column, 'kanto', codeRows[0])).toBe('kanto(1)');
   });
 });

@@ -55,6 +55,52 @@ describe('createToolPanelController', () => {
   });
 });
 
+// 追加(1.1.0 の確かめ直しの見直し): 閉じたら開いた部品へフォーカスを戻すのは、フォーカスが行き場を失うときだけ。
+describe('閉じたときのフォーカス(開いた部品へ戻す)', () => {
+  const setup = () => {
+    const root = document.createElement('div');
+    root.tabIndex = -1;
+    const opener = document.createElement('button');
+    const panel = document.createElement('div');
+    panel.className = 'ssg-toolpanel';
+    const inPanel = document.createElement('button');
+    panel.appendChild(inPanel);
+    const elsewhere = document.createElement('input');
+    document.body.append(root, opener, panel, elsewhere);
+    const c = createToolPanelController();
+    c.update({ canUseFilterTab: true, canUseColumnsTab: true, canUseSortTab: true, gridRootRef: { current: root } });
+    c.panelRef.current = panel;
+    opener.focus();
+    c.open('filter');
+    return { c, root, opener, inPanel, elsewhere };
+  };
+
+  it('パネルの中にフォーカスがあれば開いた部品へ。開いた部品が受けられない(disabled)ときはグリッドへ', () => {
+    const first = setup();
+    first.inPanel.focus();
+    first.c.close();
+    expect(document.activeElement).toBe(first.opener);
+    first.c.dispose();
+    document.body.innerHTML = '';
+
+    const second = setup();
+    second.inPanel.focus();
+    second.opener.disabled = true;
+    second.c.close();
+    expect(document.activeElement).toBe(second.root);
+    second.c.dispose();
+  });
+
+  it('ほかの場所(命令的に開いたエディタなど)にフォーカスがあれば奪わない', () => {
+    const { c, opener, elsewhere } = setup();
+    elsewhere.focus();
+    c.close();
+    expect(document.activeElement).toBe(elsewhere);
+    expect(document.activeElement).not.toBe(opener);
+    c.dispose();
+  });
+});
+
 describe('画面の中に収める(AP-30)', () => {
   it('既定の位置: 上限が下に入らなければ上へずらし、低い画面では高さの上限を画面に合わせる', () => {
     // 十分な高さ: そのまま、上限は 420px。

@@ -9,6 +9,7 @@ import type { GridColumn, GridGroupRow } from '../model/gridTypes.unbound';
 import type { GridLocaleText } from '../model/gridTypes.core';
 import { groupIndexOfOrderValue, isGroupOrderValue } from './grouping';
 import { DEFAULT_GRID_LOCALE_TEXT, formatLocaleText } from './localeText';
+import { formatCellClipboardText } from './selectLabels';
 
 // 追加(英語対応): 小計の行の自分の段の文字(「関東 小計」= localeText の exportSubtotal)と空白のグループの名前(blank)。
 export type GroupExportLocaleText = Pick<GridLocaleText, 'exportSubtotal' | 'blank'>;
@@ -61,9 +62,10 @@ export const createGroupSubtotalLineGetter = <T,>({
     }
     return undefined;
   };
-  // グループ元の列の値の文字(データ行と同じ規則。列に formatClipboardValue があればそれ、無ければ String(value ?? ''))。
+  // グループ元の列の値の文字(データ行と同じ規則。列に formatClipboardValue があればそれ、無ければ String(value ?? '')。
+  //   1.1.0 から select の `clipboard: 'label'` の列は label)。
   const valueText = (value: unknown, column: GridColumn<T>, row: T | undefined): string =>
-    column.formatClipboardValue && row !== undefined ? column.formatClipboardValue(value, row) : cellText(value);
+    formatCellClipboardText(column, value, row);
   return (index) => {
     const value = order[index];
     if (value === undefined || !isGroupOrderValue(value)) {

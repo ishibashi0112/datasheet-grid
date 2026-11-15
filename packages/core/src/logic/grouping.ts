@@ -48,6 +48,20 @@ import {
 // 空白グループの表示ラベルです。
 export const GROUP_EMPTY_LABEL = '(空白)';
 
+// 追加(1.1.0 / 2026-11-09 実アプリの総点検 AP-08 / I-01): グループ行の見出しの文字です。列の groupLabel が 'formatted' なら
+//   列の valueFormatter(無ければ String(値))、関数ならその返り値、それ以外(既定 'value')は String(値) = 1.0 と同じ。
+//   row はそのグループで最初に出てきた行(入力 order の順。グループ元の列の値はグループの中で同じ)。
+export const resolveGroupLabel = <T,>(column: GridColumn<T>, value: unknown, row: T): string => {
+  const option = column.groupLabel;
+  if (typeof option === 'function') {
+    return option({ value, row, column });
+  }
+  if (option === 'formatted' && column.valueFormatter) {
+    return column.valueFormatter({ value, row, column });
+  }
+  return String(value);
+};
+
 // グループ行キーの接頭辞です(leaf の GridRowKey と衝突しない React key / 行キー空間を作ります)。
 export const GROUP_ROW_KEY_PREFIX = '__ssg-group__:';
 
@@ -146,6 +160,7 @@ export const buildGroupTree = <T,>(
     bucket: string,
     raw: unknown,
     level: number,
+    row: T,
   ): GroupTreeNode<T> => {
     // 開閉キーの階層区切りは \u0000、列 key と bucket の区切りは \u0001 です
     //   (列 key に混入し得ない制御文字で、階層・列をまたぐ衝突を防ぎます)。
@@ -159,7 +174,7 @@ export const buildGroupTree = <T,>(
           parentKey === null ? segment : `${parentKey}\u0000${segment}`,
         columnKey: column.key,
         value: isEmpty ? null : raw,
-        label: isEmpty ? GROUP_EMPTY_LABEL : String(raw),
+        label: isEmpty ? GROUP_EMPTY_LABEL : resolveGroupLabel(column, raw, row),
         level,
         leafCount: 0,
         aggregates: {},
@@ -195,7 +210,7 @@ export const buildGroupTree = <T,>(
       const bucket = encodeGroupBucket(raw);
       let node = siblingIndex.get(bucket);
       if (!node) {
-        node = createNode(parentKey, column, bucket, raw, level);
+        node = createNode(parentKey, column, bucket, raw, level, row);
         siblings.push(node);
         siblingIndex.set(bucket, node);
       }

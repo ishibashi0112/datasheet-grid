@@ -37,7 +37,7 @@ export const PAGES = [
     moveIn: {
       from: 'GridColumn props',
       after: 'スクロール位置インジケーター',
-      blocks: ['展開行', 'ラベル行', '合計行', '行ドラッグ並び替え'],
+      blocks: ['展開行', 'ラベル行', '合計行', '固定行', '行ドラッグ並び替え'],
     },
   },
   {

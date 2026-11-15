@@ -257,4 +257,20 @@ describe('buildGridExportData × 合計行(totalLine)', () => {
       { value: null, text: '' },
     ]);
   });
+
+  // 追加(1.1.0 / 固定行): 行種は 'pinned'。上は本体の前、下は本体の後・合計行の前。
+  it('固定行は本体と同じ規則のセルで、上は本体の前・下は合計行の前(行種 pinned)', () => {
+    const data = buildGridExportData({
+      getRow: (i) => tRows[i],
+      startRow: 0,
+      endRow: tRows.length,
+      columns: tColumns,
+      pinnedTop: [tRows[1] as TRow],
+      pinnedBottom: [tRows[0] as TRow],
+      totalLine: ['合計', 3],
+    });
+    expect(data.rowKinds).toEqual(['pinned', 'data', 'data', 'pinned', 'total']);
+    expect(data.rows[0]).toEqual(data.rows[2]);
+    expect(data.rows[3]).toEqual(data.rows[1]);
+  });
 });

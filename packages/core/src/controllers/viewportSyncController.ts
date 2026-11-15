@@ -49,6 +49,12 @@ export type ViewportSyncArgs<T> = {
 
 export type ViewportSyncController<T> = {
   update: (args: ViewportSyncArgs<T>) => void;
+  // 追加(1.1.0 の確かめ直しの見直し): アクティブセルの合わせ直し(下の follow)をやめます。命令的なスクロール
+  //   (scrollToTop / scrollToRow / setScrollPosition など)の前に呼びます(イベントを伴わないので、呼ばないと 1 秒の間は
+  //   アクティブセルへ引き戻していた)。
+  cancelFollow: () => void;
+  // 追加(同): 外すとき(合わせ直しのリスナーとタイマーを外す)。外した後も update は使えます(StrictMode の付け直し)。
+  dispose: () => void;
 };
 
 // 内容縮小時の clamp(純粋な DOM 書き込み。テストからも直接呼べます)。
@@ -75,7 +81,7 @@ export const clampScrollToContent = (
   }
 };
 
-// active cell を可視域へ入れるスクロール(必要なときだけ scrollTo)。
+// active cell を可視域へ入れるスクロール(必要なときだけ scrollTo)。スクロールしたら true。
 export const scrollCellIntoView = (
   scrollElement: HTMLElement,
   rect: ViewportCellRect,
@@ -90,7 +96,7 @@ export const scrollCellIntoView = (
     | 'activeCellPinned'
     | 'stickyTopInset'
   >,
-): void => {
+): boolean => {
   const cellTop = args.headerHeight + rect.top;
   const cellBottom = cellTop + rect.height;
   const cellLeft = args.leftPaneWidth + args.centerLeadingWidth + rect.left;
@@ -151,7 +157,9 @@ export const scrollCellIntoView = (
       left: nextScrollLeft,
       behavior: 'auto',
     });
+    return true;
   }
+  return false;
 };
 
 // 追加(1.0.2 / 2026-11-09 実アプリの総点検 J-10): キーボードでアクティブセルを動かしたとき、グリッドの外側(スクロールする親と
@@ -280,6 +288,16 @@ export const createScrollScaleAnchor = (): ScrollScaleAnchor => {
   };
 };
 
+// 追加(1.1.0 の確かめ直し): アクティブセルへスクロールした後、行の高さを測り直して位置が動いたら合わせ直す時間(ms)。
+const ACTIVE_CELL_FOLLOW_MS = 1000;
+
+// 合わせ直しをやめる利用者の操作です。ポインタを離したら(押したセルはもう見えている)・ボタンを押したまま動かしたら
+//   (範囲選択のドラッグの端の自動スクロールに逆らわない)もやめます。
+const FOLLOW_CANCEL_EVENTS = ['wheel', 'touchstart', 'pointerdown', 'pointerup', 'pointermove', 'keydown'] as const;
+
+const sameRectGeometry = (a: ViewportCellRect | null, b: ViewportCellRect): boolean =>
+  a !== null && a.top === b.top && a.height === b.height && a.left === b.left && a.width === b.width;
+
 const changed = <A extends object>(
   prev: A | null,
   next: A,
@@ -290,6 +308,45 @@ export const createViewportSyncController = <T,>(): ViewportSyncController<T> =>
   let prev: ViewportSyncArgs<T> | null = null;
   // 3) の座標変化ゲート用: 前回評価した active cell 座標。
   let lastEvaluatedCell: CellCoord | null = null;
+  // 追加(1.1.0 の確かめ直し): 行の高さを測るモード(autoHeight)では、遠くの行(Ctrl+End の最後の行など)へ飛んだ直後に
+  //   描かれた行が測られて位置が動き、1 回のスクロールでは見えないことがありました(2 回目の Ctrl+End で見えた。1.0 から)。
+  //   座標が変わった後 ACTIVE_CELL_FOLLOW_MS の間、同じセルの矩形が動いて見えなくなったら合わせ直します(selectCell の後の
+  //   scrollToCell のように、先に見える位置へスクロールしてあったときも)。利用者が操作したら(ホイール / タッチ / ポインタを
+  //   押す / キーを押す)やめます。縦のスクロール位置では見分けません(行の仮想化が測った高さの差を scrollTop へ足すため)。
+  //   横のスクロール位置が動いたときはやめます。矩形が動かない(高さを測らない)表では何もしません。
+  let follow: { cell: CellCoord; until: number; left: number } | null = null;
+  let stopFollowing: (() => void) | null = null;
+  const endFollow = () => {
+    follow = null;
+    stopFollowing?.();
+    stopFollowing = null;
+  };
+  const onCancelEvent = (event: Event) => {
+    // ボタンを押していないポインタの動き(ホバー)ではやめません。
+    if (event.type === 'pointermove' && !((event as PointerEvent).buttons > 0)) {
+      return;
+    }
+    endFollow();
+  };
+  const startFollow = (scrollElement: HTMLElement, cell: CellCoord) => {
+    endFollow();
+    follow = { cell, until: Date.now() + ACTIVE_CELL_FOLLOW_MS, left: scrollElement.scrollLeft };
+    const doc = scrollElement.ownerDocument as Document | undefined;
+    const timer = setTimeout(endFollow, ACTIVE_CELL_FOLLOW_MS);
+    if (typeof doc?.addEventListener !== 'function') {
+      stopFollowing = () => clearTimeout(timer);
+      return;
+    }
+    for (const type of FOLLOW_CANCEL_EVENTS) {
+      doc.addEventListener(type, onCancelEvent, { capture: true, passive: true });
+    }
+    stopFollowing = () => {
+      clearTimeout(timer);
+      for (const type of FOLLOW_CANCEL_EVENTS) {
+        doc.removeEventListener(type, onCancelEvent, { capture: true });
+      }
+    };
+  };
 
   const update = (args: ViewportSyncArgs<T>) => {
     // 1) 列計測の再測定(旧 effect deps: columnVirtualizer, columnMeasurements)。
@@ -335,14 +392,31 @@ export const createViewportSyncController = <T,>(): ViewportSyncController<T> =>
         prevCell.row === activeCell.row &&
         prevCell.col === activeCell.col;
       lastEvaluatedCell = activeCell;
-      if (!coordUnchanged && args.scrollElement && args.activeCellRect) {
+      if (!coordUnchanged && args.scrollElement && args.activeCellRect && activeCell) {
         scrollCellIntoView(args.scrollElement, args.activeCellRect, args);
         revealActiveCellInPage(args.scrollElement, args.activeCellRect, args);
+        startFollow(args.scrollElement, activeCell);
+      } else if (
+        coordUnchanged &&
+        follow !== null &&
+        activeCell !== null &&
+        args.scrollElement &&
+        args.activeCellRect &&
+        follow.cell.row === activeCell.row &&
+        follow.cell.col === activeCell.col &&
+        !sameRectGeometry(prev?.activeCellRect ?? null, args.activeCellRect)
+      ) {
+        if (Date.now() > follow.until || Math.abs(args.scrollElement.scrollLeft - follow.left) > 1) {
+          endFollow();
+        } else {
+          scrollCellIntoView(args.scrollElement, args.activeCellRect, args);
+          follow = { ...follow, left: args.scrollElement.scrollLeft };
+        }
       }
     }
 
     prev = args;
   };
 
-  return { update };
+  return { update, cancelFollow: endFollow, dispose: endFollow };
 };

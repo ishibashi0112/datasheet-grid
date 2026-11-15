@@ -10,9 +10,11 @@
 //   - SegmentedControl は Mantine 風のスライドインジケータです。セグメントは等幅のため、
 //     インジケータは CSS 変数(--ssg-seg-count / --ssg-seg-index)による translateX だけで
 //     追従し、実測(offsetWidth)を使いません(resize / タブ数変化に自動追従)。
-import { useEffect, useId } from 'react';
+import { useEffect, useId, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { cx } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/cx';
+import { resolveFocusWrapTarget } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/focusCycle';
+import { isImeComposingKeyEvent } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/domGuards';
 import type { CSSProperties, KeyboardEvent, PointerEvent, ReactNode, RefObject } from 'react';
 import type {
   ToolPanelLayout,
@@ -20,7 +22,7 @@ import type {
 } from '../hooks/useToolPanelController';
 // ヘッダーを掴んでパネルを移動する共有フックです(FM-4)。
 import { usePanelHeaderDrag } from '../hooks/usePanelHeaderDrag';
-import { usePortalTokens } from '../hooks/usePortalTokens';
+import { usePopupContainer, usePortalTokens } from '../hooks/usePortalTokens';
 import type { GridResolvedSlot } from '../model/gridTypes';
 import { usePopupLocaleText } from '../hooks/usePopupLocaleText';
 
@@ -78,7 +80,27 @@ export function ToolPanel({
   // 追加(audit V-14): タブ / タブパネルの id の基底。
   const tabIdBase = useId();
   // 追加(DevBI の報告): 表で決まったトークン(--ssg-*)をパネルへ写します(body 直下のため継承で届かない)。
-  usePortalTokens(panelRef, activeTab !== null && layout !== null, themeClassName);
+  usePortalTokens(panelRef, activeTab !== null && layout !== null, themeClassName, { layout });
+  // 追加(1.1.0 / AP-07): 描く場所(既定はグリッドを囲むダイアログの中、無ければ body)。
+  const popupContainer = usePopupContainer(activeTab !== null && layout !== null);
+
+  // 追加(1.1.0 / 2026-11-09 実アプリの総点検 RV2-L2): 開いたら選ばれているタブへフォーカスを移します(これまでは body の
+  //   ままで、キーボードではパネルに入れなかった)。開いている間に開き直したとき(枠のフラッシュ)は動かしません。
+  const isOpen = activeTab !== null && layout !== null;
+  const wasOpenRef = useRef(false);
+  useEffect(() => {
+    const opened = isOpen && !wasOpenRef.current;
+    wasOpenRef.current = isOpen;
+    if (!opened) {
+      return;
+    }
+    const panel = panelRef.current;
+    if (panel === null || panel.contains(panel.ownerDocument.activeElement)) {
+      return;
+    }
+    const target = panel.querySelector<HTMLElement>('[role="tab"][aria-selected="true"]') ?? panel;
+    target.focus({ preventScroll: true });
+  }, [isOpen, panelRef]);
 
   // 追加(UP-2 / 既開時フラッシュ): flashTick が増えたら panelRef の枠を一瞬フラッシュします。
   //   既存のヘッダージャンプ(ssg-header-cell--jump-flash)と同じ「JS 直付け + animationend
@@ -104,7 +126,7 @@ export function ToolPanel({
     };
   }, [flashTick, panelRef]);
 
-  if (activeTab === null || !layout) {
+  if (activeTab === null || !layout || !popupContainer) {
     return null;
   }
 
@@ -134,6 +156,23 @@ export function ToolPanel({
     event.stopPropagation();
   };
 
+  // 追加(1.1.0 / RV2-L2): Tab はパネルの中で回します(列フィルターのポップオーバーと同じ。これまでは最後の項目の次で
+  //   ページの先頭へ出ていた)。中の部品がキーの伝播を止めるので capture 相で見ます。
+  const handleKeyDownCapture = (event: KeyboardEvent<HTMLDivElement>) => {
+    if (event.key !== 'Tab' || event.altKey || event.ctrlKey || event.metaKey || isImeComposingKeyEvent(event.nativeEvent)) {
+      return;
+    }
+    const next = resolveFocusWrapTarget(
+      event.currentTarget,
+      event.target instanceof Element ? event.target : null,
+      event.shiftKey,
+    );
+    if (next !== null) {
+      event.preventDefault();
+      next.focus();
+    }
+  };
+
   // SegmentedControl のインジケータ位置です(等幅前提の CSS 変数駆動)。
   const segmentedStyle = {
     '--ssg-seg-count': tabs.length,
@@ -145,9 +184,14 @@ export function ToolPanel({
       ref={panelRef}
       onPointerDown={handlePointerDown}
       onKeyDown={handleKeyDown}
+      onKeyDownCapture={handleKeyDownCapture}
       onContextMenu={(event) => {
         event.preventDefault();
       }}
+      // 追加(1.1.0 / RV2-L2): 支援技術にダイアログとして伝えます(モーダルではないので aria-modal は付けない)。
+      role="dialog"
+      aria-label={texts.toolPanelLabel}
+      tabIndex={-1}
       className={cx(
         'ssg-popover',
         'ssg-toolpanel',
@@ -216,7 +260,7 @@ export function ToolPanel({
         {children}
       </div>
     </div>,
-    document.body,
+    popupContainer,
   );
 }
 

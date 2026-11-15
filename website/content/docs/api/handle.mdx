@@ -128,7 +128,7 @@ const addRow = () => {
 | `redo()` | undo で取り消した編集をやり直す(`Ctrl/Cmd+Shift+Z` / `Ctrl/Cmd+Y` 相当)。undo 後に新しい編集が入った時点で redo 系譜は破棄される。 |
 | `canUndo()` / `canRedo()` | undo / redo 可能かを返す(無効条件下では常に `false`)。 |
 | `clearUndoHistory()` | 編集履歴を破棄する(rows は変更しない)。rows の外部差し替えはグリッド側でも自動検知して破棄するため、通常は呼ばなくてよい。 |
-| `applyRows(nextRows)` | 外からの変更(行の削除ボタン / 一括更新など)を「元に戻す」の履歴に積んでから `onRowsChange` へ渡す(`Ctrl/Cmd+Z` / `undo()` で戻せる)。`rows` を外から直接差し替えると履歴は消えるので、元に戻せるようにしたい変更はこれで渡す。履歴が無効(`enableUndoRedo={false}` / `readOnly`)なら積まずに `onRowsChange` へ渡す。`onRowsChange` が無いとき・serverSide では何もしない(開発時に警告)。渡すのは次の行の配列で、関数(`setRows((prev) => …)` の形)は受けない(今の `rows` から次の配列を作って渡す)。 |
+| `applyRows(nextRows, { undoable? })` | 外からの変更(行の削除ボタン / 一括更新など)を「元に戻す」の履歴に積んでから `onRowsChange` へ渡す(`Ctrl/Cmd+Z` / `undo()` で戻せる)。`rows` を外から直接差し替えると履歴は消えるので、元に戻せるようにしたい変更はこれで渡す。`nextRows` は次の行の配列か、関数(`(prev) => next`。`prev` は最後に渡した行で、続けて呼んでも重なる。1.1.0 から)。`undoable: false`(1.1.0 から)は履歴に積まず、今の履歴も消さない(株価のような外からのライブの更新)。そのときの元に戻す / やり直すは、外からの更新を残したままグリッドでの編集だけを取り消す / やり直す(行は `rowKeyGetter` で対応づける。無いときは位置なので、行を足す / 消す更新では `rowKeyGetter` を書く。`rowKeyGetter` が無い表で行の数が変わったときと、行キーが重なっているときは、1.0 と同じく編集の前の行をそのまま戻す = 外からの更新も戻る)。履歴が無効(`enableUndoRedo={false}` / `readOnly`)なら積まずに `onRowsChange` へ渡す。`onRowsChange` が無いとき・serverSide では何もしない(開発時に警告)。 |
 
 **挙動メモ**:
 
@@ -159,7 +159,7 @@ const addRow = () => {
 | `exportCsv(options?)` | CSV 文字列を返す(純粋・副作用なし)。 |
 | `downloadCsv(filename?, options?)` | `exportCsv` の結果を `.csv` としてダウンロード(`filename` 既定 `'export.csv'`、`bom` 既定 `true`)。 |
 
-`CsvExportOptions`: `scope`(下表)、`includeHeaders`(既定 `true`)、`delimiter`(既定 `','`。`'\t'` で TSV)、`bom`(`exportCsv` は既定 `false` / `downloadCsv` は既定 `true` = Excel 互換)、`escapeFormulas`(既定 `false`。`true` で `=` / `+` / `-` / `@` / タブ / CR で始まる値の先頭に `'` を付け、表計算ソフトで数式として実行されないようにする(CSV インジェクション対策)。`-5` のように数値として読める値はそのまま。ヘッダー行は対象外)、`includeLabelRows`(既定 `false`。ラベル行(`labelRow`)を `exportText`(未指定なら `getLabel` を先頭列・他列は空)の 1 行として出力する)、`includeTotalRow`(既定 `false`。合計行(`totalRow`)を末尾に 1 行出す。scope `'view'` のときだけで、値は生値)、`includeGroupRows`(既定 `false`。行グルーピング中に各グループの先頭へ小計の行を入れる。scope `'view'` のときだけ。グループ元の列は祖先のグループの値と「関東 小計」のような「グループの値 + 小計」、集計のある列(`aggFunc`)はそのグループの集計値(生値)、ほかの列は空。グループ元の列の文字はデータ行と同じ規則(`formatClipboardValue`)。`isRowExportable` で除いた行は小計にも数えず、行が 1 つも残らないグループは小計の行も出さない。合計行(`includeTotalRow`)は画面の合計行と同じ値で、除いた行も数える)。行グルーピング中は、表示から外れているグループ元の列を出力の先頭に入れる(scope `'view'` / `'raw'` / `'rendered'` と行の選択。セル / 列の選択は選んだ列のまま)。値整形はコピー(クリップボード)と同じ規則(`formatClipboardValue` があればそれ、無ければ `String(value ?? '')`)。RFC 4180 のクォート、行区切りは CRLF。props の `isRowExportable` 指定時は `false` の行が出力から行ごと除かれる(コピー / `getExportData` も同じ規則)。
+`CsvExportOptions`: `scope`(下表)、`includeHeaders`(既定 `true`)、`delimiter`(既定 `','`。`'\t'` で TSV)、`bom`(`exportCsv` は既定 `false` / `downloadCsv` は既定 `true` = Excel 互換)、`escapeFormulas`(既定 `false`。`true` で `=` / `+` / `-` / `@` / タブ / CR で始まる値の先頭に `'` を付け、表計算ソフトで数式として実行されないようにする(CSV インジェクション対策)。`-5` のように数値として読める値はそのまま。ヘッダー行は対象外)、`includeLabelRows`(既定 `false`。ラベル行(`labelRow`)を `exportText`(未指定なら `getLabel` を先頭列・他列は空)の 1 行として出力する)、`includeTotalRow`(既定 `false`。合計行(`totalRow`)を末尾に 1 行出す。scope `'view'` のときだけで、値は生値)、`includePinnedRows`(既定 `false`。固定行(`pinnedTopRows` / `pinnedBottomRows`)を、上は本体の行の前、下は本体の行の後(合計行の前)に出す。scope `'selection'` では出さない)、`includeGroupRows`(既定 `false`。行グルーピング中に各グループの先頭へ小計の行を入れる。scope `'view'` のときだけ。グループ元の列は祖先のグループの値と「関東 小計」のような「グループの値 + 小計」、集計のある列(`aggFunc`)はそのグループの集計値(生値)、ほかの列は空。グループ元の列の文字はデータ行と同じ規則(`formatClipboardValue`)。`isRowExportable` で除いた行は小計にも数えず、行が 1 つも残らないグループは小計の行も出さない。合計行(`includeTotalRow`)は画面の合計行と同じ値で、除いた行も数える)。行グルーピング中は、表示から外れているグループ元の列を出力の先頭に入れる(scope `'view'` / `'raw'` / `'rendered'` と行の選択。セル / 列の選択は選んだ列のまま)。値整形はコピー(クリップボード)と同じ規則(`formatClipboardValue` があればそれ、無ければ `String(value ?? '')`)。RFC 4180 のクォート、行区切りは CRLF。props の `isRowExportable` 指定時は `false` の行が出力から行ごと除かれる(コピー / `getExportData` も同じ規則)。
 
 **scope 対応表**(`exportCsv` / `downloadCsv` / `getExportData` 共通):
 
@@ -180,7 +180,7 @@ serverSide(SSRM)の注意: `'view'` は未ロード行をスキップ(= ロー�
 | --- | --- |
 | `getExportData(options?)` | 列メタ + 2 次元セルの、シリアライズ非依存な整形済みデータを返す(純粋・副作用なし)。 |
 
-`GridExportOptions`: `scope`(既定 `'view'`。上記 **scope 対応表**と同一規則を共有)、`includeLabelRows`(既定 `false`。ラベル行を含める。含めたときは `rowKinds` で行種を判別できる)、`includeTotalRow`(既定 `false`。合計行を末尾に含める。scope `'view'` のときだけで、`rowKinds` の `'total'` で判別できる)、`includeGroupRows`(既定 `false`。行グルーピング中の小計の行。`exportCsv` と同じで、`rowKinds` の `'group'` で判別できる)。
+`GridExportOptions`: `scope`(既定 `'view'`。上記 **scope 対応表**と同一規則を共有)、`includeLabelRows`(既定 `false`。ラベル行を含める。含めたときは `rowKinds` で行種を判別できる)、`includeTotalRow`(既定 `false`。合計行を末尾に含める。scope `'view'` のときだけで、`rowKinds` の `'total'` で判別できる)、`includePinnedRows`(既定 `false`。固定行を含める。`exportCsv` と同じ位置で、`rowKinds` の `'pinned'` で判別できる)、`includeGroupRows`(既定 `false`。行グルーピング中の小計の行。`exportCsv` と同じで、`rowKinds` の `'group'` で判別できる)。
 
 戻り値 `GridExportData`:
 
@@ -188,7 +188,7 @@ serverSide(SSRM)の注意: `'view'` は未ロード行をスキップ(= ロー�
 type GridExportData = {
   columns: { key: string; title: string }[];   // 視覚順(selection では選択列のみ)
   rows: { value: unknown; text: string }[][];   // scope の行レンジ(SSRM 未ロード行はスキップ)
-  rowKinds?: ('data' | 'label' | 'total' | 'group')[]; // ラベル行 / 合計行 / 小計の行を含めたときだけ(rows と同じ長さ)
+  rowKinds?: ('data' | 'label' | 'total' | 'group' | 'pinned')[]; // ラベル行 / 合計行 / 小計の行 / 固定行を含めたときだけ(rows と同じ長さ)
 };
 ```
 
@@ -292,7 +292,7 @@ const buffer = await writeXlsx({
 
 ### ツールチップ
 
-グリッド内・ポータル内の操作ヒント / 切り詰めテキスト全文表示は、`title` 属性ではなく**カスタムツールチップ**(`.ssg-tooltip`・body 直下シングルトン)で表示される。表示対象は `data-ssg-tooltip="文言"` 属性で、window の pointerover / focusin 委譲で拾うため、**利用側が自前の要素(カスタムセル / renderHeader 等)へ同属性を付けても同じ見た目のツールチップが出る**。配色は `--ssg-tooltip-bg / --ssg-tooltip-text / --ssg-tooltip-shadow` トークンで調整可能。
+グリッド内・ポータル内の操作ヒント / 切り詰めテキスト全文表示は、`title` 属性ではなく**カスタムツールチップ**(`.ssg-tooltip`・表の外のシングルトン。`popupContainer`)で表示される。表示対象は `data-ssg-tooltip="文言"` 属性で、window の pointerover / focusin 委譲で拾うため、**利用側が自前の要素(カスタムセル / renderHeader 等)へ同属性を付けても同じ見た目のツールチップが出る**。配色は `--ssg-tooltip-bg / --ssg-tooltip-text / --ssg-tooltip-shadow` トークンで調整可能。
 
 **ボディセルの省略時ツールチップ**: グリッド prop `showCellOverflowTooltip`(既定 `false`)を `true` にすると、**既定テキストセルが省略(…)されているときだけ**ホバーで全文ツールチップが出る。実装は上記機構の派生で、セルへ `data-ssg-tooltip-overflow` マーカーを付け、表示可否は**ホバー時**に `scrollWidth > clientWidth` を判定(実際にクリップされているセルのみ表示)、文言はセルの表示テキスト(`textContent`)をそのまま使用する。`renderCell` 列(テキストとは限らない)と `autoHeight` 折り返し列(クリップされない)は対象外。特定列だけ全文表示したい / させたくない場合は、`renderCell` で自前要素へ `data-ssg-tooltip="…"`(常時)や `data-ssg-tooltip-overflow`(省略時)を付ける運用も可能。
 
