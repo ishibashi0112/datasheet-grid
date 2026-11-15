@@ -34,6 +34,36 @@ const [rows, setRows] = useState(initialRows);
 
 `onRowMove` に渡る `params` は `{ rowKey, fromIndex, toIndex, rows }` です。`fromIndex` / `toIndex` は元 `rows` 配列の index、`rows` は `onRowsChange` に渡したものと同じ新配列参照です。
 
+### 落とせる先を決める(`canDropRow`)
+
+ラベル行(カテゴリ)のまとまりの中だけで動かしたいときなどは、`canDropRow` で落とせない位置に `false` を返します(1.2.0 から)。
+
+```tsx
+// ラベル行のまとまりの中だけで動かす
+const sectionOf = useMemo(() => {
+  const map = new Map<string, string>();
+  let section = '';
+  for (const row of rows) {
+    if (isLabel(row)) section = row.id;
+    else map.set(row.id, section);
+  }
+  return map;
+}, [rows]);
+
+<SpreadsheetGrid
+  enableRowDrag
+  canDropRow={({ row, rowAbove }) =>
+    rowAbove !== undefined && (isLabel(rowAbove) ? rowAbove.id : sectionOf.get(rowAbove.id)) === sectionOf.get(row.id)
+  }
+  ...
+/>
+```
+
+- `params` は `{ row, rowKey, fromIndex, toIndex, rowAbove, rowBelow, rows }` です。`fromIndex` / `toIndex` は `onRowMove` と同じ、`rowAbove` / `rowBelow` は落とした後に掴んだ行のすぐ上 / すぐ下に来る行(先頭 / 末尾なら `undefined`)、`rows` は動かす前の配列です。
+- `false` の位置ではガイド線を出さず(ゴーストは枠の外と同じ薄い見た目)、離しても動かしません。`rowDragMotion="live"` では落とせる最後の位置に留まり、そこで離せばそこへ動きます。
+- 落とす位置が変わるたびに呼ぶので、重い計算は `useMemo` で前もって済ませておきます(上の例の `sectionOf`)。
+- 命令的な `moveRow()` には効きません(アプリのコードで決めた移動はそのまま行います)。
+
 ### 表示方式(`rowDragMotion`)
 
 ```tsx
@@ -50,7 +80,7 @@ const [rows, setRows] = useState(initialRows);
 gridRef.current?.moveRow('T-108', 0); // 行キー 'T-108' を先頭へ
 ```
 
-`moveRow(rowKey, toIndex)` は表示状態(ソート / フィルター)に関わらず元配列上で移動し、`onRowsChange` → `onRowMove` の順に呼ばれます。未知のキー / 同一位置 / 範囲外は何もしません。
+`moveRow(rowKey, toIndex)` は表示状態(ソート / フィルター)に関わらず元配列上で移動し、`onRowsChange` → `onRowMove` の順に呼ばれます(`canDropRow` は効きません)。未知のキー / 同一位置 / 範囲外は何もしません。
 
 ## 仕様の要点
 

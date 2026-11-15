@@ -80,6 +80,11 @@ export type RowDragArgs = {
   // 追加(1.0.1 / 2026-11-09 実アプリの総点検 AP-15): ハンドルを押したときにフォーカスを移すグリッドのルート。pointerdown の
   //   既定の動作を止めるのでフォーカスが外の入力欄に残り、直後の Ctrl+Z が外の入力欄の文字を戻していた。省略時は移さない。
   gridRootRef?: ReadonlyRef<HTMLElement | null>;
+  // 追加(1.2.0 / 2026-11-09 実アプリの総点検 E-07): その位置へ落とせるか(from は掴んだ行の index、slot はドロップスロット =
+  //   行 i の上の境界が i)。false の位置は、'ghost' ではガイド線を出さずゴーストを枠の外と同じ見た目にして離しても動かさない、
+  //   'live' では落とせる最後の位置に留まる(最初から落とせなければ元の位置)。同じ from / スロットは聞き直さず、関数が
+  //   変わったら(行が変わった等)控えを捨てます。未指定ならどこでも落とせる(従来どおり)。
+  canDropAt?: (fromIndex: number, slot: number) => boolean;
 };
 
 // ハンドルの pointerdown イベント(構造的型。React の合成 PointerEvent をそのまま渡せます)。
@@ -193,6 +198,16 @@ export const createRowDragController = (): RowDragController => {
   // ドラッグセッション state。
   let draggingIndex: number | null = null;
   let dropSlot: number | null = null;
+  // 追加(E-07): canDropAt の答えの控え(1 回のドラッグの中で、掴んだ行の index とスロットが同じなら聞き直さない)。
+  let dropCheck: { from: number; slot: number; allowed: boolean } | null = null;
+  const isDropAllowed = (from: number, slot: number): boolean => {
+    const canDropAt = args?.canDropAt;
+    if (!canDropAt) return true;
+    if (dropCheck !== null && dropCheck.from === from && dropCheck.slot === slot) return dropCheck.allowed;
+    const allowed = canDropAt(from, slot);
+    dropCheck = { from, slot, allowed };
+    return allowed;
+  };
   let pointer = { x: 0, y: 0 };
   let dragOrigin: { x: number; y: number } | null = null;
   let autoScrollArmed = false;
@@ -469,15 +484,24 @@ export const createRowDragController = (): RowDragController => {
     //   スロットを保ちます(離しても確定。ゴースト方式の「枠外 = キャンセル」とは違う)。
     if (isLive()) {
       if (hit && from !== null) {
-        dropSlot = resolveMoveTargetIndex(from, hit.slot) === null ? null : hit.slot;
+        // 変更(E-07): 落とせない位置(canDropAt が false)では、直前の(落とせる)位置に留まります。
+        if (resolveMoveTargetIndex(from, hit.slot) === null) {
+          dropSlot = null;
+        } else if (isDropAllowed(from, hit.slot)) {
+          dropSlot = hit.slot;
+        }
       }
       hideAllIndicators();
       applyLivePositions(dropSlot);
       return;
     }
-    updateGhost(hit);
+    // 追加(E-07): 落とせない位置(canDropAt が false)は、ゴーストを枠の外と同じ見た目(離しても動かない)にし、ガイド線を
+    //   出しません。
+    const blocked =
+      hit !== null && from !== null && resolveMoveTargetIndex(from, hit.slot) !== null && !isDropAllowed(from, hit.slot);
+    updateGhost(blocked ? null : hit);
     // 掴んだ行の直上 / 直下(= 動かない)はガイド線を出さず、ドロップも no-op です。
-    if (!hit || from === null || resolveMoveTargetIndex(from, hit.slot) === null) {
+    if (!hit || from === null || blocked || resolveMoveTargetIndex(from, hit.slot) === null) {
       dropSlot = null;
       hideAllIndicators();
       return;
@@ -578,7 +602,10 @@ export const createRowDragController = (): RowDragController => {
     dragOrigin = null;
     activePointerId = null;
 
-    const to = from === null || slot === null ? null : resolveMoveTargetIndex(from, slot);
+    // 変更(E-07): 離すときも落とせるかを確かめます(ドラッグ中に並びが変わると update が控えを消すので、今の並びで聞き直す)。
+    const resolvedTo = from === null || slot === null ? null : resolveMoveTargetIndex(from, slot);
+    const to = resolvedTo !== null && from !== null && slot !== null && commit && !isDropAllowed(from, slot) ? null : resolvedTo;
+    dropCheck = null;
     const willCommit = commit && from !== null && to !== null && args !== null;
 
     // 追加(motion-8 / M-11): live 方式の後始末。確定するときは現在の画面位置(追従 / 退避済み)から settle します
@@ -883,6 +910,10 @@ export const createRowDragController = (): RowDragController => {
     update: (next) => {
       const previous = args;
       args = next;
+      // 追加(E-07): 落とせるかの関数が変わったら(行が変わった等)、答えの控えを捨てて聞き直します。
+      if (previous?.canDropAt !== next.canDropAt) {
+        dropCheck = null;
+      }
       if (draggingIndex !== null && previous !== null && previous.locateDragRow !== next.locateDragRow) {
         followDraggedRow(previous.rowMetrics);
       }
@@ -903,6 +934,7 @@ export const createRowDragController = (): RowDragController => {
       draggingIndex = null;
       draggingRow = null;
       dropSlot = null;
+      dropCheck = null;
       liveBases = null;
       liveBands?.forEach(resetDetailBandStyle);
       liveBands = null;

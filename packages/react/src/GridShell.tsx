@@ -481,6 +481,8 @@ export function useGridShell<T extends object>({
   enableRowDrag = false,
   isRowDraggable,
   onRowMove,
+  // 追加(1.2.0 / E-07): 行ドラッグで落とせるか。
+  canDropRow,
   // 追加(バッチ②/コンテキストメニュー): 有効化フラグ(既定 false=OFF)+ 項目供給 / 開通知。
   //   他機能の enable* と同じく既定無効。true かつ getContextMenuItems 指定時のみ発火します。
   enableContextMenu = false,
@@ -3857,6 +3859,10 @@ export function useGridShell<T extends object>({
       rowModel,
       visibleColumns,
       isRowDraggable,
+      // 追加(1.2.0 / E-07): 落とせるかを決める関数(表示順が rows の順のときだけ動くので index は rows の index)。
+      canDropRow,
+      rows,
+      resolveRowKey: resolvedRowKeyGetter,
       localeTexts,
     });
 

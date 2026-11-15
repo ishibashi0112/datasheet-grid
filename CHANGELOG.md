@@ -19,6 +19,7 @@
 - 列の `selectionAggregate`。`false` で、その列を選択範囲の集計の合計 / 平均(と `slotContext.selectionAggregates` の最小 / 最大)から外します(データの個数には数えます)。JAN のような数字の文字列の列を選ぶと「合計 14,700,000,000,100」のような意味の無い数が出ていました。
 - 範囲いっぱいに繰り返す貼り付けを止める `pasteFillsSelection`(既定 `true`。下の「変更」)。`false` で 1.1 までと同じく範囲の左上から 1 回だけ貼ります。
 - number と date のエディタの `strict`。`true` で、数値 / 日付として読めない値(「¥12,000」「2026年11月4日」など)に「数値で入力してください」「日付で入力してください」の印を付けます(`validationMode: 'reject'` の列では書きません。`getInvalidCells()` にも入ります)。これまでは、number の `min` / `max` / `integer` か自前の `validate` が無いと、読めない値は印も付かずに文字のまま入っていました。
+- 行ドラッグで落とせる先を決める `canDropRow`(型 `RowDropParams`)。`false` を返した位置ではガイド線を出さず、離しても動かしません(`rowDragMotion: 'live'` は落とせる最後の位置に留まる)。ラベル行のまとまりの中だけで動かす、などに使えます。これまでは `onRowMove` の中で `undo()` を呼んで戻すしかなく、一度動いて見えてから戻り、中身の無いやり直しが 1 手残っていました。
 - custom エディタの `imeDirectInput`: グリッドの `imeDirectInput` が有効なとき、エディタの定義に `imeDirectInput: true` を付けた custom の列でも IME の変換を受け、確定した文字を `ctx.initialText` に入れて開きます(付けない列は今までどおり変換を捨てます)。
 
 ### 変更

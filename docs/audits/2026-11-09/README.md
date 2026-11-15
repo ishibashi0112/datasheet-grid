@@ -138,7 +138,7 @@
 | H-06 | 入れ子で親の rows を差し替えると外の履歴が消える | 文書 | 済(文書) |
 | H-09 | 「この列でグループ化」が rowGroup の無い列にも出る | 文書 | 済(文書) |
 | E-06 | 行ドラッグのゴーストに 1 列目の生の値 | 1.0.2 | 済(1.0.2。値を文字で出す最初の列。`renderCell` の列は `valueFormatter` があるときだけ、チェックボックス / `showValue: false` のデータバーは飛ばす) |
-| E-07 | 行を落とせる先を制限する API が無い | 1.2.0 | 未着手(2026-11-15 のユーザー判断で 1.1.0 から 1.2.0 へ) |
+| E-07 | 行を落とせる先を制限する API が無い | 1.2.0 | 1.2.0 で済(`canDropRow`。1.2.0 の作業の表) |
 | F-07 | 区分ごとの小計を出す API が無い | 見送り | 見送り |
 | G-14 | 開発時の警告がしきい値をまたぐたびに出る | 1.0.2 | 済(1.0.2。グリッド 1 つにつき 1 回) |
 | G-08 | `onScroll` の source 'user' に位置の詰めも入る | 1.0.2 | 済(文書。`'user'` に詰めも入ることと、末尾を追うときの確かめ方。`followTail` / `isAtBottom()` は 1.1.0 の候補) |
@@ -454,7 +454,7 @@ pack した 1.0.1 の候補(2026-11-09 の tarball と中身が同じ。レビ�
 | 小さな追加 | G-15 / E-09 / A-07 | `onFindChange` の `truncated`(core `findController` の通知に足し、同じ内容の判定にも入れる)。列の `selectionAggregate: false`(core `logic/selectionAggregates` = 個数だけ数え、対象の同じ判定にも入れる)。number / date エディタの `strict`(core `logic/validation` = number は「数値か」だけ、date は有効な `Date` と `toDateInputValue` が読む文字列を通し、ほかは `enterDate`。`hasCellValidation` にも入れて `getInvalidCells` と印の対象に) | 済 |
 | 貼り付け | A-08 | 既定で、セルの範囲への貼り付けはコピーが範囲を割り切れれば範囲いっぱいに繰り返す(core `logic/pasteFill` の `expandPasteMatrixToSelection`。数えるのはデータ行と合成列でない列 = 貼り付けが飛ばすものと同じなので、繰り返した文字はちょうど範囲に収まる。列 / 行の選択・アクティブセルが範囲の外・行ごとの列数が違う文字は今までどおり 1 回。繰り返した行は配列を共有)。prop `pasteFillsSelection={false}` で 1.1 までと同じ。書き込み・飛ばす規則・`onPasteSkipped`・元に戻す 1 回は貼り付けのまま | 済 |
 | IME と custom エディタ | F-06 | custom エディタの定義の `imeDirectInput: true` で、確定した文字を `ctx.initialText` に入れて開く(core `logic/imeInput` の canStartImeEdit) | 済(batch 3) |
-| 行ドラッグ | E-07 | 落とせるかを決める関数の prop | 未着手 |
+| 行ドラッグ | E-07 | prop `canDropRow`(`RowDropParams` = `onRowMove` と同じ index + 落とした後のすぐ上 / 下の行 + 動かす前の rows)。core `rowDragController` の `canDropAt(from, slot)`(同じ from / スロットは聞き直さず、関数が変わったら控えを捨てる。離すときも確かめる)。'ghost' はガイド線を出さずゴーストを枠の外と同じ見た目に、'live' は落とせる最後の位置に留まる。`moveRow()` には効かない | 済(batch 4) |
 | 状態の保存 | H-04 | グループ化の列と閉じたグループを保存の形に入れる選べる形、`GridGroupRow.collapsed` | 未着手 |
 | タッチ | L-12 | `pointer: coarse` でメニュー・候補・チェックの行を大きく、⋮ は押せる範囲だけ広げる | 未着手 |
 | ライブの並べ替え | B-04 | アクティブセルを行キーで追う選べる prop(複数行の範囲の扱いはプレビューで選ぶ) | 未着手 |

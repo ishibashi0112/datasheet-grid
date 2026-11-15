@@ -90,6 +90,8 @@ export type {
   // 追加(row-drag ③): 行ドラッグ並び替え(enableRowDrag / isRowDraggable / onRowMove)の公開型です。
   RowDragContext,
   RowMoveParams,
+  // 追加(1.2.0 / E-07): 行ドラッグで落とせるかを決める関数(canDropRow)の引数。
+  RowDropParams,
   // 追加(G-1): セル操作の通知(onCellClick / onCellDoubleClick / onActiveCellChange)の引数型です。
   GridCellRef,
   GridCellEventParams,

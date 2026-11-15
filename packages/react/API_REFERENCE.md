@@ -117,6 +117,7 @@
 | `enableRowDrag` | `boolean` | `false` | **行ドラッグ並び替え**。先頭にドラッグハンドル列(幅 28px・タイトル無しの合成列。左固定列があれば左固定側)を挿入し、ハンドル(⋮⋮)を掴んで行を上下へ動かせる。確定時は `onRowsChange` へ移動後の**新配列**を渡し(履歴ラッパ経由 = undo/redo 対象)、続けて `onRowMove` を呼ぶ。clientSide(`rows` + `onRowsChange`)専用で、`dataSource`(serverSide)/ 行グルーピング中 / `onRowsChange` 未指定ではハンドル列を出さない。ソート / フィルター適用中はハンドルを淡色 + 理由ツールチップにして操作を無効化する(列は残る)。詳細は「行ドラッグ並び替え」節と[ガイド](https://datasheet-grid.vercel.app/docs/guides/row-drag)。 |
 | `isRowDraggable` | `(row: T, ctx: RowDragContext) => boolean` | 全行可 | 行ごとのドラッグ可否。`false` の行にはハンドルを描画しない。`ctx = { rowKey, sourceRowIndex }`。 |
 | `onRowMove` | `(params: RowMoveParams<T>) => void` | — | 行移動の確定後(`onRowsChange` の直後)に呼ばれる。`params = { rowKey, fromIndex, toIndex, rows }`(index は元 `rows` 配列基準、`rows` は `onRowsChange` と同じ新配列参照)。ハンドルの `moveRow()` による移動でも呼ばれる。 |
+| `canDropRow` | `(params: RowDropParams<T>) => boolean` | どこでも可 | 行ドラッグで、そこへ落とせるか(1.2.0 から)。`false` の位置ではガイド線を出さず、離しても動かさない(`rowDragMotion: 'live'` は落とせる最後の位置に留まる)。`params = { row, rowKey, fromIndex, toIndex, rowAbove, rowBelow, rows }`(`fromIndex` / `toIndex` は `onRowMove` と同じ、`rowAbove` / `rowBelow` は落とした後に掴んだ行のすぐ上 / すぐ下に来る行(先頭 / 末尾なら `undefined`)、`rows` は動かす前の配列)。落とす位置が変わるたびに呼ぶので軽い関数にする。ハンドルの `moveRow()` には効かない。 |
 
 ### バーの表示制御(top / bottom)
 
@@ -1681,7 +1682,30 @@ const [rows, setRows] = useState(initialRows);
 - **ソート / フィルター中**: 表示順と `rows` の順が一致しないため、ハンドルは淡色(`.ssg-row-drag-handle--disabled`)+ 理由のツールチップになり操作できません(列はそのまま残るのでレイアウトは跳ねません)。解除すると復帰します。
 - **展開行との併用**: 展開中のマスター行は詳細パネルごと一緒に移動します(`rowDragMotion: 'live'` でも、掴んだ行のパネルはポインタに付いてきて、退避する行のパネルも一緒に退避します。下へ引くときは、空く隙間が掴んだ行 + パネルと重なるよう、パネルの下端の位置で落とす位置を決めます)。ドロップ位置の判定は詳細パネルの高さ込みで、パネルの上は「マスター行の下」として扱います。
 - **ハンドル列**: 合成列のため、列メニュー / ソート / 列 DnD / autoSize / エクスポート / 並び替え管理パネルの対象外です。左固定列があるときは左固定側に、展開行トグル列よりさらに先頭に入ります。
-- **命令的 API**: `moveRow(rowKey, toIndex)` は表示状態(ソート / フィルター)に関わらず元配列上で移動します(`onRowsChange` → `onRowMove` の順)。
+- **落とせる先を決める**(`canDropRow`。1.2.0 から): ラベル行のまとまりの中だけで動かす、など落とせる先を決めるときは `canDropRow` で `false` を返します。`false` の位置ではガイド線を出さず(ゴーストは枠の外と同じ薄い見た目)、離しても動かしません。`rowDragMotion: 'live'` では落とせる最後の位置に留まり、そこで離せばそこへ動きます。`params` の `rowAbove` / `rowBelow` は落とした後に掴んだ行のすぐ上 / すぐ下に来る行です。
+
+  ```tsx
+  // ラベル行(カテゴリ)のまとまりの中だけで動かす
+  const sectionOf = useMemo(() => {
+    const map = new Map<string, string>();
+    let section = '';
+    for (const row of rows) {
+      if (isLabel(row)) section = row.id;
+      else map.set(row.id, section);
+    }
+    return map;
+  }, [rows]);
+
+  <SpreadsheetGrid
+    enableRowDrag
+    canDropRow={({ row, rowAbove }) =>
+      rowAbove !== undefined && (isLabel(rowAbove) ? rowAbove.id : sectionOf.get(rowAbove.id)) === sectionOf.get(row.id)
+    }
+    ...
+  />
+  ```
+
+- **命令的 API**: `moveRow(rowKey, toIndex)` は表示状態(ソート / フィルター)に関わらず元配列上で移動します(`onRowsChange` → `onRowMove` の順。`canDropRow` は効きません)。
 - **表示方式**: `rowDragMotion: 'live'` で、ドラッグ中に掴んだ行がポインタに追従し、周囲の行がリアルタイムに退避する見せ方になります(スロット解決は `'ghost'` と共通)。
 - **スタイル**: `.ssg-row-drag-handle`(+ `--disabled`)/ `.ssg-body-cell--row-drag-handle` / `.ssg-row-drop-indicator` / ドラッグ中の行 `.ssg-body-row[data-ssg-row-dragging]`。色はトークン(`--ssg-drop-indicator` / `--ssg-glyph-*` / `--ssg-ghost-*`)です。
 
@@ -1798,7 +1822,7 @@ const addRow = () => {
 
 | メソッド | 説明 |
 | --- | --- |
-| `moveRow(rowKey, toIndex)` | 指定行キーの行を元 `rows` 配列の `toIndex` へ移動する(clientSide + `onRowsChange` 指定時のみ。`enableRowDrag` / ソート / フィルターの状態には依存しない)。`onRowsChange`(履歴ラッパ経由 = undo 対象)→ `onRowMove` の順に呼ばれる。未知のキー / 同一位置 / 範囲外は no-op。serverSide では開発時警告 + no-op。 |
+| `moveRow(rowKey, toIndex)` | 指定行キーの行を元 `rows` 配列の `toIndex` へ移動する(clientSide + `onRowsChange` 指定時のみ。`enableRowDrag` / ソート / フィルターの状態には依存しない。`canDropRow` は効かない)。`onRowsChange`(履歴ラッパ経由 = undo 対象)→ `onRowMove` の順に呼ばれる。未知のキー / 同一位置 / 範囲外は no-op。serverSide では開発時警告 + no-op。 |
 
 ### undo / redo(編集履歴)
 
@@ -2189,7 +2213,7 @@ export const OrdersTable = () => <Grid columns={columns} dataSource={dataSource}
 | `filtering` | `filteringFeature` | グローバル / 列フィルター、フィルターのポップオーバー(遅延読み込み)、チップバー、非同期の候補(`enableGlobalFilter` / `enableColumnFilter` / `columns[].filterType` / `getFilterOptions` / `showFilterChipBar` / `onFiltersChange` / `manualFiltering` ほか) | +13.8KB(+ 遅延 8.2KB) |
 | `fillHandle` | `fillHandleFeature` | フィルハンドル(`fillHandle`) | +9.3KB |
 | `columnReorder` | `columnReorderFeature` | 列ヘッダーのドラッグ並べ替え(`onColumnsChange` 指定時 / `columnDragMotion`) | +6.0KB |
-| `rowDrag` | `rowDragFeature` | 行のドラッグ並べ替え(`enableRowDrag` / `isRowDraggable` / `onRowMove` / `rowDragMotion`。ハンドルの `moveRow()` は本体にあるので無くても使える) | +4.8KB |
+| `rowDrag` | `rowDragFeature` | 行のドラッグ並べ替え(`enableRowDrag` / `isRowDraggable` / `onRowMove` / `canDropRow` / `rowDragMotion`。ハンドルの `moveRow()` は本体にあるので無くても使える) | +4.8KB |
 | `serverSide` | `serverSideFeature` | サーバーサイド行モデル(SSRM)の読み取りと書き戻し、保存状態の表示(`dataSource` / `serverSideRefreshToken` / `showSaveStatus` ほか) | +4.7KB |
 | `columnMenu` | `columnMenuFeature` | 列メニュー(ソート・固定。幅の自動調整は `columnAutosize`、フィルターの入口は `filtering`、パネルの入口は `toolPanel` があるとき。`enableColumnMenu`) | +3.5KB |
 | `find` | `findFeature` | セル内検索(`find` / `onFindChange`) | +2.9KB |
@@ -2746,7 +2770,7 @@ function Grid(props: SpreadsheetGridProps<Row>) {
 - `DetailRowOptions<T>` / `DetailRowRenderContext<T> = { row, rowKey, rowIndex, sourceRowIndex, collapse }` / `CellDetailContext`(展開行。バレルから公開)
 - `LabelRowOptions<T>` / `LabelRowRenderContext<T> = { row, rowKey, rowIndex, sourceRowIndex, label, sectionRowCount }` / `GridLabelRow<T> = { kind: 'label', row, sourceIndex, label, sectionRowCount }` / `LabelRowSortMode = 'section' | 'follow' | 'hide'`(ラベル行。バレルから公開。「ラベル行(見出し / 区切り行)」節)
 - `FillHandleOptions<T> = { getFillValue? }` / `GridFillValueParams<T> = { column, row, rowIndex, sourceValues, index, direction, kind, defaultValue }` / `GridFillDirection = 'down' | 'up' | 'right' | 'left'` / `GridFillKind = 'series' | 'copy'`(フィルハンドル。バレルから公開。「フィルハンドル」節)
-- `RowDragContext = { rowKey, sourceRowIndex }`(`isRowDraggable` の第 2 引数)/ `RowMoveParams<T> = { rowKey, fromIndex, toIndex, rows }`(`onRowMove` の引数。いずれもバレルから公開)
+- `RowDragContext = { rowKey, sourceRowIndex }`(`isRowDraggable` の第 2 引数)/ `RowMoveParams<T> = { rowKey, fromIndex, toIndex, rows }`(`onRowMove` の引数)/ `RowDropParams<T> = { row, rowKey, fromIndex, toIndex, rowAbove, rowBelow, rows }`(`canDropRow` の引数。1.2.0 から。いずれもバレルから公開)
 - `GridCellRef<T> = { row, rowKey, rowIndex, sourceRowIndex, column, columnKey, colIndex, value }`(`onActiveCellChange` の引数)/ `GridCellEventParams<T> = GridCellRef<T> & { event: MouseEvent }`(`onCellClick` の引数。`event` は DOM 標準の `MouseEvent`)/ `GridCellDoubleClickParams<T> = GridCellEventParams<T> & { preventDefault(): void }`(`onCellDoubleClick` の引数。タッチのダブルタップでは `event` は離したときの `PointerEvent`)。いずれもバレルから公開。index の基準は `CellStyleContext` と同じ(「セル操作の通知」節)。
 - `CellStyleContext<T>` = 上記から `setValue` を除いた読み取り専用版(`cellClassName` 関数へ渡る)。バレル(`index.ts`)から公開(`import type { CellStyleContext } from '@ishibashi0112/spreadsheet-grid'`)
   - `rowIndex` は**ビュー行 index**(ソート / フィルター適用後の表示位置)、`sourceRowIndex` は**元 `rows` の index**、`rowKey` は行キー(`rowKeyGetter` 由来、既定は source index)。ソート / フィルター ON の画面で「エラー行 index の集合」など source 基準のデータと突き合わせるときは `sourceRowIndex` / `rowKey` を使う(`getInvalidCells()` の返す `sourceRowIndex` / `rowKey` と同一基準)。serverSide では view 順が正準のため `sourceRowIndex` は view index と同値。

@@ -840,6 +840,19 @@ export type RowMoveParams<T> = {
   rows: T[];
 };
 
+// 追加(1.2.0 / 2026-11-09 実アプリの総点検 E-07): 行ドラッグで落とせるかを決める関数(canDropRow)の引数です。
+//   fromIndex / toIndex は onRowMove と同じ(元 rows の index。toIndex は動かした後の位置)。rowAbove / rowBelow は
+//   落とした後に掴んだ行のすぐ上 / すぐ下に来る行(先頭 / 末尾なら undefined)。rows は動かす前の配列です。
+export type RowDropParams<T> = {
+  row: T;
+  rowKey: GridRowKey;
+  fromIndex: number;
+  toIndex: number;
+  rowAbove: T | undefined;
+  rowBelow: T | undefined;
+  rows: readonly T[];
+};
+
 // 追加(UI CSS移行): 条件付きセル className(GridColumn.cellClassName)の関数版へ渡す
 //   コンテキストです。CellRenderContext から setValue を除いた読み取り専用版で、
 //   className 算出に副作用(setValue)は不要なため値解決(getCellValue)のみを伴います。
@@ -3112,9 +3125,9 @@ export type SpreadsheetGridHandle<T> = {
   //   → onRowMove の順に呼ばれます。未知のキー / 同一位置 / 範囲外は no-op です。
   /**
    * 指定行キーの行を元 `rows` 配列の `toIndex` へ移動する(clientSide + `onRowsChange` 指定時のみ。
-   * `enableRowDrag` / ソート / フィルターの状態には依存しない)。`onRowsChange`(履歴ラッパ経由 =
-   * undo 対象)→ `onRowMove` の順に呼ばれる。未知のキー / 同一位置 / 範囲外は no-op。serverSide
-   * では開発時警告 + no-op。
+   * `enableRowDrag` / ソート / フィルターの状態には依存しない。`canDropRow` は効かない)。
+   * `onRowsChange`(履歴ラッパ経由 = undo 対象)→ `onRowMove` の順に呼ばれる。未知のキー / 同一位置 /
+   * 範囲外は no-op。serverSide では開発時警告 + no-op。
    */
   moveRow: (rowKey: GridRowKey, toIndex: number) => void;
 
@@ -4655,6 +4668,19 @@ export type SpreadsheetGridProps<T, F extends GridFrameworkTypes = GridFramework
    * `onRowsChange` と同じ新配列参照)。ハンドルの `moveRow()` による移動でも呼ばれる。
    */
   onRowMove?: ((params: RowMoveParams<T>) => void) | undefined;
+  // 追加(1.2.0 / 2026-11-09 実アプリの総点検 E-07): 行ドラッグで、そこへ落とせるかを決めます(未指定 = どこでも可)。false の
+  //   位置ではガイド線を出さず、離しても動かしません('live' は落とせる最後の位置に留まる)。命令的 API の moveRow() には効きません。
+  /**
+   * 行ドラッグで、そこへ落とせるか(1.2.0 から)。`false` の位置ではガイド線を出さず、
+   * 離しても動かさない(`rowDragMotion: 'live'` は落とせる最後の位置に留まる)。
+   * `params = { row, rowKey, fromIndex, toIndex, rowAbove, rowBelow, rows }`(`fromIndex` /
+   * `toIndex` は `onRowMove` と同じ、`rowAbove` / `rowBelow` は落とした後に掴んだ行のすぐ上 /
+   * すぐ下に来る行(先頭 / 末尾なら `undefined`)、`rows` は動かす前の配列)。
+   * 落とす位置が変わるたびに呼ぶので軽い関数にする。ハンドルの `moveRow()` には効かない。
+   *
+   * @defaultValue どこでも可
+   */
+  canDropRow?: ((params: RowDropParams<T>) => boolean) | undefined;
   // ── 追加(バッチ②/コンテキストメニュー): セル/行の汎用コンテキストメニュー(完全カスタム) ──
   //   有効化のマスタースイッチです(既定 false=OFF)。他機能の enable* と同じく、機能自体は既定で無効。
   //   false のあいだは getContextMenuItems を渡しても発火せず、右クリックはブラウザ標準メニューのままです。

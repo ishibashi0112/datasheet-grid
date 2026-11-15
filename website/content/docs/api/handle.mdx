@@ -116,7 +116,7 @@ const addRow = () => {
 
 | メソッド | 説明 |
 | --- | --- |
-| `moveRow(rowKey, toIndex)` | 指定行キーの行を元 `rows` 配列の `toIndex` へ移動する(clientSide + `onRowsChange` 指定時のみ。`enableRowDrag` / ソート / フィルターの状態には依存しない)。`onRowsChange`(履歴ラッパ経由 = undo 対象)→ `onRowMove` の順に呼ばれる。未知のキー / 同一位置 / 範囲外は no-op。serverSide では開発時警告 + no-op。 |
+| `moveRow(rowKey, toIndex)` | 指定行キーの行を元 `rows` 配列の `toIndex` へ移動する(clientSide + `onRowsChange` 指定時のみ。`enableRowDrag` / ソート / フィルターの状態には依存しない。`canDropRow` は効かない)。`onRowsChange`(履歴ラッパ経由 = undo 対象)→ `onRowMove` の順に呼ばれる。未知のキー / 同一位置 / 範囲外は no-op。serverSide では開発時警告 + no-op。 |
 
 ### undo / redo(編集履歴)
 

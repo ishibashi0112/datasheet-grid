@@ -40,6 +40,7 @@ import type {
   GridUiState,
   GlobalFilterStatus,
   GridGlobalFilterMatch,
+  GridRowKey,
   RowModel,
   SpreadsheetGridProps,
 } from '../model/gridTypes';
@@ -231,6 +232,11 @@ export type RowDragFeatureArgs<T> = Omit<
   rowModel: RowModel<T>;
   visibleColumns: GridColumn<T>[];
   isRowDraggable: SpreadsheetGridProps<T>['isRowDraggable'];
+  // 追加(1.2.0 / E-07): 落とせるかを決める利用側の関数と、その引数を作る元(並べ替えは表示順が rows の順のときだけ動く
+  //   ので、controller の index はそのまま rows の index)。
+  canDropRow: SpreadsheetGridProps<T>['canDropRow'];
+  rows: readonly T[];
+  resolveRowKey: (row: T, index: number) => GridRowKey;
   // 追加(1.0 前の最終チェック FC-12): rowKeyGetter が渡されているか(掴んだ行をキーで探し直してよいか)。
   hasRowKeys: boolean;
   // 追加(英語対応): グリッドの文言(ハンドルのツールチップ・ゴーストのラベル)。
