@@ -110,7 +110,7 @@
 | `onExpandedDetailRowKeysChange` | `(keys: GridRowKey[]) => void` | — | 展開中の展開行のマスター行キー集合が**変化したとき**に呼ばれる(開閉の永続化・外部同期用)。初回マウントでは発火しない。インライン関数可(latest-ref 経由)。 |
 | `labelRow` | `LabelRowOptions<T, L>` | —(無効) | **ラベル行(見出し / 区切り行)**。`rows` の中で `isLabelRow(row)` が true の行を「行数に数えない見出し」として、3 ペインを跨ぐ全幅の帯で描画する(中身は `render` で任意の React 要素に差し替え可。横スクロールしても左端に留まる)。編集 / 選択 / コピー / エクスポートの既定対象外で、行番号も消費しない。ソート / フィルターは既定でラベル行から次のラベル行までの区間(セクション)に閉じる(`sortMode`)。`sticky: true` で現在セクションのラベルを列ヘッダー直下に固定。`{ isLabelRow, getLabel, render?, height?, className?, sticky?, sortMode?, keepEmptySections?, exportText? }`。行グルーピング(`rowGroup`)とは別機能で併用不可。詳細は「ラベル行(見出し / 区切り行)」節。 |
 | `totalRow` | `boolean \| TotalRowOptions<T>` | —(無効) | **合計行**。表の下端に合計行を固定表示する(縦スクロールしても動かず、横スクロールと左右の固定列には付いていく)。列ごとの集計は `GridColumn.aggFunc`(行グルーピングと共通)で決め、フィルター後のデータ行で計算し直す(ラベル行は数えず、グルーピング中は折りたたんだ行も数える)。合計以外の組み込み集計は値の前に種類(平均 / 最小 / 最大 / 個数)を出す。表示専用(選択 / 編集 / 貼り付け / コピーの対象外)。`true` で既定値、オブジェクトで `{ label?, values?, renderCell?, height?, className? }`。serverSide は計算せず `values` の値だけを出す。エクスポートは `includeTotalRow: true` のときだけ末尾に含める。詳細は「合計行」節。 |
-| `pinnedTopRows` | `T[]` | —(無効) | **固定行(上)**。列見出しのすぐ下に固定して表示する行(縦スクロールしても動かず、横スクロールと左右の固定列には付いていく)。目標値・前年の実績・平均のような比べる行を、本体の行とは別の配列で渡す(`rows` には入れない)。セルは列の `valueFormatter` / `renderCell`(`ctx.pinned` が `'top'`)/ `cellClassName` / 条件付き書式で描く。表示専用(選択 / 編集 / 貼り付け / コピー / キー操作の対象外。並べ替え / フィルターも効かない)。行の高さは `rowHeight`。エクスポートは `includePinnedRows: true` のときだけ。詳細は「固定行」節。 |
+| `pinnedTopRows` | `T[]` | —(無効) | **固定行(上)**。列見出しのすぐ下に固定して表示する行(縦スクロールしても動かず、横スクロールと左右の固定列には付いていく)。目標値・前年の実績・平均のような比べる行を、本体の行とは別の配列で渡す(`rows` には入れない)。セルは列の `valueFormatter` / `renderCell`(`ctx.pinned` が `'top'`)/ `cellClassName` / 条件付き書式で描く。表示専用(選択 / 編集 / 貼り付け / コピー / キー操作 / セル内検索(`find`)の対象外。並べ替え / フィルターも効かない)。行の高さは `rowHeight`。エクスポートは `includePinnedRows: true` のときだけ。詳細は「固定行」節。 |
 | `pinnedBottomRows` | `T[]` | —(無効) | **固定行(下)**。表の下端(合計行(`totalRow`)があればそのすぐ上)に固定して表示する行。ほかは `pinnedTopRows` と同じ(`ctx.pinned` は `'bottom'`)。 |
 | `fillHandle` | `boolean \| FillHandleOptions<T>` | —(無効) | **フィルハンドル**。選択範囲(無ければアクティブセル)の右下に小さな四角を出し、引いた先のセルを**連続データ**(1, 2, 3 … / 日付 / 曜日・月の名前 / `P-001` のような末尾の数)か**セルのコピー**で埋める(Excel のオートフィル)。ドラッグ中は埋める範囲を点線で、いちばん遠いセルへ入る値をポインタの近くに出し、`Ctrl`(Mac は `⌘`)で埋め方を入れ替え、`Escape` でやめる。離したあとは右下のボタンで「連続データ / セルのコピー」を選び直せる(元に戻す 1 回で埋める前へ)。ハンドルのダブルクリックで隣の列に値が続くところまで下へ埋める。書き込みは貼り付けと同じ規則(編集できないセル・`validate` の reject は飛ばす / undo の対象)。`readOnly` や書き込み先が無い(`onRowsChange` も `dataSource.updateRows` も無い)ときは出さない。`true` で既定、オブジェクトで `{ getFillValue? }`。詳細は「フィルハンドル」節。 |
 | `enableRowDrag` | `boolean` | `false` | **行ドラッグ並び替え**。先頭にドラッグハンドル列(幅 28px・タイトル無しの合成列。左固定列があれば左固定側)を挿入し、ハンドル(⋮⋮)を掴んで行を上下へ動かせる。確定時は `onRowsChange` へ移動後の**新配列**を渡し(履歴ラッパ経由 = undo/redo 対象)、続けて `onRowMove` を呼ぶ。clientSide(`rows` + `onRowsChange`)専用で、`dataSource`(serverSide)/ 行グルーピング中 / `onRowsChange` 未指定ではハンドル列を出さない。ソート / フィルター適用中はハンドルを淡色 + 理由ツールチップにして操作を無効化する(列は残る)。詳細は「行ドラッグ並び替え」節。 |
@@ -1088,7 +1088,7 @@ const columns = [
 
 ### 貼り付けで読めない値(`numberParser` / `onPasteSkipped`)
 
-Excel の通貨書式のセル(「¥12,000」「12,000円」「(1,200)」)は、number 列の既定のパーサでは数値として読めません。読めない文字は、`validationMode: 'mark'`(既定)の列では文字のまま入って印が付き、`'reject'` の列では書きません。1.1.0 から、次の 2 つで扱えます。
+Excel の通貨書式のセル(「¥12,000」「12,000円」「(1,200)」)は、number 列の既定のパーサでは数値として読めません。読めない文字は文字のまま入ります。number エディタの `min` / `max` / `integer` か列の `validate` があれば、`validationMode: 'mark'`(既定)の列では印が付き、`'reject'` の列では書きません(どれも無い列では印も付かずにそのまま入ります)。1.1.0 から、次の 2 つで扱えます。
 
 - **`numberParser(options?)`** — number エディタの既定のパーサと同じ読み方(空・空白だけは `null`、全角の数字・符号・小数点と 3 桁区切りも読む、読めない文字は元の文字のまま)の「文字列 → 数値」のパーサを作ります。列の `parseClipboardValue` に渡します(貼り付け / Delete / エディタの確定で共通)。`strip` に先に外す文字(通貨記号や単位)、`negativeParentheses: true` でかっこの数(`(1,200)` / `（1,200）`)を負の数として読みます。
 - **`onPasteSkipped`** — 貼り付けで書かなかったセル(編集できないセルと、`'reject'` の列で検査に通らない値)を、1 回の貼り付けで 1 回知らせます。トーストで件数を出す、メッセージを並べる、などに使います。
@@ -1462,7 +1462,7 @@ const columns: GridColumn<Order>[] = [
 
 - **グループ行の見出し**(`groupLabel`): `'formatted'` で列の `valueFormatter`、関数でその返り値(`row` はそのグループの最初の行)。集計値は今までどおり列の書式です。
 - **グローバルフィルター**(`globalFilterMatch`): `'display'` は画面の文字(`valueFormatter` の結果。`numberFormatter()` の列なら「43,340」)だけ、`'both'` は値の文字と画面の文字のどちらか。セル内検索(`find`)は今までどおり画面の文字です。clientSide だけで、serverSide ではサーバーへ渡す文字は変わりません(サーバーで表示名でも探す)。
-- **コピー / 貼り付け / CSV**(select エディタの `clipboard: 'label'`): コピー・CSV / TSV・`getExportData` の `text` は候補の label、貼り付けた文字は label ならその value、value ならそのまま、どちらでもなければ生文字列(label を先に見るので、ある候補の label が別の候補の value と同じ文字でも、表の中のコピーと貼り付けで値は変わらない。エディタで選んだ候補は読み替えずにその value を書く。印は列の `validate` で)。`formatClipboardValue` / `parseClipboardValue` を書いた列はそちらが勝ちます。select 以外の列(コードを `valueFormatter` で出すだけの列)は、`formatClipboardValue` / `parseClipboardValue` で同じことをします。
+- **コピー / 貼り付け / CSV**(select エディタの `clipboard: 'label'`): コピー・CSV / TSV・`getExportData` の `text` は候補の label(label が空の候補は値の文字)、貼り付けた文字は label ならその value、value ならそのまま、どちらでもなければ生文字列(label を先に見るので、ある候補の label が別の候補の value と同じ文字でも、表の中のコピーと貼り付けで値は変わらない。エディタで選んだ候補は読み替えずにその value を書く。印は列の `validate` で)。`formatClipboardValue` / `parseClipboardValue` を書いた列はそちらが勝ちます。select 以外の列(コードを `valueFormatter` で出すだけの列)は、`formatClipboardValue` / `parseClipboardValue` で同じことをします。
 
 ### 合計行(`totalRow`)
 
@@ -1520,7 +1520,7 @@ const lastYear: Sale = { id: 'last-year', region: '前年', q1: 980, q2: 1110, q
 
 - **表示**: セルは本体の行と同じ規則で描きます(列の `valueFormatter` / `renderCell` / `cellClassName` / `getRowClassName`、`editor: { type: 'checkbox' }` の印、条件付き書式の色とチップ。条件付き書式の最小 / 最大は本体の行で決まります)。`renderCell` / `cellClassName` の ctx と `getRowClassName` の ctx には `pinned`(`'top'` / `'bottom'`)が入り、`rowIndex` / `sourceRowIndex` は固定行の中の位置(0 から)、`isActive` / `isSelected` / `isEditing` は `false`、`readOnly` は `true` です。`renderCell` の `setValue` は何もしません。展開行(`detailRow`)があっても `renderCell` の ctx の `detail` は入りません(固定行は展開しない)。入力の検査の印(`validate`)とメモ(`cellNote`)は出しません。行ドラッグのハンドル / 展開のトグル / 自動グループ列のセルは空です。行の高さは `rowHeight` で、`autoHeight` の列も伸びません(1 行で省略)。行見出しはピンの印です。
 - **位置**: 上の固定行は列見出しの下、下の固定行は表の下端(合計行があればそのすぐ上)に留まり、本体の行はその間を流れます。行が少ないときは、下の固定行は最後の行の直後に来ます。横スクロールと左右の固定列には通常の行と同じく付いていきます。キーボード操作 / `scrollToRow` / `scrollToCell` で行を見せるときは固定行の裏に隠しません(上へ見せる行は上の固定行の下、下へ見せる行は下の固定行の上)。
-- **表示専用**: セル選択 / 編集 / 貼り付け / コピー / クリア / 行選択 / 右クリックメニュー / 行のホバーの対象外です(押しても選択は動きません)。件数表示(下部バーの行数)・ビュー行 index・`getRowNumber`・選択範囲の集計・合計行の集計には数えません。値を変えるときは配列を作り直して渡します。
+- **表示専用**: セル選択 / 編集 / 貼り付け / コピー / クリア / 行選択 / 右クリックメニュー / 行のホバー / セル内検索(`find`)/ 変わった値のフラッシュ(`highlightChanges`)の対象外です(押しても選択は動きません)。件数表示(下部バーの行数)・ビュー行 index・`getRowNumber`・選択範囲の集計・合計行の集計には数えません。値を変えるときは配列を作り直して渡します。
 - **エクスポート**: 既定では含みません。`exportCsv` / `getExportData` の `includePinnedRows: true` で、上の固定行を本体の行の前、下の固定行を本体の行の後(合計行の前)に出します(範囲の選択(scope `'selection'`)では出しません)。値の規則は本体の行と同じで、`getExportData` は `rowKinds` の `'pinned'` で判別できます。
 - **列幅の自動調整**: 固定行の値も収まる幅にします。
 - **serverSide(`dataSource`)**: そのまま使えます(固定行は渡した配列から描くので、サーバーから取り直しません)。

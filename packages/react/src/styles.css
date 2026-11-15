@@ -744,6 +744,11 @@
   .ssg-pinned-row-header {
     background-color: var(--ssg-pinned-row-bg);
   }
+  /* 追加(1.1.0 の確かめ直し): 本体のセル(インラインの z-index: 1)と同じく、セルをスタッキングコンテキストにします
+     (データバー .ssg-cf-bar の z-index: -1 がセルの背景の下に隠れていた)。 */
+  .ssg-pinned-cell {
+    z-index: 1;
+  }
   .ssg-pinned-rows--top > .ssg-pinned-row:last-child > .ssg-body-cell,
   .ssg-pinned-rows--top > .ssg-pinned-row:last-child > .ssg-row-header-cell {
     border-bottom-color: var(--ssg-pinned-row-border);

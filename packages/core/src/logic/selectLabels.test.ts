@@ -109,6 +109,10 @@ describe('resolveSelectLabelParser / resolveCellParser', () => {
     expect(parse(' 交通費 ', row)).toBe('x');
     expect(parse('', row)).toBe('');
     expect(parse('  ', row)).toBe('  ');
+    // label が空の候補のコピーは値の文字(貼り戻すと同じ値)。
+    const column: GridColumn<Row> = { ...labelColumn, editor: { type: 'select', options, clipboard: 'label' } };
+    expect(formatCellClipboardText(column, 'none', row)).toBe('none');
+    expect(parse(formatCellClipboardText(column, 'none', row), row)).toBe('none');
   });
 
   it('同じ候補の配列へ後から足した候補も読む', () => {

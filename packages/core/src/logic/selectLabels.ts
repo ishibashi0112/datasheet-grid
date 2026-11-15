@@ -56,13 +56,18 @@ const labelOptionsOf = <T,>(column: GridColumn<T>, row: T | undefined): readonly
 
 // コピー / CSV / getExportData の text の 1 セルの文字です。列の formatClipboardValue があればその返り値(行があるとき)、
 //   `clipboard: 'label'` の select 列なら値の label(候補に無い値は値の文字)、ほかは値の文字(null / undefined は '')。
+// 変更(1.1.0 の確かめ直し): label が空(空白だけ)の候補は値の文字を出します(空を貼り戻すと値が消えていた)。
 export const formatCellClipboardText = <T,>(column: GridColumn<T>, value: unknown, row: T | undefined): string => {
   if (column.formatClipboardValue && row !== undefined) {
     return column.formatClipboardValue(value, row);
   }
   const text = String(value ?? '');
   const options = labelOptionsOf(column, row);
-  return options === undefined ? text : (lookupOf(options).labelByValue.get(text) ?? text);
+  if (options === undefined) {
+    return text;
+  }
+  const label = lookupOf(options).labelByValue.get(text);
+  return label === undefined || label.trim() === '' ? text : label;
 };
 
 // `clipboard: 'label'` の select 列の既定のパーサです(それ以外の列は undefined)。貼り付けた文字が候補の label ならその value

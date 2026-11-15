@@ -10,6 +10,7 @@
 //     capture / pointerdown / keydown capture)を attach / detach で管理します。判定(パネル内か・
 //     Escape の扱い)は各コントローラが handlers で与えます。
 import { isFocusInsideDetailCard } from '../logic/detailRow';
+import { IME_INPUT_ATTRIBUTE } from '../logic/domGuards';
 import { GRID_POPUP_SELECTOR } from './escapeClaimController';
 
 export type ReadonlyElementRef<E extends HTMLElement = HTMLElement> = {
@@ -126,12 +127,18 @@ export const handleMenuKeyNavigation = (
 
 // 追加(1.1.0 / 2026-11-09 実アプリの総点検 AP-33): マウスで開いたメニューのパネル(tabIndex=-1)にフォーカスを置きます。フォーカスが
 //   どこにも無い(body)ときだけで、ほかの要素(利用側の入力欄など)からは奪いません。
-export const focusPanelIfIdle = (panel: HTMLElement | null): void => {
+// 変更(1.1.0 の確かめ直し): グリッドのシェル(と IME の入力受け)にあるときも置きます(列フィルターを開いたまま別の列の ⋮ を
+//   押すと、閉じた列フィルターがフォーカスをシェルへ戻した後にメニューが開き、パネルへ移らなかった)。
+export const focusPanelIfIdle = (panel: HTMLElement | null, gridRoot?: HTMLElement | null): void => {
   if (panel === null || !panel.isConnected) {
     return;
   }
   const active = panel.ownerDocument.activeElement;
-  if (active === null || active === panel.ownerDocument.body) {
+  const onGrid =
+    active !== null &&
+    gridRoot != null &&
+    (active === gridRoot || (gridRoot.contains(active) && active.hasAttribute(IME_INPUT_ATTRIBUTE)));
+  if (active === null || active === panel.ownerDocument.body || onGrid) {
     panel.focus({ preventScroll: true });
   }
 };

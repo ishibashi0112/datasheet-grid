@@ -4525,8 +4525,9 @@ export type SpreadsheetGridProps<T, F extends GridFrameworkTypes = GridFramework
    * 横スクロールと左右の固定列には付いていく)。目標値・前年の実績・平均のような比べる行を、
    * 本体の行とは別の配列で渡す(`rows` には入れない)。セルは列の `valueFormatter` /
    * `renderCell`(`ctx.pinned` が `'top'`)/ `cellClassName` / 条件付き書式で描く。表示専用(選択 /
-   * 編集 / 貼り付け / コピー / キー操作の対象外。並べ替え / フィルターも効かない)。行の高さは
-   * `rowHeight`。エクスポートは `includePinnedRows: true` のときだけ。詳細は「固定行」節。
+   * 編集 / 貼り付け / コピー / キー操作 / セル内検索(`find`)の対象外。並べ替え /
+   * フィルターも効かない)。行の高さは `rowHeight`。エクスポートは `includePinnedRows: true`
+   * のときだけ。詳細は「固定行」節。
    *
    * @defaultValue —(無効)
    */

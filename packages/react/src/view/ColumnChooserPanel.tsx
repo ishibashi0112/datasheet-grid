@@ -564,6 +564,8 @@ export function ColumnChooserPanel({
             value={query}
             onChange={(event) => setQuery(event.target.value)}
             placeholder={texts.columnsSearchPlaceholder}
+            // 追加(1.1.0 の確かめ直し): 名前が placeholder だけだったので、同じ文字を名前にします。
+            aria-label={texts.columnsSearchPlaceholder}
             className="ssg-chooser-search-input"
           />
         </div>

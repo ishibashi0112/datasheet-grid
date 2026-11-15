@@ -235,7 +235,7 @@ export const createColumnMenuController = <T,>(): ColumnMenuController<T> => {
       } else {
         // 追加(1.1.0 / 2026-11-09 実アプリの総点検 AP-33): マウスで開いたときはパネル(role="menu")にフォーカスを置きます
         //   (これまでは body のままで、支援技術にメニューが開いたことが伝わらなかった)。↓ で先頭、↑ で末尾の項目へ移るのは同じ。
-        focusPanelIfIdle(panelRef.current);
+        focusPanelIfIdle(panelRef.current, args?.gridRootRef.current ?? null);
       }
     });
     bindings.attach();

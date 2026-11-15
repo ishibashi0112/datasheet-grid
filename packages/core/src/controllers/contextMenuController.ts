@@ -176,7 +176,7 @@ export const createContextMenuController = <T,>(): ContextMenuController<T> => {
           return;
         }
       }
-      focusPanelIfIdle(panel);
+      focusPanelIfIdle(panel, args?.gridRootRef.current ?? null);
     });
   };
 

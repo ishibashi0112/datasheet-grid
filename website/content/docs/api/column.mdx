@@ -65,7 +65,7 @@ const columns = [
 
 ### 貼り付けで読めない値(`numberParser` / `onPasteSkipped`)
 
-Excel の通貨書式のセル(「¥12,000」「12,000円」「(1,200)」)は、number 列の既定のパーサでは数値として読めません。読めない文字は、`validationMode: 'mark'`(既定)の列では文字のまま入って印が付き、`'reject'` の列では書きません。1.1.0 から、次の 2 つで扱えます。
+Excel の通貨書式のセル(「¥12,000」「12,000円」「(1,200)」)は、number 列の既定のパーサでは数値として読めません。読めない文字は文字のまま入ります。number エディタの `min` / `max` / `integer` か列の `validate` があれば、`validationMode: 'mark'`(既定)の列では印が付き、`'reject'` の列では書きません(どれも無い列では印も付かずにそのまま入ります)。1.1.0 から、次の 2 つで扱えます。
 
 - **`numberParser(options?)`** — number エディタの既定のパーサと同じ読み方(空・空白だけは `null`、全角の数字・符号・小数点と 3 桁区切りも読む、読めない文字は元の文字のまま)の「文字列 → 数値」のパーサを作ります。列の `parseClipboardValue` に渡します(貼り付け / Delete / エディタの確定で共通)。`strip` に先に外す文字(通貨記号や単位)、`negativeParentheses: true` でかっこの数(`(1,200)` / `（1,200）`)を負の数として読みます。
 - **`onPasteSkipped`** — 貼り付けで書かなかったセル(編集できないセルと、`'reject'` の列で検査に通らない値)を、1 回の貼り付けで 1 回知らせます。トーストで件数を出す、メッセージを並べる、などに使います。
@@ -439,5 +439,5 @@ const columns: GridColumn<Order>[] = [
 
 - **グループ行の見出し**(`groupLabel`): `'formatted'` で列の `valueFormatter`、関数でその返り値(`row` はそのグループの最初の行)。集計値は今までどおり列の書式です。
 - **グローバルフィルター**(`globalFilterMatch`): `'display'` は画面の文字(`valueFormatter` の結果。`numberFormatter()` の列なら「43,340」)だけ、`'both'` は値の文字と画面の文字のどちらか。セル内検索(`find`)は今までどおり画面の文字です。clientSide だけで、serverSide ではサーバーへ渡す文字は変わりません(サーバーで表示名でも探す)。
-- **コピー / 貼り付け / CSV**(select エディタの `clipboard: 'label'`): コピー・CSV / TSV・`getExportData` の `text` は候補の label、貼り付けた文字は label ならその value、value ならそのまま、どちらでもなければ生文字列(label を先に見るので、ある候補の label が別の候補の value と同じ文字でも、表の中のコピーと貼り付けで値は変わらない。エディタで選んだ候補は読み替えずにその value を書く。印は列の `validate` で)。`formatClipboardValue` / `parseClipboardValue` を書いた列はそちらが勝ちます。select 以外の列(コードを `valueFormatter` で出すだけの列)は、`formatClipboardValue` / `parseClipboardValue` で同じことをします。
+- **コピー / 貼り付け / CSV**(select エディタの `clipboard: 'label'`): コピー・CSV / TSV・`getExportData` の `text` は候補の label(label が空の候補は値の文字)、貼り付けた文字は label ならその value、value ならそのまま、どちらでもなければ生文字列(label を先に見るので、ある候補の label が別の候補の value と同じ文字でも、表の中のコピーと貼り付けで値は変わらない。エディタで選んだ候補は読み替えずにその value を書く。印は列の `validate` で)。`formatClipboardValue` / `parseClipboardValue` を書いた列はそちらが勝ちます。select 以外の列(コードを `valueFormatter` で出すだけの列)は、`formatClipboardValue` / `parseClipboardValue` で同じことをします。
 

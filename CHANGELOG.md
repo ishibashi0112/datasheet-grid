@@ -37,6 +37,7 @@
 ### 修正
 
 - モーダルの中のグリッドで、ポップアップを使えませんでした(素の `<dialog>` の `showModal()` ではダイアログの後ろに隠れ、Radix(shadcn/ui)・React Aria(HeroUI)・Headless UI のモーダルでは押せない・入力できない)。既定ではグリッドを囲むダイアログ(`<dialog>` / `popover` / `aria-modal="true"` / `role="dialog"` / `role="alertdialog"`)の中に描きます。祖先の `transform` / `translate` による位置のずれは打ち消します。ダイアログが `overflow` で切り、しかも `transform` などで fixed の基準になるとき(Mantine の Modal)は、外側の `position: fixed` の祖先(`.mantine-Modal-inner`)へ描くので枠で切れません。これまでどおり `document.body` の直下にするには `popupContainer="body"`。
+- 行の高さを測る列(`autoHeight`)がある表で、遠くの行へ飛んだ最初の 1 回(`Ctrl+End` / `scrollToCell` など)に、行を測り直して位置が動き、アクティブセルが画面の外や合計行・固定行の裏に残ることがありました(もう一度押すと見えた。1.0 から)。飛んだ直後の 1 秒の間は、測り直して動いた位置へ合わせ直します(ホイールやキーなどの操作があればやめます)。
 
 ## 1.0.2 — 2026-11-15
 

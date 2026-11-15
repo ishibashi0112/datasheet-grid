@@ -135,6 +135,40 @@ describe('キーボードで開く右クリックメニュー(AP-33)', () => {
     expect(second.defaultPrevented).toBe(false);
   });
 
+  it('キーで開いた後に別のキー操作かポインタの押し下げがあれば、次のキーボードの contextmenu は止めない', () => {
+    const { ref, shell } = setup({ enableContextMenu: true, getContextMenuItems: menuItems });
+    act(() => {
+      ref.current?.setActiveCell({ row: 0, col: 0 });
+    });
+    const outside = document.createElement('input');
+    document.body.appendChild(outside);
+    try {
+      for (const interrupt of ['keydown', 'pointerdown'] as const) {
+        shell.focus();
+        act(() => {
+          fireEvent.keyDown(shell, { key: 'F10', shiftKey: true });
+        });
+        expect(menuPanel()).not.toBeNull();
+        // keydown を止めたのでブラウザは contextmenu を送らなかった。メニューを閉じて別の入力欄で Shift+F10。
+        act(() => {
+          if (interrupt === 'keydown') {
+            fireEvent.keyDown(outside, { key: 'F10', shiftKey: true });
+          } else {
+            fireEvent.pointerDown(outside);
+          }
+        });
+        const next = new MouseEvent('contextmenu', { bubbles: true, cancelable: true, button: 0 });
+        outside.dispatchEvent(next);
+        expect(next.defaultPrevented).toBe(false);
+        act(() => {
+          fireEvent.keyDown(document.activeElement ?? shell, { key: 'Escape' });
+        });
+      }
+    } finally {
+      outside.remove();
+    }
+  });
+
   it('メニューキー(ContextMenu)でも開く', () => {
     const getContextMenuItems = vi.fn<(params: GridContextMenuParams<Row>) => GridContextMenuItem[]>(menuItems);
     const { ref, shell } = setup({ enableContextMenu: true, getContextMenuItems });
@@ -317,6 +351,47 @@ describe('列メニューの役割(AP-33)', () => {
       fireEvent.keyDown(menu, { key: 'ArrowUp' });
     });
     expect(document.activeElement).toBe(items[items.length - 1]);
+  });
+});
+
+describe('列フィルターを開いたまま別の列の ⋮(1.1.0 の確かめ直し)', () => {
+  let restore: () => void;
+  beforeAll(() => {
+    restore = installJsdomLayoutStubs();
+  });
+  afterAll(() => {
+    restore();
+  });
+  afterEach(() => {
+    cleanup();
+  });
+
+  it('閉じた列フィルターがフォーカスをシェルへ戻しても、開いた列メニューのパネルへフォーカスが移る', async () => {
+    const { container } = setup();
+    const openMenu = (key: string) => {
+      const trigger = container.querySelector<HTMLElement>(`[data-ssg-col-key="${key}"] [aria-haspopup="menu"]`);
+      // detail: 1 = マウスの押下(0 はキーボードの扱いで、先頭の項目へフォーカスが移る)。
+      act(() => {
+        fireEvent.pointerDown(trigger!, { button: 0, pointerId: 1 });
+        fireEvent.click(trigger!, { detail: 1 });
+      });
+    };
+    openMenu('name');
+    await nextFrame();
+    const filterItem = Array.from(screen.getByRole('menu', { name: 'Name' }).querySelectorAll<HTMLElement>('.ssg-menu-item')).find(
+      (item) => item.textContent?.includes('フィルター'),
+    );
+    act(() => {
+      filterItem!.click();
+    });
+    await nextFrame();
+    await nextFrame();
+    expect(document.querySelector('.ssg-filter-popover')).not.toBeNull();
+    openMenu('qty');
+    await nextFrame();
+    await nextFrame();
+    expect(document.querySelector('.ssg-filter-popover')).toBeNull();
+    expect(document.activeElement).toBe(screen.getByRole('menu', { name: 'Qty' }));
   });
 });
 

@@ -1484,6 +1484,9 @@ export function useGridShell<T extends object>({
   // 追加(1.1.0 / AP-33 の見直し): キーの操作(keydown)から開くときの入口です。開こうとしたことを控え、開いたときは続けて来る
   //   キーボードの contextmenu(右ボタン以外)を 1 秒の間に 1 回だけ window の capture で止めます(Windows のメニューキーは keyup で
   //   contextmenu を送り、フォーカスはもう表の外の項目かパネルへ移っているため、シェルの onContextMenu には届かないことがある)。
+  // 変更(1.1.0 の確かめ直し E): 次のキー操作かポインタの押し下げでも止めるのをやめます(keydown を止めたキーではブラウザが
+  //   contextmenu を送らないことがあり、メニューを閉じてすぐ上部のバーの入力欄で Shift+F10 を押すと、そちらの標準のメニューが
+  //   1 回止まっていた)。
   const openContextMenuFromKeyboard = useCallback(
     (cell: CellCoord): boolean => {
       const opened = openContextMenuForCell(cell);
@@ -1491,6 +1494,8 @@ export function useGridShell<T extends object>({
       if (opened && typeof window !== 'undefined') {
         const stop = (): void => {
           window.removeEventListener('contextmenu', onContextMenu, true);
+          window.removeEventListener('keydown', stop, true);
+          window.removeEventListener('pointerdown', stop, true);
           window.clearTimeout(timer);
         };
         const onContextMenu = (event: MouseEvent): void => {
@@ -1501,6 +1506,8 @@ export function useGridShell<T extends object>({
         };
         const timer = window.setTimeout(stop, 1000);
         window.addEventListener('contextmenu', onContextMenu, true);
+        window.addEventListener('keydown', stop, true);
+        window.addEventListener('pointerdown', stop, true);
       }
       return opened;
     },
