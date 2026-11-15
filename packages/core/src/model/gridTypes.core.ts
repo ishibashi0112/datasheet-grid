@@ -3669,8 +3669,8 @@ export type SpreadsheetGridProps<T, F extends GridFrameworkTypes = GridFramework
    * はグリッドを囲むダイアログ(`<dialog>` / `popover` / `aria-modal="true"` / `role="dialog"` /
    * `role="alertdialog"`)の中、無ければ `document.body`。`'body'` はいつも `document.body`(1.0
    * までと同じ)。要素ならその中、関数はグリッドの要素を受け取って描く場所を返す(`null` /
-   * `undefined` なら `document.body`。ポップアップを描くたびに呼ぶ)。
-   * 詳細は「ダイアログの中のグリッド」節。
+   * `undefined` なら `document.body`。ポップアップを開いている間の描画ごとに呼ぶ。
+   * 閉じている間は呼ばない)。詳細は「ダイアログの中のグリッド」節。
    *
    * @defaultValue `'auto'`
    */

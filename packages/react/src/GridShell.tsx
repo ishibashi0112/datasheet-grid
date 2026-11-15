@@ -4546,6 +4546,7 @@ export function useGridShell<T extends object>({
         onFilterSummaryClick={
           columnFilterEnabled && toolPanelAvailable ? handleFilterSummaryChipClick : undefined
         }
+        filterPanelOpen={activeToolPanelTab === 'filter'}
       />
     ) : null;
 

@@ -220,9 +220,21 @@ export function ColumnChooserPanel({
 
   // 変更(UP-1): タブ表示(= マウント)のたびに検索入力へフォーカスします。検索語の
   //   リセットは初期 state('')が担います(タブ非アクティブ時はアンマウントされるため)。
+  // 変更(1.1.0 の確かめ直し K-c / L): 開いている間にこのタブへ切り替えたとき(フォーカスがパネルの中にある)だけにします。
+  //   ツールパネルを開いたときは選ばれているタブへ(ドキュメントどおり。これまでは「列の表示」から開くと検索欄だった)、
+  //   タッチが主の端末(pointer: coarse)では動かしません(ソフトウェアキーボードが出るため。列フィルターと同じ)。
   useEffect(() => {
+    const input = searchInputRef.current;
+    const panel = input?.closest('[role="dialog"]');
+    if (
+      !input ||
+      !panel?.contains(input.ownerDocument.activeElement) ||
+      (typeof window.matchMedia === 'function' && window.matchMedia('(pointer: coarse)').matches)
+    ) {
+      return undefined;
+    }
     const id = requestAnimationFrame(() => {
-      searchInputRef.current?.focus();
+      input.focus();
     });
     return () => cancelAnimationFrame(id);
   }, []);

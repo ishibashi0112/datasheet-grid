@@ -732,8 +732,12 @@
     position: sticky;
     z-index: 6;
   }
+  /* 変更(1.1.0 の確かめ直し J-a): 合計行と同じく、下へ 2px の影で拡大縮小(transform: scale)の端数の隙間を埋めます
+     (合計行が無いと、倍率 0.9 で下の固定行と下部バーの間に本体の行が 1px のぞいていた)。 */
   .ssg-pinned-rows--bottom {
-    box-shadow: 0 -1px 0 var(--ssg-pinned-row-border);
+    box-shadow:
+      0 -1px 0 var(--ssg-pinned-row-border),
+      0 2px 0 var(--ssg-pinned-row-bg);
   }
   .ssg-pinned-row {
     position: absolute;
@@ -919,11 +923,14 @@
 
   /* ── ヘッダー ── */
   /* ヘッダー行コンテナ(sticky)。height はインライン。 */
+  /* 変更(1.1.0 の確かめ直し J-b): 上へ 2px の影で拡大縮小(transform: scale)の端数の隙間を埋めます(倍率 0.9 / 1.25 などで、
+     上部バーと列見出しの間に本体の行が 1px のぞいていた。1.0 から)。 */
   .ssg-header-row {
     position: sticky;
     top: 0;
     z-index: 6;
     background-color: var(--ssg-header-bg);
+    box-shadow: 0 -2px 0 var(--ssg-header-bg);
   }
 
   /* ヘッダーセル(列ヘッダー / 行ヘッダー / コーナー共通の土台)。座標 / 幅 / 高さはインライン。 */
@@ -3514,6 +3521,10 @@
 
   .ssg-menu-submenu-anchor {
     position: relative;
+  }
+  /* 追加(1.1.0 の確かめ直し X-1): メニューがパネルの中でスクロールするときの「列の固定」の小メニュー(項目の下に開く)。 */
+  .ssg-menu-subgroup {
+    padding-left: 14px;
   }
 
   /* 左端 ✓ 列スペーサ / ソート方向アイコン / 固定 ✓ / ラベル / › キャレット。 */

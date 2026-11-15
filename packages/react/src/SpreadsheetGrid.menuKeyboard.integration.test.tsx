@@ -459,6 +459,66 @@ describe('ツールパネルのダイアログ(RV2-L2)', () => {
     expect(dialog.contains(document.activeElement)).toBe(true);
   });
 
+  it('「列」タブで開いたときも選ばれているタブへフォーカス。開いている間に「列」タブへ切り替えたときは検索欄へ', async () => {
+    const { container } = setup();
+    const trigger = container.querySelector<HTMLElement>('[data-ssg-col-key="qty"] [aria-haspopup="menu"]');
+    act(() => {
+      fireEvent.pointerDown(trigger!, { button: 0, pointerId: 1 });
+      fireEvent.click(trigger!);
+    });
+    await nextFrame();
+    const item = screen.getByRole('menuitem', { name: /列の表示/ });
+    act(() => {
+      fireEvent.pointerDown(item, { button: 0, pointerId: 1 });
+      item.focus();
+      fireEvent.click(item);
+    });
+    const dialog = screen.getByRole('dialog', { name: 'ツールパネル' });
+    await nextFrame();
+    await nextFrame();
+    const selected = () => dialog.querySelector<HTMLElement>('[role="tab"][aria-selected="true"]');
+    expect(document.activeElement).toBe(selected());
+    const tabs = Array.from(dialog.querySelectorAll<HTMLElement>('[role="tab"]'));
+    const columnsTab = selected()!;
+    const otherTab = tabs.find((tab) => tab !== columnsTab)!;
+    act(() => {
+      otherTab.focus();
+      fireEvent.click(otherTab);
+    });
+    // タブを切り替えてもフォーカスはパネルの中(body へ落とさない)。
+    expect(document.activeElement).toBe(otherTab);
+    act(() => {
+      columnsTab.focus();
+      fireEvent.click(columnsTab);
+    });
+    await nextFrame();
+    expect(document.activeElement?.tagName).toBe('INPUT');
+    expect(dialog.contains(document.activeElement)).toBe(true);
+  });
+
+  it('上部バーの絞り込みの要約から開くと aria-expanded が true、Escape で閉じると要約へフォーカスが戻る', async () => {
+    const { container } = setup({ enableColumnFilter: true, showTopBar: true });
+    const chip = container.querySelector<HTMLButtonElement>('.ssg-bar-chip--action');
+    expect(chip).not.toBeNull();
+    expect(chip!.getAttribute('aria-haspopup')).toBe('dialog');
+    expect(chip!.getAttribute('aria-expanded')).toBe('false');
+    act(() => {
+      chip!.focus();
+      fireEvent.click(chip!);
+    });
+    await nextFrame();
+    const dialog = screen.getByRole('dialog', { name: 'ツールパネル' });
+    expect(chip!.getAttribute('aria-expanded')).toBe('true');
+    expect(dialog.contains(document.activeElement)).toBe(true);
+    act(() => {
+      fireEvent.keyDown(document.activeElement as HTMLElement, { key: 'Escape' });
+    });
+    await nextFrame();
+    expect(screen.queryByRole('dialog', { name: 'ツールパネル' })).toBeNull();
+    expect(document.activeElement).toBe(chip);
+    expect(chip!.getAttribute('aria-expanded')).toBe('false');
+  });
+
   it('英語の文言では「Tool panel」', async () => {
     const { ref } = setup({ localeText: { toolPanelLabel: 'Tool panel' } });
     act(() => {

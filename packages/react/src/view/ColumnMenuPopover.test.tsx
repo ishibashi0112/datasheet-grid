@@ -182,6 +182,33 @@ describe('「列の固定」の小メニュー(AP-31)', () => {
     expect(submenuLabels()).toEqual([]);
   });
 
+  it('メニューがパネルの中でスクロールするとき(maxHeight)は、項目の下に開く。ホバーでは開け閉めせず、押し直すと閉じる', () => {
+    render(<ColumnMenuPopover {...props()} layout={{ top: 0, left: 0, width: 240, maxHeight: 200 }} />);
+    const button = pinButton();
+    const inlineLabels = () =>
+      Array.from(document.body.querySelectorAll('.ssg-menu-submenu-anchor .ssg-menu-subgroup .ssg-menu-label')).map(
+        (el) => el.textContent,
+      );
+    fireEvent.pointerEnter(button, { pointerType: 'mouse' });
+    expect(inlineLabels()).toEqual([]);
+    fireEvent.click(button, { detail: 1 });
+    expect(inlineLabels()).toEqual(['固定しない', '左に固定', '右に固定']);
+    expect(submenuLabels()).toEqual([]);
+    const reset = Array.from(document.body.querySelectorAll<HTMLElement>('.ssg-menu-item')).find((el) =>
+      el.textContent?.includes('列のリセット'),
+    ) as HTMLElement;
+    fireEvent.pointerEnter(reset, { pointerType: 'mouse' });
+    expect(inlineLabels()).toHaveLength(3);
+    fireEvent.click(button, { detail: 1 });
+    expect(inlineLabels()).toEqual([]);
+    // キーボードでは → で開いて先頭の項目へ。
+    act(() => {
+      button.focus();
+    });
+    fireEvent.keyDown(button, { key: 'ArrowRight' });
+    expect(document.activeElement?.textContent).toContain('固定しない');
+  });
+
   it('キーボード: → で開いて先頭の項目へ、← で閉じて「列の固定」へ戻る。Enter(detail 0)でも先頭の項目へ', () => {
     render(<ColumnMenuPopover {...props()} />);
     const button = pinButton();

@@ -141,6 +141,9 @@ describe('popupContainer(AP-07)', () => {
       }
       return original.call(this);
     };
+    // 画面の高さに収まらないと小メニューは項目の下に開く(1.1.0 の確かめ直し X-1)ので、横に開く高さにします。
+    const originalInnerHeight = window.innerHeight;
+    window.innerHeight = 2000;
     try {
       const { ref, shell } = renderIn('dialog');
       const menu = openColumnMenu(ref, shell);
@@ -153,6 +156,7 @@ describe('popupContainer(AP-07)', () => {
       expect(submenu).not.toBeNull();
       expect(submenu!.style.getPropertyValue('translate')).toBe('');
     } finally {
+      window.innerHeight = originalInnerHeight;
       HTMLElement.prototype.getBoundingClientRect = original;
     }
   });

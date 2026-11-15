@@ -19,7 +19,7 @@ description: モーダルやポップオーバーの中にグリッドを置く�
 | `'auto'`(既定) | グリッドを囲むいちばん近いダイアログ(`<dialog>` / `popover` 属性の要素 / `aria-modal="true"` / `role="dialog"` / `role="alertdialog"`)の中。無ければ `document.body` の直下。ダイアログが中を切る fixed の基準のとき(Mantine の Modal の中身)は、外側の `position: fixed` の祖先の中(下の「気をつけること」) |
 | `'body'` | いつも `document.body` の直下(1.0 までと同じ) |
 | 要素 | その要素の中 |
-| 関数 | グリッドの要素を受け取って描く場所を返す(`null` / `undefined` なら `document.body`)。ポップアップを開くたびに呼ぶ |
+| 関数 | グリッドの要素を受け取って描く場所を返す(`null` / `undefined` なら `document.body`)。ポップアップを開いている間の描画ごとに呼ぶ。閉じている間は呼ばない |
 
 `document.body` の直下では、モーダルの中で使えないことがあります。素の `<dialog>` の `showModal()` と `popover` はトップレイヤーに出るので、body の直下の要素はその後ろに隠れます。Radix(shadcn/ui)・React Aria(HeroUI)・Headless UI のモーダルは、外側のポインタを止め(body に `pointer-events: none`)、フォーカスを中に閉じ込め、外側の押下で閉じるので、body の直下のポップアップは押せず、入力もできません。Radix の Dialog と Popover は `aria-modal` を付けないので、`role="dialog"` で見つけます。
 
