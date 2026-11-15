@@ -179,7 +179,12 @@ export const createColumnMenuController = <T,>(): ColumnMenuController<T> => {
 
   const bindings = createPopoverWindowBindings({
     onResize: updateLayout,
-    onScroll: () => {
+    onScroll: (event) => {
+      // 変更(1.1.0 の確かめ直しの見直し): メニュー自身のスクロール(画面に収まらないときのホイール / ↓ / 項目の下に開いた
+      //   「列の固定」の小メニューを見せるスクロール)では閉じも動きもしません(右クリックで開いたメニューが閉じていた)。
+      if (event.target instanceof Node && panelRef.current?.contains(event.target)) {
+        return;
+      }
       if (anchorPoint) {
         close();
         return;

@@ -186,8 +186,19 @@ export const createToolPanelController = (): ToolPanelController => {
       return;
     }
     if (toOpener && target !== null && target.isConnected && target !== args.gridRootRef.current) {
-      target.focus({ preventScroll: true });
-      return;
+      // 変更(1.1.0 の確かめ直しの見直し): 開いた部品へ戻すのは、フォーカスがパネルの中か body にある(閉じると行き場を失う)
+      //   ときだけ。開いた部品にもうあれば(押し直し)そのまま、ほかの場所(命令的に開いたエディタなど)にあればこれまでどおり
+      //   グリッドへ戻す判定に任せます。開いた部品がフォーカスを受けられなかった(disabled / 非表示)ときもグリッドへ。
+      const active = document.activeElement;
+      if (active === target) {
+        return;
+      }
+      if (active === null || active === document.body || panelRef.current?.contains(active) === true) {
+        target.focus({ preventScroll: true });
+        if (document.activeElement === target) {
+          return;
+        }
+      }
     }
     restoreGridFocus(args.gridRootRef);
   };

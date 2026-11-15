@@ -13,6 +13,7 @@
 //             既存の ColumnChooserPanel フッターと同じ reset 処理を呼び出し、列メニュー側からも
 //             AG Grid の Reset Columns 相当を実行できるようにします。
 import { useEffect, useId, useRef, useState } from 'react';
+import { useIsomorphicLayoutEffect } from '../hooks/useController';
 import { createPortal } from 'react-dom';
 import { cx } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/cx';
 import type {
@@ -167,12 +168,27 @@ export function ColumnMenuPopover({
     // eslint-disable-next-line react-hooks/set-state-in-effect -- prop(columnKey / isOpen)変更時のサブメニュー状態リセットです。render 中調整パターンへの書き換えは可能ですが、動作実績を優先して現状維持しています(React Compiler 導入時に再検討)。
     setOpenSubmenuKey(null);
   }, [columnKey, isOpen]);
+  // 追加(1.1.0 の確かめ直しの見直し): 開いたまま別の列へ切り替えたら、パネルのスクロールを先頭へ戻します(画面に収まらない
+  //   メニューで「列の固定」の小メニューを項目の下に開いてスクロールした位置が、次の列のメニューに残っていた)。
+  useIsomorphicLayoutEffect(() => {
+    const panel = popoverRef.current;
+    if (panel) {
+      panel.scrollTop = 0;
+    }
+  }, [columnKey, popoverRef]);
   // 追加(DevBI の報告): 表で決まったトークン(--ssg-*)をメニューへ写します(body 直下のため継承で届かない)。
   usePortalTokens(popoverRef, isOpen && layout !== null, themeClassName, { layout });
   // 列の固定のサブメニューも同じトークンの既定値を持つ要素(.ssg-menu-panel)なので、外側のメニューからは継承されません。
   const pinSubmenuRef = useRef<HTMLDivElement>(null);
   // 変更(1.1.0 / AP-07 の見直し): 小メニューはメニューの中に absolute で置くので、位置のずれの打ち消しはしません。
-  usePortalTokens(pinSubmenuRef, isOpen && layout !== null && openSubmenuKey === PIN_SUBMENU_KEY, themeClassName, { origin: false });
+  // 変更(1.1.0 の確かめ直しの見直し): 項目の下に開いている間(下の submenuInline)はパネルの一部なので写さず、横に出すへ
+  //   切り替わったときに写し直します(開いたまま画面が高くなると、小メニューが表で決めた色を失っていた)。
+  usePortalTokens(
+    pinSubmenuRef,
+    isOpen && layout !== null && openSubmenuKey === PIN_SUBMENU_KEY && layout.maxHeight === undefined,
+    themeClassName,
+    { origin: false },
+  );
   // 追加(1.1.0 / AP-07): 描く場所(既定はグリッドを囲むダイアログの中、無ければ body)。
   const popupContainer = usePopupContainer(isOpen && layout !== null);
   // 追加(1.0.1 / 2026-11-09 実アプリの総点検 AP-31): キーボード(→ / Enter / Space)で開いたときは小メニューの先頭の項目へ
@@ -181,8 +197,10 @@ export function ColumnMenuPopover({
   // 追加(1.1.0 / AP-33): 固定できないときの注記を、小メニューの項目の説明として読ませます(メニューの中の素の文は読まれにくい)。
   const pinNoteId = useId();
   const focusPinSubmenuOnOpen = useRef(false);
-  const focusFirstPinItem = () => {
-    pinSubmenuRef.current?.querySelector<HTMLElement>('.ssg-menu-item:not(:disabled)')?.focus();
+  const focusFirstPinItem = (): boolean => {
+    const item = pinSubmenuRef.current?.querySelector<HTMLElement>('.ssg-menu-item:not(:disabled)');
+    item?.focus();
+    return item != null;
   };
   useEffect(() => {
     if (openSubmenuKey !== PIN_SUBMENU_KEY) {
@@ -513,10 +531,14 @@ export function ColumnMenuPopover({
             //   閉じるのは別の項目へのホバー・← ・メニューを閉じたとき。キーボード(Enter / Space = detail 0)では先頭の項目へ。
             if (event.detail === 0) {
               if (isPinSubmenuOpen) {
-                focusFirstPinItem();
-              } else {
-                focusPinSubmenuOnOpen.current = true;
+                // 変更(1.1.0 の確かめ直しの見直し): 項目の下に開いていて押せる項目が無い(固定を変えられない)ときは閉じます
+                //   (中へ入れず、Escape でメニューごと閉じるまで開いたままだった)。
+                if (!focusFirstPinItem() && submenuInline) {
+                  setOpenSubmenuKey(null);
+                }
+                return;
               }
+              focusPinSubmenuOnOpen.current = true;
             } else if (submenuInline && isPinSubmenuOpen) {
               // 項目の下に開いているときは、押し直すと閉じます。
               setOpenSubmenuKey(null);
@@ -525,6 +547,12 @@ export function ColumnMenuPopover({
             setOpenSubmenuKey(PIN_SUBMENU_KEY);
           }}
           onKeyDown={(event) => {
+            // 追加(1.1.0 の確かめ直しの見直し): 項目の下に開いているときは、この項目の上の ← でも閉じます。
+            if (event.key === 'ArrowLeft' && submenuInline && isPinSubmenuOpen) {
+              event.preventDefault();
+              setOpenSubmenuKey(null);
+              return;
+            }
             // 追加(1.0.1 / AP-31): → で小メニューを開いて先頭の項目へ。
             if (event.key !== 'ArrowRight') {
               return;

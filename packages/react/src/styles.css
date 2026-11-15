@@ -3526,6 +3526,10 @@
   .ssg-menu-subgroup {
     padding-left: 14px;
   }
+  /* 項目の下に開いているときは › を下向きにします。 */
+  .ssg-menu-submenu-anchor:has(> .ssg-menu-subgroup) .ssg-menu-caret {
+    transform: rotate(90deg);
+  }
 
   /* 左端 ✓ 列スペーサ / ソート方向アイコン / 固定 ✓ / ラベル / › キャレット。 */
   .ssg-menu-icon {

@@ -35,6 +35,23 @@ describe('columnMenuController', () => {
     expect(c.getSnapshot().columnKey).toBeNull();
   });
 
+  // 追加(1.1.0 の確かめ直しの見直し): 画面に収まらないメニューの中のスクロールでは閉じない(右クリックで開いたとき)。
+  it('座標アンカー: メニュー自身のスクロールでは閉じない', () => {
+    const c = createColumnMenuController<unknown>();
+    const panel = document.createElement('div');
+    const item = document.createElement('button');
+    panel.appendChild(item);
+    document.body.appendChild(panel);
+    c.panelRef.current = panel;
+    c.update({ visibleColumns: [column], enableColumnMenu: true, gridRootRef: { current: null } });
+    c.openFromContextMenu(column, ctx(100, 100));
+    panel.dispatchEvent(new Event('scroll'));
+    expect(c.getSnapshot().columnKey).toBe('a');
+    document.dispatchEvent(new Event('scroll'));
+    expect(c.getSnapshot().columnKey).toBeNull();
+    c.dispose();
+  });
+
   it('ボタンアンカー: 収まらないときは maxHeight を付け、dispose でリスナーが外れる', () => {
     const c = createColumnMenuController<unknown>();
     c.update({ visibleColumns: [column], enableColumnMenu: true, gridRootRef: { current: null } });

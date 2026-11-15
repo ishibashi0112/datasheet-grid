@@ -209,6 +209,59 @@ describe('viewportSyncController', () => {
     }
   });
 
+  // 追加(1.1.0 の確かめ直しの見直し): 押したセル(ポインタ)・ドラッグの端の自動スクロール・命令的なスクロールには逆らわない。
+  it('ポインタを離す・ボタンを押したまま動かす・cancelFollow でやめる。ボタンを押していない動きではやめない。dispose でリスナーを外す', () => {
+    vi.useFakeTimers();
+    try {
+      const scroll = createScrollElement();
+      scroll.scrollTo.mockImplementation((target) => {
+        if (target.top !== undefined) scroll.raw.scrollTop = target.top;
+      });
+      const moved = (controller: ReturnType<typeof createViewportSyncController>, cell: { row: number; col: number }, top: number) =>
+        controller.update({
+          ...baseArgs(scroll.element),
+          physicalBodyHeight: 8000,
+          activeCell: { ...cell },
+          activeCellRect: { left: 0, top, width: 80, height: 36 },
+        });
+      const jump = (controller: ReturnType<typeof createViewportSyncController>, cell: { row: number; col: number }) => {
+        scroll.raw.scrollTop = 0;
+        moved(controller, cell, 3564);
+        return scroll.scrollTo.mock.calls.length;
+      };
+      const cases: Array<[string, (controller: ReturnType<typeof createViewportSyncController>) => void, boolean]> = [
+        ['ボタンなしの pointermove', () => document.dispatchEvent(new MouseEvent('pointermove', { buttons: 0 })), true],
+        ['ボタンありの pointermove', () => document.dispatchEvent(new MouseEvent('pointermove', { buttons: 1 })), false],
+        ['pointerup', () => document.dispatchEvent(new MouseEvent('pointerup')), false],
+        ['cancelFollow', (controller) => controller.cancelFollow(), false],
+        ['dispose', (controller) => controller.dispose(), false],
+      ];
+      for (const [name, act, keepsFollowing] of cases) {
+        const controller = createViewportSyncController();
+        const cell = { row: 99, col: 0 };
+        const calls = jump(controller, cell);
+        act(controller);
+        moved(controller, cell, 4044);
+        expect(scroll.scrollTo.mock.calls.length, name).toBe(keepsFollowing ? calls + 1 : calls);
+        controller.dispose();
+      }
+      // dispose はリスナーとタイマーを外す(外した後も update は使える)。
+      const removeSpy = vi.spyOn(document, 'removeEventListener');
+      const controller = createViewportSyncController();
+      jump(controller, { row: 50, col: 0 });
+      controller.dispose();
+      expect(removeSpy.mock.calls.filter(([type]) => type === 'wheel')).toHaveLength(1);
+      expect(vi.getTimerCount()).toBe(0);
+      const calls = jump(controller, { row: 60, col: 0 });
+      moved(controller, { row: 60, col: 0 }, 4044);
+      expect(scroll.scrollTo.mock.calls.length).toBe(calls + 1);
+      controller.dispose();
+      removeSpy.mockRestore();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it('スクロール要素が未マウント(null)なら DOM 系の処理はスキップする', () => {
     const controller = createViewportSyncController();
     expect(() =>

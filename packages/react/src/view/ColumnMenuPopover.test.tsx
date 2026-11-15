@@ -209,6 +209,41 @@ describe('「列の固定」の小メニュー(AP-31)', () => {
     expect(document.activeElement?.textContent).toContain('固定しない');
   });
 
+  // 追加(1.1.0 の確かめ直しの見直し)。
+  it('項目の下に開いているとき: 「列の固定」の上の ← で閉じる。押せる項目が無ければ Enter(detail 0)で閉じる', () => {
+    const view = render(<ColumnMenuPopover {...props()} layout={{ top: 0, left: 0, width: 240, maxHeight: 200 }} />);
+    const inlineCount = () => document.body.querySelectorAll('.ssg-menu-submenu-anchor .ssg-menu-subgroup .ssg-menu-item').length;
+    let button = pinButton();
+    act(() => {
+      button.focus();
+    });
+    fireEvent.click(button, { detail: 1 });
+    expect(inlineCount()).toBe(3);
+    fireEvent.keyDown(button, { key: 'ArrowLeft' });
+    expect(inlineCount()).toBe(0);
+    view.unmount();
+
+    render(<ColumnMenuPopover {...props()} canChangePinned={false} layout={{ top: 0, left: 0, width: 240, maxHeight: 200 }} />);
+    button = pinButton();
+    act(() => {
+      button.focus();
+    });
+    fireEvent.keyDown(button, { key: 'ArrowRight' });
+    expect(inlineCount()).toBe(3);
+    expect(document.activeElement).toBe(button);
+    fireEvent.click(button, { detail: 0 });
+    expect(inlineCount()).toBe(0);
+  });
+
+  it('開いたまま別の列へ切り替えると、パネルのスクロールを先頭へ戻す', () => {
+    const base = props();
+    const view = render(<ColumnMenuPopover {...base} layout={{ top: 0, left: 0, width: 240, maxHeight: 200 }} />);
+    const panel = base.popoverRef.current!;
+    panel.scrollTop = 83;
+    view.rerender(<ColumnMenuPopover {...base} columnKey="b" title="列 B" layout={{ top: 0, left: 0, width: 240, maxHeight: 200 }} />);
+    expect(panel.scrollTop).toBe(0);
+  });
+
   it('キーボード: → で開いて先頭の項目へ、← で閉じて「列の固定」へ戻る。Enter(detail 0)でも先頭の項目へ', () => {
     render(<ColumnMenuPopover {...props()} />);
     const button = pinButton();

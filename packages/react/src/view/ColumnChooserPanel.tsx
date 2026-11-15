@@ -223,12 +223,16 @@ export function ColumnChooserPanel({
   // 変更(1.1.0 の確かめ直し K-c / L): 開いている間にこのタブへ切り替えたとき(フォーカスがパネルの中にある)だけにします。
   //   ツールパネルを開いたときは選ばれているタブへ(ドキュメントどおり。これまでは「列の表示」から開くと検索欄だった)、
   //   タッチが主の端末(pointer: coarse)では動かしません(ソフトウェアキーボードが出るため。列フィルターと同じ)。
+  // 変更(1.1.0 の確かめ直しの見直し): パネルの中にフォーカスがあるかは最初の描画の時点で見ます(effect で見ると、開発時の
+  //   StrictMode の 2 回目の effect ではパネルが選ばれているタブへフォーカスを移し終えていて、開いたときも検索欄へ移っていた)。
+  const [focusSearchOnMount] = useState(
+    () => typeof document !== 'undefined' && document.activeElement?.closest('.ssg-toolpanel') != null,
+  );
   useEffect(() => {
     const input = searchInputRef.current;
-    const panel = input?.closest('[role="dialog"]');
     if (
       !input ||
-      !panel?.contains(input.ownerDocument.activeElement) ||
+      !focusSearchOnMount ||
       (typeof window.matchMedia === 'function' && window.matchMedia('(pointer: coarse)').matches)
     ) {
       return undefined;
@@ -237,7 +241,7 @@ export function ColumnChooserPanel({
       input.focus();
     });
     return () => cancelAnimationFrame(id);
-  }, []);
+  }, [focusSearchOnMount]);
 
   // 注記: master / guard の判定は「全列(検索フィルタ前)」を基準にします。
   //       検索はあくまで一覧の絞り込み表示で、全選択の意味は変えません。

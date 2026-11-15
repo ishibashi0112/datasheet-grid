@@ -49,6 +49,12 @@ export type ViewportSyncArgs<T> = {
 
 export type ViewportSyncController<T> = {
   update: (args: ViewportSyncArgs<T>) => void;
+  // 追加(1.1.0 の確かめ直しの見直し): アクティブセルの合わせ直し(下の follow)をやめます。命令的なスクロール
+  //   (scrollToTop / scrollToRow / setScrollPosition など)の前に呼びます(イベントを伴わないので、呼ばないと 1 秒の間は
+  //   アクティブセルへ引き戻していた)。
+  cancelFollow: () => void;
+  // 追加(同): 外すとき(合わせ直しのリスナーとタイマーを外す)。外した後も update は使えます(StrictMode の付け直し)。
+  dispose: () => void;
 };
 
 // 内容縮小時の clamp(純粋な DOM 書き込み。テストからも直接呼べます)。
@@ -285,8 +291,9 @@ export const createScrollScaleAnchor = (): ScrollScaleAnchor => {
 // 追加(1.1.0 の確かめ直し): アクティブセルへスクロールした後、行の高さを測り直して位置が動いたら合わせ直す時間(ms)。
 const ACTIVE_CELL_FOLLOW_MS = 1000;
 
-// 合わせ直しをやめる利用者の操作です。
-const FOLLOW_CANCEL_EVENTS = ['wheel', 'touchstart', 'pointerdown', 'keydown'] as const;
+// 合わせ直しをやめる利用者の操作です。ポインタを離したら(押したセルはもう見えている)・ボタンを押したまま動かしたら
+//   (範囲選択のドラッグの端の自動スクロールに逆らわない)もやめます。
+const FOLLOW_CANCEL_EVENTS = ['wheel', 'touchstart', 'pointerdown', 'pointerup', 'pointermove', 'keydown'] as const;
 
 const sameRectGeometry = (a: ViewportCellRect | null, b: ViewportCellRect): boolean =>
   a !== null && a.top === b.top && a.height === b.height && a.left === b.left && a.width === b.width;
@@ -314,6 +321,13 @@ export const createViewportSyncController = <T,>(): ViewportSyncController<T> =>
     stopFollowing?.();
     stopFollowing = null;
   };
+  const onCancelEvent = (event: Event) => {
+    // ボタンを押していないポインタの動き(ホバー)ではやめません。
+    if (event.type === 'pointermove' && !((event as PointerEvent).buttons > 0)) {
+      return;
+    }
+    endFollow();
+  };
   const startFollow = (scrollElement: HTMLElement, cell: CellCoord) => {
     endFollow();
     follow = { cell, until: Date.now() + ACTIVE_CELL_FOLLOW_MS, left: scrollElement.scrollLeft };
@@ -324,12 +338,12 @@ export const createViewportSyncController = <T,>(): ViewportSyncController<T> =>
       return;
     }
     for (const type of FOLLOW_CANCEL_EVENTS) {
-      doc.addEventListener(type, endFollow, { capture: true, passive: true });
+      doc.addEventListener(type, onCancelEvent, { capture: true, passive: true });
     }
     stopFollowing = () => {
       clearTimeout(timer);
       for (const type of FOLLOW_CANCEL_EVENTS) {
-        doc.removeEventListener(type, endFollow, { capture: true });
+        doc.removeEventListener(type, onCancelEvent, { capture: true });
       }
     };
   };
@@ -404,5 +418,5 @@ export const createViewportSyncController = <T,>(): ViewportSyncController<T> =>
     prev = args;
   };
 
-  return { update };
+  return { update, cancelFollow: endFollow, dispose: endFollow };
 };

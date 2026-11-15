@@ -2352,7 +2352,7 @@ export function useGridShell<T extends object>({
     return scheduleActiveCellTooltip(activeCellDomId, gridRootRef.current);
   }, [tooltipActiveRow, tooltipActiveCol, tooltipEditing, activeCellDomId]);
 
-  useGridViewportSync({
+  const cancelActiveCellFollow = useGridViewportSync({
     scrollRef: scrollContainerRef,
     // 追加(1.0.1 / 2026-11-09 実アプリの総点検 AP-24): 縮めたスクロールで行の数が変わったときに見ている行を保つ(物理の
     //   位置を直したら view スライスへ書き、onScroll の source は 'api')。
@@ -4651,7 +4651,12 @@ export function useGridShell<T extends object>({
     moveRowByKey,
     commitRowSelection: rowSelectionCommands.commitRowSelection,
     pendingRowSelection: rowSelectionCommands.pendingRowSelection,
-    markApiScroll: scrollSync.markApiScroll,
+    // 変更(1.1.0 の確かめ直しの見直し): 命令的なスクロールでは、アクティブセルの合わせ直しをやめます(1 秒の間に
+    //   scrollToTop などを呼ぶと、行を測り直したときにアクティブセルへ引き戻していた)。
+    markApiScroll: () => {
+      cancelActiveCellFollow();
+      return scrollSync.markApiScroll();
+    },
   });
   useImperativeHandle(ref, () => gridApi.handle, [gridApi]);
 

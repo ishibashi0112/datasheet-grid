@@ -7,7 +7,7 @@
 // @vitest-environment jsdom
 import { describe, it, expect, beforeAll, afterAll, afterEach, vi } from 'vitest';
 import { render, cleanup, act, fireEvent, screen } from '@testing-library/react';
-import { createRef } from 'react';
+import { createRef, StrictMode } from 'react';
 
 import { SpreadsheetGrid } from './SpreadsheetGrid';
 import { installJsdomLayoutStubs } from './testing';
@@ -37,11 +37,10 @@ const menuItems = (): GridContextMenuItem[] => [
   { kind: 'action', id: 'remove', label: '削除', onSelect: () => {} },
 ];
 
-const setup = (props: Partial<SpreadsheetGridProps<Row>> = {}) => {
+const setup = (props: Partial<SpreadsheetGridProps<Row>> = {}, options: { strict?: boolean } = {}) => {
   const ref = createRef<SpreadsheetGridHandle<Row>>();
-  const view = render(
-    <SpreadsheetGrid<Row> ref={ref} rows={rows} columns={columns} rowKeyGetter={(row) => row.id} {...props} />,
-  );
+  const grid = <SpreadsheetGrid<Row> ref={ref} rows={rows} columns={columns} rowKeyGetter={(row) => row.id} {...props} />;
+  const view = render(options.strict ? <StrictMode>{grid}</StrictMode> : grid);
   const shell = view.container.querySelector<HTMLElement>('.ssg-shell');
   if (!shell) {
     throw new Error('shell が見つかりません');
@@ -459,8 +458,11 @@ describe('ツールパネルのダイアログ(RV2-L2)', () => {
     expect(dialog.contains(document.activeElement)).toBe(true);
   });
 
-  it('「列」タブで開いたときも選ばれているタブへフォーカス。開いている間に「列」タブへ切り替えたときは検索欄へ', async () => {
-    const { container } = setup();
+  it.each([
+    ['', false],
+    ['(開発時の StrictMode)', true],
+  ])('「列」タブで開いたときも選ばれているタブへフォーカス。開いている間に「列」タブへ切り替えたときは検索欄へ%s', async (_, strict) => {
+    const { container } = setup({}, { strict });
     const trigger = container.querySelector<HTMLElement>('[data-ssg-col-key="qty"] [aria-haspopup="menu"]');
     act(() => {
       fireEvent.pointerDown(trigger!, { button: 0, pointerId: 1 });
