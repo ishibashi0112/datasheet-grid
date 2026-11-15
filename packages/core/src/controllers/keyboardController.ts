@@ -57,6 +57,9 @@ export type KeyboardControllerArgs<T> = {
   resolvePageRow?: (fromRow: number, direction: 1 | -1) => number;
   // 追加(別視点のレビュー): Alt+↓ でアクティブセルの列の列メニューを開く。開いたら true(列メニューが無い構成は未指定)。
   openColumnMenu?: (col: number) => boolean;
+  // 追加(1.1.0 / 2026-11-09 実アプリの総点検 AP-33): Shift+F10 / メニューキーでアクティブセルの右クリックメニューを開く。
+  //   開いたら true(右クリックメニューが無い構成・項目が無いときは false で、ブラウザの既定のまま)。
+  openContextMenu?: (cell: CellCoord) => boolean;
   // 追加(段階 2 C-N2): 最終列の Tab。その行の展開行のカードへフォーカスを移したら true(既定動作を止める)。false のときは
   //   既定動作で表の外へ出る(カードが開いていれば、既定動作の前にフォーカスを表の直後の目印へ移しておく)。展開行が無い構成は未指定。
   onTabPastLastColumn?: (viewRowIndex: number) => boolean;
@@ -324,6 +327,18 @@ export const createKeyboardController = <T,>(): KeyboardController<T> => {
     const ctrlOrMeta = event.ctrlKey || event.metaKey;
     // 追加(別視点のレビュー): Alt+↓(Mac は Option+↓)でアクティブセルの列の列メニューを開きます(Excel のフィルターの
     //   ドロップダウンと同じキー)。見出しの ⋮ は Tab の順番に入れない(DF-08)ので、キーボードの入口です。開けなければ ↓ のまま。
+    // 追加(1.1.0 / AP-33): Shift+F10 / メニューキー(ContextMenu)でアクティブセルの右クリックメニューを開きます(Windows の
+    //   慣例。Mac の Chrome / Safari にはこのキーが無い)。開けなければブラウザの既定(標準のメニュー)のままです。
+    if (
+      (event.key === 'ContextMenu' || (event.key === 'F10' && event.shiftKey)) &&
+      !ctrlOrMeta &&
+      !event.altKey &&
+      uiState.activeCell &&
+      args.openContextMenu?.(uiState.activeCell)
+    ) {
+      event.preventDefault();
+      return;
+    }
     if (
       event.key === 'ArrowDown' &&
       event.altKey &&

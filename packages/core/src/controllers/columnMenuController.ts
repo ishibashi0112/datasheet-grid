@@ -12,6 +12,7 @@ import { createValueStore } from '../logic/valueStore';
 import {
   blurForPopover,
   createPopoverWindowBindings,
+  focusPanelIfIdle,
   handleMenuKeyNavigation,
   isInsideGridRoot,
   restoreGridFocus,
@@ -207,7 +208,11 @@ export const createColumnMenuController = <T,>(): ColumnMenuController<T> => {
         return;
       }
       const active = document.activeElement;
-      if (event.key === 'Tab' && active instanceof HTMLElement && active.matches(COLUMN_MENU_ITEM) && panel.contains(active)) {
+      if (
+        event.key === 'Tab' &&
+        active instanceof HTMLElement &&
+        (active === panel || (active.matches(COLUMN_MENU_ITEM) && panel.contains(active)))
+      ) {
         event.preventDefault();
         close();
       }
@@ -227,6 +232,10 @@ export const createColumnMenuController = <T,>(): ColumnMenuController<T> => {
       if (focusFirstItem) {
         focusFirstItem = false;
         panelRef.current?.querySelector<HTMLElement>(COLUMN_MENU_ITEM)?.focus();
+      } else {
+        // 追加(1.1.0 / 2026-11-09 実アプリの総点検 AP-33): マウスで開いたときはパネル(role="menu")にフォーカスを置きます
+        //   (これまでは body のままで、支援技術にメニューが開いたことが伝わらなかった)。↓ で先頭、↑ で末尾の項目へ移るのは同じ。
+        focusPanelIfIdle(panelRef.current);
       }
     });
     bindings.attach();

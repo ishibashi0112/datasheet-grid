@@ -117,6 +117,7 @@ const GRID_LOCALE_TEXT_EN = {
   toolPanelFilters: 'Filters',
   toolPanelSort: 'Sort',
   toolPanelColumns: 'Columns',
+  toolPanelLabel: 'Tool panel',
   columnsPinnedLeft: 'Pinned left',
   columnsUnpinned: 'Not pinned',
   columnsPinnedRight: 'Pinned right',

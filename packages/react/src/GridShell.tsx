@@ -1000,6 +1000,10 @@ export function useGridShell<T extends object>({
   const { isContextMenuOpen, openContextMenu, renderContextMenuPopover } =
     features.contextMenu.useCellContextMenu<T>({ gridRootRef });
   const buildBodyContextMenuParams = features.contextMenu.buildBodyContextMenuParams;
+  const buildCellContextMenuParams = features.contextMenu.buildCellContextMenuParams;
+  // 追加(1.1.0 / AP-33): キーボードで開いた時刻(ms)。続けてブラウザが送る contextmenu(Shift+F10 / メニューキーの既定の動作)で
+  //   標準のメニューを出さないために使います。
+  const keyboardContextMenuAtRef = useRef(0);
 
   // ── column widths sync ────────────────────────────────
   // 変更(監査 RD-5 / M-03): フル置換(resetColumnWidths。columns の参照が変わるたびに全列を column.width
@@ -1386,11 +1390,75 @@ export function useGridShell<T extends object>({
   //   未指定・項目空・SSRM 未ロード行ではブラウザ標準メニューへフォールスルーします(空パネルは出さない)。
   //   ヘッダーは [data-row-index] を持たないため必ず早期 return し、列メニューと自然排他になります。
   //   本ハンドラは常時再レンダーされる shell 上に置くため latest-ref 不要(参照安定は不問)です。
+  // 追加(1.1.0 / 2026-11-09 実アプリの総点検 AP-33): キーボード(Shift+F10 / メニューキー)でアクティブセルの右クリックメニューを
+  //   開きます。メニューはセルの左下に出し、先頭の項目へフォーカスを移します。項目が無い / 行が無い(SSRM の未ロード行など)ときは
+  //   開かず false(ブラウザの既定のまま)。セルが描かれていない(画面の外)ときは表の左上に出します。
+  const openContextMenuForCell = useCallback(
+    (cell: CellCoord): boolean => {
+      const root = gridRootRef.current;
+      const column = orderedColumns[cell.col];
+      if (!enableContextMenu || !getContextMenuItems || !root || !column) {
+        return false;
+      }
+      const cellEl = Array.from(
+        root.querySelectorAll<HTMLElement>(`[data-row-index="${cell.row}"] [data-ssg-col-key]`),
+      ).find((element) => element.dataset.ssgColKey === column.key);
+      const rect = (cellEl ?? root).getBoundingClientRect();
+      const params = buildCellContextMenuParams<T>({
+        cell,
+        clientX: rect.left,
+        clientY: cellEl ? rect.bottom : rect.top,
+        rowModel,
+        orderedColumns,
+        selection: uiState.selection,
+        activeCell: uiState.activeCell,
+      });
+      if (!params) {
+        return false;
+      }
+      const items = getContextMenuItems(params);
+      if (!items || items.length === 0) {
+        return false;
+      }
+      keyboardContextMenuAtRef.current = performance.now();
+      onContextMenuOpen?.(params);
+      openContextMenu(params, items, { focus: 'firstItem' });
+      return true;
+    },
+    [
+      enableContextMenu,
+      getContextMenuItems,
+      onContextMenuOpen,
+      buildCellContextMenuParams,
+      rowModel,
+      orderedColumns,
+      uiState.selection,
+      uiState.activeCell,
+      openContextMenu,
+    ],
+  );
+
   const handleBodyContextMenu = useCallback(
     (event: ReactMouseEvent<HTMLDivElement>) => {
       // opt-in 判定: マスタースイッチ OFF(既定)/ getContextMenuItems 未指定なら何もしません
       //   (= ブラウザ標準メニュー)。両方そろって初めて独自メニューの検討に入ります。
       if (!enableContextMenu || !getContextMenuItems) {
+        return;
+      }
+      // 追加(1.1.0 / AP-33): キーボードから来た contextmenu(フォーカスを持つシェルか入力受けが対象で、右ボタンではない。
+      //   Chrome は button が -1)。直前にキーで開いたなら標準のメニューを止めるだけ、keydown を経ずに来た(OS がキーを
+      //   contextmenu に変える)ならここで開きます。検索欄などシェルの中の入力欄では標準のメニューのまま。
+      const target = event.target instanceof Element ? event.target : null;
+      const fromShellFocus =
+        target !== null && (target === event.currentTarget || target.hasAttribute(IME_INPUT_ATTRIBUTE));
+      if (event.nativeEvent.button !== 2 && fromShellFocus) {
+        if (performance.now() - keyboardContextMenuAtRef.current < 1000) {
+          event.preventDefault();
+          return;
+        }
+        if (uiState.activeCell && openContextMenuForCell(uiState.activeCell)) {
+          event.preventDefault();
+        }
         return;
       }
       // 対象(セル / 行番号)の解決は機能側(features/contextMenu)。開かない対象なら null(標準メニューへ)。
@@ -1426,6 +1494,7 @@ export function useGridShell<T extends object>({
       uiState.selection,
       uiState.activeCell,
       openContextMenu,
+      openContextMenuForCell,
     ],
   );
 
@@ -2944,6 +3013,8 @@ export function useGridShell<T extends object>({
     onToggleDetailRow: detailRowEnabled ? toggleDetailRowFromKeyboard : undefined,
     resolvePageRow,
     openColumnMenu: columnMenuEnabled ? openColumnMenuForCell : undefined,
+    // 追加(1.1.0 / AP-33): Shift+F10 / メニューキーで右クリックメニュー。
+    openContextMenu: enableContextMenu && getContextMenuItems ? openContextMenuForCell : undefined,
     // 追加(段階 2 C-N2): 最終列の Tab をその行の展開行のカードへ。
     onTabPastLastColumn: handleTabPastLastColumn,
   });

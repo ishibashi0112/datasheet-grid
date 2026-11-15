@@ -75,6 +75,8 @@ export function CellContextMenuPopover({
     <div
       ref={popoverRef}
       role="menu"
+      // 追加(1.1.0 / AP-33): 右クリックで開いたときはパネルにフォーカスを置きます(controller)。
+      tabIndex={-1}
       onPointerDown={handlePointerDown}
       onKeyDown={handleKeyDown}
       onContextMenu={(event) => {

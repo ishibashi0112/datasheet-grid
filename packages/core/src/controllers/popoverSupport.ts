@@ -117,6 +117,18 @@ export const handleMenuKeyNavigation = (
   return false;
 };
 
+// 追加(1.1.0 / 2026-11-09 実アプリの総点検 AP-33): マウスで開いたメニューのパネル(tabIndex=-1)にフォーカスを置きます。フォーカスが
+//   どこにも無い(body)ときだけで、ほかの要素(利用側の入力欄など)からは奪いません。
+export const focusPanelIfIdle = (panel: HTMLElement | null): void => {
+  if (panel === null || !panel.isConnected) {
+    return;
+  }
+  const active = panel.ownerDocument.activeElement;
+  if (active === null || active === panel.ownerDocument.body) {
+    panel.focus({ preventScroll: true });
+  }
+};
+
 export type PopoverWindowHandlers = {
   onResize?: () => void;
   // scroll は capture 相で受けます(内部スクロールも含めて拾う)。

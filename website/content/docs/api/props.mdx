@@ -274,6 +274,7 @@ import { localeTextEn } from '@ishibashi0112/spreadsheet-grid/locales/en';
 | `toolPanelFilters` | `フィルター` | `Filters` | ツールパネルのタブ。 |
 | `toolPanelSort` | `並び替え` | `Sort` | ツールパネルのタブ。 |
 | `toolPanelColumns` | `列` | `Columns` | ツールパネルのタブ。 |
+| `toolPanelLabel` | `ツールパネル` | `Tool panel` | ツールパネル(ダイアログ)の読み上げの名前(1.1.0 から)。 |
 | `columnsPinnedLeft` | `左固定` | `Pinned left` | 列のタブの見出し。 |
 | `columnsUnpinned` | `固定なし` | `Not pinned` | 列のタブの見出し。 |
 | `columnsPinnedRight` | `右固定` | `Pinned right` | 列のタブの見出し。 |
@@ -609,10 +610,10 @@ const current = rows.find((row) => row.id === currentKey) ?? null;
 
 - **ヘッダー右クリックは対象外**(列メニュー `enableColumnMenu` が担当)。本メニューはボディの **データセル**と **行NO ガター**専用。
 - **SSRM 未ロード行**(まだ取得できていない行)の上では開かない(標準メニューになる)。
-- キーボードの `Shift+F10` / コンテキストメニューキーでは開かない(フォーカスはセルではなくグリッドにあるため、ブラウザ標準のメニューになる)。キーボードだけで使えるようにしたい操作は、ツールバーのボタンや自前のショートカットからも呼べるようにする。
+- キーボード: アクティブセルで `Shift+F10` / メニューキー(Windows のアプリケーションキー)を押すと、そのセルのメニューを開く(1.1.0 から。1.0.2 までは開かず、ブラウザ標準のメニューだった)。メニューはセルの左下に出て、先頭の使える項目へフォーカスが移る。`params.target` はアクティブセル(`type: 'cell'`)、`clientX` / `clientY` はセルの左下の座標(セルが画面の外にあるときはグリッドの左上)。項目が無い・アクティブセルが無い・未ロード行のときはブラウザ標準のメニューのまま。行番号のメニュー(`type: 'rowHeader'`)はキーボードでは開かない。上部バーの検索欄など、グリッドの中の入力欄では標準のメニュー。
 - uncontrolled のみ。右クリックしても**セル選択は変化しない**(対象セル/行の情報は `params` で受け取る)。
 - close 契機: 項目選択 / 外側クリック / Escape / Tab / スクロール。
-- キーボード: 開いている間、`↓` / `↑` で項目の間を移る(使えない項目は飛ばし、端で反対側へ回る。開いた直後は `↓` で先頭、`↑` で末尾)。`Home` / `End` で先頭 / 末尾、`Enter` / `Space` で実行。開いている間は後ろのグリッドをキーでスクロールしない。`custom` 項目の中の入力欄にフォーカスがあるときは、矢印キーなどはその入力欄のまま。
+- キーボード: 開いている間、`↓` / `↑` で項目の間を移る(使えない項目は飛ばし、端で反対側へ回る。右クリックで開いた直後はパネルにフォーカスがあり(1.1.0 から)、`↓` で先頭、`↑` で末尾)。`Home` / `End` で先頭 / 末尾、`Enter` / `Space` で実行。開いている間は後ろのグリッドをキーでスクロールしない。`custom` 項目の中の入力欄にフォーカスがあるときは、矢印キーなどはその入力欄のまま。
 
 **`GridContextMenuParams<T>`**(コールバック引数)
 
@@ -983,6 +984,8 @@ const [rows, setRows] = useState(initialRows);
 | `Home` / `End`(+ `Shift`) | 行の先頭 / 末尾の列へ。 |
 | `Ctrl/Cmd+Home` / `Ctrl/Cmd+End`(+ `Shift`) | 先頭のセル / 末尾のセルへ。 |
 | `PageUp` / `PageDown`(+ `Shift`) | 見えている本体の高さ 1 画面ぶん上 / 下の行へ(少なくとも 1 行)。 |
+| `Shift+F10` / メニューキー | アクティブセルの右クリックメニューを開く(`enableContextMenu` で `getContextMenuItems` が項目を返すとき。セルの左下に開き、先頭の項目へフォーカスを移す。1.1.0 から)。中の操作は「コンテキストメニュー」節のとおりで、`Escape` / `Tab` で閉じてグリッドへ戻る。 |
+| `Alt+↓`(Mac は `Option+↓`) | アクティブセルの列の列メニューを開く(`enableColumnMenu` のとき。見出しの下に開き、先頭の項目へフォーカスを移す)。メニューの中は `↓` / `↑` / `Home` / `End` で項目を移り、`Enter` / `Space` で実行、`Escape` / `Tab` で閉じてグリッドへ戻る(マウスで開いたときも同じ)。「列の固定」は `→` / `Enter` / `Space` で小メニューを開いて先頭の項目へ移り、小メニューの中の `←` で閉じて「列の固定」へ戻る(タッチではタップで開く。1.0.1 から)。列メニューの無い合成列(自動グループ列など)ではふつうの `↓`。 |
 | `Enter` / `F2` / 印字キー直打ち | 編集開始(印字キーはその 1 文字を初期値に。select エディタではその文字で始まる候補を頭出しする。date エディタは文字の入力欄で開く)。編集可否は `readOnly` / 列 / `canEditCell` に従う。 |
 | `Enter` / `Space`(グループ行 / 展開トグル列のセル) | そのグループ / 展開行の開閉(編集は始めない)。 |
 | `Escape` | 選択解除(範囲を選んでいるとき。グリッドを入れたダイアログはこの `Escape` では閉じない。1 セルを選んでいるだけのときは見た目は変わらず、`Escape` はダイアログへ届く)。 |
@@ -1019,7 +1022,7 @@ WAI-ARIA の grid パターンに沿って、表・行・セルに役割と状�
 | 見出し行 / データ行 | `role="row"`。`aria-rowindex` は見出し行が 1、データ行は表示順 + 2。行選択のチェックボックスがあるときは `aria-selected`。未ロード行(SSRM のスケルトン)は `aria-busy`。 |
 | 列見出し | `role="columnheader"`。`aria-colindex`(行番号列が 1)。ソートの第 1 キーの列だけ `aria-sort`(`ascending` / `descending`)。 |
 | 行番号 / 左上の角 | `role="rowheader"` / `role="columnheader"`。 |
-| ラベル行(`labelRow`) | 左の行番号の欄は `role="rowheader"` で、`aria-label` は行の見出しの文(`getLabel` の値。1.0.2 から。1.0.1 までは名前の無い見出し)。 |
+| ラベル行(`labelRow`) | 行は `role="row"` で `aria-label` は行の見出しの文(`getLabel` の値)。見出しの文が見える中身の欄が `role="rowheader"`(`aria-colindex="1"`)。左の行番号の欄と、中身を持たないペイン(固定列のペイン)の帯は `aria-hidden`(1.1.0 から。1.0.2 は文字の無い行番号の欄を `role="rowheader"` + `aria-label` にしていて、axe が空の見出し(`empty-table-header`)を出していた)。 |
 | 上部バーの絞り込みの要約 / フィルターのチップ | 押せるボタン。読み上げの名前は見えている文字の後ろに操作の説明(`aria-labelledby`。例: `絞り込み: 1 列 フィルター管理パネルを開閉`、`単価 >= 1000 単価 のフィルターを編集`。1.0.2 から。1.0.1 までは操作の説明だけ)。`getByLabelText('単価 のフィルターを編集')` のように操作の説明だけでも見つかる。 |
 | ツールパネルの「列」タブ | 列の表示 / 非表示のボタンは `aria-pressed`(表示中なら `true`。押せないときも付く。1.0.2 から)。`onColumnsChange` が無い表では、スクロールする一覧に `tabindex="0"`(中の項目が押せないため。1.0.2 から)。 |
 | 列見出しの `⋮` / グループ行の開閉ボタン / 展開トグル | `tabindex="-1"`(`Tab` の順番に入れない。グリッドのキー操作はフォーカスを受ける要素で行い、`Tab` 1 回でグリッドを出入りする)。`⋮` の `aria-label` は「`<列名> の列メニュー`」(列名の後ろに半角の空白。例: `数量 の列メニュー`。ツールチップは「列メニュー」)。キーボードでは、アクティブセルで `Alt+↓` を押すとその列の列メニューが開く。開閉ボタン / トグルは `aria-expanded` と `aria-label` を持ち、キーボードではアクティブセルでの `Enter` / `Space` で開閉する。 |
@@ -1027,6 +1030,9 @@ WAI-ARIA の grid パターンに沿って、表・行・セルに役割と状�
 | 行選択のチェックボックス | `role="checkbox"`。`aria-checked`(一部選択は `mixed`)/ `aria-label`(「すべての行を選択」「行 N を選択」)。 |
 | `editor: { type: 'checkbox' }` のセル | `role="checkbox"`。`aria-label` は列の `title`(無ければ `key`)。 |
 | 編集中のエディタ | `role="group"`、`aria-label` は「`<列名> を編集`」(列名の後ろに半角の空白。例: `数量 を編集`)。組み込みのエディタの入力欄にも同じ `aria-label`(1.0.1)。行の外に重ねて描画するため、編集中のセルが `aria-owns` でエディタを子に持つ(支援技術ではエディタがセルの中に入る)。`select` エディタの入力欄は `role="combobox"`(選ぶだけ。`aria-expanded` / `aria-controls` / `aria-activedescendant` でハイライト中の候補を指す)、候補の一覧は `role="listbox"`(名前は同じ)、候補は `role="option"` + `aria-selected`(1.0.1)。確定できない値(`validationMode: 'reject'`)のときは入力欄に `aria-invalid`、メッセージは `role="alert"`。 |
+| 列メニュー | `role="menu"`(`aria-label` は列名。1.1.0 から)。項目は `role="menuitem"`、並び替えの昇順 / 降順は `role="menuitemradio"` + `aria-checked`(今の並び)、区切りは `role="separator"`。「列の固定」の小メニューも `role="menu"` で、項目は `role="menuitemradio"` + `aria-checked`(固定できないときの説明は `aria-describedby`)。列見出しの `⋮` は `aria-haspopup="menu"` / `aria-expanded`。マウスで開いたときはパネルにフォーカスが移り(`↓` で先頭の項目)、`Alt+↓` で開いたときは先頭の項目へ。 |
+| 右クリックメニュー(`enableContextMenu`) | `role="menu"`、項目は `role="menuitem"`、区切りは `role="separator"`。右クリックで開いたときはパネルに、`Shift+F10` / メニューキーで開いたときは先頭の項目にフォーカスが移る(1.1.0 から)。 |
+| ツールパネル | `role="dialog"`(モーダルではない)、`aria-label` は `localeText.toolPanelLabel`(既定 `ツールパネル`、英語 `Tool panel`)。開くと選ばれているタブへフォーカスが移り、`Tab` / `Shift+Tab` は中で回る(最後の次は先頭)。タブは `role="tablist"` / `role="tab"` + `aria-selected`、中身は `role="tabpanel"`(1.1.0 から。1.0.2 までは役割と名前が無く、開いてもフォーカスが移らなかった)。 |
 | 列フィルターのポップオーバー | `role="dialog"`(モーダルではない)、`aria-label` は「`列フィルター: <列名>`」。検索欄にも `aria-label`。`Tab` / `Shift+Tab` は中で回り(最後の次は先頭)、`Escape` で閉じてグリッドへ戻る(1.0.1)。 |
 | 合計行(`totalRow`) | `role="row"`(表の最後の行。`aria-rowindex` = 表示行数 + 2)。見出しの欄は `role="rowheader"`、セルは `role="gridcell"`。 |
 | フィルハンドル(`fillHandle`) | ハンドルは `aria-hidden`(ポインタ操作。キーボードではコピー / 貼り付け)。埋めたあとのボタンは `aria-haspopup="menu"` / `aria-expanded` / `aria-label`(「オートフィル オプション(連続データ)」等)、メニューは `role="menu"`、項目は `role="menuitemradio"` + `aria-checked`。 |

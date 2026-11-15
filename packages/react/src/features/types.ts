@@ -262,7 +262,12 @@ export type CellContextMenuFeatureArgs = {
 };
 export type CellContextMenuFeatureResult<T> = {
   isContextMenuOpen: boolean;
-  openContextMenu: (params: GridContextMenuParams<T>, items: GridContextMenuItem[]) => void;
+  // 変更(1.1.0 / AP-33): options.focus = 開いた後のフォーカス('panel' = 右クリック / 'firstItem' = キーボード)。
+  openContextMenu: (
+    params: GridContextMenuParams<T>,
+    items: GridContextMenuItem[],
+    options?: { focus?: 'panel' | 'firstItem' },
+  ) => void;
   // ルートの末尾に置く popover(閉じているときは何も描かない)。
   renderContextMenuPopover: (slots: GridResolvedSlots, themeClassName: string | undefined) => ReactNode;
 };
@@ -272,6 +277,12 @@ export type BodyContextMenuInput<T> = {
   orderedColumns: GridColumn<T>[];
   selection: GridSelection;
   activeCell: CellCoord | null;
+};
+// 追加(1.1.0 / AP-33): キーボード(Shift+F10 / メニューキー)でアクティブセルのメニューを開くときの対象(セルの座標とメニューを出す位置)。
+export type CellContextMenuInput<T> = Omit<BodyContextMenuInput<T>, 'event'> & {
+  cell: CellCoord;
+  clientX: number;
+  clientY: number;
 };
 
 // 条件付き書式のうち本体の行(GridBodyLayer)が使う部品(データバーの幾何 / カラースケールの背景色)。
@@ -370,6 +381,7 @@ export type ReactGridFeatures = {
   contextMenu?: {
     useCellContextMenu: <T>(args: CellContextMenuFeatureArgs) => CellContextMenuFeatureResult<T>;
     buildBodyContextMenuParams: <T>(input: BodyContextMenuInput<T>) => GridContextMenuParams<T> | null;
+    buildCellContextMenuParams: <T>(input: CellContextMenuInput<T>) => GridContextMenuParams<T> | null;
   } | undefined;
   // スクロール位置インジケーター(scrollHint): オプションの解決 + 描画部品。
   scrollHint?: FeatureLocaleDefaults & {

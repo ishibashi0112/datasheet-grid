@@ -12,7 +12,7 @@
 // 追加(13-B2-3 / gpt5.5対応): ルート項目「列のリセット」を追加します。
 //             既存の ColumnChooserPanel フッターと同じ reset 処理を呼び出し、列メニュー側からも
 //             AG Grid の Reset Columns 相当を実行できるようにします。
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useId, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { cx } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/cx';
 import type {
@@ -175,6 +175,8 @@ export function ColumnMenuPopover({
   // 追加(1.0.1 / 2026-11-09 実アプリの総点検 AP-31): キーボード(→ / Enter / Space)で開いたときは小メニューの先頭の項目へ
   //   フォーカスを移します(開いた後の描画で)。← で閉じて「列の固定」へ戻ります。
   const pinButtonRef = useRef<HTMLButtonElement>(null);
+  // 追加(1.1.0 / AP-33): 固定できないときの注記を、小メニューの項目の説明として読ませます(メニューの中の素の文は読まれにくい)。
+  const pinNoteId = useId();
   const focusPinSubmenuOnOpen = useRef(false);
   const focusFirstPinItem = () => {
     pinSubmenuRef.current?.querySelector<HTMLElement>('.ssg-menu-item:not(:disabled)')?.focus();
@@ -262,10 +264,17 @@ export function ColumnMenuPopover({
         // 追加: メニュー上での右クリックはブラウザ標準メニューを出しません。
         event.preventDefault();
       }}
+      // 追加(1.1.0 / 2026-11-09 実アプリの総点検 AP-33): メニューとして支援技術へ伝えます(これまではボタンの並び)。
+      //   マウスで開いたときはパネルにフォーカスを置きます(controller。これまでは body のまま)。
+      role="menu"
+      aria-label={title}
+      tabIndex={-1}
       className={cx('ssg-menu-panel', themeClassName, slots?.popover?.className)}
       style={{ ...slots?.popover?.style, ...wrapperStyle }}
     >
-      <div className="ssg-menu-title">{title}</div>
+      <div className="ssg-menu-title" aria-hidden="true">
+        {title}
+      </div>
 
       {/* ── ルート項目: フィルター…(③) ── */}
       {/* 追加(③): ヘッダーの常時フィルターボタンを廃止し、フィルター操作をここへ集約します。
@@ -278,6 +287,7 @@ export function ColumnMenuPopover({
         <>
           <button
             type="button"
+            role="menuitem"
             onPointerEnter={() => {
               setOpenSubmenuKey(null);
             }}
@@ -291,7 +301,7 @@ export function ColumnMenuPopover({
             <span className="ssg-menu-label">{texts.menuFilter}</span>
           </button>
 
-          <div className="ssg-menu-separator" />
+          <div role="separator" className="ssg-menu-separator" />
         </>
       )}
 
@@ -313,6 +323,8 @@ export function ColumnMenuPopover({
             onClick={() => {
               onSortChange('asc');
             }}
+            role="menuitemradio"
+            aria-checked={sortDirection === 'asc'}
             className={cx('ssg-menu-item', slots?.menuItem?.className)}
             style={slots?.menuItem?.style}
           >
@@ -325,6 +337,7 @@ export function ColumnMenuPopover({
                 'ssg-menu-sort-icon',
                 sortDirection === 'asc' && 'ssg-menu-sort-icon--active',
               )}
+              aria-hidden="true"
             >
               {sortDirection === 'asc' ? '✓' : '↑'}
             </span>
@@ -346,6 +359,8 @@ export function ColumnMenuPopover({
             onClick={() => {
               onSortChange('desc');
             }}
+            role="menuitemradio"
+            aria-checked={sortDirection === 'desc'}
             className={cx('ssg-menu-item', slots?.menuItem?.className)}
             style={slots?.menuItem?.style}
           >
@@ -354,6 +369,7 @@ export function ColumnMenuPopover({
                 'ssg-menu-sort-icon',
                 sortDirection === 'desc' && 'ssg-menu-sort-icon--active',
               )}
+              aria-hidden="true"
             >
               {sortDirection === 'desc' ? '✓' : '↓'}
             </span>
@@ -378,6 +394,7 @@ export function ColumnMenuPopover({
           {onOpenSortManager && (
             <button
               type="button"
+              role="menuitem"
               onPointerEnter={() => {
                 setOpenSubmenuKey(null);
               }}
@@ -406,6 +423,7 @@ export function ColumnMenuPopover({
       {canManageFilters && onOpenFilterManager && (
         <button
           type="button"
+          role="menuitem"
           onPointerEnter={() => {
             setOpenSubmenuKey(null);
           }}
@@ -423,12 +441,13 @@ export function ColumnMenuPopover({
       {/* 変更(FM-1): 区切り(旧 13-B4)の条件を「ソート群のみ」→「ソート群または
           フィルターを管理…のいずれかが出ているとき」へ広げます(位置は不変)。 */}
       {/* 変更(差し込み式 段階 3): フィルターを管理…を出さない構成(ツールパネルの機能なし)では、その分を数えません。 */}
-      {(canSort || (canManageFilters && onOpenFilterManager !== undefined)) && <div className="ssg-menu-separator" />}
+      {(canSort || (canManageFilters && onOpenFilterManager !== undefined)) && <div role="separator" className="ssg-menu-separator" />}
 
       {/* ── ルート項目: この列でグループ化 / グループ化を外す(段階 2 DU-24) ── */}
       {onGroupByColumn && (
         <button
           type="button"
+          role="menuitem"
           onPointerEnter={() => {
             setOpenSubmenuKey(null);
           }}
@@ -445,6 +464,7 @@ export function ColumnMenuPopover({
       {onUngroup && (
         <button
           type="button"
+          role="menuitem"
           onPointerEnter={() => {
             setOpenSubmenuKey(null);
           }}
@@ -458,17 +478,18 @@ export function ColumnMenuPopover({
           <span className="ssg-menu-label">{texts.menuUngroup}</span>
         </button>
       )}
-      {(onGroupByColumn || onUngroup) && <div className="ssg-menu-separator" />}
+      {(onGroupByColumn || onUngroup) && <div role="separator" className="ssg-menu-separator" />}
 
       {/* ── ルート項目: 列の固定 ›(サブメニュー親) ── */}
       {/* 追加(13-A2): サブメニューはこの行(position: relative)基準で絶対配置します。
           パネル自体は overflow を持たないため、wrapper の外側(右隣 / 左隣)へ
           はみ出して表示されます。popoverRef(wrapper)の子孫なので、controller の
           outside-pointerdown 判定(contains)にもそのまま含まれます。 */}
-      <div className="ssg-menu-submenu-anchor">
+      <div className="ssg-menu-submenu-anchor" role="none">
         <button
           ref={pinButtonRef}
           type="button"
+          role="menuitem"
           aria-haspopup="menu"
           aria-expanded={isPinSubmenuOpen}
           onPointerEnter={(event) => {
@@ -516,13 +537,17 @@ export function ColumnMenuPopover({
           {/* 注記: ✓ 列との左端揃えのため、サブメニュー項目と同じ幅のスペーサを置きます。*/}
           <span className="ssg-menu-icon" />
           <span className="ssg-menu-label">{texts.menuPin}</span>
-          <span className="ssg-menu-caret">›</span>
+          <span className="ssg-menu-caret" aria-hidden="true">
+            ›
+          </span>
         </button>
 
         {/* ── サブメニュー: 固定しない / 左に固定 / 右に固定 ── */}
         {isPinSubmenuOpen && (
           <div
             ref={pinSubmenuRef}
+            role="menu"
+            aria-label={texts.menuPin}
             className={cx(
               'ssg-menu-panel',
               themeClassName,
@@ -546,6 +571,9 @@ export function ColumnMenuPopover({
                   key={item.label}
                   type="button"
                   disabled={!canChangePinned}
+                  role="menuitemradio"
+                  aria-checked={isSelected}
+                  aria-describedby={canChangePinned ? undefined : pinNoteId}
                   onClick={() => {
                     if (!canChangePinned) {
                       return;
@@ -563,6 +591,7 @@ export function ColumnMenuPopover({
                       'ssg-menu-check',
                       !isSelected && 'ssg-menu-check--hidden',
                     )}
+                    aria-hidden="true"
                   >
                     ✓
                   </span>
@@ -572,7 +601,9 @@ export function ColumnMenuPopover({
             })}
 
             {!canChangePinned && (
-              <div className="ssg-menu-note">{texts.menuPinUnavailable}</div>
+              <div id={pinNoteId} role="none" className="ssg-menu-note">
+                {texts.menuPinUnavailable}
+              </div>
             )}
           </div>
         )}
@@ -589,6 +620,7 @@ export function ColumnMenuPopover({
         <>
           <button
             type="button"
+            role="menuitem"
             onPointerEnter={() => {
               setOpenSubmenuKey(null);
             }}
@@ -605,6 +637,7 @@ export function ColumnMenuPopover({
 
           <button
             type="button"
+            role="menuitem"
             onPointerEnter={() => {
               setOpenSubmenuKey(null);
             }}
@@ -628,6 +661,7 @@ export function ColumnMenuPopover({
       {onOpenColumnChooser && (
         <button
           type="button"
+          role="menuitem"
           onPointerEnter={() => {
             setOpenSubmenuKey(null);
           }}
@@ -648,6 +682,7 @@ export function ColumnMenuPopover({
           リーフ項目なので、hover 時は openSubmenuKey を null に戻します。 */}
       <button
         type="button"
+        role="menuitem"
         aria-disabled={!canResetColumns}
         tabIndex={canResetColumns ? 0 : -1}
         data-ssg-tooltip={
@@ -676,9 +711,10 @@ export function ColumnMenuPopover({
         <span className="ssg-menu-label">{texts.menuResetColumns}</span>
       </button>
 
-      <div className="ssg-menu-footer">
+      <div className="ssg-menu-footer" role="none">
         <button
           type="button"
+          role="menuitem"
           onClick={onRequestClose}
           className="ssg-menu-close-btn"
         >

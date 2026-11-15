@@ -70,7 +70,8 @@ function GridBodyLabelRowInner<T>({
       aria-label={labelRow.label}
       // 追加(audit V-05): 行番号セルも中身も持たないペイン(右固定など)の帯は見た目だけなので支援技術から隠します
       //   (セルの無い row は ARIA の構造違反になるため)。
-      aria-hidden={!ownsRowHeader && !renderContent ? true : undefined}
+      // 変更(1.1.0 / RV2-L1): 行番号の欄は見た目だけにしたので、中身を持たないペイン(左固定・右固定)の帯は隠します。
+      aria-hidden={!renderContent ? true : undefined}
       className={cx(
         'ssg-body-row',
         'ssg-label-row',
@@ -88,10 +89,9 @@ function GridBodyLabelRowInner<T>({
     >
       {ownsRowHeader && (
         <div
-          role="rowheader"
-          aria-colindex={1}
-          // 追加(1.0.2 / 2026-11-09 実アプリの総点検 L-08): 中身の無い行見出しにも行と同じ名前を付けます(空の見出しにしない)。
-          aria-label={labelRow.label}
+          // 変更(1.1.0 / 2026-11-09 実アプリの総点検 RV2-L1): 行番号の欄は見た目だけにします(文字の無い行見出しは axe の
+          //   empty-table-header になっていた。1.0.2 では aria-label で名前だけ付けていた)。行の見出しは中身の欄(下)です。
+          aria-hidden="true"
           className={cx(
             'ssg-header-cell',
             'ssg-row-header-cell',
@@ -107,7 +107,9 @@ function GridBodyLabelRowInner<T>({
       )}
       {renderContent && (
         <div
-          role="gridcell"
+          // 変更(1.1.0 / RV2-L1): ラベルの文字が見える中身の欄を行見出しにします(区切り行の見出し = その行の名前)。
+          role="rowheader"
+          aria-colindex={1}
           className="ssg-label-row-content-holder"
           style={{ left: contentStickyLeft, width: contentWidth, height: rowHeight }}
         >

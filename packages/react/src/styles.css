@@ -2865,6 +2865,12 @@
   .ssg-filter-popover:focus {
     outline: none;
   }
+  /* 追加(1.1.0 / AP-33・RV2-L2): メニューとツールパネルも、開いたときにパネルそのものへフォーカスを置くので枠は出しません
+     (項目へ移ると項目の枠が出ます)。 */
+  .ssg-menu-panel:focus,
+  .ssg-toolpanel:focus {
+    outline: none;
+  }
 
   .ssg-filter-title {
     font-size: 11.5px;

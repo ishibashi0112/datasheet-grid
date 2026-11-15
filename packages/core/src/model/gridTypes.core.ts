@@ -1717,6 +1717,8 @@ export type GridLocaleText = {
   toolPanelSort: string;
   /** ツールパネルのタブ。既定 `列`、英語 `Columns`。 */
   toolPanelColumns: string;
+  /** ツールパネル(ダイアログ)の読み上げの名前(1.1.0 から)。既定 `ツールパネル`、英語 `Tool panel`。 */
+  toolPanelLabel: string;
   /** 列のタブの見出し。既定 `左固定`、英語 `Pinned left`。 */
   columnsPinnedLeft: string;
   /** 列のタブの見出し。既定 `固定なし`、英語 `Not pinned`。 */

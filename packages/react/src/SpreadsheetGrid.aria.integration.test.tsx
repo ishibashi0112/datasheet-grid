@@ -470,7 +470,8 @@ describe('ARIA(audit V-05 / RD-10 / V-14)', () => {
     expect(cellAt(grid, 2, 4).textContent).toContain('10');
   });
 
-  it('ラベル行: 行番号のある帯は rowheader、中身は gridcell、どちらも無い帯は支援技術から隠す', () => {
+  // 変更(1.1.0 / RV2-L1): 行番号の欄は見た目だけにし、ラベルの文字が見える中身の欄を行見出しにした(axe の empty-table-header)。
+  it('ラベル行: 中身の欄が rowheader(ラベルの文字)、行番号の欄は見た目だけ、中身の無い帯は支援技術から隠す', () => {
     type LRow = { id: string; kind?: 'label'; name: string; qty: number };
     const labelRows: LRow[] = [
       { id: 's1', kind: 'label', name: 'セクション 1', qty: 0 },
@@ -493,11 +494,15 @@ describe('ARIA(audit V-05 / RD-10 / V-14)', () => {
     expectGridStructure(grid);
     const label = (pane: string) =>
       grid.querySelector<HTMLElement>(`[data-pane="${pane}"][data-ssg-label-row]`) as HTMLElement;
-    expect(label('left').getAttribute('aria-rowindex')).toBe('2');
-    expect(label('left').querySelector('[role="rowheader"]')).not.toBeNull();
-    // 追加(1.0.2 / L-08): 行番号の欄は空の見出しにせず、ラベルの文を名前にする。
-    expect(label('left').querySelector('[role="rowheader"]')?.getAttribute('aria-label')).toBe('セクション 1');
-    expect(within(label('center')).getByRole('gridcell').textContent).toContain('セクション 1');
+    expect(label('center').getAttribute('aria-rowindex')).toBe('2');
+    // 行番号の欄(左のペイン)は見た目だけで、その帯は支援技術から隠す。
+    expect(label('left').querySelector('[role="rowheader"]')).toBeNull();
+    expect(label('left').querySelector('.ssg-row-header-cell--label')?.getAttribute('aria-hidden')).toBe('true');
+    expect(label('left').getAttribute('aria-hidden')).toBe('true');
+    // 中身の欄が行見出しで、見える文字がある(空の見出しにしない)。
+    const header = within(label('center')).getByRole('rowheader');
+    expect(header.textContent).toContain('セクション 1');
+    expect(header.getAttribute('aria-colindex')).toBe('1');
     expect(label('right').getAttribute('aria-hidden')).toBe('true');
     // 後続のデータ行の番号はラベル行のぶん進む。
     expect(cellAt(grid, 3, 3).textContent).toContain('alpha');
