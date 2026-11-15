@@ -14,6 +14,7 @@ description: pinnedTopRows / pinnedBottomRows で目標値・前年の行を表�
 - 目標に届かないセルは赤い文字にしています(`cellClassName`)。同じ規則が固定行の「前年」「支店の平均」にも効きます。
 - 「支店」の列の太字は `renderCell` の `ctx.pinned` で固定行だけに付けています。
 - 固定行は押しても選択が動かず、編集 / 貼り付け / コピーの対象にもなりません。
+- 「合計行の下に置く」を入れると、下の固定行が合計行の下に並びます(`pinnedBottomRowsPlacement="belowTotal"`。1.2.0 から)。
 
 ## 使い方
 

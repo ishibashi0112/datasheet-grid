@@ -19,6 +19,7 @@ description: 利用者が変えた列幅・フィルター・ソート・列の�
 <StateDemo />
 
 - 並べ替え(見出しの `⋮` か、`Shift` を押しながら見出しを押す)・絞り込み・列幅・列の並び(見出しのドラッグ)を変えると、`onStateChange` で受け取った値が下の「保存した値」に入ります。
+- 「区分」の列メニュー(`⋮`)の「この列でグループ化」でグループ化できます。`includeGroupingInState` を入れたままだと、グループ化とグループの開閉も保存され、開き直すと戻ります(1.2.0 から)。
 - 「表を開き直す」はグリッドを作り直し、保存した値を `initialState` と `restoreColumnsFromState` で戻します(戻す前の画面は出ません)。デモでは React の state に保存していますが、実際のアプリでは `localStorage` やサーバーに保存します。
 
 ## 保存する(`onStateChange` / `getState`)

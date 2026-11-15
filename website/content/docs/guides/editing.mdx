@@ -158,6 +158,8 @@ useEffect(() => {
 
 並べ替えたまま値が変わる表(前日比の大きい順の株価ボードなど)では、既定ではアクティブセルが表示位置(何行目か)に残るので、銘柄が入れ替わるたびに別の銘柄を指します(Excel と同じ)。押した銘柄に付いていかせるには `activeCellFollows="row"` を書きます(1.2.0 から)。
 
+<LiveSortDemo />
+
 ```tsx
 <SpreadsheetGrid activeCellFollows="row" rowKeyGetter={(row) => row.symbol} /* ... */ />
 ```

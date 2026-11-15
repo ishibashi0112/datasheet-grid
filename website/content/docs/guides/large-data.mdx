@@ -32,6 +32,8 @@ const columns: GridColumn<Row>[] = [
 
 ログやイベントのように行が増え続ける表で、末尾にいる間だけ足した行を見せ続けるには、行を足す前にハンドルの `isAtBottom()` で末尾にいるかを確かめ、末尾にいたら足した後に `scrollToBottom()` を呼びます(1.2.0 から)。利用者が上へ戻して読んでいる間は追いかけません。
 
+<LogTailDemo />
+
 ```tsx
 const gridRef = useRef<SpreadsheetGridHandle<LogRow>>(null);
 const followRef = useRef(true);
