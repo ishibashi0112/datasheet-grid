@@ -344,6 +344,34 @@ describe('clipboardController', () => {
     expect(t.dispatch).toHaveBeenCalledWith({ type: 'cell/activate', cell: { row: 0, col: 0 } });
   });
 
+  // 追加(1.2.0 / A-08): 1 セルのコピーを範囲に貼ると範囲を埋める(Excel と同じ)。pasteFillsSelection: false で 1 回だけ。
+  it('1 セルのコピーは選んだ範囲いっぱいに書き、元に戻すは 1 回。pasteFillsSelection: false なら左上だけ(A-08)', () => {
+    const c = createClipboardController<Row>();
+    const uiState = {
+      ...createInitialGridUiState(),
+      activeCell: { row: 0, col: 0 },
+      selection: { type: 'cell' as const, range: { start: { row: 0, col: 0 }, end: { row: 1, col: 1 } } },
+    };
+    const fill = makeArgs({ uiState });
+    c.update(fill.args);
+    c.handlePaste({ clipboardData: { getData: () => 'z' }, preventDefault: vi.fn() });
+    const onRowsChange = fill.args.onRowsChange as ReturnType<typeof vi.fn>;
+    expect(onRowsChange).toHaveBeenCalledTimes(1);
+    expect(onRowsChange.mock.calls[0][0]).toEqual([
+      { id: 'z', name: 'z' },
+      { id: 'z', name: 'z' },
+    ]);
+    expect(fill.dispatch).toHaveBeenCalledWith({ type: 'selection/update', cell: { row: 1, col: 1 } });
+
+    const once = makeArgs({ uiState, pasteFillsSelection: false });
+    c.update(once.args);
+    c.handlePaste({ clipboardData: { getData: () => 'z' }, preventDefault: vi.fn() });
+    expect((once.args.onRowsChange as ReturnType<typeof vi.fn>).mock.calls[0][0]).toEqual([
+      { id: 'z', name: 'a' },
+      { id: 2, name: 'b' },
+    ]);
+  });
+
   it('列の選択への貼り付けは列の先頭の行から、範囲の外のアクティブセルはそのまま(AP-02)', () => {
     const c = createClipboardController<Row>();
     const col = makeArgs({

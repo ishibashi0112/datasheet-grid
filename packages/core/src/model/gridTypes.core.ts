@@ -3604,6 +3604,19 @@ export type SpreadsheetGridProps<T, F extends GridFrameworkTypes = GridFramework
    * が無くて足せない行 / 列)・ラベル行・グループ行は数えない。詳細は「貼り付けで読めない値」節。
    */
   onPasteSkipped?: ((params: GridPasteSkippedParams<T>) => void) | undefined;
+  // 追加(1.2.0 / 2026-11-09 実アプリの総点検 A-08): 範囲を選んで貼ったとき、コピーが範囲を割り切れれば範囲いっぱいに
+  //   繰り返すか(既定 true = Excel と同じ)。false で 1.1 までと同じ(範囲の左上から 1 回だけ)。
+  /**
+   * セルの範囲を選んで貼り付けたとき、コピーした文字が範囲を割り切れれば(1 セルのコピー、
+   * 範囲の行数と列数がコピーの倍数)範囲いっぱいに繰り返して書く(Excel / Google
+   * スプレッドシートと同じ。1.2.0 から)。数えるのはデータ行(ラベル行・グループ行は飛ばす)
+   * と合成列でない列。列 / 行の選択と、割り切れないとき・アクティブセルが範囲の外のときは 1
+   * 回だけ貼る。書き込みの規則(編集できないセル・`'reject'` の列は飛ばす)と元に戻す 1
+   * 回は貼り付けと同じ。`false` で 1.1 までと同じく範囲の左上から 1 回だけ貼る。
+   *
+   * @defaultValue `true`
+   */
+  pasteFillsSelection?: boolean | undefined;
   // 変更(THEME-2): 未指定時の既定は density プリセットから解決します(standard: 36 /
   //   compact: 28 / comfortable: 44)。明示指定はプリセットより常に優先されます。
   /**

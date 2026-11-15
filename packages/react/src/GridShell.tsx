@@ -331,6 +331,8 @@ export function useGridShell<T extends object>({
   createOverflowColumn,
   // 追加(1.1.0 / AP-09): 貼り付けで書かなかったセルの通知。
   onPasteSkipped,
+  // 追加(1.2.0 / A-08): 1 セルのコピーで選んだ範囲を埋めるか(既定 true は clipboardController が持つ)。
+  pasteFillsSelection,
   // 変更(THEME-2): rowHeight / headerHeight の既定は density プリセットから解決します(本体冒頭)。
   rowHeight: rowHeightProp,
   autoHeight = false,
@@ -2725,6 +2727,8 @@ export function useGridShell<T extends object>({
       // 追加(1.1.0 / AP-09): 貼り付けで書かなかったセルの通知と、そのメッセージの文言。
       onPasteSkipped,
       localeTexts,
+      // 追加(1.2.0 / A-08): 1 セルのコピーで選んだ範囲を埋めるか(既定 true)。
+      pasteFillsSelection,
       // 変更(undo/redo): paste の変更前 rows を履歴へ積むため、生の onRowsChange ではなく
       //   history controller のラッパを渡します(未指定時は undefined 素通しで挙動不変)。
       onRowsChange: handleRowsChange,

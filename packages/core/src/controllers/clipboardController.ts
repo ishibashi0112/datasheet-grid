@@ -37,6 +37,7 @@ import {
 import type { ServerSideCellEditInput } from '../logic/serverSideEdits';
 import type { ValidationLocaleText } from '../logic/validation';
 import { findFirstPasteRow, resolvePasteTargetViewIndexes } from '../logic/labelRows';
+import { expandPasteMatrixToSelection } from '../logic/pasteFill';
 
 export type ClipboardEventLike = {
   clipboardData: { getData: (type: string) => string } | null;
@@ -70,6 +71,9 @@ export type ClipboardControllerArgs<T extends object> = {
   //   呼ばない)と、そのメッセージの文言(localeText。省略は日本語の既定)。
   onPasteSkipped?: SpreadsheetGridProps<T>['onPasteSkipped'];
   localeTexts?: ValidationLocaleText;
+  // 追加(1.2.0 / 2026-11-09 実アプリの総点検 A-08): 範囲を選んで貼ったとき、コピーが範囲を割り切れれば範囲いっぱいに
+  //   繰り返すか(既定 true = Excel と同じ。false で 1.1 までと同じく範囲の左上から 1 回だけ)。
+  pasteFillsSelection?: boolean;
   // 追加(motion-4 / M-3): コピーが成功したとき(クリップボードへ書けたとき)に、コピー元の選択を通知します。
   //   シェルはこれで view スライスの copiedRange(動く点線)を立てます。
   onCopied?: (selection: NonNullable<GridSelection>) => void;
@@ -240,6 +244,7 @@ export const createClipboardController = <T extends object>(): ClipboardControll
       applyServerSideCellEdits,
       onPasteSkipped,
       localeTexts,
+      pasteFillsSelection = true,
       dispatch,
     } = args;
     // 追加(audit RD-2): セル編集中、またはエディタ / renderCell / renderHeader 内の入力要素が発火元の
@@ -264,10 +269,16 @@ export const createClipboardController = <T extends object>(): ClipboardControll
 
     event.preventDefault();
 
-    const matrix = parseClipboardText(text);
-    if (matrix.length === 0) {
+    const parsedMatrix = parseClipboardText(text);
+    if (parsedMatrix.length === 0) {
       return;
     }
+    // 追加(1.2.0 / A-08): 1 セル(と、範囲がコピーの大きさの倍数)のコピーは選んだ範囲いっぱいに繰り返します(Excel と同じ)。
+    //   起点は今までどおり範囲の左上で、繰り返した文字はちょうど範囲のデータのセルに収まります(logic/pasteFill)。
+    const matrix =
+      (pasteFillsSelection
+        ? expandPasteMatrixToSelection(parsedMatrix, uiState.selection, uiState.activeCell, rowModel, visibleColumns)
+        : null) ?? parsedMatrix;
     // 追加(1.1.0 / AP-09): 書かなかったセル(通知があるときだけ集める)。書き込みと選択を済ませてから 1 回だけ知らせます。
     const skipped: GridPasteSkippedCell<T>[] | null = onPasteSkipped ? [] : null;
     const notifySkipped = () => {
