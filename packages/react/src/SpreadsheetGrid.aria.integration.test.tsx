@@ -533,6 +533,40 @@ describe('ARIA(audit V-05 / RD-10 / V-14)', () => {
     }
   });
 
+  // 追加(1.2.0 / RV3-L2): 行選択のチェックボックスを出すときのグループ行の行番号の欄は空なので、行見出しにしない
+  //   (文字の無い行見出しは axe の empty-table-header)。見えるセルが無い左のペインの行は隠す。
+  it('グループ行 + 行選択: 空の行番号の欄は見た目だけで、文字の無い行見出しを作らない', () => {
+    type GRow = { id: number; region: string; qty: number };
+    const groupColumns: GridColumn<GRow>[] = [
+      { key: 'region', title: '地域', width: 100, rowGroup: true },
+      { key: 'qty', title: '数量', width: 100, aggFunc: 'sum' },
+    ];
+    const { container } = render(
+      <SpreadsheetGrid<GRow>
+        rows={[
+          { id: 1, region: '東', qty: 1 },
+          { id: 2, region: '西', qty: 2 },
+        ]}
+        columns={groupColumns}
+        rowKeyGetter={(row) => row.id}
+        enableRowSelection
+      />,
+    );
+    const grid = container.querySelector<HTMLElement>('[role="grid"]') as HTMLElement;
+    expectGridStructure(grid);
+    const isExposed = (element: Element) => element.closest('[aria-hidden="true"]') === null;
+    const headers = Array.from(grid.querySelectorAll('[role="rowheader"], [role="columnheader"]')).filter(isExposed);
+    expect(headers.length).toBeGreaterThan(0);
+    for (const header of headers) {
+      // 名前が中身から決まる(axe の has-visible-text と同じく、中の文字か名前付きの要素がある)。
+      const hasText = (header.textContent ?? '').trim() !== '' || header.querySelector('[aria-label]') !== null;
+      expect(hasText).toBe(true);
+    }
+    const groupHeader = grid.querySelector('[data-ssg-group-row] .ssg-row-header-cell');
+    expect(groupHeader?.getAttribute('aria-hidden')).toBe('true');
+    expect(groupHeader?.hasAttribute('role')).toBe(false);
+  });
+
   it('展開行: 中央ペインの帯は row + gridcell(カードの中身はそのまま操作できる)、固定ペインの帯は隠す', () => {
     const pinned: GridColumn<Row>[] = [
       { key: 'name', title: 'Name', width: 160, pinned: 'left' },

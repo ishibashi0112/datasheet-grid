@@ -189,7 +189,7 @@ const rowFullyVisible = (g) =>
     top: document.querySelector('.ssg-pinned-row[data-ssg-pinned="top"][data-pane="center"]').getAttribute('aria-rowindex'),
     bottom: [...document.querySelectorAll('.ssg-pinned-row[data-ssg-pinned="bottom"][data-pane="center"]')].map((e) => e.getAttribute('aria-rowindex')),
     total: document.querySelector('.ssg-total-row[data-pane="center"]').getAttribute('aria-rowindex'),
-    header: document.querySelector('.ssg-pinned-row[data-ssg-pinned="top"][data-pane="left"] [role="rowheader"]')?.getAttribute('aria-label'),
+    header: document.querySelector('.ssg-pinned-row[data-ssg-pinned="top"][data-pane="left"] [role="rowheader"] [role="img"]')?.getAttribute('aria-label'),
   }));
   check(
     'pinned: aria-rowcount と行の番号(見出し 1 → 上 2 → 本体 3〜502 → 下 503・504 → 合計 505)',

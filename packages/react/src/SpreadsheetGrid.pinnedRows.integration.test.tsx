@@ -4,7 +4,7 @@
 //   固定列の 3 ペイン、合計行との並び、エクスポート(includePinnedRows)を実コンポーネント越しに固定します。
 // @vitest-environment jsdom
 import { describe, it, expect, beforeAll, afterAll, afterEach, vi } from 'vitest';
-import { render, cleanup, act, fireEvent, waitFor } from '@testing-library/react';
+import { render, cleanup, act, fireEvent, waitFor, within } from '@testing-library/react';
 import { createRef, useState } from 'react';
 import type { Ref } from 'react';
 
@@ -106,11 +106,14 @@ describe('固定行(pinnedTopRows / pinnedBottomRows)', () => {
     expect(topRows[0]?.querySelector('[data-ssg-col-key="qty"]')?.classList.contains('ssg-body-cell--align-right')).toBe(true);
     const checkbox = topRows[0]?.querySelector('[data-ssg-col-key="done"] [role="checkbox"]');
     expect(checkbox?.getAttribute('aria-checked')).toBe('true');
-    // 行見出し: ピンの印(svg)と読み上げの名前。
+    // 行見出し: ピンの印(svg)と読み上げの名前。名前はピンの印(role="img")に付け、行見出しの名前は中身から決まる
+    //   (文字の無い行見出しにしない。1.2.0 / RV3-L2)。
     const header = topHeaders[0]?.querySelector<HTMLElement>('[role="rowheader"]');
     expect(header?.querySelector('svg.ssg-pinned-row-icon')).not.toBeNull();
-    expect(header?.getAttribute('aria-label')).toBe('上に固定 1');
-    expect(bottomHeaders[1]?.querySelector('[role="rowheader"]')?.getAttribute('aria-label')).toBe('下に固定 2');
+    expect(header?.hasAttribute('aria-label')).toBe(false);
+    expect(within(topHeaders[0]!).getByRole('rowheader', { name: '上に固定 1' })).toBe(header);
+    expect(header?.querySelector('svg[role="img"]')?.getAttribute('aria-label')).toBe('上に固定 1');
+    expect(within(bottomHeaders[1]!).getByRole('rowheader', { name: '下に固定 2' })).not.toBeNull();
     // 本体の行ではない(行の DOM を探す処理 / 右クリックメニューの対象にしない)。
     for (const row of [...topRows, ...bottomRows, ...topHeaders, ...bottomHeaders]) {
       expect(row.classList.contains('ssg-body-row')).toBe(false);
@@ -308,12 +311,10 @@ describe('固定行(pinnedTopRows / pinnedBottomRows)', () => {
 
   it('localeText で行見出しの読み上げを変えられる(英語の表)', () => {
     const { container } = setup({ pinnedTopRows: top, pinnedBottomRows: bottom, localeText: localeTextEn });
-    expect(pinnedRowsIn(container, 'top', 'left')[0]?.querySelector('[role="rowheader"]')?.getAttribute('aria-label')).toBe(
-      'Pinned to top 1',
-    );
-    expect(pinnedRowsIn(container, 'bottom', 'left')[1]?.querySelector('[role="rowheader"]')?.getAttribute('aria-label')).toBe(
-      'Pinned to bottom 2',
-    );
+    expect(within(pinnedRowsIn(container, 'top', 'left')[0]!).getByRole('rowheader', { name: 'Pinned to top 1' })).not.toBeNull();
+    expect(
+      within(pinnedRowsIn(container, 'bottom', 'left')[1]!).getByRole('rowheader', { name: 'Pinned to bottom 2' }),
+    ).not.toBeNull();
   });
 
   // 追加(1.1.0 / 固定行の見直し): 固定行は負の index で列幅の自動調整へ渡るので、チップの ctx は固定行の位置で作る

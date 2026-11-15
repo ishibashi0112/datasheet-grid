@@ -546,7 +546,7 @@ describe('差し込み式: pinnedRows', () => {
       'bottom',
     ]);
     expect(container.querySelector('.ssg-pinned-rows--top .ssg-pinned-cell')?.textContent).toBe('目標');
-    expect(container.querySelector('.ssg-pinned-rows--top [role="rowheader"]')?.getAttribute('aria-label')).toBe('上に固定 1');
+    expect(container.querySelector('.ssg-pinned-rows--top [role="rowheader"] [role="img"]')?.getAttribute('aria-label')).toBe('上に固定 1');
   });
 });
 

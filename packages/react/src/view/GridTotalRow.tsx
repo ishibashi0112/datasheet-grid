@@ -64,8 +64,13 @@ function GridTotalRowInner<T>({
 }: GridTotalRowProps<T>) {
   const texts = useGridLocaleText();
   const entries = renderEntries.filter(Boolean);
+  // 変更(1.2.0 / 1.1.0 の確かめ直し RV3-L2): 行番号の欄に見出しの文字が無いとき(見出しを先頭のデータ列へ出すとき
+  //   と、見出しが空のとき)は、行番号の欄を見た目だけにします(文字の無い行見出しは axe の empty-table-header に
+  //   なっていた)。そのときは見出しを出したデータ列のセルを行見出しにします(ラベル行と同じ。RV2-L1)。
+  const rowHeaderText = labelColumnKey === null ? label : '';
+  const rowHeaderIsCell = ownsRowHeader && rowHeaderText !== '';
   // 見えるセルが無いペインの行は支援技術から隠します(セルを持たない行を表に出さない)。
-  const hasCells = ownsRowHeader || entries.length > 0;
+  const hasCells = rowHeaderIsCell || entries.length > 0;
   return (
     <>
       <div aria-hidden="true" style={{ height: bodyHeight }} />
@@ -85,8 +90,9 @@ function GridTotalRowInner<T>({
       >
         {ownsRowHeader && (
           <div
-            role="rowheader"
-            aria-colindex={1}
+            role={rowHeaderIsCell ? 'rowheader' : undefined}
+            aria-colindex={rowHeaderIsCell ? 1 : undefined}
+            aria-hidden={rowHeaderIsCell ? undefined : 'true'}
             className={cx(
               'ssg-header-cell',
               'ssg-row-header-cell',
@@ -99,7 +105,7 @@ function GridTotalRowInner<T>({
               height,
             }}
           >
-            {labelColumnKey === null ? label : null}
+            {rowHeaderText === '' ? null : rowHeaderText}
           </div>
         )}
         {entries.map((entry) => {
@@ -128,7 +134,8 @@ function GridTotalRowInner<T>({
           return (
             <div
               key={`total-${pane}-${column.key}`}
-              role="gridcell"
+              // 変更(1.2.0 / RV3-L2): 見出しを出したセルは行見出し(上)。
+              role={isLabelCell && !cell && label !== '' ? 'rowheader' : 'gridcell'}
               aria-colindex={entry.logicalIndex + 2}
               data-ssg-col-key={column.key}
               className={cx(

@@ -98,7 +98,16 @@ describe('合計行(totalRow)', () => {
     expect(grid.getAttribute('aria-rowcount')).toBe('6');
     expect(row?.getAttribute('role')).toBe('row');
     expect(row?.getAttribute('aria-rowindex')).toBe('6');
-    expect(row?.querySelector('[role="rowheader"]')?.textContent).toBe('');
+    // 見出しを先頭のデータ列へ出すときは、そのセルが行見出しで、行番号の欄は見た目だけ(文字の無い行見出しにしない。
+    //   1.2.0 / RV3-L2)。
+    const rowHeaders = container.querySelectorAll('.ssg-total-row [role="rowheader"]');
+    expect(rowHeaders).toHaveLength(1);
+    expect(rowHeaders[0]).toBe(totalCell(container, 'name'));
+    const numberCell = container.querySelector('.ssg-total-row-header');
+    expect(numberCell?.getAttribute('aria-hidden')).toBe('true');
+    expect(numberCell?.hasAttribute('role')).toBe(false);
+    // 行番号の欄だけの左のペインの行は、見えるセルが無いので支援技術から隠す。
+    expect(numberCell?.closest('.ssg-total-row')?.getAttribute('aria-hidden')).toBe('true');
     expect(totalCell(container, 'qty')?.getAttribute('role')).toBe('gridcell');
     expect(totalCell(container, 'qty')?.getAttribute('aria-colindex')).toBe('4');
     // 行の DOM クエリ / 右クリックメニューの対象にしない(data-row-index を持たない)。
