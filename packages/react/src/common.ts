@@ -198,6 +198,8 @@ export type {
   // 追加(1.1.0 / AP-09): 貼り付けで書かなかったセルの通知(onPasteSkipped)。
   GridPasteSkippedCell,
   GridPasteSkippedParams,
+  // 追加(1.1.0 / AP-14): 命令的 API の applyRows のオプション(undoable: false = 履歴を消さず積みもしない)。
+  GridApplyRowsOptions,
   // 追加(F-2): セル内検索のオプションと通知引数。
   FindOptions,
   FindChangeParams,

@@ -12,6 +12,7 @@
 import type {
   CellCoord,
   DetailRowOptions,
+  GridApplyRowsOptions,
   GridColumn,
   GridRowKey,
   GridUiState,
@@ -156,7 +157,10 @@ export type GridApiArgs<T> = {
   // undo / redo(history controller)。
   undoRows: () => void;
   // 追加(段階 2 DU-21): applyRows の委譲先(履歴に積んでから onRowsChange。onRowsChange 未指定 / serverSide は undefined)。
-  applyRowsChange?: ((nextRows: T[]) => void) | undefined;
+  //   1.1.0(AP-14)から関数の形と undoable: false(履歴を消さず積みもしない)。
+  applyRowsChange?:
+    | ((nextRows: T[] | ((prev: T[]) => T[]), options?: GridApplyRowsOptions) => void)
+    | undefined;
   redoRows: () => void;
   canUndoRows: () => boolean;
   canRedoRows: () => boolean;
@@ -729,7 +733,7 @@ export const createGridApi = <T,>(features: Pick<GridCoreFeatures, 'export' | 'g
     clearUndoHistory: () => {
       args?.clearUndoHistory();
     },
-    applyRows: (nextRows) => {
+    applyRows: (nextRows, options) => {
       const s = args;
       if (!s) {
         return;
@@ -745,7 +749,7 @@ export const createGridApi = <T,>(features: Pick<GridCoreFeatures, 'export' | 'g
         }
         return;
       }
-      s.applyRowsChange(nextRows);
+      s.applyRowsChange(nextRows, options);
     },
 
     // ── 行グルーピング ──

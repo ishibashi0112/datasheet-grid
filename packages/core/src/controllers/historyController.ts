@@ -13,6 +13,7 @@ import type {
   GridSelection,
   UndoRedoState,
 } from '../model/gridTypes.unbound';
+import { revertRowsChange } from '../logic/historyRebase';
 import {
   canRedoHistory,
   canUndoHistory,
@@ -24,10 +25,17 @@ import {
 } from '../logic/history';
 
 export type GridHistoryEntry<T> = {
+  // 変更の前の rows(元に戻すとこれに戻る)。
   rows: T[];
+  // 追加(1.1.0 / AP-14): 変更の後の rows。外からの更新(applyRows の undoable: false)を挟んだときは、元に戻すで
+  //   「rows → after の変更だけ」を今の rows から取り消す(logic/historyRebase)。
+  after: T[];
   selection: GridSelection;
   activeCell: CellCoord | null;
 };
+
+// 追加(1.1.0 / AP-14): applyRows のオプション(公開の型は GridApplyRowsOptions)。
+export type HistoryApplyRowsOptions = { undoable?: boolean | undefined };
 
 export type HistoryControllerArgs<T> = {
   rows: T[];
@@ -39,6 +47,8 @@ export type HistoryControllerArgs<T> = {
   limit: number;
   onUndoRedoStateChange?: (state: UndoRedoState) => void;
   onAfterRestore?: (activeCell: CellCoord | null) => void;
+  // 追加(1.1.0 / AP-14): 外からの更新を挟んだ元に戻すで行を対応づけるキー(未指定なら位置)。
+  rowKeyGetter?: ((row: T, index: number) => unknown) | undefined;
 };
 
 export type HistoryController<T> = {
@@ -48,6 +58,9 @@ export type HistoryController<T> = {
   // 追加(フィルハンドル 1A): 直前の handleRowsChange の結果を差し替えます(履歴は積まない = 元に戻す 1 回で
   //   変更前へ戻る)。埋めたあとのボタンで「連続データ / セルのコピー」を選び直すときに使います。
   amendRowsChange: (nextRows: T[]) => void;
+  // 追加(1.1.0 / AP-14): 命令的 API の applyRows の本体。関数の形は最後に渡した rows(まだ描かれていなければそれ)を受け取る。
+  //   undoable: false は履歴を消さず積みもしない(元に戻すは編集だけを今の rows から取り消す)。
+  applyRows: (next: T[] | ((prev: T[]) => T[]), options?: HistoryApplyRowsOptions) => void;
   undo: () => void;
   redo: () => void;
   canUndo: () => boolean;
@@ -62,6 +75,11 @@ export const createHistoryController = <T,>(): HistoryController<T> => {
   let selfEmittedRows: T[] | null = null;
   let lastRows: T[] | null = null;
   let lastNotified: UndoRedoState = { canUndo: false, canRedo: false };
+  // 追加(1.1.0 / AP-14): 最後に onRowsChange へ渡した rows(次の描画で update が来るまで)。applyRows の関数の形の prev。
+  let pendingRows: T[] | null = null;
+  // 追加(1.1.0 / AP-14): 履歴を消さずに外からの更新(undoable: false)を入れたか。入れていない間の元に戻す / やり直しは
+  //   これまでどおり履歴の rows をそのまま戻す(1.0 と同じ)。
+  let rebaseNeeded = false;
 
   const isActive = () =>
     args !== null && args.enabled && args.onRowsChange != null;
@@ -83,6 +101,7 @@ export const createHistoryController = <T,>(): HistoryController<T> => {
 
   const update = (next: HistoryControllerArgs<T>) => {
     args = next;
+    pendingRows = null;
     if (lastRows === null) {
       // 初回: 現在の rows を基準にするだけ(履歴は空のまま)。
       lastRows = next.rows;
@@ -95,6 +114,7 @@ export const createHistoryController = <T,>(): HistoryController<T> => {
         // 外部からの差し替え → 履歴をリセット。
         selfEmittedRows = null;
         stack = createHistoryStack();
+        rebaseNeeded = false;
       }
     }
     // enabled / onRowsChange / onUndoRedoStateChange の変化やリセットを反映(変化時のみ通知)。
@@ -125,20 +145,28 @@ export const createHistoryController = <T,>(): HistoryController<T> => {
     dispatch(gridActions.activateCell(entry.activeCell));
   };
 
-  const handleRowsChange = (nextRows: T[]) => {
+  const pushAndEmit = (prevRows: T[], nextRows: T[]) => {
     if (args === null || !args.onRowsChange) {
       return;
     }
     if (args.enabled) {
       stack = pushHistory(
         stack,
-        { rows: args.rows, selection: args.selection, activeCell: args.activeCell },
+        { rows: prevRows, after: nextRows, selection: args.selection, activeCell: args.activeCell },
         args.limit,
       );
       selfEmittedRows = nextRows;
       notifyUndoRedoState();
     }
+    pendingRows = nextRows;
     args.onRowsChange(nextRows);
+  };
+
+  const handleRowsChange = (nextRows: T[]) => {
+    if (args === null || !args.onRowsChange) {
+      return;
+    }
+    pushAndEmit(args.rows, nextRows);
   };
 
   const amendRowsChange = (nextRows: T[]) => {
@@ -147,8 +175,42 @@ export const createHistoryController = <T,>(): HistoryController<T> => {
     }
     if (args.enabled) {
       selfEmittedRows = nextRows;
+      const top = stack.past[stack.past.length - 1];
+      if (top) {
+        stack = { ...stack, past: [...stack.past.slice(0, -1), { ...top, after: nextRows }] };
+      }
     }
+    pendingRows = nextRows;
     args.onRowsChange(nextRows);
+  };
+
+  const applyRows = (next: T[] | ((prev: T[]) => T[]), options?: HistoryApplyRowsOptions) => {
+    if (args === null || !args.onRowsChange) {
+      return;
+    }
+    const prevRows = pendingRows ?? args.rows;
+    const nextRows = Array.isArray(next) ? next : next(prevRows);
+    if (options?.undoable !== false) {
+      pushAndEmit(prevRows, nextRows);
+      return;
+    }
+    if (args.enabled) {
+      selfEmittedRows = nextRows;
+      rebaseNeeded = true;
+    }
+    pendingRows = nextRows;
+    args.onRowsChange(nextRows);
+  };
+
+  // 戻す先の rows。外からの更新(undoable: false)を挟んでいれば、その変更だけを今の rows から取り消す。
+  const resolveTarget = (entry: GridHistoryEntry<T> | undefined, current: T[]): T[] | null => {
+    if (!entry) {
+      return null;
+    }
+    if (!rebaseNeeded || entry.after === current) {
+      return entry.rows;
+    }
+    return revertRowsChange(entry.rows, entry.after, current, args?.rowKeyGetter ?? ((_row: T, index: number) => index));
   };
 
   const applyRestore = (
@@ -159,37 +221,51 @@ export const createHistoryController = <T,>(): HistoryController<T> => {
     }
     stack = result.stack;
     selfEmittedRows = result.snapshot.rows;
+    pendingRows = result.snapshot.rows;
     args.onRowsChange(result.snapshot.rows);
     restoreUiSnapshot(result.snapshot);
     args.onAfterRestore?.(result.snapshot.activeCell);
     notifyUndoRedoState();
   };
 
-  const currentSnapshot = (): GridHistoryEntry<T> | null =>
+  // 今の状態(やり直し / 元に戻すの反対側へ積む)。after は戻した後の rows。
+  const currentSnapshot = (after: T[]): GridHistoryEntry<T> | null =>
     args === null
       ? null
-      : { rows: args.rows, selection: args.selection, activeCell: args.activeCell };
+      : { rows: args.rows, after, selection: args.selection, activeCell: args.activeCell };
 
-  const undo = () => {
-    const snapshot = currentSnapshot();
-    if (!isActive() || snapshot === null) {
+  const restoreWith = (
+    entry: GridHistoryEntry<T> | undefined,
+    move: (
+      stack: HistoryStack<GridHistoryEntry<T>>,
+      current: GridHistoryEntry<T>,
+    ) => { stack: HistoryStack<GridHistoryEntry<T>>; snapshot: GridHistoryEntry<T> } | null,
+  ) => {
+    if (!isActive() || args === null) {
       return;
     }
-    applyRestore(undoHistory(stack, snapshot));
+    const target = resolveTarget(entry, args.rows);
+    const snapshot = target === null ? null : currentSnapshot(target);
+    if (target === null || snapshot === null) {
+      return;
+    }
+    const result = move(stack, snapshot);
+    applyRestore(result === null ? null : { stack: result.stack, snapshot: { ...result.snapshot, rows: target } });
+  };
+
+  const undo = () => {
+    restoreWith(stack.past[stack.past.length - 1], undoHistory);
   };
 
   const redo = () => {
-    const snapshot = currentSnapshot();
-    if (!isActive() || snapshot === null) {
-      return;
-    }
-    applyRestore(redoHistory(stack, snapshot));
+    restoreWith(stack.future[stack.future.length - 1], redoHistory);
   };
 
   const clearHistory = () => {
     stack = createHistoryStack();
+    rebaseNeeded = false;
     notifyUndoRedoState();
   };
 
-  return { update, handleRowsChange, amendRowsChange, undo, redo, canUndo, canRedo, clearHistory };
+  return { update, handleRowsChange, amendRowsChange, applyRows, undo, redo, canUndo, canRedo, clearHistory };
 };

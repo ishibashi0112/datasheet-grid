@@ -23,6 +23,7 @@
   - `globalFilterMatch`(`'value'` / `'display'` / `'both'`)と型 `GridGlobalFilterMatch`: グローバルフィルターで画面の文字(`valueFormatter` の結果)でも探せます(これまでは値の文字だけで、「関東」「43,340」で探すと 0 件でした)。clientSide だけです。
   - select エディタの `clipboard: 'label'`: コピー・CSV / TSV・`getExportData` の `text` を候補の label にし、貼り付けた label を value へ読み替えます(これまでは貼り付けた表示名がそのまま値に入っていました)。
 - 列の `parseClipboardValue` に渡す組み込みの数値のパーサ `numberParser({ strip, negativeParentheses })` と型 `NumberParserOptions`(React 版の `.` / `/lite` と core の入口)。number エディタの既定のパーサと同じ読み方(全角の数字・3 桁区切り、空白だけは `null`、読めない文字は元のまま)に、通貨記号や単位を先に外す `strip`(`['¥', '円']` など)と、`(1,200)` を `-1200` と読む `negativeParentheses` を足せます(これまでは「¥12,000」を貼ると reject の列では黙って飛ばされ、自前のパーサを書くと全角の読み方が使えませんでした)。
+- ハンドルの `applyRows` に、履歴に積まない外からの更新 `applyRows(next, { undoable: false })` と型 `GridApplyRowsOptions`、関数の形 `applyRows((prev) => next)` を足しました。`undoable: false` は今の履歴も消さず、元に戻す / やり直すは外からの更新を残したままグリッドでの編集だけを取り消す / やり直します(株価のように絶えず変わる表で、これまでは `rows` を作り直すと履歴が消え、`applyRows` で渡すと更新が 1 つずつ履歴に積まれていました)。ガイド「セルの編集」の「外から絶えず変わる表」。
 - 貼り付けで書かなかったセルを知らせる `onPasteSkipped`(型 `GridPasteSkippedCell` / `GridPasteSkippedParams`)。編集できないセル(`reason: 'readOnly'`)と、`validationMode: 'reject'` の列で検査に通らなかった値(`'invalid'`。`message` は検査のメッセージ)を、1 回の貼り付けにつき 1 回まとめて渡します。clientSide と serverSide の両方です。
 
 ### 変更

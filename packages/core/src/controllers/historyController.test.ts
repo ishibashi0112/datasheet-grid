@@ -134,4 +134,102 @@ describe('historyController', () => {
     expect(c.canUndo()).toBe(false);
     expect(active.onUndoRedoStateChange).toHaveBeenLastCalledWith({ canUndo: false, canRedo: false });
   });
+
+  // 追加(1.1.0 / AP-14): applyRows の関数の形と undoable: false。
+  describe('applyRows', () => {
+    type Live = { id: number; price: number; memo: string };
+    const makeLive = () => {
+      const onRowsChange = vi.fn<(rows: Live[]) => void>();
+      const base: HistoryControllerArgs<Live> = {
+        rows: [
+          { id: 1, price: 10, memo: '' },
+          { id: 2, price: 20, memo: '' },
+        ],
+        selection: null,
+        activeCell: null,
+        onRowsChange,
+        dispatch: vi.fn(),
+        enabled: true,
+        limit: 10,
+        rowKeyGetter: (row) => row.id,
+      };
+      const c = createHistoryController<Live>();
+      c.update(base);
+      // 親が受け取った rows をそのまま返す(描き直し = update)。
+      const render = () => {
+        const last = onRowsChange.mock.calls[onRowsChange.mock.calls.length - 1]?.[0];
+        if (last) {
+          base.rows = last;
+          c.update({ ...base });
+        }
+        return base.rows;
+      };
+      return { c, onRowsChange, render, base };
+    };
+    const tick = (rows: Live[], delta: number) => rows.map((row) => ({ ...row, price: row.price + delta }));
+
+    it('既定は履歴に積む(1.0 と同じ)。関数の形は最後に渡した rows を受け取る', () => {
+      const { c, onRowsChange, render, base } = makeLive();
+      const first = base.rows;
+      c.applyRows((prev) => tick(prev, 1));
+      // 描き直す前に続けて呼んでも、前の結果に重ねる。
+      c.applyRows((prev) => tick(prev, 1));
+      expect(onRowsChange.mock.calls[1]?.[0].map((row) => row.price)).toEqual([12, 22]);
+      render();
+      expect(c.canUndo()).toBe(true);
+      c.undo();
+      render();
+      c.undo();
+      expect(render()).toBe(first);
+    });
+
+    it('undoable: false は履歴を消さず積みもせず、元に戻すは編集だけを取り消す(外の更新は残る)', () => {
+      const { c, render } = makeLive();
+      // グリッドでの編集(memo)。
+      const current = render();
+      c.handleRowsChange(current.map((row) => (row.id === 1 ? { ...row, memo: 'A' } : row)));
+      render();
+      // 外からの更新を 3 回。
+      for (let index = 0; index < 3; index += 1) {
+        c.applyRows((prev) => tick(prev, 1), { undoable: false });
+        render();
+      }
+      expect(c.canUndo()).toBe(true);
+      expect(c.canRedo()).toBe(false);
+      c.undo();
+      expect(render()).toEqual([
+        { id: 1, price: 13, memo: '' },
+        { id: 2, price: 23, memo: '' },
+      ]);
+      expect(c.canUndo()).toBe(false);
+      // やり直しも、その後の外の更新を残したまま。
+      c.applyRows((prev) => tick(prev, 1), { undoable: false });
+      render();
+      expect(c.canRedo()).toBe(true);
+      c.redo();
+      expect(render()).toEqual([
+        { id: 1, price: 14, memo: 'A' },
+        { id: 2, price: 24, memo: '' },
+      ]);
+    });
+
+    it('undoable: false の後でも、rows を外から差し替えれば履歴は消える(これまでどおり)', () => {
+      const { c, render, base } = makeLive();
+      c.handleRowsChange(render().map((row) => ({ ...row, memo: 'x' })));
+      render();
+      c.applyRows((prev) => tick(prev, 1), { undoable: false });
+      render();
+      c.update({ ...base, rows: tick(base.rows, 5) });
+      expect(c.canUndo()).toBe(false);
+    });
+
+    it('履歴が無効なら onRowsChange へ渡すだけ', () => {
+      const { c, onRowsChange, base } = makeLive();
+      c.update({ ...base, enabled: false });
+      c.applyRows((prev) => tick(prev, 1));
+      c.applyRows([], { undoable: false });
+      expect(onRowsChange).toHaveBeenCalledTimes(2);
+      expect(c.canUndo()).toBe(false);
+    });
+  });
 });

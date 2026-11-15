@@ -15,6 +15,7 @@ import {
   type GridMotion,
   type GridTheme,
   type RowSelectionMode,
+  type SpreadsheetGridHandle,
 } from '@ishibashi0112/spreadsheet-grid';
 import { localeTextEn } from '@ishibashi0112/spreadsheet-grid/locales/en';
 import '@ishibashi0112/spreadsheet-grid/style.css';
@@ -468,6 +469,8 @@ function PlaygroundGrid({ settings }: { settings: Settings }) {
   const [rows, setRows] = useState<Row[]>(initialRows);
   const [columns, setColumns] = useState<GridColumn<Row>[]>(initialColumns);
   const dialogRef = useRef<HTMLDialogElement>(null);
+  // 追加(1.1.0): 外部更新を applyRows(next, { undoable: false }) で渡すボタン用。
+  const gridRef = useRef<SpreadsheetGridHandle<Row>>(null);
   // セルのメモ(cellNote)と条件付き書式(conditionalFormat)。トグルに合わせて状態 / 単価 / 数量の列へ付け外しする(OFF では undefined に戻す)。
   //   数量に負の値を入れると入力エラーとメモが重なり、二重の三角とツールチップ(エラー → メモ)を確認できる。
   const gridColumns = useMemo(
@@ -562,26 +565,29 @@ function PlaygroundGrid({ settings }: { settings: Settings }) {
   );
 
   // highlightChanges の確認用: 先頭付近のデータ行から 3 セル(数量 / 単価)を書き換えた新配列で rows を差し替える。
-  const applyExternalUpdate = () =>
-    setRows((current) => {
-      const candidates: number[] = [];
-      for (let i = 0; i < current.length && candidates.length < 12; i++) {
-        if (current[i].kind !== 'label') candidates.push(i);
-      }
-      const next = current.slice();
-      for (let n = 0; n < 3 && candidates.length > 0; n++) {
-        const index = candidates[Math.floor(Math.random() * candidates.length)];
-        const row = next[index];
-        next[index] =
-          Math.random() < 0.5
-            ? { ...row, qty: Math.floor(Math.random() * 500) }
-            : { ...row, price: (1 + Math.floor(Math.random() * 300)) * 10 };
-      }
-      return next;
-    });
+  //   setRows で差し替えると元に戻すの履歴は消え、applyRows(…, { undoable: false })(1.1.0)なら履歴を残したまま。
+  const externalUpdate = (current: Row[]) => {
+    const candidates: number[] = [];
+    for (let i = 0; i < current.length && candidates.length < 12; i++) {
+      if (current[i].kind !== 'label') candidates.push(i);
+    }
+    const next = current.slice();
+    for (let n = 0; n < 3 && candidates.length > 0; n++) {
+      const index = candidates[Math.floor(Math.random() * candidates.length)];
+      const row = next[index];
+      next[index] =
+        Math.random() < 0.5
+          ? { ...row, qty: Math.floor(Math.random() * 500) }
+          : { ...row, price: (1 + Math.floor(Math.random() * 300)) * 10 };
+    }
+    return next;
+  };
+  const applyExternalUpdate = () => setRows(externalUpdate);
+  const applyExternalUpdateKeepingHistory = () => gridRef.current?.applyRows(externalUpdate, { undoable: false });
 
   const grid = (
     <SpreadsheetGrid
+      ref={gridRef}
       rows={rows}
       columns={gridColumns}
       onColumnsChange={setColumns}
@@ -681,7 +687,17 @@ function PlaygroundGrid({ settings }: { settings: Settings }) {
           >
             外部更新(先頭付近の 3 セルを書き換え)
           </button>
-          <span className="text-fd-muted-foreground">編集・貼り付け・undo でも変わったセルが光ります。</span>
+          <button
+            type="button"
+            className="rounded-md border border-fd-border px-2 py-1 hover:bg-fd-accent"
+            onClick={applyExternalUpdateKeepingHistory}
+          >
+            外部更新(元に戻すの履歴を残す)
+          </button>
+          <span className="text-fd-muted-foreground">
+            編集・貼り付け・undo でも変わったセルが光ります。右のボタンは applyRows(…, {'{'} undoable: false {'}'}) で渡すので、先に直したセルを
+            Ctrl+Z で戻せます。
+          </span>
         </div>
       ) : null}
       {settings.inDialog ? (

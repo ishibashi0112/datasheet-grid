@@ -1056,6 +1056,16 @@ export type GridInvalidCell = {
   message: string;
 };
 
+// 追加(1.1.0 / 2026-11-09 実アプリの総点検 AP-14): 命令的 API の applyRows のオプション。
+/** `applyRows` のオプション。 */
+export type GridApplyRowsOptions = {
+  /**
+   * `false` で「元に戻す」の履歴に積まず、今の履歴も消さない(株価のような外からのライブの更新)。元に戻す / やり直すは、
+   * その後の外からの更新を残したまま、グリッドでの編集だけを取り消す / やり直す(行は `rowKeyGetter` で対応づける)。既定 `true`。
+   */
+  undoable?: boolean | undefined;
+};
+
 // 追加(1.1.0 / 2026-11-09 実アプリの総点検 AP-09): 貼り付けで書かなかったセル(onPasteSkipped)です。
 /**
  * 貼り付けで書かなかったセル(`onPasteSkipped`)。`reason` は `'readOnly'`(編集できないセル = 列の `editable` /
@@ -2977,12 +2987,15 @@ export type SpreadsheetGridHandle<T> = {
   /**
    * 外からの変更(行の削除ボタン / 一括更新など)を「元に戻す」の履歴に積んでから `onRowsChange`
    * へ渡す(`Ctrl/Cmd+Z` / `undo()` で戻せる)。`rows` を外から直接差し替えると履歴は消えるので、
-   * 元に戻せるようにしたい変更はこれで渡す。履歴が無効(`enableUndoRedo={false}` / `readOnly`)
-   * なら積まずに `onRowsChange` へ渡す。`onRowsChange` が無いとき・serverSide
-   * では何もしない(開発時に警告)。渡すのは次の行の配列で、関数(`setRows((prev) => …)` の形)
-   * は受けない(今の `rows` から次の配列を作って渡す)。
+   * 元に戻せるようにしたい変更はこれで渡す。`nextRows` は次の行の配列か、関数(`(prev) => next`。
+   * `prev` は最後に渡した行で、続けて呼んでも重なる。1.1.0 から)。`undoable: false`(1.1.0 から)
+   * は履歴に積まず、今の履歴も消さない(株価のような外からのライブの更新)。そのときの元に戻す /
+   * やり直すは、外からの更新を残したままグリッドでの編集だけを取り消す / やり直す(行は
+   * `rowKeyGetter` で対応づける。無いときは位置なので、行を足す / 消す更新では `rowKeyGetter`
+   * を書く)。履歴が無効(`enableUndoRedo={false}` / `readOnly`)なら積まずに `onRowsChange` へ渡す。
+   * `onRowsChange` が無いとき・serverSide では何もしない(開発時に警告)。
    */
-  applyRows: (nextRows: T[]) => void;
+  applyRows: (nextRows: T[] | ((prev: T[]) => T[]), options?: GridApplyRowsOptions | undefined) => void;
 
   // ── 行グルーピング ──
   // 追加(grouping ④): 指定グループの開閉を設定します(collapsed: true = 折りたたみ)。

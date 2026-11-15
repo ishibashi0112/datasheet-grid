@@ -4,6 +4,7 @@ import { SpreadsheetGrid } from '@ishibashi0112/spreadsheet-grid';
 import type {
   CellCoord,
   GridCellEventParams,
+  GridApplyRowsOptions,
   GridExportData,
   GridSelection,
   GridState,
@@ -40,6 +41,18 @@ export function Inventory({ rows }: { rows: Row[] }) {
     assertType<Equal<typeof rowsSelected, Row[]>>();
     handle.scrollToRow(0, { align: 'center' });
     handle.focus();
+    // 1.1.0(AP-14): 関数の形と、履歴に積まない外からの更新。
+    handle.applyRows(rows);
+    handle.applyRows((prev) => {
+      assertType<Equal<typeof prev, Row[]>>();
+      return prev.map((row) => ({ ...row, qty: row.qty + 1 }));
+    }, { undoable: false });
+    const options: GridApplyRowsOptions = { undoable: undefined };
+    handle.applyRows(rows, options);
+    // @ts-expect-error 行の型が合わない
+    handle.applyRows([{ id: 1 }]);
+    // @ts-expect-error 無いオプション
+    handle.applyRows(rows, { history: 'none' });
     // @ts-expect-error 無いメソッド
     handle.scrollToEnd();
   };

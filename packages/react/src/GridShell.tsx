@@ -2501,6 +2501,8 @@ export function useGridShell<T extends object>({
     handleRowsChange,
     // 追加(フィルハンドル 1A): 埋めたあとの選び直し(履歴を積まない差し替え)。
     amendRowsChange,
+    // 追加(1.1.0 / AP-14): 命令的 API の applyRows(関数の形 / undoable: false = 履歴を消さず積みもしない)。
+    applyRows: applyRowsWithHistory,
     undo: undoRows,
     redo: redoRows,
     canUndo: canUndoRows,
@@ -2519,6 +2521,8 @@ export function useGridShell<T extends object>({
     onUndoRedoStateChange,
     // 追加(undo/redo scroll): 復元後に復元先アクティブセルを可視化します。
     onAfterRestore: scrollRestoredCellIntoView,
+    // 追加(1.1.0 / AP-14): 外からの更新を挟んだ元に戻すで行を対応づけるキー。
+    rowKeyGetter: resolvedRowKeyGetter,
   });
 
   // ── clear(Delete / Backspace)─────────────────────────
@@ -4505,8 +4509,8 @@ export function useGridShell<T extends object>({
     canUndoRows,
     canRedoRows,
     clearUndoHistory,
-    // 追加(段階 2 DU-21): applyRows の委譲先(履歴に積んでから onRowsChange)。
-    applyRowsChange: handleRowsChange,
+    // 追加(段階 2 DU-21): applyRows の委譲先(履歴に積んでから onRowsChange。1.1.0 から関数の形と undoable: false)。
+    applyRowsChange: applyRowsWithHistory,
     detailRowEnabled,
     detailIsExpandable,
     detailIndexCacheRef: detailIndexCacheHolder,

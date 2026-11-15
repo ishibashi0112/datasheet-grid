@@ -136,6 +136,26 @@ const deleteSelected = () => {
 };
 ```
 
+### 外から絶えず変わる表(ライブの更新)
+
+株価や在庫のように外から `rows` が絶えず変わる表は、更新を `applyRows(next, { undoable: false })` で渡します(1.1.0 から)。履歴に積まず、今の履歴も消さないので、利用者が直したメモを `Ctrl/Cmd+Z` で戻すと、その後の株価の更新は残ったままメモだけが元に戻ります(やり直すも同じ)。`rows` を作り直して `setRows` で渡すと履歴が消え、`undoable` を付けずに `applyRows` で渡すと更新の 1 つずつが履歴に積まれて `Ctrl/Cmd+Z` が株価を巻き戻します。
+
+`applyRows` は関数の形(`(prev) => next`)も受け取ります。`prev` は最後に渡した行なので、フィードのコールバックで最新の `rows` を ref に持たなくて済みます。行は `rowKeyGetter` で対応づけるので、行が増えたり消えたりする表では `rowKeyGetter` を書いてください。
+
+```tsx
+useEffect(() => {
+  const unsubscribe = feed.subscribe((prices) => {
+    gridRef.current?.applyRows(
+      (prev) => prev.map((row) => (prices[row.symbol] === undefined ? row : { ...row, price: prices[row.symbol] })),
+      { undoable: false },
+    );
+  });
+  return unsubscribe;
+}, []);
+
+<SpreadsheetGrid ref={gridRef} rows={rows} onRowsChange={setRows} rowKeyGetter={(row) => row.symbol} columns={columns} />
+```
+
 ## バリデーション
 
 ```tsx
