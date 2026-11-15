@@ -152,7 +152,8 @@ export type GridApiArgs<T> = {
   // 追加(合計行 3A): 合計行のエクスポート(includeTotalRow)の値と見出し(totalRow 無効時は undefined)。
   totalRowExport?: { cells: TotalRowCells; label: string } | undefined;
   // 追加(1.1.0 / 固定行): 固定行のエクスポート(includePinnedRows)の行(固定行が無効なら undefined)。
-  pinnedRowsExport?: { top: readonly T[]; bottom: readonly T[] } | undefined;
+  //   変更(1.2.0 / RV3-要望): bottomAfterTotal = 下の固定行を合計行の下に置く(pinnedBottomRowsPlacement: 'belowTotal')。
+  pinnedRowsExport?: { top: readonly T[]; bottom: readonly T[]; bottomAfterTotal?: boolean | undefined } | undefined;
   // 統合ツールパネル(openFilterManager / closeFilterManager の委譲先)。
   activeToolPanelTab: ToolPanelTab | null;
   openToolPanel: (tab: ToolPanelTab) => void;

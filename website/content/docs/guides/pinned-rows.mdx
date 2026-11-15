@@ -3,7 +3,7 @@ title: 固定行
 description: pinnedTopRows / pinnedBottomRows で目標値・前年の行を表の上下に固定する(表示だけ・本体とは別の配列)
 ---
 
-`pinnedTopRows` / `pinnedBottomRows` に行の配列を渡すと、**列見出しのすぐ下**と**表の下端**に行を固定します。目標値・前年の実績・平均のように、本体の行と見比べたい行に使います。縦にスクロールしても動かず、横スクロールと左右の固定列には通常の行と同じく付いていきます。[合計行](/docs/guides/total-row)と一緒に使うと、下の固定行は合計行のすぐ上に並びます。
+`pinnedTopRows` / `pinnedBottomRows` に行の配列を渡すと、**列見出しのすぐ下**と**表の下端**に行を固定します。目標値・前年の実績・平均のように、本体の行と見比べたい行に使います。縦にスクロールしても動かず、横スクロールと左右の固定列には通常の行と同じく付いていきます。[合計行](/docs/guides/total-row)と一緒に使うと、下の固定行は合計行のすぐ上に並びます(合計行の下にも置けます。下の「合計行の下に置く」)。
 
 ## デモ(支店の売上 > 上に目標、下に前年と平均)
 
@@ -76,9 +76,33 @@ const columns: GridColumn<Sale>[] = [
 - キーボード操作 / `scrollToRow` / `scrollToCell` で行を見せるときは固定行の裏に隠しません(上へ見せる行は上の固定行の下、下へ見せる行は下の固定行の上)。
 - 範囲選択のドラッグで固定行の上へポインタを動かすと、そちらへ自動でスクロールします。
 
+## 合計行の下に置く
+
+小計 → 消費税 → 税込のように、合計行から続けて計算した行は、`pinnedBottomRowsPlacement="belowTotal"` で合計行の下に並べます(1.2.0 から。既定 `'aboveTotal'` は合計行のすぐ上)。
+
+```tsx
+const subtotal = useMemo(() => rows.reduce((sum, row) => sum + row.amount, 0), [rows]);
+const tax = Math.floor(subtotal * 0.1);
+
+<SpreadsheetGrid
+  rows={rows}
+  columns={columns}
+  totalRow={{ label: '小計' }}
+  pinnedBottomRows={[
+    { id: 'tax', item: '消費税(10%)', amount: tax },
+    { id: 'total', item: '税込', amount: subtotal + tax },
+  ]}
+  pinnedBottomRowsPlacement="belowTotal"
+/>
+```
+
+- どちらの置き方でも表の下端に留まり、行が少ないときは最後の行の直後に来ます。
+- エクスポート(`includePinnedRows` + `includeTotalRow`)の行の順と、読み上げの順も画面と同じです。
+- 合計行が無いときは何もしません。
+
 ## エクスポート
 
-既定では含みません。`exportCsv` / `getExportData` に `includePinnedRows: true` を渡すと、上の固定行を本体の行の前、下の固定行を本体の行の後(合計行の前)に出します。範囲の選択(scope `'selection'`)では出しません。
+既定では含みません。`exportCsv` / `getExportData` に `includePinnedRows: true` を渡すと、上の固定行を本体の行の前、下の固定行を本体の行の後(合計行の前。`pinnedBottomRowsPlacement="belowTotal"` なら合計行の後)に出します。範囲の選択(scope `'selection'`)では出しません。
 
 ```ts
 grid.current?.exportCsv({ includePinnedRows: true, includeTotalRow: true });
@@ -107,7 +131,7 @@ data?.rowKinds; // ['pinned', 'data', 'data', …, 'pinned']
 
 ## そのほか
 
-- **アクセシビリティ**: 表の行(`role="row"`)として読み上げ、`aria-rowcount` に数えます。上の固定行は見出し行の次、下の固定行はデータ行の後です。行見出しの名前は「上に固定 1」「下に固定 1」で、`localeText` の `pinnedTopRow` / `pinnedBottomRow` で変えられます(英語の表 `localeTextEn` では「Pinned to top 1」)。
+- **アクセシビリティ**: 表の行(`role="row"`)として読み上げ、`aria-rowcount` に数えます。上の固定行は見出し行の次、下の固定行はデータ行の後です(合計行との順は画面と同じ)。行見出しの名前は「上に固定 1」「下に固定 1」で、`localeText` の `pinnedTopRow` / `pinnedBottomRow` で変えられます(英語の表 `localeTextEn` では「Pinned to top 1」)。
 - **列幅の自動調整**: 固定行の値も収まる幅にします。
 - **serverSide(`dataSource`)**: そのまま使えます。固定行は渡した配列から描くので、サーバーから取り直しません。
 - **Next.js のサーバーコンポーネント**: 固定行はただの行のデータなので、サーバーコンポーネントで作って props で渡せます(関数を含まない値のとき)。サーバーで描いた HTML にも固定行が入ります。

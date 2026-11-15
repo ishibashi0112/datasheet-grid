@@ -42,6 +42,8 @@ type GridTotalRowProps<T> = {
   rowStyle?: CSSProperties;
   slots?: GridResolvedSlots;
   onPointerEnter?: () => void;
+  // 追加(1.2.0 / RV3-要望): sticky の bottom(下の固定行を合計行の下に置くときは、その固定行の高さ)。既定 0(CSS)。
+  stickyBottom?: number;
 };
 
 function GridTotalRowInner<T>({
@@ -61,6 +63,7 @@ function GridTotalRowInner<T>({
   rowStyle,
   slots,
   onPointerEnter,
+  stickyBottom = 0,
 }: GridTotalRowProps<T>) {
   const texts = useGridLocaleText();
   const entries = renderEntries.filter(Boolean);
@@ -86,6 +89,7 @@ function GridTotalRowInner<T>({
           ...slots?.totalRow?.style,
           ...rowStyle,
           height,
+          ...(stickyBottom > 0 ? { bottom: stickyBottom } : null),
         }}
       >
         {ownsRowHeader && (

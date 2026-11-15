@@ -273,4 +273,18 @@ describe('buildGridExportData × 合計行(totalLine)', () => {
     expect(data.rows[0]).toEqual(data.rows[2]);
     expect(data.rows[3]).toEqual(data.rows[1]);
   });
+
+  it('pinnedBottomAfterTotal(1.2.0 / RV3-要望): 下の固定行を合計行の後に出す', () => {
+    const data = buildGridExportData({
+      getRow: (i) => tRows[i],
+      startRow: 0,
+      endRow: tRows.length,
+      columns: tColumns,
+      pinnedBottom: [tRows[0] as TRow],
+      totalLine: ['合計', 3],
+      pinnedBottomAfterTotal: true,
+    });
+    expect(data.rowKinds).toEqual(['data', 'data', 'total', 'pinned']);
+    expect(data.rows[3]).toEqual(data.rows[0]);
+  });
 });

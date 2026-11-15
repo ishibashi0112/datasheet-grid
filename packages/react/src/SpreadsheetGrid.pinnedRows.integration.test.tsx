@@ -237,6 +237,44 @@ describe('固定行(pinnedTopRows / pinnedBottomRows)', () => {
     expect((pane?.children[bottomIndex + 1] as HTMLElement | undefined)?.style.height).toBe('0px');
   });
 
+  it("pinnedBottomRowsPlacement 'belowTotal': 合計行の下に置き、sticky の bottom・DOM の順・ARIA・エクスポートも同じ並び(RV3-要望)", () => {
+    const { container, grid, ref } = setup({
+      pinnedTopRows: top,
+      pinnedBottomRows: bottom,
+      totalRow: { height: 34 },
+      pinnedBottomRowsPlacement: 'belowTotal',
+    });
+    const bottomBlock = container.querySelector<HTMLElement>('.ssg-pinned-rows--bottom');
+    const totalRow = container.querySelector<HTMLElement>('.ssg-total-row[data-pane="center"]');
+    // 下の器は表の下端(bottom: 0)、合計行はその上(下の固定行 2 行ぶん)。
+    expect(bottomBlock?.style.bottom).toBe('0px');
+    expect(totalRow?.style.bottom).toBe(`${2 * ROW_HEIGHT}px`);
+    // DOM の順: … → 本体ぶんの空き → 合計行 → 下の器。
+    const pane = totalRow?.parentElement;
+    const order = Array.from(pane?.children ?? []);
+    const totalIndex = order.findIndex((child) => child.classList.contains('ssg-total-row'));
+    const bottomIndex = order.findIndex((child) => child.classList.contains('ssg-pinned-rows--bottom'));
+    expect(bottomIndex).toBe(totalIndex + 1);
+    expect((order[totalIndex - 1] as HTMLElement | undefined)?.style.height).toBe(`${3 * ROW_HEIGHT}px`);
+    // ARIA: 合計行が本体の次、下の固定行がその後。
+    expect(grid.getAttribute('aria-rowcount')).toBe('8');
+    expect(totalRow?.getAttribute('aria-rowindex')).toBe('6');
+    expect(pinnedRowsIn(container, 'bottom').map((row) => row.getAttribute('aria-rowindex'))).toEqual(['7', '8']);
+    // エクスポートも合計行の後。
+    const csv = ref.current?.exportCsv({ includePinnedRows: true, includeTotalRow: true, includeHeaders: false }) ?? '';
+    expect(csv.split('\r\n').map((line) => line.split(',')[0])).toEqual(['目標', 'alpha', 'beta', 'gamma', '合計', '前年', '平均']);
+    const data = ref.current?.getExportData({ includePinnedRows: true, includeTotalRow: true });
+    expect(data?.rowKinds).toEqual(['pinned', 'data', 'data', 'data', 'total', 'pinned', 'pinned']);
+  });
+
+  it("pinnedBottomRowsPlacement 'belowTotal' は合計行が無ければ何もしない(既定と同じ)", () => {
+    const { container } = setup({ pinnedBottomRows: bottom, pinnedBottomRowsPlacement: 'belowTotal' });
+    const bottomBlock = container.querySelector<HTMLElement>('.ssg-pinned-rows--bottom');
+    expect(bottomBlock?.style.bottom).toBe('0px');
+    expect(container.querySelector('.ssg-total-row')).toBeNull();
+    expect(pinnedRowsIn(container, 'bottom').map((row) => row.getAttribute('aria-rowindex'))).toEqual(['5', '6']);
+  });
+
   it('固定列があっても 3 ペインに描き、列はそれぞれのペインに出る', () => {
     const pinnedColumns: GridColumn<Row>[] = [{ ...columns[0], pinned: 'left' }, columns[1], { ...columns[2], pinned: 'right' }];
     const { container, grid } = setup({ columns: pinnedColumns, pinnedTopRows: top });

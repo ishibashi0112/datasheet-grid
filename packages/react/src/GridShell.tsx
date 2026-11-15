@@ -475,6 +475,8 @@ export function useGridShell<T extends object>({
   // 追加(1.1.0 / 固定行): 表の上下に固定する行(表示だけ)。未指定 / 空なら機能は完全に休眠します。
   pinnedTopRows,
   pinnedBottomRows,
+  // 追加(1.2.0 / RV3-要望): 下の固定行を合計行の上(既定)か下か。
+  pinnedBottomRowsPlacement = 'aboveTotal',
   // 追加(フィルハンドル 1A): 選択範囲の右下の四角を引いて埋める。未指定 / false なら機能は完全に休眠します。
   fillHandle,
   // 追加(row-drag ③): 行ドラッグ並び替え(既定 OFF)。
@@ -857,6 +859,9 @@ export function useGridShell<T extends object>({
   const pinnedBottomCount = pinnedBottom?.length ?? 0;
   const headerHeight = columnHeaderHeight + pinnedTopCount * rowHeight;
   const footerHeight = totalRowHeight + pinnedBottomCount * rowHeight;
+  // 追加(1.2.0 / 1.1.0 の確かめ直し RV3-要望): 下の固定行を合計行の下に置く(小計 → 消費税 → 税込の順)。合計行が無ければ
+  //   いつもどおり。下端に固定する高さ(footerHeight)は同じで、並び(描く順・sticky の bottom・aria-rowindex・エクスポート)だけ変わる。
+  const pinnedBelowTotal = pinnedBottomRowsPlacement === 'belowTotal' && pinnedBottom !== null && totalRowEnabled;
   // ドラッグ(範囲選択 / フィルハンドル / 行ドラッグ)のヒットテストと上の自動スクロールの帯に渡す、上端に固定する高さ。
   //   上の固定行があるときだけ(無ければ 0 = 従来どおり、列見出しの上端から 24px の帯)。
   const stickyTopHeight = pinnedTopCount > 0 ? headerHeight : 0;
@@ -2931,8 +2936,11 @@ export function useGridShell<T extends object>({
   );
   // 追加(1.1.0 / 固定行): エクスポートの includePinnedRows で出す固定行(上 / 下)。
   const pinnedRowsExport = useMemo(
-    () => (pinnedTop || pinnedBottom ? { top: pinnedTop ?? [], bottom: pinnedBottom ?? [] } : undefined),
-    [pinnedTop, pinnedBottom],
+    () =>
+      pinnedTop || pinnedBottom
+        ? { top: pinnedTop ?? [], bottom: pinnedBottom ?? [], bottomAfterTotal: pinnedBelowTotal }
+        : undefined,
+    [pinnedTop, pinnedBottom, pinnedBelowTotal],
   );
   // ── 追加(F-2): セル内検索 ──
   //   実体は engine.find(controllers/findController。走査は時間分割)。React はスナップショットを購読し、既定セルの
@@ -4253,13 +4261,15 @@ export function useGridShell<T extends object>({
         ownsRowHeader={ownsRowHeader}
         leadingWidth={leadingWidth}
         // 変更(1.1.0 / 固定行): 下の固定行があるときは本体ぶんの空きは固定行の器が持ちます(合計行はその直後)。
-        bodyHeight={pinnedBottom ? 0 : physicalBodyHeight}
+        //   変更(1.2.0 / RV3-要望): 下の固定行を合計行の下に置くときは合計行が持ち、sticky の bottom を固定行の高さぶん上げる。
+        bodyHeight={pinnedBottom && !pinnedBelowTotal ? 0 : physicalBodyHeight}
+        stickyBottom={pinnedBelowTotal ? pinnedBottomCount * rowHeight : 0}
         height={totalRowHeight}
         renderEntries={renderEntries}
         cells={totalRowCells}
         label={totalRowLabel}
         labelColumnKey={totalRowLabelColumnKey}
-        ariaRowIndex={viewRowCount + 2 + pinnedTopCount + pinnedBottomCount}
+        ariaRowIndex={viewRowCount + 2 + pinnedTopCount + (pinnedBelowTotal ? 0 : pinnedBottomCount)}
         rowHeaderCellStyle={rowHeaderCellStyle}
         renderCell={totalRowRenderCell}
         rowClassName={totalRowSlot.className}
@@ -4287,11 +4297,11 @@ export function useGridShell<T extends object>({
         leadingWidth={leadingWidth}
         rows={pinnedRows}
         rowHeight={rowHeight}
-        stickyOffset={position === 'top' ? columnHeaderHeight : totalRowHeight}
-        bodyHeight={position === 'top' ? 0 : physicalBodyHeight}
+        stickyOffset={position === 'top' ? columnHeaderHeight : pinnedBelowTotal ? 0 : totalRowHeight}
+        bodyHeight={position === 'top' || pinnedBelowTotal ? 0 : physicalBodyHeight}
         renderEntries={renderEntries}
         rowKeyGetter={resolvedRowKeyGetter}
-        ariaRowIndexStart={position === 'top' ? 2 : viewRowCount + 2 + pinnedTopCount}
+        ariaRowIndexStart={position === 'top' ? 2 : viewRowCount + 2 + pinnedTopCount + (pinnedBelowTotal ? 1 : 0)}
         rowHeaderCellStyle={rowHeaderCellStyle}
         getRowClassName={getRowClassName}
         showCellOverflowTooltip={showCellOverflowTooltip}
@@ -4301,6 +4311,28 @@ export function useGridShell<T extends object>({
         onPointerEnter={handleTotalRowPointerEnter}
       />
     ) : null;
+  };
+
+  // 追加(1.2.0 / RV3-要望): 各ペインの下端の行(下の固定行と合計行)。既定は固定行 → 合計行、'belowTotal' は合計行 → 固定行。
+  const renderFooterRows = (
+    pane: GridPaneKind,
+    ownsRowHeader: boolean,
+    leadingWidth: number,
+    renderEntries: PaneColumnEntry<T>[],
+  ) => {
+    const pinned = renderPinnedRows('bottom', pane, ownsRowHeader, leadingWidth, renderEntries);
+    const total = renderTotalRow(pane, ownsRowHeader, leadingWidth, renderEntries);
+    return pinnedBelowTotal ? (
+      <>
+        {total}
+        {pinned}
+      </>
+    ) : (
+      <>
+        {pinned}
+        {total}
+      </>
+    );
   };
 
   const pinnedPaneStyle = (
@@ -5085,8 +5117,7 @@ export function useGridShell<T extends object>({
                 </div>
                 {/* 追加(合計行 3A): 下端に固定する合計行(本体ぶんの空きの直後 = ボックスの下端の sticky 行)。 */}
                 {/* 追加(1.1.0 / 固定行): 下に固定する行(本体ぶんの空きの後。合計行はその後ろ)。 */}
-                {renderPinnedRows('bottom', 'left', true, leftLeadingWidth, leftRenderEntries)}
-                {renderTotalRow('left', true, leftLeadingWidth, leftRenderEntries)}
+                {renderFooterRows('left', true, leftLeadingWidth, leftRenderEntries)}
               </div>
             )}
 
@@ -5322,8 +5353,7 @@ export function useGridShell<T extends object>({
               </div>
               {/* 追加(合計行 3A): 下端に固定する合計行(本体ぶんの空きの直後 = ボックスの下端の sticky 行)。 */}
               {/* 追加(1.1.0 / 固定行): 下に固定する行(本体ぶんの空きの後。合計行はその後ろ)。 */}
-              {renderPinnedRows('bottom', 'center', centerOwnsRowHeader, centerLeadingWidth, centerRenderEntries)}
-              {renderTotalRow('center', centerOwnsRowHeader, centerLeadingWidth, centerRenderEntries)}
+              {renderFooterRows('center', centerOwnsRowHeader, centerLeadingWidth, centerRenderEntries)}
 
               {/* 追加(13-B3-2): 中央ペインのドロップインジケータ(縦線)。
                   controller が ref 経由で display/left を imperative に制御します
@@ -5540,8 +5570,7 @@ export function useGridShell<T extends object>({
                 </div>
                 {/* 追加(合計行 3A): 下端に固定する合計行(本体ぶんの空きの直後 = ボックスの下端の sticky 行)。 */}
                 {/* 追加(1.1.0 / 固定行): 下に固定する行(本体ぶんの空きの後。合計行はその後ろ)。 */}
-                {renderPinnedRows('bottom', 'right', false, rightLeadingWidth, rightRenderEntries)}
-                {renderTotalRow('right', false, rightLeadingWidth, rightRenderEntries)}
+                {renderFooterRows('right', false, rightLeadingWidth, rightRenderEntries)}
               </div>
             )}
 

@@ -417,7 +417,7 @@ pack した 1.0.1 の候補(2026-11-09 の tarball と中身が同じ。レビ�
 | RV3-H1 | 低 | H | 列メニューの「列の表示」で開いたツールパネルの検索欄の名前が placeholder だけ | 直した(`aria-label`) |
 | RV3-H2 | 低 | H / L | 右クリックメニューの `role="menu"` に名前が無い(列メニューは列名。axe の違反にはならない) | 1.2.0 で済(1.2.0 の作業の表) |
 | RV3-文書 | 低 | A / B / E / G / D | 検査の無い number 列で読めない文字は印も付かない(A)/ 固定行は検索と `highlightChanges` の対象外(B / E / G)/ サーバーコンポーネントから固定行を渡せるか(D) | 直した(API リファレンス(両方)の number の行、ガイド pinned-rows) |
-| RV3-要望 | — | F | 下の固定行は合計行の上にしか置けず、見積書の「合計 → 消費税 → 税込」の順が作れない | 1.2.0 の候補(要望として記録) |
+| RV3-要望 | — | F | 下の固定行は合計行の上にしか置けず、見積書の「合計 → 消費税 → 税込」の順が作れない | 1.2.0 で済(選べる prop `pinnedBottomRowsPlacement: 'belowTotal'`。1.2.0 の作業の表) |
 | RV3-X1 | 中 | J / L | 画面の高さが足りず列メニューがパネルの中でスクロールするとき(高さ 520px の画面・スマートフォン・中身がスクロールするダイアログ)、「列の固定 ›」の小メニューがパネルの枠で切れて押せない(1.0 から。1.0.1 の AP-31 の確かめは高さのある画面だった) | 直した(このときは小メニューを項目の下に開く = `.ssg-menu-subgroup`。ホバーでは開け閉めせず、押す / → で開き、押し直す / ← で閉じる。J の 520 / 760px × 4 つの置き方と L の縦 / 横向きで押せて固定が変わる) |
 | RV3-K1 | 中(文書) | K | 列メニューの役割の変更で、利用側のテストの `getByRole('button', { name: 'フィルター…' })` が落ちるのに、CHANGELOG とテストのガイドに直し方が無い | 直した(CHANGELOG の「変更」とガイド testing に `menuitem` / `menuitemradio` で取る書き方)。役割は公開の契約の表に無く、読み上げの修正として minor に入れる |
 | RV3-K2 | 低(文書) | K | `popupContainer` の関数を呼ぶ時機の書き方が 3 か所で違う | 直した(「開いている間の描画ごとに呼ぶ。閉じている間は呼ばない」にそろえた) |
@@ -462,5 +462,5 @@ pack した 1.0.1 の候補(2026-11-09 の tarball と中身が同じ。レビ�
 | 別枠 | RV3-L2 | 見た目を変えずに直した: 固定行は名前をピンの印(`role="img"` + `aria-label`)へ移す(axe の has-visible-text は中の要素の名前も数えるので、行見出しの名前は印から決まり同じまま)。合計行は見出しを先頭のデータ列に出すときそのセルを rowheader にし、行番号の欄は `aria-hidden`(ラベル行の RV2-L1 と同じ)。同じ形の 3 つ目 = 行選択のチェックボックスを出すときのグループ行の空の行番号の欄も `aria-hidden`。見えるセルが無いペインの行は隠す。axe 4.14 を実ブラウザで固定行 + 合計行 / 空の見出し / 行選択 / グループ化(+ 行選択)/ ラベル行に回して empty-table-header は 0(残るのは既知の L-08 の色だけ) | 済(batch 8) |
 | 別枠 | 1 行のエディタ | core `utils/topAlignedInput`: 入力欄の箱はセルのまま、上の余白 0.4em − 枠線(複数行と同じ)、`line-height: inherit`、下の余白で中身の箱を 1 行ぶん(height: auto で測る)。text / number / date / select のエディタ(`editors/useTopAlignedInput`、条件はシェルの editorAlignTop)と IME の変換中の入力受け(セルの `.ssg-body-cell--valign-top` を見る。変換中の見た目にしてから測る)。Chromium で背の高い行の 6 列と IME(CDP)を撮って、セルの 1 行目と同じ高さを確認 | 済(batch 9) |
 | 別枠 | `isAtBottom()` | ハンドルの `isAtBottom()` と `onScroll` の `atBottom`(省略可の型。グリッドはいつも入れる)。判定は core `utils/scrollBottom` の `scrollHeight - scrollTop - clientHeight < 1`(DOM のスクロールの末尾 = scroll-space 仮想化でも物理の末尾が論理の末尾)。ガイド large-data に末尾を追う書き方 | 済(batch 10) |
-| 別枠 | RV3-要望 | 下の固定行を合計行の下に置ける選べる項目(プレビューで) | 未着手 |
+| 別枠 | RV3-要望 | prop `pinnedBottomRowsPlacement: 'aboveTotal' \| 'belowTotal'`(既定 'aboveTotal')。プレビューのおすすめ(選べる項目で合計行の下へ)。'belowTotal' は各ペインで 合計行 → 下の固定行 の順に描き、合計行の sticky の bottom を下の固定行の高さぶん上げ、本体ぶんの空きは合計行が持つ。下端に固定する高さ(footerHeight)は同じなので、スクロール / 行を見せる位置 / ヒットテストは変えない。aria-rowindex とエクスポート(core `logic/exportCsv` / `exportData` の `pinnedBottomAfterTotal`)も同じ並び。合計行が無ければ何もしない。ハーネス `t-pinned.mjs` に 7 項目(Chromium 38 / 38) | 済(batch 12) |
 | 確かめ | — | 別視点のレビュー 2 系統、12 本のアプリでの確かめ直し、3 ブラウザのハーネス、サイズの上限(入れ終えた後の実測 + 0.5KB) | 未着手 |

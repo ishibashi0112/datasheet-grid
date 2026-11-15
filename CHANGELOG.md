@@ -23,6 +23,7 @@
 - 行のグループ化と開閉を状態に入れる `includeGroupingInState`。付けると、`getState()` / `onStateChange` の `columns` の各列に `rowGroup` が、`collapsedGroups` に折りたたんだグループのキーが入り(開閉でも `onStateChange` が呼ばれます)、`restoreColumnsFromState` / `initialState` / `applyState` で戻ります。これまではグループ化を自分で保存する必要があり、開閉は保存できませんでした。ハンドルの `getGroupRows()` の各グループに `collapsed`(折りたたんでいるか)も足しました。
 - 右クリックメニュー(`enableContextMenu`)の読み上げの名前。セルで開くと「セルのメニュー」、行番号で開くと「行のメニュー」です(文言 `localeText.contextMenuCell` / `contextMenuRow`、英語「Cell menu」「Row menu」)。これまではメニューに名前が無く、スクリーンリーダーで「メニュー」とだけ読まれていました。
 - ハンドルの `isAtBottom()` と `onScroll` の引数の `atBottom`。縦のスクロールが末尾(下端)にあるかを返します。ログのように行が増える表で末尾を追うときに、行を足す前に確かめて、末尾にいたら足した後に `scrollToBottom()` を呼べます(ガイド「大量データと固定列」の「行が増える表で末尾を追う」)。これまでは `.ssg-scroll-container` の `scrollHeight` を自分で読む必要がありました。
+- 下の固定行を合計行の下に置く `pinnedBottomRowsPlacement: 'belowTotal'`(既定 `'aboveTotal'` = 1.1 と同じく合計行のすぐ上)。小計 → 消費税 → 税込のように、合計行から続けて計算した行を並べるときに使います。エクスポートの行の順と読み上げの順も同じ並びです。ガイド「固定行」の「合計行の下に置く」。
 - 並びが変わったときにアクティブセルを行に付いていかせる `activeCellFollows: 'row'`(既定 `'position'` = 1.1 までと同じく表示位置に残る)。ソートしたまま値が変わる表(株価ボードなど)で、押した行に付いていきます。アクティブセルの行だけの範囲は一緒に動き、何行かにまたがる範囲は外してアクティブセルの 1 セルにします。表はスクロールせず、`onActiveCellChange` は位置だけ動いたときは呼ばれません。clientSide だけです。ガイド「セル編集」の「外から絶えず変わる表」。
 - custom エディタの `imeDirectInput`: グリッドの `imeDirectInput` が有効なとき、エディタの定義に `imeDirectInput: true` を付けた custom の列でも IME の変換を受け、確定した文字を `ctx.initialText` に入れて開きます(付けない列は今までどおり変換を捨てます)。
 

@@ -2694,7 +2694,8 @@ export type CsvExportOptions = {
   // 追加(合計行 3A): 合計行(totalRow)を末尾に含めるか(既定 false)。scope 'view' のときだけ出力します。
   includeTotalRow?: boolean | undefined;
   // 追加(1.1.0 / 固定行): 固定行(pinnedTopRows / pinnedBottomRows)を含めるか(既定 false)。上の固定行は見出しの次、
-  //   下の固定行は本体の行の後(合計行の前)。scope 'selection' では出しません。
+  //   下の固定行は本体の行の後(合計行の前。pinnedBottomRowsPlacement: 'belowTotal' のときは合計行の後)。
+  //   scope 'selection' では出しません。
   includePinnedRows?: boolean | undefined;
   // 追加(段階 2 DU-10): 行グルーピング中に、各グループの先頭へ小計の行を入れるか(既定 false)。scope 'view' のときだけ。
   //   グループ元の列は祖先の値と「<ラベル> 小計」、集計のある列(aggFunc)はそのグループの集計値、ほかの列は空です。
@@ -2714,7 +2715,8 @@ export type GridExportOptions = {
   //   GridExportData.rowKinds の 'total' で判別できます。
   includeTotalRow?: boolean | undefined;
   // 追加(1.1.0 / 固定行): 固定行(pinnedTopRows / pinnedBottomRows)を含めるか(既定 false)。上の固定行は先頭(見出しの次)、
-  //   下の固定行は本体の行の後(合計行の前)。scope 'selection' では出しません。GridExportData.rowKinds の 'pinned' で判別できます。
+  //   下の固定行は本体の行の後(合計行の前。pinnedBottomRowsPlacement: 'belowTotal' のときは合計行の後)。scope 'selection' では
+  //   出しません。GridExportData.rowKinds の 'pinned' で判別できます。
   includePinnedRows?: boolean | undefined;
   // 追加(段階 2 DU-10): 行グルーピング中に、各グループの先頭へ小計の行を入れるか(既定 false。CsvExportOptions と同じ)。
   //   GridExportData.rowKinds の 'group' で判別できます。
@@ -4672,12 +4674,24 @@ export type SpreadsheetGridProps<T, F extends GridFrameworkTypes = GridFramework
    */
   pinnedTopRows?: T[] | undefined;
   /**
-   * **固定行(下)**。表の下端(合計行(`totalRow`)があればそのすぐ上)に固定して表示する行。ほかは
+   * **固定行(下)**。表の下端(合計行(`totalRow`)があればそのすぐ上。
+   * `pinnedBottomRowsPlacement: 'belowTotal'` なら合計行の下)に固定して表示する行。ほかは
    * `pinnedTopRows` と同じ(`ctx.pinned` は `'bottom'`)。
    *
    * @defaultValue —(無効)
    */
   pinnedBottomRows?: T[] | undefined;
+  // 追加(1.2.0 / 1.1.0 の確かめ直し RV3-要望): 下の固定行を合計行の上(既定)に置くか下に置くか。
+  /**
+   * 合計行(`totalRow`)があるときの下の固定行の位置(1.2.0 から)。`'aboveTotal'` は合計行のすぐ上、
+   * `'belowTotal'` は合計行の下(小計 → 消費税 → 税込のように、
+   * 合計から続けて計算した行を並べるとき)。どちらも表の下端に留まり、
+   * 行が少ないときは最後の行の直後に来る。エクスポート(`includePinnedRows`)
+   * の行の順と読み上げの順(`aria-rowindex`)も同じ並び。合計行が無いときは何もしない。
+   *
+   * @defaultValue `'aboveTotal'`
+   */
+  pinnedBottomRowsPlacement?: 'aboveTotal' | 'belowTotal' | undefined;
   // ── 追加(フィルハンドル 1A): 選択範囲の右下の四角を引いて連続データ / コピーで埋める ──
   //   指定時のみ有効な opt-in 機能です。詳細は FillHandleOptions を参照。
   /**
