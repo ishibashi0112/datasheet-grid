@@ -157,7 +157,7 @@
 | L-09 | `onColumnsChange` が無いとツールパネルの列の状態が見えない | 1.0.2 | 済(1.0.2。押せないときは灰色の地に濃い灰色のチェック、`aria-pressed`、押せない理由は利用者向けの文に。使えない項目は今の状態を見せるため残す) |
 | L-10 | タッチで開いたフィルターが自動でフォーカス、文字が 16px 未満 | 1.0.2 | 済(1.0.2。`pointer: coarse` ではポップオーバーそのものへフォーカス、ポップオーバーとバーの入力欄を 16px 以上に。タッチの模擬で確認) |
 | L-11 | タッチでは ⋮ と grip が常に出て狭い見出しが切れる | 1.0.2 | 済(1.0.2。ホバーの無い端末では 120px より細い見出しの grip を出さない。64px の見出しの文字が切れないのをタッチの模擬で確認) |
-| L-12 | タッチの的が小さい | 1.2.0 | 未着手(2026-11-15 のユーザー判断で 1.1.0 から 1.2.0 へ) |
+| L-12 | タッチの的が小さい | 1.2.0 | 1.2.0 で済(`pointer: coarse` だけ大きく。1.2.0 の作業の表) |
 | L-14 | forced-colors で検査 NG とチップの色の意味が消える | 1.0.2 | 済(1.0.2。検査 NG は点線の枠 + 強調色の三角、メモは文字色の三角、チップとデータバーは作者の色のまま + チップに枠。forced-colors の模擬で確認) |
 | L-08 | コントラスト不足、見えている文言と読み上げの名前の不一致 | 名前は 1.0.2、色は文書 | 済(色は文書。名前は 1.0.2 = 絞り込みの要約とフィルターのチップの名前を見えている文字 + 操作の説明に、ラベル行の rowheader に名前、押せない列の一覧に `tabindex`) |
 | A-10 / F-05 / L-17 | 検査のレシピと README の勧めが食い違う | 文書 | 済(文書) |
@@ -456,7 +456,7 @@ pack した 1.0.1 の候補(2026-11-09 の tarball と中身が同じ。レビ�
 | IME と custom エディタ | F-06 | custom エディタの定義の `imeDirectInput: true` で、確定した文字を `ctx.initialText` に入れて開く(core `logic/imeInput` の canStartImeEdit) | 済(batch 3) |
 | 行ドラッグ | E-07 | prop `canDropRow`(`RowDropParams` = `onRowMove` と同じ index + 落とした後のすぐ上 / 下の行 + 動かす前の rows)。core `rowDragController` の `canDropAt(from, slot)`(同じ from / スロットは聞き直さず、関数が変わったら控えを捨てる。離すときも確かめる)。'ghost' はガイド線を出さずゴーストを枠の外と同じ見た目に、'live' は落とせる最後の位置に留まる。`moveRow()` には効かない | 済(batch 4) |
 | 状態の保存 | H-04 | prop `includeGroupingInState`(既定 false = 1.1 と同じ)。`GridColumnState.rowGroup`(rowGroup を書いた列だけ)と `GridState.collapsedGroups`(core `logic/gridState` の extract / build / migrate / applyColumnState / isSame、`engine/gridApi` の getState / applyState、`engine/notifiers` の onStateChange、`createGridEngine` の initialState。保存の rowGroup が列定義と違えば initialState の警告)。`getGroupRows()` の記述子に `collapsed`(複製に付ける) | 済(batch 5) |
-| タッチ | L-12 | `pointer: coarse` でメニュー・候補・チェックの行を大きく、⋮ は押せる範囲だけ広げる | 未着手 |
+| タッチ | L-12 | `pointer: coarse` だけ: メニューの項目・select の候補 44px、列フィルターの候補の行(ColumnFilterPopover の仮想化の行の高さも 40px)・(すべて選択)・ツールパネルの列の行・ポップオーバーのボタン 40px 以上、リストの高さ 240px。見出しの ⋮ とポップオーバーの × は `::after` で押せる範囲だけ広げる(見出しの高さは変えない) | 済(batch 6) |
 | ライブの並べ替え | B-04 | アクティブセルを行キーで追う選べる prop(複数行の範囲の扱いはプレビューで選ぶ) | 未着手 |
 | 別枠 | RV3-H2 / RV3-L2 / RV3-要望 / 1 行のエディタ / `isAtBottom()` | 右クリックメニューの名前の文言 / 固定行・合計行の行見出しの axe(見た目を変えない直し方を先に)/ 下の固定行を合計行の下に置ける選べる項目(プレビューで)/ 上にそろえた行の 1 行のエディタを上に / 末尾にいるかを返す `isAtBottom()` と `onScroll` の印 | 未着手 |
 | 確かめ | — | 別視点のレビュー 2 系統、12 本のアプリでの確かめ直し、3 ブラウザのハーネス、サイズの上限(入れ終えた後の実測 + 0.5KB) | 未着手 |

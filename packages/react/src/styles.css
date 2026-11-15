@@ -4730,3 +4730,48 @@
       font-size: max(16px, 1em);
     }
   }
+
+  /* 追加(1.2.0 / 2026-11-09 実アプリの総点検 L-12): タッチが主の端末では、指で押す的を大きくします(マウスの端末の見た目は
+     変えない)。メニュー(右クリック / 列メニュー)の項目と select エディタの候補は 44px、列フィルターの候補(チェックの行。
+     行の高さは ColumnFilterPopover の仮想化と同じ 40px)・(すべて選択)・ツールパネルの列の行・ボタンは 40px 以上。
+     見出しの ⋮ とポップオーバーの × は、見た目の大きさのまま押せる範囲だけ広げます(見出しの高さを変えないため)。 */
+  @media (pointer: coarse) {
+    .ssg-menu-item {
+      min-height: 44px;
+    }
+    .ssg-select-editor-option,
+    .ssg-select-editor-empty {
+      height: 44px;
+      line-height: 44px;
+    }
+    .ssg-filter-selectall {
+      height: 40px;
+    }
+    .ssg-filter-list {
+      height: 240px;
+    }
+    .ssg-chooser-handle {
+      height: 40px;
+    }
+    .ssg-filter-btn-secondary,
+    .ssg-filter-btn-primary,
+    .ssg-menu-close-btn {
+      min-height: 40px;
+      padding-left: 14px;
+      padding-right: 14px;
+    }
+    .ssg-header-actions .ssg-icon-btn,
+    .ssg-popover-close {
+      position: relative;
+    }
+    .ssg-header-actions .ssg-icon-btn::after,
+    .ssg-popover-close::after {
+      content: '';
+      position: absolute;
+      inset: -8px -6px;
+    }
+    /* 見出しの ⋮ の左はつまみ(grip)なので、左へは隙間のぶんだけ広げます。 */
+    .ssg-header-actions .ssg-icon-btn::after {
+      inset: -8px -6px -8px -2px;
+    }
+  }

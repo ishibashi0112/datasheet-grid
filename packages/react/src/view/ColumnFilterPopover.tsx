@@ -212,6 +212,15 @@ type ColumnFilterPopoverProps = {
 // 追加(12-A): set フィルター候補リストの行高です(仮想化の estimateSize と一致させます)。
 // 変更(DENS-B): 28 → 24(compact 化。CSS 側の .ssg-filter-selectall 高さとも揃えます)。
 const SET_FILTER_OPTION_ROW_HEIGHT = 24;
+// 追加(1.2.0 / 2026-11-09 実アプリの総点検 L-12): タッチが主の端末(pointer: coarse)では 40px にします(指で押しやすく。
+//   CSS の (pointer: coarse) の .ssg-filter-selectall と同じ)。開いたときに 1 回だけ決めます。
+const SET_FILTER_OPTION_ROW_HEIGHT_COARSE = 40;
+const resolveSetFilterOptionRowHeight = (): number =>
+  typeof window !== 'undefined' &&
+  typeof window.matchMedia === 'function' &&
+  window.matchMedia('(pointer: coarse)').matches
+    ? SET_FILTER_OPTION_ROW_HEIGHT_COARSE
+    : SET_FILTER_OPTION_ROW_HEIGHT;
 
 // 追加(英語対応): 集めた候補の空白(値が空で、ラベルが既定の「(空白)」)は文言の表の blank で出します(候補は core が
 //   既定の文言で作るため。利用側が filterOptions で渡したラベルはそのまま)。
@@ -283,10 +292,12 @@ function SetFilterBody({
 
   // 追加(12-A): 候補リストの行仮想化です。表示領域ぶん + overscan のみ DOM 化します。
   const listScrollRef = useRef<HTMLDivElement | null>(null);
+  // 追加(1.2.0 / L-12): 行の高さ(タッチが主の端末では 40px)。
+  const [optionRowHeight] = useState(resolveSetFilterOptionRowHeight);
   const optionVirtualizer = useVirtualizerCore({
     count: visibleOptions.length,
     getScrollElement: () => listScrollRef.current,
-    estimateSize: () => SET_FILTER_OPTION_ROW_HEIGHT,
+    estimateSize: () => optionRowHeight,
     overscan: 10,
   });
 
@@ -875,10 +886,12 @@ function DateSetFilterBody({
 
   const listScrollRef = useRef<HTMLDivElement | null>(null);
   const rowCount = isSearching ? flatMatches.length : treeRows.length;
+  // 追加(1.2.0 / L-12): 行の高さ(タッチが主の端末では 40px)。
+  const [optionRowHeight] = useState(resolveSetFilterOptionRowHeight);
   const rowVirtualizer = useVirtualizerCore({
     count: rowCount,
     getScrollElement: () => listScrollRef.current,
-    estimateSize: () => SET_FILTER_OPTION_ROW_HEIGHT,
+    estimateSize: () => optionRowHeight,
     overscan: 10,
   });
 
