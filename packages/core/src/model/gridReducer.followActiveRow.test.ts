@@ -76,4 +76,30 @@ describe('gridUiReducer (selection/followActiveRow)', () => {
     const none = withState(null, null);
     expect(gridUiReducer(none, gridActions.collapseSelectionToActiveCell())).toBe(none);
   });
+  // 追加(1.2.0 の確かめ直し J): 編集中のセルの付いていきでは、アクティブセルと選択も一緒に動く。
+  it('edit/retarget: 編集中のセル・アクティブセル・1 セルの選択が新しい位置へ動く(列が変わるときの範囲は 1 セル)', () => {
+    const s = {
+      ...withState({ row: 3, col: 2 }, { type: 'cell', range: { start: { row: 3, col: 2 }, end: { row: 3, col: 2 } } }),
+      editingCell: { row: 3, col: 2 },
+    };
+    const next = gridUiReducer(s, gridActions.retargetEdit({ row: 1, col: 2 }, 10));
+    expect(next.editingCell).toEqual({ row: 1, col: 2 });
+    expect(next.activeCell).toEqual({ row: 1, col: 2 });
+    expect(next.selection).toEqual({ type: 'cell', range: { start: { row: 1, col: 2 }, end: { row: 1, col: 2 } } });
+    // 同じ所なら同一参照。
+    expect(gridUiReducer(next, gridActions.retargetEdit({ row: 1, col: 2 }, 10))).toBe(next);
+    // 列も変わった(列の並べ替え)ときは、同じ行の範囲でも 1 セル。
+    const wide = {
+      ...withState({ row: 3, col: 2 }, { type: 'cell', range: { start: { row: 3, col: 1 }, end: { row: 3, col: 4 } } }),
+      editingCell: { row: 3, col: 2 },
+    };
+    expect(gridUiReducer(wide, gridActions.retargetEdit({ row: 5, col: 0 }, 10)).selection).toEqual({
+      type: 'cell',
+      range: { start: { row: 5, col: 0 }, end: { row: 5, col: 0 } },
+    });
+    expect(gridUiReducer(wide, gridActions.retargetEdit({ row: 5, col: 2 }, 10)).selection).toEqual({
+      type: 'cell',
+      range: { start: { row: 5, col: 1 }, end: { row: 5, col: 4 } },
+    });
+  });
 });

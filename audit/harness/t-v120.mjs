@@ -654,4 +654,60 @@ if (!SUPPORTS.cdp) {
   await close();
 }
 
+// J: 編集中に並びが変わると、エディタ・アクティブセルと一緒に選択も付いていく(Escape の後に別の行をコピーしない)。
+{
+  const { page, pageErrors, close } = await open('basic');
+  await page.evaluate(() => window.__grid.applyState({ sort: [{ columnKey: 'qty', direction: 'desc' }] }));
+  await waitIdle(page, 300);
+  await cell(page, 2, 'name').click();
+  await waitIdle(page, 150);
+  const id = await viewIdAt(page, 2);
+  await page.keyboard.press('F2');
+  await waitIdle(page, 200);
+  await page.evaluate((id) => window.__setRows(window.__rows().map((row) => (row.id === id ? { ...row, qty: -1000 } : row))), id);
+  await waitIdle(page, 300);
+  await page.keyboard.press('Escape');
+  await waitIdle(page, 200);
+  const after = await page.evaluate(() => ({ sel: window.__grid.getSelection(), active: window.__grid.getActiveCell() }));
+  const idNow = await viewIdAt(page, after.active.row);
+  check(
+    'J: 編集中に並びが変わると、アクティブセルと選択がそろって編集していた行に付いていく',
+    idNow === id && JSON.stringify(after.sel?.range) === JSON.stringify({ start: after.active, end: after.active }),
+    { id, idNow, after },
+  );
+  check('J: 予期しないページエラーなし', unexpectedPageErrors(pageErrors).length === 0, unexpectedPageErrors(pageErrors));
+  await close();
+}
+
+// K: 'row' で並べ替えの列を編集して確定すると、Tab は編集した行の右のセル、Enter は前の並びで下にあった行へ付いていく。
+for (const key of ['Tab', 'Enter']) {
+  const { page, pageErrors, close } = await open('basic');
+  await page.evaluate(() => {
+    window.__setProps({ activeCellFollows: 'row' });
+    window.__grid.applyState({ sort: [{ columnKey: 'qty', direction: 'desc' }] });
+  });
+  await waitIdle(page, 300);
+  await cell(page, 1, 'qty').click();
+  await waitIdle(page, 150);
+  const edited = await viewIdAt(page, 1);
+  const below = await viewIdAt(page, 2);
+  const qtyCol = await page.evaluate(() => window.__grid.getColIndex('qty'));
+  await focusGrid(page);
+  await page.keyboard.press('F2');
+  await waitIdle(page, 200);
+  await page.keyboard.press('Control+a');
+  // 数量は検査で 0 以上(reject)なので 0 にする(一番下の方へ動く)。
+  await page.keyboard.type('0');
+  await page.keyboard.press(key);
+  await waitIdle(page, 400);
+  const qtyNow = await page.evaluate((id) => window.__rows().find((r) => r.id === id)?.qty, edited);
+  const active = await page.evaluate(() => window.__grid.getActiveCell());
+  const idNow = await viewIdAt(page, active.row);
+  const expected = key === 'Tab' ? edited : below;
+  const colOk = key === 'Tab' ? active.col === qtyCol + 1 : active.col === qtyCol;
+  check(`K: 'row' で並べ替えの列を編集して ${key} で確定すると、${key === 'Tab' ? '編集した行' : '前の並びで下にあった行'}に付いていく`, qtyNow === 0 && idNow === expected && colOk, { edited, below, idNow, active, qtyCol, qtyNow });
+  check(`K(${key}): 予期しないページエラーなし`, unexpectedPageErrors(pageErrors).length === 0, unexpectedPageErrors(pageErrors));
+  await close();
+}
+
 summary('t-v120');

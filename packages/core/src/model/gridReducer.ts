@@ -1,5 +1,5 @@
 import type { GridUiAction } from './gridActions';
-import type { GridRowKey, GridSelection, GridUiState } from './gridTypes.unbound';
+import type { CellCoord, GridRowKey, GridSelection, GridUiState } from './gridTypes.unbound';
 // 追加(監査 RD-5 / M-03): columns 変化時の列幅 state 整合(参照変化だけではエントリを消さない)。
 import { reconcileColumnWidths } from '../logic/columnWidthState';
 // 追加(行選択): 初期状態と同値判定(同値 set は no-op 化して無駄な再レンダーを避ける)。
@@ -90,13 +90,18 @@ const clampUiStateToRowCount = (state: GridUiState, rowCount: number): GridUiSta
 //   - 変更(1.2.0 の見直し QG-1): 全部の行にまたがる範囲(Ctrl+A など。rowCount を渡したとき)は、中の行の集まりが変わらない
 //     ので、範囲はそのままにしてアクティブセルだけ動かす(株価ボードで Ctrl+A → Ctrl+C の間に更新が来ると 1 セルに縮んでいた)。
 //   選択のドラッグ中は呼ばない(controllers/activeRowFollowController)。同じ位置なら同一参照を返します。
-const followActiveRowInUiState = (state: GridUiState, row: number, rowCount: number | undefined): GridUiState => {
+// 変更(1.2.0 の確かめ直し J): 行だけでなく列も動く先(編集中のセルの付いていき = edit/retarget)にも使えるようにしました。
+//   選択は、アクティブセルの行だけの範囲なら一緒に動き(列が変わるときは 1 セル)、全部の行にまたがる範囲と列選択はそのまま、
+//   ほかは 1 セル。
+const followActiveCellInUiState = (state: GridUiState, target: CellCoord, rowCount: number | undefined): GridUiState => {
   const { activeCell, selection } = state;
-  if (activeCell === null || activeCell.row === row) {
+  if (activeCell === null || (activeCell.row === target.row && activeCell.col === target.col)) {
     return state;
   }
   const from = activeCell.row;
-  const nextActive = { row, col: activeCell.col };
+  const row = target.row;
+  const sameCol = activeCell.col === target.col;
+  const nextActive = { row, col: target.col };
   const single: GridSelection = { type: 'cell', range: { start: nextActive, end: nextActive } };
   const coversAllRows = (a: number, b: number): boolean =>
     rowCount !== undefined && rowCount > 0 && Math.min(a, b) <= 0 && Math.max(a, b) >= rowCount - 1;
@@ -104,9 +109,9 @@ const followActiveRowInUiState = (state: GridUiState, row: number, rowCount: num
   if (selection?.type === 'cell') {
     const { start, end } = selection.range;
     nextSelection =
-      start.row === from && end.row === from
+      start.row === from && end.row === from && sameCol
         ? { type: 'cell', range: { start: { row, col: start.col }, end: { row, col: end.col } } }
-        : coversAllRows(start.row, end.row)
+        : coversAllRows(start.row, end.row) && sameCol
           ? selection
           : single;
   } else if (selection?.type === 'row') {
@@ -427,7 +432,9 @@ export const gridUiReducer = (
       };
 
     case 'selection/followActiveRow':
-      return followActiveRowInUiState(state, action.row, action.rowCount);
+      return state.activeCell === null
+        ? state
+        : followActiveCellInUiState(state, { row: action.row, col: state.activeCell.col }, action.rowCount);
 
     case 'selection/collapseToActiveCell': {
       const { activeCell, selection } = state;
@@ -455,6 +462,15 @@ export const gridUiReducer = (
         editingCell: action.cell,
         activeCell: action.cell,
       };
+
+    case 'edit/retarget': {
+      const followed = followActiveCellInUiState(state, action.cell, action.rowCount);
+      const editing = state.editingCell;
+      if (editing !== null && editing.row === action.cell.row && editing.col === action.cell.col && followed === state) {
+        return state;
+      }
+      return { ...followed, editingCell: action.cell, activeCell: followed.activeCell ?? action.cell };
+    }
 
     case 'edit/stop':
       // 追加(監査 B-11): 編集中でなければ no-op。

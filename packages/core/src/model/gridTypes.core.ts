@@ -4384,7 +4384,10 @@ export type SpreadsheetGridProps<T, F extends GridFrameworkTypes = GridFramework
    * 離したときに付いていく。行の追加 / 削除で付いていくには `rowKeyGetter` が要る(無いと行のキーは
    * `rows` の位置なので、上の行を消すと同じキーが別の行を指す)。`onActiveCellChange`
    * は位置だけ動いたときは呼ばれない。clientSide だけ(serverSide は取り直すまで並びが変わらないので
-   * `'position'` のまま)。編集中のセルはどちらでも行に付いていく。
+   * `'position'` のまま)。編集中のセルはどちらでも行に付いていく(アクティブセルと選択も一緒に)。
+   * `'row'` では、並べ替えの列を編集して確定してその行が動いたとき、`Enter`
+   * は確定する前の並びで下にあった行へ、`Tab` は編集した行の隣のセルへ動く(`'position'`
+   * は確定した後の並びのその位置の下 / 隣)。
    *
    * @defaultValue `'position'`
    */

@@ -23,7 +23,7 @@ import type {
 import { isUnchangedEditorCommit, parseCommittedValue, writeRowsCell } from '../logic/editorValues';
 import { decideCellWrite, type ValidationLocaleText } from '../logic/validation';
 import { clamp } from '../logic/geometry';
-import { isFocusInsideDetailCard, resolveFirstDataColIndex } from '../logic/detailRow';
+import { findViewRowIndexByKey, isFocusInsideDetailCard, resolveFirstDataColIndex } from '../logic/detailRow';
 import { getCellValue, isViewCellEditable } from '../utils/permissions';
 import type { ServerSideCellEditInput } from '../logic/serverSideEdits';
 
@@ -46,6 +46,9 @@ export type EditControllerArgs<T extends object> = {
   canEditCell?: SpreadsheetGridProps<T>['canEditCell'];
   // 追加(英語対応): reject の検査のメッセージの文言(localeText。未指定は日本語の既定)。
   localeTexts?: ValidationLocaleText;
+  // 追加(1.2.0 の確かめ直し K): activeCellFollows: 'row'。確定の後の移動(Enter / Tab)の先を、確定した時点の並びの行キーで
+  //   覚え、並びが変わった後もその行へ動かします(並べ替えの列を編集すると、確定で行が動いた後に元の座標へ動いていた)。
+  followsRow?: boolean | undefined;
 };
 
 export type EditController<T extends object> = {
@@ -197,7 +200,8 @@ export const createEditController = <T extends object>(): EditController<T> => {
     const located = locateIdentity(next, identity);
     if (located) {
       identity = { ...identity, cell: located };
-      next.dispatch(gridActions.startEdit(located));
+      // 変更(1.2.0 の確かめ直し J): アクティブセルと選択も一緒に付いていく(これまでは startEdit で、選択だけ元の位置に残った)。
+      next.dispatch(gridActions.retargetEdit(located, next.rowModel.getRowCount()));
     } else {
       identity = null;
       next.dispatch(gridActions.stopEdit());
@@ -231,12 +235,33 @@ export const createEditController = <T extends object>(): EditController<T> => {
   //   変更(1.0.1 / AP-05): immediate(エディタの中のキーで確定・取消した)ときは、呼び出し側が stopEdit の前にフォーカスを
   //   ルートへ移し、後処理は stopEdit を反映した描画の直後(マイクロタスク)に行います。描画がまだなら(React の外から
   //   確定したなど)従来どおり次のフレーム。後処理は一度だけです。
+  // 縦の移動の先の行(行の数に収め、ラベル行は同じ向きに読み飛ばす。FC-18)。
+  const resolveMoveRow = (rowModel: RowModel<T>, nextRow: number, fromRow: number | undefined): number => {
+    const rowCount = rowModel.getRowCount();
+    let row = clamp(nextRow, 0, Math.max(rowCount - 1, 0));
+    // 追加(FC-18): 縦の移動(Enter / Shift+Enter)はラベル行に止まらず、同じ向きに読み飛ばします(↑↓ のキーと同じ。
+    //   端までラベル行しか無ければ確定した行に留まる)。従来はラベル行に止まり、続けて打った文字が捨てられていた。
+    const { getLabelRow } = rowModel;
+    if (getLabelRow && fromRow !== undefined && row !== fromRow) {
+      const step = row > fromRow ? 1 : -1;
+      while (row >= 0 && row < rowCount && getLabelRow(row)) {
+        row += step;
+      }
+      if (row < 0 || row >= rowCount) {
+        row = clamp(fromRow, 0, Math.max(rowCount - 1, 0));
+      }
+    }
+    return row;
+  };
+
   const scheduleAfterEdit = (
     nextCell: CellCoord | null,
     stayedFrom: SelectionSnapshot | null = null,
     // 追加(1.0 前の最終チェック FC-18): 確定した行(縦の移動でラベル行を読み飛ばす向きを決める)。
     fromRow?: number,
     immediate = false,
+    // 追加(1.2.0 の確かめ直し K): 移動の先の行のキー('row' のとき。確定した時点の並びで決めたもの)。
+    targetRowKey?: GridRowKey,
   ) => {
     const current = args;
     if (current === null) {
@@ -262,21 +287,11 @@ export const createEditController = <T extends object>(): EditController<T> => {
         !(stayedFrom !== null && isSelectionChangedSince(stayedFrom, args.uiState))
       ) {
         // 行数 / 列数は rAF 時点の最新 args で clamp します(旧 boundsRef 相当)。
-        const rowCount = args.rowModel.getRowCount();
         const colCount = args.visibleColumns.length;
-        let row = clamp(nextCell.row, 0, Math.max(rowCount - 1, 0));
-        // 追加(FC-18): 縦の移動(Enter / Shift+Enter)はラベル行に止まらず、同じ向きに読み飛ばします(↑↓ のキーと同じ。
-        //   端までラベル行しか無ければ確定した行に留まる)。従来はラベル行に止まり、続けて打った文字が捨てられていた。
-        const { getLabelRow } = args.rowModel;
-        if (getLabelRow && fromRow !== undefined && row !== fromRow) {
-          const step = row > fromRow ? 1 : -1;
-          while (row >= 0 && row < rowCount && getLabelRow(row)) {
-            row += step;
-          }
-          if (row < 0 || row >= rowCount) {
-            row = clamp(fromRow, 0, Math.max(rowCount - 1, 0));
-          }
-        }
+        // 変更(1.2.0 の確かめ直し K): 'row' では、確定した時点の並びで決めた行を今の並びで探します(見つからなければ座標)。
+        const followed =
+          targetRowKey === undefined ? -1 : findViewRowIndexByKey(args.rowModel, targetRowKey, new Map());
+        const row = followed >= 0 ? followed : resolveMoveRow(args.rowModel, nextCell.row, fromRow);
         activateSingleCell({
           row,
           col: clamp(nextCell.col, 0, Math.max(colCount - 1, 0)),
@@ -389,6 +404,14 @@ export const createEditController = <T extends object>(): EditController<T> => {
     // 変更(AP-05): エディタの中のキーで確定したときは、予約の前にフォーカスをルートへ移します。
     editorActionGuardRef.current = true;
     const immediate = moveFocusToRootFromEditor();
+    // 追加(1.2.0 の確かめ直し K): 'row' では移動の先の行を確定した時点の並び(書き込む前の行モデル)のキーで覚えます。
+    let targetRowKey: GridRowKey | undefined;
+    if (args.followsRow === true) {
+      const targetRow = resolveMoveRow(rowModel, intendedCell.row, editingCell.row);
+      if (rowModel.getRow(targetRow) != null || rowModel.getLabelRow?.(targetRow) !== undefined) {
+        targetRowKey = rowModel.getRowKey(targetRow);
+      }
+    }
     scheduleAfterEdit(
       intendedCell,
       direction === undefined
@@ -396,6 +419,7 @@ export const createEditController = <T extends object>(): EditController<T> => {
         : null,
       editingCell.row,
       immediate,
+      targetRowKey,
     );
     dispatch(gridActions.stopEdit());
     return { status: 'committed' };

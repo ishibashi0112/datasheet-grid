@@ -30,6 +30,10 @@ export type GridUiAction =
   //   範囲を外してアクティブセルの 1 セルにします(activeCellFollows: 'row')。アクティブセルはそのまま(同じ参照)。
   | { type: 'selection/collapseToActiveCell' }
   | { type: 'edit/start'; cell: CellCoord }
+  // 追加(1.2.0 の確かめ直し J): 編集中に並びが変わり、編集中のセルを同じ行 / 列の新しい位置へ移します(editController)。
+  //   アクティブセルと選択も selection/followActiveRow と同じ規則で付いていきます(これまでは edit/start で移していて、
+  //   選択だけ元の位置に残り、Escape の後のコピー・削除が別の行に当たっていた)。
+  | { type: 'edit/retarget'; cell: CellCoord; rowCount?: number | undefined }
   | { type: 'edit/stop' }
   | {
       type: 'column/resizeStart';
@@ -156,6 +160,8 @@ export const gridActions = {
   //   変更(1.0.2 / 2026-11-09 実アプリの総点検 C-02): 列の数(colCount)を渡すと、列が減ったときのはみ出しも詰めます。
   // 追加(1.2.0 / B-04): アクティブセルを追っている行の新しい位置(ビュー行 index)へ動かします。
   followActiveRow: (row: number, rowCount?: number): GridUiAction => ({ type: 'selection/followActiveRow', row, rowCount }),
+  // 追加(1.2.0 の確かめ直し J): 編集中のセルを新しい位置へ(アクティブセルと選択も付いていく)。
+  retargetEdit: (cell: CellCoord, rowCount?: number): GridUiAction => ({ type: 'edit/retarget', cell, rowCount }),
   // 追加(1.2.0 の確かめ直し B): 範囲を外してアクティブセルの 1 セルにします(アクティブセルは動かさない)。
   collapseSelectionToActiveCell: (): GridUiAction => ({ type: 'selection/collapseToActiveCell' }),
   clampSelectionToRowCount: (rowCount: number, colCount?: number): GridUiAction => ({

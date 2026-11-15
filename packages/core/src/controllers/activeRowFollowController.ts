@@ -10,6 +10,9 @@
 //     する(reducer の selection/collapseToActiveCell。選んだつもりの無い行をコピー・削除・貼り付けしないため。全部の行に
 //     またがる範囲はそのまま。1.2.0 の確かめ直し B)。
 //   - 覚えた行が消えた・絞り込みで隠れたときは今と同じく位置に残し、その位置の行を覚え直す(はみ出しは B-05 の詰め)。
+//   - アクティブセルと並びが同じ描画で変わったとき(並びを変える列を編集して Enter / Tab で確定した、キーを押したのと同時に
+//     更新が来た など)は、前の並びでその位置にあった行 = 利用者が動かした先の行を覚えて、そこへ付いていく(1.2.0 の確かめ直し K。
+//     これまではその位置に来た別の行を覚えていた)。
 //   - 表はスクロールしない(見ている場所を勝手に動かさない。矢印キーを押せばそのセルまで動く)。アクティブセルが動くと
 //     viewportSyncController がそのセルを見える所へスクロールするので、動かした先かを isFollowMove で教える。
 //   - 選択のドラッグ中と編集中は動かさない(編集中のセルは editController が行キーで付いていく)。
@@ -109,8 +112,22 @@ export const createActiveRowFollowController = <T,>(): ActiveRowFollowController
         return;
       }
       if (activeChanged || tracked === NO_KEY) {
-        tracked = keyAt(rowModel, activeCell.row);
         deferred = false;
+        if (activeChanged && rowModelChanged && previousRowModel !== null && !args.editing && !args.dragging) {
+          const intended = keyAt(previousRowModel, activeCell.row);
+          const here = keyAt(rowModel, activeCell.row);
+          if (intended !== NO_KEY && !Object.is(intended, here)) {
+            const row = findViewRowIndexByKey(rowModel, intended, indexCache);
+            if (row >= 0) {
+              tracked = intended;
+              pending = true;
+              followTarget = { row, col: activeCell.col };
+              args.dispatch(gridActions.followActiveRow(row, rowModel.getRowCount()));
+              return;
+            }
+          }
+        }
+        tracked = keyAt(rowModel, activeCell.row);
         return;
       }
       if ((!rowModelChanged && !deferred) || args.editing) {

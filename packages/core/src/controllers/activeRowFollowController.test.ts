@@ -67,8 +67,15 @@ describe('createActiveRowFollowController', () => {
     const cell = { row: 1, col: 0 };
     controller.update(makeArgs(cell, model(['a', 'b', 'c']), dispatch));
     controller.update(makeArgs(cell, model(['x', 'b', 'c']), dispatch));
-    // 並びとアクティブセルが同時に変わった(キー操作など)ときは、新しい位置の行を覚える。
+    // 変更(1.2.0 の確かめ直し K): 並びとアクティブセルが同時に変わった(確定の Enter / Tab、キー操作など)ときは、前の並びで
+    //   その位置にあった行(動かした先の行 = c)へ付いていく。
     controller.update(makeArgs({ row: 2, col: 0 }, model(['c', 'b', 'x']), dispatch));
+    expect(dispatch).toHaveBeenCalledWith({ type: 'selection/followActiveRow', row: 0, rowCount: 3 });
+    dispatch.mockClear();
+    // 前の並びでもその位置が同じ行なら動かさない。
+    const same = createActiveRowFollowController<Row>();
+    same.update(makeArgs(cell, model(['a', 'b', 'c']), dispatch));
+    same.update(makeArgs({ row: 2, col: 0 }, model(['b', 'a', 'c']), dispatch));
     expect(dispatch).not.toHaveBeenCalled();
     // 無効('position')。
     const off = createActiveRowFollowController<Row>();

@@ -3237,6 +3237,8 @@ export function useGridShell<T extends object>({
     readOnly,
     canEditCell,
     localeTexts,
+    // 追加(1.2.0 の確かめ直し K): 'row' では確定の後の移動の先を行キーで覚える。
+    followsRow: activeRowFollowEnabled,
   });
 
   // ── IME オンのままの直接入力(G-2)─────────────────────
