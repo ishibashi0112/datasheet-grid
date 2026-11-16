@@ -203,3 +203,89 @@ describe('IME オンのままの直接入力(imeDirectInput・G-2)', () => {
     expect(container.querySelector<HTMLInputElement>('.ssg-cell-editor-input')?.value).toBe('beta');
   });
 });
+// 追加(1.2.0 / 2026-11-09 実アプリの総点検 F-06): custom エディタの列は `imeDirectInput: true` を付けたときだけ、確定した
+//   文字を ctx.initialText に入れて開く(付けない列は従来どおり捨てる)。
+describe('custom エディタの imeDirectInput(F-06)', () => {
+  type CustomRow = { id: number; city: string; note: string };
+  const customRows: CustomRow[] = [
+    { id: 1, city: '大阪', note: 'メモ' },
+    { id: 2, city: '京都', note: '' },
+  ];
+  let latestCustomRows: CustomRow[] = customRows;
+  const customEditor = (
+    ctx: Parameters<Extract<NonNullable<GridColumn<CustomRow>['editor']>, { type: 'custom' }>['render']>[0],
+  ) => (
+    <input
+      className="test-custom-editor"
+      defaultValue={ctx.initialText}
+      onKeyDown={(event) => {
+        if (event.key === 'Enter') {
+          ctx.commit((event.target as HTMLInputElement).value, 'down');
+        }
+      }}
+    />
+  );
+  const customColumns: GridColumn<CustomRow>[] = [
+    { key: 'city', title: '都市', width: 120, editor: { type: 'custom', render: customEditor, imeDirectInput: true } },
+    { key: 'note', title: 'メモ', width: 120, editor: { type: 'custom', render: customEditor } },
+  ];
+  function CustomHarness() {
+    const [rows, setRows] = useState(customRows);
+    useEffect(() => {
+      latestCustomRows = rows;
+    }, [rows]);
+    return (
+      <SpreadsheetGrid<CustomRow>
+        rows={rows}
+        onRowsChange={setRows}
+        columns={customColumns}
+        rowKeyGetter={(row) => row.id}
+        imeDirectInput
+      />
+    );
+  }
+
+  it('imeDirectInput: true の custom 列では確定した文字を initialText にして開き、Enter で書ける', async () => {
+    const { container } = render(
+      <StrictMode>
+        <CustomHarness />
+      </StrictMode>,
+    );
+    const ime = getImeInput(container)!;
+    clickCell(getCell(container, 0, 0));
+    fireEvent.compositionStart(ime, { data: '' });
+    expect(ime.classList.contains('ssg-ime-input--composing')).toBe(true);
+    ime.value = '東京';
+    fireEvent.input(ime);
+    await act(async () => {
+      fireEvent.compositionEnd(ime, { data: '東京' });
+      await Promise.resolve();
+    });
+    const editor = container.querySelector<HTMLInputElement>('.test-custom-editor');
+    expect(editor?.value).toBe('東京');
+    await act(async () => {
+      fireEvent.keyDown(editor!, { key: 'Enter' });
+      await new Promise((resolve) => requestAnimationFrame(() => resolve(null)));
+    });
+    expect(latestCustomRows[0]?.city).toBe('東京');
+  });
+
+  it('付けていない custom 列では変換を捨てる(1.1 までと同じ)', async () => {
+    const { container } = render(
+      <StrictMode>
+        <CustomHarness />
+      </StrictMode>,
+    );
+    const ime = getImeInput(container)!;
+    clickCell(getCell(container, 0, 1));
+    fireEvent.compositionStart(ime, { data: '' });
+    expect(ime.classList.contains('ssg-ime-input--composing')).toBe(false);
+    ime.value = 'かな';
+    await act(async () => {
+      fireEvent.compositionEnd(ime, { data: 'かな' });
+      await Promise.resolve();
+    });
+    expect(container.querySelector('.test-custom-editor')).toBeNull();
+    expect(latestCustomRows[0]?.note).toBe('メモ');
+  });
+});

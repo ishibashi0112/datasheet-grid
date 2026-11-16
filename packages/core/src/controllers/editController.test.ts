@@ -106,13 +106,13 @@ describe('editController', () => {
     // 外部から rows が差し替わり、id=2 が view 2 へ移動(view 1 には id=3 が来る)。
     const rowsB = [{ id: 1, qty: 1 }, { id: 3, qty: 3 }, { id: 2, qty: 2 }];
     c.update({ ...t.args, rows: rowsB, rowModel: makeRowModel(rowsB) });
-    const startEdits = t.dispatch.mock.calls.filter(([a]) => a.type === 'edit/start');
+    const startEdits = t.dispatch.mock.calls.filter(([a]) => a.type === 'edit/retarget');
     expect(startEdits).toHaveLength(1);
     expect(startEdits[0][0]).toMatchObject({ cell: { row: 2, col: 0 } });
     // reducer が editingCell を更新した体で再度 update(再ターゲット後は dispatch しない)。
     const argsB = { ...t.args, rows: rowsB, rowModel: makeRowModel(rowsB), uiState: { ...t.args.uiState, editingCell: { row: 2, col: 0 } } };
     c.update(argsB);
-    expect(t.dispatch.mock.calls.filter(([a]) => a.type === 'edit/start')).toHaveLength(1);
+    expect(t.dispatch.mock.calls.filter(([a]) => a.type === 'edit/retarget')).toHaveLength(1);
     expect(c.commitEdit('99')).toEqual({ status: 'committed' });
     const written = (argsB.onRowsChange as ReturnType<typeof vi.fn>).mock.calls[0][0] as Row[];
     expect(written.find((r) => r.id === 2)?.qty).toBe(99);
@@ -151,7 +151,7 @@ describe('editController', () => {
     // id=2 の編集中に id=2 が先頭へ移動 → 再ターゲットは view 0。
     const rowsB = [{ id: 2, qty: 2 }, { id: 1, qty: 1 }];
     c.update({ ...t.args, rows: rowsB, rowModel: makeRowModel(rowsB), uiState: { ...t.args.uiState, editingCell: { row: 1, col: 0 } } });
-    const startEdits = t.dispatch.mock.calls.filter(([a]) => a.type === 'edit/start');
+    const startEdits = t.dispatch.mock.calls.filter(([a]) => a.type === 'edit/retarget');
     expect(startEdits.at(-1)?.[0]).toMatchObject({ cell: { row: 0, col: 0 } });
   });
 
@@ -315,6 +315,32 @@ describe('editController: 確定後のアクティブセル', () => {
 
   const activations = (t: ReturnType<typeof makeArgs>) =>
     t.dispatch.mock.calls.filter(([a]) => a.type === 'cell/activate').map(([a]) => a);
+
+  // 追加(1.2.0 の確かめ直し K): activeCellFollows: 'row' では、確定の後の移動の先を確定した時点の並びの行キーで覚え、
+  //   並びが変わった後もその行へ動かす(Enter = 前の並びで下にあった行、Tab = 編集した行)。
+  it("'row'(followsRow)では、確定で並びが変わっても移動の先を確定した時点の行で決める", () => {
+    for (const [direction, expectedRow] of [
+      ['down', 0],
+      ['right', 2],
+    ] as const) {
+      const c = createEditController<Row>();
+      const t = makeArgs(rows3, editing);
+      const uiState = {
+        ...t.args.uiState,
+        activeCell: editing,
+        selection: { type: 'cell' as const, range: { start: editing, end: editing } },
+      };
+      const args = { ...t.args, uiState, followsRow: true };
+      c.update(args);
+      c.commitEdit('0', direction);
+      // 確定で id=1 が一番下へ動いた並び(id=2, id=3, id=1)。
+      const reordered = [{ id: 2, qty: 2 }, { id: 3, qty: 3 }, { id: 1, qty: 0 }];
+      c.update({ ...afterStop(args), rows: reordered, rowModel: makeRowModel(reordered) });
+      flushRaf();
+      // down: 前の並びで下にあった id=2(今は 0 行目)。right: 編集した id=1(今は 2 行目。列は 1 つの表なので 0 に収まる)。
+      expect(activations(t).at(-1)).toEqual({ type: 'cell/activate', cell: { row: expectedRow, col: 0 } });
+    }
+  });
 
   it('方向なしの確定で何も変わっていなければ、従来どおり編集していたセルを単一選択にする', () => {
     const { c, t, args } = setup();

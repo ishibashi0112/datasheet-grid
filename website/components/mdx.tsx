@@ -35,6 +35,8 @@ import { DesignSystemsDemo } from '@/components/demo/design-systems-demo';
 import { SelectionClipboardDemo } from '@/components/demo/selection-clipboard-demo';
 import { ValidationDemo } from '@/components/demo/validation-demo';
 import { StateDemo } from '@/components/demo/state-demo';
+import { LiveSortDemo } from '@/components/demo/live-sort-demo';
+import { LogTailDemo } from '@/components/demo/log-tail-demo';
 
 export function getMDXComponents(components?: MDXComponents) {
   return {
@@ -75,6 +77,8 @@ export function getMDXComponents(components?: MDXComponents) {
     SelectionClipboardDemo,
     ValidationDemo,
     StateDemo,
+    LiveSortDemo,
+    LogTailDemo,
     ...components,
   } satisfies MDXComponents;
 }

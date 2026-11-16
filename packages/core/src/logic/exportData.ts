@@ -33,6 +33,8 @@ export type BuildGridExportDataParams<T> = {
   // 追加(1.1.0 / 固定行): 上の固定行(見出しの次)と下の固定行(本体の行の後・合計行の前)。指定時は rowKinds も返します。
   pinnedTop?: readonly T[] | undefined;
   pinnedBottom?: readonly T[] | undefined;
+  // 追加(1.2.0 / RV3-要望): 下の固定行を合計行の後に出すか(pinnedBottomRowsPlacement: 'belowTotal')。
+  pinnedBottomAfterTotal?: boolean | undefined;
 };
 
 // 行レンジ × 列集合から、列メタ(key / title)と 2 次元セル(value / text)を生成します。
@@ -47,6 +49,7 @@ export const buildGridExportData = <T,>({
   getGroupLine,
   pinnedTop,
   pinnedBottom,
+  pinnedBottomAfterTotal,
 }: BuildGridExportDataParams<T>): GridExportData => {
   // 列メタは key(オブジェクト系ライブラリ用)と title(ヘッダー表示用)の双方を持たせます。
   const exportColumns = columns.map((column) => ({
@@ -106,7 +109,9 @@ export const buildGridExportData = <T,>({
     rowKinds?.push('data');
     rows.push(dataCells(row));
   }
-  pushPinned(pinnedBottom);
+  if (pinnedBottomAfterTotal !== true) {
+    pushPinned(pinnedBottom);
+  }
 
   // 追加(合計行 3A): 合計行は末尾に 1 行(value は生値。見出しは文字列)。
   if (totalLine) {
@@ -117,6 +122,10 @@ export const buildGridExportData = <T,>({
       }),
     );
     rowKinds?.push('total');
+  }
+  // 追加(1.2.0 / RV3-要望): 下の固定行を合計行の下に置くときは、合計行の後へ。
+  if (pinnedBottomAfterTotal === true) {
+    pushPinned(pinnedBottom);
   }
 
   return rowKinds ? { columns: exportColumns, rows, rowKinds } : { columns: exportColumns, rows };

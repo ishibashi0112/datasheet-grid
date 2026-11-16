@@ -27,6 +27,7 @@ description: 列定義(GridColumn<T>)・フィルター・エディタ・バリ�
 | `rowGroup` | `boolean` | — | `true` でこの列を行グルーピングの対象にする(複数指定時は `columns` 配列の出現順が階層順)。有効時はグループ元列が表示から外れ、先頭に自動グループ列(ツリー表示)が注入される。**clientSide 限定**(serverSide では無視 + 開発時警告)。列のどれかに `rowGroup` を書いている(`false` を含む)表では、列メニューに「この列でグループ化」/「グループ化を外す」が出る(`onColumnsChange` が要る。`rowGroup` を書いた列だけでなく、集計のある列と最後のデータ列を除くすべての列に出る)。詳細は「行グルーピング + 集計」節。 |
 | `aggFunc` | `'sum' \| 'min' \| 'max' \| 'avg' \| 'count' \| GridAggFunc<T>` | — | グルーピング時と合計行(`totalRow`)のこの列の集計。組み込みは数値と数値の文字列だけを数える集計(空値・空白だけの文字列・`true` / `false`・`Date`・配列などは対象外、`count` は配下 leaf 行数 / 合計行では対象の行数)。関数でカスタム集計可(返り値がグループ行 / 合計行に表示)。`rowGroup` 列も `totalRow` もないときは無視。 |
 | `groupLabel` | `'value' \| 'formatted' \| CellValueFormatter<T>` | `'value'` | 行グルーピングのグループ行の見出しの文字(1.1.0 から)。`'value'` は値の文字(1.0 までと同じ)、`'formatted'` は列の `valueFormatter`(セルと同じ表示名。無ければ値の文字)、関数はその返り値(`row` はそのグループの最初の行)。空白のグループは「(空白)」のまま。エクスポートの小計の行の見出しはコピーと同じ規則(`formatClipboardValue`)。詳細は「値と表示名が別の列」節。 |
+| `selectionAggregate` | `boolean` | `true` | `false` で、この列のセルを選択範囲の集計(`showSelectionAggregates`)の合計 / 平均(と `slotContext.selectionAggregates` の最小 / 最大)に数えない。データの個数には数える(1.2.0 から)。JAN・郵便番号・社員番号のように数字の文字列でも数ではない列に使う。グループ集計と合計行(`aggFunc`)には効かない。 |
 | `getValue` | `(row: T) => unknown` | `row[key]` | 値アクセサ。`setValue` の無い列へ書き込むと値は `row[key]` へ入り、表示(`getValue`)は変わらない。計算列は `editable: false` にするか `setValue` を渡す(開発時は、行に無いプロパティを足した列ごとに 1 回 console.warn)。 |
 | `setValue` | `(row: T, value: unknown) => T` | — | 値ライター(新しい行を返す)。 |
 | `renderCell` | `(ctx: CellRenderContext<T>) => ReactNode` | プレーン `<span>` | カスタムセル描画。`detailRow` prop 有効時は `ctx.detail`(`{ expanded, expandable, toggle, setExpanded }`)で[展開行](/docs/guides/detail-row)のトグルを自前配置できる。 |
@@ -194,7 +195,7 @@ const columns = [
 
 ### 貼り付けで読めない値(`numberParser` / `onPasteSkipped`)
 
-Excel の通貨書式のセル(「¥12,000」「12,000円」「(1,200)」)は、number 列の既定のパーサでは数値として読めません。読めない文字は文字のまま入ります。number エディタの `min` / `max` / `integer` か列の `validate` があれば、`validationMode: 'mark'`(既定)の列では印が付き、`'reject'` の列では書きません(どれも無い列では印も付かずにそのまま入ります)。1.1.0 から、次の 2 つで扱えます。
+Excel の通貨書式のセル(「¥12,000」「12,000円」「(1,200)」)は、number 列の既定のパーサでは数値として読めません。読めない文字は文字のまま入ります。number エディタの `min` / `max` / `integer` / `strict`(1.2.0)か列の `validate` があれば、`validationMode: 'mark'`(既定)の列では印が付き、`'reject'` の列では書きません(どれも無い列では印も付かずにそのまま入ります)。1.1.0 から、次の 2 つで扱えます。
 
 - **`numberParser(options?)`** — number エディタの既定のパーサと同じ読み方(空・空白だけは `null`、全角の数字・符号・小数点と 3 桁区切りも読む、読めない文字は元の文字のまま)の「文字列 → 数値」のパーサを作ります。列の `parseClipboardValue` に渡します(貼り付け / Delete / エディタの確定で共通)。`strip` に先に外す文字(通貨記号や単位)、`negativeParentheses: true` でかっこの数(`(1,200)` / `（1,200）`)を負の数として読みます。
 - **`onPasteSkipped`** — 貼り付けで書かなかったセル(編集できないセルと、`'reject'` の列で検査に通らない値)を、1 回の貼り付けで 1 回知らせます。トーストで件数を出す、メッセージを並べる、などに使います。
@@ -234,11 +235,11 @@ const columns: GridColumn<Expense>[] = [
 | type | UI / 操作 | オプション | 既定パーサ(`parseClipboardValue` 未指定時) |
 | --- | --- | --- | --- |
 | `'text'` | 従来のテキスト input(既定)。`multiline: true` で複数行の入力欄(textarea。中身に合わせて下へ伸び、表の見える範囲の下端で止まって中でスクロール。行の間隔、1 行目の位置と折り返し = 列の `wordBreak` / `lineBreak` はセルと同じ) | `multiline` / `enterKey`(`multiline` のときの `Enter`。`'commit'`(既定。Excel と同じ)= `Enter` で確定、`Alt+Enter` と `Ctrl` / `⌘+Enter` で改行 / `'newline'`(メモ帳やチャットに近い)= `Enter`(`Shift` / `Alt` 付きも)で改行、`Ctrl` / `⌘+Enter` で確定。スマートフォンのソフトキーボードでは `Alt` / `Ctrl` を押せないので、モバイルで改行させたい列は `'newline'`(確定はフォーカスアウト)) | パススルー(生文字列のまま) |
-| `'number'` | `<input type="number">`(スピナー / ↑↓ステップ / 不正文字抑止)。セルを選んで `-` / `+` / `.` から打ち始めたときは、その文字を消さないよう文字の入力欄(`inputmode="decimal"`)で開き、確定した文字列を列のパーサで数値に直す(`-5`→`-5`、`.5`→`0.5`、`-` だけなら空。数値として読めない文字列は貼り付けと同じくそのまま)。英字など数値にならない文字から打ち始めたとき・数値でない文字列の値を開いたときも文字の入力欄で開き、その文字をそのまま見せる。数値の文字列の値(`'1,234'` / `'１２'`)は半角の数値(`1234` / `12`)で開く | `min` / `max` / `step` / `integer`(`min` / `max` / `integer` は値の検査にも使う。「バリデーション」節) | `''`・空白だけ→`null` / 有限数値文字列→`number`(全角の数字・符号・小数点と 3 桁区切りも読む: `'１，２３４'`→`1234`、`'ー５'`→`-5`)/ 非数値→生文字列のまま(mark が拾う) |
+| `'number'` | `<input type="number">`(スピナー / ↑↓ステップ / 不正文字抑止)。セルを選んで `-` / `+` / `.` から打ち始めたときは、その文字を消さないよう文字の入力欄(`inputmode="decimal"`)で開き、確定した文字列を列のパーサで数値に直す(`-5`→`-5`、`.5`→`0.5`、`-` だけなら空。数値として読めない文字列は貼り付けと同じくそのまま)。英字など数値にならない文字から打ち始めたとき・数値でない文字列の値を開いたときも文字の入力欄で開き、その文字をそのまま見せる。数値の文字列の値(`'1,234'` / `'１２'`)は半角の数値(`1234` / `12`)で開く | `min` / `max` / `step` / `integer`(`min` / `max` / `integer` は値の検査にも使う。「バリデーション」節)/ `strict`(`true` で数値として読めない値に印。1.2.0) | `''`・空白だけ→`null` / 有限数値文字列→`number`(全角の数字・符号・小数点と 3 桁区切りも読む: `'１，２３４'`→`1234`、`'ー５'`→`-5`)/ 非数値→生文字列のまま(mark が拾う) |
 | `'select'` | 候補ドロップダウン(表の外のポータル。`popupContainer`)。↑↓=ハイライト移動 / Enter=確定(下へ)/ Tab=確定(左右へ)/ クリック=確定 / 印字キー=label 前方一致のタイプアヘッド(約 700ms でリセット)/ IME で確定した文字(日本語の名前など)= その文字で始まる候補、無ければ含む候補へ(1.0.2) | `options: GridSelectEditorOption[] \| (row) => GridSelectEditorOption[]`(静的 or 行依存。関数はレンダー中に呼ばれるため純粋であること)/ `clipboard: 'value' \| 'label'`(既定 `'value'`。`'label'` でコピー・CSV は label、貼り付けた label は value へ。1.1.0) | パススルー(`option.value` は string。型変換したい場合は `parseClipboardValue` を併用)。`clipboard: 'label'` なら、貼り付けた文字が候補の label(前後の空白は外して比べる)ならその value、value ならそのまま、どちらでもなければ生文字列のまま(label を先に見る。エディタで選んだ候補は読み替えずにその value を書く) |
-| `'date'` | ネイティブ `<input type="date">`。ドラフトは `'YYYY-MM-DD' \| ''`。入力欄は中身(年 / 月 / 日)より狭くせず、細い列ではセルからはみ出して開く。セルを選んで文字から打ち始めたときは、その文字を消さないよう文字の入力欄で開き、確定するときに日付として読む(`2026/3/15`・`2026-03-15` など。読み方は既定パーサと同じ)。読めなければ「日付で入力してください」を出して編集を続ける(フォーカスが外れたら取り消し。1.0.2) | — | `''`→`null` / 解釈可能→`'YYYY-MM-DD'` へ正規化 / 解釈不可→生文字列のまま(数字だけの文字列 = Excel の日付のシリアル値「45678」や「5」と、年が 4 桁にならない文字列、年の無い文字列(「11/2」「Nov 1」)、ありえない日付(「2026/2/30」)も解釈不可。翌月へ繰り越さない) |
+| `'date'` | ネイティブ `<input type="date">`。ドラフトは `'YYYY-MM-DD' \| ''`。入力欄は中身(年 / 月 / 日)より狭くせず、細い列ではセルからはみ出して開く。セルを選んで文字から打ち始めたときは、その文字を消さないよう文字の入力欄で開き、確定するときに日付として読む(`2026/3/15`・`2026-03-15` など。読み方は既定パーサに、全角の数字・記号と「2026年3月15日」の書き方を足したもの。貼り付けではこれらを読まない)。読めなければ「日付で入力してください」を出して編集を続ける(フォーカスが外れたら取り消し。1.0.2) | `strict`(`true` で日付として読めない値に印。1.2.0。「バリデーション」節) | `''`→`null` / 解釈可能→`'YYYY-MM-DD'` へ正規化(数字の日付は年 / 月 / 日と、年が後ろの月 / 日 / 年 = 「4/11/2026」は 4 月 11 日。日 / 月 / 年としては読まない)/ 解釈不可→生文字列のまま(数字だけの文字列 = Excel の日付のシリアル値「45678」や「5」と、年が 4 桁にならない文字列、年の無い文字列(「11/2」「Nov 1」)、ありえない日付(「2026/2/30」)も解釈不可。翌月へ繰り越さない) |
 | `'checkbox'` | **直接トグル**(編集セッションなし)。チェックボックスそのものを押すか、アクティブセルで Space を押すと即トグル(セルのチェックボックスの外を押したときはアクティブセルになるだけ。ダブルクリックでも切り替わらない)。Enter / F2 / ダブルクリックではエディタが開かない | `checkedValue`(既定 `true`)/ `uncheckedValue`(既定 `false`)。checked 判定は `Object.is(value, checkedValue)` のみ | `''`→unchecked / checked・unchecked の文字列表現→対応値 / `'true'`・`'1'`→checked / その他→unchecked |
-| `'custom'` | `render(ctx)` の返り値を編集オーバーレイ内に描画。**フォーカス管理・キーバインドは利用側の責務**(開いたままグリッドの中の別のセルを押したときに値を残す / エディタを閉じるには、入力欄の `onBlur` で `ctx.commit` か `ctx.cancel` を呼ぶ。呼ばないとエディタが開いたまま残り、グリッドのキー操作が効かない) | `render: (ctx: CellEditorContext<T>) => ReactNode` | パススルー |
+| `'custom'` | `render(ctx)` の返り値を編集オーバーレイ内に描画。**フォーカス管理・キーバインドは利用側の責務**(開いたままグリッドの中の別のセルを押したときに値を残す / エディタを閉じるには、入力欄の `onBlur` で `ctx.commit` か `ctx.cancel` を呼ぶ。呼ばないとエディタが開いたまま残り、グリッドのキー操作が効かない) | `render: (ctx: CellEditorContext<T>) => ReactNode`, `imeDirectInput?: boolean`(グリッドの `imeDirectInput` が有効なとき、IME で確定した文字を `ctx.initialText` に入れて開く。既定 `false`。1.2.0 から) | パススルー |
 
 注意点:
 
@@ -249,7 +250,7 @@ const columns: GridColumn<Expense>[] = [
 - **select の blur は cancel**(値不変)です。text / number / date の blur = 確定と非対称ですが、select は「選択 = 即確定」でドラフト概念がないためです。
 - **date の Tab はグリッド流(確定 + 移動)**です。ピッカー内のセグメント移動は ← → 矢印で行えます。
 - **checkbox のダブルクリックは click 2 回**(トグル往復)として扱われます(Excel / AG Grid と同様)。`renderCell` 指定時はそちらが優先され、組み込みチェックボックスセルは描画されません。
-- **custom の `ctx.commit(value)`** は、`value` が string なら列パーサ(`parseClipboardValue` ?? editor 既定)を通し、**非 string ならパースをバイパスしてドメイン値をそのまま書き込みます**。`ctx` には `row` / `rowIndex`(ビュー行)/ `sourceRowIndex`・`rowKey`(source 基準)/ `colIndex` / `column` / `value`(編集開始時の生値)/ `initialText`(印字キー開始時はそのキー)/ `align` / `commit` / `cancel` が入ります。`commit` の返り値(`EditorCommitResult`)で reject 列の検証結果を受け取れます(無視しても安全)。`commit(value, direction)` の第 2 引数(`'down' | 'up' | 'right' | 'left'`)で確定後のアクティブセル移動を指定できます(省略時は移動しない。`editorEnterMove` prop は custom エディタには効かないため、Enter で下へ進めたい場合は `'down'` を明示)。編集が終わった後(確定 / 取消 / 別のセルの編集が始まった後)に呼んだ前の編集の `ctx.commit` / `ctx.cancel` は何もしない(`ctx.commit` は `{ status: 'noop' }` を返す)。非同期の検査の後で確定する作りでも、遅れて届いた値が別のセルへ書かれることはない。
+- **custom の `ctx.commit(value)`** は、`value` が string なら列パーサ(`parseClipboardValue` ?? editor 既定)を通し、**非 string ならパースをバイパスしてドメイン値をそのまま書き込みます**。`ctx` には `row` / `rowIndex`(ビュー行)/ `sourceRowIndex`・`rowKey`(source 基準)/ `colIndex` / `column` / `value`(編集開始時の生値)/ `initialText`(印字キー開始時はそのキー。エディタの定義に `imeDirectInput: true` があれば IME で確定した文字)/ `align` / `commit` / `cancel` が入ります。`commit` の返り値(`EditorCommitResult`)で reject 列の検証結果を受け取れます(無視しても安全)。`commit(value, direction)` の第 2 引数(`'down' | 'up' | 'right' | 'left'`)で確定後のアクティブセル移動を指定できます(省略時は移動しない。`editorEnterMove` prop は custom エディタには効かないため、Enter で下へ進めたい場合は `'down'` を明示)。編集が終わった後(確定 / 取消 / 別のセルの編集が始まった後)に呼んだ前の編集の `ctx.commit` / `ctx.cancel` は何もしない(`ctx.commit` は `{ status: 'noop' }` を返す)。非同期の検査の後で確定する作りでも、遅れて届いた値が別のセルへ書かれることはない。
 - **custom の枠**: `render(ctx)` の返り値は、編集中のセルと同じ位置・大きさの枠(`.ssg-cell-editor`。`position: absolute`)の中に描く。枠は透明なので、返す要素の根に `width: 100%; height: 100%; box-sizing: border-box` と背景色(`var(--ssg-cell-bg)` など)を付ける(付けないと内容の高さにしかならず、下のセルの文字が透ける)。デザインシステムの入力部品は、外側の要素だけでなく内側の入力欄にも高さを渡す(Mantine なら `styles={{ wrapper: { height: '100%' }, input: { height: '100%', minHeight: 0 } }}`)。枠より少し大きい部品(星のピッカーなど)ははみ出して描いてよいが、枠はスクロール領域の中にあるので、領域の端で切れ、下端に固定した合計行(`totalRow`)の下に隠れる。候補の一覧のように表の外まで伸びる部品は、`createPortal(…, document.body)` + `position: fixed`(セルの `getBoundingClientRect()` から位置を決める)で描く。portal の部品の `onMouseDown`(`onPointerDown`)で `preventDefault()` すると、押したときに入力欄の blur(確定)が起きない。表をスクロールしても portal の部品は付いてこないので、表(エディタを含む要素)や文書がスクロールしたら閉じる(`useEffect` で `window.addEventListener('scroll', onScroll, true)` とし、`onScroll` では `event.target === document || (event.target instanceof Node && event.target.contains(エディタの根の要素))` のときだけ閉じる。capture で聞くので、候補の一覧そのもののスクロールも届く。それでは閉じない。Mantine の `Select` などデザインシステムの部品も同じ)。見えていないセルで `startEditing()` を呼んだとき(行を足してすぐ編集するなど)は、エディタを出した直後にグリッドがセルまでスクロールするので、このスクロールで閉じないよう、見張りと位置の計測は開いてから 2 フレーム後(`requestAnimationFrame` を 2 回)に始める(先に `scrollToCell` で見せておいてもよい)。枠の中身はクリックを受ける(0.61.0 までは受けず、下のセルに当たっていた)。
 
 ### バリデーション(validate / validationMode)
@@ -268,6 +269,16 @@ const columns: GridColumn<Expense>[] = [
 - `validate` と併用したときは `validate` が先です。`validate` の NG はそのメッセージ(組み込みのメッセージで上書きしない)で、`validate` が通した値だけを組み込みの検査にかけます(セルのメッセージは 1 つ。`validate` が受け取る値と動きは従来どおり)。
 - `validationMode`(mark / reject)・`showValidationMarks`・`getInvalidCells()` は組み込みの検査にも同じように効きます。
 - メッセージを変えたいときは、同じ条件を `validate` に書いて自分のメッセージを返します(`validate` が先なので、そちらが出ます)。
+
+**読めない数値と日付の検査(`strict`)**: number と date のエディタの `strict: true` は、数値 / 日付として読めない値(「¥12,000」「2026年11月4日」など)に印を付けます(`'reject'` なら書き込まない。1.2.0 から。付けなければ 1.1 までと同じく、読めない値は印も付かずに文字のまま入る)。
+
+```tsx
+{ key: 'due', title: '納期', width: 140, editable: true, editor: { type: 'date', strict: true } } // 「日付で入力してください」
+```
+
+- number の `strict` は「数値か」だけを検査します(メッセージは「数値で入力してください」)。`min` / `max` / `integer` があれば `strict` を書かなくても同じ検査をします。
+- date の `strict` が日付として数えるのは、有効な `Date` と、date の既定パーサが読む文字列(`'2026-03-15'` / `'2026/3/15'` など。読めないものは「セルエディタ」節の表の既定パーサの列)です。メッセージは `localeText.enterDate`(「日付で入力してください(例: 2026/3/15)」)。
+- 空(`null` / `undefined` / 空白だけの文字列)は通します。`validate` が先なのは数値の検査と同じです。
 
 動作モード(`validationMode`、既定 `'mark'`):
 
@@ -464,7 +475,7 @@ flex 列を**手動リサイズ**すると、その列はドラッグした幅�
 - **`estimateRowHeight`**: 仮想化で画面外の未測定行に使う推定行高です(既定 `rowHeight`)。行が画面に入ると実測値へ置き換わります(**上限ではありません**)。
 - 行高は**実測**(`autoHeight` の列のセルの中身の高さ。下限は基準の `rowHeight`)で、上限のクランプはありません。列幅を広げる等で内容が減れば行も縮みます。
 - **改行**: `autoHeight` の列は値の改行どおりに折り返します(連続する空白は 1 つに詰めます)。改行を含む値を編集する列は `editor: { type: 'text', multiline: true }` にしてください(「セルエディタ」節)。
-- **縦の揃え**: どのセルも箱は行の高さです。伸びた行では、`autoHeight` の列は中身を上(折り返した文章の 1 行目)に、ほかの列は真ん中にそろえます。グリッドの `verticalAlign`(`'top'` / `'center'`)で全部の列を、列の `verticalAlign` でその列だけを変えられます(列が優先)。1 行の行はどれも真ん中です。
+- **縦の揃え**: どのセルも箱は行の高さです。伸びた行では、`autoHeight` の列は中身を上(折り返した文章の 1 行目)に、ほかの列は真ん中にそろえます。グリッドの `verticalAlign`(`'top'` / `'center'`)で全部の列を、列の `verticalAlign` でその列だけを変えられます(列が優先)。1 行の行はどれも真ん中です。上にそろえたセルを編集するときは、エディタの文字もセルの 1 行目に出ます(1 行のエディタと IME の変換中の文字も。1.2.0 から。それまでは複数行のエディタだけで、1 行のエディタは真ん中に出ていた)。
 - **`autoHeight` 列は autoSize の対象外**です(折り返し前提のため。上記「flex と autoSize」の制約を参照)。
 - 折り返し位置の品質(日本語の文節折り返し等)は次節「日本語テキストの折り返し」を参照。
 
@@ -536,7 +547,7 @@ const columns: GridColumn<Order>[] = [
 - **見出しの文字**: グループ行の見出しは値の文字です(`'chubu'`)。列の `valueFormatter` の表示名にするときは `groupLabel: 'formatted'`、別の文字にするときは関数(1.1.0 から。「値と表示名が別の列」節)。
 - **clientSide 限定**: serverSide(`dataSource`)では `rowGroup` は無視されます(開発時警告)。
 
-グループ行の記述子は `GridGroupRow`(`groupKey` / `columnKey` / `value` / `label` / `level` / `leafCount` / `aggregates`)としてバレルから公開されます(`getGroupRows()` の返り値)。
+グループ行の記述子は `GridGroupRow`(`groupKey` / `columnKey` / `value` / `label` / `level` / `leafCount` / `aggregates` / `collapsed`)としてバレルから公開されます(`getGroupRows()` の返り値。`collapsed` は折りたたんでいるか = 1.2.0 から)。グループ化と開閉を保存するときは `includeGroupingInState` を付けます(「状態の保存 / 復元」節)。
 
 ### 値と表示名が別の列
 

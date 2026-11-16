@@ -2,7 +2,7 @@
 
 // Props プレイグラウンド: 主要 props をその場で切り替えて挙動を試せる操作環境。
 // 選択内容は下部の JSX スニペットへリアルタイム反映される(コピー可)。
-import { useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   SpreadsheetGrid,
   numberFormatter,
@@ -238,6 +238,17 @@ type Settings = {
   // ポップアップ(列メニュー / 列フィルター / 右クリック / select の候補 / ツールパネル / ツールチップ)を描く場所。
   //   'auto'(既定)はグリッドを囲むダイアログの中、無ければ body。'body' はいつも body(ダイアログの後ろに隠れる)。
   popupContainer: 'auto' | 'body';
+  // 追加(1.2.0): 1 つのセルのコピーを範囲へ貼ると範囲いっぱいに書く(Excel と同じ。既定 true)。false で左上に 1 回だけ。
+  pasteFillsSelection: boolean;
+  // 追加(1.2.0): 登録日(date)のエディタの strict。日付として読めない値(「2026年11月4日」「来週」)に印を付ける
+  //   (数量・単価は min があるので、strict が無くても読めない値に印が付く)。
+  strictEditors: boolean;
+  // 追加(1.2.0): 並びが変わったときのアクティブセル。'position'(既定)は表示位置に残り、'row' は押した行に付いていく。
+  activeCellFollows: 'position' | 'row';
+  // 追加(1.2.0): 1 秒ごとに数量を外から書き換える(applyRows の undoable: false)。数量で並べ替えて activeCellFollows を試す。
+  liveUpdates: boolean;
+  // 追加(1.2.0): 合計行があるときの下の固定行の位置(pinnedBottomRowsPlacement)。
+  pinnedBottomRowsPlacement: 'aboveTotal' | 'belowTotal';
 };
 
 const DEFAULTS: Settings = {
@@ -295,6 +306,11 @@ const DEFAULTS: Settings = {
   multilineEditor: 'off',
   inDialog: false,
   popupContainer: 'auto',
+  pasteFillsSelection: true,
+  strictEditors: false,
+  activeCellFollows: 'position',
+  liveUpdates: false,
+  pinnedBottomRowsPlacement: 'aboveTotal',
 };
 
 function buildSnippet(s: Settings): string {
@@ -334,6 +350,10 @@ function buildSnippet(s: Settings): string {
     ...(s.imeDirectInput ? ['  imeDirectInput'] : []),
     ...(s.find ? ['  find'] : []),
     ...(s.fillHandle ? ['  fillHandle'] : []),
+    // 追加(1.2.0): pasteFillsSelection は既定 true、activeCellFollows は既定 'position' のため、既定と違うときだけ載せる。
+    ...(s.pasteFillsSelection ? [] : ['  pasteFillsSelection={false}']),
+    ...(s.strictEditors ? ["  // columns の登録日列: editor: { type: 'date', strict: true }"] : []),
+    ...(s.activeCellFollows === 'row' ? ['  activeCellFollows="row"'] : []),
     // popupContainer は既定 'auto' のため、'body' のときだけ載せる。
     ...(s.popupContainer === 'body' ? ['  popupContainer="body"'] : []),
     `  enableRowSelection={${s.enableRowSelection}}`,
@@ -432,6 +452,9 @@ function buildSnippet(s: Settings): string {
   // pinnedTopRows / pinnedBottomRows は既定 OFF(undefined)のため、ON のときだけスニペットへ載せる。
   if (s.pinnedRows) {
     lines.push("  pinnedTopRows={[{ id: -1001, name: '目標', qty: 300, price: 1500, … }]}", "  pinnedBottomRows={[{ id: -1002, name: '前年', qty: 240, price: 1350, … }]}");
+    if (s.totalRow && s.pinnedBottomRowsPlacement === 'belowTotal') {
+      lines.push('  pinnedBottomRowsPlacement="belowTotal"');
+    }
   }
   lines.push('/>');
   if (s.inDialog) {
@@ -510,6 +533,9 @@ function PlaygroundGrid({ settings }: { settings: Settings }) {
               : undefined,
           };
         }
+        if (column.key === 'registered') {
+          return { ...column, editor: { type: 'date', strict: settings.strictEditors || undefined } };
+        }
         if (column.key === 'price') {
           return {
             ...column,
@@ -546,6 +572,7 @@ function PlaygroundGrid({ settings }: { settings: Settings }) {
       settings.headerAlign,
       settings.autoHeight,
       settings.multilineEditor,
+      settings.strictEditors,
     ],
   );
   // セル操作の通知のログ(新しい順に 5 件)。
@@ -598,6 +625,26 @@ function PlaygroundGrid({ settings }: { settings: Settings }) {
     return next;
   };
   const applyExternalUpdate = () => setRows(externalUpdate);
+  // 追加(1.2.0): ライブの更新。1 秒ごとに表全体から 5 行を選んで数量を書き換える(数量で並べ替えると並びが入れ替わる)。
+  //   元に戻すの履歴を壊さないよう applyRows(fn, { undoable: false }) で渡す。
+  useEffect(() => {
+    if (!settings.liveUpdates) return undefined;
+    const timer = setInterval(() => {
+      gridRef.current?.applyRows(
+        (current) => {
+          const next = current.slice();
+          for (let n = 0; n < 5; n++) {
+            const index = Math.floor(Math.random() * next.length);
+            const row = next[index];
+            if (row && row.kind !== 'label') next[index] = { ...row, qty: Math.floor(Math.random() * 500) };
+          }
+          return next;
+        },
+        { undoable: false },
+      );
+    }, 1000);
+    return () => clearInterval(timer);
+  }, [settings.liveUpdates]);
   const applyExternalUpdateKeepingHistory = () => gridRef.current?.applyRows(externalUpdate, { undoable: false });
 
   const grid = (
@@ -637,6 +684,8 @@ function PlaygroundGrid({ settings }: { settings: Settings }) {
       imeDirectInput={settings.imeDirectInput}
       find={settings.find}
       fillHandle={settings.fillHandle}
+      pasteFillsSelection={settings.pasteFillsSelection}
+      activeCellFollows={settings.activeCellFollows}
       enableRowSelection={settings.enableRowSelection}
       rowSelectionMode={settings.rowSelectionMode}
       enableSelectAllRows={settings.enableRowSelection && settings.enableSelectAllRows}
@@ -655,6 +704,7 @@ function PlaygroundGrid({ settings }: { settings: Settings }) {
       totalRow={settings.totalRow}
       pinnedTopRows={settings.pinnedRows ? PINNED_TOP_ROWS : undefined}
       pinnedBottomRows={settings.pinnedRows ? PINNED_BOTTOM_ROWS : undefined}
+      pinnedBottomRowsPlacement={settings.pinnedBottomRowsPlacement}
       labelRow={
         settings.labelRow
           ? {
@@ -761,7 +811,9 @@ function PlaygroundGrid({ settings }: { settings: Settings }) {
   );
 }
 
-const selectClass = 'rounded-md border border-fd-border bg-transparent px-2 py-1 text-sm';
+// 変更(1.2.0): 名前の長い項目(pinnedBottomRowsPlacement など)で選択肢が設定の枠からはみ出していたため、行は折り返し
+//   (名前の下の行で右寄せ)、枠は中身に合わせて広がらないようにした。
+const selectClass = 'ml-auto max-w-full rounded-md border border-fd-border bg-transparent px-2 py-1 text-sm';
 
 function Toggle({
   label,
@@ -786,7 +838,7 @@ function Toggle({
 
 function Group({ title, children }: { title: string; children: React.ReactNode }) {
   return (
-    <fieldset className="rounded-lg border border-fd-border p-3">
+    <fieldset className="min-w-0 rounded-lg border border-fd-border p-3">
       <legend className="px-1 text-xs font-semibold text-fd-muted-foreground">
         {title}
       </legend>
@@ -809,7 +861,7 @@ export function Playground() {
       {/* 操作パネル */}
       <aside className="flex w-full shrink-0 flex-col gap-3 lg:w-64">
         <Group title="テーマ / 寸法">
-          <label className="flex items-center justify-between gap-2 text-sm">
+          <label className="flex flex-wrap items-center justify-between gap-x-2 gap-y-1 text-sm">
             theme
             <select
               className={selectClass}
@@ -822,7 +874,7 @@ export function Playground() {
               <option value="dark">dark</option>
             </select>
           </label>
-          <label className="flex items-center justify-between gap-2 text-sm">
+          <label className="flex flex-wrap items-center justify-between gap-x-2 gap-y-1 text-sm">
             density
             <select
               className={selectClass}
@@ -834,7 +886,7 @@ export function Playground() {
               <option value="comfortable">comfortable</option>
             </select>
           </label>
-          <label className="flex items-center justify-between gap-2 text-sm">
+          <label className="flex flex-wrap items-center justify-between gap-x-2 gap-y-1 text-sm">
             height
             <select
               className={selectClass}
@@ -846,7 +898,7 @@ export function Playground() {
               <option value={600}>600px</option>
             </select>
           </label>
-          <label className="flex items-center justify-between gap-2 text-sm">
+          <label className="flex flex-wrap items-center justify-between gap-x-2 gap-y-1 text-sm">
             行数
             <select
               className={selectClass}
@@ -861,7 +913,7 @@ export function Playground() {
         </Group>
 
         <Group title="モーション">
-          <label className="flex items-center justify-between gap-2 text-sm">
+          <label className="flex flex-wrap items-center justify-between gap-x-2 gap-y-1 text-sm">
             motion
             <select
               className={selectClass}
@@ -876,7 +928,7 @@ export function Playground() {
           <Toggle label="animateRows" checked={settings.animateRows} onChange={(v) => set('animateRows', v)} />
           <Toggle label="showCopyRange" checked={settings.showCopyRange} onChange={(v) => set('showCopyRange', v)} />
           <Toggle label="highlightChanges" checked={settings.highlightChanges} onChange={(v) => set('highlightChanges', v)} />
-          <label className="flex items-center justify-between gap-2 text-sm">
+          <label className="flex flex-wrap items-center justify-between gap-x-2 gap-y-1 text-sm">
             <code className="text-xs">hoverHighlight</code>
             <select
               className={selectClass}
@@ -912,7 +964,7 @@ export function Playground() {
           <Toggle label="enableSorting" checked={settings.enableSorting} onChange={(v) => set('enableSorting', v)} />
           <Toggle label="enableColumnFilter" checked={settings.enableColumnFilter} onChange={(v) => set('enableColumnFilter', v)} />
           <Toggle label="enableGlobalFilter" checked={settings.enableGlobalFilter} onChange={(v) => set('enableGlobalFilter', v)} />
-          <label className="flex items-center justify-between gap-2 text-sm">
+          <label className="flex flex-wrap items-center justify-between gap-x-2 gap-y-1 text-sm">
             <code className="text-xs">globalFilterMatch</code>
             <select
               className={selectClass}
@@ -934,7 +986,7 @@ export function Playground() {
           <Toggle label="enableClearOnDelete" checked={settings.enableClearOnDelete} onChange={(v) => set('enableClearOnDelete', v)} />
           <Toggle label="detailRow" checked={settings.detailRow} onChange={(v) => set('detailRow', v)} />
           <Toggle label="enableRowDrag" checked={settings.enableRowDrag} onChange={(v) => set('enableRowDrag', v)} />
-          <label className={`flex items-center justify-between gap-2 text-sm ${settings.enableRowDrag ? '' : 'opacity-50'}`}>
+          <label className={`flex flex-wrap items-center justify-between gap-x-2 gap-y-1 text-sm ${settings.enableRowDrag ? '' : 'opacity-50'}`}>
             <code className="text-xs">rowDragMotion</code>
             <select
               className={selectClass}
@@ -947,7 +999,7 @@ export function Playground() {
             </select>
           </label>
           <Toggle label="autoHeight(商品名の列を折り返す)" checked={settings.autoHeight} onChange={(v) => set('autoHeight', v)} />
-          <label className={`flex items-center justify-between gap-2 text-sm ${settings.autoHeight ? '' : 'opacity-50'}`}>
+          <label className={`flex flex-wrap items-center justify-between gap-x-2 gap-y-1 text-sm ${settings.autoHeight ? '' : 'opacity-50'}`}>
             <code className="text-xs">verticalAlign</code>
             <select
               className={selectClass}
@@ -960,7 +1012,7 @@ export function Playground() {
               <option value="center">center</option>
             </select>
           </label>
-          <label className="flex items-center justify-between gap-2 text-sm">
+          <label className="flex flex-wrap items-center justify-between gap-x-2 gap-y-1 text-sm">
             <code className="text-xs">商品名の editor.multiline</code>
             <select
               className={selectClass}
@@ -972,7 +1024,7 @@ export function Playground() {
               <option value="newline">Enter で改行</option>
             </select>
           </label>
-          <label className="flex items-center justify-between gap-2 text-sm">
+          <label className="flex flex-wrap items-center justify-between gap-x-2 gap-y-1 text-sm">
             <code className="text-xs">headerAlign</code>
             <select
               className={selectClass}
@@ -985,7 +1037,7 @@ export function Playground() {
               <option value="right">right</option>
             </select>
           </label>
-          <label className="flex items-center justify-between gap-2 text-sm">
+          <label className="flex flex-wrap items-center justify-between gap-x-2 gap-y-1 text-sm">
             <code className="text-xs">columnDragMotion</code>
             <select
               className={selectClass}
@@ -1005,8 +1057,20 @@ export function Playground() {
           </label>
           <Toggle label="totalRow(合計行)" checked={settings.totalRow} onChange={(v) => set('totalRow', v)} />
           <Toggle label="pinnedTopRows / pinnedBottomRows(固定行)" checked={settings.pinnedRows} onChange={(v) => set('pinnedRows', v)} />
+          <label className={`flex flex-wrap items-center justify-between gap-x-2 gap-y-1 text-sm ${settings.pinnedRows && settings.totalRow ? '' : 'opacity-50'}`}>
+            <code className="text-xs">pinnedBottomRowsPlacement</code>
+            <select
+              className={selectClass}
+              value={settings.pinnedBottomRowsPlacement}
+              disabled={!settings.pinnedRows || !settings.totalRow}
+              onChange={(e) => set('pinnedBottomRowsPlacement', e.target.value as Settings['pinnedBottomRowsPlacement'])}
+            >
+              <option value="aboveTotal">aboveTotal</option>
+              <option value="belowTotal">belowTotal</option>
+            </select>
+          </label>
           <Toggle label="scrollHint" checked={settings.scrollHint} onChange={(v) => set('scrollHint', v)} />
-          <label className="flex items-center justify-between gap-2 text-sm">
+          <label className="flex flex-wrap items-center justify-between gap-x-2 gap-y-1 text-sm">
             <code className="text-xs">scrollHint.minRows</code>
             <select
               className={selectClass}
@@ -1028,11 +1092,36 @@ export function Playground() {
           <Toggle label="imeDirectInput" checked={settings.imeDirectInput} onChange={(v) => set('imeDirectInput', v)} />
           <Toggle label="find(Ctrl+F)" checked={settings.find} onChange={(v) => set('find', v)} />
           <Toggle label="fillHandle(フィルハンドル)" checked={settings.fillHandle} onChange={(v) => set('fillHandle', v)} />
+          <Toggle
+            label="pasteFillsSelection(1 セルのコピーで範囲を埋める)"
+            checked={settings.pasteFillsSelection}
+            onChange={(v) => set('pasteFillsSelection', v)}
+          />
+          <Toggle
+            label="strict(登録日の読めない日付に印)"
+            checked={settings.strictEditors}
+            onChange={(v) => set('strictEditors', v)}
+          />
+          <label className="flex flex-wrap items-center justify-between gap-x-2 gap-y-1 text-sm">
+            <code className="text-xs">activeCellFollows</code>
+            <select
+              className={selectClass}
+              value={settings.activeCellFollows}
+              onChange={(e) => set('activeCellFollows', e.target.value as Settings['activeCellFollows'])}
+            >
+              <option value="position">position</option>
+              <option value="row">row</option>
+            </select>
+          </label>
+          <Toggle label="ライブの更新(1 秒ごとに数量を書き換え)" checked={settings.liveUpdates} onChange={(v) => set('liveUpdates', v)} />
+          <p className="m-0 text-xs text-fd-muted-foreground">
+            数量で並べ替えてセルを押し、ライブの更新を入れると、activeCellFollows の position(表示位置に残る)と row(押した行に付いていく)を比べられます。
+          </p>
         </Group>
 
         <Group title="ダイアログ(popupContainer)">
           <Toggle label="ダイアログの中に置く" checked={settings.inDialog} onChange={(v) => set('inDialog', v)} />
-          <label className="flex items-center justify-between gap-2 text-sm">
+          <label className="flex flex-wrap items-center justify-between gap-x-2 gap-y-1 text-sm">
             <code className="text-xs">popupContainer</code>
             <select
               className={selectClass}
@@ -1047,7 +1136,7 @@ export function Playground() {
 
         <Group title="行選択(チェックボックス)">
           <Toggle label="enableRowSelection" checked={settings.enableRowSelection} onChange={(v) => set('enableRowSelection', v)} />
-          <label className="flex items-center justify-between gap-2 text-sm">
+          <label className="flex flex-wrap items-center justify-between gap-x-2 gap-y-1 text-sm">
             <code className="text-xs">rowSelectionMode</code>
             <select
               className={selectClass}

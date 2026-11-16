@@ -94,6 +94,8 @@ const GRID_LOCALE_TEXT_EN = {
   dragRowLabel: 'Row {row}',
   pinnedTopRow: 'Pinned to top {row}',
   pinnedBottomRow: 'Pinned to bottom {row}',
+  contextMenuCell: 'Cell menu',
+  contextMenuRow: 'Row menu',
   scrollHintRow: 'Row {row}',
   scrollHintJump: 'Go to row {row}',
   scrollHintJumpSeparator: '·',

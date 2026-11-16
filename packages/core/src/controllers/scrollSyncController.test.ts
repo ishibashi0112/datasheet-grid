@@ -74,14 +74,14 @@ describe('createScrollSyncController', () => {
     expect(onScroll).not.toHaveBeenCalled();
     runFrame();
     expect(onScroll).toHaveBeenCalledTimes(1);
-    expect(onScroll).toHaveBeenCalledWith({ top: 120, left: 0, source: 'user' });
+    expect(onScroll).toHaveBeenCalledWith(expect.objectContaining({ top: 120, left: 0, source: 'user' }));
 
     // API 由来: markApiScroll 後の scroll イベント 1 回が 'api'。
     controller.markApiScroll();
     el.scrollTop = 200;
     el.dispatchEvent(new Event('scroll'));
     runFrame();
-    expect(onScroll).toHaveBeenLastCalledWith({ top: 200, left: 0, source: 'api' });
+    expect(onScroll).toHaveBeenLastCalledWith(expect.objectContaining({ top: 200, left: 0, source: 'api' }));
     // 同一フレームに api と user が混在したら user 優先。
     controller.markApiScroll();
     el.scrollTop = 210;
@@ -89,7 +89,7 @@ describe('createScrollSyncController', () => {
     el.scrollTop = 220;
     el.dispatchEvent(new Event('scroll'));
     runFrame();
-    expect(onScroll).toHaveBeenLastCalledWith({ top: 220, left: 0, source: 'user' });
+    expect(onScroll).toHaveBeenLastCalledWith(expect.objectContaining({ top: 220, left: 0, source: 'user' }));
 
     // 1.0.1 の確かめ直し G: 同じフレームで 2 回動かしても scroll イベントは 1 回。その後のユーザーのスクロールは 'user'。
     controller.markApiScroll();
@@ -98,11 +98,11 @@ describe('createScrollSyncController', () => {
     el.scrollTop = 240;
     el.dispatchEvent(new Event('scroll'));
     runFrame();
-    expect(onScroll).toHaveBeenLastCalledWith({ top: 240, left: 0, source: 'api' });
+    expect(onScroll).toHaveBeenLastCalledWith(expect.objectContaining({ top: 240, left: 0, source: 'api' }));
     el.scrollTop = 250;
     el.dispatchEvent(new Event('scroll'));
     runFrame();
-    expect(onScroll).toHaveBeenLastCalledWith({ top: 250, left: 0, source: 'user' });
+    expect(onScroll).toHaveBeenLastCalledWith(expect.objectContaining({ top: 250, left: 0, source: 'user' }));
 
     // onScroll を外しても scrollTop の反映は続く(通知だけ止まる)。
     controller.update({ scrollContainerRef: { current: el }, setViewState, onScroll: undefined });
@@ -245,6 +245,24 @@ describe('createScrollSyncController', () => {
     resizeCallback?.();
     runFrame();
     expect(setViewState).toHaveBeenLastCalledWith({ viewportHeight: 264, viewportWidth: 500 });
+    controller.dispose();
+  });
+
+  // 追加(1.2.0 / G-08 の続き): onScroll の atBottom は縦のスクロールが末尾にあるか(2px 以下の差は末尾)。
+  it('onScroll の atBottom は末尾にいるか', () => {
+    const controller = createScrollSyncController();
+    const onScroll = vi.fn();
+    const el = makeElement();
+    Object.defineProperty(el, 'scrollHeight', { value: 1000, configurable: true });
+    controller.update({ scrollContainerRef: { current: el }, setViewState: vi.fn(), onScroll });
+    el.scrollTop = 699.5;
+    el.dispatchEvent(new Event('scroll'));
+    runFrame();
+    expect(onScroll).toHaveBeenLastCalledWith({ top: 699.5, left: 0, source: 'user', atBottom: true });
+    el.scrollTop = 600;
+    el.dispatchEvent(new Event('scroll'));
+    runFrame();
+    expect(onScroll).toHaveBeenLastCalledWith({ top: 600, left: 0, source: 'user', atBottom: false });
     controller.dispose();
   });
 

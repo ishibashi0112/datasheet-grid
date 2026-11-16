@@ -344,6 +344,64 @@ describe('clipboardController', () => {
     expect(t.dispatch).toHaveBeenCalledWith({ type: 'cell/activate', cell: { row: 0, col: 0 } });
   });
 
+  // 追加(1.2.0 / A-08): 1 セルのコピーを範囲に貼ると範囲を埋める(Excel と同じ)。pasteFillsSelection: false で 1 回だけ。
+  it('1 セルのコピーは選んだ範囲いっぱいに書き、元に戻すは 1 回。pasteFillsSelection: false なら左上だけ(A-08)', () => {
+    const c = createClipboardController<Row>();
+    const uiState = {
+      ...createInitialGridUiState(),
+      activeCell: { row: 0, col: 0 },
+      selection: { type: 'cell' as const, range: { start: { row: 0, col: 0 }, end: { row: 1, col: 1 } } },
+    };
+    const fill = makeArgs({ uiState });
+    c.update(fill.args);
+    c.handlePaste({ clipboardData: { getData: () => 'z' }, preventDefault: vi.fn() });
+    const onRowsChange = fill.args.onRowsChange as ReturnType<typeof vi.fn>;
+    expect(onRowsChange).toHaveBeenCalledTimes(1);
+    expect(onRowsChange.mock.calls[0][0]).toEqual([
+      { id: 'z', name: 'z' },
+      { id: 'z', name: 'z' },
+    ]);
+    expect(fill.dispatch).toHaveBeenCalledWith({ type: 'selection/update', cell: { row: 1, col: 1 } });
+
+    const once = makeArgs({ uiState, pasteFillsSelection: false });
+    c.update(once.args);
+    c.handlePaste({ clipboardData: { getData: () => 'z' }, preventDefault: vi.fn() });
+    expect((once.args.onRowsChange as ReturnType<typeof vi.fn>).mock.calls[0][0]).toEqual([
+      { id: 'z', name: 'a' },
+      { id: 2, name: 'b' },
+    ]);
+  });
+
+  // 追加(1.2.0 の見直し QG-2): serverSide で範囲にまだ読み込んでいない行があるときは埋めずに 1 回だけ貼る。
+  it('serverSide: 範囲が読み込み済みなら埋め、読み込んでいない行があれば左上だけ(QG-2)', () => {
+    const c = createClipboardController<Row>();
+    const uiState = {
+      ...createInitialGridUiState(),
+      activeCell: { row: 0, col: 1 },
+      selection: { type: 'cell' as const, range: { start: { row: 0, col: 1 }, end: { row: 2, col: 1 } } },
+    };
+    const three: Row[] = [...rows, { id: 3, name: 'c' }];
+    const loaded: RowModel<Row> = {
+      getRowCount: () => 3,
+      getRow: (i) => three[i],
+      getSourceIndex: (i) => i,
+      getRowKey: (i) => three[i]?.id ?? i,
+    };
+    const all = makeArgs({ uiState, rowModel: loaded, onRowsChange: undefined, applyServerSideCellEdits: vi.fn() });
+    c.update(all.args);
+    c.handlePaste({ clipboardData: { getData: () => 'z' }, preventDefault: vi.fn() });
+    const allEdits = (all.args.applyServerSideCellEdits as ReturnType<typeof vi.fn>).mock.calls[0][0] as unknown[];
+    expect(allEdits).toHaveLength(3);
+
+    // 3 行目がまだ読み込まれていない。
+    const partial: RowModel<Row> = { ...loaded, getRow: (i) => (i < 2 ? three[i] : (undefined as unknown as Row)) };
+    const some = makeArgs({ uiState, rowModel: partial, onRowsChange: undefined, applyServerSideCellEdits: vi.fn() });
+    c.update(some.args);
+    c.handlePaste({ clipboardData: { getData: () => 'z' }, preventDefault: vi.fn() });
+    const someEdits = (some.args.applyServerSideCellEdits as ReturnType<typeof vi.fn>).mock.calls[0][0] as unknown[];
+    expect(someEdits).toHaveLength(1);
+  });
+
   it('列の選択への貼り付けは列の先頭の行から、範囲の外のアクティブセルはそのまま(AP-02)', () => {
     const c = createClipboardController<Row>();
     const col = makeArgs({

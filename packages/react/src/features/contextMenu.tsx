@@ -11,6 +11,9 @@ import {
   isContextMenuRowSelected,
 } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/contextMenuTarget';
 import { getCellValue } from '@ishibashi0112/spreadsheet-grid-core/internal/utils/permissions';
+// 追加(1.2.0 / RV3-H2): メニューの読み上げの名前の既定(機能の localeText でシェルが埋める)。
+import { DEFAULT_CONTEXT_MENU_LOCALE_TEXT } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/localeTextFeatures';
+import type { FeatureLocaleText } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/localeText';
 import type { GridContextMenuItem, GridContextMenuParams, GridContextMenuTarget } from '../model/gridTypes';
 import type {
   BodyContextMenuInput,
@@ -22,10 +25,14 @@ import type {
 } from './types';
 
 const EMPTY_CONTEXT_MENU_ITEMS: GridContextMenuItem[] = [];
+type ContextMenuTexts = FeatureLocaleText<typeof DEFAULT_CONTEXT_MENU_LOCALE_TEXT>;
 
 // 追加(バッチ②): セル/行の汎用コンテキストメニュー(完全カスタム)の controller です。
 //             配置(右クリック座標)/ outside click / Escape / scroll close を管理します。
-const useCellContextMenuFeature = <T,>({ gridRootRef }: CellContextMenuFeatureArgs): CellContextMenuFeatureResult<T> => {
+const useCellContextMenuFeature = <T,>({
+  gridRootRef,
+  localeTexts,
+}: CellContextMenuFeatureArgs): CellContextMenuFeatureResult<T> => {
   const {
     contextMenuState,
     contextMenuLayout,
@@ -48,6 +55,12 @@ const useCellContextMenuFeature = <T,>({ gridRootRef }: CellContextMenuFeatureAr
         layout={contextMenuLayout}
         popoverRef={contextMenuRef}
         onRequestClose={closeContextMenu}
+        // 追加(1.2.0 / RV3-H2): メニューの読み上げの名前(セル / 行番号)。
+        ariaLabel={
+          contextMenuState?.params.target.type === 'rowHeader'
+            ? (localeTexts as ContextMenuTexts).contextMenuRow
+            : (localeTexts as ContextMenuTexts).contextMenuCell
+        }
       />
     ),
   };
@@ -153,6 +166,7 @@ const buildCellContextMenuParams = <T,>({
 };
 
 export const contextMenuFeature = {
+  localeText: DEFAULT_CONTEXT_MENU_LOCALE_TEXT,
   useCellContextMenu: useCellContextMenuFeature,
   buildBodyContextMenuParams,
   buildCellContextMenuParams,

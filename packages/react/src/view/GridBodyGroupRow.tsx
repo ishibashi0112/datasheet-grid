@@ -98,6 +98,11 @@ function GridBodyGroupRowInner<T>({
   const texts = useFeatureLocaleText<typeof DEFAULT_GROUPING_LOCALE_TEXT>();
   // 追加(英語対応): 空のグループの名前は文言の表から(core は既定の「(空白)」で作る)。
   const groupLabel = groupRow.value === null ? texts.blank : groupRow.label;
+  // 変更(1.2.0 / 1.1.0 の確かめ直し RV3-L2): 行選択のチェックボックスを出すときのグループ行の行番号の欄は空なので、
+  //   見た目だけにします(文字の無い行見出しは axe の empty-table-header になっていた。グループの名前は自動グループ列の
+  //   セル)。見えるセルが無いペインの行は支援技術から隠します(合計行と同じ)。
+  const rowHeaderIsCell = ownsRowHeader && !showRowCheckbox;
+  const hasCells = rowHeaderIsCell || renderEntries.some(Boolean);
   return (
     <div
       data-pane={pane}
@@ -106,6 +111,7 @@ function GridBodyGroupRowInner<T>({
       // 追加(audit V-05): グループ行も ARIA の行(開閉状態は自動グループ列のボタンの aria-expanded)。
       role="row"
       aria-rowindex={rowIndex + 2 + ariaRowOffset}
+      aria-hidden={hasCells ? undefined : 'true'}
       className={cx(
         'ssg-body-row',
         slots?.bodyRow?.className,
@@ -121,8 +127,9 @@ function GridBodyGroupRowInner<T>({
     >
       {ownsRowHeader && (
         <div
-          role="rowheader"
-          aria-colindex={1}
+          role={rowHeaderIsCell ? 'rowheader' : undefined}
+          aria-colindex={rowHeaderIsCell ? 1 : undefined}
+          aria-hidden={rowHeaderIsCell ? undefined : 'true'}
           onPointerEnter={(event) => onRowHeaderPointerEnter(rowIndex, event)}
           onPointerLeave={() => onRowHeaderPointerLeave(rowIndex)}
           className={cx(

@@ -1,5 +1,5 @@
 // logic/selectEditorState(select エディタ純ロジック)の単体テストです。
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { GridSelectEditorOption } from '../model/gridTypes.unbound';
 import {
   findOptionByComposedText,
@@ -8,6 +8,7 @@ import {
   createTypeaheadState,
   moveHighlight,
   resolveInitialHighlight,
+  resolveSelectOptionRowHeight,
   typeaheadJump,
 } from './selectEditorState';
 
@@ -83,8 +84,8 @@ describe('computeSelectPopoverPlacement', () => {
     expect(placement.top).toBe(234);
     expect(placement.left).toBe(100);
     expect(placement.width).toBe(180);
-    // 3 候補 × 28px + 上下 padding 4px×2
-    expect(placement.maxHeight).toBe(3 * 28 + 8);
+    // 3 候補 × 28px + 上下 padding 4px×2 + 枠線 1px×2
+    expect(placement.maxHeight).toBe(3 * 28 + 8 + 2);
   });
 
   it('下に収まらない場合は上へフリップする', () => {
@@ -94,7 +95,7 @@ describe('computeSelectPopoverPlacement', () => {
       1024,
       768,
     );
-    expect(placement.top).toBe(700 - 2 - (3 * 28 + 8));
+    expect(placement.top).toBe(700 - 2 - (3 * 28 + 8 + 2));
   });
 
   it('左右はビューポートマージンでクランプされる', () => {
@@ -117,7 +118,29 @@ describe('computeSelectPopoverPlacement', () => {
 
   it('候補が多い場合は最大表示件数(8)で高さを打ち切る', () => {
     const placement = computeSelectPopoverPlacement(anchor, 50, 1024, 768);
-    expect(placement.maxHeight).toBe(8 * 28 + 8);
+    expect(placement.maxHeight).toBe(8 * 28 + 8 + 2);
+  });
+
+  // 追加(1.2.0 の見直し QH-1): タッチが主の端末は候補の行が 44px。渡した行の高さで一覧の高さと上下の反転を決める。
+  it('行の高さを渡すとその高さで見積もる(タッチの 44px)', () => {
+    const placement = computeSelectPopoverPlacement(anchor, 4, 1024, 768, 44);
+    expect(placement.maxHeight).toBe(4 * 44 + 8 + 2);
+    const flipped = computeSelectPopoverPlacement({ left: 100, top: 560, bottom: 592, width: 120 }, 4, 1024, 768, 44);
+    // 下は 594 + 186 = 780 > 760 なので上へ(28px の見積もりなら 594 + 122 = 716 で下に収まると判断していた)。
+    expect(flipped.top).toBe(560 - 2 - (4 * 44 + 8 + 2));
+  });
+});
+
+describe('resolveSelectOptionRowHeight', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it('pointer: coarse なら 44、それ以外は 28', () => {
+    vi.stubGlobal('matchMedia', (query: string) => ({ matches: query === '(pointer: coarse)', media: query }));
+    expect(resolveSelectOptionRowHeight()).toBe(44);
+    vi.stubGlobal('matchMedia', (query: string) => ({ matches: false, media: query }));
+    expect(resolveSelectOptionRowHeight()).toBe(28);
   });
 });
 

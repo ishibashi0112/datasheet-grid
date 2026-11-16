@@ -94,6 +94,14 @@ describe('createSelectionAggregateTargetStabilizer', () => {
     expect(stabilize(null)).toBeNull();
     expect(stabilize(resolveSelectionAggregateTarget(cellRange(0, 0, 3, 2), 5, withGetter))).not.toBe(getterTarget);
   });
+
+  it('selectionAggregate を切り替えたら新しい対象(計算し直す。E-09)', () => {
+    const stabilize = createSelectionAggregateTargetStabilizer<Row>();
+    const first = stabilize(resolveSelectionAggregateTarget(cellRange(0, 0, 4, 2), 5, columns));
+    const excluded = freshColumns();
+    excluded[0] = { ...excluded[0], selectionAggregate: false };
+    expect(stabilize(resolveSelectionAggregateTarget(cellRange(0, 0, 4, 2), 5, excluded))).not.toBe(first);
+  });
 });
 
 describe('computeSelectionAggregates', () => {
@@ -136,6 +144,30 @@ describe('computeSelectionAggregates', () => {
     });
     expect(computeSelectionAggregates(grouped, target)).toMatchObject({ cellCount: 2, count: 1, sum: 10, partial: false });
     expect(computeSelectionAggregates(modelOf(view), target)).toMatchObject({ cellCount: 2, sum: 10, partial: true });
+  });
+
+  // 追加(1.2.0 / E-09): JAN のような数字の文字列でも数ではない列を合計 / 平均から外す。
+  it('selectionAggregate: false の列は個数だけ数え、合計・平均・最小・最大に入れない(E-09)', () => {
+    const janColumns: GridColumn<Row>[] = [
+      { key: 'name', width: 100, selectionAggregate: false },
+      { key: 'qty', width: 100 },
+    ];
+    const janRows: Row[] = [
+      { name: '4901234567894', qty: 3, price: null },
+      { name: '4909876543210', qty: 5, price: null },
+    ];
+    const target = resolveSelectionAggregateTarget(cellRange(0, 0, 1, 1), 2, janColumns)!;
+    expect(computeSelectionAggregates(modelOf(janRows), target)).toMatchObject({
+      cellCount: 4,
+      count: 4,
+      numericCount: 2,
+      sum: 8,
+      average: 4,
+      min: 3,
+      max: 5,
+    });
+    const janOnly = resolveSelectionAggregateTarget(cellRange(0, 0, 1, 0), 2, janColumns)!;
+    expect(computeSelectionAggregates(modelOf(janRows), janOnly)).toMatchObject({ count: 2, numericCount: 0, sum: undefined });
   });
 
   it('getValue を持つ列はその値で数える', () => {

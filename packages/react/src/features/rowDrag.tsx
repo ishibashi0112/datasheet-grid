@@ -4,7 +4,7 @@
 //   (中の hook の順番はシェルにあったときと同じ)。行の移動の確定(commitRowMove)と命令的 API の moveRow はシェルに
 //   残します(ドラッグなしでも使える)。機能セットに無い構成では enableRowDrag を false として扱います
 //   (createSpreadsheetGrid。ハンドル列もガイド線も出ない)。
-import { useCallback } from 'react';
+import { useCallback, useMemo } from 'react';
 import { useIsomorphicLayoutEffect } from '../hooks/useController';
 import { cx } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/cx';
 import { isSyntheticColumnKey } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/detailRow';
@@ -15,6 +15,7 @@ import type { FeatureLocaleText } from '@ishibashi0112/spreadsheet-grid-core/int
 
 type RowDragTexts = FeatureLocaleText<typeof DEFAULT_ROW_DRAG_LOCALE_TEXT>;
 import { getCellValue } from '@ishibashi0112/spreadsheet-grid-core/internal/utils/permissions';
+import { resolveMoveTargetIndex } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/rowReorder';
 import { useRowDragController } from '../hooks/useRowDragController';
 import type { GridFeature, GridFeatureParts, RowDragFeatureArgs, RowDragFeatureResult } from './types';
 
@@ -24,10 +25,35 @@ const useRowDragFeature = <T,>({
   rowModel,
   visibleColumns,
   isRowDraggable,
+  canDropRow,
+  rows,
+  resolveRowKey,
   hasRowKeys,
   localeTexts,
   ...controllerArgs
 }: RowDragFeatureArgs<T>): RowDragFeatureResult<T> => {
+  // 追加(1.2.0 / 2026-11-09 実アプリの総点検 E-07): canDropRow を controller のスロット(行 i の上の境界が i)で聞ける形に
+  //   します。toIndex は onRowMove と同じ(動かした後の位置)、rowAbove / rowBelow は落とした後に掴んだ行のすぐ上 / 下の行。
+  const canDropAt = useMemo(
+    () =>
+      canDropRow === undefined
+        ? undefined
+        : (fromIndex: number, slot: number): boolean => {
+            const toIndex = resolveMoveTargetIndex(fromIndex, slot);
+            const row = rows[fromIndex];
+            if (toIndex === null || row === undefined) return false;
+            return canDropRow({
+              row,
+              rowKey: resolveRowKey(row, fromIndex),
+              fromIndex,
+              toIndex,
+              rowAbove: slot > 0 ? rows[slot - 1] : undefined,
+              rowBelow: slot < rows.length ? rows[slot] : undefined,
+              rows,
+            });
+          },
+    [canDropRow, rows, resolveRowKey],
+  );
   // ゴーストのラベル: 先頭の(合成列でない)表示列の表示値。空なら「行 N」。
   // 変更(1.0.2 / 2026-11-09 実アプリの総点検 E-06): 値を文字で出さない列(valueFormatter の無い renderCell の列 =
   //   画像など / チェックボックスのエディタ / showValue: false のデータバー)は飛ばし、文字を出す最初の列にします
@@ -93,7 +119,7 @@ const useRowDragFeature = <T,>({
     centerIndicatorRef: centerRowDropIndicatorRef,
     rightIndicatorRef: rightRowDropIndicatorRef,
     applyReorderSettle: applyRowReorderSettle,
-  } = useRowDragController({ ...controllerArgs, getRowDragLabel, getDragRow, locateDragRow });
+  } = useRowDragController({ ...controllerArgs, getRowDragLabel, getDragRow, locateDragRow, canDropAt });
   // 行の並び替え確定(rowModel 差し替え)後に settle アニメを発火します。直前のドロップで armed の
   //   ときだけ動き、それ以外(編集 / フィルター等の rowModel 変化)は即 return するため無害です。
   // 変更(React 18 対応 2026-10-28): React 18 の SSR で警告を出さない useIsomorphicLayoutEffect に(クライアントでは useLayoutEffect のまま)。

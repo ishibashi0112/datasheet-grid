@@ -3,10 +3,12 @@
 // 行ドラッグ並び替えのデモ: 先頭のハンドル(⋮⋮)を掴んでタスクの優先順を入れ替える。
 //   「確定」行は isRowDraggable で固定し、onRowMove の通知と moveRow() / undo() を確認できる。
 //   表示方式(rowDragMotion)は 'live'(掴んだ行が追従し周りが退避)と 'ghost'(ゴースト + ガイド線)を切り替えられる。
+//   追加(1.2.0): canDropRow で「確定」のタスクより上へは落とせないようにできる(落とせない位置ではガイド線を出さない)。
 import { useRef, useState } from 'react';
 import {
   SpreadsheetGrid,
   type GridColumn,
+  type RowDropParams,
   type RowMoveParams,
   type SpreadsheetGridHandle,
 } from '@ishibashi0112/spreadsheet-grid';
@@ -50,6 +52,7 @@ export function RowDragDemo() {
   const [tasks, setTasks] = useState<Task[]>(initialTasks);
   const [lastMove, setLastMove] = useState<string>('(まだ移動していません)');
   const [dragMotion, setDragMotion] = useState<'ghost' | 'live'>('live');
+  const [limitDrop, setLimitDrop] = useState(false);
 
   const handleRowMove = ({ rowKey, fromIndex, toIndex }: RowMoveParams<Task>) => {
     setLastMove(`${String(rowKey)} を ${fromIndex + 1} 行目 → ${toIndex + 1} 行目へ`);
@@ -68,6 +71,10 @@ export function RowDragDemo() {
             <option value="live">live(行が追従・周りが退避)</option>
             <option value="ghost">ghost(ゴースト + ガイド線)</option>
           </select>
+        </label>
+        <label className="flex items-center gap-1">
+          <input type="checkbox" checked={limitDrop} onChange={(e) => setLimitDrop(e.target.checked)} />
+          <code className="text-xs">canDropRow</code>(「確定」より上へは落とせない)
         </label>
         <button
           type="button"
@@ -108,6 +115,8 @@ export function RowDragDemo() {
         // 「確定」のタスクは順番を固定(ハンドルを出さない)
         isRowDraggable={(row) => row.status !== '確定'}
         onRowMove={handleRowMove}
+        // 落とした後に下の行が「確定」なら落とせない(確定のタスクは先頭にまとめておく)。
+        canDropRow={limitDrop ? ({ rowBelow }: RowDropParams<Task>) => rowBelow?.status !== '確定' : undefined}
       />
       <p className="text-sm text-fd-muted-foreground">
         現在の順序: {tasks.map((task) => task.id).join(' → ')}

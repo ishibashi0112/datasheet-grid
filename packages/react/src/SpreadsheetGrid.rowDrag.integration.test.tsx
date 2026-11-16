@@ -17,6 +17,7 @@ import { GRID_STATE_VERSION } from '@ishibashi0112/spreadsheet-grid-core/interna
 import type {
   GridColumn,
   GridState,
+  RowDropParams,
   RowMoveParams,
   ServerSideDataSource,
   SpreadsheetGridHandle,
@@ -346,6 +347,86 @@ describe('行ドラッグ並び替え(結合)', () => {
         .querySelector('[data-pane="center"][data-row-index="0"]')
         ?.hasAttribute('data-ssg-row-dragging'),
     ).toBe(false);
+  });
+
+  // 追加(1.2.0 / 2026-11-09 実アプリの総点検 E-07): canDropRow で落とせる先を決める。false の位置はガイド線を出さず、離しても
+  //   動かさない。引数は onRowMove と同じ index に、落とした後のすぐ上 / 下の行と、動かす前の rows。
+  it('canDropRow が false の位置ではガイド線を出さず、離しても onRowsChange / onRowMove を呼ばない', () => {
+    const onRowsChange = vi.fn();
+    const onRowMove = vi.fn();
+    const canDropRow = vi.fn((params: RowDropParams<Row>) => params.rowBelow?.id !== undefined);
+    const { container } = render(
+      <SpreadsheetGrid
+        columns={columns}
+        rows={rows}
+        rowKeyGetter={rowKeyGetter}
+        onRowsChange={onRowsChange}
+        onRowMove={onRowMove}
+        canDropRow={canDropRow}
+        enableRowDrag
+        rowHeight={ROW_HEIGHT}
+        headerHeight={HEADER_HEIGHT}
+      />,
+    );
+    // 末尾(slot 3 = 下に行が無い)へは落とせない。
+    act(() => {
+      pressHandle(handleAt(container, 0) as HTMLElement, 1, upperHalfY(0));
+    });
+    act(() => {
+      dispatchWindowPointer('pointermove', 1, lowerHalfY(2));
+    });
+    expect(canDropRow).toHaveBeenLastCalledWith({
+      row: rows[0],
+      rowKey: 'a',
+      fromIndex: 0,
+      toIndex: 2,
+      rowAbove: rows[2],
+      rowBelow: undefined,
+      rows,
+    });
+    expect(centerIndicator(container)?.style.display).toBe('none');
+    act(() => {
+      dispatchWindowPointer('pointerup', 1, lowerHalfY(2));
+    });
+    expect(onRowsChange).not.toHaveBeenCalled();
+    expect(onRowMove).not.toHaveBeenCalled();
+
+    // 行 2 の上(slot 2)は落とせる。
+    act(() => {
+      pressHandle(handleAt(container, 0) as HTMLElement, 1, upperHalfY(0));
+    });
+    act(() => {
+      dispatchWindowPointer('pointermove', 1, upperHalfY(2));
+    });
+    expect(canDropRow).toHaveBeenLastCalledWith(
+      expect.objectContaining({ fromIndex: 0, toIndex: 1, rowAbove: rows[1], rowBelow: rows[2] }),
+    );
+    expect(centerIndicator(container)?.style.display).toBe('block');
+    act(() => {
+      dispatchWindowPointer('pointerup', 1, upperHalfY(2));
+    });
+    expect(onRowsChange.mock.calls[0]?.[0].map((row: Row) => row.id)).toEqual(['b', 'a', 'c']);
+    expect(onRowMove).toHaveBeenCalledTimes(1);
+  });
+
+  it('canDropRow は命令的 API の moveRow() には効かない', () => {
+    const onRowsChange = vi.fn();
+    const ref = createRef<SpreadsheetGridHandle<Row>>();
+    render(
+      <SpreadsheetGrid
+        ref={ref}
+        columns={columns}
+        rows={rows}
+        rowKeyGetter={rowKeyGetter}
+        onRowsChange={onRowsChange}
+        canDropRow={() => false}
+        enableRowDrag
+      />,
+    );
+    act(() => {
+      ref.current?.moveRow('a', 2);
+    });
+    expect(onRowsChange).toHaveBeenCalledTimes(1);
   });
 
   // 追加(1.0.2 / 2026-11-09 実アプリの総点検 E-06): 先頭が画像などの renderCell の列なら、文字を出す次の列の値を出す。

@@ -162,8 +162,10 @@ export const buildGroupTree = <T,>(
     level: number,
     row: T,
   ): GroupTreeNode<T> => {
-    // 開閉キーの階層区切りは \u0000、列 key と bucket の区切りは \u0001 です
+    // 開閉キーの階層区切りは \u001e、列 key と bucket の区切りは \u0001 です
     //   (列 key に混入し得ない制御文字で、階層・列をまたぐ衝突を防ぎます)。
+    // 変更(1.2.0 の確かめ直し H): 階層の区切りを \u0000 から \u001e(レコード区切り)へ。includeGroupingInState で
+    //   collapsedGroups を保存すると、PostgreSQL の text / jsonb は NUL(\u0000)を受け付けず保存に失敗するため。
     const segment = `${column.key}\u0001${bucket}`;
     const isEmpty = bucket === 'e';
     groupCount += 1;
@@ -171,7 +173,7 @@ export const buildGroupTree = <T,>(
       groupRow: {
         kind: 'group',
         groupKey:
-          parentKey === null ? segment : `${parentKey}\u0000${segment}`,
+          parentKey === null ? segment : `${parentKey}\u001e${segment}`,
         columnKey: column.key,
         value: isEmpty ? null : raw,
         label: isEmpty ? GROUP_EMPTY_LABEL : resolveGroupLabel(column, raw, row),

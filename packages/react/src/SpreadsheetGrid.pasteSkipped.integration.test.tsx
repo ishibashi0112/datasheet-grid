@@ -203,3 +203,37 @@ describe('onPasteSkipped(serverSide)', () => {
     ]);
   });
 });
+// 追加(1.2.0 / 2026-11-09 実アプリの総点検 A-08): 1 セルのコピーで選んだ範囲を埋める(既定)と、pasteFillsSelection: false。
+describe('pasteFillsSelection', () => {
+  it('既定では 1 セルのコピーで範囲を埋め、書かなかったセルは onPasteSkipped へ。元に戻す 1 回で戻る', () => {
+    const onPasteSkipped = vi.fn<(params: GridPasteSkippedParams<Row>) => void>();
+    const { ref, shell } = setup({ onPasteSkipped });
+    act(() => {
+      ref.current?.selectRange({ start: { row: 0, col: 0 }, end: { row: 1, col: 2 } });
+    });
+    paste(shell, 'Z');
+    expect(currentRows.map((row) => [row.name, row.amount, row.locked])).toEqual([
+      ['Z', 1, 'x'],
+      ['Z', 2, 'y'],
+    ]);
+    expect(onPasteSkipped.mock.calls[0]?.[0].cells.map((cell) => [cell.rowIndex, cell.columnKey, cell.reason])).toEqual([
+      [0, 'amount', 'invalid'],
+      [0, 'locked', 'readOnly'],
+      [1, 'amount', 'invalid'],
+      [1, 'locked', 'readOnly'],
+    ]);
+    act(() => {
+      ref.current?.undo();
+    });
+    expect(currentRows.map((row) => row.name)).toEqual(['a', 'b']);
+  });
+
+  it('pasteFillsSelection: false では範囲の左上から 1 回だけ', () => {
+    const { ref, shell } = setup({ pasteFillsSelection: false });
+    act(() => {
+      ref.current?.selectRange({ start: { row: 0, col: 0 }, end: { row: 1, col: 0 } });
+    });
+    paste(shell, 'Z');
+    expect(currentRows.map((row) => row.name)).toEqual(['Z', 'b']);
+  });
+});

@@ -65,10 +65,11 @@ const noop = () => {};
 const CHIP_COMPACT_MAX_WIDTH = 80;
 
 // ピンの印(行見出し。読み上げは行見出しの aria-label)。
-const PIN_ICON = (
-  <svg className="ssg-pinned-row-icon" viewBox="0 0 16 16" aria-hidden="true">
-    <path d="M9.8 1.5 14.5 6.2l-1.4 1.4-1-.9-2.6 2.6.3 3.2-1.4 1.4-2.6-2.6-3.3 3.3-.7-.7 3.3-3.3L2.5 8l1.4-1.4 3.2.3 2.6-2.6-.9-1z" />
-  </svg>
+// 変更(1.2.0 / 1.1.0 の確かめ直し RV3-L2): 読み上げの名前(「上に固定 1」)は行見出しではなくピンの印(role="img")に
+//   付けます。行見出しの名前は中身から決まるので同じ名前のままで、文字の無い行見出しとして axe の empty-table-header
+//   (中身に名前が無い見出し)にならなくなります。見た目は変わりません。
+const PIN_ICON_PATH = (
+  <path d="M9.8 1.5 14.5 6.2l-1.4 1.4-1-.9-2.6 2.6.3 3.2-1.4 1.4-2.6-2.6-3.3 3.3-.7-.7 3.3-3.3L2.5 8l1.4-1.4 3.2.3 2.6-2.6-.9-1z" />
 );
 
 function GridPinnedRowsInner<T>({
@@ -154,7 +155,6 @@ function GridPinnedRowsInner<T>({
                 <div
                   role="rowheader"
                   aria-colindex={1}
-                  aria-label={formatLocaleText(position === 'top' ? texts.pinnedTopRow : texts.pinnedBottomRow, { row: index + 1 })}
                   className={cx(
                     'ssg-header-cell',
                     'ssg-row-header-cell',
@@ -164,7 +164,14 @@ function GridPinnedRowsInner<T>({
                   )}
                   style={{ ...slots?.rowHeaderCell?.style, ...rowSlot.style, ...rowHeaderCellStyle, height: rowHeight }}
                 >
-                  {PIN_ICON}
+                  <svg
+                    className="ssg-pinned-row-icon"
+                    viewBox="0 0 16 16"
+                    role="img"
+                    aria-label={formatLocaleText(position === 'top' ? texts.pinnedTopRow : texts.pinnedBottomRow, { row: index + 1 })}
+                  >
+                    {PIN_ICON_PATH}
+                  </svg>
                 </div>
               )}
               {entries.map((entry) => {

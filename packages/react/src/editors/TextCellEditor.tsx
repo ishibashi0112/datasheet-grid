@@ -18,6 +18,7 @@ import type {
 import { useIsomorphicLayoutEffect } from '../hooks/useController';
 import { createEditorKeyDownHandler } from './editorKeyBindings';
 import { CellEditorErrorBubble } from './CellEditorErrorBubble';
+import { useTopAlignedInput } from './useTopAlignedInput';
 import { cx } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/cx';
 
 type TextCellEditorProps = {
@@ -40,6 +41,7 @@ type TextCellEditorProps = {
   wordBreak?: string;
   lineBreak?: string;
   // 追加(段階 2 の確かめ直し N3-2): 編集中のセルが上にそろえて描かれているか(背の高い行の auto-height の列など)。
+  //   変更(1.2.0): 1 行の入力欄も文字をセルの 1 行目にそろえる(これまでは複数行の入力欄だけで、1 行の入力欄は真ん中に出ていた)。
   alignTop?: boolean;
 };
 
@@ -116,6 +118,8 @@ export function TextCellEditor({
   const multilinePaddingRef = useRef<{ key: string; padding: number } | null>(null);
   const [draftValue, setDraftValue] = useState(initialValue);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  // 追加(1.2.0): 1 行の入力欄の文字を上にそろえる(複数行は下の effect)。
+  useTopAlignedInput(inputRef, alignTop, cellHeight);
 
   // 追加(段階 2 DU-14): 複数行の入力欄は中身が変わるたびに高さを合わせます(描く前に合わせて、伸びる途中を見せない)。
   useIsomorphicLayoutEffect(() => {

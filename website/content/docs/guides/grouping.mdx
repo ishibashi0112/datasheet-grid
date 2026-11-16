@@ -38,7 +38,7 @@ const columns: GridColumn<Row>[] = [
 - **leaf 限定の各機能** — グループ行は編集 / コピー / 行選択 / エクスポートの対象外です(すべて leaf 行が対象)。貼り付けはグループ行を飛ばして、次の leaf 行へ続けて貼ります。エクスポートは開閉状態に関わらず、フィルター / ソート後の leaf 行をすべて出力します(折りたたんだグループの配下も含みます)。
 - **見出しの文字(`groupLabel`)** — グループ行の見出しは値の文字です。値がコード(`'chubu'`)で画面は表示名(「中部」)の列は、`groupLabel: 'formatted'` で列の `valueFormatter` の表示名にできます(関数ならその返り値。1.1.0 から)。グローバルフィルターで表示名でも探すには `globalFilterMatch="both"`([値と表示名が別の列](/docs/guides/value-labels))。
 - **clientSide 限定** — serverSide(`dataSource`)では `rowGroup` は無視されます。
-- **状態の保存** — グループ化(`rowGroup`)と開閉の状態は `GridState` に入りません(`getState()` / `initialState` / `restoreColumnsFromState` では戻りません)。画面からのグループ化を保存するときは、`onColumnsChange` で受け取った列定義の `rowGroup` を自分で保存し、次に開くときの `columns` に書いてください。開閉はマウントのたびに既定(すべて開く)へ戻ります。
+- **状態の保存** — グループ化(`rowGroup`)と開閉の状態は、`includeGroupingInState` を付けると `GridState` に入り、`restoreColumnsFromState` / `initialState` / `applyState` で戻ります(1.2.0 から。[状態の保存と復元](/docs/guides/state#行のグループ化を保存する))。付けないときは入らず、開閉はマウントのたびに既定(すべて開く)へ戻ります。
 - **セル内検索(`find`)** — 表示している行だけを探します。折りたたんだグループの中の行と、隠れたグループ元の列の値は探しません(グローバルフィルターなら絞り込めます)。
 
 ## エクスポート(CSV / TSV / Excel)

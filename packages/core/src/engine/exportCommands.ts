@@ -341,6 +341,7 @@ export const createExportCommands = <T,>(
       getGroupLine: resolveGroupLine(resolved, options?.includeGroupRows, exportColumns),
       pinnedTop: pinned?.top,
       pinnedBottom: pinned?.bottom,
+      pinnedBottomAfterTotal: pinned?.bottomAfterTotal,
     });
   };
 
@@ -363,6 +364,7 @@ export const createExportCommands = <T,>(
       getGroupLine: resolveGroupLine(resolved, options?.includeGroupRows, exportColumns),
       pinnedTop: pinned?.top,
       pinnedBottom: pinned?.bottom,
+      pinnedBottomAfterTotal: pinned?.bottomAfterTotal,
     });
   };
 

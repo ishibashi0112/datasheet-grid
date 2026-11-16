@@ -28,6 +28,8 @@ type CellContextMenuPopoverProps = {
   layout: CellContextMenuLayout | null;
   popoverRef: RefObject<HTMLDivElement | null>;
   onRequestClose: () => void;
+  // 追加(1.2.0 / 1.1.0 の確かめ直し RV3-H2): メニューの読み上げの名前(localeText の contextMenuCell / contextMenuRow)。
+  ariaLabel?: string;
 };
 
 export function CellContextMenuPopover({
@@ -38,6 +40,7 @@ export function CellContextMenuPopover({
   layout,
   popoverRef,
   onRequestClose,
+  ariaLabel,
 }: CellContextMenuPopoverProps) {
   // 追加(DevBI の報告): 表で決まったトークン(--ssg-*)をメニューへ写します(body 直下のため継承で届かない)。
   usePortalTokens(popoverRef, isOpen && layout !== null, themeClassName, { layout });
@@ -53,6 +56,8 @@ export function CellContextMenuPopover({
     left: layout.left,
     width: layout.width,
     zIndex: 1000,
+    // 追加(1.2.0 の見直し QH-2): 画面に収まらないときは高さを抑えてスクロール(列メニューと同じ)。
+    ...(layout.maxHeight !== undefined ? { maxHeight: layout.maxHeight, overflowY: 'auto' as const } : null),
   };
 
   const handlePointerDown = (event: PointerEvent<HTMLDivElement>) => {
@@ -77,6 +82,7 @@ export function CellContextMenuPopover({
     <div
       ref={popoverRef}
       role="menu"
+      aria-label={ariaLabel}
       // 追加(1.1.0 / AP-33): 右クリックで開いたときはパネルにフォーカスを置きます(controller)。
       tabIndex={-1}
       onPointerDown={handlePointerDown}

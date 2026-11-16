@@ -6,6 +6,9 @@ import type { GridSelectEditorOption } from '../model/gridTypes.unbound';
 export const SELECT_POPOVER_MIN_WIDTH = 180;
 export const SELECT_OPTION_ROW_HEIGHT = 28;
 export const SELECT_POPOVER_PADDING_Y = 4;
+// 追加(1.2.0 の見直し QH-1): 一覧の枠線(styles.css の .ssg-select-editor-popover は box-sizing: border-box なので、高さに枠線も
+//   入れないと中身が 2px 足りず、候補が全部見えていても一覧がスクロールしていた)。
+export const SELECT_POPOVER_BORDER_Y = 1;
 const SELECT_POPOVER_MAX_VISIBLE = 8;
 const VIEWPORT_MARGIN = 8;
 const OFFSET_Y = 2;
@@ -83,19 +86,27 @@ export type SelectPopoverPlacement = {
 // アンカー(編集セル input)の viewport rect からドロップダウンの fixed 配置を計算します。
 //   幅は max(セル幅, MIN_WIDTH) を左右マージンでクランプ、縦は下に収まらなければ上へフリップ
 //   (useFilterPopoverController と同じ規則)します。
+// 変更(1.2.0 の見直し QH-1): 候補の行の高さを渡せるようにしました(タッチが主の端末は CSS の (pointer: coarse) で 44px に
+//   なるため、28px のまま見積もると一覧の高さが足りずスクロールが要った)。省略時は SELECT_OPTION_ROW_HEIGHT。
+export const SELECT_OPTION_ROW_HEIGHT_COARSE = 44;
+export const resolveSelectOptionRowHeight = (): number =>
+  typeof matchMedia === 'function' && matchMedia('(pointer: coarse)').matches
+    ? SELECT_OPTION_ROW_HEIGHT_COARSE
+    : SELECT_OPTION_ROW_HEIGHT;
 export const computeSelectPopoverPlacement = (
   anchorRect: { left: number; top: number; bottom: number; width: number },
   optionCount: number,
   viewportWidth: number,
   viewportHeight: number,
+  rowHeight: number = SELECT_OPTION_ROW_HEIGHT,
 ): SelectPopoverPlacement => {
   const width = Math.max(anchorRect.width, SELECT_POPOVER_MIN_WIDTH);
   const maxLeft = Math.max(VIEWPORT_MARGIN, viewportWidth - width - VIEWPORT_MARGIN);
   const left = Math.min(Math.max(anchorRect.left, VIEWPORT_MARGIN), maxLeft);
   const listHeight =
-    Math.min(Math.max(optionCount, 1), SELECT_POPOVER_MAX_VISIBLE) *
-      SELECT_OPTION_ROW_HEIGHT +
-    SELECT_POPOVER_PADDING_Y * 2;
+    Math.min(Math.max(optionCount, 1), SELECT_POPOVER_MAX_VISIBLE) * rowHeight +
+    SELECT_POPOVER_PADDING_Y * 2 +
+    SELECT_POPOVER_BORDER_Y * 2;
   const belowTop = anchorRect.bottom + OFFSET_Y;
   const fitsBelow = belowTop + listHeight <= viewportHeight - VIEWPORT_MARGIN;
   const top = fitsBelow

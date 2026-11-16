@@ -22,6 +22,7 @@ import {
 import type { AutoHeightMeasurer } from '../controllers/autoHeightMeasurer';
 import { createScrollSyncController, type ScrollSyncController } from '../controllers/scrollSyncController';
 import { createRowEnterController, type RowEnterController } from '../controllers/rowEnterController';
+import { createActiveRowFollowController, type ActiveRowFollowController } from '../controllers/activeRowFollowController';
 import type { ChangeHighlightController } from '../controllers/changeHighlightController';
 import type { SaveStatusController } from '../controllers/saveStatusController';
 import type { FindController } from '../controllers/findController';
@@ -112,6 +113,8 @@ export type GridEngine<T> = {
   // 追加(G-1): セル操作の通知(クリック / ダブルクリック = レイアウト effect で接続、アクティブセル = passive)。
   cellEventNotifier: CellEventNotifier<T>;
   activeCellNotifier: ActiveCellNotifier<T>;
+  // 追加(1.2.0 / B-04): アクティブセルを行に付いていかせる(activeCellFollows: 'row'。レイアウト effect で接続)。
+  activeRowFollow: ActiveRowFollowController<T>;
   // DOM / タイマーを持つコントローラ。
   autoHeightMeasurer: AutoHeightMeasurer<T>;
   scrollSync: ScrollSyncController;
@@ -156,7 +159,7 @@ const toDisplayOrder = <C extends { pinned?: 'left' | 'right' }>(list: readonly 
 //   固定かどうか(両方にある列だけで比べる)。同じなら警告しません(getState() の値をそのまま渡せる、のとおりにする)。
 const isSameColumnLayout = (
   saved: readonly GridColumnState[],
-  columns: readonly { key: string; visible?: boolean; pinned?: 'left' | 'right' }[],
+  columns: readonly { key: string; visible?: boolean; pinned?: 'left' | 'right'; rowGroup?: boolean }[],
 ): boolean => {
   const byKey = new Map(columns.map((column) => [column.key, column]));
   const savedKeys = new Set(saved.map((entry) => entry.key));
@@ -173,7 +176,9 @@ const isSameColumnLayout = (
         column !== undefined &&
         column.key === entry.key &&
         (column.visible !== false) === (entry.visible !== false) &&
-        (column.pinned ?? null) === (entry.pinned ?? null)
+        (column.pinned ?? null) === (entry.pinned ?? null) &&
+        // 追加(1.2.0 / H-04): 保存に rowGroup があれば(includeGroupingInState)、それも比べます。
+        (entry.rowGroup === undefined || (column.rowGroup === true) === entry.rowGroup)
       );
     })
   );
@@ -185,7 +190,7 @@ const warnedInitialStates = /* @__PURE__ */ new WeakSet<object>();
 
 const resolveInitialUiState = (
   initialState: unknown,
-  columns: readonly { key: string; visible?: boolean; pinned?: 'left' | 'right' }[],
+  columns: readonly { key: string; visible?: boolean; pinned?: 'left' | 'right'; rowGroup?: boolean }[],
 ): GridUiState => {
   let state = createInitialGridUiState();
   if (initialState === undefined || initialState === null) {
@@ -212,10 +217,10 @@ const resolveInitialUiState = (
     }
     if (patch.columns !== undefined && !isSameColumnLayout(patch.columns, columns)) {
       console.warn(
-        '[spreadsheet-grid] initialState の columns(列の並び / 表示 / 固定)が columns prop と違いますが、使いません。' +
-          'columns prop で決めてください(マウントの後に変えるなら applyState)。\n' +
-          '[spreadsheet-grid] initialState.columns (order / visibility / pinning) differs from the columns prop and is not used. ' +
-          'Set them in the columns prop (use applyState to change them after mounting).',
+        '[spreadsheet-grid] initialState の columns(列の並び / 表示 / 固定 / グループ化)が columns prop と違いますが、使いません。' +
+          'columns prop で決めてください(保存した値から作るなら restoreColumnsFromState、マウントの後に変えるなら applyState)。\n' +
+          '[spreadsheet-grid] initialState.columns (order / visibility / pinning / grouping) differs from the columns prop and is not used. ' +
+          'Set them in the columns prop (build it with restoreColumnsFromState, or use applyState to change them after mounting).',
       );
     }
   }
@@ -233,6 +238,10 @@ const resolveInitialUiState = (
   }
   if (patch.sort) {
     state = gridUiReducer(state, gridActions.setSort(patch.sort));
+  }
+  // 追加(1.2.0 / H-04): 折りたたんだグループ(includeGroupingInState で保存した値)。
+  if (patch.collapsedGroups) {
+    state = gridUiReducer(state, gridActions.setCollapsedGroupKeys(new Set(patch.collapsedGroups)));
   }
   return state;
 };
@@ -299,6 +308,7 @@ export const createGridEngine = <T,>(init: GridEngineInit<T>): GridEngine<T> => 
     stateChangeNotifier: createStateChangeNotifier<T>(),
     cellEventNotifier: createCellEventNotifier<T>(),
     activeCellNotifier: createActiveCellNotifier<T>(),
+    activeRowFollow: createActiveRowFollowController<T>(),
     autoHeightMeasurer,
     scrollSync,
     rowEnter,

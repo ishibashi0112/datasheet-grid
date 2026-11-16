@@ -31,9 +31,10 @@ const gridRef = useRef<SpreadsheetGridHandle<Row>>(null);
 | `scrollToTop()` / `scrollToBottom()` | 先頭 / 末尾へ。行高を実測するモード(auto-height 列 / 展開行)でも、`scrollToBottom()` は直後の計測で総高が伸びた分を短時間(約 1 秒・上スクロールで中断)自動で再補正し、1 回の呼び出しで末尾に届く。 |
 | `getVisibleRowRange()` | 現在描画中の行ウィンドウ `{ startIndex, endIndex }`(end 排他)。空は `null`。 |
 | `getScrollPosition()` | 現在のスクロール位置 `{ top, left }`(px)。値はスクロールコンテナの生の `scrollTop` / `scrollLeft` で、`setScrollPosition` / `onScroll` と同一基準(往復で一貫)。未マウント時は `null`。 |
+| `isAtBottom()` | 縦のスクロールが末尾(下端)にあるか(`boolean`。中身が見える高さより低いときも `true`、2px 以下の差は末尾(拡大縮小の小数や、Firefox が 100 万行の表の高さを丸める分)。未マウント時は `false`)。ログのように行が増えるたびに末尾を見せる表で、行を足す前に呼んで末尾を追うかを決める。`onScroll` の `atBottom` も同じ判定。1.2.0 から。 |
 | `setScrollPosition({ top?, left? }, { behavior? })` | スクロール位置の設定(px)。省略側は現状維持・スクロール可能範囲へクランプ。`behavior` は `'auto'`(既定・即時)/ `'smooth'`。2 グリッドの双方向同期では `'auto'` を推奨(`'smooth'` は途中フレームの `onScroll` が `source:'user'` になり得る)。 |
 
-スクロール変化の**通知**は props 側の `onScroll` で受け取る(`{ top, left, source }`・rAF で 1 フレーム 1 回に間引き)。`source: 'api'` は `setScrollPosition` / `scrollTo*` 系由来、`'user'` はそれ以外(ホイール / ドラッグ / キーボード等。絞り込みや行の高さの測り直しで表が縮み、ブラウザが位置を詰めた分も `'user'` で届くので、「人が動かした」の判定には使えない)。2 グリッドの双方向スクロール同期は「`onScroll` で `source === 'user'` のときだけ相手の `setScrollPosition` を呼ぶ」ことでループを止められる。 末尾を追う(ログのように行が増えるたびに末尾を見せる)ときは、行を足す前に末尾にいるかを `.ssg-scroll-container` の `scrollHeight - scrollTop - clientHeight < 1` で確かめ、末尾にいたら足した後に `scrollToBottom()` を呼ぶ(`onScroll` の `source` では判定しない)。絞り込みを外して表が伸びたときのように、行を足す以外で末尾から離れたときも追い続けるなら、その後に `scrollToBottom()` を呼ぶ。
+スクロール変化の**通知**は props 側の `onScroll` で受け取る(`{ top, left, source, atBottom }`・rAF で 1 フレーム 1 回に間引き。`atBottom` は末尾にいるか = `isAtBottom()` と同じ判定。1.2.0 から)。`source: 'api'` は `setScrollPosition` / `scrollTo*` 系由来(と、スクロールの位置を縮めて写す大きな表で、行の増減のときに見ている行を保つための合わせ直し)、`'user'` はそれ以外(ホイール / ドラッグ / キーボード等。絞り込みや行の高さの測り直しで表が縮み、ブラウザが位置を詰めた分も `'user'` で届くので、「人が動かした」の判定には使えない)。2 グリッドの双方向スクロール同期は「`onScroll` で `source === 'user'` のときだけ相手の `setScrollPosition` を呼ぶ」ことでループを止められる。 末尾を追う(ログのように行が増えるたびに末尾を見せる)ときは、行を足す前に `isAtBottom()` で末尾にいるかを確かめ、末尾にいたら足した後に `scrollToBottom()` を呼ぶ(`onScroll` の `source` では判定しない。人が上へ戻したかは `onScroll` の `atBottom` で分かる。1.1 までは `.ssg-scroll-container` の `scrollHeight - scrollTop - clientHeight < 1` で確かめていた)。絞り込みを外して表が伸びたときのように、行を足す以外で末尾から離れたときも追い続けるなら、その後に `scrollToBottom()` を呼ぶ。
 
 ### 選択 / アクティブセル
 
@@ -100,7 +101,7 @@ const addRow = () => {
 | --- | --- |
 | `setGroupCollapsed(groupKey, collapsed)` | 指定グループを開閉する(`collapsed: true` = 折りたたみ)。`groupKey` は `getGroupRows()` の記述子から取得。同一イベント内の連続呼び出しも正しく積み重なる。 |
 | `expandAllGroups()` / `collapseAllGroups()` | すべてのグループを展開 / 折りたたむ。 |
-| `getGroupRows()` | 全グループ行の記述子(`GridGroupRow[]`)を DFS 順(表示順)で返す。開閉状態に関わらず全件。 |
+| `getGroupRows()` | 全グループ行の記述子(`GridGroupRow[]`)を DFS 順(表示順)で返す。開閉状態に関わらず全件。各記述子の `collapsed` は折りたたんでいるか(1.2.0 から)。折りたたまれた中の行を見せたいときは、`columnKey` と `value` でグループを探して `setGroupCollapsed(groupKey, false)` を呼ぶ。 |
 
 ### 展開行(Master/Detail)
 
@@ -116,7 +117,7 @@ const addRow = () => {
 
 | メソッド | 説明 |
 | --- | --- |
-| `moveRow(rowKey, toIndex)` | 指定行キーの行を元 `rows` 配列の `toIndex` へ移動する(clientSide + `onRowsChange` 指定時のみ。`enableRowDrag` / ソート / フィルターの状態には依存しない)。`onRowsChange`(履歴ラッパ経由 = undo 対象)→ `onRowMove` の順に呼ばれる。未知のキー / 同一位置 / 範囲外は no-op。serverSide では開発時警告 + no-op。 |
+| `moveRow(rowKey, toIndex)` | 指定行キーの行を元 `rows` 配列の `toIndex` へ移動する(clientSide + `onRowsChange` 指定時のみ。`enableRowDrag` / ソート / フィルターの状態には依存しない。`canDropRow` は効かない)。`onRowsChange`(履歴ラッパ経由 = undo 対象)→ `onRowMove` の順に呼ばれる。未知のキー / 同一位置 / 範囲外は no-op。serverSide では開発時警告 + no-op。 |
 
 ### undo / redo(編集履歴)
 
@@ -159,7 +160,7 @@ const addRow = () => {
 | `exportCsv(options?)` | CSV 文字列を返す(純粋・副作用なし)。 |
 | `downloadCsv(filename?, options?)` | `exportCsv` の結果を `.csv` としてダウンロード(`filename` 既定 `'export.csv'`、`bom` 既定 `true`)。 |
 
-`CsvExportOptions`: `scope`(下表)、`includeHeaders`(既定 `true`)、`delimiter`(既定 `','`。`'\t'` で TSV)、`bom`(`exportCsv` は既定 `false` / `downloadCsv` は既定 `true` = Excel 互換)、`escapeFormulas`(既定 `false`。`true` で `=` / `+` / `-` / `@` / タブ / CR で始まる値の先頭に `'` を付け、表計算ソフトで数式として実行されないようにする(CSV インジェクション対策)。`-5` のように数値として読める値はそのまま。ヘッダー行は対象外)、`includeLabelRows`(既定 `false`。ラベル行(`labelRow`)を `exportText`(未指定なら `getLabel` を先頭列・他列は空)の 1 行として出力する)、`includeTotalRow`(既定 `false`。合計行(`totalRow`)を末尾に 1 行出す。scope `'view'` のときだけで、値は生値)、`includePinnedRows`(既定 `false`。固定行(`pinnedTopRows` / `pinnedBottomRows`)を、上は本体の行の前、下は本体の行の後(合計行の前)に出す。scope `'selection'` では出さない)、`includeGroupRows`(既定 `false`。行グルーピング中に各グループの先頭へ小計の行を入れる。scope `'view'` のときだけ。グループ元の列は祖先のグループの値と「関東 小計」のような「グループの値 + 小計」、集計のある列(`aggFunc`)はそのグループの集計値(生値)、ほかの列は空。グループ元の列の文字はデータ行と同じ規則(`formatClipboardValue`)。`isRowExportable` で除いた行は小計にも数えず、行が 1 つも残らないグループは小計の行も出さない。合計行(`includeTotalRow`)は画面の合計行と同じ値で、除いた行も数える)。行グルーピング中は、表示から外れているグループ元の列を出力の先頭に入れる(scope `'view'` / `'raw'` / `'rendered'` と行の選択。セル / 列の選択は選んだ列のまま)。値整形はコピー(クリップボード)と同じ規則(`formatClipboardValue` があればそれ、無ければ `String(value ?? '')`)。RFC 4180 のクォート、行区切りは CRLF。props の `isRowExportable` 指定時は `false` の行が出力から行ごと除かれる(コピー / `getExportData` も同じ規則)。
+`CsvExportOptions`: `scope`(下表)、`includeHeaders`(既定 `true`)、`delimiter`(既定 `','`。`'\t'` で TSV)、`bom`(`exportCsv` は既定 `false` / `downloadCsv` は既定 `true` = Excel 互換)、`escapeFormulas`(既定 `false`。`true` で `=` / `+` / `-` / `@` / タブ / CR で始まる値の先頭に `'` を付け、表計算ソフトで数式として実行されないようにする(CSV インジェクション対策)。`-5` のように数値として読める値はそのまま。ヘッダー行は対象外)、`includeLabelRows`(既定 `false`。ラベル行(`labelRow`)を `exportText`(未指定なら `getLabel` を先頭列・他列は空)の 1 行として出力する)、`includeTotalRow`(既定 `false`。合計行(`totalRow`)を末尾に 1 行出す。scope `'view'` のときだけで、値は生値)、`includePinnedRows`(既定 `false`。固定行(`pinnedTopRows` / `pinnedBottomRows`)を、上は本体の行の前、下は本体の行の後(合計行の前。`pinnedBottomRowsPlacement: 'belowTotal'` なら合計行の後)に出す。scope `'selection'` では出さない)、`includeGroupRows`(既定 `false`。行グルーピング中に各グループの先頭へ小計の行を入れる。scope `'view'` のときだけ。グループ元の列は祖先のグループの値と「関東 小計」のような「グループの値 + 小計」、集計のある列(`aggFunc`)はそのグループの集計値(生値)、ほかの列は空。グループ元の列の文字はデータ行と同じ規則(`formatClipboardValue`)。`isRowExportable` で除いた行は小計にも数えず、行が 1 つも残らないグループは小計の行も出さない。合計行(`includeTotalRow`)は画面の合計行と同じ値で、除いた行も数える)。行グルーピング中は、表示から外れているグループ元の列を出力の先頭に入れる(scope `'view'` / `'raw'` / `'rendered'` と行の選択。セル / 列の選択は選んだ列のまま)。値整形はコピー(クリップボード)と同じ規則(`formatClipboardValue` があればそれ、無ければ `String(value ?? '')`)。RFC 4180 のクォート、行区切りは CRLF。props の `isRowExportable` 指定時は `false` の行が出力から行ごと除かれる(コピー / `getExportData` も同じ規則)。
 
 **scope 対応表**(`exportCsv` / `downloadCsv` / `getExportData` 共通):
 
@@ -307,9 +308,19 @@ const buffer = await writeXlsx({
 
 マウントの時点で戻す状態が分かっているときは、`applyState` の代わりに prop の `initialState` に渡す(最初の描画・サーバーの描画・serverSide の最初の `getRows` から効く。`columns` は使わない)。列の並び / 表示 / 固定(`columns`)も戻すときは、`restoreColumnsFromState(columns, saved)` で保存した列メタを列定義へ当てた配列を作り、`columns` prop に渡す(下の例。`applyState` と同じ規則で、保存に無い列は末尾、今の列に無い保存の列は捨てる。幅は `initialState` の `columnWidths` で戻すので列定義へは焼き込まない。保存した `columns` が無い / 読めないときは渡した配列をそのまま返す。readonly の配列も渡せる)。今の列に無い列の幅 / フィルター / ソートは捨てるが、マウント時は `onStateChange` を呼ばないので保存した値には残り、開くたびに開発時の警告が出る。消すときは、マウントの後に `getState()` の値で保存し直す。
 
-`GridState`: `{ version, columnWidths, filters, sort, columns? }`。`applyState` の引数の `GridStatePatch` は、その各フィールドを省略できる形(`filters` は `{ globalText?, columnFilters? }`)で、`getState()` の値はそのまま渡せる(全部のフィールドがあるので全部置き換わる)。`version` はマイグレーション用(現行 `2`)。`columns` は **列メタ(可視 / 順序 / ピン)のスナップショット**(`GridColumnState[]` = `{ key, visible?, pinned? }`。配列順 = 列順)で、`getState()` は常に出力し、`applyState()` は **`onColumnsChange` が指定されているときだけ** `columns` prop へ反映する(列順 / ピン / 可視も復元される点に注意。v1 形式 = `columns` 無しの保存値は列メタを触らない後方互換)。復元した `columns` 配列は固定列ごと(左固定 → 中央 → 右固定)の順に並べ直される(画面上の列順は同じ。列のドラッグ並べ替えと同じ規則で、2 回目以降の `applyState` では順序は変わらない)。`flex` / 列定義そのものは含めない。`activeCell` / `selection` などの一時 UI も含めない。`columnWidths` は**手動リサイズ / autoSize / `applyState` で幅が決まった列だけ**を持つ(それ以外の列は `width` / `flex` で描画され、エントリを持たない)。`columns` を同じ内容の別参照で渡し直しても消えず、列が削除されたとき・その列の `flex` / `pinned` 指定が変わったとき・`width` がエントリと異なる値に指定し直されたとき・列のリセット時にだけ捨てられる。そのため `applyState(getState())` は冪等で、保存値に既定幅が焼き込まれることもない(後からコードで `width` を変えれば、手動リサイズしていない列には反映される)。`custom` フィルターの `value`(`unknown`)は深いコピーをしないため、シリアライズ可能性は consumer 責務。`applyState` は壊れた / 部分的な入力にも耐える(非数値の幅・`kind` 無し / 未知 `kind` / 配列であるべき `values` が欠けた列フィルター・不正な `direction` は捨てる。`columns` に同じ `key` が重なっていたら最初の 1 つだけ使う)。
+`GridState`: `{ version, columnWidths, filters, sort, columns?, collapsedGroups? }`。`applyState` の引数の `GridStatePatch` は、その各フィールドを省略できる形(`filters` は `{ globalText?, columnFilters? }`)で、`getState()` の値はそのまま渡せる(全部のフィールドがあるので全部置き換わる)。`version` はマイグレーション用(現行 `2`)。`columns` は **列メタ(可視 / 順序 / ピン)のスナップショット**(`GridColumnState[]` = `{ key, visible?, pinned?, rowGroup? }`。`rowGroup` は `includeGroupingInState` のときだけ。配列順 = 列順)で、`getState()` は常に出力し、`applyState()` は **`onColumnsChange` が指定されているときだけ** `columns` prop へ反映する(列順 / ピン / 可視も復元される点に注意。v1 形式 = `columns` 無しの保存値は列メタを触らない後方互換)。復元した `columns` 配列は固定列ごと(左固定 → 中央 → 右固定)の順に並べ直される(画面上の列順は同じ。列のドラッグ並べ替えと同じ規則で、2 回目以降の `applyState` では順序は変わらない)。`flex` / 列定義そのものは含めない。`activeCell` / `selection` などの一時 UI も含めない。`columnWidths` は**手動リサイズ / autoSize / `applyState` で幅が決まった列だけ**を持つ(それ以外の列は `width` / `flex` で描画され、エントリを持たない)。`columns` を同じ内容の別参照で渡し直しても消えず、列が削除されたとき・その列の `flex` / `pinned` 指定が変わったとき・`width` がエントリと異なる値に指定し直されたとき・列のリセット時にだけ捨てられる。そのため `applyState(getState())` は冪等で、保存値に既定幅が焼き込まれることもない(後からコードで `width` を変えれば、手動リサイズしていない列には反映される)。`custom` フィルターの `value`(`unknown`)は深いコピーをしないため、シリアライズ可能性は consumer 責務。`applyState` は壊れた / 部分的な入力にも耐える(非数値の幅・`kind` 無し / 未知 `kind` / 配列であるべき `values` が欠けた列フィルター・不正な `direction` は捨てる。`columns` に同じ `key` が重なっていたら最初の 1 つだけ使う)。
 
-行のグループ化(列の `rowGroup`)とグループの開閉は `GridState` に入らない(`getState()` / `initialState` / `restoreColumnsFromState` では戻らない)。画面からのグループ化も保存したいときは、`onColumnsChange` で受け取った列定義の `rowGroup` を自分で保存し、次に開くときの `columns` に書く(例: `rowGroup` が `true` の列キーの配列を保存し、`defaultColumns.map((c) => ({ ...c, rowGroup: keys.includes(c.key) }))`)。開閉はマウントのたびに既定(すべて開く)へ戻る。
+行のグループ化(列の `rowGroup`)とグループの開閉は、既定では `GridState` に入らない。prop の `includeGroupingInState` を付けると入る(1.2.0 から): `columns` の各列のうち `rowGroup` を書いた列に `rowGroup`(`true` / `false`)が、`collapsedGroups` に折りたたんだグループのキー(`GridGroupRow.groupKey`)の配列が入り、グループの開閉でも `onStateChange` が呼ばれる。戻すときは、`restoreColumnsFromState(columns, saved)` が保存にある列の `rowGroup` を列定義へ当て(グループ化の階層は列の順なので並びも戻る。グループ元の列どうしの順は、固定のペインごとの並べ直しでも変えない)、`initialState` / `applyState` が `collapsedGroups` を戻す(`collapsedGroups` は渡したときだけ変える。今の行に無いキーは画面には効かないが `collapsedGroups` には残る = 絞り込みを外すと閉じたまま戻る。グループが入れ替わり続ける表では、保存する前に `getGroupRows()` にあるキーだけへ絞る)。`applyState` で `columns` を戻すときも `rowGroup` が戻る(`onColumnsChange` があるとき)。グループのキーは列のキーと値から作る文字列で、行を取り直しても変わらない(中の形は決まっていないので、自分で組み立てずに `getGroupRows()` / 保存した値から使う)。
+
+```tsx
+<SpreadsheetGrid
+  columns={columns}                 // restoreColumnsFromState(defaultColumns, saved)
+  onColumnsChange={setColumns}
+  initialState={saved}
+  includeGroupingInState
+  onStateChange={(state) => localStorage.setItem('grid-state', JSON.stringify(state))}
+/>
+```
 
 ```ts
 // 保存(任意の永続先へ)。

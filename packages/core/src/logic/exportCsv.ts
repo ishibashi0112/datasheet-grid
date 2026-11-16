@@ -67,6 +67,8 @@ export type SerializeRowsToCsvParams<T> = {
   // 追加(1.1.0 / 固定行): 上の固定行(見出しの次)と下の固定行(本体の行の後・合計行の前)。
   pinnedTop?: readonly T[] | undefined;
   pinnedBottom?: readonly T[] | undefined;
+  // 追加(1.2.0 / RV3-要望): 下の固定行を合計行の後に出すか(pinnedBottomRowsPlacement: 'belowTotal')。
+  pinnedBottomAfterTotal?: boolean | undefined;
 };
 
 // 追加(label-row ④): ラベル行 1 行ぶんの出力値です(列順)。
@@ -95,6 +97,7 @@ export const serializeRowsToCsv = <T,>({
   getGroupLine,
   pinnedTop,
   pinnedBottom,
+  pinnedBottomAfterTotal,
 }: SerializeRowsToCsvParams<T>): string => {
   const lines: string[] = [];
   // 追加(audit L-20): セル(とラベル行)の値に適用する無害化。ヘッダーは consumer の列タイトルなので対象外です。
@@ -143,10 +146,16 @@ export const serializeRowsToCsv = <T,>({
     lines.push(cells.join(delimiter));
   }
 
-  pushPinned(pinnedBottom);
+  if (pinnedBottomAfterTotal !== true) {
+    pushPinned(pinnedBottom);
+  }
   // 追加(合計行 3A): 合計行は末尾に 1 行(値は生値の文字列表現。空値は空)。
   if (totalLine) {
     lines.push(columns.map((_, index) => cellField(totalExportCellText(totalLine[index]))).join(delimiter));
+  }
+  // 追加(1.2.0 / RV3-要望): 下の固定行を合計行の下に置くときは、合計行の後へ。
+  if (pinnedBottomAfterTotal === true) {
+    pushPinned(pinnedBottom);
   }
 
   const body = lines.join('\r\n');

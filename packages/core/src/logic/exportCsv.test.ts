@@ -312,4 +312,21 @@ describe('serializeRowsToCsv × 固定行(pinnedTop / pinnedBottom)', () => {
     const empty = serializeRowsToCsv({ getRow, startRow: 0, endRow: 0, columns, pinnedTop: [rows[0] as (typeof rows)[number]] });
     expect(empty.split('\r\n')).toHaveLength(2);
   });
+
+  it('pinnedBottomAfterTotal(1.2.0 / RV3-要望): 下の固定行を合計行の後に出す', () => {
+    const csv = serializeRowsToCsv({
+      getRow,
+      startRow: 0,
+      endRow: 1,
+      columns,
+      includeHeaders: false,
+      pinnedBottom: [rows[1] as (typeof rows)[number]],
+      totalLine: ['合計', 3],
+      pinnedBottomAfterTotal: true,
+    });
+    const lines = csv.split('\r\n');
+    expect(lines).toHaveLength(3);
+    expect(lines[1]).toBe('合計,3');
+    expect(lines[2]).toBe(serializeRowsToCsv({ getRow, startRow: 1, endRow: 2, columns, includeHeaders: false }));
+  });
 });

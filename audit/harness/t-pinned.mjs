@@ -189,7 +189,7 @@ const rowFullyVisible = (g) =>
     top: document.querySelector('.ssg-pinned-row[data-ssg-pinned="top"][data-pane="center"]').getAttribute('aria-rowindex'),
     bottom: [...document.querySelectorAll('.ssg-pinned-row[data-ssg-pinned="bottom"][data-pane="center"]')].map((e) => e.getAttribute('aria-rowindex')),
     total: document.querySelector('.ssg-total-row[data-pane="center"]').getAttribute('aria-rowindex'),
-    header: document.querySelector('.ssg-pinned-row[data-ssg-pinned="top"][data-pane="left"] [role="rowheader"]')?.getAttribute('aria-label'),
+    header: document.querySelector('.ssg-pinned-row[data-ssg-pinned="top"][data-pane="left"] [role="rowheader"] [role="img"]')?.getAttribute('aria-label'),
   }));
   check(
     'pinned: aria-rowcount と行の番号(見出し 1 → 上 2 → 本体 3〜502 → 下 503・504 → 合計 505)',
@@ -294,6 +294,42 @@ const rowFullyVisible = (g) =>
   const gMid = await geo(page, 500_000);
   check('pinned: 100 万行の中ほどの scrollToRow(start) も上の固定行の下', near(gMid.rowTop, gMid.topBottom, 2), gMid);
   check('pinned: 予期しないページエラーなし(100 万行)', unexpectedPageErrors(pageErrors).length === 0, unexpectedPageErrors(pageErrors));
+  await close();
+}
+
+// ---------- 合計行の下に置く(1.2.0 / RV3-要望 pinnedBottomRowsPlacement: 'belowTotal') ----------
+{
+  const { page, pageErrors, close } = await open('basic');
+  await setPinned(page);
+  await page.evaluate(() => window.__setProps({ pinnedBottomRowsPlacement: 'belowTotal' }));
+  await waitIdle(page, 250);
+  const g0 = await geo(page, 0);
+  check('pinned(belowTotal): 合計行は下の固定行のすぐ上、下の固定行は見える範囲の下端', near(g0.totalBottom, g0.bottomTop) && near(g0.bottomBottom, g0.visibleBottom), g0);
+  await scrollTo(page, 3000);
+  await waitIdle(page, 150);
+  const gMid = await geo(page);
+  check('pinned(belowTotal): スクロールしても合計行と下の固定行は留まる', near(gMid.totalBottom, gMid.bottomTop) && near(gMid.bottomBottom, gMid.visibleBottom), gMid);
+  await scrollTo(page, 1e9);
+  await waitIdle(page, 150);
+  const gEnd = await geo(page, 499);
+  check('pinned(belowTotal): 最後までスクロールすると最終行は合計行のすぐ上', near(gEnd.rowBottom, gEnd.totalTop), gEnd);
+  await page.evaluate(() => window.__grid.scrollToRow(250, { align: 'end' }));
+  await waitIdle(page, 200);
+  const gAlign = await geo(page, 250);
+  check('pinned(belowTotal): scrollToRow(end) の行は合計行に隠れない', near(gAlign.rowBottom, gAlign.totalTop), gAlign);
+  const order = await page.evaluate(() =>
+    [...document.querySelectorAll('[role="row"][aria-rowindex]')]
+      .filter((e) => e.matches('.ssg-total-row[data-pane="center"], .ssg-pinned-row[data-ssg-pinned="bottom"][data-pane="center"]'))
+      .map((e) => `${e.classList.contains('ssg-total-row') ? 'total' : 'pinned'}:${e.getAttribute('aria-rowindex')}`),
+  );
+  check('pinned(belowTotal): aria-rowindex は合計行 → 下の固定行の順', JSON.stringify(order) === JSON.stringify(['total:503', 'pinned:504', 'pinned:505']), order);
+  // 行が少ないとき: 最後の行の直後に合計行、その直後に下の固定行。
+  await page.evaluate(() => window.__setRows(window.__rows().slice(0, 3)));
+  await waitIdle(page, 300);
+  const gFew = await geo(page, 2);
+  check('pinned(belowTotal): 行が少ないときは 最後の行 → 合計行 → 下の固定行', near(gFew.rowBottom, gFew.totalTop) && near(gFew.totalBottom, gFew.bottomTop) && gFew.bottomBottom < gFew.visibleBottom - 10, gFew);
+  await page.screenshot({ path: `${OUT}/pinned-below-total.png` });
+  check('pinned(belowTotal): 予期しないページエラーなし', unexpectedPageErrors(pageErrors).length === 0, unexpectedPageErrors(pageErrors));
   await close();
 }
 

@@ -112,6 +112,31 @@ describe('viewportSyncController', () => {
     expect(scroll.scrollTo).toHaveBeenCalledTimes(3);
   });
 
+  it('並びの変化に付いていって動いた先(isRowFollowMove。B-04)へはスクロールしない', () => {
+    const scroll = createScrollElement();
+    scroll.raw.scrollLeft = 1000;
+    const controller = createViewportSyncController();
+    const rect = { left: 0, top: 72, width: 80, height: 36 };
+    const isRowFollowMove = (cell: { row: number; col: number }) => cell.row === 40;
+    controller.update({ ...baseArgs(scroll.element), isRowFollowMove, activeCell: { row: 2, col: 1 }, activeCellRect: rect });
+    expect(scroll.scrollTo).toHaveBeenCalledTimes(1);
+    controller.update({
+      ...baseArgs(scroll.element),
+      isRowFollowMove,
+      activeCell: { row: 40, col: 1 },
+      activeCellRect: { ...rect, top: 1440 },
+    });
+    expect(scroll.scrollTo).toHaveBeenCalledTimes(1);
+    // その後に人が動かしたセルへは今までどおり。
+    controller.update({
+      ...baseArgs(scroll.element),
+      isRowFollowMove,
+      activeCell: { row: 41, col: 1 },
+      activeCellRect: { ...rect, top: 1476 },
+    });
+    expect(scroll.scrollTo).toHaveBeenCalledTimes(2);
+  });
+
   it('スクロールした直後に同じセルの矩形が動いたら(行の高さを測り直した)合わせ直す。行の仮想化がスクロール位置を足しても続け、利用者の操作と 1 秒の後はしない', () => {
     vi.useFakeTimers();
     try {

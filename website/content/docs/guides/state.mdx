@@ -10,15 +10,17 @@ description: 利用者が変えた列幅・フィルター・ソート・列の�
 | `columnWidths` | 幅が決まった列の幅(手で広げた / 自動調整した / `applyState` で入れた列だけ。`width` / `flex` のままの列は入らない) |
 | `filters` | 上部バーの検索の文字(`globalText`)と列フィルター(`columnFilters`) |
 | `sort` | 並べ替えの列と向き(複数の列も) |
-| `columns` | 列の並び / 表示 / 固定(`{ key, visible?, pinned? }[]`。配列の順 = 列の順) |
+| `columns` | 列の並び / 表示 / 固定(`{ key, visible?, pinned?, rowGroup? }[]`。配列の順 = 列の順。`rowGroup` は `includeGroupingInState` のときだけ) |
+| `collapsedGroups` | 折りたたんだグループのキー(`includeGroupingInState` のときだけ。1.2.0 から) |
 
-入らないもの: アクティブセル・選択・スクロール位置・編集の途中・行の選択、行のグループ化(列の `rowGroup`)とグループの開閉。行のデータ(`rows`)はアプリが持つものなので、これとは別に保存します。
+入らないもの: アクティブセル・選択・スクロール位置・編集の途中・行の選択。行のグループ化(列の `rowGroup`)とグループの開閉は、`includeGroupingInState` を付けたときだけ入ります(下の「行のグループ化を保存する」)。行のデータ(`rows`)はアプリが持つものなので、これとは別に保存します。
 
 ## デモ(開き直すと戻る)
 
 <StateDemo />
 
 - 並べ替え(見出しの `⋮` か、`Shift` を押しながら見出しを押す)・絞り込み・列幅・列の並び(見出しのドラッグ)を変えると、`onStateChange` で受け取った値が下の「保存した値」に入ります。
+- 「区分」の列メニュー(`⋮`)の「この列でグループ化」でグループ化できます。`includeGroupingInState` を入れたままだと、グループ化とグループの開閉も保存され、開き直すと戻ります(1.2.0 から)。
 - 「表を開き直す」はグリッドを作り直し、保存した値を `initialState` と `restoreColumnsFromState` で戻します(戻す前の画面は出ません)。デモでは React の state に保存していますが、実際のアプリでは `localStorage` やサーバーに保存します。
 
 ## 保存する(`onStateChange` / `getState`)
@@ -113,23 +115,23 @@ async function Orders({ searchParams }: { searchParams: Promise<{ sort?: string 
 
 ## 行のグループ化を保存する
 
-行のグループ化(列の `rowGroup`)は `GridState` に入りません。画面から(列メニューの「この列でグループ化」など)グループ化したものも保存したいときは、`onColumnsChange` で受け取った列定義から `rowGroup` の列キーを自分で保存し、次に開くときの列定義に書きます。
+行のグループ化(列の `rowGroup`)とグループの開閉は、既定では `GridState` に入りません。`includeGroupingInState` を付けると入ります(1.2.0 から)。
 
 ```tsx
-const groupKeys = savedGroupKeys ?? [];
-const [columns, setColumns] = useState(() =>
-  restoreColumnsFromState(defaultColumns, initialState).map((c) => ({ ...c, rowGroup: groupKeys.includes(c.key) })),
-);
+const [columns, setColumns] = useState(() => restoreColumnsFromState(defaultColumns, saved)); // rowGroup も戻る
 
 <SpreadsheetGrid
   columns={columns}
-  onColumnsChange={(next) => {
-    setColumns(next);
-    saveGroupKeys(next.filter((c) => c.rowGroup).map((c) => c.key));
-  }}
+  onColumnsChange={setColumns}
+  initialState={saved}            // 折りたたんだグループも戻る
+  includeGroupingInState
+  onStateChange={save}
 />
 ```
 
-グループの開閉は保存できず、マウントのたびにすべて開いた状態に戻ります。
+- `columns` の各列のうち `rowGroup` を書いた列に `rowGroup`(`true` / `false`)が入ります。列メニューの「この列でグループ化」「グループ化を外す」も入ります。グループ化の階層は列の順なので、`restoreColumnsFromState` で並びと一緒に戻ります。
+- `collapsedGroups` に折りたたんだグループのキーの配列が入り、グループを開け閉めするたびに `onStateChange` が呼ばれます(既定で入れないのはこのため)。今の行に無いキーは画面には効きませんが、`collapsedGroups` には残ります(絞り込みを外すと閉じたまま戻るため)。グループが入れ替わり続ける表では保存が増えていくので、保存する前に `getGroupRows()` にあるキーだけへ絞ってください。
+- 列のリセット(列メニュー / ツールパネル)は、マウントしたときの列(`restoreColumnsFromState` で戻した列)へ戻します。アプリの既定の列へ戻すときは、`setColumns(defaultColumns)` のように自分で列を渡します。
+- グループのキーは列のキーと値から作る文字列で、行を取り直しても変わりません。中の形は決まっていないので、自分で組み立てずに保存した値か `getGroupRows()` から使ってください。`getGroupRows()` の各グループの `collapsed` で、折りたたんでいるかが分かります。
 
 メソッドと型の詳細は [命令的 API の「状態の保存 / 復元」](/docs/api/handle#状態の保存--復元) を参照してください。

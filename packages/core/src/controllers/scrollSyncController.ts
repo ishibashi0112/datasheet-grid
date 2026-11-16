@@ -9,6 +9,7 @@
 //     発火しないため、実際に位置が変わるときだけ呼ぶこと = engine/gridApi が担保)。
 import type { GridScrollEventParams } from '../model/gridTypes.unbound';
 import type { GridViewStatePatch } from '../model/gridStore';
+import { isScrolledToBottom } from '../utils/scrollBottom';
 
 type ReadonlyRef<V> = { readonly current: V };
 
@@ -87,6 +88,8 @@ export const createScrollSyncController = (): ScrollSyncController => {
         top: el.scrollTop,
         left: el.scrollLeft,
         source: pending?.source === 'user' ? 'user' : source,
+        // 追加(1.2.0 / G-08 の続き): 末尾にいるか(末尾を追うときの判定。source では判定できないため)。
+        atBottom: isScrolledToBottom(el),
       };
       if (args?.onScroll && notifyFrameId === null) {
         notifyFrameId = requestAnimationFrame(flushScrollNotify);

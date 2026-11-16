@@ -4730,3 +4730,118 @@
       font-size: max(16px, 1em);
     }
   }
+
+  /* 追加(1.2.0 / 2026-11-09 実アプリの総点検 L-12): タッチが主の端末では、指で押す的を大きくします(マウスの端末の見た目は
+     変えない)。メニュー(右クリック / 列メニュー)の項目と select エディタの候補は 44px、列フィルターの候補(チェックの行。
+     行の高さは ColumnFilterPopover の仮想化と同じ 40px)・(すべて選択)・ツールパネルの列の行・ボタンは 40px 以上。
+     見出しの ⋮ とポップオーバーの × は、見た目の大きさのまま押せる範囲だけ広げます(見出しの高さを変えないため)。 */
+  @media (pointer: coarse) {
+    .ssg-menu-item {
+      min-height: 44px;
+    }
+    .ssg-select-editor-option,
+    .ssg-select-editor-empty {
+      height: 44px;
+      line-height: 44px;
+    }
+    .ssg-filter-selectall {
+      height: 40px;
+    }
+    .ssg-filter-list {
+      height: 240px;
+    }
+    .ssg-chooser-handle {
+      height: 40px;
+    }
+    .ssg-filter-btn-secondary,
+    .ssg-filter-btn-primary,
+    .ssg-menu-close-btn {
+      min-height: 40px;
+      padding-left: 14px;
+      padding-right: 14px;
+    }
+    .ssg-header-actions .ssg-icon-btn,
+    .ssg-popover-close {
+      position: relative;
+    }
+    .ssg-header-actions .ssg-icon-btn::after,
+    .ssg-popover-close::after {
+      content: '';
+      position: absolute;
+      inset: -8px -6px;
+    }
+    /* 見出しの ⋮ の左はつまみ(grip)なので、左へは隙間のぶんだけ広げます。 */
+    .ssg-header-actions .ssg-icon-btn::after {
+      inset: -8px -6px -8px -2px;
+    }
+    /* 追加(1.2.0 の見直し QH-4): 右寄せの見出しは並びが逆(つまみが ⋮ の右)なので、広げる向きも逆にします。 */
+    .ssg-header-cell--align-right .ssg-header-actions .ssg-icon-btn::after {
+      inset: -8px -2px -8px -6px;
+    }
+    /* 追加(1.2.0 の見直し QH-5): 列フィルターの中の小さい的(節の「クリア」・日付のプリセット・日付のツリーの開閉・日付の
+       入力欄のカレンダーのボタンとカレンダーの日 / 前後の月)と、ツールパネルの列の表示の切り替えも大きくします。 */
+    .ssg-filter-sec-head {
+      align-items: center;
+    }
+    .ssg-filter-sec-clear {
+      min-height: 32px;
+      padding: 0 8px;
+      margin-right: -8px;
+    }
+    .ssg-filter-preset-chip {
+      min-height: 32px;
+      padding: 4px 12px;
+    }
+    .ssg-filter-tree-toggle {
+      width: 32px;
+      align-self: stretch;
+    }
+    .ssg-dp-cal-btn {
+      width: 40px;
+    }
+    /* 日付の範囲の 2 つの入力欄は縦に並べます(16px の文字と 40px のボタンでは、横に 2 つ並べると「yyyy/」で切れる)。 */
+    .ssg-filter-cond-values:has(> .ssg-dp-root) {
+      flex-direction: column;
+      align-items: stretch;
+      gap: 0;
+    }
+    .ssg-filter-cond-values:has(> .ssg-dp-root) .ssg-filter-cond-tilde {
+      align-self: center;
+      margin: -2px 0 4px;
+    }
+    .ssg-dp-nav-btn {
+      width: 36px;
+      height: 36px;
+    }
+    .ssg-dp-day {
+      height: 36px;
+    }
+    .ssg-chooser-toggle {
+      min-height: 40px;
+    }
+    /* 追加(1.2.0 の確かめ直し L): ツールパネルのタブ・「列」タブの「すべての列を表示 / 非表示」と「初期状態に戻す」、
+       カレンダーの「今日」「クリア」、日付の入力欄(とカレンダーのボタン)の高さも大きくします。 */
+    .ssg-toolpanel-seg-btn {
+      min-height: 36px;
+    }
+    .ssg-chooser-master-btn {
+      position: relative;
+    }
+    /* 右は検索欄なので、右へは隙間のぶんだけ広げます。 */
+    .ssg-chooser-master-btn::after {
+      content: '';
+      position: absolute;
+      inset: -11px -6px -11px -11px;
+    }
+    .ssg-chooser-reset-btn {
+      min-height: 40px;
+    }
+    .ssg-dp-field {
+      min-height: 36px;
+    }
+    .ssg-dp-foot-btn {
+      min-height: 36px;
+      padding: 0 10px;
+      font-size: 12.5px;
+    }
+  }

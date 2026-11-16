@@ -13,6 +13,7 @@ import {
 } from './validation';
 import { applyClipboardMatrixToRows } from '../utils/clipboard';
 import { clearCellsInSelection } from './clearCells';
+import { DEFAULT_GRID_LOCALE_TEXT } from './localeText';
 
 type Row = { id: number; qty: unknown };
 
@@ -309,6 +310,60 @@ describe('数値の検査(number エディタの min / max / integer)', () => {
     expect(scanInvalidCells(rows, [numberColumn({ min: 0, integer: true })], (row) => row.id)).toEqual([
       { rowKey: 2, sourceRowIndex: 1, columnKey: 'qty', message: '0 以上で入力してください' },
       { rowKey: 3, sourceRowIndex: 2, columnKey: 'qty', message: '整数で入力してください' },
+    ]);
+  });
+});
+// 追加(1.2.0 / 2026-11-09 実アプリの総点検 A-07): number / date エディタの strict。
+describe('読めない値の検査(number / date エディタの strict)', () => {
+  const message = (column: GridColumn<Row>, value: unknown) => getInvalidMessage(column, makeRow({ qty: value }), value);
+  const strictNumber: GridColumn<Row> = { key: 'qty', width: 80, editor: { type: 'number', strict: true } };
+  const strictDate: GridColumn<Row> = { key: 'qty', width: 80, editor: { type: 'date', strict: true } };
+
+  it('strict の無い date 列と strict: false は検査の対象外(今までどおり)', () => {
+    expect(hasCellValidation({ key: 'qty', width: 80, editor: { type: 'date' } })).toBe(false);
+    expect(hasCellValidation({ key: 'qty', width: 80, editor: { type: 'date', strict: false } })).toBe(false);
+    expect(hasCellValidation({ key: 'qty', width: 80, editor: { type: 'number', strict: false } })).toBe(false);
+    expect(hasCellValidation(strictNumber)).toBe(true);
+    expect(hasCellValidation(strictDate)).toBe(true);
+  });
+
+  it('number の strict は数値として読めない値だけを「数値で入力してください」(範囲や整数は見ない)', () => {
+    expect(message(strictNumber, '¥12,000')).toBe('数値で入力してください');
+    expect(message(strictNumber, '十二')).toBe('数値で入力してください');
+    expect(message(strictNumber, '１，２３４')).toBeNull();
+    expect(message(strictNumber, -1.5)).toBeNull();
+    for (const empty of [null, undefined, '', '  ']) {
+      expect(message(strictNumber, empty)).toBeNull();
+    }
+  });
+
+  it('date の strict は既定のパーサが読む文字列と有効な Date を通し、ほかは「日付で入力してください」', () => {
+    for (const valid of ['2026-03-15', '2026/3/15', '2026-03-15T10:00:00', new Date(2026, 2, 15)]) {
+      expect(message(strictDate, valid)).toBeNull();
+    }
+    for (const empty of [null, undefined, '', '  ']) {
+      expect(message(strictDate, empty)).toBeNull();
+    }
+    for (const invalid of ['2026年11月4日', '来週', '2026/2/30', '11/2', '45678', 45678, true, new Date(Number.NaN)]) {
+      expect(message(strictDate, invalid)).toBe('日付で入力してください(例: 2026/3/15)');
+    }
+  });
+
+  it('validate が先で、通した値だけ strict の検査。文言は localeText の enterDate', () => {
+    const column: GridColumn<Row> = { ...strictDate, validate: ({ value }) => (value === 'x' ? '自前のメッセージ' : true) };
+    expect(message(column, 'x')).toBe('自前のメッセージ');
+    expect(getInvalidMessage(strictDate, makeRow(), 'later', { ...DEFAULT_GRID_LOCALE_TEXT, enterDate: 'Enter a date' })).toBe(
+      'Enter a date',
+    );
+  });
+
+  it("'reject' の列は読めない日付を書かない。getInvalidCells も対象", () => {
+    const column: GridColumn<Row> = { ...strictDate, validationMode: 'reject' };
+    expect(decideCellWrite(column, makeRow(), '来週')).toEqual({ action: 'reject', message: '日付で入力してください(例: 2026/3/15)' });
+    expect(decideCellWrite(column, makeRow(), '2026-03-15')).toEqual({ action: 'write' });
+    const rows = [makeRow({ id: 1, qty: '2026-03-15' }), makeRow({ id: 2, qty: '2026年11月4日' })];
+    expect(scanInvalidCells(rows, [strictDate], (row) => row.id)).toEqual([
+      { rowKey: 2, sourceRowIndex: 1, columnKey: 'qty', message: '日付で入力してください(例: 2026/3/15)' },
     ]);
   });
 });

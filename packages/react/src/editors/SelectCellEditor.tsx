@@ -21,10 +21,12 @@ import type {
 } from '../model/gridTypes';
 import { resolveEnterDirection } from './editorKeyBindings';
 import { CellEditorErrorBubble } from './CellEditorErrorBubble';
+import { useTopAlignedInput } from './useTopAlignedInput';
 import { usePopupContainer, usePortalTokens } from '../hooks/usePortalTokens';
 import { useIsomorphicLayoutEffect } from '../hooks/useController';
 import {
   computeSelectPopoverPlacement,
+  resolveSelectOptionRowHeight,
   createTypeaheadState,
   findOptionByComposedText,
   moveHighlight,
@@ -61,6 +63,9 @@ type SelectCellEditorProps = {
   // 追加(audit RD-9): 印字キー / IME 確定で編集を始めたときの文字列です。開いた時点でタイプアヘッドに 1 回
   //   使い、label がその文字列で始まる最初の候補をハイライトします(一致が無ければ現在値のまま)。
   initialText?: string;
+  // 追加(1.2.0): セルの高さと、上にそろえて描かれているか(背の高い行の 1 行のエディタの文字をセルの 1 行目にそろえる)。
+  cellHeight?: number;
+  alignTop?: boolean;
 };
 
 export function SelectCellEditor({
@@ -74,10 +79,13 @@ export function SelectCellEditor({
   popoverSlot,
   enterMove,
   initialText,
+  cellHeight = 0,
+  alignTop = false,
 }: SelectCellEditorProps) {
   // 追加(英語対応): 文言(localeText)。
   const texts = useGridLocaleText();
   const inputRef = useRef<HTMLInputElement | null>(null);
+  useTopAlignedInput(inputRef, alignTop, cellHeight);
   const listRef = useRef<HTMLDivElement | null>(null);
   // 追加(1.0.1 / AP-34): 候補の一覧と候補の id(aria-controls / aria-activedescendant)。
   const listId = useId();
@@ -94,6 +102,8 @@ export function SelectCellEditor({
   const typeaheadRef = useRef(initialState.typeahead);
   const [highlight, setHighlight] = useState(initialState.highlight);
   const [placement, setPlacement] = useState<SelectPopoverPlacement | null>(null);
+  // 追加(1.2.0 の見直し QH-1): 候補の行の高さ(タッチが主の端末は 44px)。開いたときに 1 回だけ決めます。
+  const [optionRowHeight] = useState(resolveSelectOptionRowHeight);
   // 追加(DevBI の報告): 表で決まったトークン(--ssg-*)を候補のリストへ写します(body 直下のため継承で届かない)。
   usePortalTokens(listRef, placement !== null, themeClassName, { layout: placement });
   // 追加(1.1.0 / AP-07): 候補を描く場所(既定はグリッドを囲むダイアログの中、無ければ body)。
@@ -117,11 +127,12 @@ export function SelectCellEditor({
             options.length,
             window.innerWidth,
             window.innerHeight,
+            optionRowHeight,
           ),
         );
       }
     },
-    [options.length],
+    [options.length, optionRowHeight],
   );
 
   // resize / scroll(capture: グリッド内部の仮想スクロールにも追従)で配置を再計算します。
@@ -137,6 +148,7 @@ export function SelectCellEditor({
           options.length,
           window.innerWidth,
           window.innerHeight,
+          optionRowHeight,
         ),
       );
     };
@@ -146,7 +158,7 @@ export function SelectCellEditor({
       window.removeEventListener('resize', update);
       window.removeEventListener('scroll', update, true);
     };
-  }, [options.length]);
+  }, [options.length, optionRowHeight]);
 
   // ハイライト移動時に候補を可視範囲へスクロールします(jsdom は scrollIntoView 未実装のため
   //   optional call)。

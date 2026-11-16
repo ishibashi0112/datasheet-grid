@@ -4,7 +4,7 @@
 //   固定列の 3 ペイン、合計行との並び、エクスポート(includePinnedRows)を実コンポーネント越しに固定します。
 // @vitest-environment jsdom
 import { describe, it, expect, beforeAll, afterAll, afterEach, vi } from 'vitest';
-import { render, cleanup, act, fireEvent, waitFor } from '@testing-library/react';
+import { render, cleanup, act, fireEvent, waitFor, within } from '@testing-library/react';
 import { createRef, useState } from 'react';
 import type { Ref } from 'react';
 
@@ -106,11 +106,14 @@ describe('固定行(pinnedTopRows / pinnedBottomRows)', () => {
     expect(topRows[0]?.querySelector('[data-ssg-col-key="qty"]')?.classList.contains('ssg-body-cell--align-right')).toBe(true);
     const checkbox = topRows[0]?.querySelector('[data-ssg-col-key="done"] [role="checkbox"]');
     expect(checkbox?.getAttribute('aria-checked')).toBe('true');
-    // 行見出し: ピンの印(svg)と読み上げの名前。
+    // 行見出し: ピンの印(svg)と読み上げの名前。名前はピンの印(role="img")に付け、行見出しの名前は中身から決まる
+    //   (文字の無い行見出しにしない。1.2.0 / RV3-L2)。
     const header = topHeaders[0]?.querySelector<HTMLElement>('[role="rowheader"]');
     expect(header?.querySelector('svg.ssg-pinned-row-icon')).not.toBeNull();
-    expect(header?.getAttribute('aria-label')).toBe('上に固定 1');
-    expect(bottomHeaders[1]?.querySelector('[role="rowheader"]')?.getAttribute('aria-label')).toBe('下に固定 2');
+    expect(header?.hasAttribute('aria-label')).toBe(false);
+    expect(within(topHeaders[0]!).getByRole('rowheader', { name: '上に固定 1' })).toBe(header);
+    expect(header?.querySelector('svg[role="img"]')?.getAttribute('aria-label')).toBe('上に固定 1');
+    expect(within(bottomHeaders[1]!).getByRole('rowheader', { name: '下に固定 2' })).not.toBeNull();
     // 本体の行ではない(行の DOM を探す処理 / 右クリックメニューの対象にしない)。
     for (const row of [...topRows, ...bottomRows, ...topHeaders, ...bottomHeaders]) {
       expect(row.classList.contains('ssg-body-row')).toBe(false);
@@ -234,6 +237,44 @@ describe('固定行(pinnedTopRows / pinnedBottomRows)', () => {
     expect((pane?.children[bottomIndex + 1] as HTMLElement | undefined)?.style.height).toBe('0px');
   });
 
+  it("pinnedBottomRowsPlacement 'belowTotal': 合計行の下に置き、sticky の bottom・DOM の順・ARIA・エクスポートも同じ並び(RV3-要望)", () => {
+    const { container, grid, ref } = setup({
+      pinnedTopRows: top,
+      pinnedBottomRows: bottom,
+      totalRow: { height: 34 },
+      pinnedBottomRowsPlacement: 'belowTotal',
+    });
+    const bottomBlock = container.querySelector<HTMLElement>('.ssg-pinned-rows--bottom');
+    const totalRow = container.querySelector<HTMLElement>('.ssg-total-row[data-pane="center"]');
+    // 下の器は表の下端(bottom: 0)、合計行はその上(下の固定行 2 行ぶん)。
+    expect(bottomBlock?.style.bottom).toBe('0px');
+    expect(totalRow?.style.bottom).toBe(`${2 * ROW_HEIGHT}px`);
+    // DOM の順: … → 本体ぶんの空き → 合計行 → 下の器。
+    const pane = totalRow?.parentElement;
+    const order = Array.from(pane?.children ?? []);
+    const totalIndex = order.findIndex((child) => child.classList.contains('ssg-total-row'));
+    const bottomIndex = order.findIndex((child) => child.classList.contains('ssg-pinned-rows--bottom'));
+    expect(bottomIndex).toBe(totalIndex + 1);
+    expect((order[totalIndex - 1] as HTMLElement | undefined)?.style.height).toBe(`${3 * ROW_HEIGHT}px`);
+    // ARIA: 合計行が本体の次、下の固定行がその後。
+    expect(grid.getAttribute('aria-rowcount')).toBe('8');
+    expect(totalRow?.getAttribute('aria-rowindex')).toBe('6');
+    expect(pinnedRowsIn(container, 'bottom').map((row) => row.getAttribute('aria-rowindex'))).toEqual(['7', '8']);
+    // エクスポートも合計行の後。
+    const csv = ref.current?.exportCsv({ includePinnedRows: true, includeTotalRow: true, includeHeaders: false }) ?? '';
+    expect(csv.split('\r\n').map((line) => line.split(',')[0])).toEqual(['目標', 'alpha', 'beta', 'gamma', '合計', '前年', '平均']);
+    const data = ref.current?.getExportData({ includePinnedRows: true, includeTotalRow: true });
+    expect(data?.rowKinds).toEqual(['pinned', 'data', 'data', 'data', 'total', 'pinned', 'pinned']);
+  });
+
+  it("pinnedBottomRowsPlacement 'belowTotal' は合計行が無ければ何もしない(既定と同じ)", () => {
+    const { container } = setup({ pinnedBottomRows: bottom, pinnedBottomRowsPlacement: 'belowTotal' });
+    const bottomBlock = container.querySelector<HTMLElement>('.ssg-pinned-rows--bottom');
+    expect(bottomBlock?.style.bottom).toBe('0px');
+    expect(container.querySelector('.ssg-total-row')).toBeNull();
+    expect(pinnedRowsIn(container, 'bottom').map((row) => row.getAttribute('aria-rowindex'))).toEqual(['5', '6']);
+  });
+
   it('固定列があっても 3 ペインに描き、列はそれぞれのペインに出る', () => {
     const pinnedColumns: GridColumn<Row>[] = [{ ...columns[0], pinned: 'left' }, columns[1], { ...columns[2], pinned: 'right' }];
     const { container, grid } = setup({ columns: pinnedColumns, pinnedTopRows: top });
@@ -308,12 +349,10 @@ describe('固定行(pinnedTopRows / pinnedBottomRows)', () => {
 
   it('localeText で行見出しの読み上げを変えられる(英語の表)', () => {
     const { container } = setup({ pinnedTopRows: top, pinnedBottomRows: bottom, localeText: localeTextEn });
-    expect(pinnedRowsIn(container, 'top', 'left')[0]?.querySelector('[role="rowheader"]')?.getAttribute('aria-label')).toBe(
-      'Pinned to top 1',
-    );
-    expect(pinnedRowsIn(container, 'bottom', 'left')[1]?.querySelector('[role="rowheader"]')?.getAttribute('aria-label')).toBe(
-      'Pinned to bottom 2',
-    );
+    expect(within(pinnedRowsIn(container, 'top', 'left')[0]!).getByRole('rowheader', { name: 'Pinned to top 1' })).not.toBeNull();
+    expect(
+      within(pinnedRowsIn(container, 'bottom', 'left')[1]!).getByRole('rowheader', { name: 'Pinned to bottom 2' }),
+    ).not.toBeNull();
   });
 
   // 追加(1.1.0 / 固定行の見直し): 固定行は負の index で列幅の自動調整へ渡るので、チップの ctx は固定行の位置で作る

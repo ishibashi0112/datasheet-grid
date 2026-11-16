@@ -63,6 +63,18 @@ describe('collectGroupingColumns', () => {
 });
 
 describe('buildGroupTree', () => {
+  // 追加(1.2.0 の確かめ直し H): includeGroupingInState で保存するキーに NUL を入れない(PostgreSQL の text / jsonb が受け付けない)。
+  it('グループのキーに NUL(\\u0000)を含めず、JSON で往復しても同じ', () => {
+    const tree = buildGroupTree(ROWS, createSourceOrder(ROWS.length), [REGION, REP], []);
+    const keys = collectAllGroupKeys(tree);
+    expect(keys.length).toBeGreaterThan(2);
+    for (const key of keys) {
+      expect(key.includes('\u0000')).toBe(false);
+      expect(JSON.parse(JSON.stringify(key))).toBe(key);
+    }
+    expect(new Set(keys).size).toBe(keys.length);
+  });
+
   it('初出順のグループ階層を構築し、不連続な同値 leaf を 1 グループへ集約する', () => {
     const tree = buildGroupTree(
       ROWS,

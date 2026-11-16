@@ -256,6 +256,51 @@ describe('複数行のエディタ(DU-14)', () => {
     expect(textarea(center.container)?.style.paddingTop).toBe('288px');
   });
 
+  // 追加(1.2.0): 1 行の入力欄も、背の高い行の上にそろえたセルでは文字をセルの 1 行目にそろえる(これまでは真ん中に出ていた)。
+  //   行の間隔はページから受け継ぎ、下の余白で中身の箱を 1 行ぶんにする(jsdom は文字の大きさ・枠線を 0 と読む)。
+  //   真ん中にそろえたセルと、背の低い行ではインラインの指定を付けない(styles.css のとおり)。
+  it('1 行の入力欄も、背の高い行の上にそろえたセルでは上へ(text / number / select / date)', () => {
+    const singleLine = (editor: GridColumn<Row>['editor'], verticalAlign?: 'top' | 'center'): GridColumn<Row>[] =>
+      makeColumns(undefined, false).map((column) =>
+        column.key === 'memo'
+          ? { ...column, editor, autoHeight: true, ...(verticalAlign ? { verticalAlign } : {}) }
+          : column,
+      );
+    const openAt = (columns: GridColumn<Row>[], autoHeight: boolean) => {
+      const ref = createRef<SpreadsheetGridHandle<Row>>();
+      const utils = render(
+        <SpreadsheetGrid ref={ref} columns={columns} rows={initialRows} rowKeyGetter={(row) => row.id} autoHeight={autoHeight} />,
+      );
+      act(() => {
+        ref.current?.setActiveCell({ row: 0, col: 1 });
+      });
+      fireEvent.keyDown(utils.container.querySelector<HTMLElement>('.ssg-shell')!, { key: 'F2' });
+      return utils.container.querySelector<HTMLInputElement>('input.ssg-cell-editor-input');
+    };
+    const editors: GridColumn<Row>['editor'][] = [
+      { type: 'text' },
+      { type: 'number' },
+      { type: 'select', options: [{ value: 'a', label: 'A' }] },
+      { type: 'date' },
+    ];
+    for (const editor of editors) {
+      const top = openAt(singleLine(editor), true);
+      expect(top, editor?.type).not.toBeNull();
+      expect(top?.style.lineHeight, editor?.type).toBe('inherit');
+      expect(top?.style.paddingTop, editor?.type).toBe('0px');
+      // 下の余白の量はレイアウトで決まる(jsdom のスタブでは測れない。量は core の topAlignedInput.test)。
+      expect(top?.style.paddingBottom, editor?.type).toMatch(/^\d+px$/);
+      cleanup();
+      const center = openAt(singleLine(editor, 'center'), true);
+      expect(center?.style.lineHeight, editor?.type).toBe('');
+      expect(center?.style.paddingTop, editor?.type).toBe('');
+      cleanup();
+      const short = openAt(singleLine(editor), false);
+      expect(short?.style.paddingTop, editor?.type).toBe('');
+      cleanup();
+    }
+  });
+
   it('multiline を付けない text 列は今までどおり 1 行の入力欄', () => {
     const { container } = open(makeColumns(undefined, false));
     expect(textarea(container)).toBeNull();

@@ -115,6 +115,93 @@ describe('rowDragController', () => {
     controller.dispose();
   });
 
+  // 追加(1.2.0 / 2026-11-09 実アプリの総点検 E-07): canDropAt が false の位置はガイド線を出さず、ゴーストを枠の外と同じ見た目にし、
+  //   離しても動かさない。同じスロットは聞き直さない。関数が変わったら(行が変わった等)聞き直す。
+  it('canDropAt が false の位置ではガイド線を出さず、離しても commit しない(ghost)', () => {
+    const controller = createRowDragController();
+    const { args, commitRowMove } = makeArgs();
+    // 行 0..4 と 5..9 を別のまとまりとし、まとまりの外(slot 6 以上)へは落とせない。
+    const canDropAt = vi.fn((_from: number, slot: number) => slot <= 5);
+    controller.update({ ...args, canDropAt });
+
+    controller.onRowDragHandlePointerDown(1, handleEvent());
+    // y=47 → slot 5: 落とせる。
+    dispatchPointer('pointermove', 1, 20, 47);
+    expect(args.centerIndicatorRef.current?.style.display).toBe('block');
+    expect(canDropAt).toHaveBeenLastCalledWith(1, 5);
+    // y=72 → slot 7: 落とせない。ガイド線を消し、ゴーストは枠の外と同じ薄さ。
+    dispatchPointer('pointermove', 1, 20, 72);
+    expect(args.centerIndicatorRef.current?.style.display).toBe('none');
+    const ghost = document.querySelector<HTMLElement>('[data-grid-drag-ghost]');
+    expect(ghost?.style.opacity).not.toBe('1');
+    // 同じスロットの間は聞き直さない。
+    const calls = canDropAt.mock.calls.length;
+    dispatchPointer('pointermove', 1, 20, 73);
+    expect(canDropAt.mock.calls.length).toBe(calls);
+    dispatchPointer('pointerup', 1, 20, 73);
+    expect(commitRowMove).not.toHaveBeenCalled();
+
+    // 落とせる位置で離せば commit する。
+    controller.onRowDragHandlePointerDown(1, handleEvent());
+    dispatchPointer('pointermove', 1, 20, 47);
+    expect(ghost?.isConnected).toBe(false);
+    expect(document.querySelector<HTMLElement>('[data-grid-drag-ghost]')?.style.opacity).toBe('1');
+    dispatchPointer('pointerup', 1, 20, 47);
+    expect(commitRowMove).toHaveBeenCalledWith(1, 4);
+    controller.dispose();
+  });
+
+  it('canDropAt: 離す前に関数が変わったら、離すときに今の関数で聞き直す', () => {
+    const controller = createRowDragController();
+    const { args, commitRowMove } = makeArgs();
+    controller.update({ ...args, canDropAt: () => true });
+    controller.onRowDragHandlePointerDown(1, handleEvent());
+    dispatchPointer('pointermove', 1, 20, 47);
+    expect(args.centerIndicatorRef.current?.style.display).toBe('block');
+    // ドラッグ中に行が変わり、同じ位置へは落とせなくなった。
+    controller.update({ ...args, canDropAt: () => false });
+    dispatchPointer('pointerup', 1, 20, 47);
+    expect(commitRowMove).not.toHaveBeenCalled();
+    controller.dispose();
+  });
+
+  it("canDropAt (motion='live'): 落とせない位置では直前の落とせる位置に留まり、そこで確定する", () => {
+    vi.useFakeTimers();
+    try {
+      const controller = createRowDragController();
+      const { args, container, commitRowMove } = makeArgs();
+      const rows = Array.from(container.querySelectorAll<HTMLElement>('.ssg-body-row'));
+      rows.forEach((row, i) => {
+        row.style.transform = `translateY(${i * 10}px)`;
+      });
+      controller.update({ ...args, motion: 'live', canDropAt: (_from, slot) => slot <= 5 });
+      controller.onRowDragHandlePointerDown(1, handleEvent());
+      // slot 5 → target 4(行 2..4 が退避)。
+      dispatchPointer('pointermove', 1, 20, 47);
+      expect(rows[4].style.transform).toBe('translateY(30px)');
+      // slot 8 は落とせない → slot 5 のまま(行 5 は退避しない)。
+      dispatchPointer('pointermove', 1, 20, 82);
+      expect(rows[4].style.transform).toBe('translateY(30px)');
+      expect(rows[5].style.transform).toBe('translateY(50px)');
+      dispatchPointer('pointerup', 1, 20, 82);
+      expect(commitRowMove).toHaveBeenCalledWith(1, 4);
+
+      // 最初から落とせない位置だけを通ったら、元の位置のまま(確定しない)。
+      commitRowMove.mockClear();
+      rows.forEach((row, i) => {
+        row.style.transform = `translateY(${i * 10}px)`;
+      });
+      controller.onRowDragHandlePointerDown(1, handleEvent());
+      dispatchPointer('pointermove', 1, 20, 82);
+      expect(rows[5].style.transform).toBe('translateY(50px)');
+      dispatchPointer('pointerup', 1, 20, 82);
+      expect(commitRowMove).not.toHaveBeenCalled();
+      controller.dispose();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it('ドラッグ中に dispose すると属性 / ゴースト / cursor / window リスナーを後始末する', () => {
     const controller = createRowDragController();
     const { args, container, commitRowMove } = makeArgs();

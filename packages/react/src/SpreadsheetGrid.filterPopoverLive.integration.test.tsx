@@ -3,7 +3,7 @@
 //     閉じて開き直すと今の rows の候補。
 //   - C-09: 開いたまま別の列の ⋮ を押すと、フィルターを閉じて列メニューだけを開く(2 つ重なっていた)。
 // @vitest-environment jsdom
-import { describe, it, expect, beforeAll, afterAll, afterEach } from 'vitest';
+import { describe, it, expect, beforeAll, afterAll, afterEach, vi } from 'vitest';
 import { render, cleanup, act, fireEvent } from '@testing-library/react';
 
 import { SpreadsheetGrid } from './SpreadsheetGrid';
@@ -87,5 +87,38 @@ describe('列フィルターのポップオーバーを開いている間', () =
     });
     expect(document.querySelector('.ssg-filter-popover')).toBeNull();
     expect(document.querySelector('.ssg-menu-panel')).not.toBeNull();
+  });
+});
+
+// 追加(1.2.0 / 2026-11-09 実アプリの総点検 L-12): タッチが主の端末(pointer: coarse)では、候補の行を 40px にする(マウスの端末は 24px)。
+describe('タッチの端末の候補の行の高さ(L-12)', () => {
+  const rows: Row[] = [
+    { id: 1, code: 'A', qty: 1 },
+    { id: 2, code: 'B', qty: 2 },
+  ];
+  const optionHeights = () =>
+    Array.from(document.querySelectorAll<HTMLElement>('.ssg-filter-popover .ssg-filter-option')).map(
+      (element) => element.style.height,
+    );
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it('マウスの端末では 24px、pointer: coarse では 40px', () => {
+    const first = render(<SpreadsheetGrid<Row> rows={rows} columns={columns} rowKeyGetter={(row) => row.id} />);
+    openFilter(first.container, 'code');
+    expect(optionHeights()).toEqual(['24px', '24px']);
+    first.unmount();
+
+    vi.stubGlobal('matchMedia', (query: string) => ({
+      matches: query === '(pointer: coarse)',
+      addEventListener: () => {},
+      removeEventListener: () => {},
+      addListener: () => {},
+      removeListener: () => {},
+    }));
+    const second = render(<SpreadsheetGrid<Row> rows={rows} columns={columns} rowKeyGetter={(row) => row.id} />);
+    openFilter(second.container, 'code');
+    expect(optionHeights()).toEqual(['40px', '40px']);
   });
 });

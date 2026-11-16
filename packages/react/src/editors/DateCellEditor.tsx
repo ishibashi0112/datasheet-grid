@@ -11,7 +11,7 @@
 //   「日付で入力してください」(localeText の enterDate)を出して編集を続けます(フォーカスが外れたときは取り消し)。
 // 変更(1.0.2 / A-09): 日付の入力欄は中身の幅より狭くしません(細い列で年が切れていた)。右のペインの下や表の外へ
 //   はみ出すときは左へずらします。
-import { useCallback, useState } from 'react';
+import { useCallback, useRef, useState } from 'react';
 import type {
   EditorCommitDirection,
   EditorCommitResult,
@@ -19,6 +19,7 @@ import type {
 } from '../model/gridTypes';
 import { createEditorKeyDownHandler } from './editorKeyBindings';
 import { CellEditorErrorBubble } from './CellEditorErrorBubble';
+import { useTopAlignedInput } from './useTopAlignedInput';
 import { cx } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/cx';
 import {
   normalizeTypedDateText,
@@ -42,6 +43,9 @@ type DateCellEditorProps = {
   align?: 'left' | 'center' | 'right';
   // 追加(enter-move ②): Enter 確定後の移動先です(未指定 = 'down')。
   enterMove?: EditorEnterMove;
+  // 追加(1.2.0): セルの高さと、上にそろえて描かれているか(背の高い行の 1 行のエディタの文字をセルの 1 行目にそろえる)。
+  cellHeight?: number;
+  alignTop?: boolean;
 };
 
 export function DateCellEditor({
@@ -52,6 +56,8 @@ export function DateCellEditor({
   onCancel,
   align,
   enterMove,
+  cellHeight = 0,
+  alignTop = false,
 }: DateCellEditorProps) {
   const texts = useGridLocaleText();
   // 文字から打ち始めたセッションは type="text"(セッションの途中で type は切り替えない)。
@@ -59,11 +65,15 @@ export function DateCellEditor({
   const [draftValue, setDraftValue] = useState(textMode ? (initialText ?? '') : initialValue);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [shift, setShift] = useState(0);
+  // 追加(1.2.0): 背の高い行で上にそろえたセルでは、文字をセルの 1 行目にそろえる(下の ref コールバックが入れる)。
+  const inputRef = useRef<HTMLInputElement | null>(null);
+  useTopAlignedInput(inputRef, alignTop, cellHeight);
 
   // マウント時(= 編集セッション開始時)に自動フォーカスします(callback ref は commit 後 = レイアウト確定後に呼ばれます)。
   //   ※ type="date" は setSelectionRange 非対応(例外を投げるブラウザあり)のため focus のみ。text のときは打った文字の
   //   後ろへキャレットを置きます。見えている範囲の外へはみ出す分だけ左へずらします(A-09)。
   const inputRefCallback = useCallback((input: HTMLInputElement | null) => {
+    inputRef.current = input;
     if (!input) {
       return;
     }

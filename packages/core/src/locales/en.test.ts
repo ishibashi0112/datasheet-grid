@@ -7,6 +7,7 @@ import { DEFAULT_FILTER_LOCALE_TEXT } from '../logic/localeTextFilters';
 import { DEFAULT_POPUP_LOCALE_TEXT } from '../logic/localeTextPopups';
 import { DEFAULT_AGGREGATES_LOCALE_TEXT } from '../logic/localeTextFeatures';
 import { DEFAULT_COLUMN_MENU_LOCALE_TEXT } from '../logic/localeTextFeatures';
+import { DEFAULT_CONTEXT_MENU_LOCALE_TEXT } from '../logic/localeTextFeatures';
 import { DEFAULT_FILL_HANDLE_LOCALE_TEXT } from '../logic/localeTextFeatures';
 import { DEFAULT_FILTERING_LOCALE_TEXT } from '../logic/localeTextFeatures';
 import { DEFAULT_FIND_LOCALE_TEXT } from '../logic/localeTextFeatures';
@@ -42,6 +43,7 @@ const DEFAULT_TABLES = {
   popup: DEFAULT_POPUP_LOCALE_TEXT,
   aggregates: DEFAULT_AGGREGATES_LOCALE_TEXT,
   columnMenu: DEFAULT_COLUMN_MENU_LOCALE_TEXT,
+  contextMenu: DEFAULT_CONTEXT_MENU_LOCALE_TEXT,
   fillHandle: DEFAULT_FILL_HANDLE_LOCALE_TEXT,
   filtering: DEFAULT_FILTERING_LOCALE_TEXT,
   find: DEFAULT_FIND_LOCALE_TEXT,

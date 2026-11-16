@@ -104,6 +104,58 @@ export const reorderColumnsByPane = <T,>(
   return [...left, ...center, ...right];
 };
 
+// 追加(1.2.0 の見直し QG-3): reorderColumnsByPane と同じく固定列ごとに並べますが、行のグループ化の元の列(rowGroup: true)
+//   どうしの順は元の配列のまま保ちます(グループ化の階層は columns の並び順で決まり、列メニューのグループ化は固定のペインを
+//   またいで「左固定の列を中央の列の下の階層」に置くことがあるため。グループ元の列は表示から外れるので、ペインの中の位置は
+//   見た目に関係しない)。グループ元の列が 2 つ以上あるときは、グループ元の列は元の位置のまま置き、残りの位置へほかの列を
+//   固定のペインごとに並べます(何度かけても同じ)。グループ元の列が 1 つ以下なら reorderColumnsByPane と同じです。
+export const reorderColumnsByPaneKeepingGroupOrder = <T,>(
+  columns: GridColumn<T>[],
+): GridColumn<T>[] => {
+  let groupedCount = 0;
+  for (const column of columns) {
+    if (column.rowGroup === true) {
+      groupedCount += 1;
+    }
+  }
+  if (groupedCount < 2) {
+    return reorderColumnsByPane(columns);
+  }
+  const others = reorderColumnsByPane(columns.filter((column) => column.rowGroup !== true));
+  let next = 0;
+  return columns.map((column) => (column.rowGroup === true ? column : others[next++]!));
+};
+
+// 追加(1.2.0 の確かめ直し H): 列の並べ替え(見出しのドラッグ / ツールパネル)の順は固定のペインごとに並べ直した形で
+//   届くため、グループ元の列どうしの順(グループ化の階層)がペインをまたいで入れ替わっていました(左固定の列を中央の列の
+//   下の階層にしたとき)。階層の各段がどのペインの列かは元の columns のまま保ち、同じペインの中の順だけ並べ替えた結果に
+//   従います(ツールパネルで同じペインのグループ元の列どうしを入れ替えたとき)。グループ元の列の固定が変わってペインごとの
+//   数が合わないときは元の順のままにします。グループ元の列の位置(どこに置くか)は reordered のままです。
+export const keepGroupColumnOrder = <T,>(
+  original: GridColumn<T>[],
+  reordered: GridColumn<T>[],
+): GridColumn<T>[] => {
+  const originalGroups = original.filter((column) => column.rowGroup === true);
+  const reorderedGroups = reordered.filter((column) => column.rowGroup === true);
+  if (originalGroups.length < 2 || reorderedGroups.length !== originalGroups.length) {
+    return reordered;
+  }
+  const queues: Record<ColumnPane, GridColumn<T>[]> = { left: [], center: [], right: [] };
+  for (const column of reorderedGroups) {
+    queues[getColumnPane(column)].push(column);
+  }
+  const pattern = originalGroups.map((column) => getColumnPane(column));
+  const fits = (['left', 'center', 'right'] as const).every(
+    (pane) => queues[pane].length === pattern.filter((value) => value === pane).length,
+  );
+  const byKey = new Map(reorderedGroups.map((column) => [column.key, column]));
+  const sequence = fits
+    ? pattern.map((pane) => queues[pane].shift()!)
+    : originalGroups.map((column) => byKey.get(column.key) ?? column);
+  let next = 0;
+  return reordered.map((column) => (column.rowGroup === true ? sequence[next++]! : column));
+};
+
 // 追加(10-A): 1 つのペイン内における列の座標情報です。
 //             paneLocalStart / paneLocalEnd はペイン内ローカル座標（0 始まり）です。
 //             logicalIndex は reorder 後の visibleColumns 配列上の index です。

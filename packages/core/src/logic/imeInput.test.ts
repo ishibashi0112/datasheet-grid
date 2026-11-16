@@ -58,6 +58,22 @@ describe('canStartImeEdit', () => {
     expect(canStartImeEdit(ctx({ readOnly: true }), { row: 0, col: 2 })).toBe(false);
   });
 
+  it('custom エディタは imeDirectInput: true を付けた列だけ true(F-06。1.2.0)', () => {
+    const render = () => null;
+    const customColumns: GridColumn<Row>[] = [
+      { key: 'plain', title: '素', width: 100, editor: { type: 'custom', render } },
+      { key: 'ime', title: 'IME', width: 100, editor: { type: 'custom', render, imeDirectInput: true } },
+      { key: 'off', title: '明示 off', width: 100, editor: { type: 'custom', render, imeDirectInput: false } },
+      { key: 'locked', title: '固定', width: 100, readOnly: true, editor: { type: 'custom', render, imeDirectInput: true } },
+    ];
+    expect(canStartImeEdit(ctx({ columns: customColumns }), { row: 0, col: 0 })).toBe(false);
+    expect(canStartImeEdit(ctx({ columns: customColumns }), { row: 0, col: 1 })).toBe(true);
+    expect(canStartImeEdit(ctx({ columns: customColumns }), { row: 0, col: 2 })).toBe(false);
+    expect(canStartImeEdit(ctx({ columns: customColumns }), { row: 0, col: 3 })).toBe(false);
+    // 確定した文字はそのまま(number のような直しはしない)。
+    expect(resolveImeEditText(customColumns, { row: 0, col: 1 }, 'とうきょう')).toBe('とうきょう');
+  });
+
   it('resolveImeEditText: text 列はそのまま、number 列は半角の数値表記へ直し、読めなければ null', () => {
     expect(resolveImeEditText(columns, { row: 0, col: 0 }, '漢字')).toBe('漢字');
     expect(resolveImeEditText(columns, { row: 0, col: 1 }, '１２')).toBe('１２');

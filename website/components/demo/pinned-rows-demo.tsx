@@ -52,6 +52,8 @@ export function PinnedRowsDemo() {
   const [rows, setRows] = useState<Row[]>(initialRows);
   const [showTop, setShowTop] = useState(true);
   const [showBottom, setShowBottom] = useState(true);
+  // 追加(1.2.0): 下の固定行を合計行の下に置く(pinnedBottomRowsPlacement)。
+  const [belowTotal, setBelowTotal] = useState(false);
   const [csv, setCsv] = useState('');
 
   // 本体の行から作り直す固定行(支店の平均)。固定行は表示だけなので、値が変わったら配列を作り直して渡す。
@@ -100,6 +102,10 @@ export function PinnedRowsDemo() {
           <input type="checkbox" checked={showBottom} onChange={(event) => setShowBottom(event.target.checked)} />
           下に固定(前年 / 支店の平均)
         </label>
+        <label className="flex items-center gap-1">
+          <input type="checkbox" checked={belowTotal} onChange={(event) => setBelowTotal(event.target.checked)} />
+          合計行の下に置く(<code className="text-xs">pinnedBottomRowsPlacement=&quot;belowTotal&quot;</code>)
+        </label>
         <button
           type="button"
           className="rounded border px-2 py-1"
@@ -117,6 +123,7 @@ export function PinnedRowsDemo() {
         height={360}
         pinnedTopRows={showTop ? [target] : undefined}
         pinnedBottomRows={showBottom ? [lastYear, average] : undefined}
+        pinnedBottomRowsPlacement={belowTotal ? 'belowTotal' : 'aboveTotal'}
         totalRow
       />
       {csv !== '' && (
