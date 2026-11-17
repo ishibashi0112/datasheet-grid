@@ -38,6 +38,7 @@ import type { ServerSideCellEditInput } from '../logic/serverSideEdits';
 import type { ValidationLocaleText } from '../logic/validation';
 import { findFirstPasteRow, resolvePasteTargetViewIndexes } from '../logic/labelRows';
 import { expandPasteMatrixToSelection } from '../logic/pasteFill';
+import { readLiveUiState } from './liveUiState';
 
 export type ClipboardEventLike = {
   clipboardData: { getData: (type: string) => string } | null;
@@ -55,6 +56,8 @@ export type ClipboardControllerArgs<T extends object> = {
   columns?: readonly GridColumn<T>[];
   visibleColumns: GridColumn<T>[];
   uiState: GridUiState;
+  // 追加(Solid 版 段階 0-1): イベントの時点の状態(store の getState。controllers/liveUiState)。省略は uiState。
+  getUiState?: (() => GridUiState) | undefined;
   readOnly: boolean;
   canEditCell: SpreadsheetGridProps<T>['canEditCell'];
   // 追加(audit RD-4): 貼り付けで末尾へ追加した行の rowKey(canEditCell の context)を求めるための行キー解決。
@@ -222,7 +225,9 @@ export const createClipboardController = <T extends object>(): ClipboardControll
       return;
     }
     const current = args;
-    const { rowModel, visibleColumns, uiState } = current;
+    const { rowModel, visibleColumns } = current;
+    // 変更(Solid 版 段階 0-1): 状態はイベントの時点の store から読みます(getUiState が無いときは update で受けた値)。
+    const uiState = readLiveUiState(current);
     const wholeGrid = computeIsWholeGridSelected(
       uiState.selection,
       rowModel.getRowCount(),
@@ -255,7 +260,6 @@ export const createClipboardController = <T extends object>(): ClipboardControll
       rowModel,
       columns,
       visibleColumns,
-      uiState,
       readOnly,
       canEditCell,
       rowKeyGetter,
@@ -269,6 +273,7 @@ export const createClipboardController = <T extends object>(): ClipboardControll
       pasteFillsSelection = true,
       dispatch,
     } = args;
+    const uiState = readLiveUiState(args);
     // 追加(audit RD-2): セル編集中、またはエディタ / renderCell / renderHeader 内の入力要素が発火元の
     //   paste はその要素のネイティブ貼り付けに委ねます(keydown 側の editingCell ガードと同じ扱い。
     //   従来はここで preventDefault + セル範囲貼り付けが走り、input には貼り付かず rows が直接

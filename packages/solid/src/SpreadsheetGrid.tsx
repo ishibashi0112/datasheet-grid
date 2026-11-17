@@ -345,6 +345,8 @@ export function SpreadsheetGrid<T extends object>(props: SpreadsheetGridProps<T>
     columns: columns(),
     visibleColumns: orderedColumns(),
     uiState: ui(),
+    // イベントの時点の状態は store から読む(core controllers/liveUiState)。
+    getUiState: store.getState,
     readOnly: readOnly(),
     canEditCell: props.canEditCell,
     rowKeyGetter: resolvedRowKeyGetter(),
@@ -439,6 +441,8 @@ export function SpreadsheetGrid<T extends object>(props: SpreadsheetGridProps<T>
     pointerClientRef,
     autoScrollFrameRef,
     uiState: ui(),
+    // イベントの時点の状態は store から読む(core controllers/liveUiState)。
+    getUiState: store.getState,
     dispatch,
     enableRangeSelection: enableRangeSelection(),
     enableSorting: enableSorting(),
@@ -470,6 +474,8 @@ export function SpreadsheetGrid<T extends object>(props: SpreadsheetGridProps<T>
   const keyboard = createKeyboardController<T>();
   connectController(keyboard, () => ({
     uiState: ui(),
+    // イベントの時点の状態は store から読む(core controllers/liveUiState)。
+    getUiState: store.getState,
     rowModel: rowModel(),
     visibleColumns: orderedColumns(),
     readOnly: readOnly(),

@@ -2544,6 +2544,8 @@ export function useGridShell<T extends object>({
     pointerClientRef,
     autoScrollFrameRef,
     uiState,
+    // 追加(Solid 版 段階 0-1): イベントの時点の状態は store から読みます(controllers/liveUiState)。
+    getUiState: gridStore.getState,
     dispatch,
     enableRangeSelection,
     // 追加(MS-2): ヘッダー Shift+click ソート(発火口 a)用です。
@@ -2731,6 +2733,8 @@ export function useGridShell<T extends object>({
       //             selection の col は論理 index なので、indexing も orderedColumns に揃える必要があります。
       visibleColumns: orderedColumns,
       uiState,
+      // 追加(Solid 版 段階 0-1): イベントの時点の状態は store から読みます(controllers/liveUiState)。
+      getUiState: gridStore.getState,
       readOnly,
       canEditCell,
       // 追加(audit RD-4): 貼り付けで末尾へ追加した行の rowKey(canEditCell の context)用。
@@ -3142,6 +3146,8 @@ export function useGridShell<T extends object>({
 
   const { handleKeyDown } = useGridKeyboardInteractions({
     uiState,
+    // 追加(Solid 版 段階 0-1): イベントの時点の状態は store から読みます(controllers/liveUiState)。
+    getUiState: gridStore.getState,
     // 変更(DS-3-1): filteredRows 配列 → rowModel シームを渡します(keyboard consumer 移行)。
     rowModel,
     // 変更(10-E): キーボード移動/編集開始の col は論理 index 空間。

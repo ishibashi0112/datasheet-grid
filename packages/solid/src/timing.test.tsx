@@ -34,10 +34,10 @@ it.each([
   }
   flush();
   const last = onActiveCellChange.mock.calls.at(-1)?.[0];
-  // 実測: flush なしだと 1 行しか動かない。キー操作のコントローラは update で受けた uiState(signal の値)を読むので、
-  //   Solid が書き込みを反映する(マイクロタスク)前の 2 回目・3 回目は古い位置から動く。実際のブラウザのキー入力は
-  //   イベントごとにマイクロタスクが回るので起きない(Playwright で確認)が、テストや同じタスクの中での連続した操作では起きる。
-  expect(last?.rowKey).toBe(withFlush ? 4 : 2);
+  // 試作の最初の形では flush なしだと 1 行しか動かなかった(キー操作のコントローラが update で受けた uiState = signal の値を
+  //   読み、Solid が書き込みを反映する(マイクロタスク)前の 2 回目・3 回目は古い位置から動いた)。段階 0-1 でコントローラが
+  //   イベントの時点の store を読む(getUiState)ようにしたので、どちらも 3 行動く。
+  expect(last?.rowKey).toBe(4);
 });
 
 it('同じタスクの中でハンドルの selectCell → startEditing', () => {
