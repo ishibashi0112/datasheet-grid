@@ -7,7 +7,7 @@
 //     最新 args(uiState / rowModel / 列 / コールバック)を読みます。
 import { isClearableSelection } from './escapeClaimController';
 import { computeIsWholeGridSelected } from './clipboardController';
-import { readLiveUiState } from './liveUiState';
+import { isEditingAtEvent, readLiveUiState } from './liveUiState';
 import { gridActions, type GridUiAction } from '../model/gridActions';
 import type {
   CellCoord,
@@ -280,8 +280,8 @@ export const createKeyboardController = <T,>(): KeyboardController<T> => {
     if (shouldIgnoreGridKeydown(event.target)) {
       return;
     }
-    // 編集中はエディタがキーを扱います。
-    if (uiState.editingCell) {
+    // 編集中はエディタがキーを扱います(描いた時点か今のどちらかで編集中なら扱わない。controllers/liveUiState)。
+    if (isEditingAtEvent(args)) {
       return;
     }
     // 追加(G-2): 入力受け(imeDirectInput)で IME の変換中のキー(候補の選択 / 変換確定の Enter 等)は IME の操作なので

@@ -6,7 +6,9 @@
 //     読み取り専用 / canEditCell / 列の editable は isViewCellEditable で見ます。
 //   - toggleCheckbox: チェックボックスのセルの直接の切り替え(クリック / Space)。検証で reject の列は NG の値を書きません。
 //   - writeCellValue: 1 セルへ値をそのまま書きます(renderCell の ctx.setValue。パースを通らない値なので、検証で reject の列の
-//     NG の値だけを止め、書き換えてよいかの判定はしません = これまでどおり)。
+//     NG の値だけを止め、書き換えてよいかの判定はしません = これまでどおり)。本体は純関数 writeCellValueTo で、React 版の
+//     ctx.setValue は描いた時点の rows / rowModel / 書き込み口を渡します(setValue は後で呼ばれることがあり、描いた時点の
+//     行の index と今の並びを混ぜると別の行へ書くため。別視点のレビュー)。
 //   - clearSelectedCells: 選んだセル(無ければアクティブセル)の値を消します(Delete / Backspace)。
 //   - selectEntireGrid: 表の全体を選び、アクティブセルは最初のデータのセル(合成列とラベル行を飛ばす)。
 //   書き込みは clientSide = handleRowsChange(履歴のラッパ)、serverSide = applyServerSideCellEdits(書き戻し)です。
@@ -40,6 +42,41 @@ export type CellCommandsArgs<T extends object> = {
   // 初期値を入れて編集を始めます(controllers/editController の startEditWithValue)。
   startEditWithValue: (cell: CellCoord, initialValue: string) => void;
   dispatch: (action: GridUiAction) => void;
+};
+
+// 書き込み先(clientSide = rows を作り直して handleRowsChange / serverSide = applyServerSideCellEdits)。
+export type CellWriteTarget<T extends object> = Pick<
+  CellCommandsArgs<T>,
+  'rows' | 'rowModel' | 'handleRowsChange' | 'applyServerSideCellEdits'
+>;
+
+// 1 セルへ値をそのまま書きます。viewIndex は target.rowModel の並びの index です。
+export const writeCellValueTo = <T extends object>(
+  target: CellWriteTarget<T>,
+  viewIndex: number,
+  row: T,
+  column: GridColumn<T>,
+  nextValue: unknown,
+): void => {
+  const { rows, rowModel, handleRowsChange, applyServerSideCellEdits } = target;
+  // reject の列は検証 NG の値を書きません。
+  if (decideCellWrite(column, row, nextValue).action === 'reject') {
+    return;
+  }
+  // serverSide は書き戻しへ流します(楽観更新は serverSide の機能の側)。
+  if (applyServerSideCellEdits) {
+    applyServerSideCellEdits([{ viewIndex, column, value: nextValue }]);
+    return;
+  }
+  if (!handleRowsChange) {
+    return;
+  }
+  // 元の行が引けなければ書きません(別の行へ書かない)。
+  const originalRowIndex = rowModel.getSourceIndex(viewIndex);
+  if (originalRowIndex === undefined) {
+    return;
+  }
+  handleRowsChange(writeRowsCell(rows, originalRowIndex, column, nextValue));
 };
 
 export type CellCommands<T extends object> = {
@@ -86,29 +123,11 @@ export const createCellCommands = <T extends object>(): CellCommands<T> => {
     return true;
   };
 
+  // 最新の状態(update で受けた値)へ書きます。チェックボックスの切り替えは今の並びの行を読んで書くので一致します。
   const writeCellValue = (viewIndex: number, row: T, column: GridColumn<T>, nextValue: unknown) => {
-    if (args === null) {
-      return;
+    if (args !== null) {
+      writeCellValueTo(args, viewIndex, row, column, nextValue);
     }
-    const { rows, rowModel, handleRowsChange, applyServerSideCellEdits } = args;
-    // reject の列は検証 NG の値を書きません。
-    if (decideCellWrite(column, row, nextValue).action === 'reject') {
-      return;
-    }
-    // serverSide は書き戻しへ流します(楽観更新は serverSide の機能の側)。
-    if (applyServerSideCellEdits) {
-      applyServerSideCellEdits([{ viewIndex, column, value: nextValue }]);
-      return;
-    }
-    if (!handleRowsChange) {
-      return;
-    }
-    // 元の行が引けなければ書きません(別の行へ書かない)。
-    const originalRowIndex = rowModel.getSourceIndex(viewIndex);
-    if (originalRowIndex === undefined) {
-      return;
-    }
-    handleRowsChange(writeRowsCell(rows, originalRowIndex, column, nextValue));
   };
 
   const toggleCheckbox = (cell: CellCoord) => {

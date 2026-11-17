@@ -38,7 +38,7 @@ import { useVirtualizerCore } from './hooks/useVirtualizerCore';
 // 追加(本体分解 E-7): グリッドエンジン(リゾルバ / コマンド / 通知 / DOM コントローラ / store の束ね。React 非依存)。
 import { createGridEngine } from '@ishibashi0112/spreadsheet-grid-core/internal/engine/createGridEngine';
 import { useControllerLifecycle, useIsomorphicLayoutEffect } from './hooks/useController';
-import { createCellCommands } from '@ishibashi0112/spreadsheet-grid-core/internal/engine/cellCommands';
+import { createCellCommands, writeCellValueTo } from '@ishibashi0112/spreadsheet-grid-core/internal/engine/cellCommands';
 import { GRID_DENSITY_DIMENSIONS } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/density';
 import {
   isActiveCellRendered,
@@ -2624,7 +2624,6 @@ export function useGridShell<T extends object>({
     selectEntireGrid,
     toggleCheckbox: toggleCheckboxCell,
     tryStartEdit: tryStartEditCell,
-    writeCellValue,
   } = cellCommands;
 
   // ── clipboard ─────────────────────────────────────────
@@ -3747,8 +3746,10 @@ export function useGridShell<T extends object>({
           // 追加: 実編集は CellEditorLayer で行いますが、将来の API 互換のため setValue も残します。
           // 変更(undo/redo): 変更前 rows を履歴へ積むため handleRowsChange(ラッパ)経由にします。
           // 変更(Solid 版 段階 0-2): 書き込み(reject の列の NG を止める / serverSide は書き戻し / clientSide は履歴のラッパ)は
-          //   core engine/cellCommands の writeCellValue(Solid 版と共用)。
-          setValue: (nextValue) => writeCellValue(rowIndex, row, column, nextValue),
+          //   core engine/cellCommands の writeCellValueTo(Solid 版と共用)。setValue は後で呼ばれることがあるので、行の index と
+          //   同じ描いた時点の rows / rowModel / 書き込み口を渡します(今の並びと混ぜると別の行へ書く。別視点のレビュー)。
+          setValue: (nextValue) =>
+            writeCellValueTo({ rows, rowModel, handleRowsChange, applyServerSideCellEdits }, rowIndex, row, column, nextValue),
         });
       }
       // 追加(editor: checkbox): checkbox 列の既定セルは組み込みのトグルセルを描画します
@@ -3826,13 +3827,15 @@ export function useGridShell<T extends object>({
     },
     [
       rowModel,
-      writeCellValue,
+      handleRowsChange,
+      rows,
       findIndex,
       findCurrentIndex,
       splitTextByFindRanges,
       conditionalFormatFeature,
       toggleCheckboxCell,
       slots.checkbox,
+      applyServerSideCellEdits,
       detailRowEnabled,
       expandedDetailRowKeys,
       detailIsExpandable,

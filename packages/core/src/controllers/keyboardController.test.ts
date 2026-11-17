@@ -278,4 +278,33 @@ describe('keyboardController', () => {
     await legacy.handleKeyDown(ev('ArrowDown'));
     expect(stale.getState().activeCell).toEqual({ row: 1, col: 0 });
   });
+
+  it('描いた時点で編集中なら、store が編集を終えていても同じ keydown は扱わない(custom エディタの確定が上がってきた形)', async () => {
+    const two: Row[] = [
+      { id: 1, name: 'a' },
+      { id: 2, name: 'b' },
+    ];
+    const rowModel: RowModel<Row> = {
+      getRow: (i) => two[i],
+      getRowCount: () => two.length,
+      getSourceIndex: (i) => i,
+      getRowKey: (i) => two[i]?.id ?? i,
+    };
+    // custom エディタが keydown の中で ctx.commit を呼び、store はもう編集を終えて下のセルへ動いた。
+    const store = createGridStore({ ...createInitialGridUiState(), activeCell: { row: 1, col: 0 } });
+    const c = createKeyboardController<Row>();
+    const { args } = makeArgs(rowModel);
+    const rendered = { ...createInitialGridUiState(), activeCell: { row: 0, col: 0 }, editingCell: { row: 0, col: 0 } };
+    c.update({ ...args, uiState: rendered, getUiState: store.getState, dispatch: store.dispatch });
+    const enter = ev('Enter');
+    await c.handleKeyDown(enter);
+    await c.handleKeyDown(ev('Escape'));
+    expect(args.handleCellDoubleClick).not.toHaveBeenCalled();
+    expect(enter.preventDefault).not.toHaveBeenCalled();
+    expect(store.getState().activeCell).toEqual({ row: 1, col: 0 });
+    // 描き直した後(描いた時点も今も編集していない)は扱う。
+    c.update({ ...args, uiState: store.getState(), getUiState: store.getState, dispatch: store.dispatch });
+    await c.handleKeyDown(ev('Enter'));
+    expect(args.handleCellDoubleClick).toHaveBeenCalledTimes(1);
+  });
 });

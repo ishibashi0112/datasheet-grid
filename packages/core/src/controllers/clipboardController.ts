@@ -38,7 +38,7 @@ import type { ServerSideCellEditInput } from '../logic/serverSideEdits';
 import type { ValidationLocaleText } from '../logic/validation';
 import { findFirstPasteRow, resolvePasteTargetViewIndexes } from '../logic/labelRows';
 import { expandPasteMatrixToSelection } from '../logic/pasteFill';
-import { readLiveUiState } from './liveUiState';
+import { isEditingAtEvent, readLiveUiState } from './liveUiState';
 
 export type ClipboardEventLike = {
   clipboardData: { getData: (type: string) => string } | null;
@@ -278,7 +278,8 @@ export const createClipboardController = <T extends object>(): ClipboardControll
     //   paste はその要素のネイティブ貼り付けに委ねます(keydown 側の editingCell ガードと同じ扱い。
     //   従来はここで preventDefault + セル範囲貼り付けが走り、input には貼り付かず rows が直接
     //   書き換わっていました)。
-    if (uiState.editingCell || shouldIgnoreGridKeydown(event.target ?? null)) {
+    //   変更(Solid 版 段階 0-1 の見直し): 編集中かは描いた時点か今のどちらか(controllers/liveUiState)。
+    if (isEditingAtEvent(args) || shouldIgnoreGridKeydown(event.target ?? null)) {
       return;
     }
     if (
