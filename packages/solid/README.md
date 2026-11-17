@@ -34,7 +34,7 @@ pnpm --filter ./packages/solid spike:build  # 大きさを測るためのライ�
 | `hooks/useGridStore.ts`(useSyncExternalStore) | `primitives/gridStoreSignals.ts`(store を signal に。購読は `onSettled`) |
 | `hooks/useController.ts` | `primitives/controller.ts`(`createRenderEffect` / `createEffect` で `update`) |
 | `hooks/useVirtualizerCore.ts` | `primitives/columnVirtualizer.ts` |
-| `GridShell.tsx`(5,715 行) | `SpreadsheetGrid.tsx`(約 900 行) |
+| `GridShell.tsx`(5,420 行) | `SpreadsheetGrid.tsx`(約 830 行) |
 | `view/GridHeaderRow.tsx` / `view/GridBodyLayer.tsx` | `view/HeaderRow.tsx` / `view/BodyRows.tsx` |
 | `editors/TextCellEditor.tsx` | `view/TextEditor.tsx` |
 
@@ -52,11 +52,12 @@ pnpm --filter ./packages/solid spike:build  # 大きさを測るためのライ�
 3. **Solid の開発ビルドの診断が役に立つ**: 部品の本体での読み取り(STRICT_READ_UNTRACKED)、ref の中の onCleanup
    (CLEANUP_IN_FORBIDDEN_SCOPE)を開発ビルドが止めてくれた(直した)。残っているのは列の幅が変わったときの
    EFFECT_RELAY_TEAR(列の仮想化の測り直しで見出しを 2 回描く。React 版にも同じ 2 回目の描画がある)。
-4. **core へ寄せたいもの**: React 版の層にフレームワークに依らないファイルはほぼ残っていない(`editors/editorVisibleBounds.ts`
-   など数個)が、`GridShell.tsx` の useCallback / useMemo(54 / 40 個)の中に、Solid でも同じことを書く処理がある:
-   編集を始めてよいかの判断(tryStartEditCell)、全選択、選択したセルの削除、オーバーレイの矩形、`aria-activedescendant` の判断、
-   セルの既定の表示(valueFormatter)、`renderCell` の `setValue` の書き込み、props の既定値(密度の高さ等)、固定ペインの style、
-   エディタのキーの割り当て。core の `resolveGridHeightLayout` は React 向けの style(camelCase・数値)を返すので変換が要る。
+4. **core へ寄せたもの(段階 0-2〜0-4)**: React 版の層にフレームワークに依らないファイルはほぼ残っていなかったが、`GridShell.tsx`
+   の useCallback / useMemo の中に Solid でも同じことを書く処理があったので core へ移した: セルの操作(編集を始めてよいかの判断・
+   チェックボックス・選択したセルの削除・全選択・`renderCell` の `setValue` = `engine/cellCommands`)、オーバーレイの矩形と
+   `aria-activedescendant` の判断(`logic/cellPlacement`)、エディタのキーの割り当て(`logic/editorKeys`)、密度の既定の高さ
+   (`logic/density`)。残り: セルの既定の表示(valueFormatter。数行)、固定ペインの style、core の `resolveGridHeightLayout` が
+   React 向けの style(camelCase・数値)を返すので変換が要る(`primitives/style.ts`)。
 5. **テスト**: core の `installJsdomLayoutStubs` は Solid の jsdom テストでもそのまま使えた。`@solidjs/testing-library` はまだ
    1.0.0-rc.2。イベントの後に DOM を見るときは `flush()` を挟む。
 6. **pnpm**: Solid 2.0 の各パッケージは公開されたばかりで pnpm 11 の `minimumReleaseAge` に止められるので、

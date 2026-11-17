@@ -1,5 +1,5 @@
-// 1 行の text エディタ(試作)。React 版の editors/TextCellEditor.tsx(1 行の分)と editors/editorKeyBindings.ts の
-//   Enter / Tab / Escape / PageUp・PageDown の扱いを Solid で書き直したもの。
+// 1 行の text エディタ(試作)。React 版の editors/TextCellEditor.tsx(1 行の分)を Solid で書き直したもの。キーの割り当ては
+//   core logic/editorKeys(React 版の editors/editorKeyBindings.ts と共用)。
 //   Solid 2.0 では signal への書き込みが次のマイクロタスクまで読めない(setDraft の直後の draft() は前の値)ので、
 //   確定するときは signal ではなく入力欄の今の値(DOM)を読みます。
 import { Show, createSignal, onSettled, untrack } from 'solid-js';
@@ -8,7 +8,7 @@ import type {
   EditorCommitResult,
   EditorEnterMove,
 } from '@ishibashi0112/spreadsheet-grid-core';
-import { isImeComposingKeyEvent } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/domGuards';
+import { handleEditorKeyDown } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/editorKeys';
 
 type TextEditorProps = {
   initialValue: string;
@@ -17,11 +17,6 @@ type TextEditorProps = {
   enterMove?: EditorEnterMove | undefined;
   onCommit: (value: unknown, direction?: EditorCommitDirection) => EditorCommitResult | void;
   onCancel: () => void;
-};
-
-const resolveEnterDirection = (enterMove: EditorEnterMove | undefined): EditorCommitDirection | undefined => {
-  const move = enterMove ?? 'down';
-  return move === 'none' ? undefined : move;
 };
 
 export function TextEditor(props: TextEditorProps) {
@@ -38,36 +33,16 @@ export function TextEditor(props: TextEditorProps) {
     input.setSelectionRange(end, end);
   });
 
-  const commitWith = (value: string, direction?: EditorCommitDirection) => {
-    const result = props.onCommit(value, direction);
-    if (result && result.status === 'rejected') {
-      setError(result.message);
-    }
-  };
-
-  const handleKeyDown = (event: KeyboardEvent & { currentTarget: HTMLInputElement }) => {
-    if (isImeComposingKeyEvent(event)) {
-      return;
-    }
-    if (event.key === 'PageUp' || event.key === 'PageDown') {
-      event.preventDefault();
-      return;
-    }
-    if (event.key === 'Enter') {
-      event.preventDefault();
-      commitWith(event.currentTarget.value, resolveEnterDirection(props.enterMove));
-      return;
-    }
-    if (event.key === 'Escape') {
-      event.preventDefault();
-      props.onCancel();
-      return;
-    }
-    if (event.key === 'Tab') {
-      event.preventDefault();
-      commitWith(event.currentTarget.value, event.shiftKey ? 'left' : 'right');
-    }
-  };
+  // キーの割り当て(IME の変換中 / スクロールのキー / Enter・Tab・Escape)は core logic/editorKeys(React 版と共用)。
+  //   確定する値は入力欄の今の値(signal は書き込みの直後に前の値を返すため)。
+  const handleKeyDown = (event: KeyboardEvent & { currentTarget: HTMLInputElement }) =>
+    handleEditorKeyDown(event, {
+      value: event.currentTarget.value,
+      onCommit: props.onCommit,
+      onCancel: props.onCancel,
+      onRejected: setError,
+      enterMove: props.enterMove,
+    });
 
   return (
     <>

@@ -12,7 +12,6 @@ import type { JSX } from '@solidjs/web';
 import type {
   CellCoord,
   EditorCommitDirection,
-  GridDensity,
   GridViewState,
 } from '@ishibashi0112/spreadsheet-grid-core';
 import { createGridEngine } from '@ishibashi0112/spreadsheet-grid-core/internal/engine/createGridEngine';
@@ -21,7 +20,6 @@ import { gridActions } from '@ishibashi0112/spreadsheet-grid-core/internal/model
 import { buildSelectionSnapshot } from '@ishibashi0112/spreadsheet-grid-core/internal/model/gridSelectors';
 import {
   buildColumnMeasurements,
-  computeSinglePaneColumnExtent,
   type ColumnPane,
   type PaneColumnEntry,
 } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/geometry';
@@ -29,13 +27,18 @@ import {
   resolveSelectionBand,
   resolveSelectionExtents,
 } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/selectionOverlayGeometry';
+import {
+  isActiveCellRendered,
+  placementRectInPane,
+  resolveCellPlacement,
+  resolvePaneBandRect,
+} from '@ishibashi0112/spreadsheet-grid-core/internal/logic/cellPlacement';
+import { GRID_DENSITY_DIMENSIONS } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/density';
 import { resolveGridHeightLayout } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/gridHeight';
 import { resolveGridThemeClassName } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/theme';
 import { systemColorSchemeStore } from '@ishibashi0112/spreadsheet-grid-core/internal/controllers/systemColorSchemeStore';
-import { clearCellsInSelection } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/clearCells';
-import { writeRowsCell } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/editorValues';
-import { decideCellWrite } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/validation';
-import { getCellValue, isViewCellEditable } from '@ishibashi0112/spreadsheet-grid-core/internal/utils/permissions';
+import { createCellCommands } from '@ishibashi0112/spreadsheet-grid-core/internal/engine/cellCommands';
+import { getCellValue } from '@ishibashi0112/spreadsheet-grid-core/internal/utils/permissions';
 import { isImeComposingKeyEvent } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/domGuards';
 import {
   createKeyboardController,
@@ -62,11 +65,6 @@ import { BodyRows, type CellRenderState } from './view/BodyRows';
 import { Overlay, type OverlayRect } from './view/Overlay';
 import { TextEditor } from './view/TextEditor';
 
-const DENSITY_DIMENSIONS: Record<GridDensity, { rowHeight: number; headerHeight: number }> = {
-  compact: { rowHeight: 28, headerHeight: 32 },
-  standard: { rowHeight: 36, headerHeight: 40 },
-  comfortable: { rowHeight: 44, headerHeight: 48 },
-};
 const EMPTY_ROWS: never[] = [];
 const NO_COLUMNS: never[] = [];
 const noopRenderDetailToggleCell = () => null;
@@ -78,8 +76,8 @@ export function SpreadsheetGrid<T extends object>(props: SpreadsheetGridProps<T>
   const rows = createMemo(() => (props.rows ?? EMPTY_ROWS) as T[]);
   const columns = createMemo(() => props.columns as unknown as UnboundGridColumn<T>[]);
   const density = () => props.density ?? 'standard';
-  const rowHeight = () => props.rowHeight ?? DENSITY_DIMENSIONS[density()].rowHeight;
-  const headerHeight = () => props.headerHeight ?? DENSITY_DIMENSIONS[density()].headerHeight;
+  const rowHeight = () => props.rowHeight ?? GRID_DENSITY_DIMENSIONS[density()].rowHeight;
+  const headerHeight = () => props.headerHeight ?? GRID_DENSITY_DIMENSIONS[density()].headerHeight;
   const rowHeaderWidth = () => props.rowHeaderWidth ?? 56;
   const readOnly = () => props.readOnly ?? false;
   const enableRangeSelection = () => props.enableRangeSelection ?? true;
@@ -234,40 +232,19 @@ export function SpreadsheetGrid<T extends object>(props: SpreadsheetGridProps<T>
   );
 
   // ── アクティブセル / 編集中のセルの位置 ──
-  const resolveCellPlacement = (cell: CellCoord | null): { pane: ColumnPane; rect: OverlayRect } | null => {
-    if (!cell || cell.row < 0 || cell.row >= viewRowCount()) {
-      return null;
-    }
-    const single = computeSinglePaneColumnExtent(paneLayout(), cell.col);
-    if (!single) {
-      return null;
-    }
-    const metrics = vertical().rowMetrics;
-    return {
-      pane: single.pane,
-      rect: {
-        left: single.extent.start,
-        top: metrics.rowTop(cell.row),
-        width: single.extent.width,
-        height: metrics.cellHeight(cell.row),
-      },
-    };
-  };
-  const activeCellPlacement = createMemo(() => resolveCellPlacement(ui().activeCell));
-  const editingCellPlacement = createMemo(() => resolveCellPlacement(ui().editingCell));
+  //   位置の解決は core logic/cellPlacement(React 版と共用)。
+  const activeCellPlacement = createMemo(() =>
+    resolveCellPlacement(ui().activeCell, viewRowCount(), paneLayout(), vertical().rowMetrics),
+  );
+  const editingCellPlacement = createMemo(() =>
+    resolveCellPlacement(ui().editingCell, viewRowCount(), paneLayout(), vertical().rowMetrics),
+  );
   const selectionExtents = createMemo(() => resolveSelectionExtents(ui().selection, paneLayout(), viewRowCount()));
   const selectionBand = createMemo(() =>
     resolveSelectionBand(selectionExtents(), vertical().windowFirstRow, vertical().windowLastRow, vertical().rowMetrics),
   );
-  const selectionRectForPane = (pane: ColumnPane): OverlayRect | null => {
-    const extents = selectionExtents();
-    const band = selectionBand();
-    const extent = extents?.extents[pane];
-    if (!extent || !band) {
-      return null;
-    }
-    return { left: extent.start, top: band.top, width: extent.width, height: band.height };
-  };
+  const selectionRectForPane = (pane: ColumnPane): OverlayRect | null =>
+    resolvePaneBandRect(selectionExtents(), selectionBand(), pane);
 
   // アクティブセルをキーで動かしたときに見える範囲へスクロールする(core の viewportSyncController)。
   const viewportSync = createViewportSyncController<T>();
@@ -356,33 +333,6 @@ export function SpreadsheetGrid<T extends object>(props: SpreadsheetGridProps<T>
   const isWholeGridSelected = createMemo(() =>
     computeIsWholeGridSelected(ui().selection, viewRowCount(), visibleColumns().length),
   );
-  const selectEntireGrid = () => {
-    if (viewRowCount() === 0 || visibleColumns().length === 0) {
-      return;
-    }
-    dispatch(gridActions.startSelection({ row: 0, col: 0 }));
-    dispatch(gridActions.updateSelection({ row: viewRowCount() - 1, col: visibleColumns().length - 1 }));
-    dispatch(gridActions.endSelection());
-    dispatch(gridActions.activateCell(resolveFirstDataCell(rowModel(), visibleColumns())));
-  };
-  const clearSelectedCells = () => {
-    if (!props.onRowsChange) {
-      return;
-    }
-    const { nextRows, changed } = clearCellsInSelection({
-      rows: rows(),
-      resolveSourceIndex: (viewIndex: number) => rowModel().getSourceIndex(viewIndex),
-      columns: orderedColumns(),
-      selection: ui().selection,
-      activeCell: ui().activeCell,
-      viewRowCount: viewRowCount(),
-      canWriteCell: (_source: number, colIndex: number, row: T, column: UnboundGridColumn<T>, viewIndex: number) =>
-        isViewCellEditable({ readOnly: readOnly(), canEditCell: props.canEditCell }, rowModel(), viewIndex, colIndex, row, column),
-    });
-    if (changed) {
-      handleRowsChange(nextRows);
-    }
-  };
 
   // ── 編集 ──
   const edit = createEditController<T>();
@@ -399,35 +349,24 @@ export function SpreadsheetGrid<T extends object>(props: SpreadsheetGridProps<T>
     readOnly: readOnly(),
     canEditCell: props.canEditCell,
   }));
-  const tryStartEditCell = (cell: CellCoord): boolean => {
-    const row = rowModel().getRow(cell.row);
-    const column = orderedColumns()[cell.col];
-    if (!row || !column) {
-      return false;
-    }
-    if (!isViewCellEditable({ readOnly: readOnly(), canEditCell: props.canEditCell }, rowModel(), cell.row, cell.col, row, column)) {
-      return false;
-    }
-    if (column.editor?.type === 'checkbox') {
-      return false;
-    }
-    edit.startEditWithValue(cell, String(getCellValue(row, column) ?? ''));
-    return true;
-  };
+  // ── セルの操作(編集の開始 / チェックボックス / 削除 / 全選択。core engine/cellCommands で React 版と共用)──
+  const cells = createCellCommands<T>();
+  connectController(cells, () => ({
+    rows: rows(),
+    rowModel: rowModel(),
+    orderedColumns: orderedColumns(),
+    uiState: ui(),
+    getUiState: store.getState,
+    readOnly: readOnly(),
+    canEditCell: props.canEditCell,
+    handleRowsChange: props.onRowsChange ? handleRowsChange : undefined,
+    applyServerSideCellEdits: undefined,
+    startEditWithValue: edit.startEditWithValue,
+    dispatch,
+  }));
+  const { selectEntireGrid, clearSelectedCells, tryStartEdit: tryStartEditCell } = cells;
   cellDoubleClickRef.current = (cell) => {
     tryStartEditCell(cell);
-  };
-  const handleCellDoubleClickFromKeyboard = (cell: CellCoord) => {
-    const row = rowModel().getRow(cell.row);
-    const column = orderedColumns()[cell.col];
-    if (!row || !column) {
-      return;
-    }
-    if (!isViewCellEditable({ readOnly: readOnly(), canEditCell: props.canEditCell }, rowModel(), cell.row, cell.col, row, column)) {
-      return;
-    }
-    setEditorInitialValue(String(getCellValue(row, column) ?? ''));
-    dispatch(gridActions.startEdit(cell));
   };
 
   // ── ポインタ(範囲選択 / 見出し / 行番号 / ダブルクリック) ──
@@ -483,14 +422,14 @@ export function SpreadsheetGrid<T extends object>(props: SpreadsheetGridProps<T>
     setEditorInitialValue,
     dispatch,
     handleCopy: clipboard.handleCopy,
-    handleCellDoubleClick: handleCellDoubleClickFromKeyboard,
+    handleCellDoubleClick: tryStartEditCell,
     isWholeGridSelected: isWholeGridSelected(),
     selectEntireGrid,
     onUndo: history.undo,
     onRedo: history.redo,
     onClearSelection: clearSelectedCells,
     enableClearOnDelete: props.enableClearOnDelete ?? true,
-    onToggleCheckboxCell: () => {},
+    onToggleCheckboxCell: cells.toggleCheckbox,
     onToggleGroup: () => {},
   }));
   const handleShellKeyDown = (event: KeyboardEvent) => {
@@ -624,16 +563,7 @@ export function SpreadsheetGrid<T extends object>(props: SpreadsheetGridProps<T>
         isSelected: state.isSelected,
         isEditing: state.isEditing,
         readOnly: state.readOnly,
-        setValue: (nextValue: unknown) => {
-          if (decideCellWrite(unbound, row, nextValue).action === 'reject') {
-            return;
-          }
-          const source = rowModel().getSourceIndex(rowIndex);
-          if (source === undefined || !props.onRowsChange) {
-            return;
-          }
-          handleRowsChange(writeRowsCell(rows(), source, unbound, nextValue));
-        },
+        setValue: (nextValue: unknown) => cells.writeCellValue(rowIndex, row, unbound, nextValue),
       });
     }
     const text = column.valueFormatter ? column.valueFormatter({ value, row, column }) : String(value ?? '');
@@ -664,14 +594,8 @@ export function SpreadsheetGrid<T extends object>(props: SpreadsheetGridProps<T>
     entries: () => readonly PaneColumnEntry<T>[],
   ) => {
     const bodyHeight = () => headerHeight() + vertical().physicalBodyHeight;
-    const activeRect = () => {
-      const placement = activeCellPlacement();
-      return placement && placement.pane === pane ? placement.rect : null;
-    };
-    const editorRect = () => {
-      const placement = editingCellPlacement();
-      return placement && placement.pane === pane ? placement.rect : null;
-    };
+    const activeRect = () => placementRectInPane(activeCellPlacement(), pane);
+    const editorRect = () => placementRectInPane(editingCellPlacement(), pane);
     return (
       <div
         style={{
@@ -779,14 +703,15 @@ export function SpreadsheetGrid<T extends object>(props: SpreadsheetGridProps<T>
     );
   };
 
-  const activeDescendantId = () => {
-    const cell = ui().activeCell;
-    if (!cell || !vertical().virtualRowIndexes.has(cell.row)) {
-      return undefined;
-    }
-    const rendered = [...paneLayout().left.entries, ...centerRenderEntries(), ...paneLayout().right.entries];
-    return rendered.some((entry) => entry.logicalIndex === cell.col) ? activeCellDomId : undefined;
-  };
+  // aria-activedescendant は参照先のセルが描かれているときだけ(core logic/cellPlacement。React 版と共用)。
+  const activeDescendantId = () =>
+    isActiveCellRendered(ui().activeCell, vertical().virtualRowIndexes, rowModel(), [
+      paneLayout().left.entries,
+      centerRenderEntries(),
+      paneLayout().right.entries,
+    ])
+      ? activeCellDomId
+      : undefined;
 
   return (
     <div

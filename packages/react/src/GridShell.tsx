@@ -38,6 +38,16 @@ import { useVirtualizerCore } from './hooks/useVirtualizerCore';
 // 追加(本体分解 E-7): グリッドエンジン(リゾルバ / コマンド / 通知 / DOM コントローラ / store の束ね。React 非依存)。
 import { createGridEngine } from '@ishibashi0112/spreadsheet-grid-core/internal/engine/createGridEngine';
 import { useControllerLifecycle, useIsomorphicLayoutEffect } from './hooks/useController';
+import { createCellCommands } from '@ishibashi0112/spreadsheet-grid-core/internal/engine/cellCommands';
+import { GRID_DENSITY_DIMENSIONS } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/density';
+import {
+  isActiveCellRendered,
+  placementRectInPane,
+  resolveCellPlacement,
+  resolveColumnHoverRect,
+  resolvePaneBandRect,
+  resolvePaneSegmentRects,
+} from '@ishibashi0112/spreadsheet-grid-core/internal/logic/cellPlacement';
 import {
   GRID_POPUP_SELECTOR,
   createEscapeClaimController,
@@ -129,7 +139,6 @@ import {
   type PaneColumnEntry,
   type ColumnPane,
 } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/geometry';
-import { buildClearCellEdits, clearCellsInSelection } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/clearCells';
 // 追加: データ投入時の列幅自動フィットの発火判定(純関数)です。
 // 追加(13-B2-5): 列リセットの再構成純ロジック(幅 / 固定 / 表示 / 並び順の完全復元)です。
 // 追加(scroll-space 仮想化): 縦ジオメトリのシーム(uniform window + pixel scaling)です。
@@ -180,8 +189,6 @@ import type {
   CellRenderState,
   GridColumn,
   CellRenderContext,
-  // 追加(THEME-2): 密度プリセットの型です。
-  GridDensity,
   // 追加(C1): auto-height 実測キャッシュのキー型です。
   GridRowKey,
   // 追加(detail ③): 展開行の描画コンテキスト / セルへ渡す detail コンテキスト型です。
@@ -203,11 +210,9 @@ import type {
   SpreadsheetGridProps,
   // 追加(state #2): onStateChange の lastEmitted 保持 / snapshot 型に使います。
 } from './model/gridTypes';
-import { getCellValue, isViewCellEditable } from '@ishibashi0112/spreadsheet-grid-core/internal/utils/permissions';
-import { writeRowsCell } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/editorValues';
-import { isCheckboxChecked, toggleCheckboxValue } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/checkboxEditor';
+import { getCellValue } from '@ishibashi0112/spreadsheet-grid-core/internal/utils/permissions';
+import { isCheckboxChecked } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/checkboxEditor';
 import { CheckboxCell } from './editors/CheckboxCell';
-import { decideCellWrite } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/validation';
 // 変更(lazy-popups): 列フィルターポップオーバーとツールパネル(+ 3 タブ)は別チャンクへ分けて遅延読み込みします
 //   (view/lazyPopups。シェルから部品を静的に import しないこと = 初期チャンクへ戻ってしまう)。
 import type { ToolPanelViews } from './view/lazyPopups';
@@ -260,17 +265,6 @@ const EMPTY_GROUP_COLUMNS: never[] = [];
 // 追加(stage ②): serverSide query 構築/debounce 用の安定既定値・定数です。
 //   clientSide では query を空に保ち(フックは inert)、参照同一で memo/effect を不要に揺らしません。
 
-// 追加(THEME-2): density プリセット別の既定寸法です(明示 rowHeight / headerHeight prop が優先)。
-//   'standard' は従来既定(36 / 40)と同値。CSS 側の寸法トークン切替は styles.css の
-//   ssg-root--density-* 修飾子を参照。
-const DENSITY_DIMENSIONS: Record<
-  GridDensity,
-  { rowHeight: number; headerHeight: number }
-> = {
-  compact: { rowHeight: 28, headerHeight: 32 },
-  standard: { rowHeight: 36, headerHeight: 40 },
-  comfortable: { rowHeight: 44, headerHeight: 48 },
-};
 // 追加(B3): flex 非適用時(未計測 / flex 列なし)に返す共有の空 map です。参照同一性で
 //   「flex 素通し(= effectiveColumnWidths は uiState.columnWidths そのまま)」を判定します。
 // 追加(バッチ②): コンテキストメニュー closed 時に popover へ渡す空 items(参照不変)。
@@ -525,10 +519,11 @@ export function useGridShell<T extends object>({
   const localeTexts = useMemo(() => resolveLocaleText(localeText), [resolveLocaleText, localeText]);
 
   // 追加(THEME-2): density プリセットの既定寸法を解決します(明示 prop が常に優先)。
-  const rowHeight = rowHeightProp ?? DENSITY_DIMENSIONS[density].rowHeight;
+  //   変更(Solid 版 段階 0-4): 表は core logic/density の GRID_DENSITY_DIMENSIONS(Solid 版と共用)。
+  const rowHeight = rowHeightProp ?? GRID_DENSITY_DIMENSIONS[density].rowHeight;
   // 変更(1.1.0 / 固定行): 列見出しの行の高さ。上の固定行があるときは、本体の上端(headerHeight)= 列見出し + 上の固定行
   //   (下の合計行の後で決める)。列見出しの行そのものの高さが要るところ(GridHeaderRow ほか)はこちら。
-  const columnHeaderHeight = headerHeightProp ?? DENSITY_DIMENSIONS[density].headerHeight;
+  const columnHeaderHeight = headerHeightProp ?? GRID_DENSITY_DIMENSIONS[density].headerHeight;
 
   // 追加(scrollHint): スクロール位置インジケーターのオプション解決です。
   //   null = 完全無効(オーバーレイ自体を描画しない)。boolean / オブジェクトの両形を吸収します。
@@ -2242,25 +2237,26 @@ export function useGridShell<T extends object>({
   // 追加(見直し): 編集中のエディタの DOM id(編集中のセルが aria-owns で子に持つ)。
   const cellEditorDomId = `${gridDomId}-cell-editor`;
   const activeCellForAria = uiState.activeCell;
-  const activeDescendantId = useMemo(() => {
-    const cell = activeCellForAria;
-    if (cell === null || !virtualRowIndexes.has(cell.row) || rowModel.getRow(cell.row) === undefined) {
-      return undefined;
-    }
-    const isRendered = (entries: readonly (PaneColumnEntry<T> | undefined)[]) =>
-      entries.some((entry) => entry?.logicalIndex === cell.col);
-    return isRendered(leftRenderEntries) || isRendered(centerRenderEntries) || isRendered(rightRenderEntries)
-      ? activeCellDomId
-      : undefined;
-  }, [
-    activeCellForAria,
-    virtualRowIndexes,
-    rowModel,
-    leftRenderEntries,
-    centerRenderEntries,
-    rightRenderEntries,
-    activeCellDomId,
-  ]);
+  // 変更(Solid 版 段階 0-3): 判断は core logic/cellPlacement の isActiveCellRendered(Solid 版と共用)。
+  const activeDescendantId = useMemo(
+    () =>
+      isActiveCellRendered(activeCellForAria, virtualRowIndexes, rowModel, [
+        leftRenderEntries,
+        centerRenderEntries,
+        rightRenderEntries,
+      ])
+        ? activeCellDomId
+        : undefined,
+    [
+      activeCellForAria,
+      virtualRowIndexes,
+      rowModel,
+      leftRenderEntries,
+      centerRenderEntries,
+      rightRenderEntries,
+      activeCellDomId,
+    ],
+  );
 
   // ── active cell placement（10-D: ペイン別座標系） ──────
   // 追加(10-D): active cell が属するペインと、そのペインローカル矩形を求めます。
@@ -2268,59 +2264,30 @@ export function useGridShell<T extends object>({
   //             computeSinglePaneColumnExtent で所属ペイン + ローカル extent を取得します。
   //             left は leadingWidth 非含有のローカル列座標で、描画側で leadingWidth を加算します。
   // 変更(1.0 前の最終チェック FC-10): 位置の解決を関数にして、アクティブセルと編集中のセルの両方に使います。
-  const resolveCellPlacement = useCallback(
-    (cell: CellCoord | null): { pane: ColumnPane; rect: ActiveCellOverlayRect } | null => {
-      if (!cell) {
-        return null;
-      }
-      const { row, col } = cell;
-      if (row < 0 || row >= viewRowCount) {
-        return null;
-      }
-      const single = computeSinglePaneColumnExtent(paneLayout, col);
-      if (!single) {
-        return null;
-      }
-      return {
-        pane: single.pane,
-        rect: {
-          left: single.extent.start,
-          top: rowMetrics.rowTop(row),
-          width: single.extent.width,
-          // 変更(detail ③): 展開行の帯を含まないセル行の高さ(展開行なしでは rowsHeight(row, row) と一致)。
-          height: rowMetrics.cellHeight(row),
-        },
-      };
-    },
-    [viewRowCount, paneLayout, rowMetrics],
-  );
+  // 変更(Solid 版 段階 0-3): 位置の解決は core logic/cellPlacement の resolveCellPlacement(Solid 版と共用)。
   const activeCellPlacement = useMemo(
-    () => resolveCellPlacement(uiState.activeCell),
-    [resolveCellPlacement, uiState.activeCell],
+    () => resolveCellPlacement(uiState.activeCell, viewRowCount, paneLayout, rowMetrics),
+    [uiState.activeCell, viewRowCount, paneLayout, rowMetrics],
   );
   // 追加(FC-10): 編集中のセルの位置です。エディタはアクティブセルではなく編集中のセルに重ねます(blur で閉じない custom
   //   エディタで編集中に別のセルを押した / 編集中に selectCell を呼んだとき、エディタだけが押したセルへ動き、中身と書き込み先は
   //   元のセルのままだった)。
   const editingCellPlacement = useMemo(
-    () => resolveCellPlacement(uiState.editingCell),
-    [resolveCellPlacement, uiState.editingCell],
+    () => resolveCellPlacement(uiState.editingCell, viewRowCount, paneLayout, rowMetrics),
+    [uiState.editingCell, viewRowCount, paneLayout, rowMetrics],
   );
 
 
   // 追加(10-D): 指定ペインに active cell があればそのローカル矩形を、無ければ null を返します。
   const activeCellRectForPane = useCallback(
-    (pane: ColumnPane): ActiveCellOverlayRect | null =>
-      activeCellPlacement && activeCellPlacement.pane === pane
-        ? activeCellPlacement.rect
-        : null,
+    (pane: ColumnPane): ActiveCellOverlayRect | null => placementRectInPane(activeCellPlacement, pane),
     [activeCellPlacement],
   );
 
   // 追加(10-D): editor は editingCell があるときだけ出します。
   // 変更(FC-10): 位置は active cell ではなく編集中のセル(editingCellPlacement)です。
   const editorRectForPane = useCallback(
-    (pane: ColumnPane): ActiveCellOverlayRect | null =>
-      editingCellPlacement && editingCellPlacement.pane === pane ? editingCellPlacement.rect : null,
+    (pane: ColumnPane): ActiveCellOverlayRect | null => placementRectInPane(editingCellPlacement, pane),
     [editingCellPlacement],
   );
 
@@ -2647,73 +2614,18 @@ export function useGridShell<T extends object>({
     rowKeyGetter,
   });
 
-  // ── clear(Delete / Backspace)─────────────────────────
-  // 追加(clear): 選択セル(なければアクティブセル)の値クリアです。書き込みは paste と同じ
-  //   view→source 解決 + isCellEditable ガードで、変更が 1 セルも無ければ emit しません
-  //   (undo 履歴に no-op を積まない)。クリア値は「空文字のペースト」と同じ規則
-  //   (parseClipboardValue('') 経由、未定義なら '')です。
-  const clearSelectedCells = useCallback(() => {
-    // 追加(SSRM 書き戻し): serverSide はビュー走査でセル編集集合を作り、書き戻しへ流します
-    //   (全件 rows が無いため rows 再構築は不可)。未ロード行(スケルトン)はスキップされます。
-    if (applyServerSideCellEdits) {
-      const edits = buildClearCellEdits({
-        getRow: (viewIndex) => rowModel.getRow(viewIndex),
-        columns: orderedColumns,
-        selection: uiState.selection,
-        activeCell: uiState.activeCell,
-        viewRowCount,
-        canWriteCell: (viewIndex, colIndex, row, column) =>
-          isViewCellEditable(
-            { readOnly, canEditCell },
-            rowModel,
-            viewIndex,
-            colIndex,
-            row,
-            column,
-          ),
-      });
-      if (edits.length > 0) {
-        applyServerSideCellEdits(edits);
-      }
-      return;
-    }
-    if (!handleRowsChange) {
-      return;
-    }
-    const { nextRows, changed } = clearCellsInSelection({
-      rows,
-      resolveSourceIndex: (viewIndex) => rowModel.getSourceIndex(viewIndex),
-      columns: orderedColumns,
-      selection: uiState.selection,
-      activeCell: uiState.activeCell,
-      viewRowCount,
-      // 変更(audit RD-4): canEditCell の rowIndex はビュー行 index(表示 / 編集開始と同じ)。
-      canWriteCell: (_originalRowIndex, colIndex, row, column, viewIndex) =>
-        isViewCellEditable(
-          { readOnly, canEditCell },
-          rowModel,
-          viewIndex,
-          colIndex,
-          row,
-          column,
-        ),
-    });
-    if (!changed) {
-      return;
-    }
-    handleRowsChange(nextRows);
-  }, [
-    applyServerSideCellEdits,
-    canEditCell,
-    handleRowsChange,
-    orderedColumns,
-    readOnly,
-    rowModel,
-    rows,
-    uiState.activeCell,
-    uiState.selection,
-    viewRowCount,
-  ]);
+  // ── セルの操作(編集の開始 / チェックボックス / 削除 / 全選択)──────────
+  // 変更(Solid 版 段階 0-2): 判断と書き込みは core engine/cellCommands(React 非依存。Solid 版と共用)へ移しました。
+  //   ここでは参照の安定したインスタンスを作るだけで、最新の状態は編集のコントローラの後の useControllerLifecycle で渡します
+  //   (startEditWithValue を受けるため)。呼ばれるのはイベント / 命令的 API の時点なので、レイアウト effect の update で足ります。
+  const [cellCommands] = useState(createCellCommands<T>);
+  const {
+    clearSelectedCells,
+    selectEntireGrid,
+    toggleCheckbox: toggleCheckboxCell,
+    tryStartEdit: tryStartEditCell,
+    writeCellValue,
+  } = cellCommands;
 
   // ── clipboard ─────────────────────────────────────────
   // 追加(1.0 前の最終チェック FC-21): コピー範囲(動く点線)のビュー形状の列は、列キーの並びで比べます(列の参照で比べると、
@@ -2812,121 +2724,6 @@ export function useGridShell<T extends object>({
     overlayBaseOffset,
     portalClassName,
   });
-
-  const selectEntireGrid = useCallback(() => {
-    if (viewRowCount === 0 || visibleColumns.length === 0) {
-      return;
-    }
-    const startCell = { row: 0, col: 0 };
-    const endCell = {
-      row: viewRowCount - 1,
-      col: visibleColumns.length - 1,
-    };
-    dispatch(gridActions.startSelection(startCell));
-    dispatch(gridActions.updateSelection(endCell));
-    dispatch(gridActions.endSelection());
-    // 変更(段階 2 lite-2): 範囲は表の全体のまま、アクティブセルは最初のデータのセル(合成列とラベル行を飛ばす。Tab の最初の
-    //   止まり先と同じ)。これまでは (0, 0) で、枠が行ドラッグのハンドル列やラベル行に乗っていました。
-    dispatch(gridActions.activateCell(resolveFirstDataCell(rowModel, visibleColumns)));
-  }, [dispatch, viewRowCount, visibleColumns, rowModel]);
-
-  // ── double click → edit ───────────────────────────────
-  const handleCellDoubleClick = useCallback(
-    (cell: CellCoord) => {
-      // 変更(DS-3-5): filteredRows[cell.row] → rowModel.getRow 経由(double-click consumer 移行)。
-      //   getRow(i)=rows[order[i]] で旧 filteredRows[i] と参照同一。OOB は getRow が undefined を
-      //   返し、下の `if (!row …) return` ガードで吸収するため挙動等価です。
-      const row = rowModel.getRow(cell.row);
-      // 変更(10-E): cell.col は論理 index 空間（orderedColumns）です。
-      const column = orderedColumns[cell.col];
-      if (!row || !column) {
-        return;
-      }
-      if (
-        !isViewCellEditable(
-          { readOnly, canEditCell },
-          rowModel,
-          cell.row,
-          cell.col,
-          row,
-          column,
-        )
-      ) {
-        return;
-      }
-      // 追加(editor: checkbox): checkbox 列は直接トグル方式のため編集セッションを開きません
-      //   (Enter / F2 もここを通るため、このガード 1 箇所で済みます)。
-      if (column.editor?.type === 'checkbox') {
-        return;
-      }
-      const currentValue = getCellValue(row, column);
-      // 変更(11-B6): ドラフト setter → 初期値 setter へ置き換え（挙動等価）。
-      setEditorInitialValue(String(currentValue ?? ''));
-      dispatch(gridActions.startEdit(cell));
-    },
-    [canEditCell, dispatch, rowModel, readOnly, orderedColumns, setEditorInitialValue],
-  );
-
-  // 追加(editor: checkbox): checkbox セルの直接トグルです(クリック / Space 共通の集約点)。
-  //   isCellEditable ガードを通し、履歴ラッパ(handleRowsChange)経由で undo/redo 対象にします。
-  const toggleCheckboxCell = useCallback(
-    (cell: CellCoord) => {
-      // 変更(SSRM 書き戻し): 書き込み口はどちらか(clientSide=handleRowsChange /
-      //   serverSide=applyServerSideCellEdits)があれば進みます。
-      if (!handleRowsChange && !applyServerSideCellEdits) {
-        return;
-      }
-      const row = rowModel.getRow(cell.row);
-      const column = orderedColumns[cell.col];
-      if (!row || !column || column.editor?.type !== 'checkbox') {
-        return;
-      }
-      if (
-        !isViewCellEditable(
-          { readOnly, canEditCell },
-          rowModel,
-          cell.row,
-          cell.col,
-          row,
-          column,
-        )
-      ) {
-        return;
-      }
-      const nextValue = toggleCheckboxValue(
-        getCellValue(row, column),
-        column.editor,
-      );
-      // 追加(validation): reject 列は検証 NG のトグルを no-op に倒します(経路 D)。
-      if (decideCellWrite(column, row, nextValue).action === 'reject') {
-        return;
-      }
-      // 追加(SSRM 書き戻し): serverSide は書き戻しへ流します(楽観更新はフック側)。
-      if (applyServerSideCellEdits) {
-        applyServerSideCellEdits([
-          { viewIndex: cell.row, column, value: nextValue },
-        ]);
-        return;
-      }
-      if (!handleRowsChange) {
-        return;
-      }
-      const originalRowIndex = rowModel.getSourceIndex(cell.row);
-      if (originalRowIndex === undefined) {
-        return;
-      }
-      handleRowsChange(writeRowsCell(rows, originalRowIndex, column, nextValue));
-    },
-    [
-      applyServerSideCellEdits,
-      canEditCell,
-      handleRowsChange,
-      orderedColumns,
-      readOnly,
-      rowModel,
-      rows,
-    ],
-  );
 
   // ── keyboard ──────────────────────────────────────────
   // ── 追加(F-3): 条件付き書式の列ごとの min / max(ビュー行から集計。内容が同じなら参照不変 = 行 memo を壊さない)──
@@ -3160,7 +2957,8 @@ export function useGridShell<T extends object>({
     handleCopy,
     // 追加(F-2): Ctrl/Cmd+F で検索バーを開く(find が有効で shortcut が true のときだけ横取り)。
     openFind: findShortcut ? openFindFromShortcut : undefined,
-    handleCellDoubleClick,
+    // 変更(Solid 版 段階 0-2): Enter / F2 の編集開始はダブルクリックと同じ core engine/cellCommands の tryStartEdit。
+    handleCellDoubleClick: tryStartEditCell,
     isWholeGridSelected,
     selectEntireGrid,
     // 追加(undo/redo): Ctrl/Cmd+Z / Shift+Z / Y のショートカット配線です。無効条件は
@@ -3246,6 +3044,20 @@ export function useGridShell<T extends object>({
     // 追加(1.2.0 の確かめ直し K): 'row' では確定の後の移動の先を行キーで覚える。
     followsRow: activeRowFollowEnabled,
   });
+  // 追加(Solid 版 段階 0-2): セルの操作のコマンド群(core engine/cellCommands)へ最新の状態を渡します。
+  useControllerLifecycle(cellCommands, {
+    rows,
+    rowModel,
+    orderedColumns,
+    uiState,
+    getUiState: gridStore.getState,
+    readOnly,
+    canEditCell,
+    handleRowsChange,
+    applyServerSideCellEdits,
+    startEditWithValue,
+    dispatch,
+  });
 
   // ── IME オンのままの直接入力(G-2)─────────────────────
   // 追加(G-2): imeDirectInput 有効時だけ、シェル末尾の透明な入力受け(input)へグリッドのフォーカスを置き、IME の変換を
@@ -3319,42 +3131,6 @@ export function useGridShell<T extends object>({
   const focusGridRoot = useCallback(() => {
     gridRootRef.current?.focus({ preventScroll: true });
   }, []);
-  // 変更(dogfood DU-02): ダブルクリックの編集開始を、命令的 API の startEditing() と共用するため切り出しました
-  //   (編集を始めたら true)。判定と初期値は従来どおりです。
-  const tryStartEditCell = useCallback(
-    (cell: CellCoord): boolean => {
-      // 変更(DS-3-5): filteredRows[cell.row] → rowModel.getRow 経由(double-click consumer 移行)。
-      //   getRow(i)=rows[order[i]] で旧 filteredRows[i] と参照同一。OOB は getRow が undefined を
-      //   返し、下の `if (!row …) return` ガードで吸収するため挙動等価です。
-      const row = rowModel.getRow(cell.row);
-      // 変更(10-E): cell.col は論理 index 空間（orderedColumns）です。
-      const column = orderedColumns[cell.col];
-      if (!row || !column) {
-        return false;
-      }
-      if (
-        !isViewCellEditable(
-          { readOnly, canEditCell },
-          rowModel,
-          cell.row,
-          cell.col,
-          row,
-          column,
-        )
-      ) {
-        return false;
-      }
-      // 追加(editor: checkbox): checkbox 列は直接トグル方式のため編集セッションを開きません
-      //   (トグルはクリック / Space。ダブルクリックは click 2 回として扱われます)。
-      if (column.editor?.type === 'checkbox') {
-        return false;
-      }
-      const currentValue = getCellValue(row, column);
-      startEditWithValue(cell, String(currentValue ?? ''));
-      return true;
-    },
-    [canEditCell, rowModel, readOnly, startEditWithValue, orderedColumns],
-  );
   const handleCellDoubleClickWithController = useCallback(
     (cell: CellCoord, event: MouseEvent) => {
       // 追加(G-1): 既定の動作(編集開始)の前に onCellDoubleClick を呼びます(読み取り専用セルでも呼ぶため
@@ -3453,86 +3229,37 @@ export function useGridShell<T extends object>({
       ),
     [detailActive, copiedExtents, rowMetrics, detailExtras, windowFirstRow, windowLastRow],
   );
+  // 変更(Solid 版 段階 0-3): ペインの矩形は core logic/cellPlacement(Solid 版と共用)。
   const copyRectsForPane = useCallback(
     (pane: ColumnPane): SelectionOverlayRect[] => {
-      const extent = copiedExtents?.extents[pane];
-      if (!extent) {
-        return [];
-      }
       if (copiedBandSegments) {
-        return copiedBandSegments.map((segment) => ({
-          left: extent.start,
-          top: segment.top,
-          width: extent.width,
-          height: segment.height,
-        }));
+        return resolvePaneSegmentRects(copiedExtents, copiedBandSegments, pane) ?? [];
       }
-      if (!copiedBand) {
-        return [];
-      }
-      return [{ left: extent.start, top: copiedBand.top, width: extent.width, height: copiedBand.height }];
+      const rect = resolvePaneBandRect(copiedExtents, copiedBand, pane);
+      return rect ? [rect] : [];
     },
     [copiedExtents, copiedBand, copiedBandSegments],
   );
 
   // 追加(10-D): 指定ペインの選択矩形（ペインローカル）を返します。該当列が無い / 窓外なら null です。
   const selectionRectForPane = useCallback(
-    (pane: ColumnPane): SelectionOverlayRect | null => {
-      if (!selectionExtents || !selectionBand) {
-        return null;
-      }
-      const extent = selectionExtents.extents[pane];
-      if (!extent) {
-        return null;
-      }
-      return {
-        left: extent.start,
-        top: selectionBand.top,
-        width: extent.width,
-        height: selectionBand.height,
-      };
-    },
+    (pane: ColumnPane): SelectionOverlayRect | null => resolvePaneBandRect(selectionExtents, selectionBand, pane),
     [selectionExtents, selectionBand],
   );
   // 追加(detail ③): 展開行あり時のペイン別選択矩形リスト(detail 帯を避けたセグメント群)。
   //   展開行なしでは null を返し、呼び出し側は従来の selectionRectForPane を使います。
   const selectionRectsForPane = useCallback(
-    (pane: ColumnPane): SelectionOverlayRect[] | null => {
-      if (!selectionBandSegments || !selectionExtents) {
-        return null;
-      }
-      const extent = selectionExtents.extents[pane];
-      if (!extent) {
-        return null;
-      }
-      return selectionBandSegments.map((segment) => ({
-        left: extent.start,
-        top: segment.top,
-        width: extent.width,
-        height: segment.height,
-      }));
-    },
+    (pane: ColumnPane): SelectionOverlayRect[] | null =>
+      resolvePaneSegmentRects(selectionExtents, selectionBandSegments, pane),
     [selectionBandSegments, selectionExtents],
   );
 
   // 追加(motion-5 / M-6): クロスヘアのポインタ列の帯(ペインローカル)。描画窓の縦範囲だけを覆います。
   const columnHoverRectForPane = useCallback(
-    (pane: ColumnPane): SelectionOverlayRect | null => {
-      if (hoverHighlight !== 'cross' || hoveredColumnIndex === null || windowLastRow < windowFirstRow) {
-        return null;
-      }
-      const single = computeSinglePaneColumnExtent(paneLayout, hoveredColumnIndex);
-      if (!single || single.pane !== pane) {
-        return null;
-      }
-      const top = rowMetrics.rowTop(windowFirstRow);
-      return {
-        left: single.extent.start,
-        top,
-        width: single.extent.width,
-        height: rowMetrics.rowTop(windowLastRow + 1) - top,
-      };
-    },
+    (pane: ColumnPane): SelectionOverlayRect | null =>
+      hoverHighlight === 'cross'
+        ? resolveColumnHoverRect(hoveredColumnIndex, pane, paneLayout, rowMetrics, windowFirstRow, windowLastRow)
+        : null,
     [hoverHighlight, hoveredColumnIndex, paneLayout, rowMetrics, windowFirstRow, windowLastRow],
   );
 
@@ -4019,35 +3746,9 @@ export function useGridShell<T extends object>({
           readOnly: cellState.readOnly,
           // 追加: 実編集は CellEditorLayer で行いますが、将来の API 互換のため setValue も残します。
           // 変更(undo/redo): 変更前 rows を履歴へ積むため handleRowsChange(ラッパ)経由にします。
-          setValue: (nextValue) => {
-            // 追加(validation): reject 列は検証 NG の書き込みを no-op に倒します(経路 D。
-            //   setValue はパースを通らないドメイン値直書きのため、ここが唯一のガードです)。
-            if (decideCellWrite(column, row, nextValue).action === 'reject') {
-              return;
-            }
-            // 追加(SSRM 書き戻し): serverSide は書き戻しへ流します(楽観更新はフック側)。
-            if (applyServerSideCellEdits) {
-              applyServerSideCellEdits([
-                { viewIndex: rowIndex, column, value: nextValue },
-              ]);
-              return;
-            }
-            if (!handleRowsChange) {
-              return;
-            }
-            // 変更(DS-3-9): レガシーの ?? rowIndex フォールバックを撤去します。
-            //   getSourceIndex(viewIndex) = order[viewIndex]。ここで rowIndex は virtualizer の
-            //   描画レンジ ⊂ [0, viewRowCount) のため常に in-bounds で、OOB(undefined)は実際には
-            //   発生しません。万一 undefined の場合は誤行(rows[viewIndex])への書き込みを避けるため
-            //   早期 return で no-op に倒します(旧 ?? は view index を source index に誤代入していた)。
-            const originalRowIndex = rowModel.getSourceIndex(rowIndex);
-            if (originalRowIndex === undefined) {
-              return;
-            }
-            // 変更(editor 基盤): rows 再構築を logic/editorValues.ts の writeRowsCell へ集約しました。
-            const nextRows = writeRowsCell(rows, originalRowIndex, column, nextValue);
-            handleRowsChange(nextRows);
-          },
+          // 変更(Solid 版 段階 0-2): 書き込み(reject の列の NG を止める / serverSide は書き戻し / clientSide は履歴のラッパ)は
+          //   core engine/cellCommands の writeCellValue(Solid 版と共用)。
+          setValue: (nextValue) => writeCellValue(rowIndex, row, column, nextValue),
         });
       }
       // 追加(editor: checkbox): checkbox 列の既定セルは組み込みのトグルセルを描画します
@@ -4125,15 +3826,13 @@ export function useGridShell<T extends object>({
     },
     [
       rowModel,
-      handleRowsChange,
-      rows,
+      writeCellValue,
       findIndex,
       findCurrentIndex,
       splitTextByFindRanges,
       conditionalFormatFeature,
       toggleCheckboxCell,
       slots.checkbox,
-      applyServerSideCellEdits,
       detailRowEnabled,
       expandedDetailRowKeys,
       detailIsExpandable,

@@ -1,0 +1,132 @@
+// 追加(Solid 版 段階 0-4): 組み込みエディタが共有するキーの割り当てです(React 版の editors/editorKeyBindings.ts の本体を移設。
+//   Solid 版と共用)。イベントは構造的な型(EditorKeyEventLike)で受けます(React は合成イベントを詰め替え、Solid はネイティブの
+//   KeyboardEvent をそのまま渡せる)。
+//   Enter = 確定して下へ(editorEnterMove で 'up' / 'right' / 'left' / 'none')/ Tab = 確定して左右 / Escape = やめる。
+//   IME の変換中(isComposing)の Enter / Escape / Tab は IME の確定・取り消し・候補の操作なので、セルの確定 / やめるには
+//   使いません(日本語入力で変換を確定する Enter がセルの確定まで巻き込まないように)。変換を確定した後のキーは
+//   isComposing=false で届くので通常どおり動きます。
+//   変更(FC-13): Safari は変換を確定する Enter を isComposing=false / keyCode 229 で送るため、229 も変換中とみなします。
+import type {
+  EditorCommitDirection,
+  EditorCommitResult,
+  EditorEnterMove,
+  GridTextEditorEnterKey,
+} from '../model/gridTypes.unbound';
+import { isImeComposingKeyEvent } from './domGuards';
+
+export type EditorKeyEventLike = {
+  key: string;
+  altKey: boolean;
+  ctrlKey: boolean;
+  metaKey: boolean;
+  shiftKey: boolean;
+  isComposing?: boolean | undefined;
+  keyCode?: number | undefined;
+  // 複数行のエディタの改行の挿入先(<textarea> のときだけ使う)。
+  currentTarget: EventTarget | null;
+  preventDefault: () => void;
+};
+
+export type EditorKeyDownOptions = {
+  // 確定するときに commit へ渡す値です(React はレンダーごとの下書き、Solid は入力欄の今の値)。
+  value: unknown;
+  // commit の結果を返せます(reject の列の検証 NG = rejected)。テスト用のモックなどの void の戻りも受けます。
+  onCommit: (value: unknown, direction?: EditorCommitDirection) => EditorCommitResult | void;
+  onCancel: () => void;
+  // rejected のときに呼びます(エディタ側のエラーの表示。編集は続く)。
+  onRejected?: ((message: string) => void) | undefined;
+  // Enter で確定した後の移動の先です(未指定 = 'down')。
+  enterMove?: EditorEnterMove | undefined;
+  // 追加(dogfood DF-13): Home / End もブラウザの既定の動作(グリッドのスクロール)を止めます。文字の入力欄(text / number)では
+  //   Home / End はカーソルの移動なので止めず、日付の入力欄(type="date")だけで true にします。
+  blockHomeEnd?: boolean | undefined;
+  // 追加(段階 2 DU-14): 複数行のエディタ(textarea)の Enter。'commit' は Enter で確定 / Alt・Ctrl・⌘+Enter で改行、
+  //   'newline' は Enter(Shift / Alt 付きも)で改行 / Ctrl・⌘+Enter で確定。未指定は 1 行の入力欄(Enter で確定)。
+  multilineEnter?: GridTextEditorEnterKey | undefined;
+  // 追加(段階 2 DU-14): 修飾キー付きの Enter で改行を入れる処理(textarea の既定では入らないため。エディタが渡す)。
+  onInsertNewline?: ((element: HTMLTextAreaElement) => void) | undefined;
+};
+
+// 追加(enter-move ②): editorEnterMove('none' を含む)を commit へ渡す方向へ解決します。'none' は「移動しない」=
+//   方向の省略(undefined)です。select エディタも使います。
+export const resolveEnterDirection = (enterMove: EditorEnterMove | undefined): EditorCommitDirection | undefined => {
+  const move = enterMove ?? 'down';
+  return move === 'none' ? undefined : move;
+};
+
+// 追加(段階 2 DU-14): 複数行のエディタで、この Enter が改行か(false なら確定)。
+export const isMultilineNewlineEnter = (
+  event: { altKey: boolean; ctrlKey: boolean; metaKey: boolean },
+  enterKey: GridTextEditorEnterKey,
+): boolean => {
+  const commandKey = event.ctrlKey || event.metaKey;
+  return enterKey === 'newline' ? !commandKey : event.altKey || commandKey;
+};
+
+// 追加(dogfood DF-13): 1 行の入力欄では PageUp / PageDown(と日付の Home / End)は入力欄の操作にならず、ブラウザが
+//   グリッドをスクロールしてエディタが画面の外へ出ていました。編集中はこれらのキーでスクロールしません(編集は続く)。
+//   注記(段階 2 の見直し): 複数行の入力欄(<textarea>)でも止めます。中がスクロールするときだけ入力欄に任せる形を試したところ、
+//   Chromium は入力欄の中と一緒にグリッドもスクロールし(キャレットを見せるため。入力欄が画面に収まっていても)、
+//   エディタの上の方が見出しの下へ隠れたため戻しました(実ブラウザの確認は監査ハーネス t-stage2.mjs)。
+export const isEditorScrollKey = (key: string, blockHomeEnd: boolean): boolean =>
+  key === 'PageUp' || key === 'PageDown' || (blockHomeEnd && (key === 'Home' || key === 'End'));
+
+// エディタの keydown を 1 回処理します。
+export const handleEditorKeyDown = (
+  event: EditorKeyEventLike,
+  {
+    value,
+    onCommit,
+    onCancel,
+    onRejected,
+    enterMove,
+    blockHomeEnd = false,
+    multilineEnter,
+    onInsertNewline,
+  }: EditorKeyDownOptions,
+): void => {
+  if (isImeComposingKeyEvent(event)) {
+    return;
+  }
+
+  if (isEditorScrollKey(event.key, blockHomeEnd)) {
+    event.preventDefault();
+    return;
+  }
+
+  const commitWith = (direction?: EditorCommitDirection) => {
+    const result = onCommit(value, direction);
+    if (result && result.status === 'rejected') {
+      onRejected?.(result.message);
+    }
+  };
+
+  if (event.key === 'Enter' && multilineEnter !== undefined && isMultilineNewlineEnter(event, multilineEnter)) {
+    // 素の Enter / Shift+Enter は textarea が自分で改行を入れる。修飾キー付きは入らないので代わりに入れる。
+    if (event.altKey || event.ctrlKey || event.metaKey) {
+      event.preventDefault();
+      if (typeof HTMLTextAreaElement !== 'undefined' && event.currentTarget instanceof HTMLTextAreaElement) {
+        onInsertNewline?.(event.currentTarget);
+      }
+    }
+    return;
+  }
+
+  if (event.key === 'Enter') {
+    event.preventDefault();
+    // 変更(enter-move ②): 方向は editorEnterMove に従います(既定 'down')。
+    commitWith(resolveEnterDirection(enterMove));
+    return;
+  }
+
+  if (event.key === 'Escape') {
+    event.preventDefault();
+    onCancel();
+    return;
+  }
+
+  if (event.key === 'Tab') {
+    event.preventDefault();
+    commitWith(event.shiftKey ? 'left' : 'right');
+  }
+};
