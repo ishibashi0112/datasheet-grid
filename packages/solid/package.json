@@ -1,0 +1,38 @@
+{
+  "name": "@ishibashi0112/spreadsheet-grid-solid",
+  "version": "0.0.0-spike",
+  "private": true,
+  "description": "Solid 2.0 版の試作(公開しない)。core(@ishibashi0112/spreadsheet-grid-core)の上に Solid のシェルを載せて、実現性と作業量を測るためのもの。",
+  "license": "MIT",
+  "type": "module",
+  "sideEffects": [
+    "*.css"
+  ],
+  "exports": {
+    ".": "./src/index.ts",
+    "./package.json": "./package.json"
+  },
+  "scripts": {
+    "dev": "vp dev --config vite.config.ts",
+    "build:demo": "vp build --config vite.config.ts",
+    "spike:build": "vp build --config vite.lib.config.ts",
+    "test": "vitest run --config vitest.config.ts",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "peerDependencies": {
+    "@solidjs/web": "^2.0.0",
+    "solid-js": "^2.0.0"
+  },
+  "dependencies": {
+    "@ishibashi0112/spreadsheet-grid-core": "workspace:*",
+    "@tanstack/virtual-core": "^3.19.11"
+  },
+  "devDependencies": {
+    "@babel/core": "^7.28.0",
+    "@solidjs/babel-plugin": "2.0.0",
+    "@solidjs/testing-library": "1.0.0-rc.2",
+    "@solidjs/vite-plugin": "3.0.0",
+    "@solidjs/web": "2.0.0",
+    "solid-js": "2.0.0"
+  }
+}

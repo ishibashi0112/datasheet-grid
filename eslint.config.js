@@ -93,6 +93,16 @@ export default defineConfig([
       'no-restricted-imports': ['error', { patterns: [CORE_SUBPATH_PATTERN] }],
     },
   },
+  // 追加(Solid 版の試作 2026-11-17): packages/solid は Solid 2.0 のコード(非公開の試作)。React の hooks / Fast Refresh の
+  //   規則は当てはまらない(ref は関数、部品の本体は 1 回だけ走る)ので外します。core の部品の import の規則は React 版と同じ。
+  {
+    files: ['packages/solid/**/*.{ts,tsx}'],
+    rules: {
+      ...Object.fromEntries(Object.keys(reactHooks.rules).map((name) => [`react-hooks/${name}`, 'off'])),
+      'react-refresh/only-export-components': 'off',
+      'no-restricted-imports': ['error', { patterns: [CORE_SUBPATH_PATTERN] }],
+    },
+  },
   // 追加(1.0 の準備): 公開型の型テスト(types:check が pack した tarball に対して tsc にかける)。型を確かめるための値と
   //   export だけのファイルなので、Fast Refresh の規則と「型でしか使わない変数」の規則は外します。import は公開の入口だけ。
   {
