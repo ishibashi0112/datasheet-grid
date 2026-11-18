@@ -1,23 +1,29 @@
-// Solid 2.0 版のシェル(試作)。React 版の GridShell.tsx(5,715 行)のうち、表示・縦横の仮想化・固定列・範囲選択・
-//   キー操作・text の編集・コピー貼り付け・元に戻す・命令的 API を、同じ core(createGridEngine と各コントローラ)の上に
-//   Solid で組み直したもの。DOM と class は React 版と同じなので、styles.css をそのまま使います。
+// Solid 2.0 版のシェル。React 版の GridShell.tsx を、同じ core(createGridEngine と各コントローラ)の上に Solid で
+//   組み直したもの。DOM と class は React 版と同じなので、styles.css をそのまま使います。
+//   段階 1 の範囲は React 版の機能なしの構成(`/lite` の createSpreadsheetGrid({ features: {} }))と同じで、
+//   React 版と並べて DOM と通知を比べるテスト(src/parity/)で確かめます。
 //
 //   作り:
 //   - 派生値は createMemo で、engine のリゾルバ(同じ入力なら同じ参照)を呼ぶだけ。React 版の useMemo の外皮と同じ並び。
-//   - コントローラは connectController(primitives/controller.ts)で update を描画の段の effect から呼ぶ。
+//   - コントローラは connectController(primitives/controller.ts)で update を描画の段の effect から呼ぶ
+//     (React 版の useControllerLifecycle。'effect' は React の passive effect)。
 //   - store は primitives/gridStoreSignals.ts で signal にする(購読は onSettled の中)。
 //   - 部品の本体では props を直接読まない(Solid 2.0 は本体での読み取りを警告する)。props は関数や memo の中で読む。
-import { Show, createEffect, createMemo, createSignal, createUniqueId, onCleanup, onSettled, untrack } from 'solid-js';
+//   - React の onXxxCapture / onBlur / onFocus(子孫からも上がってくる)は、Solid では capture のリスナーを自分で付ける /
+//     onFocusOut / onFocusIn にします。
+import { Show, createEffect, createMemo, createUniqueId, onCleanup, onSettled, untrack } from 'solid-js';
 import type { JSX } from '@solidjs/web';
 import type {
   CellCoord,
+  CellRenderState,
   EditorCommitDirection,
-  GridViewState,
+  GridRowKey,
+  SpreadsheetGridDerivedSummary,
 } from '@ishibashi0112/spreadsheet-grid-core';
 import { createGridEngine } from '@ishibashi0112/spreadsheet-grid-core/internal/engine/createGridEngine';
 import type { GridColumn as UnboundGridColumn } from '@ishibashi0112/spreadsheet-grid-core/internal/model/gridTypes.unbound';
 import { gridActions } from '@ishibashi0112/spreadsheet-grid-core/internal/model/gridActions';
-import { buildSelectionSnapshot } from '@ishibashi0112/spreadsheet-grid-core/internal/model/gridSelectors';
+import { buildSelectionSnapshot, selectGlobalFilter } from '@ishibashi0112/spreadsheet-grid-core/internal/model/gridSelectors';
 import {
   buildColumnMeasurements,
   type ColumnPane,
@@ -36,8 +42,29 @@ import {
 import { GRID_DENSITY_DIMENSIONS } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/density';
 import { resolveGridHeightLayout } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/gridHeight';
 import { resolveGridThemeClassName } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/theme';
+import { MOTION_OFF_CLASS_NAME, resolveGridMotion } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/motion';
 import { systemColorSchemeStore } from '@ishibashi0112/spreadsheet-grid-core/internal/controllers/systemColorSchemeStore';
-import { createCellCommands } from '@ishibashi0112/spreadsheet-grid-core/internal/engine/cellCommands';
+import { reducedMotionStore } from '@ishibashi0112/spreadsheet-grid-core/internal/controllers/reducedMotionStore';
+import {
+  createLocaleTextResolver,
+  DEFAULT_GRID_LOCALE_TEXT,
+} from '@ishibashi0112/spreadsheet-grid-core/internal/logic/localeText';
+import {
+  resolveSlotMapFromSignature,
+  serializeSlotValue,
+} from '@ishibashi0112/spreadsheet-grid-core/internal/logic/slotProps';
+import {
+  buildGridDerivedSummary,
+  createDataColumnNamer,
+  createDataRowNumberer,
+} from '@ishibashi0112/spreadsheet-grid-core/internal/logic/gridBarSummary';
+import { isCheckboxChecked } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/checkboxEditor';
+import { resolvePageTargetRow } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/verticalGeometry';
+import {
+  registerPopupContainer,
+  resolvePopupContainer,
+} from '@ishibashi0112/spreadsheet-grid-core/internal/utils/popupContainer';
+import { createCellCommands, writeCellValueTo } from '@ishibashi0112/spreadsheet-grid-core/internal/engine/cellCommands';
 import { getCellValue } from '@ishibashi0112/spreadsheet-grid-core/internal/utils/permissions';
 import { isImeComposingKeyEvent } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/domGuards';
 import {
@@ -55,34 +82,62 @@ import {
   createScrollScaleAnchor,
   createViewportSyncController,
 } from '@ishibashi0112/spreadsheet-grid-core/internal/controllers/viewportSyncController';
-import type { GridColumn, SpreadsheetGridProps } from './model/gridTypes';
+import {
+  acquireTooltipController,
+  hideActiveCellTooltip,
+  scheduleActiveCellTooltip,
+  type TooltipController,
+} from '@ishibashi0112/spreadsheet-grid-core/internal/controllers/tooltipController';
+import {
+  GRID_POPUP_SELECTOR,
+  createEscapeClaimController,
+  isClearableSelection,
+  isEscapeClaimedByGrid,
+} from '@ishibashi0112/spreadsheet-grid-core/internal/controllers/escapeClaimController';
+import type {
+  GridClassNames,
+  GridColumn,
+  SpreadsheetGridProps,
+  SpreadsheetGridSlotContext,
+} from './model/gridTypes';
+import { GridLocaleTextContext } from './context/localeText';
 import { createGridStoreSignals } from './primitives/gridStoreSignals';
+import { createExternalStoreSignal } from './primitives/externalStore';
+import { createGridViewSetters } from './primitives/viewSetters';
 import { connectController } from './primitives/controller';
 import { createColumnVirtualizer } from './primitives/columnVirtualizer';
 import { px, toSolidStyle } from './primitives/style';
-import { HeaderRow } from './view/HeaderRow';
-import { BodyRows, type CellRenderState } from './view/BodyRows';
+import { GridHeaderRow } from './view/GridHeaderRow';
+import { GridBodyLayer, type GridBodyRowItem } from './view/GridBodyLayer';
 import { Overlay, type OverlayRect } from './view/Overlay';
 import { TextEditor } from './view/TextEditor';
+import { CheckboxCell } from './view/CheckboxCell';
+import { DefaultGridTopBar } from './view/DefaultGridTopBar';
+import { DefaultGridBottomBar } from './view/DefaultGridBottomBar';
 
 const EMPTY_ROWS: never[] = [];
 const NO_COLUMNS: never[] = [];
+const NO_COLUMN_FILTERS: Record<string, never> = {};
 const noopRenderDetailToggleCell = () => null;
+const noop = () => {};
 
 type MutableRef<V> = { current: V };
 
 export function SpreadsheetGrid<T extends object>(props: SpreadsheetGridProps<T>): JSX.Element {
-  // ── props(既定値つきの読み取り。本体では読まず、関数 / memo の中で読む) ──
+  // ── props(既定値つきの読み取り。本体では読まず、関数 / memo の中で読む。既定値は React 版の GridShell と同じ) ──
   const rows = createMemo(() => (props.rows ?? EMPTY_ROWS) as T[]);
   const columns = createMemo(() => props.columns as unknown as UnboundGridColumn<T>[]);
   const density = () => props.density ?? 'standard';
   const rowHeight = () => props.rowHeight ?? GRID_DENSITY_DIMENSIONS[density()].rowHeight;
+  // 機能なしの構成では固定行が無いので、列見出しの高さがそのまま見出しの帯の高さ(React 版の headerHeight)。
   const headerHeight = () => props.headerHeight ?? GRID_DENSITY_DIMENSIONS[density()].headerHeight;
   const rowHeaderWidth = () => props.rowHeaderWidth ?? 56;
   const readOnly = () => props.readOnly ?? false;
   const enableRangeSelection = () => props.enableRangeSelection ?? true;
   const enableSorting = () => props.enableSorting ?? true;
   const enableRowHover = () => props.enableRowHover ?? true;
+  const enableColumnResize = () => props.enableColumnResize ?? true;
+  const activeRowFollowEnabled = () => (props.activeCellFollows ?? 'position') === 'row';
   const columnInputs = () => ({
     columns: columns(),
     isServerSide: false,
@@ -92,9 +147,14 @@ export function SpreadsheetGrid<T extends object>(props: SpreadsheetGridProps<T>
     renderDetailToggleCell: noopRenderDetailToggleCell,
   });
 
+  // ── 文言(React 版の createLocaleTextResolver(mergeFeatureLocaleDefaults(features))。機能なしなので既定の表だけ) ──
+  const resolveLocaleText = createLocaleTextResolver(DEFAULT_GRID_LOCALE_TEXT);
+  const localeTexts = createMemo(() => resolveLocaleText(props.localeText));
+
   // ── エンジン(1 回だけ作る) ──
   const engine = createGridEngine<T>({
     features: {},
+    initialState: untrack(() => props.initialState),
     columnInputs: untrack(columnInputs),
     serverSide: {
       isServerSide: false,
@@ -107,7 +167,8 @@ export function SpreadsheetGrid<T extends object>(props: SpreadsheetGridProps<T>
   const store = engine.store;
   const dispatch = store.dispatch;
   const { state: ui, view } = createGridStoreSignals(store);
-  const setView = (patch: Partial<GridViewState>) => store.setViewState(patch);
+  const viewSetters = createGridViewSetters(store);
+  const { setHoveredColumnIndex, setIsCornerHovered, setEditorInitialValue } = viewSetters;
 
   // ── DOM の参照(コントローラは { current } を受ける) ──
   const gridRootRef: MutableRef<HTMLDivElement | null> = { current: null };
@@ -115,10 +176,19 @@ export function SpreadsheetGrid<T extends object>(props: SpreadsheetGridProps<T>
   const bodyScrollRef: MutableRef<HTMLDivElement | null> = { current: null };
   const leftPaneScrollRef: MutableRef<HTMLDivElement | null> = { current: null };
   const rightPaneScrollRef: MutableRef<HTMLDivElement | null> = { current: null };
+  const tableExitRef: MutableRef<HTMLSpanElement | null> = { current: null };
   const pointerClientRef: MutableRef<{ x: number; y: number } | null> = { current: null };
   const autoScrollFrameRef: MutableRef<number | null> = { current: null };
   const editorActionGuardRef: MutableRef<boolean> = { current: false };
-  const cellDoubleClickRef: MutableRef<(cell: CellCoord, event: MouseEvent) => void> = { current: () => {} };
+  const cellDoubleClickRef: MutableRef<(cell: CellCoord, event: MouseEvent) => void> = { current: noop };
+  let tableExitFocusing = false;
+
+  // ── ポップアップの置き場(ツールチップ / エディタのポップアップ。core utils/popupContainer) ──
+  const getPopupContainer = () => resolvePopupContainer(gridRootRef.current, props.popupContainer ?? 'auto');
+  onSettled(() => {
+    const shell = gridRootRef.current;
+    return registerPopupContainer([shell, shell?.closest('.ssg-root')], getPopupContainer);
+  });
 
   // ── 列 ──
   const columnResolution = createMemo(() => engine.resolveColumns(columnInputs()));
@@ -136,7 +206,14 @@ export function SpreadsheetGrid<T extends object>(props: SpreadsheetGridProps<T>
   );
   const paneLayout = () => paneResolution().paneLayout;
 
-  // ── 行(clientSide だけ。フィルター / グループ / ラベル行は無し) ──
+  // 列の定義が変わったら列幅の状態を合わせる(React 版の useEffect と同じ。手で変えた幅は残す)。
+  let previousColumnsForWidths: UnboundGridColumn<T>[] | null = null;
+  createEffect(columns, (next) => {
+    dispatch(gridActions.reconcileColumnWidths(previousColumnsForWidths, next));
+    previousColumnsForWidths = next;
+  });
+
+  // ── 行(clientSide だけ。フィルター / グループ / ラベル行は機能なので無し) ──
   const baseOrder = createMemo(() => engine.rowPipeline.resolveBaseOrder(rows().length, null));
   const orderResolution = createMemo(() =>
     engine.rowPipeline.resolveOrder({
@@ -166,6 +243,13 @@ export function SpreadsheetGrid<T extends object>(props: SpreadsheetGridProps<T>
   const rowModel = () => clientRowModel().rowModel;
   const viewRowCount = createMemo(() => rowModel().getRowCount());
   const viewColCount = () => orderedColumns().length;
+  const order = () => orderResolution().order;
+  const getFilteredRows = createMemo(() => {
+    const currentOrder = order();
+    const currentRows = rows();
+    let cache: T[] | null = null;
+    return () => (cache ??= Array.from(currentOrder, (sourceIndex) => currentRows[sourceIndex] as T));
+  });
 
   // 表示行数 / 列数が減ったら選択を範囲内へ詰める(React 版の useEffect と同じ)。
   createEffect(
@@ -198,12 +282,30 @@ export function SpreadsheetGrid<T extends object>(props: SpreadsheetGridProps<T>
       labelDisplay: null,
     }),
   );
+  // 描く行(React 版の GridBodyLayer が virtualRowIndexes に無い行を飛ばすのと同じ)と、対応に使う rowKey。
+  const bodyRows = createMemo((): GridBodyRowItem[] => {
+    const { virtualRows, virtualRowIndexes } = vertical();
+    const model = rowModel();
+    const items: GridBodyRowItem[] = [];
+    for (const virtualRow of virtualRows) {
+      if (!virtualRowIndexes.has(virtualRow.index)) {
+        continue;
+      }
+      items.push({
+        index: virtualRow.index,
+        start: virtualRow.start,
+        size: virtualRow.size,
+        key: String(model.getRowKey(virtualRow.index) ?? virtualRow.index),
+      });
+    }
+    return items;
+  });
 
   // ── スクロールの同期(見える大きさ / scrollTop を view スライスへ) ──
   connectController(engine.scrollSync, () => ({
     scrollContainerRef,
     setViewState: store.setViewState,
-    onScroll: undefined,
+    onScroll: props.onScroll,
     footerHeight: 0,
   }));
 
@@ -231,6 +333,27 @@ export function SpreadsheetGrid<T extends object>(props: SpreadsheetGridProps<T>
     buildColumnMeasurements(visibleColumns(), paneResolution().effectiveColumnWidths),
   );
 
+  // ── モーション / 行の出入り(animateRows。React 版の engine.rowEnter と同じつなぎ) ──
+  const prefersReducedMotion = createExternalStoreSignal(reducedMotionStore);
+  const resolvedMotion = () => resolveGridMotion(props.motion ?? 'auto', prefersReducedMotion());
+  const animateRowsActive = () => (props.animateRows ?? true) && resolvedMotion() === 'on';
+  connectController(engine.rowEnter, () => ({
+    scrollContainerRef,
+    skeletonEnter: false,
+    mountEnter: animateRowsActive(),
+  }));
+
+  // ── テーマ(OS の配色の外部 store も signal にする) ──
+  const systemPrefersDark = createExternalStoreSignal(systemColorSchemeStore);
+  const themeClassName = () => resolveGridThemeClassName(props.theme ?? 'light', systemPrefersDark());
+  const heightLayout = createMemo(() => resolveGridHeightLayout(props.height, props.maxHeight));
+
+  // ── classNames(スロット)。中身の署名が同じなら同じ表(React 版の useResolvedGridSlots と同じ) ──
+  const slotSignature = createMemo(() => serializeSlotValue(props.classNames));
+  const slots = createMemo(() =>
+    resolveSlotMapFromSignature<keyof GridClassNames, JSX.CSSProperties>(slotSignature()),
+  );
+
   // ── アクティブセル / 編集中のセルの位置 ──
   //   位置の解決は core logic/cellPlacement(React 版と共用)。
   const activeCellPlacement = createMemo(() =>
@@ -246,7 +369,51 @@ export function SpreadsheetGrid<T extends object>(props: SpreadsheetGridProps<T>
   const selectionRectForPane = (pane: ColumnPane): OverlayRect | null =>
     resolvePaneBandRect(selectionExtents(), selectionBand(), pane);
 
-  // アクティブセルをキーで動かしたときに見える範囲へスクロールする(core の viewportSyncController)。
+  // ── ツールチップ(data-ssg-tooltip の委譲。core controllers/tooltipController) ──
+  const gridDomId = createUniqueId();
+  const activeCellDomId = `${gridDomId}-active-cell`;
+  const cellEditorDomId = `${gridDomId}-cell-editor`;
+  let tooltipController: TooltipController | null = null;
+  onSettled(() => {
+    const controller = acquireTooltipController();
+    tooltipController = controller;
+    controller.setSlot(untrack(slots).tooltip);
+    return () => {
+      controller.dispose();
+      tooltipController = null;
+    };
+  });
+  createEffect(
+    () => slots().tooltip,
+    (slot) => {
+      tooltipController?.setSlot(slot);
+    },
+  );
+  // アクティブセルのツールチップ(エラー / メモ)。キーで動かしたときも出す(React 版と同じ条件)。
+  const activeCellTooltipKey = createMemo(() => {
+    const active = ui().activeCell;
+    return active === null || ui().editingCell !== null ? null : `${active.row}:${active.col}`;
+  });
+  createEffect(activeCellTooltipKey, (key) => {
+    if (key === null) {
+      hideActiveCellTooltip(gridRootRef.current);
+      return undefined;
+    }
+    return scheduleActiveCellTooltip(activeCellDomId, gridRootRef.current);
+  });
+
+  // ── ホバー ──
+  connectController(engine.hoverRowNotifier, () => ({
+    enableRowHover: enableRowHover(),
+    isHoverControlled: props.hoveredRowIndex !== undefined,
+    onHoveredRowChange: props.onHoveredRowChange,
+    setHoveredRowIndex: viewSetters.setHoveredRowIndex,
+  }));
+  const applyHoveredRowChange = engine.hoverRowNotifier.applyHoveredRowChange;
+  const resolvedHoveredRowIndex = () =>
+    !enableRowHover() ? null : props.hoveredRowIndex !== undefined ? props.hoveredRowIndex : view().hoveredRowIndex;
+
+  // ── アクティブセルを動かしたときに見える範囲へスクロール(core の viewportSyncController) ──
   const viewportSync = createViewportSyncController<T>();
   const scaleAnchor = createScrollScaleAnchor();
   connectController(
@@ -254,7 +421,7 @@ export function SpreadsheetGrid<T extends object>(props: SpreadsheetGridProps<T>
       update: (verticalScaleFactor: number) => {
         scaleAnchor.update(scrollContainerRef.current, verticalScaleFactor, (scrollTop) => {
           engine.scrollSync.markApiScroll();
-          setView({ scrollTop });
+          store.setViewState({ scrollTop });
         });
       },
     },
@@ -273,107 +440,68 @@ export function SpreadsheetGrid<T extends object>(props: SpreadsheetGridProps<T>
       rightPaneWidth: paneResolution().rightPaneTotalWidth,
       centerLeadingWidth: paneResolution().centerLeadingWidth,
       activeCellRect: activeCellPlacement()?.rect ?? null,
+      isRowFollowMove: engine.activeRowFollow.isFollowMove,
       activeCellPinned: activeCellPlacement() !== null && activeCellPlacement()?.pane !== 'center',
       activeCell: ui().activeCell,
       verticalScaleFactor: vertical().verticalScaleFactor,
       footerHeight: 0,
+      stickyTopInset: undefined,
     }),
     'effect',
   );
 
-  // ── ホバー ──
-  connectController(engine.hoverRowNotifier, () => ({
-    enableRowHover: enableRowHover(),
-    isHoverControlled: false,
-    onHoveredRowChange: undefined,
-    setHoveredRowIndex: (value: number | null) => setView({ hoveredRowIndex: value }),
-  }));
-  const setHoveredColumnIndex = (value: number | null) => setView({ hoveredColumnIndex: value });
-  const setEditorInitialValue = (value: string) => setView({ editorInitialValue: value });
-
-  // ── 元に戻す(履歴) ──
-  const history = createHistoryController<T>();
-  connectController(history, () => ({
-    rows: rows(),
-    selection: ui().selection,
-    activeCell: ui().activeCell,
-    onRowsChange: props.onRowsChange,
-    dispatch,
-    enabled: (props.enableUndoRedo ?? true) && !readOnly(),
-    limit: props.undoHistoryLimit ?? 100,
-    onAfterRestore: (activeCell: CellCoord | null) => {
-      if (activeCell) {
-        requestAnimationFrame(() => engine.gridApi.scrollToCellInternal(activeCell.row, activeCell.col, 'auto'));
-      }
-    },
-    rowKeyGetter: props.rowKeyGetter,
-  }));
-  const handleRowsChange = (nextRows: T[]) => {
-    if (props.onRowsChange) {
-      history.handleRowsChange(nextRows);
-    }
-  };
-
-  // ── コピー / 貼り付け ──
-  const clipboard = createClipboardController<T>();
-  connectController(clipboard, () => ({
-    rows: rows(),
+  // ── 行の選択(段階 1-3 で props をつなぐ。今は命令的 API の確定だけ) ──
+  const rowSelectionCommands = engine.rowSelectionCommands;
+  connectController(rowSelectionCommands, () => ({
     rowModel: rowModel(),
-    columns: columns(),
-    visibleColumns: orderedColumns(),
-    uiState: ui(),
-    // イベントの時点の状態は store から読む(core controllers/liveUiState)。
-    getUiState: store.getState,
-    readOnly: readOnly(),
-    canEditCell: props.canEditCell,
-    rowKeyGetter: resolvedRowKeyGetter(),
-    onRowsChange: props.onRowsChange ? handleRowsChange : undefined,
+    rowSelectionState: ui().rowSelection,
+    rowSelectionMode: 'multiple' as const,
+    onRowSelectionChange: undefined,
+    controlledRowSelectionModel: undefined,
+    leafRowCount: viewRowCount(),
+    filteredDataRows: null,
     dispatch,
   }));
-  const isWholeGridSelected = createMemo(() =>
-    computeIsWholeGridSelected(ui().selection, viewRowCount(), visibleColumns().length),
-  );
 
-  // ── 編集 ──
-  const edit = createEditController<T>();
-  connectController(edit, () => ({
-    uiState: ui(),
-    rows: rows(),
-    visibleColumns: orderedColumns(),
-    rowModel: rowModel(),
-    setEditorInitialValue,
-    onRowsChange: props.onRowsChange ? handleRowsChange : undefined,
-    dispatch,
-    gridRootRef,
-    editorActionGuardRef,
-    readOnly: readOnly(),
-    canEditCell: props.canEditCell,
-  }));
-  // ── セルの操作(編集の開始 / チェックボックス / 削除 / 全選択。core engine/cellCommands で React 版と共用)──
-  const cells = createCellCommands<T>();
-  connectController(cells, () => ({
-    rows: rows(),
+  // ── セルの通知(クリック / ダブルクリック / アクティブセル) ──
+  connectController(engine.cellEventNotifier, () => ({
     rowModel: rowModel(),
     orderedColumns: orderedColumns(),
-    uiState: ui(),
-    getUiState: store.getState,
-    readOnly: readOnly(),
-    canEditCell: props.canEditCell,
-    handleRowsChange: props.onRowsChange ? handleRowsChange : undefined,
-    applyServerSideCellEdits: undefined,
-    startEditWithValue: edit.startEditWithValue,
+    onCellClick: props.onCellClick,
+    onCellDoubleClick: props.onCellDoubleClick,
+  }));
+  connectController(engine.activeRowFollow, () => ({
+    enabled: activeRowFollowEnabled(),
+    activeCell: ui().activeCell,
+    selection: ui().selection,
+    rowModel: rowModel(),
+    dragging: (() => {
+      const drag = ui().dragState;
+      return drag?.type === 'selection' && drag.selectionKind !== 'col';
+    })(),
+    editing: ui().editingCell !== null,
     dispatch,
   }));
-  const { selectEntireGrid, clearSelectedCells, tryStartEdit: tryStartEditCell } = cells;
-  cellDoubleClickRef.current = (cell) => {
-    tryStartEditCell(cell);
-  };
+  connectController(
+    engine.activeCellNotifier,
+    () => ({
+      activeCell: ui().activeCell,
+      editingCell: ui().editingCell,
+      rowModel: rowModel(),
+      orderedColumns: orderedColumns(),
+      onActiveCellChange: props.onActiveCellChange,
+      followsRow: activeRowFollowEnabled(),
+      isRowFollowPending: engine.activeRowFollow.isFollowPending,
+    }),
+    'effect',
+  );
 
   // ── ポインタ(範囲選択 / 見出し / 行番号 / ダブルクリック) ──
   const pointer = createPointerInteractionsController<T>();
   connectController(pointer, () => ({
     gridRootRef,
     bodyScrollRef,
+    onCellDoubleClickRef: cellDoubleClickRef,
     scrollContainerRef,
     leftPaneScrollRef,
     rightPaneScrollRef,
@@ -398,16 +526,114 @@ export function SpreadsheetGrid<T extends object>(props: SpreadsheetGridProps<T>
     stickyTopHeight: 0,
     rowMetrics: vertical().rowMetrics,
     verticalScaleFactor: vertical().verticalScaleFactor,
-    setHoveredRowIndex: engine.hoverRowNotifier.applyHoveredRowChange,
+    setHoveredRowIndex: applyHoveredRowChange,
     setHoveredColumnIndex,
     enableRowHover: enableRowHover(),
     enableColumnHeaderHover: props.enableColumnHeaderHover ?? true,
+    // クロスヘア(hoverHighlight: 'cross')は機能(motionExtras)。機能なしでは 'row' のまま。
     enableColumnHover: false,
     enableRowSelection: false,
-    onGutterRowSelect: () => {},
-    onGutterRowSelectDrag: () => {},
-    onCellDoubleClickRef: cellDoubleClickRef,
+    onGutterRowSelect: rowSelectionCommands.handleGutterRowSelect,
+    onGutterRowSelectDrag: rowSelectionCommands.handleGutterRowSelectDrag,
   }));
+
+  // ── 元に戻す(履歴) ──
+  const history = createHistoryController<T>();
+  connectController(history, () => ({
+    rows: rows(),
+    selection: ui().selection,
+    activeCell: ui().activeCell,
+    onRowsChange: props.onRowsChange,
+    dispatch,
+    enabled: (props.enableUndoRedo ?? true) && !readOnly(),
+    limit: props.undoHistoryLimit ?? 100,
+    onUndoRedoStateChange: props.onUndoRedoStateChange,
+    onAfterRestore: (activeCell: CellCoord | null) => {
+      if (activeCell) {
+        requestAnimationFrame(() => engine.gridApi.scrollToCellInternal(activeCell.row, activeCell.col, 'auto'));
+      }
+    },
+    rowKeyGetter: props.rowKeyGetter,
+  }));
+  // onRowsChange が無いときは書き込まない(React 版の useGridHistoryController と同じ)。
+  const handleRowsChange = () => (props.onRowsChange ? history.handleRowsChange : undefined);
+
+  // ── セルの操作(編集の開始 / チェックボックス / 削除 / 全選択。core engine/cellCommands で React 版と共用)──
+  const cells = createCellCommands<T>();
+  const { selectEntireGrid, clearSelectedCells, tryStartEdit: tryStartEditCell } = cells;
+
+  // ── コピー / 貼り付け ──
+  const orderedColumnKeys = createMemo(() => orderedColumns().map((column) => column.key).join('\u0000'));
+  const clipboard = createClipboardController<T>();
+  connectController(clipboard, () => ({
+    rows: rows(),
+    rowModel: rowModel(),
+    columns: columns(),
+    visibleColumns: orderedColumns(),
+    uiState: ui(),
+    // イベントの時点の状態は store から読む(core controllers/liveUiState)。
+    getUiState: store.getState,
+    readOnly: readOnly(),
+    canEditCell: props.canEditCell,
+    rowKeyGetter: resolvedRowKeyGetter(),
+    onCopied: (selection: NonNullable<ReturnType<typeof store.getState>['selection']>) => {
+      const state = store.getState();
+      store.setViewState({
+        copiedRange: {
+          selection,
+          view: {
+            sort: state.sort,
+            filters: state.filters,
+            collapsedGroupKeys: state.collapsedGroupKeys,
+            viewRowCount: untrack(viewRowCount),
+            columns: untrack(orderedColumnKeys),
+          },
+        },
+      });
+    },
+    createRow: props.createRow,
+    createOverflowColumn: props.createOverflowColumn,
+    onPasteSkipped: props.onPasteSkipped,
+    localeTexts: localeTexts(),
+    pasteFillsSelection: props.pasteFillsSelection,
+    onRowsChange: handleRowsChange(),
+    onColumnsChange: props.onColumnsChange,
+    applyServerSideCellEdits: undefined,
+    isRowExportable: props.isRowExportable,
+    dispatch,
+  }));
+  const isWholeGridSelected = createMemo(() =>
+    computeIsWholeGridSelected(ui().selection, viewRowCount(), visibleColumns().length),
+  );
+
+  // ── Tab でグリッドの外へ(最後の列の Tab / 表の外の目印 .ssg-tab-exit) ──
+  const moveFocusPastTable = () => {
+    const exit = tableExitRef.current;
+    if (!exit) {
+      return;
+    }
+    tableExitFocusing = true;
+    try {
+      exit.focus({ preventScroll: true });
+    } finally {
+      tableExitFocusing = false;
+    }
+  };
+  const handleTabPastLastColumn = (): boolean => {
+    moveFocusPastTable();
+    return false;
+  };
+  const handleTableExitFocus = () => {
+    if (tableExitFocusing) {
+      return;
+    }
+    // 後ろ(グリッドの外の次の要素)から Shift+Tab で戻ってきたときはグリッドへ(展開行のカードは段階 1-3)。
+    gridRootRef.current?.focus({ preventScroll: true });
+  };
+  const resolvePageRow = (fromRow: number, direction: 1 | -1): number => {
+    const pageHeight = Math.max(view().viewportHeight - headerHeight(), rowHeight());
+    return resolvePageTargetRow(vertical().rowMetrics, fromRow, direction, pageHeight);
+  };
 
   // ── キー操作 ──
   const keyboard = createKeyboardController<T>();
@@ -422,6 +648,7 @@ export function SpreadsheetGrid<T extends object>(props: SpreadsheetGridProps<T>
     setEditorInitialValue,
     dispatch,
     handleCopy: clipboard.handleCopy,
+    openFind: undefined,
     handleCellDoubleClick: tryStartEditCell,
     isWholeGridSelected: isWholeGridSelected(),
     selectEntireGrid,
@@ -430,7 +657,74 @@ export function SpreadsheetGrid<T extends object>(props: SpreadsheetGridProps<T>
     onClearSelection: clearSelectedCells,
     enableClearOnDelete: props.enableClearOnDelete ?? true,
     onToggleCheckboxCell: cells.toggleCheckbox,
-    onToggleGroup: () => {},
+    onToggleGroup: noop,
+    onToggleDetailRow: undefined,
+    resolvePageRow,
+    openColumnMenu: undefined,
+    openContextMenu: undefined,
+    onTabPastLastColumn: handleTabPastLastColumn,
+  }));
+
+  // ── 編集 ──
+  const edit = createEditController<T>();
+  connectController(edit, () => ({
+    uiState: ui(),
+    rows: rows(),
+    visibleColumns: orderedColumns(),
+    rowModel: rowModel(),
+    setEditorInitialValue,
+    onRowsChange: handleRowsChange(),
+    applyServerSideCellEdits: undefined,
+    dispatch,
+    gridRootRef,
+    editorActionGuardRef,
+    readOnly: readOnly(),
+    canEditCell: props.canEditCell,
+    localeTexts: localeTexts(),
+    followsRow: activeRowFollowEnabled(),
+  }));
+  connectController(cells, () => ({
+    rows: rows(),
+    rowModel: rowModel(),
+    orderedColumns: orderedColumns(),
+    uiState: ui(),
+    getUiState: store.getState,
+    readOnly: readOnly(),
+    canEditCell: props.canEditCell,
+    handleRowsChange: handleRowsChange(),
+    applyServerSideCellEdits: undefined,
+    startEditWithValue: edit.startEditWithValue,
+    dispatch,
+  }));
+  // ダブルクリック: 利用側の onCellDoubleClick が preventDefault しなければ編集を始める(React 版と同じ)。
+  cellDoubleClickRef.current = (cell, event) => {
+    if (engine.cellEventNotifier.notifyCellDoubleClick(cell, event)) {
+      return;
+    }
+    tryStartEditCell(cell);
+  };
+
+  // ── Escape をグリッドが使うとき、外側(ダイアログなど)へ渡さない(core controllers/escapeClaimController) ──
+  //   機能なしの構成ではグリッドのポップアップ(列メニュー / フィルター / ツールパネル / 右クリックメニュー)が無い。
+  const escapeClaim = createEscapeClaimController();
+  connectController(escapeClaim, () => ({
+    gridRootRef,
+    isClaimedTarget: (target: Element, root: HTMLElement) => {
+      const state = store.getState();
+      if (!root.contains(target)) {
+        if (target.closest(GRID_POPUP_SELECTOR) !== null) {
+          return state.editingCell !== null;
+        }
+        return false;
+      }
+      if (target.closest('.ssg-cell-editor, [data-ssg-find-bar]') !== null) {
+        return true;
+      }
+      if (target === root || target.hasAttribute('data-ssg-ime-input')) {
+        return state.editingCell !== null || isClearableSelection(state.selection);
+      }
+      return false;
+    },
   }));
   const handleShellKeyDown = (event: KeyboardEvent) => {
     keyboard.handleKeyDown({
@@ -443,20 +737,52 @@ export function SpreadsheetGrid<T extends object>(props: SpreadsheetGridProps<T>
       target: event.target,
       preventDefault: () => event.preventDefault(),
     });
+    if (isEscapeClaimedByGrid(event)) {
+      event.stopPropagation();
+    }
   };
 
-  // ── 通知(onActiveCellChange) ──
-  connectController(
-    engine.activeCellNotifier,
-    () => ({
-      activeCell: ui().activeCell,
-      editingCell: ui().editingCell,
-      rowModel: rowModel(),
-      orderedColumns: orderedColumns(),
-      onActiveCellChange: props.onActiveCellChange,
-    }),
-    'effect',
-  );
+  // ── 列(並べ替え / 列幅のドラッグ。core engine/columnCommands) ──
+  const columnCommands = engine.columnCommands;
+  connectController(columnCommands, () => ({
+    columns: columns(),
+    visibleColumns: visibleColumns(),
+    orderedColumns: orderedColumns(),
+    columnWidths: paneResolution().effectiveColumnWidths,
+    onColumnsChange: props.onColumnsChange,
+    dispatch,
+    enableSorting: enableSorting(),
+    sort: ui().sort,
+    globalFilterText: selectGlobalFilter(ui()),
+    closeColumnMenu: noop,
+    openToolPanel: noop,
+    openColumnFilterPopover: noop,
+    runAutosize: undefined,
+  }));
+
+  // ── 見出しの角 / 行番号 / 列見出しのホバー ──
+  const handleCornerHeaderPointerDown = (event: PointerEvent) => {
+    event.preventDefault();
+    if (event.button !== 0) {
+      return;
+    }
+    if (viewRowCount() === 0 || visibleColumns().length === 0) {
+      return;
+    }
+    gridRootRef.current?.focus({ preventScroll: true });
+    if (isWholeGridSelected()) {
+      dispatch(gridActions.clearSelection());
+      dispatch(gridActions.activateCell(null));
+      return;
+    }
+    selectEntireGrid();
+  };
+  const handleRowHeaderPointerLeave = (rowIndex: number) => {
+    applyHoveredRowChange((current) => (current === rowIndex ? null : current));
+  };
+  const handleColumnHeaderPointerLeave = (colIndex: number) => {
+    setHoveredColumnIndex((current) => (current === colIndex ? null : current));
+  };
 
   // ── 命令的 API(ハンドル) ──
   connectController(engine.gridApi, () => ({
@@ -470,10 +796,12 @@ export function SpreadsheetGrid<T extends object>(props: SpreadsheetGridProps<T>
     paneLayout: paneLayout(),
     orderedColumns: orderedColumns(),
     columns: columns(),
-    onColumnsChange: undefined,
+    onColumnsChange: props.onColumnsChange,
+    includeGroupingInState: false,
     uiState: ui(),
     getUiState: store.getState,
     focusGrid: () => gridRootRef.current?.focus({ preventScroll: true }),
+    beforeDetailRowsCollapse: undefined,
     startEditCell: tryStartEditCell,
     headerHeight: headerHeight(),
     verticalScaleFactor: vertical().verticalScaleFactor,
@@ -483,35 +811,66 @@ export function SpreadsheetGrid<T extends object>(props: SpreadsheetGridProps<T>
     windowFirstRow: vertical().windowFirstRow,
     windowLastRow: vertical().windowLastRow,
     physicalBodyHeight: vertical().physicalBodyHeight,
-    footerHeight: 0,
+    measuredRowHeights: false,
     rows: rows(),
     isServerSide: false,
-    serverSideRefresh: () => {},
-    serverSideRetryFailed: () => {},
+    serverSideRefresh: noop,
+    serverSideRetryFailed: noop,
     resolvedRowKeyGetter: resolvedRowKeyGetter(),
-    isRowExportable: undefined,
+    isRowExportable: props.isRowExportable,
+    labelRowExport: undefined,
+    localeTexts: localeTexts(),
+    labelViewIndexes: undefined,
+    totalRowExport: undefined,
+    pinnedRowsExport: undefined,
+    footerHeight: 0,
+    stickyTopInset: undefined,
     activeToolPanelTab: null,
-    openToolPanel: () => {},
-    closeToolPanel: () => {},
-    find: { open: () => {}, close: () => {}, next: () => {}, prev: () => {} },
+    openToolPanel: noop,
+    closeToolPanel: noop,
+    find: { open: noop, close: noop, next: noop, prev: noop },
     undoRows: history.undo,
-    applyRowsChange: props.onRowsChange ? history.applyRows : undefined,
     redoRows: history.redo,
     canUndoRows: history.canUndo,
     canRedoRows: history.canRedo,
     clearUndoHistory: history.clearHistory,
+    applyRowsChange: props.onRowsChange ? history.applyRows : undefined,
     detailRowEnabled: false,
     detailIsExpandable: undefined,
     detailIndexCacheRef: engine.detailIndexCache,
-    moveRowByKey: () => {},
-    commitRowSelection: () => {},
-    markApiScroll: engine.scrollSync.markApiScroll,
+    moveRowByKey: noop,
+    commitRowSelection: rowSelectionCommands.commitRowSelection,
+    pendingRowSelection: rowSelectionCommands.pendingRowSelection,
+    markApiScroll: () => {
+      viewportSync.cancelFollow();
+      return engine.scrollSync.markApiScroll();
+    },
   }));
   onSettled(() => {
     props.ref?.(engine.gridApi.handle);
   });
-  // React 版の onPointerMoveCapture。Solid 2.0 は on: / oncapture: を無くしたので、capture のリスナーは自分で付けます
-  //   (ref の中では onCleanup を使えないので、描き終わった後に付けて、外すのは onSettled の戻り値で)。
+
+  // ── 状態の通知(onStateChange / onFiltersChange / onSortChange) ──
+  connectController(
+    engine.stateChangeNotifier,
+    () => ({
+      columnWidths: ui().columnWidths,
+      filters: ui().filters,
+      sort: ui().sort,
+      dragState: ui().dragState,
+      columns: columns(),
+      collapsedGroupKeys: ui().collapsedGroupKeys,
+      includeGroupingInState: false,
+      onStateChange: props.onStateChange,
+      onFiltersChange: props.onFiltersChange,
+      onSortChange: props.onSortChange,
+    }),
+    'effect',
+  );
+
+  // React 版の onPointerMoveCapture / onPointerDownCapture / onKeyDownCapture。Solid 2.0 は oncapture: を無くしたので、
+  //   capture のリスナーは自分で付けます(ref の中では onCleanup を使えないので、描き終わった後に付けて、外すのは
+  //   onSettled の戻り値で)。
   onSettled(() => {
     const element = gridRootRef.current;
     if (!element) {
@@ -521,26 +880,125 @@ export function SpreadsheetGrid<T extends object>(props: SpreadsheetGridProps<T>
       pointerClientRef.current = { x: event.clientX, y: event.clientY };
       pointer.updateSelectionFromPointer(event.clientX, event.clientY);
     };
+    // ポインタで操作を始めたら目印(キーボードで動かしたときだけフォーカスの枠を出す)。
+    const onDown = () => element.setAttribute('data-ssg-pointer', '');
+    const onKey = () => element.removeAttribute('data-ssg-pointer');
     element.addEventListener('pointermove', onMove, { capture: true });
-    return () => element.removeEventListener('pointermove', onMove, { capture: true });
+    element.addEventListener('pointerdown', onDown, { capture: true });
+    element.addEventListener('keydown', onKey, { capture: true });
+    return () => {
+      element.removeEventListener('pointermove', onMove, { capture: true });
+      element.removeEventListener('pointerdown', onDown, { capture: true });
+      element.removeEventListener('keydown', onKey, { capture: true });
+    };
   });
 
-  // ── テーマ(OS の配色の外部 store も signal にする) ──
-  const [systemPrefersDark, setSystemPrefersDark] = createSignal(systemColorSchemeStore.getSnapshot());
-  onSettled(() => {
-    setSystemPrefersDark(systemColorSchemeStore.getSnapshot());
-    return systemColorSchemeStore.subscribe(() => setSystemPrefersDark(systemColorSchemeStore.getSnapshot()));
+  // ── 上下のバー(core logic/gridBarSummary の文字列。React 版の useGridBarContext と同じ) ──
+  const columnNamer = createMemo(() =>
+    createDataColumnNamer(orderedColumns(), {
+      detail: localeTexts().detailColumnName,
+      rowDrag: localeTexts().rowDragColumnName,
+    }),
+  );
+  const rowNumberer = createDataRowNumberer(undefined);
+  const slotContextBase = createMemo(() => ({
+    rows: rows(),
+    columns: props.columns as GridColumn<T>[],
+    visibleColumns: visibleColumns() as unknown as GridColumn<T>[],
+    globalFilterText: selectGlobalFilter(ui()),
+    columnFilterValues: ui().filters.columnFilters,
+    sortState: ui().sort,
+    activeCell: ui().activeCell,
+    selection: ui().selection,
+  }));
+  // 機能なしの構成ではフィルターが行に効かないので、状態にあっても「絞り込み: …」に数えない(React 版の filtersApplied)。
+  const derivedSummary = createMemo(
+    (): SpreadsheetGridDerivedSummary =>
+      buildGridDerivedSummary(
+        { ...slotContextBase(), globalFilterText: '', columnFilterValues: NO_COLUMN_FILTERS },
+        viewRowCount(),
+        undefined,
+        columnNamer(),
+        rowNumberer,
+        localeTexts(),
+      ),
+  );
+  const setGlobalFilterText = (value: string) => dispatch(gridActions.setGlobalFilter(value));
+  const slotContext = createMemo((): SpreadsheetGridSlotContext<T> => {
+    const filteredRows = getFilteredRows();
+    return {
+      ...slotContextBase(),
+      get filteredRows() {
+        return filteredRows();
+      },
+      setGlobalFilterText,
+      derivedSummary: derivedSummary(),
+      globalFilterStatus: 'idle',
+      globalFilterProgress: 1,
+      selectionAggregates: null,
+    };
   });
-  const themeClassName = () => resolveGridThemeClassName(props.theme ?? 'light', systemPrefersDark());
-  const heightLayout = createMemo(() => resolveGridHeightLayout(props.height, props.maxHeight));
+  const showTopBarSummary = () => props.showTopBarSummary ?? true;
+  const topBar = () => {
+    if (!(props.showTopBar ?? true)) {
+      return null;
+    }
+    if (props.renderTopBar) {
+      return props.renderTopBar(slotContext());
+    }
+    return showTopBarSummary() ? (
+      <DefaultGridTopBar
+        slot={slots().toolbar}
+        derivedSummary={derivedSummary()}
+        showSummary={showTopBarSummary()}
+        showCounts={props.showTopBarCounts ?? true}
+      />
+    ) : null;
+  };
+  const bottomBar = () => {
+    if (!(props.showBottomBar ?? true)) {
+      return null;
+    }
+    if (props.renderBottomBar) {
+      return props.renderBottomBar(slotContext());
+    }
+    return (
+      <DefaultGridBottomBar
+        slot={slots().statusBar}
+        derivedSummary={derivedSummary()}
+        showCounts={props.showBottomBarCounts ?? true}
+      />
+    );
+  };
 
   // ── 描画の材料 ──
-  const gridDomId = createUniqueId();
-  const activeCellDomId = `${gridDomId}-active-cell`;
   const editingKey = createMemo(() => {
     const cell = ui().editingCell;
     return cell ? `${cell.row}:${cell.col}` : null;
   });
+  // renderCell の ctx.setValue: 呼ばれた時点で、描いた行のキーから今の位置を引き直して書く(React 版は描き直しのたびに
+  //   描いた時点の rows / rowModel を渡す。Solid 版は中身を作り直さないので、今の値と行のキーで同じ行へ書く)。
+  //   行が消えていれば書かない。
+  const writeRenderedCellValue = (rowKey: GridRowKey, column: UnboundGridColumn<T>, nextValue: unknown) => {
+    const viewIndex = engine.gridApi.handle.getViewRowIndex(rowKey);
+    if (viewIndex < 0) {
+      return;
+    }
+    const model = untrack(rowModel);
+    const row = model.getRow(viewIndex);
+    if (row === undefined) {
+      return;
+    }
+    writeCellValueTo(
+      { rows: untrack(rows), rowModel: model, handleRowsChange: untrack(handleRowsChange), applyServerSideCellEdits: undefined },
+      viewIndex,
+      row,
+      column,
+      nextValue,
+    );
+  };
+  // セルの中身。行 / 列 / 行の位置が変わったときだけ作り直す(アクティブ / 選択などの状態は state から読んだときに引く)。
+  //   行の並び(rowModel)や rows そのものは読まない(1 セルの編集で表のすべての renderCell を作り直さないように)。
   const renderCellContent = (
     row: T,
     rowIndex: number,
@@ -551,20 +1009,42 @@ export function SpreadsheetGrid<T extends object>(props: SpreadsheetGridProps<T>
     const unbound = column as unknown as UnboundGridColumn<T>;
     const value = getCellValue(row, unbound);
     if (column.renderCell) {
+      const model = untrack(rowModel);
+      const rowKey = model.getRowKey(rowIndex) ?? rowIndex;
       return column.renderCell({
         row,
         rowIndex,
-        sourceRowIndex: rowModel().getSourceIndex(rowIndex) ?? rowIndex,
-        rowKey: rowModel().getRowKey(rowIndex) ?? rowIndex,
+        sourceRowIndex: model.getSourceIndex(rowIndex) ?? rowIndex,
+        rowKey,
         colIndex,
         value,
         column,
-        isActive: state.isActive,
-        isSelected: state.isSelected,
-        isEditing: state.isEditing,
-        readOnly: state.readOnly,
-        setValue: (nextValue: unknown) => cells.writeCellValue(rowIndex, row, unbound, nextValue),
+        get isActive() {
+          return state.isActive;
+        },
+        get isSelected() {
+          return state.isSelected;
+        },
+        get isEditing() {
+          return state.isEditing;
+        },
+        get readOnly() {
+          return state.readOnly;
+        },
+        setValue: (nextValue: unknown) => writeRenderedCellValue(rowKey, unbound, nextValue),
       });
+    }
+    if (column.editor?.type === 'checkbox') {
+      const editor = column.editor;
+      return (
+        <CheckboxCell
+          slot={slots().checkbox}
+          label={column.title || column.key}
+          checked={isCheckboxChecked(value, editor)}
+          readOnly={state.readOnly}
+          onToggle={() => cells.toggleCheckbox({ row: rowIndex, col: colIndex })}
+        />
+      );
     }
     const text = column.valueFormatter ? column.valueFormatter({ value, row, column }) : String(value ?? '');
     return <span class="ssg-cell-value">{text}</span>;
@@ -606,21 +1086,35 @@ export function SpreadsheetGrid<T extends object>(props: SpreadsheetGridProps<T>
           height: px(bodyHeight()),
         }}
       >
-        <HeaderRow<T>
+        <GridHeaderRow<T>
           pane={pane}
           ownsRowHeader={ownsRowHeader()}
           leadingWidth={leadingWidth()}
           headerHeight={headerHeight()}
           rowHeaderWidth={rowHeaderWidth()}
-          entries={entries()}
-          selection={selectionSnapshot()}
-          isWholeGridSelected={isWholeGridSelected()}
-          hoveredColumnIndex={view().hoveredColumnIndex}
+          slots={slots()}
           isCornerHovered={view().isCornerHovered}
+          isWholeGridSelected={isWholeGridSelected()}
+          showSelectAllCheckbox={false}
+          selectAllState="none"
+          filteredRowsLength={viewRowCount()}
+          visibleColumnsLength={visibleColumns().length}
+          entries={entries()}
+          hoveredColumnIndex={view().hoveredColumnIndex}
+          selection={selectionSnapshot()}
+          // 機能なしの構成ではフィルターが行に効かないので、見出しのフィルター中の印も出さない(React 版と同じ)。
+          columnFilterValues={NO_COLUMN_FILTERS}
           sort={ui().sort}
-          onCornerPointerDown={() => selectEntireGrid()}
+          enableColumnResize={enableColumnResize()}
+          onCornerPointerDown={handleCornerHeaderPointerDown}
+          onCornerPointerEnter={() => setIsCornerHovered(true)}
+          onCornerPointerLeave={() => setIsCornerHovered(false)}
           onColumnHeaderPointerDown={pointer.handleColumnHeaderPointerDown}
           onColumnHeaderPointerEnter={pointer.handleColumnHeaderPointerEnter}
+          onColumnHeaderPointerLeave={handleColumnHeaderPointerLeave}
+          onColumnResizePointerDown={(column, event) =>
+            columnCommands.handleColumnResizePointerDown(column as unknown as UnboundGridColumn<T>, event)
+          }
         />
         <div
           style={{
@@ -634,6 +1128,7 @@ export function SpreadsheetGrid<T extends object>(props: SpreadsheetGridProps<T>
         >
           <Overlay
             class="ssg-selection-overlay"
+            slot={slots().selectionOverlay}
             rect={selectionRectForPane(pane)}
             headerHeight={headerHeight()}
             leadingWidth={leadingWidth()}
@@ -641,6 +1136,7 @@ export function SpreadsheetGrid<T extends object>(props: SpreadsheetGridProps<T>
           />
           <Overlay
             class="ssg-active-cell-overlay"
+            slot={slots().activeCellOverlay}
             rect={activeRect()}
             headerHeight={headerHeight()}
             leadingWidth={leadingWidth()}
@@ -674,28 +1170,38 @@ export function SpreadsheetGrid<T extends object>(props: SpreadsheetGridProps<T>
               );
             }}
           </Show>
-          <BodyRows<T>
+          <GridBodyLayer<T>
             pane={pane}
             ownsRowHeader={ownsRowHeader()}
             leadingWidth={leadingWidth()}
             rowHeight={rowHeight()}
             rowHeaderWidth={rowHeaderWidth()}
-            rows={vertical().virtualRows}
+            rows={bodyRows()}
             entries={entries()}
             rowModel={rowModel()}
+            ariaRowOffset={0}
             activeCell={ui().activeCell}
             editingCell={ui().editingCell}
             selection={selectionSnapshot()}
             isWholeGridSelected={isWholeGridSelected()}
-            hoveredRowIndex={view().hoveredRowIndex}
+            hoveredRowIndex={resolvedHoveredRowIndex()}
+            enableRowSelection={false}
+            rowSelectionState={ui().rowSelection}
             readOnly={readOnly()}
             canEditCell={props.canEditCell}
+            showValidationMarks={props.showValidationMarks ?? true}
+            showCellOverflowTooltip={props.showCellOverflowTooltip ?? false}
+            getRowClassName={props.getRowClassName}
+            slots={slots()}
             activeCellDomId={activeCellDomId}
+            cellEditorDomId={cellEditorDomId}
             renderCellContent={renderCellContent}
             onRowHeaderPointerDown={pointer.handleRowHeaderPointerDown}
             onRowHeaderPointerEnter={pointer.handleRowHeaderPointerEnter}
+            onRowHeaderPointerLeave={handleRowHeaderPointerLeave}
             onCellPointerDown={pointer.handleCellPointerDown}
             onCellPointerEnter={pointer.handleCellPointerEnter}
+            onCellClick={engine.cellEventNotifier.handleCellClick}
             onCellDoubleClick={pointer.handleCellDoubleClick}
           />
         </div>
@@ -713,116 +1219,153 @@ export function SpreadsheetGrid<T extends object>(props: SpreadsheetGridProps<T>
       ? activeCellDomId
       : undefined;
 
+  const emptyStateText = () =>
+    rows().length === 0
+      ? (props.noRowsText ?? localeTexts().noRows)
+      : (props.noMatchingRowsText ?? localeTexts().noMatchingRows);
+
   return (
-    <div
-      class={[
-        'ssg-root',
-        {
-          [`ssg-root--density-${density()}`]: density() !== 'standard',
-          'ssg-root--selecting': ui().dragState?.type === 'selection',
-          'ssg-root--fill-height': heightLayout().fillParent,
-        },
-        themeClassName() ?? '',
-        props.className ?? '',
-      ]}
-      style={{ ...toSolidStyle(heightLayout().rootStyle), ...props.style }}
-    >
+    <GridLocaleTextContext value={localeTexts}>
       <div
-        ref={(element) => {
-          gridRootRef.current = element;
-        }}
-        class="ssg-shell"
-        tabindex={0}
-        role="group"
-        aria-activedescendant={activeDescendantId()}
-        data-ssg-has-active-cell={ui().activeCell === null ? undefined : ''}
-        onKeyDown={handleShellKeyDown}
-        onPaste={(event) =>
-          clipboard.handlePaste({
-            clipboardData: event.clipboardData,
-            preventDefault: () => event.preventDefault(),
-            target: event.target,
-          })
-        }
-        onDragStart={(event) => pointer.handleNativeDragStart(event)}
-        onPointerLeave={() => engine.hoverRowNotifier.applyHoveredRowChange(null)}
+        class={[
+          'ssg-root',
+          themeClassName(),
+          slots().root?.className,
+          props.className,
+          {
+            [`ssg-root--density-${density()}`]: density() !== 'standard',
+            [MOTION_OFF_CLASS_NAME]: resolvedMotion() === 'off',
+            'ssg-root--selecting': ui().dragState?.type === 'selection',
+            'ssg-root--animate-rows': animateRowsActive(),
+            'ssg-root--dim-readonly': props.dimReadOnlyCells ?? false,
+            'ssg-root--fill-height': heightLayout().fillParent,
+          },
+        ]}
+        style={{ ...toSolidStyle(heightLayout().rootStyle), ...slots().root?.style, ...props.style }}
       >
+        {topBar()}
         <div
           ref={(element) => {
-            scrollContainerRef.current = element;
+            gridRootRef.current = element;
           }}
-          tabindex={-1}
-          role="grid"
-          aria-label={props.ariaLabel}
-          aria-rowcount={viewRowCount() + 1}
-          aria-colcount={orderedColumns().length + 1}
-          aria-multiselectable={enableRangeSelection() ? 'true' : undefined}
-          aria-readonly={readOnly() ? 'true' : undefined}
-          class="ssg-scroll-container"
-          style={toSolidStyle(heightLayout().scrollContainerStyle)}
+          class="ssg-shell"
+          tabindex={0}
+          role="group"
+          aria-activedescendant={activeDescendantId()}
+          data-ssg-has-active-cell={ui().activeCell === null ? undefined : ''}
+          onKeyDown={handleShellKeyDown}
+          onPaste={(event) =>
+            clipboard.handlePaste({
+              clipboardData: event.clipboardData,
+              preventDefault: () => event.preventDefault(),
+              target: event.target,
+            })
+          }
+          onDragStart={(event) => pointer.handleNativeDragStart(event)}
+          onPointerLeave={() => applyHoveredRowChange(null)}
+          onFocusOut={(event) => {
+            if (!event.currentTarget.contains(event.relatedTarget as Node | null) && document.hasFocus()) {
+              event.currentTarget.removeAttribute('data-ssg-pointer');
+            }
+          }}
         >
           <div
-            class="ssg-inner-row"
-            style={{
-              width: px(paneResolution().totalScrollWidth),
-              'min-width': px(paneResolution().totalScrollWidth),
-              height: px(headerHeight() + vertical().physicalBodyHeight),
+            ref={(element) => {
+              scrollContainerRef.current = element;
             }}
+            tabindex={-1}
+            onFocusIn={(event) => {
+              if (event.target === event.currentTarget) {
+                gridRootRef.current?.focus({ preventScroll: true });
+              }
+            }}
+            role="grid"
+            aria-label={props.ariaLabel}
+            aria-rowcount={viewRowCount() + 1}
+            aria-colcount={orderedColumns().length + 1}
+            aria-multiselectable={enableRangeSelection() ? 'true' : undefined}
+            aria-readonly={readOnly() ? 'true' : undefined}
+            class="ssg-scroll-container"
+            style={toSolidStyle(heightLayout().scrollContainerStyle)}
           >
             <div
-              ref={(element) => {
-                leftPaneScrollRef.current = element;
-              }}
-              style={pinnedPaneStyle('left', paneResolution().leftPaneTotalWidth, paneLayout().left.entries.length > 0)}
-            >
-              <Show when={paneResolution().hasLeftPane}>
-                {renderPane(
-                  'left',
-                  () => paneResolution().leftPaneTotalWidth,
-                  () => paneResolution().leftLeadingWidth,
-                  () => true,
-                  () => paneLayout().left.entries,
-                )}
-              </Show>
-            </div>
-            <div
-              ref={(element) => {
-                bodyScrollRef.current = element;
-              }}
-              class="ssg-center-pane"
+              class="ssg-inner-row"
               style={{
-                width: px(paneResolution().centerContentWidth),
-                'min-width': px(paneResolution().centerContentWidth),
+                width: px(paneResolution().totalScrollWidth),
+                'min-width': px(paneResolution().totalScrollWidth),
+                height: px(headerHeight() + vertical().physicalBodyHeight),
               }}
             >
-              {renderPane(
-                'center',
-                () => paneResolution().centerContentWidth,
-                () => paneResolution().centerLeadingWidth,
-                () => paneResolution().centerOwnsRowHeader,
-                centerRenderEntries,
-              )}
-            </div>
-            <div
-              ref={(element) => {
-                rightPaneScrollRef.current = element;
-              }}
-              style={pinnedPaneStyle('right', paneResolution().rightPaneTotalWidth, paneLayout().right.entries.length > 0)}
-            >
-              <Show when={paneResolution().hasRightPane}>
+              <div
+                ref={(element) => {
+                  leftPaneScrollRef.current = element;
+                }}
+                style={pinnedPaneStyle('left', paneResolution().leftPaneTotalWidth, paneLayout().left.entries.length > 0)}
+              >
+                <Show when={paneResolution().hasLeftPane}>
+                  {renderPane(
+                    'left',
+                    () => paneResolution().leftPaneTotalWidth,
+                    () => paneResolution().leftLeadingWidth,
+                    () => true,
+                    () => paneLayout().left.entries,
+                  )}
+                </Show>
+              </div>
+              <div
+                ref={(element) => {
+                  bodyScrollRef.current = element;
+                }}
+                class="ssg-center-pane"
+                style={{
+                  width: px(paneResolution().centerContentWidth),
+                  'min-width': px(paneResolution().centerContentWidth),
+                }}
+              >
                 {renderPane(
-                  'right',
-                  () => paneResolution().rightPaneTotalWidth,
-                  () => paneResolution().rightLeadingWidth,
-                  () => false,
-                  () => paneLayout().right.entries,
+                  'center',
+                  () => paneResolution().centerContentWidth,
+                  () => paneResolution().centerLeadingWidth,
+                  () => paneResolution().centerOwnsRowHeader,
+                  centerRenderEntries,
                 )}
-              </Show>
+              </div>
+              <div
+                ref={(element) => {
+                  rightPaneScrollRef.current = element;
+                }}
+                style={pinnedPaneStyle('right', paneResolution().rightPaneTotalWidth, paneLayout().right.entries.length > 0)}
+              >
+                <Show when={paneResolution().hasRightPane}>
+                  {renderPane(
+                    'right',
+                    () => paneResolution().rightPaneTotalWidth,
+                    () => paneResolution().rightLeadingWidth,
+                    () => false,
+                    () => paneLayout().right.entries,
+                  )}
+                </Show>
+              </div>
             </div>
+            <Show when={viewRowCount() === 0}>
+              <div class={['ssg-empty-state', slots().emptyState?.className]} style={slots().emptyState?.style}>
+                {emptyStateText()}
+              </div>
+            </Show>
           </div>
+          <span
+            ref={(element) => {
+              tableExitRef.current = element;
+            }}
+            class="ssg-tab-exit"
+            tabindex={-1}
+            aria-hidden="true"
+            onFocus={handleTableExitFocus}
+          />
         </div>
+        {bottomBar()}
       </div>
-    </div>
+    </GridLocaleTextContext>
   );
 }
 

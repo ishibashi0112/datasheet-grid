@@ -11,6 +11,7 @@ type Item = {
   qty: number;
   price: number;
   note: string;
+  done: boolean;
   extra: Record<string, number>;
 };
 
@@ -25,6 +26,7 @@ const createRows = (count: number): Item[] =>
     qty: (i * 7) % 100,
     price: 100 + ((i * 37) % 900),
     note: '',
+    done: i % 3 === 0,
     extra: Object.fromEntries(EXTRA_KEYS.map((key, k) => [key, (i * (k + 3)) % 1000])),
   }));
 
@@ -32,7 +34,16 @@ const columns: GridColumn<Item>[] = [
   { key: 'id', title: 'ID', width: 72, pinned: 'left', editable: false },
   { key: 'name', title: '品名', width: 160 },
   { key: 'category', title: '分類', width: 100 },
-  { key: 'qty', title: '数量', width: 90, align: 'right', editor: { type: 'number' } },
+  {
+    key: 'qty',
+    title: '数量',
+    width: 90,
+    align: 'right',
+    editor: { type: 'number' },
+    validate: ({ value }) => (Number(value) <= 95 ? true : '95 以下にしてください'),
+    cellNote: ({ row }) => (row.id % 50 === 0 ? '棚卸しで確認済み' : undefined),
+  },
+  { key: 'done', title: '済', width: 60, editor: { type: 'checkbox' } },
   { key: 'price', title: '単価', width: 100, align: 'right', editor: { type: 'number' } },
   ...EXTRA_KEYS.map<GridColumn<Item>>((key) => ({
     key,
