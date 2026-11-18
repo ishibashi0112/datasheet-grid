@@ -20,6 +20,12 @@ import { createEditorKeyDownHandler } from './editorKeyBindings';
 import { CellEditorErrorBubble } from './CellEditorErrorBubble';
 import { useTopAlignedInput } from './useTopAlignedInput';
 import { cx } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/cx';
+import {
+  fitMultilineEditor,
+  insertNewlineByCommand,
+  insertNewlineText,
+  resolveMultilinePadding,
+} from '@ishibashi0112/spreadsheet-grid-core/internal/utils/multilineEditor';
 
 type TextCellEditorProps = {
   // 追加(1.0.1 / 2026-11-09 実アプリの総点検 AP-34): 入力欄の読み上げの名前(「(列名) を編集」。枠の group と同じ)。
@@ -45,55 +51,9 @@ type TextCellEditorProps = {
   alignTop?: boolean;
 };
 
-// 追加(段階 2 DU-14): 複数行の入力欄の 1 行の高さが読めないとき(line-height: normal など)の値です。
-// 変更(段階 2 の確かめ直し N2-2): 行の間隔はセルと同じくページから受け継ぐ(styles.css の line-height: inherit)ので、
-//   余白の計算には実際の値を読みます(これまでは 20px 固定で、行の間隔 24px のページでは開くと行が詰まって見えた)。
-const FALLBACK_LINE_HEIGHT = 20;
-
-// 追加(段階 2 の確かめ直し N3-2): 複数行の入力欄の上下の余白です。1 行目をセルの文字にそろえる量で、上にそろえたセルは 0、
-//   真ん中にそろえたセルは開いたときの中身の高さをセルの真ん中に置く量(4 は上下の枠線 2px × 2)。これまでは 1 行の値を
-//   基準の行の高さの真ん中に置く量(最大 6px)で、背の高い行では文字がセルより下へずれ、入力欄もその分セルより高くなっていました。
-// 変更(1.0.2 / G-12 の見直し・レビュー QB-4): 上にそろえたセルは、文字の上に 0.4em の余白があります(auto-height の列は中身の器
-//   .ssg-autoheight-content、ほかの列はセル。styles.css)。エディタもその分(エディタの文字の大きさ = セルの文字の大きさの 0.4 倍)を
-//   余白にします(これまでの 0 のままだと、背の高い行で 1 行目がセルの文字より約 5px 上に出た)。
-// 変更(1.0.2 の確かめ直し): 入力欄の上の枠線(2px)のぶんを余白から引きます(枠線の内側から 0.4em だと、セルの文字より約 2px
-//   下に出ていた)。
-const TOP_ALIGNED_PADDING_EM = 0.4;
-const resolveMultilinePadding = (
-  textarea: HTMLTextAreaElement,
-  cellHeight: number,
-  alignTop: boolean,
-): number => {
-  if (alignTop) {
-    const style = getComputedStyle(textarea);
-    const fontSize = Number.parseFloat(style.fontSize) || 0;
-    const borderTop = Number.parseFloat(style.borderTopWidth) || 0;
-    return Math.max(0, Math.round(fontSize * TOP_ALIGNED_PADDING_EM - borderTop));
-  }
-  textarea.style.paddingTop = '0px';
-  textarea.style.paddingBottom = '0px';
-  textarea.style.height = '0px';
-  const lineHeight = Number.parseFloat(getComputedStyle(textarea).lineHeight) || FALLBACK_LINE_HEIGHT;
-  const textHeight = Math.max(textarea.scrollHeight, lineHeight);
-  return Math.max(0, Math.floor((cellHeight - 4 - textHeight) / 2));
-};
-
-// 追加(段階 2 DU-14): 複数行の入力欄の高さを中身に合わせます。下限はセルの高さ、上限は表の見える範囲の下端まで
-//   (超える分は入力欄の中でスクロール)。上下の余白は resolveMultilinePadding で決めた量(打っている間は変えない)。
-const fitMultilineEditor = (textarea: HTMLTextAreaElement, cellHeight: number, padding: number) => {
-  textarea.style.paddingTop = `${padding}px`;
-  textarea.style.paddingBottom = `${padding}px`;
-  textarea.style.height = `${cellHeight}px`;
-  const border = textarea.offsetHeight - textarea.clientHeight;
-  const needed = textarea.scrollHeight + border;
-  let limit = Number.POSITIVE_INFINITY;
-  const scroller = textarea.closest('.ssg-scroll-container');
-  if (scroller instanceof HTMLElement) {
-    const scrollerRect = scroller.getBoundingClientRect();
-    limit = scrollerRect.top + scroller.clientTop + scroller.clientHeight - textarea.getBoundingClientRect().top;
-  }
-  textarea.style.height = `${Math.max(cellHeight, Math.min(needed, limit))}px`;
-};
+// 変更(Solid 版 段階 1-2): 複数行の入力欄の余白と高さの合わせ方(resolveMultilinePadding / fitMultilineEditor)と改行の入れ方は
+//   core utils/multilineEditor へ移しました(Solid 版と共用)。中身は段階 2 DU-14 / その確かめ直し N2-2・N3-2、
+//   1.0.2 / G-12 の見直し QB-4 のとおりです。
 
 export function TextCellEditor({
   ariaLabel,
@@ -164,13 +124,12 @@ export function TextCellEditor({
     // 修飾キー付きの Enter で改行を入れます。execCommand なら入力欄の「元に戻す」(Ctrl+Z)に載り、input イベントで
     //   ドラフトも更新されます。使えない環境では値を組み立てて入れ、キャレットを改行の後ろへ置きます。
     const insertNewline = (textarea: HTMLTextAreaElement) => {
-      if (typeof document.execCommand === 'function' && document.execCommand('insertText', false, '\n')) {
+      if (insertNewlineByCommand()) {
         return;
       }
-      const start = textarea.selectionStart;
-      const end = textarea.selectionEnd;
-      pendingCaretRef.current = start + 1;
-      setDraftValue(`${textarea.value.slice(0, start)}\n${textarea.value.slice(end)}`);
+      const next = insertNewlineText(textarea);
+      pendingCaretRef.current = next.caret;
+      setDraftValue(next.value);
       setErrorMessage(null);
     };
     // 'auto-phrase' など csstype に無い値も通すため、緩い型で入れます(セルの wrapStyle と同じ)。

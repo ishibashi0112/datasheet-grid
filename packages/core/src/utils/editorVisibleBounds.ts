@@ -1,4 +1,5 @@
-import { resolveGridVisibleBand } from '@ishibashi0112/spreadsheet-grid-core/internal/utils/gridVisibleBand';
+// 変更(Solid 版 段階 1-2): React 版の editors/editorVisibleBounds.ts から移しました(DOM だけを見るので Solid 版と共用)。
+import { resolveGridVisibleBand } from './gridVisibleBand';
 
 // 追加(1.0.2 / 2026-11-09 実アプリの総点検 A-09 / B-05): エディタの部品(日付の入力欄・エラーの吹き出し)が見えている横の範囲。
 //   グリッドのスクロールの枠の中で、中央のペインにあるときは左右の固定ペインの下を除きます(固定ペインが上に重なるため)。

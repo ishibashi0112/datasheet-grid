@@ -23,8 +23,8 @@ React 版の機能なしの構成と並べて、同じ props・同じ操作で D
 
 | # | 内容 | 状況 |
 | --- | --- | --- |
-| 1-1 | 見出しとセル: 見出し(renderHeader・並びの印・列幅のつまみ・角)、セル(renderCell・valueFormatter・cellClassName・メモ・入力の検査の印・checkbox のセル・ARIA)、上下のバー、空の表示、テーマ・密度・モーション・classNames、ツールチップ、Tab でグリッドの外へ、通知(onStateChange / onSortChange / onScroll / onCellClick ほか)。共通の部品を core へ(下部バーの文字列 = core `logic/gridBarSummary`、renderHeader の中のボタンの判定 = core `logic/domGuards`)。React 版と並べて比べるテスト | 済み(比べる場面 11 で DOM・フォーカス・要素の使い回し・id の参照・通知が一致。別視点のレビューの指摘も直した。PR #62 を見てもらう) |
-| 1-2 | エディタ 6 種(text / number / select / date / checkbox / custom)・入力の検査(reject)・エラーの吹き出し | まだ |
+| 1-1 | 見出しとセル: 見出し(renderHeader・並びの印・列幅のつまみ・角)、セル(renderCell・valueFormatter・cellClassName・メモ・入力の検査の印・checkbox のセル・ARIA)、上下のバー、空の表示、テーマ・密度・モーション・classNames、ツールチップ、Tab でグリッドの外へ、通知(onStateChange / onSortChange / onScroll / onCellClick ほか)。共通の部品を core へ(下部バーの文字列 = core `logic/gridBarSummary`、renderHeader の中のボタンの判定 = core `logic/domGuards`)。React 版と並べて比べるテスト | 済み(比べる場面 11 で DOM・フォーカス・要素の使い回し・id の参照・通知が一致。別視点のレビューの指摘も直した。PR #62 でマージ済み) |
+| 1-2 | エディタ 6 種(text / number / select / date / checkbox / custom)・入力の検査(reject)・エラーの吹き出し | 作業中(1-2a: エディタの判断と DOM の処理を core へ = 済み。エラーの吹き出しの置き方 `utils/errorBubblePlacement`、複数行の入力欄の大きさと改行 `utils/multilineEditor`、見えている範囲 `utils/editorVisibleBounds`(React 版から移動)、number / date の開く値と確定する値 `logic/editorStart`、select のキーと開いたときのハイライト `logic/selectEditorState`(React 版はフル版が 0.08KB 増えるので展開したまま)。フル版 149.71KB) |
 | 1-3 | 行の選択(チェックボックス)・展開行・フォーカスの順 | まだ |
 
 ### 1-1 で分かったこと

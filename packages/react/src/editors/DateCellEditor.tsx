@@ -21,12 +21,9 @@ import { createEditorKeyDownHandler } from './editorKeyBindings';
 import { CellEditorErrorBubble } from './CellEditorErrorBubble';
 import { useTopAlignedInput } from './useTopAlignedInput';
 import { cx } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/cx';
-import {
-  normalizeTypedDateText,
-  toDateInputValue,
-} from '@ishibashi0112/spreadsheet-grid-core/internal/logic/editorValues';
+import { readTypedDateCommitValue } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/editorStart';
 import { useGridLocaleText } from '../hooks/useGridLocaleText';
-import { resolveShiftIntoView } from './editorVisibleBounds';
+import { resolveShiftIntoView } from '@ishibashi0112/spreadsheet-grid-core/internal/utils/editorVisibleBounds';
 
 type DateCellEditorProps = {
   // 追加(1.0.1 / 2026-11-09 実アプリの総点検 AP-34): 入力欄の読み上げの名前(「(列名) を編集」。枠の group と同じ)。
@@ -93,13 +90,9 @@ export function DateCellEditor({
     if (!textMode) {
       return onCommit(value, direction);
     }
-    const text = String(value).trim();
-    if (text === '') {
-      return onCommit('', direction);
-    }
-    // 変更(レビュー QA-5): IME をオンのまま打った全角の数字や「2026年3月15日」も読みます。
-    const normalized = toDateInputValue(normalizeTypedDateText(text));
-    return normalized === ''
+    // 変更(レビュー QA-5): IME をオンのまま打った全角の数字や「2026年3月15日」も読みます(core logic/editorStart)。
+    const normalized = readTypedDateCommitValue(value);
+    return normalized === null
       ? { status: 'rejected', message: texts.enterDate }
       : onCommit(normalized, direction);
   };
