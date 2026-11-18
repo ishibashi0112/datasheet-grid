@@ -1,4 +1,4 @@
-// Solid 版の型の束ね(試作)。core の公開型は描画の型(node / style)を束ね型 F で受けるので、Solid の JSX.Element と
+// Solid 版の型の束ね。core の公開型は描画の型(node / style)を束ね型 F で受けるので、Solid の JSX.Element と
 //   JSX.CSSProperties を入れるだけで同じ列定義・props の型が使えます(React 版の model/gridTypes.ts と同じ作り)。
 import type { JSX } from '@solidjs/web';
 import type * as Core from '@ishibashi0112/spreadsheet-grid-core';
@@ -11,9 +11,13 @@ export type SolidGridTypes = {
 export type GridColumn<T> = Core.GridColumn<T, SolidGridTypes>;
 export type CellRenderContext<T> = Core.CellRenderContext<T, SolidGridTypes>;
 export type SpreadsheetGridHandle<T> = Core.SpreadsheetGridHandle<T>;
+export type SpreadsheetGridSlotContext<T> = Core.SpreadsheetGridSlotContext<T, SolidGridTypes>;
+export type GridClassNames = Core.GridClassNames<SolidGridTypes>;
+export type GridResolvedSlot = Core.GridResolvedSlot<SolidGridTypes>;
+export type GridResolvedSlots = Core.GridResolvedSlots<SolidGridTypes>;
 
-// 試作で受ける props(React 版と同じ名前・同じ型)。全部で 114 ある props のうち、表示・スクロール・選択・text の編集・
-//   キー操作・コピー貼り付け・元に戻すに要るものだけです。
+// 受ける props(React 版と同じ名前・同じ型)。段階 1 は React 版の機能なしの構成(`/lite` の
+//   createSpreadsheetGrid({ features: {} }))と同じ範囲で、受けられるものから順に足していきます。
 type SupportedPropKeys =
   | 'rows'
   | 'columns'
@@ -27,19 +31,55 @@ type SupportedPropKeys =
   | 'maxHeight'
   | 'readOnly'
   | 'canEditCell'
+  | 'dimReadOnlyCells'
   | 'enableUndoRedo'
   | 'undoHistoryLimit'
+  | 'onUndoRedoStateChange'
   | 'enableClearOnDelete'
   | 'editorEnterMove'
   | 'enableRangeSelection'
   | 'enableRowHover'
+  | 'hoveredRowIndex'
+  | 'onHoveredRowChange'
   | 'enableColumnHeaderHover'
   | 'enableSorting'
+  | 'enableColumnResize'
+  | 'onColumnsChange'
+  | 'showValidationMarks'
+  | 'getRowClassName'
+  | 'classNames'
   | 'ariaLabel'
   | 'className'
   | 'style'
   | 'theme'
-  | 'onActiveCellChange';
+  | 'motion'
+  | 'animateRows'
+  | 'localeText'
+  | 'noRowsText'
+  | 'noMatchingRowsText'
+  | 'showTopBar'
+  | 'showBottomBar'
+  | 'showTopBarSummary'
+  | 'showTopBarCounts'
+  | 'showBottomBarCounts'
+  | 'renderTopBar'
+  | 'renderBottomBar'
+  | 'initialState'
+  | 'activeCellFollows'
+  | 'onCellClick'
+  | 'onCellDoubleClick'
+  | 'onActiveCellChange'
+  | 'onStateChange'
+  | 'onFiltersChange'
+  | 'onSortChange'
+  | 'onScroll'
+  | 'showCellOverflowTooltip'
+  | 'popupContainer'
+  | 'createRow'
+  | 'createOverflowColumn'
+  | 'onPasteSkipped'
+  | 'pasteFillsSelection'
+  | 'isRowExportable';
 
 export type SpreadsheetGridProps<T> = Pick<Core.SpreadsheetGridProps<T, SolidGridTypes>, SupportedPropKeys> & {
   // Solid の ref は関数だけ(React の ref オブジェクトは無い)。命令的 API のハンドルを受け取ります。

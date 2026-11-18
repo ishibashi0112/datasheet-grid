@@ -6,23 +6,35 @@ Solid のシェルを載せられるか・どれくらいの作業になるか�
 
 ## 動くもの
 
-React 版と同じ DOM・class で描くので、React 版の `styles.css` をそのまま使っています。
+React 版と同じ DOM・class で描くので、React 版の `styles.css` をそのまま使っています。段階 1 の範囲は React 版の機能なしの構成
+(`/lite` の `createSpreadsheetGrid({ features: {} })`)で、`src/parity/` のテストで React 版と DOM と通知が同じかを比べています。
 
-- 表示: 行の縦の仮想化(core の `resolveVerticalLayout`)、列の横の仮想化(`@tanstack/virtual-core` を自前でつなぐ)、左右の固定列
-- 選択: クリック / Shift+クリック / ドラッグの範囲選択、見出し(列の選択、Shift+クリックで並べ替え)、行番号、左上の角で全選択
-- キー操作: core の keyboardController(矢印 / Ctrl+矢印 / Home / End / PageUp / PageDown / Ctrl+A / Delete / Ctrl+Z / Ctrl+Y)
-- 編集: text のエディタ(打ち始め / ダブルクリック / F2 / Enter / Tab / Esc / 外をクリックで確定)、元に戻す
+- 表示: 行の縦の仮想化(core の `resolveVerticalLayout`)、列の横の仮想化(`@tanstack/virtual-core` を自前でつなぐ)、左右の固定列、
+  上下のバー(`renderTopBar` / `renderBottomBar` も)、空の表示、テーマ・密度・モーション・`classNames`、ツールチップ
+- 見出し: `renderHeader`、Shift+クリックで並べ替え(印と優先度)、列幅のドラッグ、列の選択、左上の角で全選択
+- セル: `renderCell`・`valueFormatter`・`cellClassName`・`getRowClassName`・メモ(`cellNote`)・入力の検査の印(`validate`)・checkbox のセル
+- 選択とキー操作: core の keyboardController / pointerInteractionsController(範囲選択・行番号・矢印 / Ctrl+矢印 / Home / End /
+  PageUp / PageDown / Ctrl+A / Delete / Ctrl+Z / Ctrl+Y、最後の列の Tab でグリッドの外へ)
+- 編集: text のエディタだけ(打ち始め / ダブルクリック / F2 / Enter / Tab / Esc / 外をクリックで確定)、元に戻す
 - コピー・貼り付け: core の clipboardController(Excel と同じ TSV、範囲いっぱいの貼り付け)
 - 命令的 API: core の gridApi のハンドルをそのまま(`ref` は関数で受ける)
-- 通知: `onActiveCellChange`
+- 通知: `onActiveCellChange` / `onCellClick` / `onCellDoubleClick` / `onStateChange` / `onSortChange` / `onFiltersChange` / `onScroll` /
+  `onColumnsChange` / `onUndoRedoStateChange` / `onHoveredRowChange`
 
-無いもの: text 以外のエディタ、列幅の変更、ツールチップ、行の選択、展開行、ラベル行、合計行、固定行、`/lite` の 20 の機能、SSRM。
+無いもの(段階 1-2 / 1-3): text 以外のエディタ、入力の検査の reject とエラーの吹き出し、行の選択、展開行。段階 2: `/lite` の 21 の機能
+(ラベル行・SSRM・行のグループ・合計行・固定行などを含む)。
+
+`renderCell` / `renderHeader` / `renderTopBar` / `renderBottomBar` は、React 版のように描き直しのたびに呼ぶのではなく、Solid の部品と
+同じく必要なときだけ呼びます: `renderCell` は行(と値)や列が変わったとき、`renderHeader` は列が変わったとき、バーは関数が変わった
+ときだけ。位置(`rowIndex` など)・状態(`isActive` など)・バーの文脈(`derivedSummary` など)は読んだときに引くので、JSX の中で
+読めば追従します(本体で読むと、それが変わったときに呼び直します)。要素を作り直さないので、中のボタンや入力欄のクリックと
+フォーカスが保たれます。
 
 ## 使い方
 
 ```sh
 pnpm --filter ./packages/solid dev          # デモ(10,000 行 × 37 列)
-pnpm --filter ./packages/solid test         # jsdom のテスト(Solid の JSX 変換の vitest 設定)
+pnpm --filter ./packages/solid test         # jsdom のテスト(Solid の JSX 変換の vitest 設定。React 版と並べて比べるテストも)
 pnpm --filter ./packages/solid typecheck
 pnpm --filter ./packages/solid spike:build  # 大きさを測るためのライブラリビルド(dist/)
 ```
@@ -34,8 +46,11 @@ pnpm --filter ./packages/solid spike:build  # 大きさを測るためのライ�
 | `hooks/useGridStore.ts`(useSyncExternalStore) | `primitives/gridStoreSignals.ts`(store を signal に。購読は `onSettled`) |
 | `hooks/useController.ts` | `primitives/controller.ts`(`createRenderEffect` / `createEffect` で `update`) |
 | `hooks/useVirtualizerCore.ts` | `primitives/columnVirtualizer.ts` |
-| `GridShell.tsx`(5,420 行) | `SpreadsheetGrid.tsx`(約 830 行) |
-| `view/GridHeaderRow.tsx` / `view/GridBodyLayer.tsx` | `view/HeaderRow.tsx` / `view/BodyRows.tsx` |
+| `GridShell.tsx`(5,420 行) | `SpreadsheetGrid.tsx`(約 1,370 行) |
+| `view/GridHeaderRow.tsx` / `view/GridBodyLayer.tsx` | 同じ名前(`view/`) |
+| `view/DefaultGridTopBar.tsx` / `DefaultGridBottomBar.tsx` / `RowSelectionCheckbox.tsx` / `editors/CheckboxCell.tsx` | 同じ名前(`view/`) |
+| `hooks/useGridLocaleText.ts`(Context) | `context/localeText.ts` |
+| (React の `useSyncExternalStore`) | `primitives/externalStore.ts`(OS の配色 / 視差効果を減らす設定) |
 | `editors/TextCellEditor.tsx` | `view/TextEditor.tsx` |
 
 ## 試作で分かったこと

@@ -8,7 +8,7 @@ import type {
   SpreadsheetGridSlotContext,
 } from '../model/gridTypes';
 import type { ResolvedGridLocaleText } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/localeText';
-import { buildGridDerivedSummary, createDataColumnNamer, createDataRowNumberer } from '../view/gridBarHelpers';
+import { buildGridDerivedSummary, createDataColumnNamer, createDataRowNumberer } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/gridBarSummary';
 
 // 追加: derivedSummary / setGlobalFilterText を載せる前の中間 slot context 型です。
 // 変更(DS-3-7): base から filteredRows(配列)を外します。サマリは件数のみ使用し、公開

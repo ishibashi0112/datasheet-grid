@@ -39,30 +39,11 @@ import type { GridResolvedSlots } from '../model/gridTypes';
 const HEADER_INLINE_ACTIONS_MIN_WIDTH = 120;
 import { useGridLocaleText } from '../hooks/useGridLocaleText';
 import { formatLocaleText } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/localeText';
+// 追加(audit V-16): renderHeader の中の操作から始まった pointerdown か(core logic/domGuards。Solid 版と共用)。
+import { isFromRenderHeaderControl } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/domGuards';
 
 // 追加(10-C): このヘッダーがどのペインを描画しているかの種別です。
 export type GridPaneKind = 'left' | 'center' | 'right';
-
-// 追加(audit V-16): renderHeader の中のボタン / 入力欄 / リンク等から始まった pointerdown では列の範囲選択を
-//   始めません(既定動作の preventDefault も掛けないため、入力欄へフォーカスも入ります)。
-const RENDER_HEADER_CONTROL_SELECTOR =
-  'button, input, select, textarea, a[href], label, [contenteditable]:not([contenteditable="false"]), ' +
-  '[role="button"], [role="checkbox"], [role="switch"], [role="link"], [role="textbox"], [role="combobox"], [role="slider"]';
-
-const isFromRenderHeaderControl = (event: PointerEvent<HTMLDivElement>): boolean => {
-  const { target } = event;
-  if (!(target instanceof Element)) {
-    return false;
-  }
-  const control = target.closest(RENDER_HEADER_CONTROL_SELECTOR);
-  if (control === null) {
-    return false;
-  }
-  // renderHeader の中身(= このヘッダーセル直下の .ssg-header-label の内側)にあるものだけを対象にします
-  //   (グリッドの外側の祖先や、組み込みのボタンは対象外)。
-  const label = control.closest('.ssg-header-label');
-  return label !== null && label.parentElement === event.currentTarget;
-};
 
 type GridHeaderRowProps<T> = {
   // 追加(10-C): 描画対象のペイン種別です。
@@ -382,7 +363,7 @@ function GridHeaderRowInner<T>({
                 : undefined
             }
             onPointerDown={(event) => {
-              if (column.renderHeader && isFromRenderHeaderControl(event)) {
+              if (column.renderHeader && isFromRenderHeaderControl(event.target, event.currentTarget)) {
                 return;
               }
               onColumnHeaderPointerDown(colIndex, event);

@@ -45,3 +45,25 @@ export const shouldIgnoreGridKeydown = (eventTarget: EventTarget | null) => {
 
   return interactiveElement !== null;
 };
+
+// 追加(audit V-16): renderHeader の中のボタン / 入力欄 / リンク等から始まった pointerdown では列の範囲選択を
+//   始めません(既定動作の preventDefault も掛けないため、入力欄へフォーカスも入ります)。
+//   React 版の view/GridHeaderRow から移しました(Solid 版も同じ判定を使う)。
+const RENDER_HEADER_CONTROL_SELECTOR =
+  'button, input, select, textarea, a[href], label, [contenteditable]:not([contenteditable="false"]), ' +
+  '[role="button"], [role="checkbox"], [role="switch"], [role="link"], [role="textbox"], [role="combobox"], [role="slider"]';
+
+// target = イベントの target、headerCell = 見出しのセル(イベントの currentTarget)。
+export const isFromRenderHeaderControl = (target: EventTarget | null, headerCell: EventTarget | null): boolean => {
+  if (!(target instanceof Element)) {
+    return false;
+  }
+  const control = target.closest(RENDER_HEADER_CONTROL_SELECTOR);
+  if (control === null) {
+    return false;
+  }
+  // renderHeader の中身(= このヘッダーセル直下の .ssg-header-label の内側)にあるものだけを対象にします
+  //   (グリッドの外側の祖先や、組み込みのボタンは対象外)。
+  const label = control.closest('.ssg-header-label');
+  return label !== null && label.parentElement === headerCell;
+};
