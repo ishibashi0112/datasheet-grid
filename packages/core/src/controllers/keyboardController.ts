@@ -6,6 +6,8 @@
 //   - update(args) はレンダー後に毎回呼ばれる前提(hooks/useController)。handleKeyDown はイベント時点の
 //     最新 args(uiState / rowModel / 列 / コールバック)を読みます。
 import { isClearableSelection } from './escapeClaimController';
+import { computeIsWholeGridSelected } from './clipboardController';
+import { isEditingAtEvent, readLiveUiState } from './liveUiState';
 import { gridActions, type GridUiAction } from '../model/gridActions';
 import type {
   CellCoord,
@@ -33,6 +35,8 @@ export type GridKeyboardEventLike = {
 
 export type KeyboardControllerArgs<T> = {
   uiState: GridUiState;
+  // 追加(Solid 版 段階 0-1): イベントの時点の状態(store の getState。controllers/liveUiState)。省略は uiState。
+  getUiState?: (() => GridUiState) | undefined;
   rowModel: RowModel<T>;
   visibleColumns: GridColumn<T>[];
   readOnly: boolean;
@@ -122,7 +126,8 @@ export const createKeyboardController = <T,>(): KeyboardController<T> => {
     if (args === null) {
       return;
     }
-    const { uiState, dispatch } = args;
+    const { dispatch } = args;
+    const uiState = readLiveUiState(args);
     if (extendSelection) {
       const anchor =
         uiState.selection?.type === 'cell'
@@ -143,7 +148,7 @@ export const createKeyboardController = <T,>(): KeyboardController<T> => {
   //   (ラベル行を飛ばした最初の行 × 操作用の合成列を飛ばした最初の列)に止まります。これまでは (0, 0) から 1 つ動いた
   //   セル(↓ なら A2、→ / Tab なら B1)へ行き、A1 に止まれませんでした。止まったら true。
   const activateFirstCellIfNone = (): boolean => {
-    if (args === null || args.uiState.activeCell) {
+    if (args === null || readLiveUiState(args).activeCell) {
       return false;
     }
     const { rowModel, visibleColumns } = args;
@@ -159,7 +164,7 @@ export const createKeyboardController = <T,>(): KeyboardController<T> => {
   //   広げる。これまではアクティブセル = 起点から数え直して範囲が縮んでいた)、それ以外はアクティブセルです。
   //   キー操作だけで広げた範囲はアクティブセルが範囲の終わりなので、これまでと同じです。
   const movingCell = (extendSelection: boolean): CellCoord => {
-    const uiState = args?.uiState;
+    const uiState = args === null ? undefined : readLiveUiState(args);
     if (extendSelection && uiState?.selection?.type === 'cell') {
       return uiState.selection.range.end;
     }
@@ -205,7 +210,8 @@ export const createKeyboardController = <T,>(): KeyboardController<T> => {
     if (args === null) {
       return;
     }
-    const { uiState, rowModel, visibleColumns } = args;
+    const { rowModel, visibleColumns } = args;
+    const uiState = readLiveUiState(args);
     if (rowModel.getRowCount() === 0 || visibleColumns.length === 0) {
       return;
     }
@@ -245,7 +251,6 @@ export const createKeyboardController = <T,>(): KeyboardController<T> => {
       return;
     }
     const {
-      uiState,
       rowModel,
       visibleColumns,
       readOnly,
@@ -255,7 +260,6 @@ export const createKeyboardController = <T,>(): KeyboardController<T> => {
       handleCopy,
       openFind,
       handleCellDoubleClick,
-      isWholeGridSelected,
       selectEntireGrid,
       onUndo,
       onRedo,
@@ -265,13 +269,19 @@ export const createKeyboardController = <T,>(): KeyboardController<T> => {
       onToggleGroup,
       onToggleDetailRow,
     } = args;
+    // 変更(Solid 版 段階 0-1): 状態はイベントの時点の store から読みます(getUiState が無いときは update で受けた値)。
+    //   全選択かどうかも同じ状態から求めます(レンダー中に求めた isWholeGridSelected と同じ計算)。
+    const uiState = readLiveUiState(args);
+    const isWholeGridSelected = args.getUiState
+      ? computeIsWholeGridSelected(uiState.selection, rowModel.getRowCount(), visibleColumns.length)
+      : args.isWholeGridSelected;
 
     // 入力部品(input / textarea / select / button / contenteditable)配下では発火させません。
     if (shouldIgnoreGridKeydown(event.target)) {
       return;
     }
-    // 編集中はエディタがキーを扱います。
-    if (uiState.editingCell) {
+    // 編集中はエディタがキーを扱います(描いた時点か今のどちらかで編集中なら扱わない。controllers/liveUiState)。
+    if (isEditingAtEvent(args)) {
       return;
     }
     // 追加(G-2): 入力受け(imeDirectInput)で IME の変換中のキー(候補の選択 / 変換確定の Enter 等)は IME の操作なので

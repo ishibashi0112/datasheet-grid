@@ -11,6 +11,7 @@
 import { gridActions, type GridUiAction } from '../model/gridActions';
 import type { CellCoord, GridColumn, GridUiState } from '../model/gridTypes.unbound';
 import { nextSortEntries } from '../logic/sorting';
+import { readLiveUiState } from './liveUiState';
 import { isSyntheticColumnKey } from '../logic/detailRow';
 import {
   clamp,
@@ -69,6 +70,8 @@ export type PointerInteractionsArgs<T> = {
   pointerClientRef: MutableRef<{ x: number; y: number } | null>;
   autoScrollFrameRef: MutableRef<number | null>;
   uiState: GridUiState;
+  // 追加(Solid 版 段階 0-1): イベントの時点の状態(store の getState。controllers/liveUiState)。省略は uiState。
+  getUiState?: (() => GridUiState) | undefined;
   dispatch: (action: GridUiAction) => void;
   enableRangeSelection: boolean;
   enableSorting: boolean;
@@ -134,7 +137,8 @@ export const createPointerInteractionsController = <T,>(): PointerInteractionsCo
   let autoScrollArmed = false;
   let selectionAutoScrollActive = false;
 
-  const dragState = () => args?.uiState.dragState ?? null;
+  // 変更(Solid 版 段階 0-1): 状態はイベントの時点の store から読みます(getUiState が無いときは update で受けた値)。
+  const dragState = () => (args === null ? null : readLiveUiState(args).dragState ?? null);
   // 追加(1.0.1 / AP-29): 列幅のドラッグの倍率(ドラッグの始めの dragState ごとに 1 回測る。pointermove ごとにレイアウトを読まない)。
   let resizeScale: { drag: object; x: number } | null = null;
 
@@ -538,7 +542,7 @@ export const createPointerInteractionsController = <T,>(): PointerInteractionsCo
     //   (起点からそのセルまでドラッグしたのと同じ。そのまま動かせば範囲が広がる。Shift+矢印と同じ起点)。
     //   これまでは Shift を見ず、押したセルだけの選択になっていました。
     if (event.shiftKey && args.enableRangeSelection) {
-      const { selection, activeCell } = args.uiState;
+      const { selection, activeCell } = readLiveUiState(args);
       const anchor = selection?.type === 'cell' ? selection.range.start : activeCell;
       if (anchor) {
         args.dispatch(gridActions.startSelection(anchor));
@@ -587,7 +591,7 @@ export const createPointerInteractionsController = <T,>(): PointerInteractionsCo
     // 追加(段階 2 の確かめ直し): Shift+クリックは、今の行の範囲の起点(無ければアクティブセルの行)から押した行までを選びます
     //   (起点からドラッグしたのと同じ。セルの Shift+クリック = DU-15 と同じ考え方)。これまでは押した行だけでした。
     if (event.shiftKey) {
-      const { selection, activeCell } = args.uiState;
+      const { selection, activeCell } = readLiveUiState(args);
       const anchorRow = selection?.type === 'row' ? selection.startRow : activeCell?.row;
       if (anchorRow !== undefined) {
         args.dispatch(gridActions.startRowSelection(anchorRow, args.resolveFirstDataCell?.().col));
@@ -626,7 +630,7 @@ export const createPointerInteractionsController = <T,>(): PointerInteractionsCo
     if (event.shiftKey && args.enableSorting) {
       const column = args.orderedColumns[colIndex];
       if (column && !isSyntheticColumnKey(column.key)) {
-        const current = args.uiState.sort;
+        const current = readLiveUiState(args).sort;
         const existingDir = current.find((entry) => entry.columnKey === column.key)?.direction;
         const direction: 'asc' | 'desc' = existingDir ? 'desc' : 'asc';
         const next = nextSortEntries(current, column.key, direction, true);

@@ -13,6 +13,8 @@ export default defineConfig({
     environment: 'node',
     // 変更(非依存化 ⑤-2): テストは packages/*/src 配下(core / react)。
     include: ['packages/*/src/**/*.test.{ts,tsx}'],
+    // 追加(Solid 版の試作): packages/solid は自分の vitest.config.ts(Solid の JSX 変換)で回すので、ここでは拾わない。
+    exclude: ['**/node_modules/**', 'packages/solid/**'],
     // 追加(lazy-popups): React 版の jsdom テストで遅延読み込みのポップオーバー部品を先読みします。
     setupFiles: ['./vitest.setup.ts'],
     // 追加(デザインシステムのテーマ): vitest は既定で .css の import を空文字にするので、`?raw` で読む CSS だけは中身を

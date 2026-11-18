@@ -5,7 +5,8 @@
 import { describe, expect, it, vi } from 'vitest';
 import { createKeyboardController, type KeyboardControllerArgs } from './keyboardController';
 import { createInitialGridUiState } from '../model/gridReducer';
-import type { GridUiAction } from '../model/gridActions';
+import { createGridStore } from '../model/gridStore';
+import { gridActions, type GridUiAction } from '../model/gridActions';
 import type { GridColumn, GridGroupRow, RowModel } from '../model/gridTypes.unbound';
 import { ROW_DRAG_HANDLE_COLUMN_KEY } from '../logic/rowReorder';
 
@@ -237,5 +238,73 @@ describe('keyboardController', () => {
     c.update({ ...t.args, uiState: { ...t.args.uiState, activeCell: null }, openContextMenu: closed });
     await c.handleKeyDown({ ...ev('F10'), shiftKey: true });
     expect(closed).toHaveBeenCalledTimes(1);
+  });
+
+  it('getUiState を渡すと、update を挟まずに続けたキー操作もイベントの時点の状態から動く(Solid 版 段階 0-1)', async () => {
+    const many: Row[] = Array.from({ length: 10 }, (_, i) => ({ id: i + 1, name: `r${i}` }));
+    const rowModel: RowModel<Row> = {
+      getRow: (i) => many[i],
+      getRowCount: () => many.length,
+      getSourceIndex: (i) => i,
+      getRowKey: (i) => many[i]?.id ?? i,
+    };
+    const store = createGridStore({ ...createInitialGridUiState(), activeCell: { row: 0, col: 0 } });
+    const live = createKeyboardController<Row>();
+    const base = makeArgs(rowModel).args;
+    const selectEntireGrid = vi.fn(() => {
+      store.dispatch(gridActions.startSelection({ row: 0, col: 0 }));
+      store.dispatch(gridActions.updateSelection({ row: many.length - 1, col: 0 }));
+      store.dispatch(gridActions.endSelection());
+    });
+    // update は 1 回だけ(描き直しが追いつかない間に続けて押した形)。
+    live.update({ ...base, uiState: store.getState(), getUiState: store.getState, dispatch: store.dispatch, selectEntireGrid });
+    await live.handleKeyDown(ev('ArrowDown'));
+    await live.handleKeyDown(ev('ArrowDown'));
+    await live.handleKeyDown(ev('ArrowDown'));
+    expect(store.getState().activeCell).toEqual({ row: 3, col: 0 });
+    // Ctrl+A を 2 回: 1 回目で全体を選び、2 回目は(今の状態が全選択なので)外す。
+    await live.handleKeyDown({ ...ev('a'), ctrlKey: true });
+    expect(selectEntireGrid).toHaveBeenCalledTimes(1);
+    await live.handleKeyDown({ ...ev('a'), ctrlKey: true });
+    expect(selectEntireGrid).toHaveBeenCalledTimes(1);
+    expect(store.getState().selection).toBeNull();
+
+    // getUiState が無いときは今までどおり update で受けた uiState(3 回押しても 1 行)。
+    const stale = createGridStore({ ...createInitialGridUiState(), activeCell: { row: 0, col: 0 } });
+    const legacy = createKeyboardController<Row>();
+    legacy.update({ ...base, uiState: stale.getState(), dispatch: stale.dispatch });
+    await legacy.handleKeyDown(ev('ArrowDown'));
+    await legacy.handleKeyDown(ev('ArrowDown'));
+    await legacy.handleKeyDown(ev('ArrowDown'));
+    expect(stale.getState().activeCell).toEqual({ row: 1, col: 0 });
+  });
+
+  it('描いた時点で編集中なら、store が編集を終えていても同じ keydown は扱わない(custom エディタの確定が上がってきた形)', async () => {
+    const two: Row[] = [
+      { id: 1, name: 'a' },
+      { id: 2, name: 'b' },
+    ];
+    const rowModel: RowModel<Row> = {
+      getRow: (i) => two[i],
+      getRowCount: () => two.length,
+      getSourceIndex: (i) => i,
+      getRowKey: (i) => two[i]?.id ?? i,
+    };
+    // custom エディタが keydown の中で ctx.commit を呼び、store はもう編集を終えて下のセルへ動いた。
+    const store = createGridStore({ ...createInitialGridUiState(), activeCell: { row: 1, col: 0 } });
+    const c = createKeyboardController<Row>();
+    const { args } = makeArgs(rowModel);
+    const rendered = { ...createInitialGridUiState(), activeCell: { row: 0, col: 0 }, editingCell: { row: 0, col: 0 } };
+    c.update({ ...args, uiState: rendered, getUiState: store.getState, dispatch: store.dispatch });
+    const enter = ev('Enter');
+    await c.handleKeyDown(enter);
+    await c.handleKeyDown(ev('Escape'));
+    expect(args.handleCellDoubleClick).not.toHaveBeenCalled();
+    expect(enter.preventDefault).not.toHaveBeenCalled();
+    expect(store.getState().activeCell).toEqual({ row: 1, col: 0 });
+    // 描き直した後(描いた時点も今も編集していない)は扱う。
+    c.update({ ...args, uiState: store.getState(), getUiState: store.getState, dispatch: store.dispatch });
+    await c.handleKeyDown(ev('Enter'));
+    expect(args.handleCellDoubleClick).toHaveBeenCalledTimes(1);
   });
 });
