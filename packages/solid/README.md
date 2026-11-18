@@ -15,13 +15,14 @@ React 版と同じ DOM・class で描くので、React 版の `styles.css` を�
 - セル: `renderCell`・`valueFormatter`・`cellClassName`・`getRowClassName`・メモ(`cellNote`)・入力の検査の印(`validate`)・checkbox のセル
 - 選択とキー操作: core の keyboardController / pointerInteractionsController(範囲選択・行番号・矢印 / Ctrl+矢印 / Home / End /
   PageUp / PageDown / Ctrl+A / Delete / Ctrl+Z / Ctrl+Y、最後の列の Tab でグリッドの外へ)
-- 編集: text のエディタだけ(打ち始め / ダブルクリック / F2 / Enter / Tab / Esc / 外をクリックで確定)、元に戻す
+- 編集: エディタ 6 種(text・複数行の text / number / select / date / checkbox / custom。打ち始め / ダブルクリック / F2 / Enter /
+  Tab / Esc / 外をクリックで確定)、入力の検査の reject とエラーの吹き出し、元に戻す
 - コピー・貼り付け: core の clipboardController(Excel と同じ TSV、範囲いっぱいの貼り付け)
 - 命令的 API: core の gridApi のハンドルをそのまま(`ref` は関数で受ける)
 - 通知: `onActiveCellChange` / `onCellClick` / `onCellDoubleClick` / `onStateChange` / `onSortChange` / `onFiltersChange` / `onScroll` /
   `onColumnsChange` / `onUndoRedoStateChange` / `onHoveredRowChange`
 
-無いもの(段階 1-2 / 1-3): text 以外のエディタ、入力の検査の reject とエラーの吹き出し、行の選択、展開行。段階 2: `/lite` の 21 の機能
+無いもの(段階 1-3): 行の選択、展開行。段階 2: `/lite` の 21 の機能
 (ラベル行・SSRM・行のグループ・合計行・固定行などを含む)。
 
 `renderCell` / `renderHeader` / `renderTopBar` / `renderBottomBar` は、React 版のように描き直しのたびに呼ぶのではなく、Solid の部品と
@@ -48,10 +49,12 @@ pnpm --filter ./packages/solid spike:build  # 大きさを測るためのライ�
 | `hooks/useVirtualizerCore.ts` | `primitives/columnVirtualizer.ts` |
 | `GridShell.tsx`(5,420 行) | `SpreadsheetGrid.tsx`(約 1,370 行) |
 | `view/GridHeaderRow.tsx` / `view/GridBodyLayer.tsx` | 同じ名前(`view/`) |
-| `view/DefaultGridTopBar.tsx` / `DefaultGridBottomBar.tsx` / `RowSelectionCheckbox.tsx` / `editors/CheckboxCell.tsx` | 同じ名前(`view/`) |
+| `view/DefaultGridTopBar.tsx` / `DefaultGridBottomBar.tsx` / `RowSelectionCheckbox.tsx` | 同じ名前(`view/`) |
+| `editors/*`(CellEditorLayer / 6 種のエディタ / CheckboxCell / CellEditorErrorBubble) | 同じ名前(`editors/`) |
+| `hooks/usePortalTokens.ts` / `editors/useTopAlignedInput.ts` | `primitives/portalTokens.ts` / `primitives/topAlignedInput.ts` |
+| (ポップアップの置き場所の props) | `context/portal.ts`(表の root と描く場所) |
 | `hooks/useGridLocaleText.ts`(Context) | `context/localeText.ts` |
 | (React の `useSyncExternalStore`) | `primitives/externalStore.ts`(OS の配色 / 視差効果を減らす設定) |
-| `editors/TextCellEditor.tsx` | `view/TextEditor.tsx` |
 
 ## 試作で分かったこと
 

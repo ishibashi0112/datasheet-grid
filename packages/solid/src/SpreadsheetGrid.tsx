@@ -47,7 +47,6 @@ import { reducedMotionStore } from '@ishibashi0112/spreadsheet-grid-core/interna
 import {
   createLocaleTextResolver,
   DEFAULT_GRID_LOCALE_TEXT,
-  formatLocaleText,
 } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/localeText';
 import {
   resolveSlotMapFromSignature,
@@ -111,8 +110,9 @@ import { createLiveObject } from './primitives/liveObject';
 import { GridHeaderRow } from './view/GridHeaderRow';
 import { GridBodyLayer, type GridBodyRowItem, type GridCellContentContext } from './view/GridBodyLayer';
 import { Overlay, type OverlayRect } from './view/Overlay';
-import { TextEditor } from './view/TextEditor';
-import { CheckboxCell } from './view/CheckboxCell';
+import { CheckboxCell } from './editors/CheckboxCell';
+import { CellEditorLayer, type CellEditorSession } from './editors/CellEditorLayer';
+import { GridPortalContext } from './context/portal';
 import { DefaultGridTopBar } from './view/DefaultGridTopBar';
 import { DefaultGridBottomBar } from './view/DefaultGridBottomBar';
 
@@ -207,6 +207,8 @@ export function SpreadsheetGrid<T extends object>(props: SpreadsheetGridProps<T>
 
   // ── ポップアップの置き場(ツールチップ / エディタのポップアップ。core utils/popupContainer) ──
   const getPopupContainer = () => resolvePopupContainer(gridRootRef.current, props.popupContainer ?? 'auto');
+  // エディタのポップアップへ渡す文脈(トークンを写す元 = シェル、描く場所)。
+  const portalContext = { source: () => gridRootRef.current, container: getPopupContainer };
   onSettled(() => {
     const shell = gridRootRef.current;
     return registerPopupContainer([shell, shell?.closest('.ssg-root')], getPopupContainer);
@@ -1042,6 +1044,32 @@ export function SpreadsheetGrid<T extends object>(props: SpreadsheetGridProps<T>
     return { id: rekeyed ? previous.id + 1 : previous.id, identity };
   });
   const editorSessionId = createMemo(() => editorSession()?.id ?? null);
+  // 編集中のセルの情報(行 / 位置 / 値)。エディタが select の行で決まる候補・開いたときのハイライト・custom の ctx に使う
+  //   (編集中だけ非 null。React 版の GridShell の editorSession と同じ)。
+  const editingSessionInfo = createMemo((): CellEditorSession<T> | null => {
+    const cell = ui().editingCell;
+    if (cell === null) {
+      return null;
+    }
+    const column = orderedColumns()[cell.col];
+    const model = rowModel();
+    const row = model.getRow(cell.row);
+    if (!column || !row) {
+      return null;
+    }
+    return {
+      row,
+      rowIndex: cell.row,
+      sourceRowIndex: model.getSourceIndex(cell.row) ?? cell.row,
+      rowKey: model.getRowKey(cell.row) ?? cell.row,
+      colIndex: cell.col,
+      column: column as unknown as GridColumn<T>,
+      value: getCellValue(row, column),
+    };
+  });
+  // ポップアップ(select の候補の一覧)へ付ける修飾子(テーマ + モーション。React 版の portalClassName)。
+  const portalClassName = () =>
+    [themeClassName(), resolvedMotion() === 'off' ? MOTION_OFF_CLASS_NAME : undefined].filter(Boolean).join(' ') || undefined;
   // renderCell の ctx.setValue: 呼ばれた時点で、描いた行のキーから今の位置を引き直して書く(React 版は描き直しのたびに
   //   描いた時点の rows / rowModel を渡す。Solid 版は中身を作り直さないので、今の値と行のキーで同じ行へ書く)。
   //   行が消えていれば書かない。
@@ -1207,41 +1235,24 @@ export function SpreadsheetGrid<T extends object>(props: SpreadsheetGridProps<T>
             leadingWidth={leadingWidth()}
             baseOffset={vertical().overlayBaseOffset}
           />
-          <Show when={editorRect() !== null ? editorSessionId() : null} keyed>
-            {/* eslint-disable-next-line @typescript-eslint/no-unused-vars -- keyed の Show は引数のある関数で受ける(型の都合)。値はセッションの番号で、変わったらエディタを作り直すためだけに使う */}
-            {(_sessionId) => {
-              const column = () => orderedColumns()[ui().editingCell?.col ?? -1];
-              // 「(列名) を編集」。枠の group と入力欄の両方の名前(React 版と同じ)。
-              const editLabel = () =>
-                formatLocaleText(localeTexts().editCell, { column: column()?.title || column()?.key || '' });
-              return (
-                <div
-                  class={['ssg-cell-editor', slots().cellEditor?.className]}
-                  role="group"
-                  aria-label={editLabel()}
-                  // 編集中のセルが aria-owns でこの枠を指す。
-                  id={cellEditorDomId}
-                  style={{
-                    ...slots().cellEditor?.style,
-                    position: 'absolute',
-                    left: px(leadingWidth() + (editorRect()?.left ?? 0)),
-                    top: px(headerHeight() + (editorRect()?.top ?? 0) - vertical().overlayBaseOffset),
-                    width: px(editorRect()?.width ?? 0),
-                    height: px(editorRect()?.height ?? 0),
-                  }}
-                >
-                  <TextEditor
-                    initialValue={untrack(() => view().editorInitialValue ?? store.getViewState().editorInitialValue ?? '')}
-                    ariaLabel={editLabel()}
-                    align={column()?.align}
-                    enterMove={props.editorEnterMove}
-                    onCommit={(value: unknown, direction?: EditorCommitDirection) => edit.commitEdit(value, direction)}
-                    onCancel={edit.cancelEdit}
-                  />
-                </div>
-              );
-            }}
-          </Show>
+          <CellEditorLayer<T>
+            rect={editorRect()}
+            sessionId={editorSessionId()}
+            headerHeight={headerHeight()}
+            leadingWidth={leadingWidth()}
+            baseOffset={vertical().overlayBaseOffset}
+            initialValue={() => view().editorInitialValue ?? store.getViewState().editorInitialValue ?? ''}
+            session={editingSessionInfo()}
+            themeClassName={portalClassName()}
+            slots={slots()}
+            onCommit={(value: unknown, direction?: EditorCommitDirection) => edit.commitEdit(value, direction)}
+            onCancel={edit.cancelEdit}
+            align={editingSessionInfo()?.column.align}
+            enterMove={props.editorEnterMove}
+            domId={cellEditorDomId}
+            // 上にそろえたセル(auto-height の背の高い行)は機能(autoHeight)なので、段階 1 では常に false(React 版の機能なしと同じ)。
+            alignTop={false}
+          />
           <GridBodyLayer<T>
             pane={pane}
             ownsRowHeader={ownsRowHeader()}
@@ -1298,6 +1309,7 @@ export function SpreadsheetGrid<T extends object>(props: SpreadsheetGridProps<T>
 
   return (
     <GridLocaleTextContext value={localeTexts}>
+      <GridPortalContext value={portalContext}>
       <div
         class={[
           'ssg-root',
@@ -1437,6 +1449,7 @@ export function SpreadsheetGrid<T extends object>(props: SpreadsheetGridProps<T>
         </div>
         {bottomBar()}
       </div>
+      </GridPortalContext>
     </GridLocaleTextContext>
   );
 }
