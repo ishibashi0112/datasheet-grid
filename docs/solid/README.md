@@ -12,9 +12,34 @@ Claude Doc「Solid 2.0 版の試作の報告」)。試作の中身と分かっ�
 | 段階 | 中身 | PR | 公開 |
 | --- | --- | --- | --- |
 | 0 | core へ寄せる整理(React 版の公開 API と見た目は不変)+ 試作の `packages/solid`(非公開) | 1 | React 版は patch / minor に混ぜる |
-| 1 | Solid 版の本体(React の `/lite` の機能なしと同じ範囲: エディタ 6 種・列幅・ツールチップ・行の選択・展開行・ラベル行・SSRM の読み取り と書き戻し・ARIA) | 3〜4 | — |
-| 2 | 20 の機能(`/lite` の部品と同じ名前で) | 3〜4 | — |
+| 1 | Solid 版の本体(React の `/lite` の機能なし = `createSpreadsheetGrid({ features: {} })` と同じ範囲: 見出しとセル・列幅・ソート・ツールチップ・エディタ 6 種・入力の検査・行の選択・展開行・ARIA) | 3 | — |
+| 2 | 21 の機能(`/lite` の部品と同じ名前で。ラベル行・SSRM・行のグループもここ = React 版でも機能のため) | 3〜4 | — |
 | 3 | ハーネス(3 ブラウザ)・`types:check`・`size:check`・ドキュメント・サンプル | 2 | `@ishibashi0112/spreadsheet-grid-solid` 0.x |
+
+## 段階 1 の中身
+
+React 版の機能なしの構成と並べて、同じ props・同じ操作で DOM と通知(on* の呼ばれ方と引数)が同じかを比べるテスト
+(`packages/solid/src/parity/`)で確かめながら進める。
+
+| # | 内容 | 状況 |
+| --- | --- | --- |
+| 1-1 | 見出しとセル: 見出し(renderHeader・並びの印・列幅のつまみ・角)、セル(renderCell・valueFormatter・cellClassName・メモ・入力の検査の印・checkbox のセル・ARIA)、上下のバー、空の表示、テーマ・密度・モーション・classNames、ツールチップ、Tab でグリッドの外へ、通知(onStateChange / onSortChange / onScroll / onCellClick ほか)。共通の部品を core へ(下部バーの文字列 = core `logic/gridBarSummary`、renderHeader の中のボタンの判定 = core `logic/domGuards`)。React 版と並べて比べるテスト | 済み(比べる場面 9 つで DOM と通知が一致。PR を見てもらう) |
+| 1-2 | エディタ 6 種(text / number / select / date / checkbox / custom)・入力の検査(reject)・エラーの吹き出し | まだ |
+| 1-3 | 行の選択(チェックボックス)・展開行・フォーカスの順 | まだ |
+
+### 1-1 で分かったこと
+
+- **中身を作る式が状態を読むと、要素が作り直されて click が落ちる**: Solid は React と違って要素を使い回さない。セルの中身を作る式が
+  アクティブセルやホバーを読んでいる(または素の関数の位置 `() => item().index` が、作り直された描く行の配列の新しいオブジェクトを
+  読んでいる)と、pointerdown のたびに中身の要素が作り直され、pointerup が別の要素に落ちて click が起きない(checkbox のセルが押せ
+  なかった。jsdom の fireEvent.click では見つからず、Chromium の確かめで見つけた)。→ 位置・列は memo で受け、renderCell /
+  renderHeader へ渡す状態(isActive / isSelected / isEditing / readOnly、見出しの width / isFiltered)は読んだときに引く形にした。
+  renderCell は行・値・列・行の位置が変わったときだけ呼び直す(状態は ctx から JSX の中で読めば追従する)。回帰テスト
+  `packages/solid/src/cellContent.test.tsx`(修正を外すと 2 件落ちる)。Solid 版のドキュメント(段階 3)に書く。
+- **renderCell の setValue**: React 版は描き直しのたびに描いた時点の rows / rowModel を渡す(段階 0 の見直しの中-1)。Solid 版は中身を
+  作り直さないので、呼ばれた時点で行のキーから今の位置を引き直して書く(行が消えていれば書かない)。
+- **比べるテストの書き方**: React の onPointerEnter は pointerover から作られ、Solid は pointerenter のリスナーを要素へ直接付けるので、
+  ホバーはブラウザと同じく両方を送る(`ctx.hover`)。差は `PARITY_DUMP=<dir>` で書き出して `diff -u` で見る。
 
 ## 段階 0 の中身
 
