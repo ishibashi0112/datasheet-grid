@@ -2,10 +2,16 @@
 //   キーの割り当ては core logic/editorKeys、複数行の入力欄の大きさと改行は core utils/multilineEditor(どちらも React 版と共用)。
 //   - 編集のセッションごとに作り直されます(呼ぶ側の CellEditorLayer)。初期値は作ったときに 1 回だけ読みます。
 //   - Solid 2.0 では signal への書き込みが次のマイクロタスクまで読めない(setDraft の直後の draft() は前の値)ので、確定する
-//     ときは signal ではなく入力欄の今の値(DOM)を読みます。下書きの signal は複数行の入力欄の高さを合わせ直す合図にだけ使います。
+//     ときは signal ではなく入力欄の今の値(DOM)を読みます。下書きの signal は複数行の入力欄の高さを合わせ直す合図と、
+//     1 行 ⇄ 複数行の入れ替え(列の editor の差し替え)で打ちかけを引き継ぐのに使います。
+//   - 入力欄の value は作ったときに 1 回だけ入れます(JSX の value は素の変数で渡す)。式で渡すと、同じ要素の別の属性
+//     (aria-invalid・class など)が変わるたびに Solid が value を書き直し、打ちかけが消える(type="number" の「-」だけなど、
+//     入力欄の value が '' のままの打ちかけも消える)。React 版は値が違うときだけ書く。
+//   - エディタが外れるとき(取り消し・ペインの移動・グリッドの破棄)にブラウザが出す blur では確定しません(React 版は DOM を
+//     書き換える間のイベントを止めるので届かない)。
 //   - 入力の検査の NG(commit が rejected)ではエラーの吹き出しを出して編集を続けます。フォーカスが外れたときの rejected は
 //     取り消しにします(フォーカスが去ったのに開き続ける事故の防止)。
-import { Show, createRenderEffect, createSignal, onSettled, untrack } from 'solid-js';
+import { Show, createRenderEffect, createSignal, onCleanup, onSettled, untrack } from 'solid-js';
 import type { JSX } from '@solidjs/web';
 import type {
   EditorCommitDirection,
@@ -21,7 +27,7 @@ import {
   resolveMultilinePadding,
 } from '@ishibashi0112/spreadsheet-grid-core/internal/utils/multilineEditor';
 import { createTopAlignedInput } from '../primitives/topAlignedInput';
-import { CellEditorErrorBubble } from './CellEditorErrorBubble';
+import { CellEditorError } from './CellEditorErrorBubble';
 
 export type EditorCommit = (value: unknown, direction?: EditorCommitDirection) => EditorCommitResult | void;
 
@@ -86,7 +92,14 @@ export function TextCellEditor(props: TextCellEditorProps) {
     element.setSelectionRange(end, end);
   });
 
+  let disposed = false;
+  onCleanup(() => {
+    disposed = true;
+  });
   const commitOnBlur = (value: string) => {
+    if (disposed) {
+      return;
+    }
     const result = props.onCommit(value);
     if (result && result.status === 'rejected') {
       props.onCancel();
@@ -110,46 +123,42 @@ export function TextCellEditor(props: TextCellEditorProps) {
     handleInput(next.value);
   };
 
-  // 文言が変わったら作り直して測り直します(React 版の key={message} と同じ)。
-  const errorBubble = () => (
-    <Show when={error()} keyed>
-      {(message) => <CellEditorErrorBubble message={message} />}
-    </Show>
-  );
-
-  return (
-    <Show
-      when={props.multiline ?? false}
-      fallback={
-        <>
-          <input
-            ref={setInput}
-            type="text"
-            value={draft()}
-            onInput={(event) => handleInput(event.currentTarget.value)}
-            onKeyDown={(event) =>
-              handleEditorKeyDown(event, {
-                value: event.currentTarget.value,
-                onCommit: props.onCommit,
-                onCancel: props.onCancel,
-                onRejected: setError,
-                enterMove: props.enterMove,
-              })
-            }
-            onBlur={(event) => commitOnBlur(event.currentTarget.value)}
-            aria-label={props.ariaLabel}
-            aria-invalid={error() !== null ? 'true' : undefined}
-            class={['ssg-cell-editor-input', { 'ssg-cell-editor-input--invalid': error() !== null }]}
-            style={props.align ? { 'text-align': props.align } : undefined}
-          />
-          {errorBubble()}
-        </>
-      }
-    >
+  // 入力欄はその時点の下書きで作ります(value は素の変数 = 作ったときに 1 回だけ入れる)。
+  const renderInput = () => {
+    const startValue = untrack(draft);
+    return (
+      <>
+        <input
+          ref={setInput}
+          type="text"
+          value={startValue}
+          onInput={(event) => handleInput(event.currentTarget.value)}
+          onKeyDown={(event) =>
+            handleEditorKeyDown(event, {
+              value: event.currentTarget.value,
+              onCommit: props.onCommit,
+              onCancel: props.onCancel,
+              onRejected: setError,
+              enterMove: props.enterMove,
+            })
+          }
+          onBlur={(event) => commitOnBlur(event.currentTarget.value)}
+          aria-label={props.ariaLabel}
+          aria-invalid={error() !== null ? 'true' : undefined}
+          class={['ssg-cell-editor-input', { 'ssg-cell-editor-input--invalid': error() !== null }]}
+          style={props.align ? { 'text-align': props.align } : undefined}
+        />
+        <CellEditorError message={error()} />
+      </>
+    );
+  };
+  const renderTextarea = () => {
+    const startValue = untrack(draft);
+    return (
       <div class="ssg-cell-editor-multiline">
         <textarea
           ref={setTextarea}
-          value={draft()}
+          value={startValue}
           rows={1}
           onInput={(event) => handleInput(event.currentTarget.value)}
           onKeyDown={(event) =>
@@ -180,8 +189,14 @@ export function TextCellEditor(props: TextCellEditorProps) {
             } as JSX.CSSProperties
           }
         />
-        {errorBubble()}
+        <CellEditorError message={error()} />
       </div>
+    );
+  };
+
+  return (
+    <Show when={props.multiline ?? false} fallback={renderInput()}>
+      {renderTextarea()}
     </Show>
   );
 }

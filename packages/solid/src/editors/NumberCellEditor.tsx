@@ -3,7 +3,7 @@
 //   文字列のまま(列のパーサが数値 / null へ。core logic/editorValues)。「-」「+」「.」で打ち始めたときと、数値に直せない
 //   初期値のときは type="text"(inputmode="decimal")で開きます(core logic/editorStart。セッションの途中で type は変えない)。
 //   入力の検査の NG とフォーカスが外れたときの扱いは text エディタと同じです。
-import { Show, createSignal, onSettled, untrack } from 'solid-js';
+import { createSignal, onCleanup, onSettled, untrack } from 'solid-js';
 import type { EditorEnterMove } from '@ishibashi0112/spreadsheet-grid-core';
 import { handleEditorKeyDown } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/editorKeys';
 import {
@@ -11,7 +11,7 @@ import {
   resolveNumberEditorStart,
 } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/editorStart';
 import { createTopAlignedInput } from '../primitives/topAlignedInput';
-import { CellEditorErrorBubble } from './CellEditorErrorBubble';
+import { CellEditorError } from './CellEditorErrorBubble';
 import type { EditorCommit } from './TextCellEditor';
 
 type NumberCellEditorProps = {
@@ -34,9 +34,14 @@ export function NumberCellEditor(props: NumberCellEditorProps) {
   createTopAlignedInput(input, () => props.alignTop ?? false, () => props.cellHeight ?? 0);
   const start = resolveNumberEditorStart(untrack(() => props.initialValue));
   const textMode = start.textMode;
-  // 入力欄の値は下書きの signal で持ちます(同じ要素の別の属性が変わったとき = エラーの印 で、Solid が value を書き直すので、
-  //   開いたときの文字のままにすると打った文字が消える)。確定するときは入力欄の今の値(DOM)を読みます。
-  const [draft, setDraft] = createSignal(start.text);
+  // value は素の変数で渡して作ったときに 1 回だけ入れます(式で渡すと、エラーの印などの描き直しで Solid が書き直し、打ちかけが
+  //   消える。type="number" の「-」「1e」だけの打ちかけは入力欄の value が '' のまま。text エディタの説明を参照)。
+  const startText = start.text;
+  // エディタが外れるときのブラウザの blur では確定しません(text エディタと同じ)。
+  let disposed = false;
+  onCleanup(() => {
+    disposed = true;
+  });
 
   // 描き終わった後にフォーカスします(type="number" は setSelectionRange に対応しないので、text のときだけ打った文字の後ろへ)。
   onSettled(() => {
@@ -57,15 +62,12 @@ export function NumberCellEditor(props: NumberCellEditorProps) {
         ref={setInput}
         type={textMode ? 'text' : 'number'}
         inputmode={textMode ? 'decimal' : undefined}
-        value={draft()}
+        value={startText}
         min={textMode ? undefined : props.min}
         max={textMode ? undefined : props.max}
         step={textMode ? undefined : props.step}
         // 再入力でエラーの表示を外します。
-        onInput={(event) => {
-          setDraft(event.currentTarget.value);
-          setError(null);
-        }}
+        onInput={() => setError(null)}
         onKeyDown={(event) =>
           handleEditorKeyDown(event, {
             value: resolveNumberEditorCommitValue(event.currentTarget.value, textMode),
@@ -76,6 +78,9 @@ export function NumberCellEditor(props: NumberCellEditorProps) {
           })
         }
         onBlur={(event) => {
+          if (disposed) {
+            return;
+          }
           const result = props.onCommit(resolveNumberEditorCommitValue(event.currentTarget.value, textMode));
           if (result && result.status === 'rejected') {
             props.onCancel();
@@ -86,9 +91,7 @@ export function NumberCellEditor(props: NumberCellEditorProps) {
         class={['ssg-cell-editor-input', { 'ssg-cell-editor-input--invalid': error() !== null }]}
         style={props.align ? { 'text-align': props.align } : undefined}
       />
-      <Show when={error()} keyed>
-        {(message) => <CellEditorErrorBubble message={message} />}
-      </Show>
+      <CellEditorError message={error()} />
     </>
   );
 }

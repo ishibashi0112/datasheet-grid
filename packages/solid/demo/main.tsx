@@ -1,5 +1,5 @@
 // 試作のデモ: 10,000 行の編集できる在庫表(左右の固定列 + 横に長い列で縦横の仮想化を確かめる)。
-import { createSignal, onSettled } from 'solid-js';
+import { Show, createSignal, onSettled } from 'solid-js';
 import { render } from '@solidjs/web';
 import '../../react/src/styles.css';
 import { SpreadsheetGrid, type GridColumn, type SpreadsheetGridHandle } from '../src';
@@ -34,7 +34,7 @@ const createRows = (count: number): Item[] =>
     extra: Object.fromEntries(EXTRA_KEYS.map((key, k) => [key, (i * (k + 3)) % 1000])),
   }));
 
-const columns: GridColumn<Item>[] = [
+const baseColumns: GridColumn<Item>[] = [
   { key: 'id', title: 'ID', width: 72, pinned: 'left', editable: false },
   { key: 'name', title: '品名', width: 160 },
   {
@@ -101,6 +101,13 @@ const columns: GridColumn<Item>[] = [
 function App() {
   const [rows, setRows] = createSignal(createRows(10_000));
   const [active, setActive] = createSignal('');
+  const [dark, setDark] = createSignal(false);
+  const [pinName, setPinName] = createSignal(false);
+  const [mounted, setMounted] = createSignal(true);
+  const [changes, setChanges] = createSignal(0);
+  // 「品名を左へ固定」で編集中の列のペインを変える(エディタが外れるときの blur で確定しないことの確かめ)。
+  const columns = () =>
+    pinName() ? baseColumns.map((column) => (column.key === 'name' ? { ...column, pinned: 'left' as const } : column)) : baseColumns;
   let handle: SpreadsheetGridHandle<Item> | undefined;
   return (
     <div style={{ padding: '16px', 'font-family': 'system-ui, sans-serif' }}>
@@ -112,21 +119,37 @@ function App() {
         <button type="button" data-testid="undo" onClick={() => handle?.undo()}>
           元に戻す
         </button>
+        <button type="button" data-testid="theme" onClick={() => setDark((v) => !v)}>
+          ライト / ダーク
+        </button>
+        <button type="button" data-testid="pin-name" onClick={() => setPinName((v) => !v)}>
+          品名を左へ固定
+        </button>
+        <button type="button" data-testid="unmount" onClick={() => setMounted((v) => !v)}>
+          グリッドを外す / 戻す
+        </button>
         <span data-testid="active">{active()}</span>
+        <span data-testid="changes">{changes()}</span>
       </div>
-      <SpreadsheetGrid<Item>
-        ref={(h) => {
-          handle = h;
-          (window as unknown as { gridHandle: unknown }).gridHandle = h;
-        }}
-        rows={rows()}
-        columns={columns}
-        rowKeyGetter={(row) => row.id}
-        onRowsChange={setRows}
-        height={520}
-        ariaLabel="在庫表"
-        onActiveCellChange={(cell) => setActive(cell ? `${cell.columnKey} / ${String(cell.rowKey)}` : '')}
-      />
+      <Show when={mounted()}>
+        <SpreadsheetGrid<Item>
+          ref={(h) => {
+            handle = h;
+            (window as unknown as { gridHandle: unknown }).gridHandle = h;
+          }}
+          rows={rows()}
+          columns={columns()}
+          theme={dark() ? 'dark' : 'light'}
+          rowKeyGetter={(row) => row.id}
+          onRowsChange={(next) => {
+            setChanges((count) => count + 1);
+            setRows(next);
+          }}
+          height={520}
+          ariaLabel="在庫表"
+          onActiveCellChange={(cell) => setActive(cell ? `${cell.columnKey} / ${String(cell.rowKey)}` : '')}
+        />
+      </Show>
     </div>
   );
 }

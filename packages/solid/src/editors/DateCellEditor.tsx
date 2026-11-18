@@ -3,7 +3,7 @@
 //   セルを選んで文字から打ち始めたときは type="text" で開いて打った文字を残し、確定するときに日付として読みます(読めなければ
 //   「日付で入力してください」を出して編集を続ける。フォーカスが外れたときは取り消し。core logic/editorStart)。日付の入力欄は
 //   中身の幅より狭くせず、右のペインの下や表の外へはみ出すときは左へずらします(core utils/editorVisibleBounds)。
-import { Show, createSignal, onSettled, untrack } from 'solid-js';
+import { createSignal, onCleanup, onSettled, untrack } from 'solid-js';
 import type { EditorCommitDirection, EditorCommitResult, EditorEnterMove } from '@ishibashi0112/spreadsheet-grid-core';
 import { handleEditorKeyDown } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/editorKeys';
 import { readTypedDateCommitValue } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/editorStart';
@@ -11,7 +11,7 @@ import { resolveShiftIntoView } from '@ishibashi0112/spreadsheet-grid-core/inter
 import { useGridLocaleText } from '../context/localeText';
 import { createTopAlignedInput } from '../primitives/topAlignedInput';
 import { px } from '../primitives/style';
-import { CellEditorErrorBubble } from './CellEditorErrorBubble';
+import { CellEditorError } from './CellEditorErrorBubble';
 import type { EditorCommit } from './TextCellEditor';
 
 type DateCellEditorProps = {
@@ -37,8 +37,14 @@ export function DateCellEditor(props: DateCellEditorProps) {
   // 文字から打ち始めたセッションは type="text"(セッションの途中で type は変えない)。
   const initialText = untrack(() => props.initialText);
   const textMode = initialText !== undefined && initialText !== '';
-  // 入力欄の値は下書きの signal で持ちます(Solid は同じ要素の描き直しで value を書き直すので、打った文字が消えないように)。
-  const [draft, setDraft] = createSignal(textMode ? (initialText ?? '') : untrack(() => props.initialValue));
+  // value は素の変数で渡して作ったときに 1 回だけ入れます(式で渡すと描き直しのたびに Solid が書き直し、欄が欠けた日付の
+  //   打ちかけ = value が '' が消える。text エディタの説明を参照)。
+  const startValue = textMode ? (initialText ?? '') : untrack(() => props.initialValue);
+  // エディタが外れるときのブラウザの blur では確定しません(text エディタと同じ)。
+  let disposed = false;
+  onCleanup(() => {
+    disposed = true;
+  });
 
   // 描き終わった後にフォーカスし(type="date" は setSelectionRange に対応しないので、text のときだけ打った文字の後ろへ)、
   //   見えている範囲の外へはみ出す分だけ左へずらします。
@@ -69,12 +75,9 @@ export function DateCellEditor(props: DateCellEditorProps) {
       <input
         ref={setInput}
         type={textMode ? 'text' : 'date'}
-        value={draft()}
+        value={startValue}
         // 再入力でエラーの表示を外します。
-        onInput={(event) => {
-          setDraft(event.currentTarget.value);
-          setError(null);
-        }}
+        onInput={() => setError(null)}
         onKeyDown={(event) =>
           handleEditorKeyDown(event, {
             value: event.currentTarget.value,
@@ -87,6 +90,9 @@ export function DateCellEditor(props: DateCellEditorProps) {
           })
         }
         onBlur={(event) => {
+          if (disposed) {
+            return;
+          }
           const result = commitDraft(event.currentTarget.value);
           if (result && result.status === 'rejected') {
             props.onCancel();
@@ -104,9 +110,7 @@ export function DateCellEditor(props: DateCellEditorProps) {
             : undefined
         }
       />
-      <Show when={error()} keyed>
-        {(message) => <CellEditorErrorBubble message={message} />}
-      </Show>
+      <CellEditorError message={error()} />
     </>
   );
 }

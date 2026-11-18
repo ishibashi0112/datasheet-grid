@@ -34,7 +34,7 @@ React 版と同じ DOM・class で描くので、React 版の `styles.css` を�
 ## 使い方
 
 ```sh
-pnpm --filter ./packages/solid dev          # デモ(10,000 行 × 37 列)
+pnpm --filter ./packages/solid dev          # デモ(10,000 行 × 39 列。エディタ 6 種・テーマ・列の固定・グリッドを外すボタン)
 pnpm --filter ./packages/solid test         # jsdom のテスト(Solid の JSX 変換の vitest 設定。React 版と並べて比べるテストも)
 pnpm --filter ./packages/solid typecheck
 pnpm --filter ./packages/solid spike:build  # 大きさを測るためのライブラリビルド(dist/)

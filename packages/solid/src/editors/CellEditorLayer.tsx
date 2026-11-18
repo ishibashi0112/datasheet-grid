@@ -91,7 +91,7 @@ export function CellEditorLayer<T>(props: CellEditorLayerProps<T>) {
     return row !== undefined ? current.options(row) : [];
   });
 
-  const renderEditor = (type: EditorKind): JSX.Element => {
+  const renderEditor = (type: EditorKind, sessionId: number): JSX.Element => {
     const common = {
       get ariaLabel() {
         return editLabel();
@@ -158,8 +158,12 @@ export function CellEditorLayer<T>(props: CellEditorLayerProps<T>) {
         if (current?.type !== 'custom' || untrack(() => props.session) === null) {
           return null;
         }
-        const session = () => props.session;
-        // ctx の行・位置・値は読んだときに引きます(JSX の中で読めば追従する。編集中に上へ行が足されたときなど)。
+        // ctx の行・位置・値は読んだときに引きます(JSX の中で読めば追従する。編集中に上へ行が足されたときなど)。セッションが
+        //   終わった後(別のセルの編集が始まった後など)は、そのセッションの最後の値のまま(サーバーで検査してから commit する作りで、
+        //   await の後に読んだ ctx.row が別のセルの行を指していた。React 版は描いた時点の値を渡す)。
+        const session = createMemo((previous: CellEditorSession<T> | null | undefined) =>
+          previous === undefined || props.sessionId === sessionId ? props.session : previous,
+        );
         const context = {
           get row() {
             return session()?.row as T;
@@ -216,8 +220,7 @@ export function CellEditorLayer<T>(props: CellEditorLayerProps<T>) {
 
   return (
     <Show when={props.rect !== null ? props.sessionId : null} keyed>
-      {/* eslint-disable-next-line @typescript-eslint/no-unused-vars -- keyed の Show は引数のある関数で受ける(型の都合)。値はセッションの番号で、変わったらエディタを作り直すためだけに使う */}
-      {(_sessionId) => (
+      {(sessionId) => (
         <div
           class={['ssg-cell-editor', props.slots.cellEditor?.className]}
           // エディタは行の外に重ねて描くので、どの列を編集しているかを名前で伝えます。
@@ -235,7 +238,7 @@ export function CellEditorLayer<T>(props: CellEditorLayerProps<T>) {
           }}
         >
           <Show when={kind()} keyed>
-            {(type) => renderEditor(type)}
+            {(type) => renderEditor(type, sessionId)}
           </Show>
         </div>
       )}

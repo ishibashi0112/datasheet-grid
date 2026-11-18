@@ -432,6 +432,44 @@ describe('React 版と同じエディタ', () => {
     });
   });
 
+  it('編集中に列の editor を 1 行 → 複数行へ差し替えても打ちかけを引き継ぐ・列を固定してペインが変わると開き直す', async () => {
+    const multilineName = baseColumns.map((column) =>
+      column.key === 'name' ? { ...column, editor: { type: 'text', multiline: true } } : column,
+    );
+    const pinnedName = baseColumns.map((column) => (column.key === 'name' ? { ...column, pinned: 'left' } : column));
+    await expectParity({
+      props: props(),
+      watch: ['onRowsChange'],
+      steps: async (ctx) => {
+        await doubleClick(ctx, 1, 'name');
+        await typeInto(ctx, '打ちかけ');
+        await ctx.setProps({ columns: multilineName });
+        ctx.snapshot('複数行へ');
+        await ctx.setProps({ columns: baseColumns });
+        await pressInShell(ctx, 'Escape');
+        await doubleClick(ctx, 2, 'name');
+        await typeInto(ctx, '固定の前');
+        await ctx.setProps({ columns: pinnedName });
+        ctx.snapshot('左へ固定');
+        await pressInEditor(ctx, 'Enter');
+        ctx.snapshot('確定');
+      },
+    });
+  });
+
+  it('エラーの文言が空(localeText で空にした)でも吹き出しを出す', async () => {
+    await expectParity({
+      props: props({ localeText: { enterDate: '' } }),
+      watch: ['onRowsChange'],
+      steps: async (ctx) => {
+        await click(ctx, 1, 'due');
+        await pressInShell(ctx, 'a');
+        await pressInEditor(ctx, 'Enter');
+        ctx.snapshot('空の吹き出し');
+      },
+    });
+  });
+
   it('editorEnterMove: right / none', async () => {
     await expectParity({
       props: props({ editorEnterMove: 'right' }),

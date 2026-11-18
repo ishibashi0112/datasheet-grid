@@ -9,7 +9,21 @@
 //   - ハイライトが変わるたびに名前の先頭を見せます(細い列で入力欄が末尾までスクロールしていた)。
 //   - Solid 2.0 は signal への書き込みが次のマイクロタスクまで読めないので、イベントの中で続けて読むハイライトと変換中の文字は
 //     手元の変数にも持ちます(同じタスクの中で続けて届いたキーが古い値から動かないように)。
-import { For, Show, createEffect, createRenderEffect, createSignal, createUniqueId, onSettled, untrack } from 'solid-js';
+//   - 入力欄の value は JSX の式では結ばず、今の値と違うときだけ書きます(React 版の制御された入力欄と同じ。式で結ぶと同じ要素の
+//     描き直しのたびに同じ値でも書き直し、IME の変換中にも書いてしまう)。
+//   - エディタが外れるときのブラウザの blur では取り消しません(text エディタと同じ。列を固定してペインが変わったときは、新しい
+//     ペインで開き直す = React 版と同じ)。
+import {
+  For,
+  Show,
+  createEffect,
+  createRenderEffect,
+  createSignal,
+  createUniqueId,
+  onCleanup,
+  onSettled,
+  untrack,
+} from 'solid-js';
 import { Portal } from '@solidjs/web';
 import type { EditorCommitDirection, EditorEnterMove, GridSelectEditorOption } from '@ishibashi0112/spreadsheet-grid-core';
 import {
@@ -29,7 +43,7 @@ import { useGridPortal } from '../context/portal';
 import { createPortalTokens } from '../primitives/portalTokens';
 import { createTopAlignedInput } from '../primitives/topAlignedInput';
 import { px } from '../primitives/style';
-import { CellEditorErrorBubble } from './CellEditorErrorBubble';
+import { CellEditorError } from './CellEditorErrorBubble';
 import type { EditorCommit } from './TextCellEditor';
 
 type SelectCellEditorProps = {
@@ -118,8 +132,6 @@ export function SelectCellEditor(props: SelectCellEditorProps) {
       }
     },
   );
-  // 表で決まったトークン(--ssg-*)を候補の一覧へ写します(グリッドの外なので継承で届かない)。
-  createPortalTokens(list, () => props.themeClassName, placement);
   // 描く場所は開いている間だけ決めます(ダイアログを後から開いたときも、開いた時点の場所になる)。
   const mount = () => (placement() !== null ? portal.container() : null);
 
@@ -178,6 +190,11 @@ export function SelectCellEditor(props: SelectCellEditorProps) {
 
   const highlightedOption = () => props.options[highlight()];
   const shownText = () => highlightedOption()?.label ?? String(props.value ?? '');
+  const initialShownText = untrack(shownText);
+  let disposed = false;
+  onCleanup(() => {
+    disposed = true;
+  });
 
   const view = (
     <>
@@ -185,7 +202,7 @@ export function SelectCellEditor(props: SelectCellEditorProps) {
         ref={setInput}
         type="text"
         inputmode="none"
-        value={composing() ?? shownText()}
+        value={initialShownText}
         onInput={(event) => {
           // 変換中だけ文字を受けます(それ以外の変更 = Backspace など は受けず、名前のまま)。
           if (event.isComposing) {
@@ -206,7 +223,11 @@ export function SelectCellEditor(props: SelectCellEditorProps) {
           }
         }}
         onKeyDown={handleKeyDown}
-        onBlur={() => props.onCancel()}
+        onBlur={() => {
+          if (!disposed) {
+            props.onCancel();
+          }
+        }}
         // 選ぶだけの combobox(WAI-ARIA の select-only combobox)。候補の一覧を aria-controls で指し、ハイライト中の候補を
         //   aria-activedescendant で読ませます。
         role="combobox"
@@ -222,9 +243,7 @@ export function SelectCellEditor(props: SelectCellEditorProps) {
         ]}
         style={props.align ? { 'text-align': props.align } : undefined}
       />
-      <Show when={error()} keyed>
-        {(message) => <CellEditorErrorBubble message={message} />}
-      </Show>
+      <CellEditorError message={error()} />
       <Show when={mount()}>
         {(container) => (
           <Portal mount={container()}>
@@ -249,20 +268,22 @@ export function SelectCellEditor(props: SelectCellEditorProps) {
                 when={props.options.length > 0}
                 fallback={<div class="ssg-select-editor-empty">{texts().noOptions}</div>}
               >
-                <For each={props.options}>
+                {/* 候補の要素は位置で使い回します(行で決まる候補の関数が新しい配列を返しても作り直さない。React 版の
+                    key={`${value}-${index}`} に近い) */}
+                <For each={props.options} keyed={false}>
                   {(option, index) => (
                     <div
-                      id={`${listId}-${index()}`}
+                      id={`${listId}-${index}`}
                       role="option"
-                      aria-selected={index() === highlight() ? 'true' : 'false'}
+                      aria-selected={index === highlight() ? 'true' : 'false'}
                       class={[
                         'ssg-select-editor-option',
-                        { 'ssg-select-editor-option--highlighted': index() === highlight() },
+                        { 'ssg-select-editor-option--highlighted': index === highlight() },
                       ]}
-                      onClick={() => commitValue(option.value)}
-                      onPointerEnter={() => updateHighlight(index())}
+                      onClick={() => commitValue(option().value)}
+                      onPointerEnter={() => updateHighlight(index)}
                     >
-                      {option.label}
+                      {option().label}
                     </div>
                   )}
                 </For>
@@ -272,6 +293,18 @@ export function SelectCellEditor(props: SelectCellEditorProps) {
         )}
       </Show>
     </>
+  );
+  // 表で決まったトークン(--ssg-*)を候補の一覧へ写します(グリッドの外なので継承で届かない)。一覧の class(テーマの修飾子)を
+  //   書く描画の後に測るよう、JSX を作った後に作ります(先に作ると、開いたままテーマを変えたときに古い class のまま測っていた)。
+  createPortalTokens(list, () => props.themeClassName, placement);
+  // 入力欄の値はハイライト中の名前(変換中はその文字)。今の値と違うときだけ書きます。
+  createRenderEffect(
+    () => [input(), composing() ?? shownText()] as const,
+    ([element, text]) => {
+      if (element && element.value !== text) {
+        element.value = text;
+      }
+    },
   );
   // 名前の先頭を見せます(細い列で入力欄が末尾までスクロールしていた)。変換中は触りません。入力欄の値を書く描画の後に
   //   動くよう、JSX を作った後に作ります(同じ更新の中では作った順に動く)。
