@@ -15,7 +15,6 @@ import { Show, createEffect, createMemo, createUniqueId, onCleanup, onSettled, u
 import type { JSX } from '@solidjs/web';
 import type {
   CellCoord,
-  CellRenderState,
   EditorCommitDirection,
   GridRowKey,
   SpreadsheetGridDerivedSummary,
@@ -48,6 +47,7 @@ import { reducedMotionStore } from '@ishibashi0112/spreadsheet-grid-core/interna
 import {
   createLocaleTextResolver,
   DEFAULT_GRID_LOCALE_TEXT,
+  formatLocaleText,
 } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/localeText';
 import {
   resolveSlotMapFromSignature,
@@ -107,8 +107,9 @@ import { createGridViewSetters } from './primitives/viewSetters';
 import { connectController } from './primitives/controller';
 import { createColumnVirtualizer } from './primitives/columnVirtualizer';
 import { px, toSolidStyle } from './primitives/style';
+import { createLiveObject } from './primitives/liveObject';
 import { GridHeaderRow } from './view/GridHeaderRow';
-import { GridBodyLayer, type GridBodyRowItem } from './view/GridBodyLayer';
+import { GridBodyLayer, type GridBodyRowItem, type GridCellContentContext } from './view/GridBodyLayer';
 import { Overlay, type OverlayRect } from './view/Overlay';
 import { TextEditor } from './view/TextEditor';
 import { CheckboxCell } from './view/CheckboxCell';
@@ -122,6 +123,27 @@ const noopRenderDetailToggleCell = () => null;
 const noop = () => {};
 
 type MutableRef<V> = { current: V };
+
+type EditorIdentity = { row: number; col: number; rowKey: GridRowKey | undefined; columnKey: string | undefined };
+type EditorSession = { id: number; identity: EditorIdentity };
+
+// 利用側のバーへ渡す文脈のキー(SpreadsheetGridSlotContext のすべて。足りないと型で分かる)。
+const SLOT_CONTEXT_KEYS = Object.keys({
+  rows: true,
+  columns: true,
+  visibleColumns: true,
+  filteredRows: true,
+  globalFilterText: true,
+  setGlobalFilterText: true,
+  columnFilterValues: true,
+  sortState: true,
+  activeCell: true,
+  selection: true,
+  derivedSummary: true,
+  globalFilterStatus: true,
+  globalFilterProgress: true,
+  selectionAggregates: true,
+} satisfies Record<keyof SpreadsheetGridSlotContext<unknown>, true>) as (keyof SpreadsheetGridSlotContext<unknown>)[];
 
 export function SpreadsheetGrid<T extends object>(props: SpreadsheetGridProps<T>): JSX.Element {
   // ── props(既定値つきの読み取り。本体では読まず、関数 / memo の中で読む。既定値は React 版の GridShell と同じ) ──
@@ -938,44 +960,88 @@ export function SpreadsheetGrid<T extends object>(props: SpreadsheetGridProps<T>
       selectionAggregates: null,
     };
   });
+  // 利用側のバー(renderTopBar / renderBottomBar)へ渡す文脈。値は読んだときに引く形にして、バーの関数は 1 回だけ呼ぶ
+  //   (状態が変わるたびに呼び直すとバーの要素が作り直され、バーの入力欄のフォーカスと打ちかけの文字が消える。React は
+  //   要素を使い回す)。値は JSX の中や関数の中で読めば追従する(Solid の props と同じ)。
+  const liveSlotContext = createLiveObject(SLOT_CONTEXT_KEYS, slotContext);
+  //   関数は memo で受ける(親が props を広げ直しても、同じ関数ならバーを作り直さない)。
+  const renderTopBarFn = createMemo(() => props.renderTopBar);
+  const renderBottomBarFn = createMemo(() => props.renderBottomBar);
+  const customTopBar = createMemo(() => {
+    const render = renderTopBarFn();
+    return render ? untrack(() => render(liveSlotContext)) : undefined;
+  });
+  const customBottomBar = createMemo(() => {
+    const render = renderBottomBarFn();
+    return render ? untrack(() => render(liveSlotContext)) : undefined;
+  });
   const showTopBarSummary = () => props.showTopBarSummary ?? true;
-  const topBar = () => {
-    if (!(props.showTopBar ?? true)) {
-      return null;
-    }
-    if (props.renderTopBar) {
-      return props.renderTopBar(slotContext());
-    }
-    return showTopBarSummary() ? (
-      <DefaultGridTopBar
-        slot={slots().toolbar}
-        derivedSummary={derivedSummary()}
-        showSummary={showTopBarSummary()}
-        showCounts={props.showTopBarCounts ?? true}
-      />
-    ) : null;
-  };
-  const bottomBar = () => {
-    if (!(props.showBottomBar ?? true)) {
-      return null;
-    }
-    if (props.renderBottomBar) {
-      return props.renderBottomBar(slotContext());
-    }
-    return (
-      <DefaultGridBottomBar
-        slot={slots().statusBar}
-        derivedSummary={derivedSummary()}
-        showCounts={props.showBottomBarCounts ?? true}
-      />
-    );
-  };
+  // 上下のバー(React 版と同じ選び方: 出さない → 利用側のバー → 既定のバー)。条件は Show で分け、条件が変わったときだけ
+  //   作り直す(props が広げ直されても既定のバーを作り直さない)。
+  const topBar = () => (
+    <Show when={props.showTopBar ?? true}>
+      <Show
+        when={renderTopBarFn() !== undefined}
+        fallback={
+          <Show when={showTopBarSummary()}>
+            <DefaultGridTopBar
+              slot={slots().toolbar}
+              derivedSummary={derivedSummary()}
+              showSummary={showTopBarSummary()}
+              showCounts={props.showTopBarCounts ?? true}
+            />
+          </Show>
+        }
+      >
+        {customTopBar()}
+      </Show>
+    </Show>
+  );
+  const bottomBar = () => (
+    <Show when={props.showBottomBar ?? true}>
+      <Show
+        when={renderBottomBarFn() !== undefined}
+        fallback={
+          <DefaultGridBottomBar
+            slot={slots().statusBar}
+            derivedSummary={derivedSummary()}
+            showCounts={props.showBottomBarCounts ?? true}
+          />
+        }
+      >
+        {customBottomBar()}
+      </Show>
+    </Show>
+  );
 
   // ── 描画の材料 ──
-  const editingKey = createMemo(() => {
+  // 編集のセッション(エディタを作り直す単位。React 版の CellEditorLayer と同じ決め方): 編集が始まったとき、または
+  //   位置と行 / 列のキーが両方変わったとき(閉じずに別のセルの編集が始まった)に新しくする。編集中に rows が変わって行の
+  //   位置だけが動いたとき(上に行が足された / 並びが変わった)は同じセッションのまま(打ちかけの文字を残す)。
+  const editorSession = createMemo((previous?: EditorSession | null): EditorSession | null => {
     const cell = ui().editingCell;
-    return cell ? `${cell.row}:${cell.col}` : null;
+    if (cell === null) {
+      return null;
+    }
+    const identity: EditorIdentity = {
+      row: cell.row,
+      col: cell.col,
+      rowKey: rowModel().getRowKey(cell.row),
+      columnKey: orderedColumns()[cell.col]?.key,
+    };
+    if (!previous) {
+      return { id: 1, identity };
+    }
+    const moved = identity.row !== previous.identity.row || identity.col !== previous.identity.col;
+    if (!moved) {
+      // 同じ位置でキーだけ変わった(rows の差し替えの直後で、位置の付け替えの前)は前のキーのまま待つ。
+      return previous;
+    }
+    const rekeyed =
+      !Object.is(identity.rowKey, previous.identity.rowKey) || identity.columnKey !== previous.identity.columnKey;
+    return { id: rekeyed ? previous.id + 1 : previous.id, identity };
   });
+  const editorSessionId = createMemo(() => editorSession()?.id ?? null);
   // renderCell の ctx.setValue: 呼ばれた時点で、描いた行のキーから今の位置を引き直して書く(React 版は描き直しのたびに
   //   描いた時点の rows / rowModel を渡す。Solid 版は中身を作り直さないので、今の値と行のキーで同じ行へ書く)。
   //   行が消えていれば書かない。
@@ -997,41 +1063,40 @@ export function SpreadsheetGrid<T extends object>(props: SpreadsheetGridProps<T>
       nextValue,
     );
   };
-  // セルの中身。行 / 列 / 行の位置が変わったときだけ作り直す(アクティブ / 選択などの状態は state から読んだときに引く)。
+  // セルの中身。行と列が変わったときだけ作り直す(行の位置とアクティブ / 選択などの状態は cell から読んだときに引く)。
   //   行の並び(rowModel)や rows そのものは読まない(1 セルの編集で表のすべての renderCell を作り直さないように)。
-  const renderCellContent = (
-    row: T,
-    rowIndex: number,
-    column: GridColumn<T>,
-    colIndex: number,
-    state: CellRenderState,
-  ): JSX.Element => {
+  //   renderCell の本体で位置や状態を読めば、それが変わったときにその列のセルだけ作り直す(React で毎回呼ぶのと同じ結果)。
+  const renderCellContent = (row: T, column: GridColumn<T>, cell: GridCellContentContext): JSX.Element => {
     const unbound = column as unknown as UnboundGridColumn<T>;
     const value = getCellValue(row, unbound);
     if (column.renderCell) {
-      const model = untrack(rowModel);
-      const rowKey = model.getRowKey(rowIndex) ?? rowIndex;
       return column.renderCell({
         row,
-        rowIndex,
-        sourceRowIndex: model.getSourceIndex(rowIndex) ?? rowIndex,
-        rowKey,
-        colIndex,
+        get rowIndex() {
+          return cell.rowIndex;
+        },
+        get sourceRowIndex() {
+          return cell.sourceRowIndex;
+        },
+        rowKey: cell.rowKey,
+        get colIndex() {
+          return cell.colIndex;
+        },
         value,
         column,
         get isActive() {
-          return state.isActive;
+          return cell.isActive;
         },
         get isSelected() {
-          return state.isSelected;
+          return cell.isSelected;
         },
         get isEditing() {
-          return state.isEditing;
+          return cell.isEditing;
         },
         get readOnly() {
-          return state.readOnly;
+          return cell.readOnly;
         },
-        setValue: (nextValue: unknown) => writeRenderedCellValue(rowKey, unbound, nextValue),
+        setValue: (nextValue: unknown) => writeRenderedCellValue(cell.rowKey, unbound, nextValue),
       });
     }
     if (column.editor?.type === 'checkbox') {
@@ -1041,8 +1106,8 @@ export function SpreadsheetGrid<T extends object>(props: SpreadsheetGridProps<T>
           slot={slots().checkbox}
           label={column.title || column.key}
           checked={isCheckboxChecked(value, editor)}
-          readOnly={state.readOnly}
-          onToggle={() => cells.toggleCheckbox({ row: rowIndex, col: colIndex })}
+          readOnly={cell.readOnly}
+          onToggle={() => cells.toggleCheckbox({ row: cell.rowIndex, col: cell.colIndex })}
         />
       );
     }
@@ -1142,15 +1207,22 @@ export function SpreadsheetGrid<T extends object>(props: SpreadsheetGridProps<T>
             leadingWidth={leadingWidth()}
             baseOffset={vertical().overlayBaseOffset}
           />
-          <Show when={editorRect() !== null && editingKey()} keyed>
-            {(key) => {
+          <Show when={editorRect() !== null ? editorSessionId() : null} keyed>
+            {/* eslint-disable-next-line @typescript-eslint/no-unused-vars -- keyed の Show は引数のある関数で受ける(型の都合)。値はセッションの番号で、変わったらエディタを作り直すためだけに使う */}
+            {(_sessionId) => {
               const column = () => orderedColumns()[ui().editingCell?.col ?? -1];
+              // 「(列名) を編集」。枠の group と入力欄の両方の名前(React 版と同じ)。
+              const editLabel = () =>
+                formatLocaleText(localeTexts().editCell, { column: column()?.title || column()?.key || '' });
               return (
                 <div
-                  class="ssg-cell-editor"
+                  class={['ssg-cell-editor', slots().cellEditor?.className]}
                   role="group"
-                  data-editing-key={key}
+                  aria-label={editLabel()}
+                  // 編集中のセルが aria-owns でこの枠を指す。
+                  id={cellEditorDomId}
                   style={{
+                    ...slots().cellEditor?.style,
                     position: 'absolute',
                     left: px(leadingWidth() + (editorRect()?.left ?? 0)),
                     top: px(headerHeight() + (editorRect()?.top ?? 0) - vertical().overlayBaseOffset),
@@ -1160,7 +1232,7 @@ export function SpreadsheetGrid<T extends object>(props: SpreadsheetGridProps<T>
                 >
                   <TextEditor
                     initialValue={untrack(() => view().editorInitialValue ?? store.getViewState().editorInitialValue ?? '')}
-                    ariaLabel={column()?.title || column()?.key}
+                    ariaLabel={editLabel()}
                     align={column()?.align}
                     enterMove={props.editorEnterMove}
                     onCommit={(value: unknown, direction?: EditorCommitDirection) => edit.commitEdit(value, direction)}

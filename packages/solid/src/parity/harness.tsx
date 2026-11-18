@@ -41,6 +41,9 @@ export type ParityContext = {
   cell: (row: number, key: string, pane?: 'left' | 'center' | 'right') => HTMLElement;
   header: (key: string) => HTMLElement;
   handle: () => ParityHandle;
+  // 要素を覚えておき、以後の snapshot ごとに「同じ要素のままか」を書き出す(React は要素を使い回すので、Solid が作り直すと
+  //   差になる)。find は今の DOM から探す関数。
+  track: (name: string, find: () => Element | null) => void;
   // ポインタを要素の上へ(ブラウザと同じく pointerover と pointerenter を送る。React は over から enter を作り、
   //   Solid は enter のリスナーを要素へ直接付けるため)。
   hover: (target: Element) => void;
@@ -114,6 +117,30 @@ const describeFocus = (container: HTMLElement): string => {
   const classes = Array.from(active.classList).sort().join('.');
   const columnKey = active.getAttribute('data-ssg-col-key');
   return `<${active.tagName.toLowerCase()}${classes ? `.${classes}` : ''}${columnKey ? ` col=${columnKey}` : ''}>`;
+};
+
+// id を指す属性の参照先が document に無いもの(参照切れ)。React 版には無いので、Solid 版にあれば差になる。
+const ID_REFERENCE_SELECTOR = '[aria-activedescendant], [aria-owns], [aria-controls], [aria-labelledby], [aria-describedby]';
+const ID_REFERENCE_NAMES = ['aria-activedescendant', 'aria-owns', 'aria-controls', 'aria-labelledby', 'aria-describedby'];
+const findDanglingIdReferences = (roots: readonly Element[]): string[] => {
+  const result: string[] = [];
+  for (const root of roots) {
+    const elements = [root, ...Array.from(root.querySelectorAll(ID_REFERENCE_SELECTOR))];
+    for (const element of elements) {
+      for (const name of ID_REFERENCE_NAMES) {
+        const value = element.getAttribute(name);
+        if (value === null) {
+          continue;
+        }
+        for (const id of value.split(/\s+/).filter(Boolean)) {
+          if (document.getElementById(id) === null) {
+            result.push(`参照切れ: <${element.tagName.toLowerCase()} class="${element.className}"> ${name}`);
+          }
+        }
+      }
+    }
+  }
+  return result;
 };
 
 const collectPortals = (container: HTMLElement): Element[] =>
@@ -233,6 +260,7 @@ async function runOne(framework: Framework, scenario: ParityScenario): Promise<P
     return element;
   };
 
+  const tracked = new Map<string, { find: () => Element | null; element: Element | null }>();
   const ctx: ParityContext = {
     framework,
     container,
@@ -248,10 +276,16 @@ async function runOne(framework: Framework, scenario: ParityScenario): Promise<P
       await settle(waitMs);
     },
     snapshot: (label) => {
-      snapshots.push({
-        label,
-        dom: `${normalizeDom([container, ...collectPortals(container)])}\nフォーカス: ${describeFocus(container)}`,
-      });
+      const roots = [container, ...collectPortals(container)];
+      const lines = [normalizeDom(roots), `フォーカス: ${describeFocus(container)}`, ...findDanglingIdReferences(roots)];
+      for (const [name, entry] of tracked) {
+        const now = entry.find();
+        lines.push(`要素 ${name}: ${now === null ? 'なし' : now === entry.element ? '同じ' : '作り直し'}`);
+      }
+      snapshots.push({ label, dom: lines.join('\n') });
+    },
+    track: (name, find) => {
+      tracked.set(name, { find, element: find() });
     },
     shell: () => query('.ssg-shell'),
     cell: (row, key, pane) =>

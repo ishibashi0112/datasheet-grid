@@ -328,4 +328,104 @@ describe('React 版と同じ DOM と通知', () => {
       },
     });
   });
+
+  it('自作のバー(入力欄)と、描いた後の props の差し替え', async () => {
+    // React 版は createElement で、Solid 版は JSX で同じ DOM のバーを作る。入力欄に打ってもセルを押しても、バーの要素は
+    //   作り直さない(フォーカスと打ちかけの文字が残る)。
+    const reactBar = async (kind: string) => {
+      const { createElement } = await import('react');
+      return (ctx: { derivedSummary: { activeCellLabel: string; rowSummaryText: string }; setGlobalFilterText: (v: string) => void }) =>
+        createElement(
+          'div',
+          { className: `my-${kind}` },
+          createElement('input', {
+            className: 'bar-input',
+            'aria-label': kind,
+            onInput: (event: { currentTarget: HTMLInputElement }) => ctx.setGlobalFilterText(event.currentTarget.value),
+          }),
+          createElement('span', { className: 'bar-label' }, `${ctx.derivedSummary.activeCellLabel} / ${ctx.derivedSummary.rowSummaryText}`),
+        );
+    };
+    const solidBar =
+      (kind: string) =>
+      (ctx: { derivedSummary: { activeCellLabel: string; rowSummaryText: string }; setGlobalFilterText: (v: string) => void }) => (
+        <div class={`my-${kind}`}>
+          <input class="bar-input" aria-label={kind} onInput={(event) => ctx.setGlobalFilterText(event.currentTarget.value)} />
+          <span class="bar-label">{`${ctx.derivedSummary.activeCellLabel} / ${ctx.derivedSummary.rowSummaryText}`}</span>
+        </div>
+      );
+    const bars = { react: { top: await reactBar('top'), bottom: await reactBar('bottom') } };
+    await expectParity({
+      props: (framework) => ({
+        rows: makeRows(20),
+        columns,
+        rowKeyGetter: (row: Row) => row.id,
+        height: 300,
+        renderTopBar: framework === 'react' ? bars.react.top : solidBar('top'),
+        renderBottomBar: framework === 'react' ? bars.react.bottom : solidBar('bottom'),
+      }),
+      watch: ['onStateChange'],
+      steps: async (ctx) => {
+        const input = () => ctx.container.querySelector<HTMLInputElement>('.my-top .bar-input');
+        ctx.track('上のバーの入力欄', input);
+        ctx.track('下のバー', () => ctx.container.querySelector('.my-bottom'));
+        await ctx.act(() => {
+          const element = input();
+          element?.focus();
+          if (element) {
+            element.value = 'ab';
+            element.dispatchEvent(new Event('input', { bubbles: true }));
+          }
+        });
+        ctx.snapshot('入力欄に打つ');
+        await ctx.act(() => {
+          const target = ctx.cell(3, 'name');
+          fireEvent.pointerDown(target, { button: 0, pointerId: 1, isPrimary: true });
+          fireEvent.pointerUp(target, { button: 0, pointerId: 1, isPrimary: true });
+        });
+        ctx.snapshot('セルを押す');
+        await ctx.setProps({ localeText: { rowCount: 'rows {shown} of {total}' }, theme: 'auto', density: 'compact' });
+        ctx.snapshot('文言とテーマを差し替え');
+        await ctx.setProps({ rows: makeRows(25), showBottomBar: false });
+        ctx.snapshot('行を増やし、下のバーを消す');
+      },
+    });
+  });
+
+  it('右の固定列と、横に仮想化される多くの列', async () => {
+    const wide = [
+      { key: 'id', title: 'ID', width: 60, pinned: 'left' },
+      ...Array.from({ length: 30 }, (_, i) => ({ key: `c${i}`, title: `列 ${i}`, width: 100 })),
+      { key: 'total', title: '合計', width: 90, pinned: 'right', align: 'right' },
+    ];
+    const wideRows = Array.from({ length: 40 }, (_, r) => ({
+      id: r + 1,
+      total: r * 3,
+      ...Object.fromEntries(Array.from({ length: 30 }, (_, i) => [`c${i}`, `${r}-${i}`])),
+    }));
+    await expectParity({
+      props: () => ({ rows: wideRows, columns: wide, rowKeyGetter: (row: { id: number }) => row.id, height: 300 }),
+      watch: ['onActiveCellChange', 'onScroll'],
+      steps: async (ctx) => {
+        ctx.snapshot('最初');
+        await ctx.act(() => {
+          const target = ctx.cell(2, 'total');
+          fireEvent.pointerDown(target, { button: 0, pointerId: 1, isPrimary: true });
+          fireEvent.pointerUp(target, { button: 0, pointerId: 1, isPrimary: true });
+        });
+        await ctx.act(() => {
+          fireEvent.keyDown(ctx.shell(), { key: 'ArrowLeft' });
+        });
+        ctx.snapshot('右の固定列から左へ');
+        const scroller = ctx.container.querySelector<HTMLElement>('.ssg-scroll-container');
+        await ctx.act(() => {
+          if (scroller) {
+            scroller.scrollLeft = 1500;
+            scroller.dispatchEvent(new Event('scroll'));
+          }
+        }, 120);
+        ctx.snapshot('横へスクロール');
+      },
+    });
+  });
 });

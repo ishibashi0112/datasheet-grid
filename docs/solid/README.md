@@ -23,7 +23,7 @@ React 版の機能なしの構成と並べて、同じ props・同じ操作で D
 
 | # | 内容 | 状況 |
 | --- | --- | --- |
-| 1-1 | 見出しとセル: 見出し(renderHeader・並びの印・列幅のつまみ・角)、セル(renderCell・valueFormatter・cellClassName・メモ・入力の検査の印・checkbox のセル・ARIA)、上下のバー、空の表示、テーマ・密度・モーション・classNames、ツールチップ、Tab でグリッドの外へ、通知(onStateChange / onSortChange / onScroll / onCellClick ほか)。共通の部品を core へ(下部バーの文字列 = core `logic/gridBarSummary`、renderHeader の中のボタンの判定 = core `logic/domGuards`)。React 版と並べて比べるテスト | 済み(比べる場面 9 つで DOM と通知が一致。PR を見てもらう) |
+| 1-1 | 見出しとセル: 見出し(renderHeader・並びの印・列幅のつまみ・角)、セル(renderCell・valueFormatter・cellClassName・メモ・入力の検査の印・checkbox のセル・ARIA)、上下のバー、空の表示、テーマ・密度・モーション・classNames、ツールチップ、Tab でグリッドの外へ、通知(onStateChange / onSortChange / onScroll / onCellClick ほか)。共通の部品を core へ(下部バーの文字列 = core `logic/gridBarSummary`、renderHeader の中のボタンの判定 = core `logic/domGuards`)。React 版と並べて比べるテスト | 済み(比べる場面 11 で DOM・フォーカス・要素の使い回し・id の参照・通知が一致。別視点のレビューの指摘も直した。PR を見てもらう) |
 | 1-2 | エディタ 6 種(text / number / select / date / checkbox / custom)・入力の検査(reject)・エラーの吹き出し | まだ |
 | 1-3 | 行の選択(チェックボックス)・展開行・フォーカスの順 | まだ |
 
@@ -38,6 +38,22 @@ React 版の機能なしの構成と並べて、同じ props・同じ操作で D
   `packages/solid/src/cellContent.test.tsx`(修正を外すと 2 件落ちる)。Solid 版のドキュメント(段階 3)に書く。
 - **renderCell の setValue**: React 版は描き直しのたびに描いた時点の rows / rowModel を渡す(段階 0 の見直しの中-1)。Solid 版は中身を
   作り直さないので、呼ばれた時点で行のキーから今の位置を引き直して書く(行が消えていれば書かない)。
+- **別視点のレビュー(1-1 の差分を、結論を渡さずに読んでもらった)**: 高 2・中 1・低 5。
+  - 高-A: `renderTopBar` / `renderBottomBar` の自作のバーを、状態が変わるたびに呼び直して作り直していた(バーの入力欄に 1 文字
+    打つとフォーカスが外れる)。→ バーの関数は 1 回だけ呼び、文脈(slotContext)は読んだときに引く形(`primitives/liveObject.ts`)。
+    関数は memo で受けて、親が props を広げ直しても同じ関数なら作り直さない。既定のバーも Show で分けて作り直さない。
+  - 高-B: エディタを位置(行:列)で作り直していたので、編集中に上へ行が足される / 並びが変わると打ちかけの文字が消えた。
+    → React 版の CellEditorLayer と同じ決め方(編集の開始か、位置と行 / 列のキーが両方変わったときだけ新しいエディタ)。
+  - 中-C: エディタの枠に id が無く、編集中のセルの `aria-owns` が参照切れ。枠と入力欄の名前(「(列名) を編集」)、
+    `classNames.cellEditor` も無かった。→ 直した。エディタの中身(複数行・number / select / date / custom)は 1-2 で React 版と
+    同じ DOM にする。
+  - 低: 並べ替えで行の位置が変わるたびに renderCell の中身を作り直していた → 位置も読んだときに引く形に(行と列が変わった
+    ときだけ作り直す)。`manualSorting` などの props はまだ受けない(足すときに行の並びへ渡す)。機能が無いときの開発時の
+    警告は段階 2(機能を足すとき)。Escape の伝わり方と `onCellClick` の `event.currentTarget` は React と同じだった
+    (`shellBehavior.test.tsx` で確認)。ref に null が来ない(ハンドルは変わらないので実害なし)。
+  - 比べるテストを強めた: 要素を作り直していないか(`ctx.track`)、id を指す属性の参照切れ、自作のバーと描いた後の props の
+    差し替え、右の固定列と横に仮想化される多くの列の場面を足した。回帰テスト `shellBehavior.test.tsx`(エディタのセッション
+    を位置で作り直すように戻すと落ちる)。
 - **比べるテストの書き方**: React の onPointerEnter は pointerover から作られ、Solid は pointerenter のリスナーを要素へ直接付けるので、
   ホバーはブラウザと同じく両方を送る(`ctx.hover`)。差は `PARITY_DUMP=<dir>` で書き出して `diff -u` で見る。
 

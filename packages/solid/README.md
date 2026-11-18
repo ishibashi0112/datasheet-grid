@@ -24,8 +24,11 @@ React 版と同じ DOM・class で描くので、React 版の `styles.css` を�
 無いもの(段階 1-2 / 1-3): text 以外のエディタ、入力の検査の reject とエラーの吹き出し、行の選択、展開行。段階 2: `/lite` の 21 の機能
 (ラベル行・SSRM・行のグループ・合計行・固定行などを含む)。
 
-`renderCell` / `renderHeader` は Solid の部品と同じく、行・値・列・位置が変わったときだけ呼び直します(アクティブセルや選択が変わる
-たびには呼びません)。`ctx.isActive` などの状態は JSX の中で読めば追従します。
+`renderCell` / `renderHeader` / `renderTopBar` / `renderBottomBar` は、React 版のように描き直しのたびに呼ぶのではなく、Solid の部品と
+同じく必要なときだけ呼びます: `renderCell` は行(と値)や列が変わったとき、`renderHeader` は列が変わったとき、バーは関数が変わった
+ときだけ。位置(`rowIndex` など)・状態(`isActive` など)・バーの文脈(`derivedSummary` など)は読んだときに引くので、JSX の中で
+読めば追従します(本体で読むと、それが変わったときに呼び直します)。要素を作り直さないので、中のボタンや入力欄のクリックと
+フォーカスが保たれます。
 
 ## 使い方
 

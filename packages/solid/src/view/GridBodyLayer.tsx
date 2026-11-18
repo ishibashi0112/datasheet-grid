@@ -4,7 +4,7 @@
 //   行は rowKey、セルは列の key で対応させます(React 版の key と同じ。並びが変わっても同じ要素が新しい位置へ動くので、
 //   animateRows の transition が効く)。
 //   Solid は部品を描き直さない(細かく signal で更新する)ので、React 版の memo / 行プリミティブへの畳み込みは要らない。
-import { For, Show, createMemo } from 'solid-js';
+import { For, Show, createMemo, untrack } from 'solid-js';
 import type { JSX } from '@solidjs/web';
 import type {
   CellCoord,
@@ -31,6 +31,15 @@ import { RowSelectionCheckbox } from './RowSelectionCheckbox';
 import type { GridPaneKind } from './GridHeaderRow';
 
 // 描く行(core の縦のレイアウトの virtualRows のうち描くもの + 対応に使う rowKey)。
+// セルの中身へ渡す位置と状態。どれも読んだときに引く(中身は行・列が変わったときだけ作り直す。位置や状態を読んだ式だけが
+//   追従する)。rowKey はこのセルの行のキー(行はキーで対応づけるので変わらない)。
+export type GridCellContentContext = CellRenderState & {
+  readonly rowIndex: number;
+  readonly colIndex: number;
+  readonly sourceRowIndex: number;
+  readonly rowKey: GridRowKey;
+};
+
 const NO_SELECTED_COLUMNS: readonly [number, number] = [-1, -1];
 
 export type GridBodyRowItem = {
@@ -66,7 +75,7 @@ type GridBodyLayerProps<T> = {
   slots: GridResolvedSlots;
   activeCellDomId: string;
   cellEditorDomId: string;
-  renderCellContent: (row: T, rowIndex: number, column: GridColumn<T>, colIndex: number, state: CellRenderState) => JSX.Element;
+  renderCellContent: (row: T, column: GridColumn<T>, cell: GridCellContentContext) => JSX.Element;
   onRowHeaderPointerDown: (rowIndex: number, event: PointerEvent) => void;
   onRowHeaderPointerEnter: (rowIndex: number, event: PointerEvent) => void;
   onRowHeaderPointerLeave: (rowIndex: number) => void;
@@ -208,10 +217,22 @@ export function GridBodyLayer<T>(props: GridBodyLayerProps<T>) {
                           ),
                       );
                       const value = () => getCellValue(currentRow(), unbound());
-                      // セルの中身へ渡す操作の状態は、読んだときに引く形にする(中身を作る式が状態を読まないように)。
+                      // セルの中身へ渡す位置と操作の状態は、読んだときに引く形にする(中身を作る式が読まないように)。
                       //   クリックの pointerdown でアクティブセルが変わるたびに中身を作り直すと、pointerup が別の要素に落ちて
-                      //   click が起きない(チェックボックスのセルや renderCell のボタンが押せない)。React は同じ要素を使い回す。
-                      const cellState: CellRenderState = {
+                      //   click が起きない(チェックボックスのセルや renderCell のボタンが押せない)。並べ替えで行の位置が
+                      //   変わるたびに作り直すと、renderCell の中の入力欄のフォーカスが外れる。React は同じ要素を使い回す。
+                      const cellRowKey = untrack(rowKey);
+                      const cellState: GridCellContentContext = {
+                        get rowIndex() {
+                          return rowIndex();
+                        },
+                        get colIndex() {
+                          return colIndex();
+                        },
+                        get sourceRowIndex() {
+                          return sourceRowIndex();
+                        },
+                        rowKey: cellRowKey,
                         get isActive() {
                           return isActive();
                         },
@@ -317,7 +338,7 @@ export function GridBodyLayer<T>(props: GridBodyLayerProps<T>) {
                             'z-index': isActive() ? 3 : 1,
                           }}
                         >
-                          {props.renderCellContent(currentRow(), rowIndex(), column(), colIndex(), cellState)}
+                          {props.renderCellContent(currentRow(), column(), cellState)}
                         </div>
                       );
                     }}
