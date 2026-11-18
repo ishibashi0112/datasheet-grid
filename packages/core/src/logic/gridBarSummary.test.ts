@@ -1,12 +1,12 @@
-// B: gridBarHelpers の表示テキスト / 選択統計テスト(純関数・node)。
+// B: gridBarSummary(旧 React 版 view/gridBarHelpers)の表示テキスト / 選択統計テスト(純関数・node)。
 //   本番コードは無改修。ツールバー / ステータスバーが見せる文字列(A1 整形・件数・
 //   フィルター/ソート要約)と getGridSelectionStats の cell/row/col 分岐を固定します。
-import { DEFAULT_GRID_LOCALE_TEXT } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/localeText';
+import { DEFAULT_GRID_LOCALE_TEXT } from './localeText';
 import { describe, it, expect } from 'vitest';
-import type { GridColumn, GridSelection } from '../model/gridTypes';
-import { DETAIL_TOGGLE_COLUMN_KEY } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/detailRow';
-import { ROW_DRAG_HANDLE_COLUMN_KEY } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/rowReorder';
-import { GROUP_AUTO_COLUMN_KEY } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/grouping';
+import type { GridColumn, GridSelection } from '../model/gridTypes.unbound';
+import { DETAIL_TOGGLE_COLUMN_KEY } from './detailRow';
+import { ROW_DRAG_HANDLE_COLUMN_KEY } from './rowReorder';
+import { GROUP_AUTO_COLUMN_KEY } from './grouping';
 import {
   buildGridDerivedSummary,
   createDataColumnNamer,
@@ -19,7 +19,7 @@ import {
   formatGridSelectionStatsLabel,
   formatGridSortSummary,
   getGridSelectionStats,
-} from './gridBarHelpers';
+} from './gridBarSummary';
 
 type Row = { id: number };
 
