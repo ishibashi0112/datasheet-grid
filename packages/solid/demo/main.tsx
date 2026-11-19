@@ -139,6 +139,7 @@ function App() {
   const [scrollHint, setScrollHint] = createSignal(false);
   const [highlight, setHighlight] = createSignal(false);
   const [cross, setCross] = createSignal(false);
+  const [find, setFind] = createSignal('');
   // 「品名を左へ固定」で編集中の列のペインを変える(エディタが外れるときの blur で確定しないことの確かめ)。
   const columns = () =>
     pinName() ? baseColumns.map((column) => (column.key === 'name' ? { ...column, pinned: 'left' as const } : column)) : baseColumns;
@@ -180,6 +181,10 @@ function App() {
         <button type="button" data-testid="cross" onClick={() => setCross((v) => !v)}>
           クロスヘア
         </button>
+        <button type="button" data-testid="open-find" onClick={() => handle?.openFind('品目 12')}>
+          検索を開く
+        </button>
+        <span data-testid="find">{find()}</span>
         <span data-testid="active">{active()}</span>
         <span data-testid="changes">{changes()}</span>
         <span data-testid="selected">{selected()}</span>
@@ -214,6 +219,9 @@ function App() {
           //   コピー範囲の点線(showCopyRange)は既定でオン。
           highlightChanges={highlight()}
           hoverHighlight={cross() ? 'cross' : 'row'}
+          // セル内検索: グリッドにフォーカスがあるときの Ctrl / ⌘ + F か「検索を開く」(openFind)。
+          find
+          onFindChange={(params) => setFind(`${params.open ? 'open' : 'closed'}:${params.query}:${params.currentIndex ?? '-'}/${params.matchCount}`)}
           ariaLabel="在庫表"
           onActiveCellChange={(cell) => setActive(cell ? `${cell.columnKey} / ${String(cell.rowKey)}` : '')}
           enableRowSelection

@@ -26,6 +26,7 @@ import { normalizeCellNote, resolveCellTooltipText } from '@ishibashi0112/spread
 import { resolveSlotProps } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/slotProps';
 import { formatLocaleText } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/localeText';
 import type { ConditionalFormatStatsMap } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/conditionalFormat';
+import type { FindIndex, FindRange } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/find';
 import type { SolidGridFeatures } from '../features/types';
 import type { GridColumn, GridResolvedSlots, SolidGridTypes, SpreadsheetGridProps } from '../model/gridTypes';
 import { useGridLocaleText } from '../context/localeText';
@@ -41,6 +42,9 @@ export type GridCellContentContext = CellRenderState & {
   readonly colIndex: number;
   readonly sourceRowIndex: number;
   readonly rowKey: GridRowKey;
+  // セル内検索のこのセルのヒット(無ければ undefined)と、この行にカレントのヒットがあればその番号(無ければ null)。
+  readonly findRanges: readonly FindRange[] | undefined;
+  readonly findCurrentIndex: number | null;
 };
 
 const NO_SELECTED_COLUMNS: readonly [number, number] = [-1, -1];
@@ -71,6 +75,9 @@ type GridBodyLayerProps<T> = {
   // 条件付き書式の機能(無ければ conditionalFormat を指定した列も素の表示)と、列ごとの min / max。
   conditionalFormat: SolidGridFeatures['conditionalFormat'];
   conditionalFormatStats: ConditionalFormatStatsMap;
+  // セル内検索のヒット(rowIndex → colIndex → 範囲。検索の機能が無い / 閉じているときは空)とカレントのヒットの番号。
+  findIndex: FindIndex;
+  findCurrentIndex: number | null;
   labelViewIndexes?: ArrayLike<number> | undefined;
   ariaRowOffset: number;
   activeCell: CellCoord | null;
@@ -137,6 +144,22 @@ export function GridBodyLayer<T>(props: GridBodyLayerProps<T>) {
               const selectedColStart = () => selectedColRange()[0];
               const selectedColEnd = () => selectedColRange()[1];
               const activeCol = createMemo(() => (props.activeCell?.row === rowIndex() ? props.activeCell.col : -1));
+              // セル内検索: この行のヒットと、この行にカレントのヒットがあればその番号(無ければ null)。どちらも行ごとの memo に
+              //   して、セルは行の値だけを読みます(ヒットの表やカレントの番号をセルごとに読むと、1 回の検索に数千の購読が付く)。
+              const rowFindHits = createMemo(() => props.findIndex.get(rowIndex()));
+              const rowFindCurrent = createMemo((): number | null => {
+                const hits = rowFindHits();
+                const current = hits ? props.findCurrentIndex : null;
+                if (!hits || current === null) {
+                  return null;
+                }
+                for (const ranges of hits.values()) {
+                  if (ranges.some((range) => range.matchIndex === current)) {
+                    return current;
+                  }
+                }
+                return null;
+              });
               const editingCol = createMemo(() => (props.editingCell?.row === rowIndex() ? props.editingCell.col : -1));
               const isHovered = createMemo(() => props.hoveredRowIndex === rowIndex());
               const rowSlot = createMemo(() =>
@@ -231,6 +254,7 @@ export function GridBodyLayer<T>(props: GridBodyLayerProps<T>) {
                           ),
                       );
                       const value = () => getCellValue(currentRow(), unbound());
+                      const findRanges = createMemo(() => rowFindHits()?.get(colIndex()));
                       // セルの中身へ渡す位置と操作の状態は、読んだときに引く形にする(中身を作る式が読まないように)。
                       //   クリックの pointerdown でアクティブセルが変わるたびに中身を作り直すと、pointerup が別の要素に落ちて
                       //   click が起きない(チェックボックスのセルや renderCell のボタンが押せない)。並べ替えで行の位置が
@@ -247,6 +271,12 @@ export function GridBodyLayer<T>(props: GridBodyLayerProps<T>) {
                           return sourceRowIndex();
                         },
                         rowKey: cellRowKey,
+                        get findRanges() {
+                          return findRanges();
+                        },
+                        get findCurrentIndex() {
+                          return rowFindCurrent();
+                        },
                         get isActive() {
                           return isActive();
                         },

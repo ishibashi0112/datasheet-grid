@@ -25,6 +25,8 @@ import type { createSelectionAggregates } from '../primitives/selectionAggregate
 import type { GridScrollHint } from '../view/GridScrollHint';
 import type { ColumnHoverOverlay, CopyRangeOverlay } from '../view/CopyRangeOverlay';
 import type { resolveScrollHintOptions } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/scrollHint';
+import type { splitTextByFindRanges } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/find';
+import type { GridFindBar } from '../view/GridFindBar';
 
 // 機能だけが使う文言の既定(core の logic/localeText<機能>.ts の表)。シェルが本体の既定に重ねて部品へ渡します(React 版と同じ)。
 type FeatureLocaleDefaults = { localeText?: Readonly<Partial<GridLocaleText>> | undefined };
@@ -74,6 +76,14 @@ export type SolidGridFeatures = {
         CopyRangeOverlay: typeof CopyRangeOverlay;
         ColumnHoverOverlay: typeof ColumnHoverOverlay;
       })
+    | undefined;
+  // セル内検索: 検索のコントローラ(core)+ 右上の検索バーの部品 + ヒットを分ける純関数(既定のセルの <mark>)。
+  find?:
+    | (NonNullable<GridCoreFeatures['find']> &
+        FeatureLocaleDefaults & {
+          FindBar: typeof GridFindBar;
+          splitTextByFindRanges: typeof splitTextByFindRanges;
+        })
     | undefined;
 };
 

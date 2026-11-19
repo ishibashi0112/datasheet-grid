@@ -405,6 +405,7 @@ export function GridShell<T extends object>(props: SpreadsheetGridProps<T>, feat
   // スクロール位置インジケーター(機能 features/scrollHint。無い構成では常に null = ネイティブのスクロールバー)。表示行数が
   //   minRows 未満のあいだは待機(React 版と同じ)。
   const scrollHintFeature = features.scrollHint;
+  const findFeature = features.find;
   const resolvedScrollHint = createMemo(() =>
     scrollHintFeature ? scrollHintFeature.resolveScrollHintOptions<T, SolidGridTypes>(props.scrollHint) : null,
   );
@@ -937,6 +938,37 @@ export function GridShell<T extends object>(props: SpreadsheetGridProps<T>, feat
     return resolvePageTargetRow(vertical().rowMetrics, fromRow, direction, pageHeight);
   };
 
+  // ── セル内検索(機能 features/find) ──
+  //   実体は engine.find(core controllers/findController。走査は時間分割)。スナップショットを signal で受け、既定のセルの
+  //   描画でヒットを <mark> にし、右上に検索バーを出します。Ctrl / ⌘ + F はキー操作のコントローラ経由。機能セットに find が
+  //   無ければ prop は何もせず(Ctrl / ⌘ + F も横取りしない)、engine.find は何もしない代役(常に閉じたまま)です(React 版と同じ)。
+  const findEnabled = createMemo(() => props.find !== false && props.find !== undefined && findFeature !== undefined);
+  const findOptions = createMemo(() => (typeof props.find === 'object' ? props.find : null));
+  const findShortcut = createMemo(() => findEnabled() && (findOptions()?.shortcut ?? true));
+  const findSnapshot = createExternalStoreSignal(engine.find);
+  const FindBar = findFeature?.FindBar;
+  // 本体の行が読むヒットの表とカレントの番号(どちらも値だけの memo。開閉や件数だけの変化では行へ伝えない)。
+  const findIndex = createMemo(() => findSnapshot().index);
+  const findCurrentIndex = createMemo(() => findSnapshot().currentIndex);
+  connectController(engine.find, () => ({
+    enabled: findEnabled(),
+    rowModel: rowModel(),
+    columns: orderedColumns(),
+    caseSensitive: findOptions()?.caseSensitive ?? false,
+    // 条件付き書式の機能が無ければチップもデータバーも描かれないので、値の文字を探す(React 版 1.0.2 / QB-1)。
+    conditionalFormat: conditionalFormatFeature !== undefined,
+    // カレントのヒットへ: クリックと同じ 1 セルの選択 + 見える位置へのスクロール(命令的 API と同じ経路)。
+    onNavigate: (rowIndex: number, colIndex: number) => {
+      engine.gridApi.handle.selectCell(rowIndex, colIndex, { scrollIntoView: true });
+    },
+    onChange: props.onFindChange,
+  }));
+  const openFindFromShortcut = () => engine.find.open();
+  const closeFindAndRefocus = () => {
+    engine.find.close();
+    gridRootRef.current?.focus({ preventScroll: true });
+  };
+
   // ── キー操作 ──
   const keyboard = createKeyboardController<T>();
   connectController(keyboard, () => ({
@@ -950,7 +982,7 @@ export function GridShell<T extends object>(props: SpreadsheetGridProps<T>, feat
     setEditorInitialValue,
     dispatch,
     handleCopy: clipboard.handleCopy,
-    openFind: undefined,
+    openFind: findShortcut() ? openFindFromShortcut : undefined,
     handleCellDoubleClick: tryStartEditCell,
     isWholeGridSelected: isWholeGridSelected(),
     selectEntireGrid,
@@ -1139,7 +1171,7 @@ export function GridShell<T extends object>(props: SpreadsheetGridProps<T>, feat
     activeToolPanelTab: null,
     openToolPanel: noop,
     closeToolPanel: noop,
-    find: { open: noop, close: noop, next: noop, prev: noop },
+    find: { open: engine.find.open, close: engine.find.close, next: engine.find.next, prev: engine.find.prev },
     undoRows: history.undo,
     redoRows: history.redo,
     canUndoRows: history.canUndo,
@@ -1465,6 +1497,25 @@ export function GridShell<T extends object>(props: SpreadsheetGridProps<T>, feat
       );
     }
     const text = column.valueFormatter ? column.valueFormatter({ value, row, column }) : String(value ?? '');
+    // セル内検索のヒットを <mark> にします(既定のセルだけ。カレントは --current)。ヒットとカレントは cell から読んだときに引く
+    //   ので、変わったときは中の文字だけを描き直します(セルの箱と中身の span はそのまま)。
+    const splitFind = findFeature?.splitTextByFindRanges;
+    const highlightFind = (content: string): JSX.Element => {
+      const ranges = cell.findRanges;
+      if (!splitFind || !ranges || ranges.length === 0) {
+        return content;
+      }
+      return splitFind(content, ranges).map((segment) => {
+        const range = segment.range;
+        return range ? (
+          <mark class={['ssg-find-mark', { 'ssg-find-mark--current': range.matchIndex === cell.findCurrentIndex }]}>
+            {segment.text}
+          </mark>
+        ) : (
+          segment.text
+        );
+      });
+    };
     // 条件付き書式: データバーの showValue: false は文字を出さない(帯は GridBodyLayer が描く)。機能セットに無ければ指定を無視。
     //   valueFormatter は React 版と同じく先に呼ぶ。
     const formatRules = conditionalFormatFeature ? unbound.conditionalFormat : undefined;
@@ -1505,12 +1556,12 @@ export function GridShell<T extends object>(props: SpreadsheetGridProps<T>, feat
         }),
       );
       return (
-        <Show when={chip()} fallback={<span class="ssg-cell-value">{text}</span>}>
-          {(spec) => <GridChip spec={spec()}>{spec().label ?? text}</GridChip>}
+        <Show when={chip()} fallback={<span class="ssg-cell-value">{highlightFind(text)}</span>}>
+          {(spec) => <GridChip spec={spec()}>{highlightFind(spec().label ?? text)}</GridChip>}
         </Show>
       );
     }
-    return <span class="ssg-cell-value">{text}</span>;
+    return <span class="ssg-cell-value">{highlightFind(text)}</span>;
   };
 
   const pinnedPaneStyle = (side: 'left' | 'right', width: number, hasContent: boolean): JSX.CSSProperties => ({
@@ -1723,6 +1774,8 @@ export function GridShell<T extends object>(props: SpreadsheetGridProps<T>, feat
             verticalAlign={props.verticalAlign}
             conditionalFormat={conditionalFormatFeature}
             conditionalFormatStats={conditionalFormatStats()}
+            findIndex={findIndex()}
+            findCurrentIndex={findCurrentIndex()}
             rowHeaderWidth={rowHeaderWidth()}
             rows={bodyRows()}
             entries={entries()}
@@ -1958,6 +2011,20 @@ export function GridShell<T extends object>(props: SpreadsheetGridProps<T>, feat
                 />
               );
             }}
+          </Show>
+          {/* セル内検索のバー(右上に浮く。見出しの直下)。開いているときだけ描きます。 */}
+          <Show when={findSnapshot().open}>
+            {FindBar && (
+              <FindBar
+                snapshot={findSnapshot()}
+                headerHeight={headerHeight()}
+                onQueryChange={engine.find.setQuery}
+                onNext={engine.find.next}
+                onPrev={engine.find.prev}
+                onClose={closeFindAndRefocus}
+                slot={slots().findBar}
+              />
+            )}
           </Show>
         </div>
         {bottomBar()}

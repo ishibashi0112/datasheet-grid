@@ -71,6 +71,8 @@ type SupportedPropKeys =
   | 'highlightChanges'
   | 'showCopyRange'
   | 'hoverHighlight'
+  | 'find'
+  | 'onFindChange'
   | 'renderTopBar'
   | 'renderBottomBar'
   | 'initialState'
