@@ -146,6 +146,8 @@ function App() {
   const [liveDrag, setLiveDrag] = createSignal(false);
   const [rowDrag, setRowDrag] = createSignal(false);
   const [fillHandle, setFillHandle] = createSignal(true);
+  const [contextMenu, setContextMenu] = createSignal(true);
+  const [menuAction, setMenuAction] = createSignal('');
   // 「品名を左へ固定」で編集中の列のペインを変える(エディタが外れるときの blur で確定しないことの確かめ)。
   const columns = () =>
     userColumns() ??
@@ -210,11 +212,15 @@ function App() {
         <button type="button" data-testid="fill-handle" onClick={() => setFillHandle((v) => !v)}>
           フィルハンドル
         </button>
+        <button type="button" data-testid="context-menu" onClick={() => setContextMenu((v) => !v)}>
+          右クリックメニュー
+        </button>
         <span data-testid="find">{find()}</span>
         <span data-testid="active">{active()}</span>
         <span data-testid="changes">{changes()}</span>
         <span data-testid="selected">{selected()}</span>
         <span data-testid="expanded">{expanded()}</span>
+        <span data-testid="menu-action">{menuAction()}</span>
       </div>
       <Show when={mounted()}>
         <SpreadsheetGrid<Item>
@@ -260,6 +266,49 @@ function App() {
           // フィルハンドル(既定でオン): 選択範囲の右下の四角を引いて連続データ / コピーで埋める。Ctrl / ⌘ で入れ替え、Escape でやめる。
           //   埋めたあとのボタンで選び直せ、四角のダブルクリックで隣の列に合わせて下へ埋める。
           fillHandle={fillHandle()}
+          // 「右クリックメニュー」(既定でオン): セル / 行番号の右クリックか Shift+F10 / メニューキーで開く。分類の列は項目なし
+          //   (ブラウザの標準のメニュー)。
+          enableContextMenu={contextMenu()}
+          getContextMenuItems={(params) => {
+            const target = params.target;
+            if (target.type === 'rowHeader') {
+              return [
+                {
+                  label: `${target.row.name} を削除`,
+                  danger: true,
+                  onSelect: () => {
+                    setRows((current) => current.filter((row) => row.id !== target.row.id));
+                    setMenuAction(`行を削除:${target.row.id}`);
+                  },
+                },
+              ];
+            }
+            if (target.column.key === 'category') {
+              return [];
+            }
+            return [
+              { kind: 'label', label: `${target.column.title} / ${target.row.name}` },
+              { label: '値を控える', icon: '⧉', onSelect: () => setMenuAction(`控える:${String(target.value)}`) },
+              { label: '使えない項目', disabled: true, onSelect: () => setMenuAction('使えない') },
+              { kind: 'separator' },
+              {
+                kind: 'custom',
+                render: ({ close }) => (
+                  <button
+                    type="button"
+                    data-testid="menu-custom"
+                    style={{ margin: '4px 8px' }}
+                    onClick={() => {
+                      setMenuAction('自由な項目');
+                      close();
+                    }}
+                  >
+                    自由に描いた項目
+                  </button>
+                ),
+              },
+            ];
+          }}
           onFindChange={(params) => setFind(`${params.open ? 'open' : 'closed'}:${params.query}:${params.currentIndex ?? '-'}/${params.matchCount}`)}
           ariaLabel="在庫表"
           onActiveCellChange={(cell) => setActive(cell ? `${cell.columnKey} / ${String(cell.rowKey)}` : '')}

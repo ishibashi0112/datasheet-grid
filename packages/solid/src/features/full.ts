@@ -3,6 +3,7 @@ import { autoHeightFeature } from './autoHeight';
 import { columnAutosizeFeature } from './columnAutosize';
 import { columnReorderFeature } from './columnReorder';
 import { conditionalFormatFeature } from './conditionalFormat';
+import { contextMenuFeature } from './contextMenu';
 import { exportFeature } from './export';
 import { fillHandleFeature } from './fillHandle';
 import { findFeature } from './find';
@@ -30,4 +31,5 @@ export const fullGridFeatures = {
   columnReorder: columnReorderFeature,
   rowDrag: rowDragFeature,
   fillHandle: fillHandleFeature,
+  contextMenu: contextMenuFeature,
 } satisfies Required<GridFeatures> as unknown as Required<SolidGridFeatures>;

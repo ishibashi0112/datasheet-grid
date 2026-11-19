@@ -33,6 +33,10 @@ import type { createRowDrag } from '../primitives/rowDrag';
 import type { RowDragHandle } from '../view/RowDragHandle';
 import type { createFillHandle } from '../primitives/fillHandle';
 import type { FillHandleLayer, FillHandlePortals } from '../view/FillHandleLayer';
+import type { createCellContextMenu } from '../primitives/contextMenu';
+import type { CellContextMenuPopover } from '../view/CellContextMenuPopover';
+import type { BodyContextMenuInput, CellContextMenuInput } from './contextMenu';
+import type { GridContextMenuParams } from '../model/gridTypes';
 
 // 機能だけが使う文言の既定(core の logic/localeText<機能>.ts の表)。シェルが本体の既定に重ねて部品へ渡します(React 版と同じ)。
 type FeatureLocaleDefaults = { localeText?: Readonly<Partial<GridLocaleText>> | undefined };
@@ -95,6 +99,15 @@ export type SolidGridFeatures = {
         createFillHandle: typeof createFillHandle;
         FillHandleLayer: typeof FillHandleLayer;
         FillHandlePortals: typeof FillHandlePortals;
+      })
+    | undefined;
+  // 右クリックメニュー: コントローラ(core)の接続 + ポップアップの部品 + 右クリックの対象(セル / 行番号)の解決。
+  contextMenu?:
+    | (FeatureLocaleDefaults & {
+        createCellContextMenu: typeof createCellContextMenu;
+        CellContextMenuPopover: typeof CellContextMenuPopover;
+        buildBodyContextMenuParams: <T>(input: BodyContextMenuInput<T>) => GridContextMenuParams<T> | null;
+        buildCellContextMenuParams: <T>(input: CellContextMenuInput<T>) => GridContextMenuParams<T> | null;
       })
     | undefined;
   // IME オンのままの直接入力: 透明な入力受けのコントローラ + 入力してよいセルの判定 + 編集の初期値の決定(いずれも core)。

@@ -158,7 +158,7 @@ React 版の機能なしの構成と並べて、同じ props・同じ操作で D
 | # | 内容 | 状況 |
 | --- | --- | --- |
 | 2-1 | 機能を差し込む仕組み + 表示の機能 8 つ(totalRow / pinnedRows / conditionalFormat / selectionAggregates / scrollHint / motionExtras / export / autoHeight) | 済み(PR #65、2026-11-19 マージ。2-1a: 仕組み(`features/types.ts` / `createSpreadsheetGrid.tsx` / `features/full.ts`、比べるテストの `features`)と export、2-1b: autoHeight、2-1c: conditionalFormat、2-1d: totalRow + pinnedRows、2-1e: selectionAggregates、2-1f: scrollHint、2-1g: motionExtras) |
-| 2-2 | 操作の機能 7 つ(find / fillHandle / columnReorder / rowDrag / columnAutosize / imeDirectInput / contextMenu) | 作業中(2-2a: find、2-2b: imeDirectInput、2-2c: columnAutosize、2-2d: columnReorder、2-2e: rowDrag、2-2f: fillHandle = 済み) |
+| 2-2 | 操作の機能 7 つ(find / fillHandle / columnReorder / rowDrag / columnAutosize / imeDirectInput / contextMenu) | 作業中(2-2a: find、2-2b: imeDirectInput、2-2c: columnAutosize、2-2d: columnReorder、2-2e: rowDrag、2-2f: fillHandle、2-2g: contextMenu = 済み) |
 | 2-3 | ポップアップ 3 つ(columnMenu / toolPanel / filtering) | まだ |
 | 2-4 | 行のモデル 3 つ(serverSide / labelRow / grouping) | まだ |
 
@@ -190,6 +190,12 @@ React 版の機能なしの構成と並べて、同じ props・同じ操作で D
   埋めたあとのボタンの位置をそれでまるごと読むと、別のセルを押しただけで位置を計算し直し、続いてコントローラがボタンを消した
   ときにもう 1 回計算していた(Solid の開発時の EFFECT_RELAY_TEAR)。項目ごとの memo にし、ルートの `ssg-root--filling` も
   真偽値の memo にして、Chromium のデモで警告が出ないことを確かめた。React 版は描くたびに計算し直すので、この差は無い。
+- **右クリックメニューの params を作る関数は React 版の写し**: 右クリックの対象を DOM から逆引きして params を作る 2 つの関数
+  (React 版の `features/contextMenu.tsx` の `buildBodyContextMenuParams` / `buildCellContextMenuParams`)はフレームワークに
+  依らないが、React 版の機能のファイルにあるので、Solid 版の `features/contextMenu.ts` へ同じ処理を写した(core へ寄せるかは
+  `commitRowMoveFromDrag` と一緒に段階 3 で決める)。シェルの配線(キーボードから開いた直後の contextmenu を 1 秒止める、
+  ポップアップを出している間はシェルを Tab の止まる先から外し、キー操作と貼り付けを止める、Escape をグリッドが受ける条件)は
+  React 版の `GridShell.tsx` と同じ。
 - **ref の関数の中では `onCleanup` を呼べない**(Solid 2.0 の CLEANUP_IN_FORBIDDEN_SCOPE): コントローラの外側クリックの判定に
   使うボタン / メニューの要素の控えは、部品の本体で `onCleanup` を登録して外したときに消す(React 版の ref の null)。
 

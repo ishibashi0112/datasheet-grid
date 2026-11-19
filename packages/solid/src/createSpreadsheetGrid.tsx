@@ -24,6 +24,8 @@ const DISABLED_FEATURE_PROPS: { [K in GridFeatureName]?: Partial<SpreadsheetGrid
   motionExtras: { highlightChanges: false, showCopyRange: false, hoverHighlight: 'row' },
   // 列幅の自動調整が無ければ autoSizeColumns を切る(React 版と同じ)。
   columnAutosize: { autoSizeColumns: false },
+  // 右クリックメニューが無ければ enableContextMenu を切る(ブラウザの標準のメニューのまま。React 版と同じ)。
+  contextMenu: { enableContextMenu: false },
 };
 
 export function createSpreadsheetGrid(options: CreateSpreadsheetGridOptions) {

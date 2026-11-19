@@ -71,6 +71,7 @@ import {
   DEFAULT_DETAIL_ROW_HEIGHT,
   isControlColumnKey,
   isDetailRowExpandable,
+  isInsideDetailCardOf,
   resolveFirstDataColIndex,
 } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/detailRow';
 import {
@@ -1121,6 +1122,139 @@ export function GridShell<T extends object>(props: SpreadsheetGridProps<T>, feat
     gridRootRef.current?.focus({ preventScroll: true });
   };
 
+  // ── 右クリックメニュー(機能 features/contextMenu) ──
+  //   本体の右クリックはシェルの 1 つの委譲のハンドラ(onContextMenu)で受け、対象(セル / 行番号)を DOM から逆引きして
+  //   getContextMenuItems の項目でメニューを開きます。開かない対象や項目が空ならブラウザの標準のメニューのまま(空のパネルは
+  //   出さない)。キーボード(Shift+F10 / メニューキー)はアクティブセルのメニューをセルの左下に開き、先頭の項目へフォーカスを
+  //   移します。どれも React 版の GridShell.tsx と同じ処理です。機能セットに無ければ enableContextMenu は false(標準のメニュー)。
+  const contextMenuFeature = features.contextMenu;
+  const contextMenu = contextMenuFeature?.createCellContextMenu<T>({ gridRootRef });
+  const contextMenuActive = () =>
+    contextMenu !== undefined && (props.enableContextMenu ?? false) && props.getContextMenuItems !== undefined;
+  // グリッドのポップアップを出しているか(シェルの Tab の順・キー操作・貼り付けを止める。React 版の isAnyGridPopupOpen。
+  //   列メニュー / 列フィルター / ツールパネルは段階 2-3 で足す)。
+  const isAnyGridPopupOpen = () => contextMenu?.isOpen() ?? false;
+  // キーボードで開こうとした時刻(ms)と開いたか。続けてブラウザが送る contextmenu(Shift+F10 / メニューキーの既定の動作)で、
+  //   開いたときは標準のメニューを止め、開かなかった(項目が無い)ときは標準のメニューのままにします(項目をもう一度聞かない)。
+  let keyboardContextMenu: { at: number; opened: boolean } | null = null;
+  const openContextMenuForCell = (cell: CellCoord): boolean => {
+    const root = gridRootRef.current;
+    const columnsNow = untrack(orderedColumns);
+    const column = columnsNow[cell.col];
+    const getItems = props.getContextMenuItems;
+    if (!contextMenuActive() || !contextMenuFeature || !contextMenu || !getItems || !root || !column) {
+      return false;
+    }
+    // 展開行のカードの中の入れ子のグリッドのセルは数えません。セルが描かれていない(画面の外)ときは表の左上に出します。
+    const cellEl = Array.from(
+      root.querySelectorAll<HTMLElement>(`[data-row-index="${cell.row}"] [data-ssg-col-key]`),
+    ).find((element) => element.dataset.ssgColKey === column.key && !isInsideDetailCardOf(root, element));
+    const rect = (cellEl ?? root).getBoundingClientRect();
+    const state = untrack(ui);
+    const params = contextMenuFeature.buildCellContextMenuParams<T>({
+      cell,
+      clientX: rect.left,
+      clientY: cellEl ? rect.bottom : rect.top,
+      rowModel: untrack(rowModel),
+      orderedColumns: columnsNow,
+      selection: state.selection,
+      activeCell: state.activeCell,
+    });
+    if (!params) {
+      return false;
+    }
+    const items = getItems(params);
+    if (!items || items.length === 0) {
+      return false;
+    }
+    props.onContextMenuOpen?.(params);
+    contextMenu.open(params, items, { focus: 'firstItem' });
+    return true;
+  };
+  // キーの操作(keydown)から開くときの入口。開いたときは、続けて来るキーボードの contextmenu(右ボタン以外)を 1 秒の間に 1 回だけ
+  //   window の capture で止めます(Windows のメニューキーは keyup で contextmenu を送り、フォーカスはもう表の外へ移っている)。
+  const openContextMenuFromKeyboard = (cell: CellCoord): boolean => {
+    const opened = openContextMenuForCell(cell);
+    keyboardContextMenu = { at: performance.now(), opened };
+    if (opened && typeof window !== 'undefined') {
+      const stop = (): void => {
+        window.removeEventListener('contextmenu', onContextMenu, true);
+        window.removeEventListener('keydown', stop, true);
+        window.removeEventListener('pointerdown', stop, true);
+        window.clearTimeout(timer);
+      };
+      const onContextMenu = (event: MouseEvent): void => {
+        stop();
+        if (event.button !== 2) {
+          event.preventDefault();
+        }
+      };
+      const timer = window.setTimeout(stop, 1000);
+      window.addEventListener('contextmenu', onContextMenu, true);
+      window.addEventListener('keydown', stop, true);
+      window.addEventListener('pointerdown', stop, true);
+    }
+    return opened;
+  };
+  const handleBodyContextMenu = (event: MouseEvent & { currentTarget: HTMLDivElement }) => {
+    const getItems = props.getContextMenuItems;
+    if (!contextMenuActive() || !contextMenuFeature || !contextMenu || !getItems) {
+      return;
+    }
+    // キーボードから来た contextmenu(フォーカスを持つシェルか入力受けが対象で、右ボタンではない。Chrome は button が -1)。
+    //   直前にキーで開いたなら標準のメニューを止めるだけ、keydown を経ずに来た(OS がキーを contextmenu に変える)ならここで
+    //   開きます。検索欄などシェルの中の入力欄では標準のメニューのまま。
+    const target = event.target instanceof Element ? event.target : null;
+    const fromShellFocus = target !== null && (target === event.currentTarget || target.hasAttribute(IME_INPUT_ATTRIBUTE));
+    if (event.button !== 2 && fromShellFocus) {
+      const fromKeyboard = keyboardContextMenu;
+      if (fromKeyboard && performance.now() - fromKeyboard.at < 1000) {
+        if (fromKeyboard.opened) {
+          event.preventDefault();
+        }
+        return;
+      }
+      const activeCell = untrack(ui).activeCell;
+      if (activeCell && openContextMenuForCell(activeCell)) {
+        event.preventDefault();
+      }
+      return;
+    }
+    const state = untrack(ui);
+    const params = contextMenuFeature.buildBodyContextMenuParams<T>({
+      event,
+      rowModel: untrack(rowModel),
+      orderedColumns: untrack(orderedColumns),
+      selection: state.selection,
+      activeCell: state.activeCell,
+    });
+    if (!params) {
+      return;
+    }
+    const items = getItems(params);
+    // 空(または未定義)なら標準のメニューへ(空のパネルは出さない)。
+    if (!items || items.length === 0) {
+      return;
+    }
+    // ここで初めて標準のメニューを止め、グリッドのメニューを開きます。
+    event.preventDefault();
+    props.onContextMenuOpen?.(params);
+    contextMenu.open(params, items);
+  };
+  // 開いているメニュー(項目と位置と読み上げの名前)。閉じている間 / 位置が決まる前は null。
+  const contextMenuView = createMemo(() => {
+    const snapshot = contextMenu?.snapshot();
+    if (!snapshot?.state || !snapshot.layout) {
+      return null;
+    }
+    const texts = localeTexts() as unknown as { contextMenuRow: string; contextMenuCell: string };
+    return {
+      items: snapshot.state.items,
+      layout: snapshot.layout,
+      ariaLabel: snapshot.state.params.target.type === 'rowHeader' ? texts.contextMenuRow : texts.contextMenuCell,
+    };
+  });
+
   // ── キー操作 ──
   const keyboard = createKeyboardController<T>();
   connectController(keyboard, () => ({
@@ -1147,7 +1281,7 @@ export function GridShell<T extends object>(props: SpreadsheetGridProps<T>, feat
     onToggleDetailRow: detailRowEnabled() ? detailRows.toggleFromKeyboard : undefined,
     resolvePageRow,
     openColumnMenu: undefined,
-    openContextMenu: undefined,
+    openContextMenu: contextMenuActive() ? openContextMenuFromKeyboard : undefined,
     // 最終列の Tab: その行のカードが開いていればカードの最初の要素へ、無ければ表の直後の目印から既定の Tab(段階 2 C-N2 / F-10)。
     onTabPastLastColumn: detailRows.handleTabPastLastColumn,
   }));
@@ -1240,10 +1374,14 @@ export function GridShell<T extends object>(props: SpreadsheetGridProps<T>, feat
     isClaimedTarget: (target: Element, root: HTMLElement) => {
       const state = store.getState();
       if (!root.contains(target)) {
+        const popupOpen = untrack(isAnyGridPopupOpen);
         if (target.closest(GRID_POPUP_SELECTOR) !== null) {
-          return state.editingCell !== null;
+          return popupOpen || state.editingCell !== null;
         }
-        return false;
+        // 右クリックメニューは開くときにフォーカスを外す(blurForPopover)ので、Escape の対象は body になる。その Escape は
+        //   メニューを閉じるのに使う(React 版と同じ)。
+        const ownerDocument = target.ownerDocument;
+        return popupOpen && (target === ownerDocument.body || target === ownerDocument.documentElement);
       }
       if (target.closest('.ssg-cell-editor, [data-ssg-find-bar]') !== null) {
         return true;
@@ -1256,6 +1394,15 @@ export function GridShell<T extends object>(props: SpreadsheetGridProps<T>, feat
     },
   }));
   const handleShellKeyDown = (event: KeyboardEvent) => {
+    // ポップアップを出している間はグリッドのキー操作を止めます(React 版と同じ)。
+    if (!untrack(isAnyGridPopupOpen)) {
+      handleRootKeyDown(event);
+    }
+    if (isEscapeClaimedByGrid(event)) {
+      event.stopPropagation();
+    }
+  };
+  const handleRootKeyDown = (event: KeyboardEvent) => {
     keyboard.handleKeyDown({
       key: event.key,
       ctrlKey: event.ctrlKey,
@@ -1268,9 +1415,6 @@ export function GridShell<T extends object>(props: SpreadsheetGridProps<T>, feat
     });
     // セルや見出しの中の要素で Tab を押し、表の中にもう止まる要素が無いときは表の外へ(カードがあるときだけ)。
     detailRows.handleRootKeyDownAfter(event);
-    if (isEscapeClaimedByGrid(event)) {
-      event.stopPropagation();
-    }
   };
 
   // ── 列(並べ替え / 列幅のドラッグ。core engine/columnCommands) ──
@@ -2277,18 +2421,25 @@ export function GridShell<T extends object>(props: SpreadsheetGridProps<T>, feat
           }}
           class="ssg-shell"
           style={{ cursor: isAutosizing() ? 'progress' : undefined }}
-          tabindex={0}
+          // ポップアップを出している間はシェルを Tab の止まる先から外します(React 版と同じ)。
+          tabindex={isAnyGridPopupOpen() ? -1 : 0}
           role="group"
           aria-activedescendant={activeDescendantId()}
           data-ssg-has-active-cell={ui().activeCell === null ? undefined : ''}
           onKeyDown={handleShellKeyDown}
-          onPaste={(event) =>
+          onPaste={(event) => {
+            // ポップアップを出している間は貼り付けを受けません(React 版はハンドラを外す)。
+            if (untrack(isAnyGridPopupOpen)) {
+              return;
+            }
             clipboard.handlePaste({
               clipboardData: event.clipboardData,
               preventDefault: () => event.preventDefault(),
               target: event.target,
-            })
-          }
+            });
+          }}
+          // 本体の右クリックの委譲(機能が無い・enableContextMenu でない・対象が無いときは素通しで標準のメニュー)。
+          onContextMenu={handleBodyContextMenu}
           onDragStart={(event) => pointer.handleNativeDragStart(event)}
           onPointerLeave={() => {
             applyHoveredRowChange(null);
@@ -2457,6 +2608,22 @@ export function GridShell<T extends object>(props: SpreadsheetGridProps<T>, feat
           </Show>
         </div>
         {bottomBar()}
+        {/* セル / 行番号の右クリックメニュー(グリッドの外のポップアップ)。 */}
+        {contextMenu && contextMenuFeature ? (
+          <Show when={contextMenuView()}>
+            {(open) => (
+              <contextMenuFeature.CellContextMenuPopover
+                items={open().items}
+                layout={open().layout}
+                panelRef={contextMenu.panelRef}
+                onRequestClose={contextMenu.close}
+                ariaLabel={open().ariaLabel}
+                themeClassName={portalClassName()}
+                slots={slots()}
+              />
+            )}
+          </Show>
+        ) : null}
         {/* フィルハンドルの埋めたあとのメニュー / ドラッグ中の値のツールチップ(グリッドの外のポップアップ)。 */}
         {fill && fillHandleFeature ? (
           <fillHandleFeature.FillHandlePortals fill={fill} themeClassName={portalClassName()} />

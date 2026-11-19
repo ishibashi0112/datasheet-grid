@@ -16,6 +16,9 @@ export type GridClassNames = Core.GridClassNames<SolidGridTypes>;
 export type GridResolvedSlot = Core.GridResolvedSlot<SolidGridTypes>;
 export type GridResolvedSlots = Core.GridResolvedSlots<SolidGridTypes>;
 export type TotalRowCellContext<T> = Core.TotalRowCellContext<T, SolidGridTypes>;
+export type GridContextMenuItem = Core.GridContextMenuItem<SolidGridTypes>;
+export type GridContextMenuParams<T> = Core.GridContextMenuParams<T, SolidGridTypes>;
+export type GridContextMenuTarget<T> = Core.GridContextMenuTarget<T, SolidGridTypes>;
 
 // 受ける props(React 版と同じ名前・同じ型)。段階 1 は React 版の機能なしの構成(`/lite` の
 //   createSpreadsheetGrid({ features: {} }))と同じ範囲で、受けられるものから順に足していきます。
@@ -82,6 +85,9 @@ type SupportedPropKeys =
   | 'onRowMove'
   | 'rowDragMotion'
   | 'fillHandle'
+  | 'enableContextMenu'
+  | 'getContextMenuItems'
+  | 'onContextMenuOpen'
   | 'renderTopBar'
   | 'renderBottomBar'
   | 'initialState'

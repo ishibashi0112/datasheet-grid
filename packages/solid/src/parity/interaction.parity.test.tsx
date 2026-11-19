@@ -787,3 +787,142 @@ describe('フィルハンドル(fillHandle)', () => {
     });
   }, 30_000);
 });
+describe('右クリックメニュー(contextMenu)', () => {
+  // 項目を選んだときに控える先(シナリオごとに steps の頭で差し替える。React 版と Solid 版は順に動く)。
+  let onPick: (label: string) => void = () => {};
+  const menuItems = (params: { target: { type: string; column?: { key: string } } }) => {
+    if (params.target.type === 'rowHeader') {
+      return [{ kind: 'action', id: 'remove', label: '行を削除', danger: true, onSelect: () => onPick('行を削除') }];
+    }
+    // 状態の列は項目なし = ブラウザの標準のメニューのまま。
+    if (params.target.column?.key === 'status') {
+      return [];
+    }
+    return [
+      { kind: 'label', label: 'セルの操作' },
+      { id: 'copy', label: 'コピー', icon: '⧉', onSelect: () => onPick('コピー') },
+      { label: '使えない', disabled: true, onSelect: () => onPick('使えない') },
+      { kind: 'separator' },
+      { label: '消す', danger: true, onSelect: () => onPick('消す') },
+      { kind: 'custom', render: () => '自由に描く項目' },
+    ];
+  };
+  const focused = () => document.activeElement ?? document.body;
+  const rightClick = (ctx: ParityContext, target: Element, label: string) =>
+    ctx.act(() => {
+      ctx.log(`${label} の標準のメニューを止めたか`, !fireEvent.contextMenu(target, { button: 2, clientX: 210, clientY: 130 }));
+    });
+  const menuItem = (label: string) =>
+    Array.from(document.querySelectorAll<HTMLElement>('.ssg-menu-item')).find((el) => el.textContent?.includes(label));
+
+  it.each([
+    ['あり', ['contextMenu']],
+    ['なし(空)', []],
+  ])('セル / 行番号の右クリック・キー操作・閉じ方・項目なし(機能%s)', async (_label, features) => {
+    await expectParity({
+      features,
+      watch: ['onContextMenuOpen', 'getContextMenuItems'],
+      props: () => ({
+        rows: makeRows(12),
+        columns,
+        rowKeyGetter: (row: Row) => row.id,
+        height: 360,
+        enableContextMenu: true,
+        getContextMenuItems: menuItems,
+      }),
+      steps: async (ctx) => {
+        onPick = (label) => ctx.log('選んだ項目', label);
+        await ctx.act(() => {
+          fireEvent.pointerDown(ctx.cell(1, 'name'), pointer);
+          fireEvent.pointerUp(window, pointer);
+        });
+        // セルの右クリック(パネルへフォーカス)。
+        await rightClick(ctx, ctx.cell(2, 'qty'), 'セル');
+        ctx.snapshot('セルの右クリック');
+        await ctx.act(() => {
+          fireEvent.keyDown(focused(), { key: 'ArrowDown' });
+        });
+        await ctx.act(() => {
+          fireEvent.keyDown(focused(), { key: 'ArrowDown' });
+        });
+        ctx.snapshot('↓ を 2 回(使えない項目を飛ばす)');
+        await ctx.act(() => {
+          fireEvent.keyDown(focused(), { key: 'End' });
+        });
+        ctx.snapshot('End');
+        // 項目を押すと実行して閉じ、グリッドへフォーカスを戻す。
+        const copy = menuItem('コピー');
+        if (copy) {
+          await ctx.act(() => {
+            fireEvent.click(copy);
+          });
+        }
+        ctx.snapshot('項目を押して閉じる');
+        // 使えない項目は押しても何もしない。
+        await rightClick(ctx, ctx.cell(3, 'name'), 'セル(2 回目)');
+        const disabled = menuItem('使えない');
+        if (disabled) {
+          await ctx.act(() => {
+            fireEvent.click(disabled);
+          });
+        }
+        ctx.snapshot('使えない項目を押す');
+        // メニューの中のキーはグリッドへ届かない(Escape で閉じる)。
+        await ctx.act(() => {
+          ctx.log('Escape を止めたか', !fireEvent.keyDown(focused(), { key: 'Escape' }));
+        });
+        ctx.snapshot('Escape で閉じる');
+        // 行番号の右クリックと、外を押して閉じる。
+        const rowHeader = ctx.container.querySelector('[data-row-index="4"] .ssg-row-header-cell');
+        if (rowHeader) {
+          await rightClick(ctx, rowHeader, '行番号');
+        }
+        ctx.snapshot('行番号の右クリック');
+        await ctx.act(() => {
+          fireEvent.pointerDown(document.body, pointer);
+        });
+        ctx.snapshot('外を押して閉じる');
+        // 項目が空なら標準のメニューのまま。
+        await rightClick(ctx, ctx.cell(2, 'status'), '項目が空');
+        ctx.snapshot('項目が空');
+        // Shift+F10: アクティブセルのメニューをセルの左下に開き、先頭の項目へフォーカス。続けて来る contextmenu は止める。
+        await ctx.act(() => {
+          fireEvent.pointerDown(ctx.cell(5, 'price'), pointer);
+          fireEvent.pointerUp(window, pointer);
+        });
+        await ctx.act(() => {
+          ctx.log('Shift+F10 を止めたか', !fireEvent.keyDown(ctx.shell(), { key: 'F10', shiftKey: true }));
+          ctx.log('続く contextmenu を止めたか', !fireEvent.contextMenu(focused(), { button: 0 }));
+        });
+        ctx.snapshot('Shift+F10');
+        await ctx.act(() => {
+          fireEvent.keyDown(focused(), { key: 'Tab' });
+        });
+        ctx.snapshot('Tab で閉じる');
+        // keydown を経ずにシェルへ来た contextmenu(OS がメニューキーを変える)はアクティブセルのメニューを開く。
+        await ctx.act(() => {}, 1100);
+        await ctx.act(() => {
+          ctx.log('シェルの contextmenu を止めたか', !fireEvent.contextMenu(ctx.shell(), { button: 0 }));
+        });
+        ctx.snapshot('シェルの contextmenu');
+        await ctx.act(() => {
+          fireEvent.keyDown(focused(), { key: 'Escape' });
+        });
+        // 項目が空のセルでの Shift+F10 は何もしない。
+        await ctx.act(() => {
+          fireEvent.pointerDown(ctx.cell(5, 'status'), pointer);
+          fireEvent.pointerUp(window, pointer);
+        });
+        await ctx.act(() => {
+          ctx.log('項目が空の Shift+F10 を止めたか', !fireEvent.keyDown(ctx.shell(), { key: 'F10', shiftKey: true }));
+          ctx.log('項目が空の続く contextmenu を止めたか', !fireEvent.contextMenu(ctx.shell(), { button: 0 }));
+        });
+        ctx.snapshot('項目が空の Shift+F10');
+        // enableContextMenu: false では標準のメニュー。
+        await ctx.setProps({ enableContextMenu: false });
+        await rightClick(ctx, ctx.cell(2, 'qty'), 'enableContextMenu なし');
+        ctx.snapshot('enableContextMenu なし');
+      },
+    });
+  }, 30_000);
+});
