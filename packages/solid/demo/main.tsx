@@ -105,6 +105,8 @@ function App() {
   const [pinName, setPinName] = createSignal(false);
   const [mounted, setMounted] = createSignal(true);
   const [changes, setChanges] = createSignal(0);
+  const [selected, setSelected] = createSignal('');
+  const [expanded, setExpanded] = createSignal('');
   // 「品名を左へ固定」で編集中の列のペインを変える(エディタが外れるときの blur で確定しないことの確かめ)。
   const columns = () =>
     pinName() ? baseColumns.map((column) => (column.key === 'name' ? { ...column, pinned: 'left' as const } : column)) : baseColumns;
@@ -130,6 +132,8 @@ function App() {
         </button>
         <span data-testid="active">{active()}</span>
         <span data-testid="changes">{changes()}</span>
+        <span data-testid="selected">{selected()}</span>
+        <span data-testid="expanded">{expanded()}</span>
       </div>
       <Show when={mounted()}>
         <SpreadsheetGrid<Item>
@@ -148,6 +152,26 @@ function App() {
           height={520}
           ariaLabel="在庫表"
           onActiveCellChange={(cell) => setActive(cell ? `${cell.columnKey} / ${String(cell.rowKey)}` : '')}
+          enableRowSelection
+          onRowSelectionChange={(model) => setSelected(`${model.type}:${model.rowKeys.length}`)}
+          // 展開行: 5 の倍数の行は開けない。中身は入力欄 2 つと閉じるボタン(フォーカスの順を確かめる)。
+          detailRow={{
+            height: 120,
+            isExpandable: (row) => row.id % 5 !== 0,
+            render: (ctx) => (
+              <div data-testid={`detail-${ctx.rowKey}`} style={{ padding: '8px', display: 'flex', gap: '8px' }}>
+                <span>
+                  {ctx.row.name} の詳細(表示の {ctx.rowIndex + 1} 行目)
+                </span>
+                <input data-testid={`detail-input-${ctx.rowKey}`} aria-label="詳細のメモ" />
+                <input aria-label="詳細の担当" />
+                <button type="button" data-testid={`detail-close-${ctx.rowKey}`} onClick={() => ctx.collapse()}>
+                  閉じる
+                </button>
+              </div>
+            ),
+          }}
+          onExpandedDetailRowKeysChange={(keys) => setExpanded(Array.from(keys).join(','))}
         />
       </Show>
     </div>

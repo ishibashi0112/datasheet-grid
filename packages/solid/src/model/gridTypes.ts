@@ -79,7 +79,15 @@ type SupportedPropKeys =
   | 'createOverflowColumn'
   | 'onPasteSkipped'
   | 'pasteFillsSelection'
-  | 'isRowExportable';
+  | 'isRowExportable'
+  | 'enableRowSelection'
+  | 'rowSelectionMode'
+  | 'enableSelectAllRows'
+  | 'rowSelection'
+  | 'selectedRowKeys'
+  | 'onRowSelectionChange'
+  | 'detailRow'
+  | 'onExpandedDetailRowKeysChange';
 
 export type SpreadsheetGridProps<T> = Pick<Core.SpreadsheetGridProps<T, SolidGridTypes>, SupportedPropKeys> & {
   // Solid の ref は関数だけ(React の ref オブジェクトは無い)。命令的 API のハンドルを受け取ります。

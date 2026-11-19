@@ -50,6 +50,8 @@ export type ParityContext = {
   // props を差し替える(渡したものだけ。rows は制御された行の値を差し替える)。
   setProps: (patch: Record<string, unknown>) => Promise<void>;
   rows: () => readonly unknown[];
+  // 命令的 API の戻り値などを通知と同じ列へ控える(React 版と同じ値か)。
+  log: (label: string, value: unknown) => void;
 };
 
 export type ParityScenario = {
@@ -316,6 +318,9 @@ async function runOne(framework: Framework, scenario: ParityScenario): Promise<P
       });
     },
     rows: () => currentRows,
+    log: (label, value) => {
+      record(label, [value]);
+    },
     hover: (target) => {
       target.dispatchEvent(new PointerEvent('pointerover', { bubbles: true, pointerId: 1, isPrimary: true }));
       target.dispatchEvent(new PointerEvent('pointerenter', { bubbles: false, pointerId: 1, isPrimary: true }));

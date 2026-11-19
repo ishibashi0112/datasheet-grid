@@ -25,7 +25,36 @@ React 版の機能なしの構成と並べて、同じ props・同じ操作で D
 | --- | --- | --- |
 | 1-1 | 見出しとセル: 見出し(renderHeader・並びの印・列幅のつまみ・角)、セル(renderCell・valueFormatter・cellClassName・メモ・入力の検査の印・checkbox のセル・ARIA)、上下のバー、空の表示、テーマ・密度・モーション・classNames、ツールチップ、Tab でグリッドの外へ、通知(onStateChange / onSortChange / onScroll / onCellClick ほか)。共通の部品を core へ(下部バーの文字列 = core `logic/gridBarSummary`、renderHeader の中のボタンの判定 = core `logic/domGuards`)。React 版と並べて比べるテスト | 済み(比べる場面 11 で DOM・フォーカス・要素の使い回し・id の参照・通知が一致。別視点のレビューの指摘も直した。PR #62 でマージ済み) |
 | 1-2 | エディタ 6 種(text / number / select / date / checkbox / custom)・入力の検査(reject)・エラーの吹き出し | 済み(1-2c: 別視点のレビュー = 高 1・中 2・低 3 を直した。比べる場面 13 で DOM・フォーカス・通知が一致、Solid だけのテスト 1、Chromium のデモで実際のキー入力・IME・吹き出しの置き方・エディタが外れるときを確かめた。全ゲートと React 版のハーネス Chromium 941 / 941・Firefox 865 / 865・WebKit 861 / 864(FAIL は既知の BR-3・BR-4 だけ。1.2.0 と同じ数)。1-2b: Solid のエディタ 6 種と比べるテスト = 済み。1-2a: エディタの判断と DOM の処理を core へ = 済み。エラーの吹き出しの置き方 `utils/errorBubblePlacement`、複数行の入力欄の大きさと改行 `utils/multilineEditor`、見えている範囲 `utils/editorVisibleBounds`(React 版から移動)、number / date の開く値と確定する値 `logic/editorStart`、select のキーと開いたときのハイライト `logic/selectEditorState`(React 版はフル版が 0.08KB 増えるので展開したまま)。フル版 149.71KB) |
-| 1-3 | 行の選択(チェックボックス)・展開行・フォーカスの順 | まだ |
+| 1-3 | 行の選択(チェックボックス)・展開行・フォーカスの順 | 作業中(1-3a: 展開行の開閉とカードの Tab の順を core `controllers/detailRowController` へ = 済み。React 版は全テスト緑、フル版 149.77KB(+0.06KB)。1-3b: Solid の行の選択・展開行と比べるテスト = 済み(比べる場面 7 で DOM・フォーカス・通知が一致)。Chromium のデモで実際のポインタ / キー入力を 33 項目確かめた。残り: 別視点のレビューと 3 ブラウザのハーネス) |
+
+### 1-3 で分かったこと
+
+- **core へ寄せたもの**: 展開行の開閉(閉じる前にカードの中のフォーカスを表へ戻し、その行のセルを選ぶ)・トグル列のセルの
+  Enter / Space・最終列の Tab でカードへ・カードの端の Tab / Shift+Tab・表の直後の目印(後ろから戻ってきたらカードの最後の
+  要素へ)・セルの中の要素の Tab で表の外へ・フォーカスを持ったカードが消えたとき(G-13)は、React 版の `GridShell.tsx` の
+  useCallback に書いてあったので core `controllers/detailRowController` へ移した(jsdom のテスト `detailRowController.test.ts`)。
+  開閉できる行かの判断は core `logic/detailRow` の `isDetailRowExpandable`。React 版はフル版が 0.06KB 増える(149.77KB。上限
+  150.1KB の中)が、フォーカスの順は細かい条件が多く、二重に持つと片方だけ直すずれが起きやすいので共有にした(1-2 の select の
+  判断は 0.08KB で展開したまま = こちらは数行の計算だったため)。
+- **カードが消えたときの判断を共用**: React 版はレイアウト effect の後始末で「今カードの中にフォーカスがあるか」を見て、外れた後
+  (マイクロタスク)に body へ落ちたときだけ表へ戻していた。この判断を core の `notifyDetailCardFocusLost` へそのまま移し、Solid 版は
+  `onCleanup`(DOM から外す前に走る)から呼ぶ。
+- **カードの中身は rowKey で対応させる**: 帯は `For keyed={(entry) => entry.rowKey}` で、`render` の ctx の `row` / `rowIndex` /
+  `sourceRowIndex` は読んだときに引く getter。並べ替えても中身を作り直さず、打った文字が残る(React 版と同じ。比べるテストで
+  同じ要素のままかを見た)。
+- **選択の塗りは展開行の帯を避けて分ける**: core の `resolveSelectionBandSegments` / `resolvePaneSegmentRects` で、範囲が開いた
+  行をまたぐと塗りが 2 つ以上になる(React 版と同じ数と位置)。
+- **比べるテストで見たもの**: multiple(行番号のチェック・Shift で範囲・角で全選択 / 解除・ドラッグ・`clearRowSelection`)、
+  single、controlled(`selectedRowKeys` / `rowSelection` の exclude)・`enableSelectAllRows={false}`、トグル列で開閉・中身の
+  `collapse`・`isExpandable`・`className`・ハンドルの `setDetailRowExpanded` / `collapseAllDetailRows`・開いたまま並べ替え、
+  キーボード(Enter / Space・Tab でカードへ・カードの端・後ろから戻る)、カードの中にフォーカスがあるまま閉じる / 行が消える、
+  カードの中のキーが本体へ伝わらない、`showToggleColumn: false` と renderCell の `ctx.detail`、`detailRow` を外す。
+  Chromium のデモでは実際の Tab / Shift+Tab(表の外のボタンから戻るのも)・ポインタのドラッグ・横スクロールでカードが留まる・
+  スクロールで外れたカードからのフォーカスの戻りも確かめた。
+- **まだ入れていないもの**: 展開行の高さが本体の上限を超えるときの開発時の警告(React 版の `detailMaxBody`。開発時の警告は
+  段階 2〜3 でまとめて)。
+- **既知の開発時の診断**: 読み込んだときに 1 回、列の仮想化の測り直し(`createColumnVirtualizer.version`)で見出しを 2 回描く
+  EFFECT_RELAY_TEAR が出る(段階 1-1 から。main でも出る。大きさを測った後に描き直す = 診断の文言どおり「測る代わり」)。
 
 ### 1-2 で分かったこと
 

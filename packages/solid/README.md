@@ -18,12 +18,15 @@ React 版と同じ DOM・class で描くので、React 版の `styles.css` を�
 - 編集: エディタ 6 種(text・複数行の text / number / select / date / checkbox / custom。打ち始め / ダブルクリック / F2 / Enter /
   Tab / Esc / 外をクリックで確定)、入力の検査の reject とエラーの吹き出し、元に戻す
 - コピー・貼り付け: core の clipboardController(Excel と同じ TSV、範囲いっぱいの貼り付け)
+- 行の選択: チェックボックス(`enableRowSelection` / `rowSelectionMode` / `enableSelectAllRows` / `selectedRowKeys` / `rowSelection` /
+  `onRowSelectionChange`)。行番号のクリック・Shift で範囲・ドラッグ・左上の角で全選択 / 解除
+- 展開行: `detailRow`(トグル列・`isExpandable`・`className`・高さ・中身の `collapse`)と `onExpandedDetailRowKeysChange`。トグル列の
+  セルの Enter / Space、最終列の Tab でカードへ・カードの端の Tab / Shift+Tab・表の外から戻る(core の `detailRowController`)
 - 命令的 API: core の gridApi のハンドルをそのまま(`ref` は関数で受ける)
 - 通知: `onActiveCellChange` / `onCellClick` / `onCellDoubleClick` / `onStateChange` / `onSortChange` / `onFiltersChange` / `onScroll` /
   `onColumnsChange` / `onUndoRedoStateChange` / `onHoveredRowChange`
 
-無いもの(段階 1-3): 行の選択、展開行。段階 2: `/lite` の 21 の機能
-(ラベル行・SSRM・行のグループ・合計行・固定行などを含む)。
+無いもの(段階 2): `/lite` の 21 の機能(ラベル行・SSRM・行のグループ・合計行・固定行などを含む)。
 
 `renderCell` / `renderHeader` / `renderTopBar` / `renderBottomBar` は、React 版のように描き直しのたびに呼ぶのではなく、Solid の部品と
 同じく必要なときだけ呼びます: `renderCell` は行(と値)や列が変わったとき、`renderHeader` は列が変わったとき、バーは関数が変わった
@@ -34,7 +37,7 @@ React 版と同じ DOM・class で描くので、React 版の `styles.css` を�
 ## 使い方
 
 ```sh
-pnpm --filter ./packages/solid dev          # デモ(10,000 行 × 39 列。エディタ 6 種・テーマ・列の固定・グリッドを外すボタン)
+pnpm --filter ./packages/solid dev          # デモ(10,000 行 × 39 列。エディタ 6 種・行の選択・展開行・テーマ・列の固定・グリッドを外すボタン)
 pnpm --filter ./packages/solid test         # jsdom のテスト(Solid の JSX 変換の vitest 設定。React 版と並べて比べるテストも)
 pnpm --filter ./packages/solid typecheck
 pnpm --filter ./packages/solid spike:build  # 大きさを測るためのライブラリビルド(dist/)
@@ -47,9 +50,9 @@ pnpm --filter ./packages/solid spike:build  # 大きさを測るためのライ�
 | `hooks/useGridStore.ts`(useSyncExternalStore) | `primitives/gridStoreSignals.ts`(store を signal に。購読は `onSettled`) |
 | `hooks/useController.ts` | `primitives/controller.ts`(`createRenderEffect` / `createEffect` で `update`) |
 | `hooks/useVirtualizerCore.ts` | `primitives/columnVirtualizer.ts` |
-| `GridShell.tsx`(5,420 行) | `SpreadsheetGrid.tsx`(約 1,370 行) |
+| `GridShell.tsx`(5,246 行) | `SpreadsheetGrid.tsx`(約 1,590 行) |
 | `view/GridHeaderRow.tsx` / `view/GridBodyLayer.tsx` | 同じ名前(`view/`) |
-| `view/DefaultGridTopBar.tsx` / `DefaultGridBottomBar.tsx` / `RowSelectionCheckbox.tsx` | 同じ名前(`view/`) |
+| `view/DefaultGridTopBar.tsx` / `DefaultGridBottomBar.tsx` / `RowSelectionCheckbox.tsx` / `GridDetailLayer.tsx` / `DetailToggleButton.tsx` | 同じ名前(`view/`) |
 | `editors/*`(CellEditorLayer / 6 種のエディタ / CheckboxCell / CellEditorErrorBubble) | 同じ名前(`editors/`) |
 | `hooks/usePortalTokens.ts` / `editors/useTopAlignedInput.ts` | `primitives/portalTokens.ts` / `primitives/topAlignedInput.ts` |
 | (ポップアップの置き場所の props) | `context/portal.ts`(表の root と描く場所) |

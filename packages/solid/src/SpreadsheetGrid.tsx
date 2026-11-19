@@ -11,12 +11,15 @@
 //   - 部品の本体では props を直接読まない(Solid 2.0 は本体での読み取りを警告する)。props は関数や memo の中で読む。
 //   - React の onXxxCapture / onBlur / onFocus(子孫からも上がってくる)は、Solid では capture のリスナーを自分で付ける /
 //     onFocusOut / onFocusIn にします。
-import { Show, createEffect, createMemo, createUniqueId, onCleanup, onSettled, untrack } from 'solid-js';
+import { For, Show, createEffect, createMemo, createUniqueId, onCleanup, onSettled, untrack } from 'solid-js';
 import type { JSX } from '@solidjs/web';
 import type {
   CellCoord,
+  CellDetailContext,
+  CellRenderContext,
   EditorCommitDirection,
   GridRowKey,
+  RowSelectionModel,
   SpreadsheetGridDerivedSummary,
 } from '@ishibashi0112/spreadsheet-grid-core';
 import { createGridEngine } from '@ishibashi0112/spreadsheet-grid-core/internal/engine/createGridEngine';
@@ -30,6 +33,7 @@ import {
 } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/geometry';
 import {
   resolveSelectionBand,
+  resolveSelectionBandSegments,
   resolveSelectionExtents,
 } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/selectionOverlayGeometry';
 import {
@@ -37,6 +41,7 @@ import {
   placementRectInPane,
   resolveCellPlacement,
   resolvePaneBandRect,
+  resolvePaneSegmentRects,
 } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/cellPlacement';
 import { GRID_DENSITY_DIMENSIONS } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/density';
 import { resolveGridHeightLayout } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/gridHeight';
@@ -49,6 +54,7 @@ import {
   DEFAULT_GRID_LOCALE_TEXT,
 } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/localeText';
 import {
+  resolveSlotFromSignature,
   resolveSlotMapFromSignature,
   serializeSlotValue,
 } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/slotProps';
@@ -58,7 +64,14 @@ import {
   createDataRowNumberer,
 } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/gridBarSummary';
 import { isCheckboxChecked } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/checkboxEditor';
-import { resolvePageTargetRow } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/verticalGeometry';
+import { MAX_BODY_PX, resolvePageTargetRow } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/verticalGeometry';
+import { DEFAULT_DETAIL_ROW_HEIGHT, isDetailRowExpandable } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/detailRow';
+import {
+  createSelectedRowsInOrderCounter,
+  getSelectAllState,
+  resolveSelectAllState,
+} from '@ishibashi0112/spreadsheet-grid-core/internal/logic/rowSelection';
+import { createDetailRowController } from '@ishibashi0112/spreadsheet-grid-core/internal/controllers/detailRowController';
 import {
   registerPopupContainer,
   resolvePopupContainer,
@@ -110,6 +123,8 @@ import { createLiveObject } from './primitives/liveObject';
 import { GridHeaderRow } from './view/GridHeaderRow';
 import { GridBodyLayer, type GridBodyRowItem, type GridCellContentContext } from './view/GridBodyLayer';
 import { Overlay, type OverlayRect } from './view/Overlay';
+import { GridDetailLayer } from './view/GridDetailLayer';
+import { DetailToggleButton } from './view/DetailToggleButton';
 import { CheckboxCell } from './editors/CheckboxCell';
 import { CellEditorLayer, type CellEditorSession } from './editors/CellEditorLayer';
 import { GridPortalContext } from './context/portal';
@@ -119,7 +134,12 @@ import { DefaultGridBottomBar } from './view/DefaultGridBottomBar';
 const EMPTY_ROWS: never[] = [];
 const NO_COLUMNS: never[] = [];
 const NO_COLUMN_FILTERS: Record<string, never> = {};
-const noopRenderDetailToggleCell = () => null;
+// 展開トグル列(合成列)のセル。開閉できる行だけ ▸ / ▾ を出します(React 版の renderDetailToggleCell と同じ)。
+const renderDetailToggleCell = (ctx: CellRenderContext<unknown>): JSX.Element => (
+  <Show when={ctx.detail?.expandable === true}>
+    <DetailToggleButton detail={ctx.detail as CellDetailContext} />
+  </Show>
+);
 const noop = () => {};
 
 type MutableRef<V> = { current: V };
@@ -160,13 +180,21 @@ export function SpreadsheetGrid<T extends object>(props: SpreadsheetGridProps<T>
   const enableRowHover = () => props.enableRowHover ?? true;
   const enableColumnResize = () => props.enableColumnResize ?? true;
   const activeRowFollowEnabled = () => (props.activeCellFollows ?? 'position') === 'row';
+  // 行の選択(チェックボックス)。全選択の既定は enableRowSelection && multiple(React 版と同じ)。
+  const enableRowSelection = () => props.enableRowSelection ?? false;
+  const rowSelectionMode = () => props.rowSelectionMode ?? 'multiple';
+  const enableSelectAllRows = () =>
+    props.enableSelectAllRows ?? (enableRowSelection() && rowSelectionMode() === 'multiple');
+  // 展開行(Master/Detail)。detailRow の指定が無ければ機能は休眠します。
+  const detailRowEnabled = () => props.detailRow != null;
+  const detailToggleColumnActive = () => props.detailRow != null && props.detailRow.showToggleColumn !== false;
   const columnInputs = () => ({
     columns: columns(),
     isServerSide: false,
     enableRowDrag: false,
     hasRowsChange: props.onRowsChange != null,
-    detailToggleColumnActive: false,
-    renderDetailToggleCell: noopRenderDetailToggleCell,
+    detailToggleColumnActive: detailToggleColumnActive(),
+    renderDetailToggleCell: renderDetailToggleCell as unknown as NonNullable<UnboundGridColumn<T>['renderCell']>,
   });
 
   // ── 文言(React 版の createLocaleTextResolver(mergeFeatureLocaleDefaults(features))。機能なしなので既定の表だけ) ──
@@ -203,7 +231,6 @@ export function SpreadsheetGrid<T extends object>(props: SpreadsheetGridProps<T>
   const autoScrollFrameRef: MutableRef<number | null> = { current: null };
   const editorActionGuardRef: MutableRef<boolean> = { current: false };
   const cellDoubleClickRef: MutableRef<(cell: CellCoord, event: MouseEvent) => void> = { current: noop };
-  let tableExitFocusing = false;
 
   // ── ポップアップの置き場(ツールチップ / エディタのポップアップ。core utils/popupContainer) ──
   const getPopupContainer = () => resolvePopupContainer(gridRootRef.current, props.popupContainer ?? 'auto');
@@ -298,10 +325,10 @@ export function SpreadsheetGrid<T extends object>(props: SpreadsheetGridProps<T>
       rowModel: rowModel(),
       measuredHeights: engine.autoHeightMeasurer.measuredHeights,
       autoHeightVersion: 0,
-      detailRowEnabled: false,
+      detailRowEnabled: detailRowEnabled(),
       expandedDetailRowKeys: ui().expandedDetailRowKeys,
-      detailHeight: 0,
-      detailIsExpandable: undefined,
+      detailHeight: props.detailRow?.height ?? DEFAULT_DETAIL_ROW_HEIGHT,
+      detailIsExpandable: props.detailRow?.isExpandable,
       detailIndexCacheRef: engine.detailIndexCache,
       labelDisplay: null,
     }),
@@ -390,8 +417,21 @@ export function SpreadsheetGrid<T extends object>(props: SpreadsheetGridProps<T>
   const selectionBand = createMemo(() =>
     resolveSelectionBand(selectionExtents(), vertical().windowFirstRow, vertical().windowLastRow, vertical().rowMetrics),
   );
-  const selectionRectForPane = (pane: ColumnPane): OverlayRect | null =>
-    resolvePaneBandRect(selectionExtents(), selectionBand(), pane);
+  // 展開行があるときは、選択の縦の帯を展開行の帯を避けた複数の矩形に分けます(無いときは 1 つ。React 版と同じ)。
+  const selectionBandSegments = createMemo(() =>
+    resolveSelectionBandSegments(
+      vertical().detailActive,
+      selectionExtents(),
+      vertical().windowFirstRow,
+      vertical().windowLastRow,
+      vertical().rowMetrics,
+      vertical().detailExtras,
+    ),
+  );
+  const selectionRectsForPane = (pane: ColumnPane): (OverlayRect | null)[] =>
+    resolvePaneSegmentRects(selectionExtents(), selectionBandSegments(), pane) ?? [
+      resolvePaneBandRect(selectionExtents(), selectionBand(), pane),
+    ];
 
   // ── ツールチップ(data-ssg-tooltip の委譲。core controllers/tooltipController) ──
   const gridDomId = createUniqueId();
@@ -474,18 +514,94 @@ export function SpreadsheetGrid<T extends object>(props: SpreadsheetGridProps<T>
     'effect',
   );
 
-  // ── 行の選択(段階 1-3 で props をつなぐ。今は命令的 API の確定だけ) ──
+  // ── 行の選択(チェックボックス。React 版の GridShell と同じつなぎ) ──
+  //   controlled の記述子(rowSelection が先、無ければ selectedRowKeys の糖衣)。
+  const controlledRowSelectionModel = createMemo((): RowSelectionModel | undefined => {
+    if (props.rowSelection !== undefined) {
+      return props.rowSelection;
+    }
+    if (props.selectedRowKeys !== undefined) {
+      return { type: 'include', rowKeys: props.selectedRowKeys };
+    }
+    return undefined;
+  });
+  // フィルターで隠れている行があるときのフィルター後のデータ行(見出しのチェックボックスは見えている行だけを選ぶ / 外す。
+  //   1.0.1 / AP-03)。機能なしの構成ではフィルターが行に効かないので、ふつうは null。
+  const filteredDataRows = createMemo(() =>
+    order().length < baseOrder().length ? { rows: rows(), order: order(), rowKeyGetter: resolvedRowKeyGetter() } : null,
+  );
+  // 見出しの全選択のチェックの 3 状態(none / some / all)。選択・行・並びが同じ間は数え直さない(1.0.1 のレビュー RA-7)。
+  const countSelectedRowsInOrder = createSelectedRowsInOrderCounter();
+  const selectAllRowsState = createMemo(() => {
+    const filtered = filteredDataRows();
+    return filtered && enableRowSelection()
+      ? resolveSelectAllState(
+          countSelectedRowsInOrder(ui().rowSelection, filtered.rows, filtered.order, filtered.rowKeyGetter),
+          filtered.order.length,
+        )
+      : getSelectAllState(ui().rowSelection, viewRowCount());
+  });
   const rowSelectionCommands = engine.rowSelectionCommands;
   connectController(rowSelectionCommands, () => ({
     rowModel: rowModel(),
     rowSelectionState: ui().rowSelection,
-    rowSelectionMode: 'multiple' as const,
-    onRowSelectionChange: undefined,
-    controlledRowSelectionModel: undefined,
+    rowSelectionMode: rowSelectionMode(),
+    onRowSelectionChange: props.onRowSelectionChange,
+    controlledRowSelectionModel: controlledRowSelectionModel(),
     leafRowCount: viewRowCount(),
-    filteredDataRows: null,
+    filteredDataRows: filteredDataRows(),
     dispatch,
   }));
+
+  // ── 展開行(Master/Detail。React 版の GridShell と同じつなぎ) ──
+  //   展開中の行のキーの変更の通知(初回 = マウント時の空集合は通知しない)と、rows から消えた行のキーを外す処理(DF-25)。
+  connectController(
+    engine.detailKeysNotifier,
+    () => ({ expandedKeys: ui().expandedDetailRowKeys, onChange: props.onExpandedDetailRowKeysChange }),
+    'effect',
+  );
+  connectController(engine.detailKeysPruner, () => ({
+    enabled: detailRowEnabled(),
+    rows: rows(),
+    expandedKeys: ui().expandedDetailRowKeys,
+    keyOf: resolvedRowKeyGetter(),
+    setExpandedKeys: (keys: ReadonlySet<GridRowKey>) => dispatch(gridActions.setExpandedDetailRowKeys(keys)),
+  }));
+  // 行だけで論理の全高の上限を超える表(約 50 万行〜)では展開行を描けないので、トグルを出さずキーでも開閉しない(AP-26)。
+  const detailDrawable = () => vertical().baseRowMetrics.totalBodyHeight <= MAX_BODY_PX;
+  const hasDetailCards = () => detailRowEnabled() && vertical().detailEntries.length > 0;
+  // 開閉(閉じる前にカードの中のフォーカスを表へ戻す)と、カードと Tab の順は core controllers/detailRowController(React 版と共用)。
+  const detailRows = createDetailRowController<T>();
+  connectController(detailRows, () => ({
+    rowModel: rowModel(),
+    orderedColumns: orderedColumns(),
+    hasCards: hasDetailCards(),
+    drawable: detailDrawable(),
+    isExpandable: props.detailRow?.isExpandable,
+    detailIndexCache: engine.detailIndexCache,
+    getUiState: store.getState,
+    dispatch,
+    scrollContainerRef,
+    gridRootRef,
+    tableExitRef,
+    scrollCellIntoView: (cell: CellCoord) => {
+      requestAnimationFrame(() => engine.gridApi.scrollToCellInternal(cell.row, cell.col, 'auto'));
+    },
+  }));
+  // カードの sticky の左オフセットと幅(ビューポートの中央の見える幅。列の合計がそれより狭ければ列の合計)。
+  const detailCardStickyLeft = () => paneResolution().leftPaneTotalWidth + paneResolution().centerLeadingWidth;
+  const detailCardWidth = () =>
+    Math.max(
+      Math.min(
+        view().viewportWidth - detailCardStickyLeft() - paneResolution().rightPaneTotalWidth,
+        paneLayout().center.totalWidth,
+      ),
+      0,
+    );
+  const detailRender = createMemo(() => props.detailRow?.render);
+  const detailCardSlotSignature = createMemo(() => serializeSlotValue(props.detailRow?.className));
+  const detailCardSlot = createMemo(() => resolveSlotFromSignature<JSX.CSSProperties>(detailCardSlotSignature()));
+  const collapseDetailRow = (rowKey: GridRowKey, viewIndex: number) => detailRows.setExpandedAt(rowKey, viewIndex, false);
 
   // ── セルの通知(クリック / ダブルクリック / アクティブセル) ──
   connectController(engine.cellEventNotifier, () => ({
@@ -556,7 +672,7 @@ export function SpreadsheetGrid<T extends object>(props: SpreadsheetGridProps<T>
     enableColumnHeaderHover: props.enableColumnHeaderHover ?? true,
     // クロスヘア(hoverHighlight: 'cross')は機能(motionExtras)。機能なしでは 'row' のまま。
     enableColumnHover: false,
-    enableRowSelection: false,
+    enableRowSelection: enableRowSelection(),
     onGutterRowSelect: rowSelectionCommands.handleGutterRowSelect,
     onGutterRowSelectDrag: rowSelectionCommands.handleGutterRowSelectDrag,
   }));
@@ -630,30 +746,6 @@ export function SpreadsheetGrid<T extends object>(props: SpreadsheetGridProps<T>
     computeIsWholeGridSelected(ui().selection, viewRowCount(), visibleColumns().length),
   );
 
-  // ── Tab でグリッドの外へ(最後の列の Tab / 表の外の目印 .ssg-tab-exit) ──
-  const moveFocusPastTable = () => {
-    const exit = tableExitRef.current;
-    if (!exit) {
-      return;
-    }
-    tableExitFocusing = true;
-    try {
-      exit.focus({ preventScroll: true });
-    } finally {
-      tableExitFocusing = false;
-    }
-  };
-  const handleTabPastLastColumn = (): boolean => {
-    moveFocusPastTable();
-    return false;
-  };
-  const handleTableExitFocus = () => {
-    if (tableExitFocusing) {
-      return;
-    }
-    // 後ろ(グリッドの外の次の要素)から Shift+Tab で戻ってきたときはグリッドへ(展開行のカードは段階 1-3)。
-    gridRootRef.current?.focus({ preventScroll: true });
-  };
   const resolvePageRow = (fromRow: number, direction: 1 | -1): number => {
     const pageHeight = Math.max(view().viewportHeight - headerHeight(), rowHeight());
     return resolvePageTargetRow(vertical().rowMetrics, fromRow, direction, pageHeight);
@@ -682,11 +774,12 @@ export function SpreadsheetGrid<T extends object>(props: SpreadsheetGridProps<T>
     enableClearOnDelete: props.enableClearOnDelete ?? true,
     onToggleCheckboxCell: cells.toggleCheckbox,
     onToggleGroup: noop,
-    onToggleDetailRow: undefined,
+    onToggleDetailRow: detailRowEnabled() ? detailRows.toggleFromKeyboard : undefined,
     resolvePageRow,
     openColumnMenu: undefined,
     openContextMenu: undefined,
-    onTabPastLastColumn: handleTabPastLastColumn,
+    // 最終列の Tab: その行のカードが開いていればカードの最初の要素へ、無ければ表の直後の目印から既定の Tab(段階 2 C-N2 / F-10)。
+    onTabPastLastColumn: detailRows.handleTabPastLastColumn,
   }));
 
   // ── 編集 ──
@@ -761,6 +854,8 @@ export function SpreadsheetGrid<T extends object>(props: SpreadsheetGridProps<T>
       target: event.target,
       preventDefault: () => event.preventDefault(),
     });
+    // セルや見出しの中の要素で Tab を押し、表の中にもう止まる要素が無いときは表の外へ(カードがあるときだけ)。
+    detailRows.handleRootKeyDownAfter(event);
     if (isEscapeClaimedByGrid(event)) {
       event.stopPropagation();
     }
@@ -794,6 +889,11 @@ export function SpreadsheetGrid<T extends object>(props: SpreadsheetGridProps<T>
       return;
     }
     gridRootRef.current?.focus({ preventScroll: true });
+    // 全選択のチェックがあるときは、角で行の選択の全選択 / 解除を切り替えます(表全体のセルの選択より先)。
+    if (enableSelectAllRows()) {
+      rowSelectionCommands.handleToggleSelectAllRows();
+      return;
+    }
     if (isWholeGridSelected()) {
       dispatch(gridActions.clearSelection());
       dispatch(gridActions.activateCell(null));
@@ -825,7 +925,7 @@ export function SpreadsheetGrid<T extends object>(props: SpreadsheetGridProps<T>
     uiState: ui(),
     getUiState: store.getState,
     focusGrid: () => gridRootRef.current?.focus({ preventScroll: true }),
-    beforeDetailRowsCollapse: undefined,
+    beforeDetailRowsCollapse: detailRows.returnFocusFromCards,
     startEditCell: tryStartEditCell,
     headerHeight: headerHeight(),
     verticalScaleFactor: vertical().verticalScaleFactor,
@@ -835,7 +935,7 @@ export function SpreadsheetGrid<T extends object>(props: SpreadsheetGridProps<T>
     windowFirstRow: vertical().windowFirstRow,
     windowLastRow: vertical().windowLastRow,
     physicalBodyHeight: vertical().physicalBodyHeight,
-    measuredRowHeights: false,
+    measuredRowHeights: vertical().detailActive,
     rows: rows(),
     isServerSide: false,
     serverSideRefresh: noop,
@@ -859,8 +959,8 @@ export function SpreadsheetGrid<T extends object>(props: SpreadsheetGridProps<T>
     canRedoRows: history.canRedo,
     clearUndoHistory: history.clearHistory,
     applyRowsChange: props.onRowsChange ? history.applyRows : undefined,
-    detailRowEnabled: false,
-    detailIsExpandable: undefined,
+    detailRowEnabled: detailRowEnabled(),
+    detailIsExpandable: props.detailRow?.isExpandable,
     detailIndexCacheRef: engine.detailIndexCache,
     moveRowByKey: noop,
     commitRowSelection: rowSelectionCommands.commitRowSelection,
@@ -1098,6 +1198,18 @@ export function SpreadsheetGrid<T extends object>(props: SpreadsheetGridProps<T>
     const unbound = column as unknown as UnboundGridColumn<T>;
     const value = getCellValue(row, unbound);
     if (column.renderCell) {
+      // ctx.detail(任意のセルからの展開行の開閉の口)。detailRow の指定がある間だけ渡し、値は読んだときに引きます。
+      //   開閉は押した時点の行の位置で(React 版は描いた時点の位置。描き直すたびに新しくなるので同じ)。
+      const detail: CellDetailContext = {
+        get expanded() {
+          return ui().expandedDetailRowKeys.has(cell.rowKey);
+        },
+        get expandable() {
+          return isDetailRowExpandable(detailDrawable(), props.detailRow?.isExpandable, row, cell.rowKey, cell.sourceRowIndex);
+        },
+        toggle: () => detailRows.toggleAt(cell.rowKey, untrack(() => cell.rowIndex)),
+        setExpanded: (expanded: boolean) => detailRows.setExpandedAt(cell.rowKey, untrack(() => cell.rowIndex), expanded),
+      };
       return column.renderCell({
         row,
         get rowIndex() {
@@ -1109,6 +1221,9 @@ export function SpreadsheetGrid<T extends object>(props: SpreadsheetGridProps<T>
         rowKey: cell.rowKey,
         get colIndex() {
           return cell.colIndex;
+        },
+        get detail() {
+          return detailRowEnabled() ? detail : undefined;
         },
         value,
         column,
@@ -1188,8 +1303,8 @@ export function SpreadsheetGrid<T extends object>(props: SpreadsheetGridProps<T>
           slots={slots()}
           isCornerHovered={view().isCornerHovered}
           isWholeGridSelected={isWholeGridSelected()}
-          showSelectAllCheckbox={false}
-          selectAllState="none"
+          showSelectAllCheckbox={enableSelectAllRows()}
+          selectAllState={selectAllRowsState()}
           filteredRowsLength={viewRowCount()}
           visibleColumnsLength={visibleColumns().length}
           entries={entries()}
@@ -1219,14 +1334,18 @@ export function SpreadsheetGrid<T extends object>(props: SpreadsheetGridProps<T>
             transform: vertical().bodyLayerTransform,
           }}
         >
-          <Overlay
-            class="ssg-selection-overlay"
-            slot={slots().selectionOverlay}
-            rect={selectionRectForPane(pane)}
-            headerHeight={headerHeight()}
-            leadingWidth={leadingWidth()}
-            baseOffset={vertical().overlayBaseOffset}
-          />
+          <For each={selectionRectsForPane(pane)} keyed={false}>
+            {(rect) => (
+              <Overlay
+                class="ssg-selection-overlay"
+                slot={slots().selectionOverlay}
+                rect={rect()}
+                headerHeight={headerHeight()}
+                leadingWidth={leadingWidth()}
+                baseOffset={vertical().overlayBaseOffset}
+              />
+            )}
+          </For>
           <Overlay
             class="ssg-active-cell-overlay"
             slot={slots().activeCellOverlay}
@@ -1268,7 +1387,7 @@ export function SpreadsheetGrid<T extends object>(props: SpreadsheetGridProps<T>
             selection={selectionSnapshot()}
             isWholeGridSelected={isWholeGridSelected()}
             hoveredRowIndex={resolvedHoveredRowIndex()}
-            enableRowSelection={false}
+            enableRowSelection={enableRowSelection()}
             rowSelectionState={ui().rowSelection}
             readOnly={readOnly()}
             canEditCell={props.canEditCell}
@@ -1286,6 +1405,20 @@ export function SpreadsheetGrid<T extends object>(props: SpreadsheetGridProps<T>
             onCellPointerEnter={pointer.handleCellPointerEnter}
             onCellClick={engine.cellEventNotifier.handleCellClick}
             onCellDoubleClick={pointer.handleCellDoubleClick}
+          />
+          <GridDetailLayer<T>
+            entries={vertical().detailEntries}
+            mode={pane === 'center' ? 'center' : 'band'}
+            paneWidth={width()}
+            cardStickyLeft={pane === 'center' ? detailCardStickyLeft() : 0}
+            cardWidth={pane === 'center' ? detailCardWidth() : 0}
+            cardSlot={detailCardSlot()}
+            slots={slots()}
+            rowModel={rowModel()}
+            renderCard={detailRender()}
+            onCollapse={collapseDetailRow}
+            onCardKeyDown={detailRows.handleCardKeyDown}
+            onCardFocusLost={detailRows.handleCardFocusLost}
           />
         </div>
       </div>
@@ -1442,9 +1575,10 @@ export function SpreadsheetGrid<T extends object>(props: SpreadsheetGridProps<T>
               tableExitRef.current = element;
             }}
             class="ssg-tab-exit"
-            tabindex={-1}
+            // Tab の順番に入れるのは展開行のカードが描かれているときだけ(段階 2 C-N2)。
+            tabindex={hasDetailCards() ? 0 : -1}
             aria-hidden="true"
-            onFocus={handleTableExitFocus}
+            onFocus={(event) => detailRows.handleTableExitFocus(event.relatedTarget)}
           />
         </div>
         {bottomBar()}
