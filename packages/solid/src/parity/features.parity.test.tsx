@@ -563,3 +563,84 @@ describe('スクロール位置インジケーター(scrollHint)', () => {
     });
   }, 20_000);
 });
+
+describe('動きの追加(motionExtras)', () => {
+  // jsdom には navigator.clipboard が無いので、書き込みは成功したことにする(コピー範囲の点線はコピーに成功したときだけ)。
+  const copied: string[] = [];
+  beforeAll(() => {
+    Object.defineProperty(navigator, 'clipboard', {
+      configurable: true,
+      value: { writeText: async (text: string) => void copied.push(text) },
+    });
+  });
+  afterAll(() => {
+    Reflect.deleteProperty(navigator, 'clipboard');
+  });
+
+  it.each([
+    ['あり', ['motionExtras']],
+    ['なし(空)', []],
+  ])('コピー範囲の点線・クロスヘア・変わったセルのフラッシュとトゥイーン(機能%s)', async (_label, features) => {
+    await expectParity({
+      features,
+      props: () => ({
+        rows: makeRows(10),
+        columns,
+        rowKeyGetter: (row: Row) => row.id,
+        height: 360,
+        motion: 'on',
+        highlightChanges: true,
+        hoverHighlight: 'cross',
+      }),
+      steps: async (ctx) => {
+        await selectRange(ctx, [1, 'name'], [3, 'price']);
+        await ctx.act(() => {
+          fireEvent.keyDown(ctx.shell(), { key: 'c', ctrlKey: true });
+        });
+        ctx.log('コピーした文字', copied.at(-1));
+        ctx.snapshot('コピーした範囲の点線');
+        // 選択を変えても点線は残る。
+        await ctx.act(() => {
+          fireEvent.pointerDown(ctx.cell(5, 'qty'), pointer);
+          fireEvent.pointerUp(window, pointer);
+        });
+        ctx.snapshot('選択を変える');
+        // クロスヘア: 本体のセルのホバーで列もホバーの列にし、列の帯を描く。本体から出たら消す。
+        await ctx.act(() => {
+          ctx.hover(ctx.cell(4, 'price'));
+        });
+        ctx.snapshot('セルにホバー(クロスヘア)');
+        // 本体から出る(React は pointerout から leave を作り、Solid は leave のリスナーを要素へ直接付けるので両方を送る)。
+        await ctx.act(() => {
+          fireEvent.pointerOut(ctx.cell(4, 'price'), { relatedTarget: document.body });
+          fireEvent.pointerLeave(ctx.shell(), { relatedTarget: document.body });
+        });
+        ctx.snapshot('本体から出る');
+        // 値が変わったセル: フラッシュ(class)。数値のトゥイーンは jsdom の requestAnimationFrame の時刻が performance.now() と
+        //   ずれていて途中の値が決まらないので、ここでは数値 → 空(トゥイーンしない)で見る(トゥイーンは Chromium で確かめる)。
+        await ctx.act(async () => {
+          await ctx.setProps({
+            rows: (ctx.rows() as Row[]).map((row) =>
+              row.id === 3 ? { ...row, qty: null as unknown as number, name: '変更' } : row,
+            ),
+          });
+        }, 500);
+        ctx.snapshot('値が変わったセル');
+        await ctx.act(() => {}, 1600);
+        ctx.snapshot('フラッシュが消えた後');
+        // 行数が変わると点線は消える(コピーした時点の見え方と違う)。
+        await ctx.setProps({ rows: makeRows(12) });
+        ctx.snapshot('行数が変わる');
+        await ctx.setProps({ showCopyRange: false, hoverHighlight: 'row' });
+        await selectRange(ctx, [0, 'name'], [1, 'qty']);
+        await ctx.act(() => {
+          fireEvent.keyDown(ctx.shell(), { key: 'c', ctrlKey: true });
+        });
+        await ctx.act(() => {
+          ctx.hover(ctx.cell(2, 'qty'));
+        });
+        ctx.snapshot('showCopyRange={false}・hoverHighlight="row"');
+      },
+    });
+  }, 20_000);
+});

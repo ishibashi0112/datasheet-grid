@@ -40,6 +40,7 @@ import {
   isActiveCellRendered,
   placementRectInPane,
   resolveCellPlacement,
+  resolveColumnHoverRect,
   resolvePaneBandRect,
   resolvePaneSegmentRects,
 } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/cellPlacement';
@@ -497,6 +498,21 @@ export function GridShell<T extends object>(props: SpreadsheetGridProps<T>, feat
     skeletonEnter: false,
     mountEnter: animateRowsActive(),
   }));
+  // 変わったセルのフラッシュ + 数値のトゥイーン(highlightChanges。機能 motionExtras。無い構成ではエンジンの代役で何もしない)。
+  //   rows の参照が変わったとき、描いているセルのうち値が変わったものへ直付けする。コントローラは書き換わった DOM の文字を
+  //   旧値へ戻してから補間するので、セルの文字を書き終えた後の effect で呼ぶ(React 版はコミット後のレイアウト effect)。
+  //   SSRM では止める(React 版と同じ。Solid 版の SSRM は段階 2-4)。
+  connectController(
+    engine.changeHighlight,
+    () => ({
+      enabled: (props.highlightChanges ?? false) && resolvedMotion() === 'on',
+      rows: rows(),
+      rowKeyGetter: resolvedRowKeyGetter(),
+      columns: visibleColumns(),
+      scrollContainerRef,
+    }),
+    'effect',
+  );
 
   // ── テーマ(OS の配色の外部 store も signal にする) ──
   const systemPrefersDark = createExternalStoreSignal(systemColorSchemeStore);
@@ -548,6 +564,58 @@ export function GridShell<T extends object>(props: SpreadsheetGridProps<T>, feat
     resolvePaneSegmentRects(selectionExtents(), selectionBandSegments(), pane) ?? [
       resolvePaneBandRect(selectionExtents(), selectionBand(), pane),
     ];
+  // コピー範囲の動く点線(showCopyRange。機能 motionExtras)。コピーした時点の見え方(ソート / フィルター / グループの開閉 /
+  //   行数 / 列)と今を参照で比べ、変わっていれば描かない(React 版と同じ)。矩形の求め方は選択範囲と同じ。
+  const motionExtrasFeature = features.motionExtras;
+  const copiedSelection = createMemo(() => {
+    const copied = view().copiedRange;
+    if (!motionExtrasFeature || !(props.showCopyRange ?? true) || !copied) {
+      return null;
+    }
+    const state = ui();
+    return copied.view.sort === state.sort &&
+      copied.view.filters === state.filters &&
+      copied.view.collapsedGroupKeys === state.collapsedGroupKeys &&
+      copied.view.viewRowCount === viewRowCount() &&
+      copied.view.columns === orderedColumnKeys()
+      ? copied.selection
+      : null;
+  });
+  const copiedExtents = createMemo(() => resolveSelectionExtents(copiedSelection(), paneLayout(), viewRowCount()));
+  const copiedBand = createMemo(() =>
+    resolveSelectionBand(copiedExtents(), vertical().windowFirstRow, vertical().windowLastRow, vertical().rowMetrics),
+  );
+  const copiedBandSegments = createMemo(() =>
+    resolveSelectionBandSegments(
+      vertical().detailActive,
+      copiedExtents(),
+      vertical().windowFirstRow,
+      vertical().windowLastRow,
+      vertical().rowMetrics,
+      vertical().detailExtras,
+    ),
+  );
+  const copyRectsForPane = (pane: ColumnPane): OverlayRect[] => {
+    if (copiedBandSegments()) {
+      return resolvePaneSegmentRects(copiedExtents(), copiedBandSegments(), pane) ?? [];
+    }
+    const rect = resolvePaneBandRect(copiedExtents(), copiedBand(), pane);
+    return rect ? [rect] : [];
+  };
+  // クロスヘア(hoverHighlight: 'cross'。機能 motionExtras。無い構成では 'row' に置き換わる): 本体のセルのホバーで列もホバーの
+  //   列にし、その列の帯を描く(描いている窓の縦の範囲だけ)。
+  const hoverCross = () => motionExtrasFeature !== undefined && props.hoverHighlight === 'cross';
+  const columnHoverRectForPane = (pane: ColumnPane): OverlayRect | null =>
+    hoverCross()
+      ? resolveColumnHoverRect(
+          view().hoveredColumnIndex,
+          pane,
+          paneLayout(),
+          vertical().rowMetrics,
+          vertical().windowFirstRow,
+          vertical().windowLastRow,
+        )
+      : null;
 
   // ── ツールチップ(data-ssg-tooltip の委譲。core controllers/tooltipController) ──
   const gridDomId = createUniqueId();
@@ -789,7 +857,7 @@ export function GridShell<T extends object>(props: SpreadsheetGridProps<T>, feat
     enableRowHover: enableRowHover(),
     enableColumnHeaderHover: props.enableColumnHeaderHover ?? true,
     // クロスヘア(hoverHighlight: 'cross')は機能(motionExtras)。機能なしでは 'row' のまま。
-    enableColumnHover: false,
+    enableColumnHover: hoverCross(),
     enableRowSelection: enableRowSelection(),
     onGutterRowSelect: rowSelectionCommands.handleGutterRowSelect,
     onGutterRowSelectDrag: rowSelectionCommands.handleGutterRowSelectDrag,
@@ -1591,6 +1659,32 @@ export function GridShell<T extends object>(props: SpreadsheetGridProps<T>, feat
               />
             )}
           </For>
+          {motionExtrasFeature
+            ? (() => {
+                const { CopyRangeOverlay, ColumnHoverOverlay } = motionExtrasFeature;
+                return (
+                  <>
+                    <For each={copyRectsForPane(pane)} keyed={false}>
+                      {(rect) => (
+                        <CopyRangeOverlay
+                          slot={slots().copyRangeOverlay}
+                          rect={rect()}
+                          headerHeight={headerHeight()}
+                          leadingWidth={leadingWidth()}
+                          baseOffset={vertical().overlayBaseOffset}
+                        />
+                      )}
+                    </For>
+                    <ColumnHoverOverlay
+                      rect={columnHoverRectForPane(pane)}
+                      headerHeight={headerHeight()}
+                      leadingWidth={leadingWidth()}
+                      baseOffset={vertical().overlayBaseOffset}
+                    />
+                  </>
+                );
+              })()
+            : null}
           <Overlay
             class="ssg-active-cell-overlay"
             slot={slots().activeCellOverlay}
@@ -1711,6 +1805,8 @@ export function GridShell<T extends object>(props: SpreadsheetGridProps<T>, feat
             'ssg-root--animate-rows': animateRowsActive(),
             'ssg-root--dim-readonly': props.dimReadOnlyCells ?? false,
             'ssg-root--fill-height': heightLayout().fillParent,
+            // クロスヘア(列見出し / 行番号を選択の色で染める。列の帯は ColumnHoverOverlay)。
+            'ssg-root--hover-cross': hoverCross(),
           },
         ]}
         style={{ ...toSolidStyle(heightLayout().rootStyle), ...slots().root?.style, ...props.style }}
@@ -1734,7 +1830,13 @@ export function GridShell<T extends object>(props: SpreadsheetGridProps<T>, feat
             })
           }
           onDragStart={(event) => pointer.handleNativeDragStart(event)}
-          onPointerLeave={() => applyHoveredRowChange(null)}
+          onPointerLeave={() => {
+            applyHoveredRowChange(null);
+            // クロスヘアの列のホバーも本体から出たら消す。
+            if (hoverCross()) {
+              setHoveredColumnIndex(null);
+            }
+          }}
           onFocusOut={(event) => {
             if (!event.currentTarget.contains(event.relatedTarget as Node | null) && document.hasFocus()) {
               event.currentTarget.removeAttribute('data-ssg-pointer');

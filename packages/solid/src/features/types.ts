@@ -23,6 +23,7 @@ import type { GridPinnedRows } from '../view/GridPinnedRows';
 import type { GridSelectionAggregates } from '../view/GridSelectionAggregates';
 import type { createSelectionAggregates } from '../primitives/selectionAggregates';
 import type { GridScrollHint } from '../view/GridScrollHint';
+import type { ColumnHoverOverlay, CopyRangeOverlay } from '../view/CopyRangeOverlay';
 import type { resolveScrollHintOptions } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/scrollHint';
 
 // 機能だけが使う文言の既定(core の logic/localeText<機能>.ts の表)。シェルが本体の既定に重ねて部品へ渡します(React 版と同じ)。
@@ -65,6 +66,13 @@ export type SolidGridFeatures = {
     | (FeatureLocaleDefaults & {
         resolveScrollHintOptions: typeof resolveScrollHintOptions;
         ScrollHint: typeof GridScrollHint;
+      })
+    | undefined;
+  // 動きの追加分: 変わったセルのフラッシュ(core のコントローラ)+ コピー範囲の点線 / クロスヘアの列の帯の部品。
+  motionExtras?:
+    | (NonNullable<GridCoreFeatures['motionExtras']> & {
+        CopyRangeOverlay: typeof CopyRangeOverlay;
+        ColumnHoverOverlay: typeof ColumnHoverOverlay;
       })
     | undefined;
 };

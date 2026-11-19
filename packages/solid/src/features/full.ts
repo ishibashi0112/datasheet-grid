@@ -2,6 +2,7 @@
 import { autoHeightFeature } from './autoHeight';
 import { conditionalFormatFeature } from './conditionalFormat';
 import { exportFeature } from './export';
+import { motionExtrasFeature } from './motionExtras';
 import { pinnedRowsFeature } from './pinnedRows';
 import { scrollHintFeature } from './scrollHint';
 import { selectionAggregatesFeature } from './selectionAggregates';
@@ -16,4 +17,5 @@ export const fullGridFeatures = {
   pinnedRows: pinnedRowsFeature,
   selectionAggregates: selectionAggregatesFeature,
   scrollHint: scrollHintFeature,
+  motionExtras: motionExtrasFeature,
 } satisfies Required<GridFeatures> as unknown as Required<SolidGridFeatures>;

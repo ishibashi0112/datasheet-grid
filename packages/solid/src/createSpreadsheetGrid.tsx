@@ -18,6 +18,8 @@ export type CreateSpreadsheetGridOptions = {
 const DISABLED_FEATURE_PROPS: { [K in GridFeatureName]?: Partial<SpreadsheetGridProps<object>> } = {
   // 行の高さの実測が無ければ autoHeight を切る。
   autoHeight: { autoHeight: false },
+  // 動きの追加分が無ければ、変わったセルのフラッシュ / コピー範囲の点線 / クロスヘアを止める(React 版と同じ)。
+  motionExtras: { highlightChanges: false, showCopyRange: false, hoverHighlight: 'row' },
 };
 
 export function createSpreadsheetGrid(options: CreateSpreadsheetGridOptions) {

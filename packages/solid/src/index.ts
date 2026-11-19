@@ -10,4 +10,5 @@ export { totalRowFeature } from './features/totalRow';
 export { pinnedRowsFeature } from './features/pinnedRows';
 export { selectionAggregatesFeature } from './features/selectionAggregates';
 export { scrollHintFeature } from './features/scrollHint';
+export { motionExtrasFeature } from './features/motionExtras';
 export type { GridColumn, CellRenderContext, SpreadsheetGridHandle, SpreadsheetGridProps, SolidGridTypes } from './model/gridTypes';

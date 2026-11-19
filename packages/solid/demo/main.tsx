@@ -137,6 +137,8 @@ function App() {
   const [footer, setFooter] = createSignal(false);
   const [aggregates, setAggregates] = createSignal(true);
   const [scrollHint, setScrollHint] = createSignal(false);
+  const [highlight, setHighlight] = createSignal(false);
+  const [cross, setCross] = createSignal(false);
   // 「品名を左へ固定」で編集中の列のペインを変える(エディタが外れるときの blur で確定しないことの確かめ)。
   const columns = () =>
     pinName() ? baseColumns.map((column) => (column.key === 'name' ? { ...column, pinned: 'left' as const } : column)) : baseColumns;
@@ -172,6 +174,12 @@ function App() {
         <button type="button" data-testid="scroll-hint" onClick={() => setScrollHint((v) => !v)}>
           スクロールのヒント
         </button>
+        <button type="button" data-testid="highlight" onClick={() => setHighlight((v) => !v)}>
+          変更のハイライト
+        </button>
+        <button type="button" data-testid="cross" onClick={() => setCross((v) => !v)}>
+          クロスヘア
+        </button>
         <span data-testid="active">{active()}</span>
         <span data-testid="changes">{changes()}</span>
         <span data-testid="selected">{selected()}</span>
@@ -202,6 +210,10 @@ function App() {
           showSelectionAggregates={aggregates()}
           // 「スクロールのヒント」: 行番号のバブル(品名つき)・ルーラー・カスタムスクロールバー。
           scrollHint={scrollHint() ? { hintColumn: 'name' } : undefined}
+          // 「変更のハイライト」: 値が変わったセルのフラッシュ + 数値のトゥイーン。「クロスヘア」: ホバーの列も帯で示す。
+          //   コピー範囲の点線(showCopyRange)は既定でオン。
+          highlightChanges={highlight()}
+          hoverHighlight={cross() ? 'cross' : 'row'}
           ariaLabel="在庫表"
           onActiveCellChange={(cell) => setActive(cell ? `${cell.columnKey} / ${String(cell.rowKey)}` : '')}
           enableRowSelection
