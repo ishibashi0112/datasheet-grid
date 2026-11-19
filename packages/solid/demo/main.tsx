@@ -135,6 +135,7 @@ function App() {
   const [expanded, setExpanded] = createSignal('');
   const [autoHeight, setAutoHeight] = createSignal(false);
   const [footer, setFooter] = createSignal(false);
+  const [aggregates, setAggregates] = createSignal(true);
   // 「品名を左へ固定」で編集中の列のペインを変える(エディタが外れるときの blur で確定しないことの確かめ)。
   const columns = () =>
     pinName() ? baseColumns.map((column) => (column.key === 'name' ? { ...column, pinned: 'left' as const } : column)) : baseColumns;
@@ -164,6 +165,9 @@ function App() {
         <button type="button" data-testid="footer" onClick={() => setFooter((v) => !v)}>
           合計行と固定行
         </button>
+        <button type="button" data-testid="aggregates" onClick={() => setAggregates((v) => !v)}>
+          選択範囲の集計
+        </button>
         <span data-testid="active">{active()}</span>
         <span data-testid="changes">{changes()}</span>
         <span data-testid="selected">{selected()}</span>
@@ -190,6 +194,8 @@ function App() {
           totalRow={footer()}
           pinnedTopRows={footer() ? [PINNED_TOP] : undefined}
           pinnedBottomRows={footer() ? PINNED_BOTTOM : undefined}
+          // 「選択範囲の集計」: 2 セル以上を選ぶと下部バーに平均 / データの個数 / 合計(既定でオン)。全選択は時間分割で集計する。
+          showSelectionAggregates={aggregates()}
           ariaLabel="在庫表"
           onActiveCellChange={(cell) => setActive(cell ? `${cell.columnKey} / ${String(cell.rowKey)}` : '')}
           enableRowSelection

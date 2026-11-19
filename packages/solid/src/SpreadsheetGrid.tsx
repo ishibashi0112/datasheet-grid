@@ -1154,6 +1154,21 @@ export function GridShell<T extends object>(props: SpreadsheetGridProps<T>, feat
       ),
   );
   const setGlobalFilterText = (value: string) => dispatch(gridActions.setGlobalFilter(value));
+  // 選択範囲の集計(機能 features/selectionAggregates。無い構成では常に null)。出す先が無いときは計算しない(大きな選択の
+  //   走査を省く)。出す先 = 下部バー(既定 / renderBottomBar)か、自前の上部バー(renderTopBar)。既定の上部バーは集計を
+  //   出さないので数えない(React 版と同じ)。
+  const selectionAggregatesFeature = features.selectionAggregates;
+  const selectionAggregates = selectionAggregatesFeature
+    ? selectionAggregatesFeature.createSelectionAggregates<T>(() => ({
+        enabled:
+          (props.showSelectionAggregates ?? true) &&
+          ((props.showBottomBar ?? true) || ((props.showTopBar ?? true) && props.renderTopBar !== undefined)),
+        selection: ui().selection,
+        viewRowCount: viewRowCount(),
+        orderedColumns: orderedColumns(),
+        rowModel: rowModel(),
+      }))
+    : () => null;
   const slotContext = createMemo((): SpreadsheetGridSlotContext<T> => {
     const filteredRows = getFilteredRows();
     return {
@@ -1165,7 +1180,7 @@ export function GridShell<T extends object>(props: SpreadsheetGridProps<T>, feat
       derivedSummary: derivedSummary(),
       globalFilterStatus: 'idle',
       globalFilterProgress: 1,
-      selectionAggregates: null,
+      selectionAggregates: selectionAggregates(),
     };
   });
   // 利用側のバー(renderTopBar / renderBottomBar)へ渡す文脈。値は読んだときに引く形にして、バーの関数は 1 回だけ呼ぶ
@@ -1214,6 +1229,8 @@ export function GridShell<T extends object>(props: SpreadsheetGridProps<T>, feat
             slot={slots().statusBar}
             derivedSummary={derivedSummary()}
             showCounts={props.showBottomBarCounts ?? true}
+            selectionAggregates={selectionAggregates()}
+            SelectionAggregates={selectionAggregatesFeature?.SelectionAggregates}
           />
         }
       >

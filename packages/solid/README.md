@@ -30,9 +30,10 @@ React 版と同じ DOM・class で描くので、React 版の `styles.css` を�
   `SpreadsheetGrid` は全部入り): エクスポート(`exportCsv` / `downloadCsv` / `getExportData`)、行の高さの自動調整(`autoHeight` /
   `estimateRowHeight` / `verticalAlign`、列の `autoHeight` / `verticalAlign`)、条件付き書式(列の `conditionalFormat` =
   データバー / カラースケール / 状態チップ)、合計行(`totalRow`。列の `aggFunc`)、固定行(`pinnedTopRows` / `pinnedBottomRows` /
-  `pinnedBottomRowsPlacement`)
+  `pinnedBottomRowsPlacement`)、選択範囲の集計(`showSelectionAggregates`。下部バーの平均 / データの個数 / 合計、大きな選択は
+  core のコントローラで時間分割。利用側のバーの文脈の `selectionAggregates`)
 
-無いもの(段階 2 の残り): `/lite` の残りの 16 の機能(ラベル行・SSRM・行のグループ・合計行・固定行などを含む)。
+無いもの(段階 2 の残り): `/lite` の残りの 15 の機能(ラベル行・SSRM・行のグループ・列フィルター・検索などを含む)。
 
 `renderCell` / `renderHeader` / `renderTopBar` / `renderBottomBar` は、React 版のように描き直しのたびに呼ぶのではなく、Solid の部品と
 同じく必要なときだけ呼びます: `renderCell` は行(と値)や列が変わったとき、`renderHeader` は列が変わったとき、バーは関数が変わった
@@ -43,7 +44,7 @@ React 版と同じ DOM・class で描くので、React 版の `styles.css` を�
 ## 使い方
 
 ```sh
-pnpm --filter ./packages/solid dev          # デモ(10,000 行 × 39 列。エディタ 6 種・行の選択・展開行・行の高さの自動調整・合計行と固定行・条件付き書式・テーマ・列の固定・グリッドを外すボタン)
+pnpm --filter ./packages/solid dev          # デモ(10,000 行 × 39 列。エディタ 6 種・行の選択・展開行・行の高さの自動調整・合計行と固定行・条件付き書式・選択範囲の集計・テーマ・列の固定・グリッドを外すボタン)
 pnpm --filter ./packages/solid test         # jsdom のテスト(Solid の JSX 変換の vitest 設定。React 版と並べて比べるテストも)
 pnpm --filter ./packages/solid typecheck
 pnpm --filter ./packages/solid spike:build  # 大きさを測るためのライブラリビルド(dist/)
@@ -58,10 +59,10 @@ pnpm --filter ./packages/solid spike:build  # 大きさを測るためのライ�
 | `hooks/useVirtualizerCore.ts` | `primitives/columnVirtualizer.ts` |
 | `GridShell.tsx`(5,246 行) | `SpreadsheetGrid.tsx`(約 1,590 行) |
 | `view/GridHeaderRow.tsx` / `view/GridBodyLayer.tsx` | 同じ名前(`view/`) |
-| `view/DefaultGridTopBar.tsx` / `DefaultGridBottomBar.tsx` / `RowSelectionCheckbox.tsx` / `GridDetailLayer.tsx` / `DetailToggleButton.tsx` / `GridChip.tsx` / `GridTotalRow.tsx` / `GridPinnedRows.tsx` | 同じ名前(`view/`) |
+| `view/DefaultGridTopBar.tsx` / `DefaultGridBottomBar.tsx` / `RowSelectionCheckbox.tsx` / `GridDetailLayer.tsx` / `DetailToggleButton.tsx` / `GridChip.tsx` / `GridTotalRow.tsx` / `GridPinnedRows.tsx` / `GridSelectionAggregates.tsx` | 同じ名前(`view/`) |
 | `features/*`(機能の部品)/ `createSpreadsheetGrid.tsx` | 同じ名前(入れた機能だけ) |
 | `editors/*`(CellEditorLayer / 6 種のエディタ / CheckboxCell / CellEditorErrorBubble) | 同じ名前(`editors/`) |
-| `hooks/usePortalTokens.ts` / `editors/useTopAlignedInput.ts` | `primitives/portalTokens.ts` / `primitives/topAlignedInput.ts` |
+| `hooks/usePortalTokens.ts` / `editors/useTopAlignedInput.ts` / `hooks/useSelectionAggregates.ts` | `primitives/portalTokens.ts` / `primitives/topAlignedInput.ts` / `primitives/selectionAggregates.ts` |
 | (ポップアップの置き場所の props) | `context/portal.ts`(表の root と描く場所) |
 | `hooks/useGridLocaleText.ts`(Context) | `context/localeText.ts` |
 | (React の `useSyncExternalStore`) | `primitives/externalStore.ts`(OS の配色 / 視差効果を減らす設定) |

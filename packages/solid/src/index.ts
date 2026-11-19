@@ -8,4 +8,5 @@ export { autoHeightFeature } from './features/autoHeight';
 export { conditionalFormatFeature } from './features/conditionalFormat';
 export { totalRowFeature } from './features/totalRow';
 export { pinnedRowsFeature } from './features/pinnedRows';
+export { selectionAggregatesFeature } from './features/selectionAggregates';
 export type { GridColumn, CellRenderContext, SpreadsheetGridHandle, SpreadsheetGridProps, SolidGridTypes } from './model/gridTypes';

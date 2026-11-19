@@ -20,6 +20,8 @@ import type { GridLocaleText } from '@ishibashi0112/spreadsheet-grid-core';
 import type { GridChip } from '../view/GridChip';
 import type { GridTotalRow } from '../view/GridTotalRow';
 import type { GridPinnedRows } from '../view/GridPinnedRows';
+import type { GridSelectionAggregates } from '../view/GridSelectionAggregates';
+import type { createSelectionAggregates } from '../primitives/selectionAggregates';
 
 // 機能だけが使う文言の既定(core の logic/localeText<機能>.ts の表)。シェルが本体の既定に重ねて部品へ渡します(React 版と同じ)。
 type FeatureLocaleDefaults = { localeText?: Readonly<Partial<GridLocaleText>> | undefined };
@@ -49,6 +51,13 @@ export type SolidGridFeatures = {
     | undefined;
   // 固定行(pinnedTopRows / pinnedBottomRows): 表示だけの行を各ペインに描く部品。
   pinnedRows?: (FeatureLocaleDefaults & { PinnedRows: typeof GridPinnedRows }) | undefined;
+  // 選択範囲の集計(既定の下部バーの平均 / データの個数 / 合計): 集計を求めるアダプタ(core のコントローラ)+ バーの部品。
+  selectionAggregates?:
+    | (FeatureLocaleDefaults & {
+        createSelectionAggregates: typeof createSelectionAggregates;
+        SelectionAggregates: typeof GridSelectionAggregates;
+      })
+    | undefined;
 };
 
 declare const gridFeatureBrand: unique symbol;

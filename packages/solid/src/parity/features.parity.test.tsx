@@ -361,3 +361,85 @@ describe('合計行(totalRow)と固定行(pinnedRows)', () => {
     });
   });
 });
+
+describe('選択範囲の集計(selectionAggregates)', () => {
+  const aggregatesText = (value: unknown) => JSON.stringify(value ?? null);
+  const reactAggregatesBar = async () => {
+    const { createElement } = await import('react');
+    return (ctx: { selectionAggregates: unknown }) =>
+      createElement('div', { className: 'my-bottom' }, aggregatesText(ctx.selectionAggregates));
+  };
+  const solidAggregatesBar = (ctx: { selectionAggregates: unknown }) => (
+    <div class="my-bottom">{aggregatesText(ctx.selectionAggregates)}</div>
+  );
+
+  it.each([
+    ['あり', ['selectionAggregates']],
+    ['なし(空)', []],
+  ])('数値 / 文字だけ / 空だけ / 1 セルの範囲・値の変更・件数なしの置き場所・止める(機能%s)', async (_label, features) => {
+    await expectParity({
+      features,
+      props: () => ({ rows: makeRows(12), columns, rowKeyGetter: (row: Row) => row.id, height: 360 }),
+      steps: async (ctx) => {
+        await selectRange(ctx, [1, 'qty'], [3, 'price']);
+        // 集計の要素は値や範囲が変わっても作り直さない(消えて出直したときだけ新しい要素)。
+        ctx.track('集計', () => ctx.container.querySelector('.ssg-bar-aggregates'));
+        ctx.snapshot('数値の範囲');
+        await ctx.setProps({ rows: (ctx.rows() as Row[]).map((row) => (row.id === 3 ? { ...row, qty: 1234.5 } : row)) });
+        ctx.snapshot('範囲の中の値を変える');
+        await selectRange(ctx, [1, 'name'], [4, 'name']);
+        ctx.snapshot('文字だけ');
+        await selectRange(ctx, [1, 'note'], [2, 'note']);
+        ctx.snapshot('空のセルだけ');
+        await selectRange(ctx, [0, 'name'], [2, 'note']);
+        ctx.snapshot('数値と文字と空の混ざった範囲');
+        await ctx.act(() => {
+          fireEvent.pointerDown(ctx.cell(5, 'qty'), pointer);
+          fireEvent.pointerUp(window, pointer);
+        });
+        ctx.snapshot('1 セル');
+        await selectRange(ctx, [2, 'qty'], [6, 'qty']);
+        await ctx.setProps({ showBottomBarCounts: false });
+        ctx.snapshot('件数なし(集計は右のグループの後ろ)');
+        await ctx.setProps({ showBottomBarCounts: true, localeText: { aggregateSum: 'SUM', aggregateAverage: 'AVG' } });
+        ctx.snapshot('文言の差し替え');
+        await ctx.setProps({ showSelectionAggregates: false });
+        ctx.snapshot('showSelectionAggregates={false}');
+        await ctx.setProps({ showSelectionAggregates: true, showBottomBar: false });
+        ctx.snapshot('下のバーを消す');
+      },
+    });
+  });
+
+  it.each([
+    ['あり', ['selectionAggregates']],
+    ['なし(空)', []],
+  ])('大きな選択は時間分割で集計し、利用側のバーへも渡す(機能%s)', async (_label, features) => {
+    const bar = await reactAggregatesBar();
+    await expectParity({
+      features,
+      // 15,000 行 × 5 列 = 75,000 セル(同期で計算する上限 50,000 を超える)。
+      props: (framework) => ({
+        rows: makeRows(15_000),
+        columns,
+        rowKeyGetter: (row: Row) => row.id,
+        height: 360,
+        renderBottomBar: framework === 'react' ? bar : solidAggregatesBar,
+      }),
+      steps: async (ctx) => {
+        await selectRange(ctx, [1, 'qty'], [2, 'price']);
+        ctx.snapshot('小さな範囲(利用側のバー)');
+        await ctx.act(() => {
+          fireEvent.pointerDown(ctx.cell(0, 'name'), pointer);
+          fireEvent.pointerUp(window, pointer);
+        });
+        await ctx.act(() => {
+          fireEvent.keyDown(ctx.shell(), { key: 'a', ctrlKey: true });
+        }, 1500);
+        ctx.snapshot('全選択(計算が終わった後)');
+        await ctx.setProps({ renderBottomBar: undefined });
+        ctx.snapshot('既定のバーへ戻す');
+      },
+    });
+  });
+});
