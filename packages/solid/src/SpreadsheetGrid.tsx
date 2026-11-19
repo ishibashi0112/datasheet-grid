@@ -40,6 +40,7 @@ import {
   isActiveCellRendered,
   placementRectInPane,
   resolveCellPlacement,
+  resolveColumnHoverRect,
   resolvePaneBandRect,
   resolvePaneSegmentRects,
 } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/cellPlacement';
@@ -49,10 +50,8 @@ import { resolveGridThemeClassName } from '@ishibashi0112/spreadsheet-grid-core/
 import { MOTION_OFF_CLASS_NAME, resolveGridMotion } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/motion';
 import { systemColorSchemeStore } from '@ishibashi0112/spreadsheet-grid-core/internal/controllers/systemColorSchemeStore';
 import { reducedMotionStore } from '@ishibashi0112/spreadsheet-grid-core/internal/controllers/reducedMotionStore';
-import {
-  createLocaleTextResolver,
-  DEFAULT_GRID_LOCALE_TEXT,
-} from '@ishibashi0112/spreadsheet-grid-core/internal/logic/localeText';
+import { createLocaleTextResolver } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/localeText';
+import { EMPTY_TOTAL_ROW_CELLS } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/totalRow';
 import {
   resolveSlotFromSignature,
   resolveSlotMapFromSignature,
@@ -109,15 +108,17 @@ import {
 import type {
   GridClassNames,
   GridColumn,
+  SolidGridTypes,
   SpreadsheetGridProps,
   SpreadsheetGridSlotContext,
 } from './model/gridTypes';
-import { GridLocaleTextContext } from './context/localeText';
+import { GridLocaleTextContext, mergeFeatureLocaleDefaults } from './context/localeText';
 import { createGridStoreSignals } from './primitives/gridStoreSignals';
 import { createExternalStoreSignal } from './primitives/externalStore';
 import { createGridViewSetters } from './primitives/viewSetters';
 import { connectController } from './primitives/controller';
 import { createColumnVirtualizer } from './primitives/columnVirtualizer';
+import type { SolidGridFeatures } from './features/types';
 import { px, toSolidStyle } from './primitives/style';
 import { createLiveObject } from './primitives/liveObject';
 import { GridHeaderRow } from './view/GridHeaderRow';
@@ -165,14 +166,15 @@ const SLOT_CONTEXT_KEYS = Object.keys({
   selectionAggregates: true,
 } satisfies Record<keyof SpreadsheetGridSlotContext<unknown>, true>) as (keyof SpreadsheetGridSlotContext<unknown>)[];
 
-export function SpreadsheetGrid<T extends object>(props: SpreadsheetGridProps<T>): JSX.Element {
+// シェルの本体です。機能セット(features)は createSpreadsheetGrid が渡します(全部入りは下の SpreadsheetGrid)。
+export function GridShell<T extends object>(props: SpreadsheetGridProps<T>, features: SolidGridFeatures): JSX.Element {
   // ── props(既定値つきの読み取り。本体では読まず、関数 / memo の中で読む。既定値は React 版の GridShell と同じ) ──
   const rows = createMemo(() => (props.rows ?? EMPTY_ROWS) as T[]);
   const columns = createMemo(() => props.columns as unknown as UnboundGridColumn<T>[]);
   const density = () => props.density ?? 'standard';
   const rowHeight = () => props.rowHeight ?? GRID_DENSITY_DIMENSIONS[density()].rowHeight;
-  // 機能なしの構成では固定行が無いので、列見出しの高さがそのまま見出しの帯の高さ(React 版の headerHeight)。
-  const headerHeight = () => props.headerHeight ?? GRID_DENSITY_DIMENSIONS[density()].headerHeight;
+  // 列見出しの行の高さ。本体の上端(headerHeight)は列見出し + 上の固定行(下の「合計行と固定行」)。
+  const columnHeaderHeight = () => props.headerHeight ?? GRID_DENSITY_DIMENSIONS[density()].headerHeight;
   const rowHeaderWidth = () => props.rowHeaderWidth ?? 56;
   const readOnly = () => props.readOnly ?? false;
   const enableRangeSelection = () => props.enableRangeSelection ?? true;
@@ -199,13 +201,46 @@ export function SpreadsheetGrid<T extends object>(props: SpreadsheetGridProps<T>
     renderDetailToggleCell: renderDetailToggleCell as unknown as NonNullable<UnboundGridColumn<T>['renderCell']>,
   });
 
-  // ── 文言(React 版の createLocaleTextResolver(mergeFeatureLocaleDefaults(features))。機能なしなので既定の表だけ) ──
-  const resolveLocaleText = createLocaleTextResolver(DEFAULT_GRID_LOCALE_TEXT);
+  // ── 文言(既定の表に、機能セットの各機能の文言の既定を重ねる。React 版と同じ) ──
+  const resolveLocaleText = createLocaleTextResolver(mergeFeatureLocaleDefaults(features));
   const localeTexts = createMemo(() => resolveLocaleText(props.localeText));
+
+  // ── 合計行と固定行(機能。無ければ高さ 0 = 今までどおり) ──
+  //   合計行は列の aggFunc をフィルター後のデータ行で集計し、表の下端に sticky で固定する。固定行は表示だけの行(選択 / 編集 /
+  //   キー操作に入らない)。本体の上端(headerHeight)は列見出し + 上の固定行、下端に固定する高さ(footerHeight)は下の固定行 +
+  //   合計行として、今までの幾何(スクロール / 行を見せる位置 / ヒットテスト / 選択の枠)へそのまま通す(React 版と同じ)。
+  const totalRowFeature = features.totalRow;
+  const TotalRow = totalRowFeature?.TotalRow;
+  const PinnedRows = features.pinnedRows?.PinnedRows;
+  const totalRowOptions = createMemo(() =>
+    typeof props.totalRow === 'object' && props.totalRow !== null ? props.totalRow : null,
+  );
+  const totalRowEnabled = createMemo(
+    () => (props.totalRow === true || totalRowOptions() !== null) && totalRowFeature !== undefined,
+  );
+  const totalRowLabel = () => totalRowOptions()?.label ?? localeTexts().totalRowLabel;
+  const totalRowHeight = createMemo(() => (totalRowEnabled() ? Math.max(0, totalRowOptions()?.height ?? rowHeight()) : 0));
+  const pinnedTop = createMemo(() =>
+    PinnedRows && props.pinnedTopRows && props.pinnedTopRows.length > 0 ? props.pinnedTopRows : null,
+  );
+  const pinnedBottom = createMemo(() =>
+    PinnedRows && props.pinnedBottomRows && props.pinnedBottomRows.length > 0 ? props.pinnedBottomRows : null,
+  );
+  const pinnedTopCount = () => pinnedTop()?.length ?? 0;
+  const pinnedBottomCount = () => pinnedBottom()?.length ?? 0;
+  const headerHeight = createMemo(() => columnHeaderHeight() + pinnedTopCount() * rowHeight());
+  const footerHeight = createMemo(() => totalRowHeight() + pinnedBottomCount() * rowHeight());
+  // 下の固定行を合計行の下に置く('belowTotal')。合計行が無ければいつもどおり。高さは同じで、並び(描く順・sticky の bottom・
+  //   aria-rowindex・エクスポート)だけ変わる。
+  const pinnedBelowTotal = createMemo(
+    () => props.pinnedBottomRowsPlacement === 'belowTotal' && pinnedBottom() !== null && totalRowEnabled(),
+  );
+  // ドラッグのヒットテストと上の自動スクロールの帯に渡す、上端に固定する高さ(上の固定行があるときだけ)。
+  const stickyTopHeight = () => (pinnedTopCount() > 0 ? headerHeight() : 0);
 
   // ── エンジン(1 回だけ作る) ──
   const engine = createGridEngine<T>({
-    features: {},
+    features,
     initialState: untrack(() => props.initialState),
     columnInputs: untrack(columnInputs),
     serverSide: {
@@ -313,20 +348,24 @@ export function SpreadsheetGrid<T extends object>(props: SpreadsheetGridProps<T>
   );
 
   // ── 縦のレイアウト(行の仮想化は core が計算する) ──
+  //   auto-height(行の高さの実測)は機能(features.autoHeight)。無い構成では createSpreadsheetGrid が autoHeight を
+  //   false にし、エンジンの実測は代役(測らない)、縦のレイアウトも auto-height を使わない(React 版と同じ)。
+  //   実測の version(prefix の更新)/ nonce(中身の変化)を購読して、縦のレイアウトの計算し直しと測り直しのきっかけにします。
+  const autoHeightSnapshot = createExternalStoreSignal(engine.autoHeightMeasurer);
   const vertical = createMemo(() =>
     engine.resolveVerticalLayout({
       isServerSide: false,
-      autoHeight: false,
+      autoHeight: props.autoHeight ?? false,
       visibleColumns: visibleColumns(),
       viewRowCount: viewRowCount(),
-      estimateRowHeight: rowHeight(),
+      estimateRowHeight: props.estimateRowHeight ?? rowHeight(),
       rowHeight: rowHeight(),
       headerHeight: headerHeight(),
       viewportHeight: view().viewportHeight,
       scrollTop: view().scrollTop,
       rowModel: rowModel(),
       measuredHeights: engine.autoHeightMeasurer.measuredHeights,
-      autoHeightVersion: 0,
+      autoHeightVersion: autoHeightSnapshot().version,
       detailRowEnabled: detailRowEnabled(),
       expandedDetailRowKeys: ui().expandedDetailRowKeys,
       detailHeight: props.detailRow?.height ?? DEFAULT_DETAIL_ROW_HEIGHT,
@@ -335,6 +374,47 @@ export function SpreadsheetGrid<T extends object>(props: SpreadsheetGridProps<T>
       labelDisplay: null,
     }),
   );
+  // 条件付き書式の機能(機能セットは作ったときに決まる)と、列ごとの min / max(ビューの行から。中身が同じなら同じ参照)。
+  const conditionalFormatFeature = features.conditionalFormat;
+  const conditionalFormatStats = createMemo(() => engine.resolveConditionalFormatStats(rowModel(), orderedColumns()));
+  // 合計行のセルの値(フィルター後のデータ行 = order から集計)と見出しを出す列。中身が同じなら同じ参照(React 版と同じ)。
+  const totalRowCells = createMemo(() =>
+    totalRowEnabled()
+      ? engine.resolveTotalRowCells({
+          rows: rows(),
+          order: order(),
+          columns: orderedColumns(),
+          values: totalRowOptions()?.values,
+        })
+      : EMPTY_TOTAL_ROW_CELLS,
+  );
+  const totalRowLabelColumnKey = createMemo(() =>
+    totalRowFeature ? totalRowFeature.resolveTotalRowLabelColumnKey(orderedColumns(), totalRowCells()) : null,
+  );
+  const totalRowSlotSignature = createMemo(() => serializeSlotValue(totalRowOptions()?.className));
+  const totalRowSlot = createMemo(() => resolveSlotFromSignature<JSX.CSSProperties>(totalRowSlotSignature()));
+  // エクスポートの includeTotalRow / includePinnedRows で出す行。
+  const totalRowExport = createMemo(() =>
+    totalRowEnabled() ? { cells: totalRowCells(), label: totalRowLabel() } : undefined,
+  );
+  const pinnedRowsExport = createMemo(() =>
+    pinnedTop() || pinnedBottom()
+      ? { top: pinnedTop() ?? [], bottom: pinnedBottom() ?? [], bottomAfterTotal: pinnedBelowTotal() }
+      : undefined,
+  );
+  // スクロール位置インジケーター(機能 features/scrollHint。無い構成では常に null = ネイティブのスクロールバー)。表示行数が
+  //   minRows 未満のあいだは待機(React 版と同じ)。
+  const scrollHintFeature = features.scrollHint;
+  const resolvedScrollHint = createMemo(() =>
+    scrollHintFeature ? scrollHintFeature.resolveScrollHintOptions<T, SolidGridTypes>(props.scrollHint) : null,
+  );
+  const activeScrollHint = createMemo(() => {
+    const resolved = resolvedScrollHint();
+    return resolved !== null && viewRowCount() >= resolved.minRows ? resolved : null;
+  });
+  const customScrollbar = createMemo(() => activeScrollHint()?.scrollbar === true);
+  // auto-height が効いているか(真偽値だけの memo。すべてのセルが読むので、vertical の変化のたびに全セルを走らせない)。
+  const autoHeightActive = createMemo(() => vertical().autoHeightActive);
   // 描く行(React 版の GridBodyLayer が virtualRowIndexes に無い行を飛ばすのと同じ)と、対応に使う rowKey。
   const bodyRows = createMemo((): GridBodyRowItem[] => {
     const { virtualRows, virtualRowIndexes } = vertical();
@@ -354,12 +434,34 @@ export function SpreadsheetGrid<T extends object>(props: SpreadsheetGridProps<T>
     return items;
   });
 
+  // auto-height の測り方は core controllers/autoHeightMeasurer(描いたセルの器を測り、行高ストアへ入れ、上の行の高さが
+  //   変わったら見ている行がずれないよう scrollTop を合わせる)。React 版はコミット後・描く前のレイアウト effect で update
+  //   しますが、Solid では描画の段の effect が新しい行の DOM より先に走りうるので、DOM を書き終えた後の effect で呼びます
+  //   (同じマイクロタスクの中 = 画面に出る前)。
+  connectController(
+    engine.autoHeightMeasurer,
+    () => ({
+      scrollContainerRef,
+      autoHeightActive: vertical().autoHeightActive,
+      minRowHeight: rowHeight(),
+      rowHeightStore: vertical().rowHeightStore,
+      rowMetrics: vertical().rowMetrics,
+      rowModel: rowModel(),
+      virtualRows: vertical().virtualRows,
+      viewportHeight: view().viewportHeight,
+      version: autoHeightSnapshot().version,
+      nonce: autoHeightSnapshot().nonce,
+    }),
+    'effect',
+  );
+
   // ── スクロールの同期(見える大きさ / scrollTop を view スライスへ) ──
   connectController(engine.scrollSync, () => ({
     scrollContainerRef,
     setViewState: store.setViewState,
     onScroll: props.onScroll,
-    footerHeight: 0,
+    // 見える高さは下端に固定する行(合計行 / 下の固定行)に隠れるぶんを除く。
+    footerHeight: footerHeight(),
   }));
 
   // ── 列の横の仮想化 ──
@@ -389,12 +491,28 @@ export function SpreadsheetGrid<T extends object>(props: SpreadsheetGridProps<T>
   // ── モーション / 行の出入り(animateRows。React 版の engine.rowEnter と同じつなぎ) ──
   const prefersReducedMotion = createExternalStoreSignal(reducedMotionStore);
   const resolvedMotion = () => resolveGridMotion(props.motion ?? 'auto', prefersReducedMotion());
-  const animateRowsActive = () => (props.animateRows ?? true) && resolvedMotion() === 'on';
+  const animateRowsActive = () =>
+    (props.animateRows ?? true) && resolvedMotion() === 'on' && !autoHeightActive();
   connectController(engine.rowEnter, () => ({
     scrollContainerRef,
     skeletonEnter: false,
     mountEnter: animateRowsActive(),
   }));
+  // 変わったセルのフラッシュ + 数値のトゥイーン(highlightChanges。機能 motionExtras。無い構成ではエンジンの代役で何もしない)。
+  //   rows の参照が変わったとき、描いているセルのうち値が変わったものへ直付けする。コントローラは書き換わった DOM の文字を
+  //   旧値へ戻してから補間するので、セルの文字を書き終えた後の effect で呼ぶ(React 版はコミット後のレイアウト effect)。
+  //   SSRM では止める(React 版と同じ。Solid 版の SSRM は段階 2-4)。
+  connectController(
+    engine.changeHighlight,
+    () => ({
+      enabled: (props.highlightChanges ?? false) && resolvedMotion() === 'on',
+      rows: rows(),
+      rowKeyGetter: resolvedRowKeyGetter(),
+      columns: visibleColumns(),
+      scrollContainerRef,
+    }),
+    'effect',
+  );
 
   // ── テーマ(OS の配色の外部 store も signal にする) ──
   const systemPrefersDark = createExternalStoreSignal(systemColorSchemeStore);
@@ -415,6 +533,18 @@ export function SpreadsheetGrid<T extends object>(props: SpreadsheetGridProps<T>
   const editingCellPlacement = createMemo(() =>
     resolveCellPlacement(ui().editingCell, viewRowCount(), paneLayout(), vertical().rowMetrics),
   );
+  const editorAlignTop = createMemo(() => {
+    const editing = ui().editingCell;
+    const column = editing ? orderedColumns()[editing.col] : undefined;
+    const placement = editingCellPlacement();
+    return (
+      column !== undefined &&
+      placement !== null &&
+      autoHeightActive() &&
+      placement.rect.height > rowHeight() &&
+      (column.verticalAlign ?? props.verticalAlign ?? (column.autoHeight === true ? 'top' : 'center')) === 'top'
+    );
+  });
   const selectionExtents = createMemo(() => resolveSelectionExtents(ui().selection, paneLayout(), viewRowCount()));
   const selectionBand = createMemo(() =>
     resolveSelectionBand(selectionExtents(), vertical().windowFirstRow, vertical().windowLastRow, vertical().rowMetrics),
@@ -434,6 +564,58 @@ export function SpreadsheetGrid<T extends object>(props: SpreadsheetGridProps<T>
     resolvePaneSegmentRects(selectionExtents(), selectionBandSegments(), pane) ?? [
       resolvePaneBandRect(selectionExtents(), selectionBand(), pane),
     ];
+  // コピー範囲の動く点線(showCopyRange。機能 motionExtras)。コピーした時点の見え方(ソート / フィルター / グループの開閉 /
+  //   行数 / 列)と今を参照で比べ、変わっていれば描かない(React 版と同じ)。矩形の求め方は選択範囲と同じ。
+  const motionExtrasFeature = features.motionExtras;
+  const copiedSelection = createMemo(() => {
+    const copied = view().copiedRange;
+    if (!motionExtrasFeature || !(props.showCopyRange ?? true) || !copied) {
+      return null;
+    }
+    const state = ui();
+    return copied.view.sort === state.sort &&
+      copied.view.filters === state.filters &&
+      copied.view.collapsedGroupKeys === state.collapsedGroupKeys &&
+      copied.view.viewRowCount === viewRowCount() &&
+      copied.view.columns === orderedColumnKeys()
+      ? copied.selection
+      : null;
+  });
+  const copiedExtents = createMemo(() => resolveSelectionExtents(copiedSelection(), paneLayout(), viewRowCount()));
+  const copiedBand = createMemo(() =>
+    resolveSelectionBand(copiedExtents(), vertical().windowFirstRow, vertical().windowLastRow, vertical().rowMetrics),
+  );
+  const copiedBandSegments = createMemo(() =>
+    resolveSelectionBandSegments(
+      vertical().detailActive,
+      copiedExtents(),
+      vertical().windowFirstRow,
+      vertical().windowLastRow,
+      vertical().rowMetrics,
+      vertical().detailExtras,
+    ),
+  );
+  const copyRectsForPane = (pane: ColumnPane): OverlayRect[] => {
+    if (copiedBandSegments()) {
+      return resolvePaneSegmentRects(copiedExtents(), copiedBandSegments(), pane) ?? [];
+    }
+    const rect = resolvePaneBandRect(copiedExtents(), copiedBand(), pane);
+    return rect ? [rect] : [];
+  };
+  // クロスヘア(hoverHighlight: 'cross'。機能 motionExtras。無い構成では 'row' に置き換わる): 本体のセルのホバーで列もホバーの
+  //   列にし、その列の帯を描く(描いている窓の縦の範囲だけ)。
+  const hoverCross = () => motionExtrasFeature !== undefined && props.hoverHighlight === 'cross';
+  const columnHoverRectForPane = (pane: ColumnPane): OverlayRect | null =>
+    hoverCross()
+      ? resolveColumnHoverRect(
+          view().hoveredColumnIndex,
+          pane,
+          paneLayout(),
+          vertical().rowMetrics,
+          vertical().windowFirstRow,
+          vertical().windowLastRow,
+        )
+      : null;
 
   // ── ツールチップ(data-ssg-tooltip の委譲。core controllers/tooltipController) ──
   const gridDomId = createUniqueId();
@@ -510,7 +692,7 @@ export function SpreadsheetGrid<T extends object>(props: SpreadsheetGridProps<T>
       activeCellPinned: activeCellPlacement() !== null && activeCellPlacement()?.pane !== 'center',
       activeCell: ui().activeCell,
       verticalScaleFactor: vertical().verticalScaleFactor,
-      footerHeight: 0,
+      footerHeight: footerHeight(),
       stickyTopInset: undefined,
     }),
     'effect',
@@ -666,8 +848,8 @@ export function SpreadsheetGrid<T extends object>(props: SpreadsheetGridProps<T>
     centerLeadingWidth: paneResolution().centerLeadingWidth,
     rightLeadingWidth: paneResolution().rightLeadingWidth,
     headerHeight: headerHeight(),
-    footerHeight: 0,
-    stickyTopHeight: 0,
+    footerHeight: footerHeight(),
+    stickyTopHeight: stickyTopHeight(),
     rowMetrics: vertical().rowMetrics,
     verticalScaleFactor: vertical().verticalScaleFactor,
     setHoveredRowIndex: applyHoveredRowChange,
@@ -675,7 +857,7 @@ export function SpreadsheetGrid<T extends object>(props: SpreadsheetGridProps<T>
     enableRowHover: enableRowHover(),
     enableColumnHeaderHover: props.enableColumnHeaderHover ?? true,
     // クロスヘア(hoverHighlight: 'cross')は機能(motionExtras)。機能なしでは 'row' のまま。
-    enableColumnHover: false,
+    enableColumnHover: hoverCross(),
     enableRowSelection: enableRowSelection(),
     onGutterRowSelect: rowSelectionCommands.handleGutterRowSelect,
     onGutterRowSelectDrag: rowSelectionCommands.handleGutterRowSelectDrag,
@@ -842,7 +1024,8 @@ export function SpreadsheetGrid<T extends object>(props: SpreadsheetGridProps<T>
         return true;
       }
       if (target === root || target.hasAttribute('data-ssg-ime-input')) {
-        return state.editingCell !== null || isClearableSelection(state.selection);
+        // 1 セルのコピーの後の Escape も(コピー範囲の点線を消す。React 版と同じ)。
+        return state.editingCell !== null || isClearableSelection(state.selection) || untrack(copiedSelection) !== null;
       }
       return false;
     },
@@ -939,7 +1122,7 @@ export function SpreadsheetGrid<T extends object>(props: SpreadsheetGridProps<T>
     windowFirstRow: vertical().windowFirstRow,
     windowLastRow: vertical().windowLastRow,
     physicalBodyHeight: vertical().physicalBodyHeight,
-    measuredRowHeights: vertical().detailActive,
+    measuredRowHeights: autoHeightActive() || vertical().detailActive,
     rows: rows(),
     isServerSide: false,
     serverSideRefresh: noop,
@@ -949,9 +1132,9 @@ export function SpreadsheetGrid<T extends object>(props: SpreadsheetGridProps<T>
     labelRowExport: undefined,
     localeTexts: localeTexts(),
     labelViewIndexes: undefined,
-    totalRowExport: undefined,
-    pinnedRowsExport: undefined,
-    footerHeight: 0,
+    totalRowExport: totalRowExport(),
+    pinnedRowsExport: pinnedRowsExport(),
+    footerHeight: footerHeight(),
     stickyTopInset: undefined,
     activeToolPanelTab: null,
     openToolPanel: noop,
@@ -1052,6 +1235,21 @@ export function SpreadsheetGrid<T extends object>(props: SpreadsheetGridProps<T>
       ),
   );
   const setGlobalFilterText = (value: string) => dispatch(gridActions.setGlobalFilter(value));
+  // 選択範囲の集計(機能 features/selectionAggregates。無い構成では常に null)。出す先が無いときは計算しない(大きな選択の
+  //   走査を省く)。出す先 = 下部バー(既定 / renderBottomBar)か、自前の上部バー(renderTopBar)。既定の上部バーは集計を
+  //   出さないので数えない(React 版と同じ)。
+  const selectionAggregatesFeature = features.selectionAggregates;
+  const selectionAggregates = selectionAggregatesFeature
+    ? selectionAggregatesFeature.createSelectionAggregates<T>(() => ({
+        enabled:
+          (props.showSelectionAggregates ?? true) &&
+          ((props.showBottomBar ?? true) || ((props.showTopBar ?? true) && props.renderTopBar !== undefined)),
+        selection: ui().selection,
+        viewRowCount: viewRowCount(),
+        orderedColumns: orderedColumns(),
+        rowModel: rowModel(),
+      }))
+    : () => null;
   const slotContext = createMemo((): SpreadsheetGridSlotContext<T> => {
     const filteredRows = getFilteredRows();
     return {
@@ -1063,7 +1261,7 @@ export function SpreadsheetGrid<T extends object>(props: SpreadsheetGridProps<T>
       derivedSummary: derivedSummary(),
       globalFilterStatus: 'idle',
       globalFilterProgress: 1,
-      selectionAggregates: null,
+      selectionAggregates: selectionAggregates(),
     };
   });
   // 利用側のバー(renderTopBar / renderBottomBar)へ渡す文脈。値は読んだときに引く形にして、バーの関数は 1 回だけ呼ぶ
@@ -1112,6 +1310,8 @@ export function SpreadsheetGrid<T extends object>(props: SpreadsheetGridProps<T>
             slot={slots().statusBar}
             derivedSummary={derivedSummary()}
             showCounts={props.showBottomBarCounts ?? true}
+            selectionAggregates={selectionAggregates()}
+            SelectionAggregates={selectionAggregatesFeature?.SelectionAggregates}
           />
         }
       >
@@ -1265,6 +1465,51 @@ export function SpreadsheetGrid<T extends object>(props: SpreadsheetGridProps<T>
       );
     }
     const text = column.valueFormatter ? column.valueFormatter({ value, row, column }) : String(value ?? '');
+    // 条件付き書式: データバーの showValue: false は文字を出さない(帯は GridBodyLayer が描く)。機能セットに無ければ指定を無視。
+    //   valueFormatter は React 版と同じく先に呼ぶ。
+    const formatRules = conditionalFormatFeature ? unbound.conditionalFormat : undefined;
+    if (formatRules?.dataBar?.showValue === false) {
+      return null;
+    }
+    // 状態チップ(値 → 色味 / 指定)。ラベルの省略時は表示の文字。チップの関数が位置や状態を読んだときは、その式だけが追従する。
+    const chips = formatRules?.chips;
+    if (conditionalFormatFeature && chips) {
+      const { GridChip, resolveChipSpec } = conditionalFormatFeature;
+      const chip = createMemo(() =>
+        resolveChipSpec<T>(chips, {
+          row,
+          get rowIndex() {
+            return cell.rowIndex;
+          },
+          get sourceRowIndex() {
+            return cell.sourceRowIndex;
+          },
+          rowKey: cell.rowKey,
+          get colIndex() {
+            return cell.colIndex;
+          },
+          value,
+          column: unbound,
+          get isActive() {
+            return cell.isActive;
+          },
+          get isSelected() {
+            return cell.isSelected;
+          },
+          get isEditing() {
+            return cell.isEditing;
+          },
+          get readOnly() {
+            return cell.readOnly;
+          },
+        }),
+      );
+      return (
+        <Show when={chip()} fallback={<span class="ssg-cell-value">{text}</span>}>
+          {(spec) => <GridChip spec={spec()}>{spec().label ?? text}</GridChip>}
+        </Show>
+      );
+    }
     return <span class="ssg-cell-value">{text}</span>;
   };
 
@@ -1294,6 +1539,63 @@ export function SpreadsheetGrid<T extends object>(props: SpreadsheetGridProps<T>
     const bodyHeight = () => headerHeight() + vertical().physicalBodyHeight;
     const activeRect = () => placementRectInPane(activeCellPlacement(), pane);
     const editorRect = () => placementRectInPane(editingCellPlacement(), pane);
+    // 表示だけの行(固定行 / 合計行)に入ったら行ホバーを外す(直前にいた本体の行を強調したままにしない)。
+    const clearHoveredRow = () => applyHoveredRowChange(null);
+    const renderPinnedRows = (position: 'top' | 'bottom') =>
+      PinnedRows ? (
+        <Show when={position === 'top' ? pinnedTop() : pinnedBottom()}>
+          {(pinnedRows) => (
+            <PinnedRows
+              pane={pane}
+              position={position}
+              ownsRowHeader={ownsRowHeader()}
+              leadingWidth={leadingWidth()}
+              rowHeaderWidth={rowHeaderWidth()}
+              rows={pinnedRows() as readonly T[]}
+              rowHeight={rowHeight()}
+              stickyOffset={position === 'top' ? columnHeaderHeight() : pinnedBelowTotal() ? 0 : totalRowHeight()}
+              bodyHeight={position === 'top' || pinnedBelowTotal() ? 0 : vertical().physicalBodyHeight}
+              entries={entries()}
+              rowKeyGetter={resolvedRowKeyGetter()}
+              ariaRowIndexStart={
+                position === 'top' ? 2 : viewRowCount() + 2 + pinnedTopCount() + (pinnedBelowTotal() ? 1 : 0)
+              }
+              getRowClassName={props.getRowClassName}
+              showCellOverflowTooltip={props.showCellOverflowTooltip ?? false}
+              conditionalFormat={conditionalFormatFeature}
+              conditionalFormatStats={conditionalFormatStats()}
+              slots={slots()}
+              onPointerEnter={clearHoveredRow}
+            />
+          )}
+        </Show>
+      ) : null;
+    const renderTotalRow = () =>
+      TotalRow ? (
+        <Show when={totalRowEnabled()}>
+          <TotalRow
+            pane={pane}
+            ownsRowHeader={ownsRowHeader()}
+            leadingWidth={leadingWidth()}
+            rowHeaderWidth={rowHeaderWidth()}
+            // 下の固定行があるときは本体ぶんの空きは固定行の器が持つ(合計行はその直後)。下の固定行を合計行の下に置くときは
+            //   合計行が持ち、sticky の bottom を固定行の高さぶん上げる。
+            bodyHeight={pinnedBottom() && !pinnedBelowTotal() ? 0 : vertical().physicalBodyHeight}
+            stickyBottom={pinnedBelowTotal() ? pinnedBottomCount() * rowHeight() : 0}
+            height={totalRowHeight()}
+            entries={entries()}
+            cells={totalRowCells()}
+            label={totalRowLabel()}
+            labelColumnKey={totalRowLabelColumnKey()}
+            ariaRowIndex={viewRowCount() + 2 + pinnedTopCount() + (pinnedBelowTotal() ? 0 : pinnedBottomCount())}
+            renderCell={totalRowOptions()?.renderCell}
+            rowClassName={totalRowSlot().className}
+            rowStyle={totalRowSlot().style}
+            slots={slots()}
+            onPointerEnter={clearHoveredRow}
+          />
+        </Show>
+      ) : null;
     return (
       <div
         style={{
@@ -1301,14 +1603,15 @@ export function SpreadsheetGrid<T extends object>(props: SpreadsheetGridProps<T>
           overflow: 'clip',
           width: px(width()),
           'min-width': px(width()),
-          height: px(bodyHeight()),
+          // 下端に固定する行(合計行 / 下の固定行。箱の下端の sticky の行)の高さを足す。
+          height: px(bodyHeight() + footerHeight()),
         }}
       >
         <GridHeaderRow<T>
           pane={pane}
           ownsRowHeader={ownsRowHeader()}
           leadingWidth={leadingWidth()}
-          headerHeight={headerHeight()}
+          headerHeight={columnHeaderHeight()}
           rowHeaderWidth={rowHeaderWidth()}
           slots={slots()}
           isCornerHovered={view().isCornerHovered}
@@ -1334,6 +1637,8 @@ export function SpreadsheetGrid<T extends object>(props: SpreadsheetGridProps<T>
             columnCommands.handleColumnResizePointerDown(column as unknown as UnboundGridColumn<T>, event)
           }
         />
+        {/* 上に固定する行(列見出しの直後の sticky の器)。 */}
+        {renderPinnedRows('top')}
         <div
           style={{
             position: 'absolute',
@@ -1356,6 +1661,32 @@ export function SpreadsheetGrid<T extends object>(props: SpreadsheetGridProps<T>
               />
             )}
           </For>
+          {motionExtrasFeature
+            ? (() => {
+                const { CopyRangeOverlay, ColumnHoverOverlay } = motionExtrasFeature;
+                return (
+                  <>
+                    <For each={copyRectsForPane(pane)} keyed={false}>
+                      {(rect) => (
+                        <CopyRangeOverlay
+                          slot={slots().copyRangeOverlay}
+                          rect={rect()}
+                          headerHeight={headerHeight()}
+                          leadingWidth={leadingWidth()}
+                          baseOffset={vertical().overlayBaseOffset}
+                        />
+                      )}
+                    </For>
+                    <ColumnHoverOverlay
+                      rect={columnHoverRectForPane(pane)}
+                      headerHeight={headerHeight()}
+                      leadingWidth={leadingWidth()}
+                      baseOffset={vertical().overlayBaseOffset}
+                    />
+                  </>
+                );
+              })()
+            : null}
           <Overlay
             class="ssg-active-cell-overlay"
             slot={slots().activeCellOverlay}
@@ -1379,19 +1710,24 @@ export function SpreadsheetGrid<T extends object>(props: SpreadsheetGridProps<T>
             align={editingSessionInfo()?.column.align}
             enterMove={props.editorEnterMove}
             domId={cellEditorDomId}
-            // 上にそろえたセル(auto-height の背の高い行)は機能(autoHeight)なので、段階 1 では常に false(React 版の機能なしと同じ)。
-            alignTop={false}
+            // 編集中のセルが上にそろえて描かれているか(GridBodyLayer の alignTop と同じ条件。複数行のエディタの 1 行目を
+            //   セルの文字にそろえる)。
+            alignTop={editorAlignTop()}
           />
           <GridBodyLayer<T>
             pane={pane}
             ownsRowHeader={ownsRowHeader()}
             leadingWidth={leadingWidth()}
             rowHeight={rowHeight()}
+            autoHeight={autoHeightActive()}
+            verticalAlign={props.verticalAlign}
+            conditionalFormat={conditionalFormatFeature}
+            conditionalFormatStats={conditionalFormatStats()}
             rowHeaderWidth={rowHeaderWidth()}
             rows={bodyRows()}
             entries={entries()}
             rowModel={rowModel()}
-            ariaRowOffset={0}
+            ariaRowOffset={pinnedTopCount()}
             activeCell={ui().activeCell}
             editingCell={ui().editingCell}
             selection={selectionSnapshot()}
@@ -1431,6 +1767,11 @@ export function SpreadsheetGrid<T extends object>(props: SpreadsheetGridProps<T>
             onCardFocusLost={detailRows.handleCardFocusLost}
           />
         </div>
+        {/* 下端の行(本体ぶんの空きの直後 = 箱の下端の sticky の行)。既定は下の固定行 → 合計行、'belowTotal' は合計行 → 固定行。 */}
+        <Show when={pinnedBelowTotal()} fallback={[renderPinnedRows('bottom'), renderTotalRow()]}>
+          {renderTotalRow()}
+          {renderPinnedRows('bottom')}
+        </Show>
       </div>
     );
   };
@@ -1466,6 +1807,8 @@ export function SpreadsheetGrid<T extends object>(props: SpreadsheetGridProps<T>
             'ssg-root--animate-rows': animateRowsActive(),
             'ssg-root--dim-readonly': props.dimReadOnlyCells ?? false,
             'ssg-root--fill-height': heightLayout().fillParent,
+            // クロスヘア(列見出し / 行番号を選択の色で染める。列の帯は ColumnHoverOverlay)。
+            'ssg-root--hover-cross': hoverCross(),
           },
         ]}
         style={{ ...toSolidStyle(heightLayout().rootStyle), ...slots().root?.style, ...props.style }}
@@ -1489,7 +1832,13 @@ export function SpreadsheetGrid<T extends object>(props: SpreadsheetGridProps<T>
             })
           }
           onDragStart={(event) => pointer.handleNativeDragStart(event)}
-          onPointerLeave={() => applyHoveredRowChange(null)}
+          onPointerLeave={() => {
+            applyHoveredRowChange(null);
+            // クロスヘアの列のホバーも本体から出たら消す。
+            if (hoverCross()) {
+              setHoveredColumnIndex(null);
+            }
+          }}
           onFocusOut={(event) => {
             if (!event.currentTarget.contains(event.relatedTarget as Node | null) && document.hasFocus()) {
               event.currentTarget.removeAttribute('data-ssg-pointer');
@@ -1508,11 +1857,12 @@ export function SpreadsheetGrid<T extends object>(props: SpreadsheetGridProps<T>
             }}
             role="grid"
             aria-label={props.ariaLabel}
-            aria-rowcount={viewRowCount() + 1}
+            aria-rowcount={viewRowCount() + 1 + pinnedTopCount() + pinnedBottomCount() + (totalRowEnabled() ? 1 : 0)}
             aria-colcount={orderedColumns().length + 1}
             aria-multiselectable={enableRangeSelection() ? 'true' : undefined}
             aria-readonly={readOnly() ? 'true' : undefined}
-            class="ssg-scroll-container"
+            // カスタムスクロールバーのときはネイティブの縦のバーを隠し、右端にガターぶんの余白を空ける(GridScrollHint が描く)。
+            class={['ssg-scroll-container', { 'ssg-scroll-container--custom-scrollbar': customScrollbar() }]}
             style={toSolidStyle(heightLayout().scrollContainerStyle)}
           >
             <div
@@ -1520,7 +1870,7 @@ export function SpreadsheetGrid<T extends object>(props: SpreadsheetGridProps<T>
               style={{
                 width: px(paneResolution().totalScrollWidth),
                 'min-width': px(paneResolution().totalScrollWidth),
-                height: px(headerHeight() + vertical().physicalBodyHeight),
+                height: px(headerHeight() + vertical().physicalBodyHeight + footerHeight()),
               }}
             >
               <div
@@ -1590,6 +1940,25 @@ export function SpreadsheetGrid<T extends object>(props: SpreadsheetGridProps<T>
             aria-hidden="true"
             onFocus={(event) => detailRows.handleTableExitFocus(event.relatedTarget)}
           />
+          <Show when={scrollHintFeature !== undefined && activeScrollHint()}>
+            {(options) => {
+              const ScrollHint = scrollHintFeature!.ScrollHint;
+              return (
+                <ScrollHint<T>
+                  slot={slots().scrollHint}
+                  options={options()}
+                  scrollContainerRef={scrollContainerRef}
+                  scrollTop={view().scrollTop}
+                  viewportHeight={view().viewportHeight}
+                  headerHeight={headerHeight()}
+                  physicalBodyHeight={vertical().physicalBodyHeight}
+                  verticalScaleFactor={vertical().verticalScaleFactor}
+                  rowMetrics={vertical().rowMetrics}
+                  rowModel={rowModel()}
+                />
+              );
+            }}
+          </Show>
         </div>
         {bottomBar()}
       </div>
@@ -1597,5 +1966,3 @@ export function SpreadsheetGrid<T extends object>(props: SpreadsheetGridProps<T>
     </GridLocaleTextContext>
   );
 }
-
-export default SpreadsheetGrid;

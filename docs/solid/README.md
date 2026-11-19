@@ -149,6 +149,50 @@ React 版の機能なしの構成と並べて、同じ props・同じ操作で D
 - **比べるテストの書き方**: React の onPointerEnter は pointerover から作られ、Solid は pointerenter のリスナーを要素へ直接付けるので、
   ホバーはブラウザと同じく両方を送る(`ctx.hover`)。差は `PARITY_DUMP=<dir>` で書き出して `diff -u` で見る。
 
+## 段階 2 の中身
+
+`/lite` の 21 の機能を、React 版と同じ名前の部品(`<名前>Feature`)と `createSpreadsheetGrid({ features })` で差し込む形で
+足す。比べるテストは場面ごとに両方へ同じ機能を差し込む(`expectParity({ features: ['export'], … })`)。4 つの PR に分ける
+(2026-11-19 にユーザーへ伝えた順。フィルターは SSRM の取り直しの条件に使うので SSRM より前)。
+
+| # | 内容 | 状況 |
+| --- | --- | --- |
+| 2-1 | 機能を差し込む仕組み + 表示の機能 8 つ(totalRow / pinnedRows / conditionalFormat / selectionAggregates / scrollHint / motionExtras / export / autoHeight) | 作業中(2-1a: 仕組み(`features/types.ts` / `createSpreadsheetGrid.tsx` / `features/full.ts`、比べるテストの `features`)と export = 済み。2-1b: autoHeight、2-1c: conditionalFormat、2-1d: totalRow + pinnedRows、2-1e: selectionAggregates、2-1f: scrollHint、2-1g: motionExtras = 済み) |
+| 2-2 | 操作の機能 7 つ(find / fillHandle / columnReorder / rowDrag / columnAutosize / imeDirectInput / contextMenu) | まだ |
+| 2-3 | ポップアップ 3 つ(columnMenu / toolPanel / filtering) | まだ |
+| 2-4 | 行のモデル 3 つ(serverSide / labelRow / grouping) | まだ |
+
+### 2-1 で分かったこと
+
+- **機能の代役は要らない**: React 版は hook の呼ぶ順番を変えないために、無い機能にも代役の hook を入れる(`features/resolve.ts`)。
+  Solid には順番の決まりが無いので、シェルは `features.X` があるときだけ部品を作る / 描く。`DISABLED_FEATURE_PROPS` は、機能の
+  有無より前に行や列の形を決める prop(`autoHeight`)と、既定でオンの prop を機能なしで止めるもの(`motionExtras` の
+  `showCopyRange` など)だけ。エンジン側(core)の代役は React 版と同じく `createGridEngine` が入れる。
+- **機能だけの文言は文脈で渡す**: React 版はシェルが機能の文言を重ねた表を props で部品へ渡す所がある。Solid 版は
+  `mergeFeatureLocaleDefaults(features)` で重ねた表を文脈(`GridLocaleTextContext`)に置き、部品は
+  `useFeatureLocaleText<typeof DEFAULT_…_LOCALE_TEXT>()` で型だけ足して読む。
+- **全部のセルが読む値は memo に畳む**: `vertical()`(縦のレイアウト)や `autoHeightActive` のような大きな値をセルごとに読むと、
+  1 つの書き込みに数千の購読が付き、Solid の開発ビルドが HUGE_FAN_OUT を出す(2,000 から)。シェルで真偽値だけの memo
+  (`autoHeightActive`)にし、セルの中でもその列の判断を 1 つの memo(`autoHeightFlags`)にまとめた。
+- **DOM を書いた後に読むコントローラは 'effect' でつなぐ**: 変わったセルのフラッシュ(core の changeHighlightController)は
+  書き換わったセルの文字を旧値へ戻してから補間するので、`connectController(…, 'effect')`(セルの文字を書き終えた後。同じ
+  マイクロタスクの中なので画面には出ない)。行の高さの実測(autoHeightMeasurer)も同じ。
+- **測り直しの警告**: 合計行 / 固定行を出し入れすると、見える高さ(clientHeight から下端の行を引く)の測り直しで
+  EFFECT_RELAY_TEAR が出る(既知の列の仮想化のものと同じく「測る代わり」。packages/solid/README.md)。
+- **比べるテストで気をつけること**: React の `onPointerLeave` は `pointerout` から作られるので、`fireEvent.pointerLeave` だけでは
+  React 側が動かない(出るときは `pointerout` も送る。入るときの `ctx.hover` と同じ)。jsdom の `requestAnimationFrame` の時刻は
+  `performance.now()` とずれるので、数値のトゥイーンの途中の値は決まらない(トゥイーンは Chromium で確かめた)。`ctx.track` は
+  要素ができてから呼ぶ(無いうちに呼ぶと以後ずっと「作り直し」になる)。大きな選択の集計(時間分割)は待ってから控える。
+- **別視点のレビューで直したもの**: 1 セルをコピーした後の Escape をグリッドが受けていなかった(escapeClaim の条件に
+  コピー範囲を足し忘れ。ダイアログの中では 1 回目で閉じてしまう)。合計行 / 固定行のセルの中身が列の幅や位置が変わるたびに
+  作り直されていた(列や位置を memo で受けていなかった。renderCell の中の要素のフォーカスが消える)。どちらも比べるテストに
+  足した(Escape の既定の動きを止めたか / `ctx.track` で列の幅の前後)。
+- **残した違い**: 同じ行の別の列の値が変わると、Solid 版はセルの中身の span を作り直す(行のオブジェクトが変わると
+  `valueFormatter` を呼び直すため。React 版は仮想 DOM の差分で span を使い回す)。動いている数値のトゥイーンはそこで最後の値へ
+  飛ぶ(見た目だけの差)。
+- **2-4 で確かめること**: React 版の `DISABLED_FEATURE_PROPS` は `undefined` を入れて prop を切る(`dataSource` / `labelRow`)。
+  Solid の `merge(props, overrides)` で `undefined` が元の値を上書きするかを、serverSide / labelRow を移すときに確かめる。
+
 ## 段階 0 の中身
 
 | # | 内容 | 状況 |

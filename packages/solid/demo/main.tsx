@@ -1,4 +1,4 @@
-// 試作のデモ: 10,000 行の編集できる在庫表(左右の固定列 + 横に長い列で縦横の仮想化を確かめる)。
+// 試作のデモ: 10,000 行の編集できる在庫表(左右の固定列 + 横に長い列で縦横の仮想化を確かめる。数量・単価・分類に条件付き書式)。
 import { Show, createSignal, onSettled } from 'solid-js';
 import { render } from '@solidjs/web';
 import '../../react/src/styles.css';
@@ -34,6 +34,20 @@ const createRows = (count: number): Item[] =>
     extra: Object.fromEntries(EXTRA_KEYS.map((key, k) => [key, (i * (k + 3)) % 1000])),
   }));
 
+// 表示だけの固定行(上: 目標、下: 前月と前年)。
+const pinnedRow = (id: number, name: string, qty: number, price: number): Item => ({
+  ...createRows(1)[0]!,
+  id,
+  name,
+  qty,
+  price,
+  note: '',
+  code: '',
+  done: false,
+});
+const PINNED_TOP = pinnedRow(-1, '目標', 90, 500);
+const PINNED_BOTTOM = [pinnedRow(-2, '前月', 40, 480), pinnedRow(-3, '前年', 35, 450)];
+
 const baseColumns: GridColumn<Item>[] = [
   { key: 'id', title: 'ID', width: 72, pinned: 'left', editable: false },
   { key: 'name', title: '品名', width: 160 },
@@ -42,6 +56,8 @@ const baseColumns: GridColumn<Item>[] = [
     title: '分類',
     width: 100,
     editor: { type: 'select', options: CATEGORIES.map((value) => ({ value, label: value })) },
+    // 条件付き書式の状態チップ。
+    conditionalFormat: { chips: { 文具: 'info', 食品: 'good', 家電: 'warning', 衣料: 'neutral', 工具: 'critical' } },
   },
   {
     key: 'qty',
@@ -52,9 +68,19 @@ const baseColumns: GridColumn<Item>[] = [
     validationMode: 'reject',
     validate: ({ value }) => (Number(value) <= 95 ? true : '95 以下にしてください'),
     cellNote: ({ row }) => (row.id % 50 === 0 ? '棚卸しで確認済み' : undefined),
+    conditionalFormat: { dataBar: {} },
+    aggFunc: 'sum',
   },
   { key: 'done', title: '済', width: 60, editor: { type: 'checkbox' } },
-  { key: 'price', title: '単価', width: 100, align: 'right', editor: { type: 'number' } },
+  {
+    key: 'price',
+    title: '単価',
+    width: 100,
+    align: 'right',
+    editor: { type: 'number' },
+    conditionalFormat: { colorScale: {} },
+    aggFunc: 'avg',
+  },
   { key: 'due', title: '期日', width: 130, editor: { type: 'date' } },
   {
     key: 'code',
@@ -95,7 +121,7 @@ const baseColumns: GridColumn<Item>[] = [
     getValue: (row) => row.extra[key],
     setValue: (row, value) => ({ ...row, extra: { ...row.extra, [key]: Number(value) || 0 } }),
   })),
-  { key: 'note', title: 'メモ', width: 180, pinned: 'right', editor: { type: 'text', multiline: true } },
+  { key: 'note', title: 'メモ', width: 180, pinned: 'right', autoHeight: true, editor: { type: 'text', multiline: true } },
 ];
 
 function App() {
@@ -107,6 +133,12 @@ function App() {
   const [changes, setChanges] = createSignal(0);
   const [selected, setSelected] = createSignal('');
   const [expanded, setExpanded] = createSignal('');
+  const [autoHeight, setAutoHeight] = createSignal(false);
+  const [footer, setFooter] = createSignal(false);
+  const [aggregates, setAggregates] = createSignal(true);
+  const [scrollHint, setScrollHint] = createSignal(false);
+  const [highlight, setHighlight] = createSignal(false);
+  const [cross, setCross] = createSignal(false);
   // 「品名を左へ固定」で編集中の列のペインを変える(エディタが外れるときの blur で確定しないことの確かめ)。
   const columns = () =>
     pinName() ? baseColumns.map((column) => (column.key === 'name' ? { ...column, pinned: 'left' as const } : column)) : baseColumns;
@@ -130,6 +162,24 @@ function App() {
         <button type="button" data-testid="unmount" onClick={() => setMounted((v) => !v)}>
           グリッドを外す / 戻す
         </button>
+        <button type="button" data-testid="auto-height" onClick={() => setAutoHeight((v) => !v)}>
+          行の高さの自動調整
+        </button>
+        <button type="button" data-testid="footer" onClick={() => setFooter((v) => !v)}>
+          合計行と固定行
+        </button>
+        <button type="button" data-testid="aggregates" onClick={() => setAggregates((v) => !v)}>
+          選択範囲の集計
+        </button>
+        <button type="button" data-testid="scroll-hint" onClick={() => setScrollHint((v) => !v)}>
+          スクロールのヒント
+        </button>
+        <button type="button" data-testid="highlight" onClick={() => setHighlight((v) => !v)}>
+          変更のハイライト
+        </button>
+        <button type="button" data-testid="cross" onClick={() => setCross((v) => !v)}>
+          クロスヘア
+        </button>
         <span data-testid="active">{active()}</span>
         <span data-testid="changes">{changes()}</span>
         <span data-testid="selected">{selected()}</span>
@@ -150,6 +200,20 @@ function App() {
             setRows(next);
           }}
           height={520}
+          // メモの列は autoHeight: 「行の高さの自動調整」で、改行のある行が伸びる。
+          autoHeight={autoHeight()}
+          // 「合計行と固定行」: 数量の合計・単価の平均の合計行と、上下の固定行(表示だけの行)。
+          totalRow={footer()}
+          pinnedTopRows={footer() ? [PINNED_TOP] : undefined}
+          pinnedBottomRows={footer() ? PINNED_BOTTOM : undefined}
+          // 「選択範囲の集計」: 2 セル以上を選ぶと下部バーに平均 / データの個数 / 合計(既定でオン)。全選択は時間分割で集計する。
+          showSelectionAggregates={aggregates()}
+          // 「スクロールのヒント」: 行番号のバブル(品名つき)・ルーラー・カスタムスクロールバー。
+          scrollHint={scrollHint() ? { hintColumn: 'name' } : undefined}
+          // 「変更のハイライト」: 値が変わったセルのフラッシュ + 数値のトゥイーン。「クロスヘア」: ホバーの列も帯で示す。
+          //   コピー範囲の点線(showCopyRange)は既定でオン。
+          highlightChanges={highlight()}
+          hoverHighlight={cross() ? 'cross' : 'row'}
           ariaLabel="在庫表"
           onActiveCellChange={(cell) => setActive(cell ? `${cell.columnKey} / ${String(cell.rowKey)}` : '')}
           enableRowSelection
