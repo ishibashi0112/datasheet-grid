@@ -13,4 +13,5 @@ export { scrollHintFeature } from './features/scrollHint';
 export { motionExtrasFeature } from './features/motionExtras';
 export { findFeature } from './features/find';
 export { imeDirectInputFeature } from './features/imeDirectInput';
+export { columnAutosizeFeature } from './features/columnAutosize';
 export type { GridColumn, CellRenderContext, SpreadsheetGridHandle, SpreadsheetGridProps, SolidGridTypes } from './model/gridTypes';

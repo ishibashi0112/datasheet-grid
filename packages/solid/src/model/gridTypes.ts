@@ -74,6 +74,7 @@ type SupportedPropKeys =
   | 'find'
   | 'onFindChange'
   | 'imeDirectInput'
+  | 'autoSizeColumns'
   | 'renderTopBar'
   | 'renderBottomBar'
   | 'initialState'

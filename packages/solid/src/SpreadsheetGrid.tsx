@@ -24,6 +24,7 @@ import type {
 } from '@ishibashi0112/spreadsheet-grid-core';
 import { createGridEngine } from '@ishibashi0112/spreadsheet-grid-core/internal/engine/createGridEngine';
 import type { GridColumn as UnboundGridColumn } from '@ishibashi0112/spreadsheet-grid-core/internal/model/gridTypes.unbound';
+import type { AutosizeChipOf, AutosizeTotalRowText } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/columnAutosize';
 import { gridActions } from '@ishibashi0112/spreadsheet-grid-core/internal/model/gridActions';
 import { buildSelectionSnapshot, selectGlobalFilter } from '@ishibashi0112/spreadsheet-grid-core/internal/model/gridSelectors';
 import {
@@ -390,6 +391,112 @@ export function GridShell<T extends object>(props: SpreadsheetGridProps<T>, feat
   );
   const totalRowLabelColumnKey = createMemo(() =>
     totalRowFeature ? totalRowFeature.resolveTotalRowLabelColumnKey(orderedColumns(), totalRowCells()) : null,
+  );
+  // ── 列幅の自動調整(機能 features/columnAutosize) ──
+  //   計測の時間分割ランナー(core)。合計行の表示(値と見出し / 見出しを出す列はその文言)・状態チップの枠・固定行も幅に
+  //   収めます(React 版と同じ)。機能セットに無ければ境界のダブルクリックは通常のリサイズ、autoSizeColumns は false 扱い。
+  const columnAutosizeFeature = features.columnAutosize;
+  const totalRowAutosizeTexts = createMemo(() => {
+    if (!totalRowEnabled() || !totalRowFeature) {
+      return undefined;
+    }
+    const { formatTotalRowCellText, resolveTotalRowCaption } = totalRowFeature;
+    const cells = totalRowCells();
+    const labelColumnKey = totalRowLabelColumnKey();
+    const texts = new Map<string, AutosizeTotalRowText>();
+    for (const column of orderedColumns()) {
+      const cell = cells.get(column.key);
+      if (cell) {
+        const text = formatTotalRowCellText(column, cell);
+        texts.set(column.key, { text, caption: text !== '' ? resolveTotalRowCaption(cell.kind, localeTexts()) : undefined });
+      } else if (column.key === labelColumnKey) {
+        texts.set(column.key, { text: totalRowLabel() });
+      }
+    }
+    return texts;
+  });
+  const pinnedAutosizeRows = createMemo(() =>
+    pinnedTop() || pinnedBottom() ? [...(pinnedTop() ?? []), ...(pinnedBottom() ?? [])] : undefined,
+  );
+  // 状態チップ(conditionalFormat.chips)のセルをチップの枠(余白とアイコン)ごと測るための中身。セルの描画と同じ文脈で
+  //   チップを決めます(選択などの状態は false)。条件付き書式の機能が無ければ渡しません(文字だけを測る)。
+  const autosizeChipOf = createMemo((): AutosizeChipOf<T> | undefined => {
+    const chipFeature = conditionalFormatFeature;
+    if (!chipFeature) {
+      return undefined;
+    }
+    const model = rowModel();
+    const columnsNow = orderedColumns();
+    const keyGetter = resolvedRowKeyGetter();
+    const topCount = pinnedTopCount();
+    return (row, column, viewIndex) => {
+      const chips = column.conditionalFormat?.chips;
+      if (!chips) {
+        return null;
+      }
+      const colIndex = columnsNow.findIndex((candidate) => candidate.key === column.key);
+      const value = getCellValue(row, column);
+      // 固定行は負の index(-1 - 上 + 下の通し番号)で来るので、本体の rowModel を引かず、描くときと同じ文脈(固定行の中の
+      //   位置・行キー・pinned)を作ります。
+      if (viewIndex < 0) {
+        const pinnedIndex = -1 - viewIndex;
+        const pinned = pinnedIndex < topCount ? 'top' : 'bottom';
+        const index = pinned === 'top' ? pinnedIndex : pinnedIndex - topCount;
+        const spec = chipFeature.resolveChipSpec<T>(chips, {
+          row,
+          rowIndex: index,
+          sourceRowIndex: index,
+          rowKey: keyGetter(row, index),
+          colIndex,
+          value,
+          column,
+          isActive: false,
+          isSelected: false,
+          isEditing: false,
+          readOnly: true,
+          pinned,
+        });
+        return spec ? { label: spec.label, icon: spec.icon !== false } : null;
+      }
+      const spec = chipFeature.resolveChipSpec<T>(chips, {
+        row,
+        rowIndex: viewIndex,
+        sourceRowIndex: model.getSourceIndex(viewIndex) ?? viewIndex,
+        rowKey: model.getRowKey(viewIndex) ?? viewIndex,
+        colIndex,
+        value,
+        column,
+        isActive: false,
+        isSelected: false,
+        isEditing: false,
+        readOnly: false,
+      });
+      return spec ? { label: spec.label, icon: spec.icon !== false } : null;
+    };
+  });
+  const columnAutosize = columnAutosizeFeature?.createColumnAutosize<T>(() => ({
+    rowModel: rowModel(),
+    gridRootRef,
+    columnWidths: paneResolution().effectiveColumnWidths,
+    dispatch,
+    totalRowTexts: totalRowAutosizeTexts(),
+    chipOf: autosizeChipOf(),
+    pinnedRows: pinnedAutosizeRows(),
+  }));
+  const isAutosizing = () => columnAutosize?.isAutosizing() ?? false;
+  // データを入れたときの列幅の自動調整(autoSizeColumns × rows の変化。core の宣言的なトリガー。React 版と同じくコミットの
+  //   後 = 'effect' で測る)。
+  connectController(
+    engine.autoSizeOnData,
+    () => ({
+      mode: columnAutosize ? (props.autoSizeColumns ?? false) : false,
+      isServerSide: false,
+      rows: rows(),
+      visibleColumns: visibleColumns(),
+      runAutosize: columnAutosize?.runAutosize ?? (() => Promise.resolve()),
+      gridRootRef,
+    }),
+    'effect',
   );
   const totalRowSlotSignature = createMemo(() => serializeSlotValue(totalRowOptions()?.className));
   const totalRowSlot = createMemo(() => resolveSlotFromSignature<JSX.CSSProperties>(totalRowSlotSignature()));
@@ -1137,7 +1244,7 @@ export function GridShell<T extends object>(props: SpreadsheetGridProps<T>, feat
     closeColumnMenu: noop,
     openToolPanel: noop,
     openColumnFilterPopover: noop,
-    runAutosize: undefined,
+    runAutosize: columnAutosize?.runAutosize,
   }));
 
   // ── 見出しの角 / 行番号 / 列見出しのホバー ──
@@ -1914,6 +2021,7 @@ export function GridShell<T extends object>(props: SpreadsheetGridProps<T>, feat
             gridRootRef.current = element;
           }}
           class="ssg-shell"
+          style={{ cursor: isAutosizing() ? 'progress' : undefined }}
           tabindex={0}
           role="group"
           aria-activedescendant={activeDescendantId()}
@@ -2053,6 +2161,12 @@ export function GridShell<T extends object>(props: SpreadsheetGridProps<T>, feat
                 />
               );
             }}
+          </Show>
+          {/* 列幅の自動調整の計測中の overlay(遅れて出す。pointer-events: none で操作は素通し)。 */}
+          <Show when={isAutosizing()}>
+            <div class="ssg-autosize-overlay">
+              <span class="ssg-autosize-pill">{localeTexts().sizingColumns}</span>
+            </div>
           </Show>
           {/* セル内検索のバー(右上に浮く。見出しの直下)。開いているときだけ描きます。 */}
           <Show when={findSnapshot().open}>

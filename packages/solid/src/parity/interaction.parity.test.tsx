@@ -1,6 +1,6 @@
 // React 版(`/lite` に同じ機能を差し込んだもの)と Solid 版の操作の機能を同じ操作で動かして、DOM と通知と命令的 API の結果が
 //   同じかを見る(段階 2-2)。
-import { beforeAll, describe, it } from 'vitest';
+import { afterAll, beforeAll, describe, it } from 'vitest';
 import { fireEvent } from '@solidjs/testing-library';
 import { installJsdomLayoutStubs } from '@ishibashi0112/spreadsheet-grid-core/testing';
 import { expectParity, type ParityContext } from './harness';
@@ -284,6 +284,100 @@ describe('IME オンのままの直接入力(imeDirectInput)', () => {
           call(ctx, 'focus');
         });
         ctx.snapshot('無効の後の focus()');
+      },
+    });
+  }, 20_000);
+});
+
+
+describe('列幅の自動調整(columnAutosize)', () => {
+  // jsdom の canvas には measureText が無く、要素の offsetWidth も 0 なので、どちらも文字数で決める(1 文字 7px。全角も同じ。
+  //   要素は左右の余白 16px を足す)。計測は実 DOM の経路(要素の offsetWidth)を通る。
+  const originalGetContext = HTMLCanvasElement.prototype.getContext;
+  const originalOffsetWidth = Object.getOwnPropertyDescriptor(HTMLElement.prototype, 'offsetWidth');
+  beforeAll(() => {
+    HTMLCanvasElement.prototype.getContext = function getContext() {
+      return { font: '', measureText: (text: string) => ({ width: Array.from(text).length * 7 }) };
+    } as unknown as typeof HTMLCanvasElement.prototype.getContext;
+    Object.defineProperty(HTMLElement.prototype, 'offsetWidth', {
+      configurable: true,
+      get(this: HTMLElement) {
+        return Array.from(this.textContent ?? '').length * 7 + 16;
+      },
+    });
+  });
+  afterAll(() => {
+    HTMLCanvasElement.prototype.getContext = originalGetContext;
+    if (originalOffsetWidth) {
+      Object.defineProperty(HTMLElement.prototype, 'offsetWidth', originalOffsetWidth);
+    }
+  });
+  const widths = (ctx: ParityContext) => (call(ctx, 'getState') as { columnWidths: Record<string, number> }).columnWidths;
+  const resizeHandle = (ctx: ParityContext, key: string) => {
+    const handle = ctx.header(key).querySelector('.ssg-header-resize');
+    if (!handle) {
+      throw new Error(`列幅のつまみがありません: ${key}`);
+    }
+    return handle;
+  };
+
+  it.each([
+    ['あり', ['columnAutosize']],
+    ['合計行・チップ・固定行も', ['columnAutosize', 'totalRow', 'conditionalFormat', 'pinnedRows']],
+    ['なし(空)', []],
+  ])('autoSizeColumns・境界のダブルクリック・データの差し替え(機能%s)', async (_label, features) => {
+    await expectParity({
+      features,
+      watch: ['onStateChange'],
+      props: () => ({
+        rows: makeRows(6),
+        columns: [
+          ...columns.slice(0, 2),
+          { key: 'qty', title: '数量', width: 80, align: 'right', aggFunc: 'sum' },
+          { key: 'price', title: '単価', width: 90, align: 'right', aggFunc: 'avg' },
+          {
+            key: 'status',
+            title: '状態',
+            width: 100,
+            conditionalFormat: { chips: { 在庫あり: 'good', 品切れ: { tone: 'critical', label: '品切れ(入荷待ち)' } } },
+          },
+          columns[5],
+        ],
+        rowKeyGetter: (row: Row) => row.id,
+        height: 360,
+        autoSizeColumns: 'onMount',
+        totalRow: { label: '合計の行の見出しはとても長い' },
+        pinnedTopRows: [{ id: 0, name: '固定行の品名はとても長い文字', qty: 1, price: 1, note: '', status: '在庫あり' }],
+      }),
+      steps: async (ctx) => {
+        await ctx.act(() => {}, 300);
+        ctx.snapshot('作った直後(onMount)');
+        ctx.log('列幅(onMount)', widths(ctx));
+        // 品名を手で狭める。
+        await ctx.act(() => {
+          fireEvent.pointerDown(resizeHandle(ctx, 'name'), { ...pointer, clientX: 300 });
+          fireEvent.pointerMove(window, { ...pointer, clientX: 240 });
+          fireEvent.pointerUp(window, { ...pointer, clientX: 240 });
+        });
+        ctx.log('列幅(手で狭める)', widths(ctx));
+        // 境界のダブルクリック(押す 2 回。機能が無ければ通常のリサイズ)。
+        await ctx.act(() => {
+          const handle = resizeHandle(ctx, 'name');
+          fireEvent.pointerDown(handle, { ...pointer, clientX: 240 });
+          fireEvent.pointerUp(window, { ...pointer, clientX: 240 });
+          fireEvent.pointerDown(handle, { ...pointer, clientX: 240 });
+          fireEvent.pointerUp(window, { ...pointer, clientX: 240 });
+        }, 300);
+        ctx.snapshot('境界のダブルクリック');
+        ctx.log('列幅(境界のダブルクリック)', widths(ctx));
+        // onDataChange: 行を差し替えると測り直す。
+        await ctx.setProps({ autoSizeColumns: 'onDataChange' });
+        await ctx.setProps({
+          rows: [...(ctx.rows() as Row[]), { id: 99, name: 'とても長い品名の行を足した', qty: 123456789, price: 5, note: '', status: '品切れ' }],
+        });
+        await ctx.act(() => {}, 300);
+        ctx.snapshot('onDataChange で行を足す');
+        ctx.log('列幅(onDataChange)', widths(ctx));
       },
     });
   }, 20_000);
