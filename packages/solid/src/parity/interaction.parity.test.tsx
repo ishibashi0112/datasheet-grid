@@ -382,3 +382,117 @@ describe('列幅の自動調整(columnAutosize)', () => {
     });
   }, 20_000);
 });
+describe('列の並べ替え(columnReorder)', () => {
+  // jsdom の要素の矩形はどれも (0, 0)〜(800, 400) なので、ポインタはいつも左の固定ペインにいる扱いになる(左の固定ペインの中の
+  //   並べ替えと、中央 / 右から左への固定はこれで通る。中央の中の並べ替えと実際の位置は Chromium のデモで見る)。
+  type ColumnLike = { key: string; pinned?: string };
+  const reorderColumns = [
+    { key: 'id', title: 'ID', width: 60, pinned: 'left', editable: false },
+    { key: 'name', title: '品名', width: 120, pinned: 'left' },
+    { key: 'qty', title: '数量', width: 80, align: 'right' },
+    { key: 'price', title: '単価', width: 90, align: 'right' },
+    { key: 'status', title: '状態', width: 100 },
+    { key: 'note', title: 'メモ', width: 160, pinned: 'right' },
+  ];
+  const grip = (ctx: ParityContext, key: string) => {
+    const element = ctx.header(key).querySelector('.ssg-header-grip');
+    if (!element) {
+      throw new Error(`[${ctx.framework}] grip がありません: ${key}`);
+    }
+    return element;
+  };
+  const describeColumns = (next: readonly ColumnLike[] | null) =>
+    next === null ? 'なし' : next.map((column) => `${column.key}${column.pinned ? `:${column.pinned}` : ''}`).join(' ');
+
+  it.each([
+    ['あり・ghost', ['columnReorder'], 'ghost', 'auto'],
+    ['あり・live', ['columnReorder'], 'live', 'auto'],
+    ['あり・live + motion off', ['columnReorder'], 'live', 'off'],
+    ['なし(空)', [], 'live', 'auto'],
+  ])('grip を引いて落とす・固定のまたぎ・Escape でやめる(機能%s)', async (_label, features, columnDragMotion, motion) => {
+    let latest: readonly ColumnLike[] | null = null;
+    await expectParity({
+      features,
+      watch: ['onStateChange'],
+      props: () => ({
+        rows: makeRows(8),
+        columns: reorderColumns,
+        rowKeyGetter: (row: Row) => row.id,
+        height: 360,
+        columnDragMotion,
+        motion,
+        onColumnsChange: (next: readonly ColumnLike[]) => {
+          latest = next;
+        },
+      }),
+      steps: async (ctx) => {
+        const commit = async (label: string) => {
+          ctx.log(`onColumnsChange(${label})`, describeColumns(latest));
+          if (latest !== null) {
+            await ctx.setProps({ columns: latest });
+          }
+          latest = null;
+          await ctx.act(() => {}, 450);
+          ctx.snapshot(label);
+        };
+        ctx.snapshot('はじめ');
+        if (!ctx.header('qty').querySelector('.ssg-header-grip')) {
+          return;
+        }
+        // 左の固定ペインの中で、品名を ID の前へ。
+        await ctx.act(() => {
+          fireEvent.pointerDown(grip(ctx, 'name'), { ...pointer, clientX: 150, clientY: 10 });
+          fireEvent.pointerMove(window, { ...pointer, clientX: 120, clientY: 10 });
+          fireEvent.pointerMove(window, { ...pointer, clientX: 50, clientY: 10 });
+        });
+        ctx.snapshot('左のペインの中を引いている');
+        await ctx.act(() => {
+          fireEvent.pointerUp(window, { ...pointer, clientX: 50, clientY: 10 });
+        });
+        await commit('左のペインの中で落とす');
+        // 中央の数量を左の固定ペインの末尾へ(固定する)。
+        await ctx.act(() => {
+          fireEvent.pointerDown(grip(ctx, 'qty'), { ...pointer, clientX: 300, clientY: 10 });
+          fireEvent.pointerMove(window, { ...pointer, clientX: 260, clientY: 10 });
+          fireEvent.pointerMove(window, { ...pointer, clientX: 230, clientY: 10 });
+        });
+        ctx.snapshot('中央から左へ引いている');
+        await ctx.act(() => {
+          fireEvent.pointerUp(window, { ...pointer, clientX: 230, clientY: 10 });
+        });
+        await commit('左の固定ペインへ落とす');
+        // 右の固定のメモを引いて、Escape でやめる(onColumnsChange は呼ばない)。
+        await ctx.act(() => {
+          fireEvent.pointerDown(grip(ctx, 'note'), { ...pointer, clientX: 700, clientY: 10 });
+          fireEvent.pointerMove(window, { ...pointer, clientX: 600, clientY: 10 });
+          fireEvent.pointerMove(window, { ...pointer, clientX: 80, clientY: 10 });
+        });
+        ctx.snapshot('右から引いている');
+        await ctx.act(() => {
+          ctx.log('Escape を止めたか', !fireEvent.keyDown(ctx.shell(), { key: 'Escape' }));
+        }, 450);
+        ctx.snapshot('Escape でやめる');
+        await ctx.act(() => {
+          fireEvent.pointerUp(window, { ...pointer, clientX: 80, clientY: 10 });
+        });
+        await commit('Escape の後に離す');
+        // 動かさずに離す(jsdom では離した点が左のペインの末尾になるので、単価が左へ固定される)。
+        await ctx.act(() => {
+          fireEvent.pointerDown(grip(ctx, 'price'), { ...pointer, clientX: 400, clientY: 10 });
+          fireEvent.pointerUp(window, { ...pointer, clientX: 400, clientY: 10 });
+        });
+        await commit('動かさずに離す');
+        // 右ボタンでは始めない。
+        await ctx.act(() => {
+          fireEvent.pointerDown(grip(ctx, 'status'), { ...pointer, button: 2, clientX: 500, clientY: 10 });
+          fireEvent.pointerMove(window, { ...pointer, button: 2, clientX: 20, clientY: 10 });
+          fireEvent.pointerUp(window, { ...pointer, button: 2, clientX: 20, clientY: 10 });
+        });
+        await commit('右ボタン');
+        // onColumnsChange を外すと grip も消える。
+        await ctx.setProps({ onColumnsChange: undefined });
+        ctx.snapshot('onColumnsChange なし');
+      },
+    });
+  }, 20_000);
+});

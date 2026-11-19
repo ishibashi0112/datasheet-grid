@@ -1,6 +1,7 @@
 // 全部入りの機能セットです(SpreadsheetGrid が使う)。Required で型付けし、機能を足したときにここへの入れ忘れを型で検出します。
 import { autoHeightFeature } from './autoHeight';
 import { columnAutosizeFeature } from './columnAutosize';
+import { columnReorderFeature } from './columnReorder';
 import { conditionalFormatFeature } from './conditionalFormat';
 import { exportFeature } from './export';
 import { findFeature } from './find';
@@ -24,4 +25,5 @@ export const fullGridFeatures = {
   find: findFeature,
   imeDirectInput: imeDirectInputFeature,
   columnAutosize: columnAutosizeFeature,
+  columnReorder: columnReorderFeature,
 } satisfies Required<GridFeatures> as unknown as Required<SolidGridFeatures>;

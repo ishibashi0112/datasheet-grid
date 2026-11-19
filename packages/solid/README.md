@@ -37,9 +37,10 @@ React 版と同じ DOM・class で描くので、React 版の `styles.css` を�
   `hoverHighlight: 'cross'` = クロスヘア)、セル内検索(`find` / `onFindChange`、ハンドルの `openFind` / `closeFind` /
   `findNext` / `findPrev`。右上のバーと既定のセルの `<mark>`)、IME オンのままの直接入力(`imeDirectInput`。
   透明な入力受けで変換を始め、確定した文字で編集を始める。数値の列は全角の数字を半角へ)、列幅の自動調整(`autoSizeColumns`・
-  列の境界のダブルクリック。合計行・状態チップ・固定行も幅に収める。列メニューの項目は段階 2-3)
+  列の境界のダブルクリック。合計行・状態チップ・固定行も幅に収める。列メニューの項目は段階 2-3)、列の並べ替え
+  (`onColumnsChange` があるときの見出しの grip。固定ペインへも移せる、`columnDragMotion: 'ghost' | 'live'`、Escape でやめる)
 
-無いもの(段階 2 の残り): `/lite` の残りの 10 の機能(ラベル行・SSRM・行のグループ・列フィルター・右クリックメニューなどを含む)。
+無いもの(段階 2 の残り): `/lite` の残りの 9 の機能(ラベル行・SSRM・行のグループ・列フィルター・右クリックメニューなどを含む)。
 
 `renderCell` / `renderHeader` / `renderTopBar` / `renderBottomBar` は、React 版のように描き直しのたびに呼ぶのではなく、Solid の部品と
 同じく必要なときだけ呼びます: `renderCell` は行(と値)や列が変わったとき、`renderHeader` は列が変わったとき、バーは関数が変わった
@@ -50,7 +51,7 @@ React 版と同じ DOM・class で描くので、React 版の `styles.css` を�
 ## 使い方
 
 ```sh
-pnpm --filter ./packages/solid dev          # デモ(10,000 行 × 39 列。エディタ 6 種・行の選択・展開行・行の高さの自動調整・合計行と固定行・条件付き書式・選択範囲の集計・スクロールのヒント・変更のハイライト・クロスヘア・セル内検索・IME の直接入力・テーマ・列の固定・グリッドを外すボタン)
+pnpm --filter ./packages/solid dev          # デモ(10,000 行 × 39 列。エディタ 6 種・行の選択・展開行・行の高さの自動調整・合計行と固定行・条件付き書式・選択範囲の集計・スクロールのヒント・変更のハイライト・クロスヘア・セル内検索・IME の直接入力・列の並べ替え(ghost / live)・テーマ・列の固定・グリッドを外すボタン)
 pnpm --filter ./packages/solid test         # jsdom のテスト(Solid の JSX 変換の vitest 設定。React 版と並べて比べるテストも)
 pnpm --filter ./packages/solid typecheck
 pnpm --filter ./packages/solid spike:build  # 大きさを測るためのライブラリビルド(dist/)
@@ -63,13 +64,13 @@ pnpm --filter ./packages/solid spike:build  # 大きさを測るためのライ�
 | `hooks/useGridStore.ts`(useSyncExternalStore) | `primitives/gridStoreSignals.ts`(store を signal に。購読は `onSettled`) |
 | `hooks/useController.ts` | `primitives/controller.ts`(`createRenderEffect` / `createEffect` で `update`) |
 | `hooks/useVirtualizerCore.ts` | `primitives/columnVirtualizer.ts` |
-| `GridShell.tsx`(5,246 行) | `SpreadsheetGrid.tsx`(約 2,030 行) |
+| `GridShell.tsx`(5,246 行) | `SpreadsheetGrid.tsx`(約 2,250 行) |
 | `view/GridHeaderRow.tsx` / `view/GridBodyLayer.tsx` | 同じ名前(`view/`) |
 | `view/DefaultGridTopBar.tsx` / `DefaultGridBottomBar.tsx` / `RowSelectionCheckbox.tsx` / `GridDetailLayer.tsx` / `DetailToggleButton.tsx` / `GridChip.tsx` / `GridTotalRow.tsx` / `GridPinnedRows.tsx` / `GridSelectionAggregates.tsx` / `GridScrollHint.tsx` / `GridFindBar.tsx` | 同じ名前(`view/`) |
 | `CopyRangeOverlay.tsx` / `ColumnHoverOverlay.tsx` | `view/CopyRangeOverlay.tsx`(2 つをまとめた) |
 | `features/*`(機能の部品)/ `createSpreadsheetGrid.tsx` | 同じ名前(入れた機能だけ) |
 | `editors/*`(CellEditorLayer / 6 種のエディタ / CheckboxCell / CellEditorErrorBubble) | 同じ名前(`editors/`) |
-| `hooks/usePortalTokens.ts` / `editors/useTopAlignedInput.ts` / `hooks/useSelectionAggregates.ts` / `hooks/useColumnAutosizeRunner.ts` | `primitives/portalTokens.ts` / `primitives/topAlignedInput.ts` / `primitives/selectionAggregates.ts` / `primitives/columnAutosize.ts` |
+| `hooks/usePortalTokens.ts` / `editors/useTopAlignedInput.ts` / `hooks/useSelectionAggregates.ts` / `hooks/useColumnAutosizeRunner.ts` / `hooks/useColumnHeaderDragController.ts` | `primitives/portalTokens.ts` / `primitives/topAlignedInput.ts` / `primitives/selectionAggregates.ts` / `primitives/columnAutosize.ts` / `primitives/columnReorder.ts` |
 | (ポップアップの置き場所の props) | `context/portal.ts`(表の root と描く場所) |
 | `hooks/useGridLocaleText.ts`(Context) | `context/localeText.ts` |
 | (React の `useSyncExternalStore`) | `primitives/externalStore.ts`(OS の配色 / 視差効果を減らす設定) |

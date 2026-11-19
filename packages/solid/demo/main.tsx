@@ -141,9 +141,13 @@ function App() {
   const [cross, setCross] = createSignal(false);
   const [find, setFind] = createSignal('');
   const [ime, setIme] = createSignal(false);
+  // 見出しの grip で並べ替えた列(onColumnsChange で受ける)。「品名を左へ固定」を押すと元の並びへ戻す。
+  const [userColumns, setUserColumns] = createSignal<GridColumn<Item>[] | null>(null);
+  const [liveColumnDrag, setLiveColumnDrag] = createSignal(false);
   // 「品名を左へ固定」で編集中の列のペインを変える(エディタが外れるときの blur で確定しないことの確かめ)。
   const columns = () =>
-    pinName() ? baseColumns.map((column) => (column.key === 'name' ? { ...column, pinned: 'left' as const } : column)) : baseColumns;
+    userColumns() ??
+    (pinName() ? baseColumns.map((column) => (column.key === 'name' ? { ...column, pinned: 'left' as const } : column)) : baseColumns);
   let handle: SpreadsheetGridHandle<Item> | undefined;
   return (
     <div style={{ padding: '16px', 'font-family': 'system-ui, sans-serif' }}>
@@ -158,7 +162,14 @@ function App() {
         <button type="button" data-testid="theme" onClick={() => setDark((v) => !v)}>
           ライト / ダーク
         </button>
-        <button type="button" data-testid="pin-name" onClick={() => setPinName((v) => !v)}>
+        <button
+          type="button"
+          data-testid="pin-name"
+          onClick={() => {
+            setUserColumns(null);
+            setPinName((v) => !v);
+          }}
+        >
           品名を左へ固定
         </button>
         <button type="button" data-testid="unmount" onClick={() => setMounted((v) => !v)}>
@@ -187,6 +198,9 @@ function App() {
         </button>
         <button type="button" data-testid="ime" onClick={() => setIme((v) => !v)}>
           IME の直接入力
+        </button>
+        <button type="button" data-testid="column-drag" onClick={() => setLiveColumnDrag((v) => !v)}>
+          列のドラッグ: ghost / live
         </button>
         <span data-testid="find">{find()}</span>
         <span data-testid="active">{active()}</span>
@@ -227,6 +241,9 @@ function App() {
           find
           // 「IME の直接入力」: IME をオンにしたままセルで打ち始められる(変換の確定で編集を始める)。
           imeDirectInput={ime()}
+          // 列の並べ替え: 見出しにホバーすると出る grip を引く(固定ペインへも移せる)。「列のドラッグ」で live 方式に。
+          onColumnsChange={(next) => setUserColumns(next)}
+          columnDragMotion={liveColumnDrag() ? 'live' : 'ghost'}
           onFindChange={(params) => setFind(`${params.open ? 'open' : 'closed'}:${params.query}:${params.currentIndex ?? '-'}/${params.matchCount}`)}
           ariaLabel="在庫表"
           onActiveCellChange={(cell) => setActive(cell ? `${cell.columnKey} / ${String(cell.rowKey)}` : '')}

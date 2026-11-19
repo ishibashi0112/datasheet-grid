@@ -1,7 +1,7 @@
 // 列見出しの行(1 つのペインぶん)。React 版の view/GridHeaderRow.tsx と同じ DOM と class。
 //   段階 1(機能なし)の範囲: コーナー(# / 全選択のチェック)・見出しの文字(renderHeader)・並びの印・フィルター中の印・
-//   列幅のつまみ。列メニューの ⋮ と列の並べ替えのつまみは機能(columnMenu / columnReorder)なので、置き場の
-//   .ssg-header-actions だけを描きます(React 版の機能なしと同じ)。
+//   列幅のつまみ。列の並べ替えのつまみ(grip)は機能 columnReorder で、シェルが onColumnDragHandlePointerDown を渡したときだけ
+//   描きます。列メニューの ⋮ は機能(columnMenu。段階 2-3)なので、まだ置き場の .ssg-header-actions だけです。
 import { For, Show, createMemo } from 'solid-js';
 import type {
   ColumnFilterValue,
@@ -55,6 +55,8 @@ type GridHeaderRowProps<T> = {
   onColumnHeaderPointerEnter: (colIndex: number, event: PointerEvent) => void;
   onColumnHeaderPointerLeave: (colIndex: number) => void;
   onColumnResizePointerDown: (column: GridColumn<T>, event: PointerEvent) => void;
+  // 列の並べ替えの grip の pointerdown(機能 columnReorder。onColumnsChange があるときだけ。無ければ grip を出さない)。
+  onColumnDragHandlePointerDown?: ((column: GridColumn<T>, event: PointerEvent & { currentTarget: HTMLElement }) => void) | undefined;
 };
 
 // React 版の <svg focusable="false">(Solid の型には focusable が無いので属性として渡す)。
@@ -228,7 +230,28 @@ export function GridHeaderRow<T>(props: GridHeaderRowProps<T>) {
                   </span>
                 </Show>
               </div>
-              <div class="ssg-header-actions" />
+              <div class="ssg-header-actions">
+                {/* 列の並べ替えの grip(合成列には出さない)。ホバーで出る(CSS)。 */}
+                <Show when={!isSynthetic() && props.onColumnDragHandlePointerDown}>
+                  {(handler) => (
+                    <span
+                      onPointerDown={(event) => handler()(column(), event)}
+                      data-ssg-tooltip={texts().dragColumn}
+                      aria-hidden="true"
+                      class="ssg-header-grip"
+                    >
+                      <svg width="8" height="14" viewBox="0 0 8 14" fill="currentColor" aria-hidden="true" {...SVG_NOT_FOCUSABLE}>
+                        <circle cx="2" cy="3" r="1" />
+                        <circle cx="6" cy="3" r="1" />
+                        <circle cx="2" cy="7" r="1" />
+                        <circle cx="6" cy="7" r="1" />
+                        <circle cx="2" cy="11" r="1" />
+                        <circle cx="6" cy="11" r="1" />
+                      </svg>
+                    </span>
+                  )}
+                </Show>
+              </div>
               <Show when={column().resizable ?? props.enableColumnResize}>
                 <div
                   onPointerDown={(event) => props.onColumnResizePointerDown(column(), event)}

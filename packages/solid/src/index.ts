@@ -14,4 +14,5 @@ export { motionExtrasFeature } from './features/motionExtras';
 export { findFeature } from './features/find';
 export { imeDirectInputFeature } from './features/imeDirectInput';
 export { columnAutosizeFeature } from './features/columnAutosize';
+export { columnReorderFeature } from './features/columnReorder';
 export type { GridColumn, CellRenderContext, SpreadsheetGridHandle, SpreadsheetGridProps, SolidGridTypes } from './model/gridTypes';

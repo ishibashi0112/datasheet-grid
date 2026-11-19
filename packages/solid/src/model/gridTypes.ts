@@ -75,6 +75,7 @@ type SupportedPropKeys =
   | 'onFindChange'
   | 'imeDirectInput'
   | 'autoSizeColumns'
+  | 'columnDragMotion'
   | 'renderTopBar'
   | 'renderBottomBar'
   | 'initialState'

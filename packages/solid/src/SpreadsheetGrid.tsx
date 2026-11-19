@@ -1247,6 +1247,46 @@ export function GridShell<T extends object>(props: SpreadsheetGridProps<T>, feat
     runAutosize: columnAutosize?.runAutosize,
   }));
 
+  // ── 列見出しのドラッグによる並べ替え(機能 features/columnReorder。core controllers/columnHeaderDragController) ──
+  //   onColumnsChange があるときだけ見出しに grip を出します(React 版と同じ)。ドラッグ中は状態を変えず、ドロップの縦線 /
+  //   ゴースト / live 方式の追従はコントローラが DOM へ直接書きます。確定は columnCommands の applyColumnOrderAndPin。
+  //   live 方式は motion が 'off' のときゴーストへ(React 版と同じ)。
+  const columnReorder = features.columnReorder?.createColumnReorder<T>(() => ({
+    enabled: Boolean(props.onColumnsChange),
+    columns: columns(),
+    paneLayout: paneLayout(),
+    leftPaneScrollRef,
+    rightPaneScrollRef,
+    bodyScrollRef,
+    scrollContainerRef,
+    leftLeadingWidth: paneResolution().leftLeadingWidth,
+    centerLeadingWidth: paneResolution().centerLeadingWidth,
+    rightLeadingWidth: paneResolution().rightLeadingWidth,
+    applyColumnOrderAndPin: columnCommands.applyColumnOrderAndPin,
+    ghostSlot: slots().dragGhost,
+    motion: resolvedMotion() === 'off' ? 'ghost' : (props.columnDragMotion ?? 'ghost'),
+  }));
+  const columnDragHandler = createMemo(() =>
+    columnReorder && props.onColumnsChange ? columnReorder.onColumnDragHandlePointerDown : undefined,
+  );
+  // ドロップの縦線(各ペインに常設。表示と位置はコントローラが直接書く)。高さは見出しから合計行までを貫く(React 版と同じ)。
+  const renderColumnDropIndicator = (pane: ColumnPane) =>
+    columnReorder ? (
+      <div
+        ref={(element) => columnReorder.setIndicator(pane, element)}
+        class="ssg-col-drop-indicator"
+        style={{
+          position: 'absolute',
+          top: '0',
+          height: px(headerHeight() + vertical().physicalBodyHeight + footerHeight()),
+          transform: 'translateX(-1px)',
+          'pointer-events': 'none',
+          'z-index': 8,
+          display: 'none',
+        }}
+      />
+    ) : null;
+
   // ── 見出しの角 / 行番号 / 列見出しのホバー ──
   const handleCornerHeaderPointerDown = (event: PointerEvent) => {
     event.preventDefault();
@@ -1836,6 +1876,7 @@ export function GridShell<T extends object>(props: SpreadsheetGridProps<T>, feat
           onColumnResizePointerDown={(column, event) =>
             columnCommands.handleColumnResizePointerDown(column as unknown as UnboundGridColumn<T>, event)
           }
+          onColumnDragHandlePointerDown={columnDragHandler()}
         />
         {/* 上に固定する行(列見出しの直後の sticky の器)。 */}
         {renderPinnedRows('top')}
@@ -1974,6 +2015,8 @@ export function GridShell<T extends object>(props: SpreadsheetGridProps<T>, feat
           {renderTotalRow()}
           {renderPinnedRows('bottom')}
         </Show>
+        {/* 中央ペインのドロップの縦線(左右のペインは、固定列が 0 本でも線を出せるよう外側の器に置く。React 版と同じ)。 */}
+        {pane === 'center' ? renderColumnDropIndicator('center') : null}
       </div>
     );
   };
@@ -2091,6 +2134,7 @@ export function GridShell<T extends object>(props: SpreadsheetGridProps<T>, feat
                     () => paneLayout().left.entries,
                   )}
                 </Show>
+                {renderColumnDropIndicator('left')}
               </div>
               <div
                 ref={(element) => {
@@ -2125,6 +2169,7 @@ export function GridShell<T extends object>(props: SpreadsheetGridProps<T>, feat
                     () => paneLayout().right.entries,
                   )}
                 </Show>
+                {renderColumnDropIndicator('right')}
               </div>
             </div>
             <Show when={viewRowCount() === 0}>

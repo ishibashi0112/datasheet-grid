@@ -28,6 +28,7 @@ import type { resolveScrollHintOptions } from '@ishibashi0112/spreadsheet-grid-c
 import type { splitTextByFindRanges } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/find';
 import type { GridFindBar } from '../view/GridFindBar';
 import type { createColumnAutosize } from '../primitives/columnAutosize';
+import type { createColumnReorder } from '../primitives/columnReorder';
 
 // 機能だけが使う文言の既定(core の logic/localeText<機能>.ts の表)。シェルが本体の既定に重ねて部品へ渡します(React 版と同じ)。
 type FeatureLocaleDefaults = { localeText?: Readonly<Partial<GridLocaleText>> | undefined };
@@ -80,6 +81,8 @@ export type SolidGridFeatures = {
     | undefined;
   // 列幅の自動調整: 計測の時間分割ランナー(core)の接続。描画の部品は無い(計測中の overlay はシェルが描く)。
   columnAutosize?: { createColumnAutosize: typeof createColumnAutosize } | undefined;
+  // 列見出しのドラッグによる並べ替え: ドラッグのコントローラ(core)の接続。見出しの grip とドロップの縦線はシェルが描く。
+  columnReorder?: { createColumnReorder: typeof createColumnReorder } | undefined;
   // IME オンのままの直接入力: 透明な入力受けのコントローラ + 入力してよいセルの判定 + 編集の初期値の決定(いずれも core)。
   imeDirectInput?: NonNullable<GridCoreFeatures['imeDirectInput']> | undefined;
   // セル内検索: 検索のコントローラ(core)+ 右上の検索バーの部品 + ヒットを分ける純関数(既定のセルの <mark>)。
