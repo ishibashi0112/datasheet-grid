@@ -1,4 +1,4 @@
-// 試作のデモ: 10,000 行の編集できる在庫表(左右の固定列 + 横に長い列で縦横の仮想化を確かめる)。
+// 試作のデモ: 10,000 行の編集できる在庫表(左右の固定列 + 横に長い列で縦横の仮想化を確かめる。数量・単価・分類に条件付き書式)。
 import { Show, createSignal, onSettled } from 'solid-js';
 import { render } from '@solidjs/web';
 import '../../react/src/styles.css';
@@ -42,6 +42,8 @@ const baseColumns: GridColumn<Item>[] = [
     title: '分類',
     width: 100,
     editor: { type: 'select', options: CATEGORIES.map((value) => ({ value, label: value })) },
+    // 条件付き書式の状態チップ。
+    conditionalFormat: { chips: { 文具: 'info', 食品: 'good', 家電: 'warning', 衣料: 'neutral', 工具: 'critical' } },
   },
   {
     key: 'qty',
@@ -52,9 +54,17 @@ const baseColumns: GridColumn<Item>[] = [
     validationMode: 'reject',
     validate: ({ value }) => (Number(value) <= 95 ? true : '95 以下にしてください'),
     cellNote: ({ row }) => (row.id % 50 === 0 ? '棚卸しで確認済み' : undefined),
+    conditionalFormat: { dataBar: {} },
   },
   { key: 'done', title: '済', width: 60, editor: { type: 'checkbox' } },
-  { key: 'price', title: '単価', width: 100, align: 'right', editor: { type: 'number' } },
+  {
+    key: 'price',
+    title: '単価',
+    width: 100,
+    align: 'right',
+    editor: { type: 'number' },
+    conditionalFormat: { colorScale: {} },
+  },
   { key: 'due', title: '期日', width: 130, editor: { type: 'date' } },
   {
     key: 'code',

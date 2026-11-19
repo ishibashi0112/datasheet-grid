@@ -341,6 +341,9 @@ export function GridShell<T extends object>(props: SpreadsheetGridProps<T>, feat
       labelDisplay: null,
     }),
   );
+  // 条件付き書式の機能(機能セットは作ったときに決まる)と、列ごとの min / max(ビューの行から。中身が同じなら同じ参照)。
+  const conditionalFormatFeature = features.conditionalFormat;
+  const conditionalFormatStats = createMemo(() => engine.resolveConditionalFormatStats(rowModel(), orderedColumns()));
   // auto-height が効いているか(真偽値だけの memo。すべてのセルが読むので、vertical の変化のたびに全セルを走らせない)。
   const autoHeightActive = createMemo(() => vertical().autoHeightActive);
   // 描く行(React 版の GridBodyLayer が virtualRowIndexes に無い行を飛ばすのと同じ)と、対応に使う rowKey。
@@ -1306,7 +1309,51 @@ export function GridShell<T extends object>(props: SpreadsheetGridProps<T>, feat
         />
       );
     }
+    // 条件付き書式: データバーの showValue: false は文字を出さない(帯は GridBodyLayer が描く)。機能セットに無ければ指定を無視。
+    const formatRules = conditionalFormatFeature ? unbound.conditionalFormat : undefined;
+    if (formatRules?.dataBar?.showValue === false) {
+      return null;
+    }
     const text = column.valueFormatter ? column.valueFormatter({ value, row, column }) : String(value ?? '');
+    // 状態チップ(値 → 色味 / 指定)。ラベルの省略時は表示の文字。チップの関数が位置や状態を読んだときは、その式だけが追従する。
+    const chips = formatRules?.chips;
+    if (conditionalFormatFeature && chips) {
+      const { GridChip, resolveChipSpec } = conditionalFormatFeature;
+      const chip = createMemo(() =>
+        resolveChipSpec<T>(chips, {
+          row,
+          get rowIndex() {
+            return cell.rowIndex;
+          },
+          get sourceRowIndex() {
+            return cell.sourceRowIndex;
+          },
+          rowKey: cell.rowKey,
+          get colIndex() {
+            return cell.colIndex;
+          },
+          value,
+          column: unbound,
+          get isActive() {
+            return cell.isActive;
+          },
+          get isSelected() {
+            return cell.isSelected;
+          },
+          get isEditing() {
+            return cell.isEditing;
+          },
+          get readOnly() {
+            return cell.readOnly;
+          },
+        }),
+      );
+      return (
+        <Show when={chip()} fallback={<span class="ssg-cell-value">{text}</span>}>
+          {(spec) => <GridChip spec={spec()}>{spec().label ?? text}</GridChip>}
+        </Show>
+      );
+    }
     return <span class="ssg-cell-value">{text}</span>;
   };
 
@@ -1432,6 +1479,8 @@ export function GridShell<T extends object>(props: SpreadsheetGridProps<T>, feat
             rowHeight={rowHeight()}
             autoHeight={autoHeightActive()}
             verticalAlign={props.verticalAlign}
+            conditionalFormat={conditionalFormatFeature}
+            conditionalFormatStats={conditionalFormatStats()}
             rowHeaderWidth={rowHeaderWidth()}
             rows={bodyRows()}
             entries={entries()}

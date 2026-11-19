@@ -75,7 +75,6 @@ describe('エクスポート(export)', () => {
   });
 });
 
-
 describe('行の高さの自動調整(autoHeight)', () => {
   // jsdom には折り返しが無いので、器(data-autoheight-content)の高さを文字数から決めます(12 文字で 1 行 = 20px)。
   let restore: (() => void) | null = null;
@@ -145,6 +144,101 @@ describe('行の高さの自動調整(autoHeight)', () => {
           }
         }, 120);
         ctx.snapshot('少しスクロール');
+      },
+    });
+  });
+});
+
+
+describe('条件付き書式(conditionalFormat)', () => {
+  type Item = { id: number; name: string; qty: number; diff: number; score: number; status: string; level: number };
+  const items = (count: number): Item[] =>
+    Array.from({ length: count }, (_, i) => ({
+      id: i + 1,
+      name: `品目 ${i + 1}`,
+      qty: (i * 37) % 100,
+      diff: ((i * 13) % 21) - 10,
+      score: (i * 7) % 50,
+      status: ['済み', '確認中', '保留', '不明'][i % 4] ?? '',
+      level: i % 5,
+    }));
+  const cfColumns = [
+    { key: 'id', title: 'ID', width: 60, pinned: 'left', editable: false },
+    { key: 'name', title: '品名', width: 120 },
+    { key: 'qty', title: '数量', width: 90, align: 'right', editor: { type: 'number' }, conditionalFormat: { dataBar: {} } },
+    {
+      key: 'diff',
+      title: '増減',
+      width: 90,
+      align: 'right',
+      editor: { type: 'number' },
+      conditionalFormat: { dataBar: { color: 'rgb(0, 128, 0)', negativeColor: 'rgb(200, 0, 0)', showValue: false } },
+    },
+    {
+      key: 'score',
+      title: '点数',
+      width: 90,
+      align: 'right',
+      editor: { type: 'number' },
+      conditionalFormat: { colorScale: { type: 'diverging', mid: 25 } },
+    },
+    {
+      key: 'status',
+      title: '状態',
+      width: 110,
+      conditionalFormat: {
+        chips: { 済み: 'good', 確認中: { tone: 'warning', label: '確認待ち' }, 保留: { tone: 'info', icon: false, color: 'rgb(1, 2, 3)' } },
+      },
+    },
+    {
+      key: 'level',
+      title: '段階',
+      width: 70,
+      // 関数のチップ: アクティブなセルだけ色を変える(位置や状態を読むチップも追従する)。
+      conditionalFormat: {
+        chips: (ctx: { value: unknown; isActive: boolean }) =>
+          ctx.isActive ? { tone: 'critical', label: `選択中 ${String(ctx.value)}` } : Number(ctx.value) >= 3 ? 'warning' : null,
+      },
+    },
+  ];
+
+  it.each([
+    ['あり', ['conditionalFormat']],
+    ['なし(素の表示)', []],
+  ])('データバー・カラースケール・チップ・値の変更と並べ替えで集計が変わる・関数のチップが状態に追従する(機能%s)', async (_label, features) => {
+    await expectParity({
+      features,
+      props: () => ({ rows: items(10), columns: cfColumns, rowKeyGetter: (row: Item) => row.id, height: 360 }),
+      watch: ['onRowsChange'],
+      steps: async (ctx) => {
+        ctx.snapshot('最初');
+        ctx.track('済みのチップ', () => ctx.container.querySelector('.ssg-body-row[data-row-key="1"] [data-ssg-col-key="status"] .ssg-chip'));
+        ctx.track('数量の帯', () => ctx.container.querySelector('.ssg-body-row[data-row-key="2"] [data-ssg-col-key="qty"] .ssg-cf-bar'));
+        // 最大の値を大きくする → ほかの行の帯が短くなる。
+        await ctx.setProps({ rows: (ctx.rows() as Item[]).map((row) => (row.id === 3 ? { ...row, qty: 500 } : row)) });
+        ctx.snapshot('数量の最大を変える');
+        // 段階のセルをアクティブに → 関数のチップが変わる。状態のセルを押しても中身は作り直さない。
+        await ctx.act(() => {
+          fireEvent.pointerDown(ctx.cell(1, 'level'), pointer);
+          fireEvent.pointerUp(window, pointer);
+        });
+        ctx.snapshot('段階のセルをアクティブに');
+        await ctx.act(() => {
+          fireEvent.pointerDown(ctx.cell(0, 'status'), pointer);
+          fireEvent.pointerUp(window, pointer);
+        });
+        ctx.snapshot('状態のセルをアクティブに');
+        // 並べ替え(点数の昇順)。
+        await ctx.act(() => {
+          fireEvent.pointerDown(ctx.header('score'), { ...pointer, shiftKey: true });
+          fireEvent.pointerUp(window, { ...pointer, shiftKey: true });
+        });
+        ctx.snapshot('点数で並べ替え');
+        // 値をチップの無い値へ / 帯の値を負へ。
+        await ctx.setProps({
+          rows: (ctx.rows() as Item[]).map((row) => (row.id === 1 ? { ...row, status: '不明', diff: -10, score: 49 } : row)),
+        });
+        ctx.snapshot('チップの無い値と負の帯');
       },
     });
   });

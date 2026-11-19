@@ -6,12 +6,27 @@
 //   - 機能の部品は中身の見えない GridFeature<K> で公開します(React 版と同じ。利用側が推論のまま export しても d.ts を書ける)。
 //   段階 2 で 21 の機能を順に足します(足した機能だけがこの表にある)。
 import type { GridCoreFeatures } from '@ishibashi0112/spreadsheet-grid-core/internal/engine/features';
+import type {
+  resolveChipSpec,
+  resolveColorScaleBackground,
+  resolveDataBar,
+} from '@ishibashi0112/spreadsheet-grid-core/internal/logic/conditionalFormat';
+import type { GridChip } from '../view/GridChip';
 
 export type SolidGridFeatures = {
   // エクスポート(命令的 API の exportCsv / downloadCsv / getExportData)。描画の部品は無い。
   export?: NonNullable<GridCoreFeatures['export']> | undefined;
   // 行の高さの実測(autoHeight): 実測のコントローラ + 行高ストア(core)。描画の部品は無い(セルの器はシェルが描く)。
   autoHeight?: NonNullable<GridCoreFeatures['autoHeight']> | undefined;
+  // 条件付き書式: min / max の集計(core)+ データバー / カラースケール(本体の行)+ 状態チップ(セルの中身)。
+  conditionalFormat?:
+    | (NonNullable<GridCoreFeatures['conditionalFormat']> & {
+        resolveDataBar: typeof resolveDataBar;
+        resolveColorScaleBackground: typeof resolveColorScaleBackground;
+        resolveChipSpec: typeof resolveChipSpec;
+        GridChip: typeof GridChip;
+      })
+    | undefined;
 };
 
 declare const gridFeatureBrand: unique symbol;
