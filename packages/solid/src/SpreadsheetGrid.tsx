@@ -605,6 +605,15 @@ export function GridShell<T extends object>(props: SpreadsheetGridProps<T>, feat
       .map((item) => entries[item.index])
       .filter((entry): entry is PaneColumnEntry<T> => Boolean(entry));
   });
+  // アクティブセルが描かれているか(core logic/cellPlacement。React 版と共用)。aria-activedescendant と、IME の入力受けを
+  //   描かれたセルへ合わせ直す合図に使います。
+  const activeCellRendered = createMemo(() =>
+    isActiveCellRendered(ui().activeCell, vertical().virtualRowIndexes, rowModel(), [
+      paneLayout().left.entries,
+      centerRenderEntries(),
+      paneLayout().right.entries,
+    ]),
+  );
   const columnMeasurements = createMemo(() =>
     buildColumnMeasurements(visibleColumns(), paneResolution().effectiveColumnWidths),
   );
@@ -1325,30 +1334,36 @@ export function GridShell<T extends object>(props: SpreadsheetGridProps<T>, feat
   const imeDirectInputEnabled = createMemo(() => (props.imeDirectInput ?? false) && imeFeature !== undefined);
   connectController(
     engine.imeInput,
-    () => ({
-      enabled: imeDirectInputEnabled(),
-      gridRootRef,
-      editing: ui().editingCell !== null,
-      activeCell: ui().activeCell,
-      resolveCell: (cell: CellCoord) => {
-        const column = untrack(orderedColumns)[cell.col];
-        return column ? { colKey: column.key, align: column.align } : null;
-      },
-      canStartEdit: (cell: CellCoord) =>
-        imeFeature?.canStartImeEdit(
-          {
-            rowModel: untrack(rowModel),
-            columns: untrack(orderedColumns),
-            readOnly: untrack(readOnly),
-            canEditCell: untrack(() => props.canEditCell),
-          },
-          cell,
-        ) === true,
-      startEdit: edit.startEditWithValue,
-      // number の列は確定した文字を半角の数値の表記へ直して編集を始めます(読めない変換は捨てる)。
-      resolveEditText: (cell: CellCoord, text: string) =>
-        imeFeature ? imeFeature.resolveImeEditText(untrack(orderedColumns), cell, text) : text,
-    }),
+    () => {
+      // 読むだけ(args には入れない): アクティブセルが描かれたら update し直します。コントローラは描かれていないセルへは
+      //   入力受けを合わせられず、次の update で合わせ直す作りで、React 版は描くたびに update するので、画面の外へ跳んだ
+      //   アクティブセル(Ctrl+End など)へもスクロールで描かれた後に合う。Solid 版はスクロールでは args が変わらないため。
+      activeCellRendered();
+      return {
+        enabled: imeDirectInputEnabled(),
+        gridRootRef,
+        editing: ui().editingCell !== null,
+        activeCell: ui().activeCell,
+        resolveCell: (cell: CellCoord) => {
+          const column = untrack(orderedColumns)[cell.col];
+          return column ? { colKey: column.key, align: column.align } : null;
+        },
+        canStartEdit: (cell: CellCoord) =>
+          imeFeature?.canStartImeEdit(
+            {
+              rowModel: untrack(rowModel),
+              columns: untrack(orderedColumns),
+              readOnly: untrack(readOnly),
+              canEditCell: untrack(() => props.canEditCell),
+            },
+            cell,
+          ) === true,
+        startEdit: edit.startEditWithValue,
+        // number の列は確定した文字を半角の数値の表記へ直して編集を始めます(読めない変換は捨てる)。
+        resolveEditText: (cell: CellCoord, text: string) =>
+          imeFeature ? imeFeature.resolveImeEditText(untrack(orderedColumns), cell, text) : text,
+      };
+    },
     'effect',
   );
   // 入力受けを外したら(imeDirectInput を false にした)コントローラから切り離します(React 版の ref の null)。
@@ -2376,15 +2391,8 @@ export function GridShell<T extends object>(props: SpreadsheetGridProps<T>, feat
     );
   };
 
-  // aria-activedescendant は参照先のセルが描かれているときだけ(core logic/cellPlacement。React 版と共用)。
-  const activeDescendantId = () =>
-    isActiveCellRendered(ui().activeCell, vertical().virtualRowIndexes, rowModel(), [
-      paneLayout().left.entries,
-      centerRenderEntries(),
-      paneLayout().right.entries,
-    ])
-      ? activeCellDomId
-      : undefined;
+  // aria-activedescendant は参照先のセルが描かれているときだけ(activeCellRendered)。
+  const activeDescendantId = () => (activeCellRendered() ? activeCellDomId : undefined);
 
   const emptyStateText = () =>
     rows().length === 0

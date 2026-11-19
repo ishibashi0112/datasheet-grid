@@ -608,6 +608,54 @@ describe('行のドラッグ(rowDrag)', () => {
       },
     });
   }, 20_000);
+
+  // 引いている間に行が変わっても、掴んだ行を追いかける(1.0 前の最終チェック FC-12。行が増えたら新しい位置へ、消えたらやめる)。
+  it.each([
+    ['ghost', 'ghost'],
+    ['live', 'live'],
+  ])('引いている間に行が増える / 掴んだ行が消える(%s)', async (_label, rowDragMotion) => {
+    await expectParity({
+      features: ['rowDrag'],
+      watch: ['onRowMove'],
+      props: () => ({
+        rows: makeRows(8),
+        columns,
+        rowKeyGetter: (row: Row) => row.id,
+        height: 400,
+        enableRowDrag: true,
+        rowDragMotion,
+      }),
+      steps: async (ctx) => {
+        // 2 行目(id 2)を掴んで 5 行目の上へ。引いている間に先頭へ 1 行足す。
+        await ctx.act(() => {
+          fireEvent.pointerDown(handleOf(ctx, 1), { ...pointer, clientX: 30, clientY: rowY(1) });
+          fireEvent.pointerMove(window, { ...pointer, clientX: 30, clientY: rowY(2) });
+          fireEvent.pointerMove(window, { ...pointer, clientX: 30, clientY: rowTopY(5) });
+        });
+        await ctx.setProps({ rows: [{ ...makeRows(1)[0], id: 100, name: '足した行' }, ...(ctx.rows() as Row[])] });
+        ctx.snapshot('引いている間に行が増える');
+        await ctx.act(() => {
+          fireEvent.pointerUp(window, { ...pointer, clientX: 30, clientY: rowTopY(5) });
+        }, 450);
+        ctx.snapshot('落とす(行が増えた後)');
+        ctx.log('行の並び(行が増えた後)', names(ctx));
+        // 4 行目を掴み、引いている間にその行を消す = やめる。
+        const grabbed = (ctx.rows() as Row[])[3]?.id;
+        await ctx.act(() => {
+          fireEvent.pointerDown(handleOf(ctx, 3), { ...pointer, clientX: 30, clientY: rowY(3) });
+          fireEvent.pointerMove(window, { ...pointer, clientX: 30, clientY: rowY(4) });
+          fireEvent.pointerMove(window, { ...pointer, clientX: 30, clientY: rowTopY(7) });
+        });
+        await ctx.setProps({ rows: (ctx.rows() as Row[]).filter((row) => row.id !== grabbed) });
+        ctx.snapshot('掴んだ行が消える');
+        await ctx.act(() => {
+          fireEvent.pointerUp(window, { ...pointer, clientX: 30, clientY: rowTopY(7) });
+        }, 450);
+        ctx.snapshot('離す(掴んだ行が消えた後)');
+        ctx.log('行の並び(掴んだ行が消えた後)', names(ctx));
+      },
+    });
+  }, 20_000);
 });
 
 describe('フィルハンドル(fillHandle)', () => {

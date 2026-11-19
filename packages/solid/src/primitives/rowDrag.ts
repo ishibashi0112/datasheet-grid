@@ -4,7 +4,8 @@
 //   追従を DOM へ直接書く)。行の移動の確定(commitRowMove)と命令的 API の moveRow はシェルに置きます(React 版と同じ)。
 //   - 落とせるかの判定(canDropAt)は canDropRow / rows / 行のキーの関数が変わったときだけ作り直します(コントローラは関数が
 //     変わると答えの控えを捨てるので、React 版の useMemo と同じ回数だけ canDropRow を呼ぶように)。
-//   - ゴーストのラベル / 掴んだ行の控えと探し直しは、呼ばれた時点の行モデルで答えます(React 版は描くたびに新しい関数)。
+//   - ゴーストのラベル / 掴んだ行の控えは、呼ばれた時点の行モデルで答えます(React 版は描くたびに新しい関数)。掴んだ行の
+//     探し直しは行の並びが変わるたびに作り直します(コントローラは関数が変わったら引いている間の行を探し直す)。
 //   - 滑り込みは行の並びが変わって DOM を書き終えた後に呼びます(React 版はコミット後・描く前のレイアウト effect)。
 import { createEffect, createMemo, untrack } from 'solid-js';
 import {
@@ -101,33 +102,47 @@ export function createRowDrag<T>(inputs: RowDragInputs<T>): RowDrag {
     if (row === undefined) return null;
     return { row, rowKey: rowModel.getRowKey(viewIndex), rowCount: rowModel.getRowCount() };
   };
-  const locateDragRow = (token: unknown, hint: number): number | null => {
-    const rowModel = untrack(inputs.rowModel);
-    const { row, rowKey, rowCount } = token as DragRowToken;
-    if (rowModel.getRow(hint) === row) return hint;
-    const count = rowModel.getRowCount();
-    for (let index = 0; index < count; index += 1) {
-      if (rowModel.getRow(index) === row) return index;
-    }
-    if (untrack(inputs.hasRowKeys)) {
+  // 探し直しの関数は行の並び(と行のキーの有無)が変わるたびに作り直します。コントローラは引いている間にこの関数が変わると
+  //   掴んだ行を探し直す(行が増えたら新しい位置へ、消えたらやめる。1.0 前の最終チェック FC-12)ので、React 版の
+  //   useCallback([rowModel, hasRowKeys]) と同じ回数だけ変わるようにします。
+  const locateDragRow = createMemo(() => {
+    const rowModel = inputs.rowModel();
+    const hasRowKeys = inputs.hasRowKeys();
+    return (token: unknown, hint: number): number | null => {
+      const { row, rowKey, rowCount } = token as DragRowToken;
+      if (rowModel.getRow(hint) === row) return hint;
+      const count = rowModel.getRowCount();
       for (let index = 0; index < count; index += 1) {
-        if (Object.is(rowModel.getRowKey(index), rowKey)) return index;
+        if (rowModel.getRow(index) === row) return index;
       }
-      return null;
-    }
-    return count === rowCount && hint < rowCount ? hint : null;
-  };
+      if (hasRowKeys) {
+        for (let index = 0; index < count; index += 1) {
+          if (Object.is(rowModel.getRowKey(index), rowKey)) return index;
+        }
+        return null;
+      }
+      return count === rowCount && hint < rowCount ? hint : null;
+    };
+  });
 
-  connectController(controller, () => ({
-    ...inputs.controller(),
-    leftIndicatorRef,
-    centerIndicatorRef,
-    rightIndicatorRef,
-    getRowDragLabel,
-    getDragRow,
-    locateDragRow,
-    canDropAt: canDropAt(),
-  }));
+  // update は描画の後(ふつうの effect)で呼びます。引いている間に行が変わったときの探し直しは、掴んだ行の印
+  //   (data-ssg-row-dragging)を新しい行番号(data-row-index)の要素へ付け直し、live 方式では退避した行の基準位置を
+  //   DOM から取り直すので、行の要素を書き終えてからでないと前の行番号の要素に付く(React 版はコミット後のレイアウト effect)。
+  //   コントローラは update で args を覚えるだけなので、ほかの読み取りはイベントの時点の args で変わらない。
+  connectController(
+    controller,
+    () => ({
+      ...inputs.controller(),
+      leftIndicatorRef,
+      centerIndicatorRef,
+      rightIndicatorRef,
+      getRowDragLabel,
+      getDragRow,
+      locateDragRow: locateDragRow(),
+      canDropAt: canDropAt(),
+    }),
+    'effect',
+  );
   // 行の並びが変わったら(確定の後)滑り込み。直前のドロップで用意したときだけ動き、それ以外(編集 / フィルター等)はすぐ戻る。
   createEffect(inputs.rowModel, () => {
     controller.applyReorderSettle();

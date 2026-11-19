@@ -158,7 +158,7 @@ React 版の機能なしの構成と並べて、同じ props・同じ操作で D
 | # | 内容 | 状況 |
 | --- | --- | --- |
 | 2-1 | 機能を差し込む仕組み + 表示の機能 8 つ(totalRow / pinnedRows / conditionalFormat / selectionAggregates / scrollHint / motionExtras / export / autoHeight) | 済み(PR #65、2026-11-19 マージ。2-1a: 仕組み(`features/types.ts` / `createSpreadsheetGrid.tsx` / `features/full.ts`、比べるテストの `features`)と export、2-1b: autoHeight、2-1c: conditionalFormat、2-1d: totalRow + pinnedRows、2-1e: selectionAggregates、2-1f: scrollHint、2-1g: motionExtras) |
-| 2-2 | 操作の機能 7 つ(find / fillHandle / columnReorder / rowDrag / columnAutosize / imeDirectInput / contextMenu) | 作業中(2-2a: find、2-2b: imeDirectInput、2-2c: columnAutosize、2-2d: columnReorder、2-2e: rowDrag、2-2f: fillHandle、2-2g: contextMenu = 済み) |
+| 2-2 | 操作の機能 7 つ(find / fillHandle / columnReorder / rowDrag / columnAutosize / imeDirectInput / contextMenu) | 作業中(2-2a: find、2-2b: imeDirectInput、2-2c: columnAutosize、2-2d: columnReorder、2-2e: rowDrag、2-2f: fillHandle、2-2g: contextMenu = 済み。別視点のレビュー = 高 1・低 1 を直した) |
 | 2-3 | ポップアップ 3 つ(columnMenu / toolPanel / filtering) | まだ |
 | 2-4 | 行のモデル 3 つ(serverSide / labelRow / grouping) | まだ |
 
@@ -196,6 +196,20 @@ React 版の機能なしの構成と並べて、同じ props・同じ操作で D
   `commitRowMoveFromDrag` と一緒に段階 3 で決める)。シェルの配線(キーボードから開いた直後の contextmenu を 1 秒止める、
   ポップアップを出している間はシェルを Tab の止まる先から外し、キー操作と貼り付けを止める、Escape をグリッドが受ける条件)は
   React 版の `GridShell.tsx` と同じ。
+- **関数が変わったことを合図にするコントローラには、変わる関数を渡す**(別視点のレビューの高): 行のドラッグのコントローラは、
+  引いている間に掴んだ行の探し直しの関数(`locateDragRow`)が変わると、行が変わったとみなして掴んだ行を探し直す(1.0 前の最終
+  チェック FC-12。行が増えたら新しい位置へ、消えたらやめる)。React 版は `useCallback([rowModel, hasRowKeys])` で行の並びが
+  変わるたびに別の関数になるが、Solid 版は呼んだ時点の行を読む 1 つの関数にしていたので、引いている間に行が増えると別の行が
+  動き、掴んだ行が消えても止まらなかった。行の並びの memo で作り直すようにし、探し直しが掴んだ行の印を新しい行番号の要素へ
+  付け直せるよう、update を描いた後の effect にした(比べるテストに「引いている間に行が増える / 消える」を足した)。ほかの
+  コントローラ(fill / find / contextMenu / columnHeaderDrag)は関数の同一性を合図にしていない。
+- **描かれた後に合わせ直すコントローラには、描かれたことを伝える**(レビューの低): IME の入力受けは描かれていないセルへは
+  合わせられず、次の update で合わせ直す。React 版は描くたびに update するのでスクロールで描かれた後に合うが、Solid 版は
+  スクロールでは args が変わらず、Ctrl+End などで画面の外へ跳ぶと前のセルの位置に残っていた(変換を始めると直る)。
+  アクティブセルが描かれているかの memo(aria-activedescendant と共用)を args の関数で読むようにした。なお React 版でも、
+  PageDown のように先読みの行(描かれている)へ移ってからスクロールするときは、入力受けがスクロール前の位置に残る(Chromium で
+  16px。変換を始めると直る。core の imeInputController の待機中の位置合わせの話で、Solid 版はこの場面では合う)。直すかは
+  段階 3 で決める。
 - **ref の関数の中では `onCleanup` を呼べない**(Solid 2.0 の CLEANUP_IN_FORBIDDEN_SCOPE): コントローラの外側クリックの判定に
   使うボタン / メニューの要素の控えは、部品の本体で `onCleanup` を登録して外したときに消す(React 版の ref の null)。
 
