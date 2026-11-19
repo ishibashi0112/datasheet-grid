@@ -81,7 +81,8 @@ export function GridTotalRow<T>(props: GridTotalRowProps<T>) {
         </Show>
         <For each={props.entries} keyed={(entry) => entry.column.key}>
           {(entry) => {
-            const unbound = () => entry().column;
+            // 列は memo で受ける(項目のオブジェクトは列の位置や幅が変わるたびに新しくなる。中身はそれでは作り直さない)。
+            const unbound = createMemo(() => entry().column);
             const cell = () => props.cells.get(unbound().key);
             const isLabelCell = () => unbound().key === props.labelColumnKey;
             // 中身は集計の値・見出し・文言が変わったときだけ作り直す(列の位置や幅では作り直さない)。

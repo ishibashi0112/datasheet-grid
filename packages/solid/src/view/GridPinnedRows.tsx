@@ -131,13 +131,15 @@ export function GridPinnedRows<T>(props: GridPinnedRowsProps<T>) {
                     const unbound = createMemo(() => entry().column);
                     const column = () => unbound() as unknown as GridColumn<T>;
                     const value = createMemo(() => getCellValue(row(), unbound()));
+                    // 位置は値だけの memo(項目のオブジェクトは列の位置や幅が変わるたびに新しくなる。中身はそれでは作り直さない)。
+                    const colIndex = createMemo(() => entry().logicalIndex);
                     const ctx = createMemo(
                       (): CellStyleContext<T, SolidGridTypes> => ({
                         row: row(),
                         rowIndex: index,
                         sourceRowIndex: index,
                         rowKey: rowKey(),
-                        colIndex: entry().logicalIndex,
+                        colIndex: colIndex(),
                         value: value(),
                         column: column(),
                         isActive: false,

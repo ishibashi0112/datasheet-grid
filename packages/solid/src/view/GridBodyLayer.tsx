@@ -112,7 +112,8 @@ export function GridBodyLayer<T>(props: GridBodyLayerProps<T>) {
             {(currentRow) => {
               const rowKey = (): GridRowKey => props.rowModel.getRowKey(rowIndex()) ?? rowIndex();
               const sourceRowIndex = () => props.rowModel.getSourceIndex(rowIndex()) ?? rowIndex();
-              const rowSize = () => item().size ?? props.rowHeight;
+              // 行の高さは値だけの memo(項目のオブジェクトはスクロールのたびに新しくなる)。
+              const rowSize = createMemo(() => item().size ?? props.rowHeight);
               const isRowChecked = createMemo(() =>
                 props.enableRowSelection ? resolveIsRowSelected(props.rowSelectionState, rowKey()) : false,
               );

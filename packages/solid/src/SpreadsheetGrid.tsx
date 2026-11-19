@@ -1024,7 +1024,8 @@ export function GridShell<T extends object>(props: SpreadsheetGridProps<T>, feat
         return true;
       }
       if (target === root || target.hasAttribute('data-ssg-ime-input')) {
-        return state.editingCell !== null || isClearableSelection(state.selection);
+        // 1 セルのコピーの後の Escape も(コピー範囲の点線を消す。React 版と同じ)。
+        return state.editingCell !== null || isClearableSelection(state.selection) || untrack(copiedSelection) !== null;
       }
       return false;
     },
@@ -1463,12 +1464,13 @@ export function GridShell<T extends object>(props: SpreadsheetGridProps<T>, feat
         />
       );
     }
+    const text = column.valueFormatter ? column.valueFormatter({ value, row, column }) : String(value ?? '');
     // 条件付き書式: データバーの showValue: false は文字を出さない(帯は GridBodyLayer が描く)。機能セットに無ければ指定を無視。
+    //   valueFormatter は React 版と同じく先に呼ぶ。
     const formatRules = conditionalFormatFeature ? unbound.conditionalFormat : undefined;
     if (formatRules?.dataBar?.showValue === false) {
       return null;
     }
-    const text = column.valueFormatter ? column.valueFormatter({ value, row, column }) : String(value ?? '');
     // 状態チップ(値 → 色味 / 指定)。ラベルの省略時は表示の文字。チップの関数が位置や状態を読んだときは、その式だけが追従する。
     const chips = formatRules?.chips;
     if (conditionalFormatFeature && chips) {

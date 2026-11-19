@@ -338,6 +338,14 @@ describe('合計行(totalRow)と固定行(pinnedRows)', () => {
           fireEvent.keyDown(ctx.shell(), { key: 'ArrowDown' });
         });
         ctx.snapshot('最後の行で下へ');
+        // 列の幅が変わっても、合計行 / 固定行のセルの中身(renderCell の要素・チップ)は作り直さない(React 版と同じ)。
+        ctx.track('合計行の数量の中身', () => ctx.container.querySelector('.ssg-total-row [data-ssg-col-key="qty"] > *'));
+        ctx.track('固定行の品名の中身', () => ctx.container.querySelector('.ssg-pinned-rows--top [data-ssg-col-key="name"] > *'));
+        ctx.track('固定行の点数のチップ', () => ctx.container.querySelector('.ssg-pinned-rows--top [data-ssg-col-key="score"] .ssg-chip'));
+        await ctx.act(() => {
+          call(ctx, 'applyState', { columnWidths: { id: 90, name: 150 } });
+        });
+        ctx.snapshot('列の幅を変える');
         ctx.log('csv(合計行・固定行つき)', call(ctx, 'exportCsv', { includeTotalRow: true, includePinnedRows: true }));
         ctx.log('data(既定)', call(ctx, 'getExportData'));
         // 合計行のオプション(見出し・値・高さ・className・renderCell)と、下の固定行を合計行の下へ。
@@ -479,7 +487,8 @@ describe('スクロール位置インジケーター(scrollHint)', () => {
         await ctx.act(() => {
           const target = gutter();
           if (target) {
-            fireEvent.pointerEnter(target, { clientY: 200 });
+            // React の onPointerEnter は pointerover から作られるので ctx.hover(両方を送る)。
+            ctx.hover(target);
             fireEvent.pointerMove(target, { clientY: 200, pointerId: 1 });
           }
         });
@@ -501,7 +510,8 @@ describe('スクロール位置インジケーター(scrollHint)', () => {
           if (target) {
             fireEvent.pointerMove(target, { clientY: 120, pointerId: 1 });
             fireEvent.pointerUp(target, { clientY: 120, pointerId: 1 });
-            fireEvent.pointerLeave(target);
+            fireEvent.pointerOut(target, { relatedTarget: document.body });
+            fireEvent.pointerLeave(target, { relatedTarget: document.body });
           }
         });
         ctx.log('ドラッグした後の scrollTop', scroller(ctx).scrollTop);
@@ -628,6 +638,39 @@ describe('動きの追加(motionExtras)', () => {
         ctx.snapshot('値が変わったセル');
         await ctx.act(() => {}, 1600);
         ctx.snapshot('フラッシュが消えた後');
+        // 数値のトゥイーンの始まり(requestAnimationFrame を止め、旧値へ戻して書いた直後の文字を見る)。
+        const originalRaf = window.requestAnimationFrame;
+        const queuedFrames: FrameRequestCallback[] = [];
+        window.requestAnimationFrame = ((callback: FrameRequestCallback) => {
+          queuedFrames.push(callback);
+          return queuedFrames.length;
+        }) as typeof window.requestAnimationFrame;
+        try {
+          await ctx.setProps({ rows: (ctx.rows() as Row[]).map((row) => (row.id === 5 ? { ...row, price: 900 } : row)) });
+          const tweened = ctx.container.querySelector('.ssg-body-row[data-row-key="5"] [data-ssg-col-key="price"]');
+          ctx.log('トゥイーンの始まりの文字', tweened?.textContent);
+          ctx.log('トゥイーン中のフラッシュ', tweened?.classList.contains('ssg-body-cell--changed'));
+        } finally {
+          window.requestAnimationFrame = originalRaf;
+        }
+        // 1 セルのコピーの後の Escape はグリッドが受ける(既定の動きを止めて点線を消す。ダイアログの中では 1 回目で閉じない)。
+        await ctx.act(() => {
+          fireEvent.pointerDown(ctx.cell(6, 'qty'), pointer);
+          fireEvent.pointerUp(window, pointer);
+        });
+        await ctx.act(() => {
+          fireEvent.keyDown(ctx.shell(), { key: 'c', ctrlKey: true });
+        });
+        ctx.snapshot('1 セルをコピー');
+        await ctx.act(() => {
+          ctx.log('1 セルのコピーの後の Escape を止めたか', !fireEvent.keyDown(ctx.shell(), { key: 'Escape' }));
+        });
+        ctx.snapshot('1 セルのコピーの後の Escape');
+        // 範囲を選び直してコピーしておく(下の「行数が変わる」で点線が消えるのを見る)。
+        await selectRange(ctx, [1, 'name'], [3, 'price']);
+        await ctx.act(() => {
+          fireEvent.keyDown(ctx.shell(), { key: 'c', ctrlKey: true });
+        });
         // 行数が変わると点線は消える(コピーした時点の見え方と違う)。
         await ctx.setProps({ rows: makeRows(12) });
         ctx.snapshot('行数が変わる');

@@ -183,6 +183,15 @@ React 版の機能なしの構成と並べて、同じ props・同じ操作で D
   React 側が動かない(出るときは `pointerout` も送る。入るときの `ctx.hover` と同じ)。jsdom の `requestAnimationFrame` の時刻は
   `performance.now()` とずれるので、数値のトゥイーンの途中の値は決まらない(トゥイーンは Chromium で確かめた)。`ctx.track` は
   要素ができてから呼ぶ(無いうちに呼ぶと以後ずっと「作り直し」になる)。大きな選択の集計(時間分割)は待ってから控える。
+- **別視点のレビューで直したもの**: 1 セルをコピーした後の Escape をグリッドが受けていなかった(escapeClaim の条件に
+  コピー範囲を足し忘れ。ダイアログの中では 1 回目で閉じてしまう)。合計行 / 固定行のセルの中身が列の幅や位置が変わるたびに
+  作り直されていた(列や位置を memo で受けていなかった。renderCell の中の要素のフォーカスが消える)。どちらも比べるテストに
+  足した(Escape の既定の動きを止めたか / `ctx.track` で列の幅の前後)。
+- **残した違い**: 同じ行の別の列の値が変わると、Solid 版はセルの中身の span を作り直す(行のオブジェクトが変わると
+  `valueFormatter` を呼び直すため。React 版は仮想 DOM の差分で span を使い回す)。動いている数値のトゥイーンはそこで最後の値へ
+  飛ぶ(見た目だけの差)。
+- **2-4 で確かめること**: React 版の `DISABLED_FEATURE_PROPS` は `undefined` を入れて prop を切る(`dataSource` / `labelRow`)。
+  Solid の `merge(props, overrides)` で `undefined` が元の値を上書きするかを、serverSide / labelRow を移すときに確かめる。
 
 ## 段階 0 の中身
 
