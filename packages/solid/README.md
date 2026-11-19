@@ -26,7 +26,11 @@ React 版と同じ DOM・class で描くので、React 版の `styles.css` を�
 - 通知: `onActiveCellChange` / `onCellClick` / `onCellDoubleClick` / `onStateChange` / `onSortChange` / `onFiltersChange` / `onScroll` /
   `onColumnsChange` / `onUndoRedoStateChange` / `onHoveredRowChange`
 
-無いもの(段階 2): `/lite` の 21 の機能(ラベル行・SSRM・行のグループ・合計行・固定行などを含む)。
+- 機能(段階 2。React 版の `/lite` と同じく `createSpreadsheetGrid({ features: { export: exportFeature } })` で選んで差し込む。
+  `SpreadsheetGrid` は全部入り): エクスポート(`exportCsv` / `downloadCsv` / `getExportData`)、行の高さの自動調整(`autoHeight` /
+  `estimateRowHeight` / `verticalAlign`、列の `autoHeight` / `verticalAlign`)
+
+無いもの(段階 2 の残り): `/lite` の残りの 19 の機能(ラベル行・SSRM・行のグループ・合計行・固定行などを含む)。
 
 `renderCell` / `renderHeader` / `renderTopBar` / `renderBottomBar` は、React 版のように描き直しのたびに呼ぶのではなく、Solid の部品と
 同じく必要なときだけ呼びます: `renderCell` は行(と値)や列が変わったとき、`renderHeader` は列が変わったとき、バーは関数が変わった
@@ -37,7 +41,7 @@ React 版と同じ DOM・class で描くので、React 版の `styles.css` を�
 ## 使い方
 
 ```sh
-pnpm --filter ./packages/solid dev          # デモ(10,000 行 × 39 列。エディタ 6 種・行の選択・展開行・テーマ・列の固定・グリッドを外すボタン)
+pnpm --filter ./packages/solid dev          # デモ(10,000 行 × 39 列。エディタ 6 種・行の選択・展開行・行の高さの自動調整・テーマ・列の固定・グリッドを外すボタン)
 pnpm --filter ./packages/solid test         # jsdom のテスト(Solid の JSX 変換の vitest 設定。React 版と並べて比べるテストも)
 pnpm --filter ./packages/solid typecheck
 pnpm --filter ./packages/solid spike:build  # 大きさを測るためのライブラリビルド(dist/)
@@ -72,7 +76,9 @@ pnpm --filter ./packages/solid spike:build  # 大きさを測るためのライ�
    (React 版も同じ形)。
 3. **Solid の開発ビルドの診断が役に立つ**: 部品の本体での読み取り(STRICT_READ_UNTRACKED)、ref の中の onCleanup
    (CLEANUP_IN_FORBIDDEN_SCOPE)を開発ビルドが止めてくれた(直した)。残っているのは列の幅が変わったときの
-   EFFECT_RELAY_TEAR(列の仮想化の測り直しで見出しを 2 回描く。React 版にも同じ 2 回目の描画がある)。
+   EFFECT_RELAY_TEAR(列の仮想化の測り直しで見出しを 2 回描く。React 版にも同じ 2 回目の描画がある)と、`autoHeight` で行を
+   測ったときの EFFECT_RELAY_TEAR / EFFECT_WRITES_OWN_SOURCE(測った高さで縦のレイアウトを計算し直す。React 版もレイアウト effect
+   で測って描き直す。どちらも描く前に済むので画面には出ない。Solid の診断の文言どおり「測る代わり」)。
 4. **core へ寄せたもの(段階 0-2〜0-4)**: React 版の層にフレームワークに依らないファイルはほぼ残っていなかったが、`GridShell.tsx`
    の useCallback / useMemo の中に Solid でも同じことを書く処理があったので core へ移した: セルの操作(編集を始めてよいかの判断・
    チェックボックス・選択したセルの削除・全選択・`renderCell` の `setValue` = `engine/cellCommands`)、オーバーレイの矩形と

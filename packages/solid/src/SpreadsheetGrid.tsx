@@ -315,20 +315,24 @@ export function GridShell<T extends object>(props: SpreadsheetGridProps<T>, feat
   );
 
   // ── 縦のレイアウト(行の仮想化は core が計算する) ──
+  //   auto-height(行の高さの実測)は機能(features.autoHeight)。無い構成では createSpreadsheetGrid が autoHeight を
+  //   false にし、エンジンの実測は代役(測らない)、縦のレイアウトも auto-height を使わない(React 版と同じ)。
+  //   実測の version(prefix の更新)/ nonce(中身の変化)を購読して、縦のレイアウトの計算し直しと測り直しのきっかけにします。
+  const autoHeightSnapshot = createExternalStoreSignal(engine.autoHeightMeasurer);
   const vertical = createMemo(() =>
     engine.resolveVerticalLayout({
       isServerSide: false,
-      autoHeight: false,
+      autoHeight: props.autoHeight ?? false,
       visibleColumns: visibleColumns(),
       viewRowCount: viewRowCount(),
-      estimateRowHeight: rowHeight(),
+      estimateRowHeight: props.estimateRowHeight ?? rowHeight(),
       rowHeight: rowHeight(),
       headerHeight: headerHeight(),
       viewportHeight: view().viewportHeight,
       scrollTop: view().scrollTop,
       rowModel: rowModel(),
       measuredHeights: engine.autoHeightMeasurer.measuredHeights,
-      autoHeightVersion: 0,
+      autoHeightVersion: autoHeightSnapshot().version,
       detailRowEnabled: detailRowEnabled(),
       expandedDetailRowKeys: ui().expandedDetailRowKeys,
       detailHeight: props.detailRow?.height ?? DEFAULT_DETAIL_ROW_HEIGHT,
@@ -337,6 +341,8 @@ export function GridShell<T extends object>(props: SpreadsheetGridProps<T>, feat
       labelDisplay: null,
     }),
   );
+  // auto-height が効いているか(真偽値だけの memo。すべてのセルが読むので、vertical の変化のたびに全セルを走らせない)。
+  const autoHeightActive = createMemo(() => vertical().autoHeightActive);
   // 描く行(React 版の GridBodyLayer が virtualRowIndexes に無い行を飛ばすのと同じ)と、対応に使う rowKey。
   const bodyRows = createMemo((): GridBodyRowItem[] => {
     const { virtualRows, virtualRowIndexes } = vertical();
@@ -355,6 +361,27 @@ export function GridShell<T extends object>(props: SpreadsheetGridProps<T>, feat
     }
     return items;
   });
+
+  // auto-height の測り方は core controllers/autoHeightMeasurer(描いたセルの器を測り、行高ストアへ入れ、上の行の高さが
+  //   変わったら見ている行がずれないよう scrollTop を合わせる)。React 版はコミット後・描く前のレイアウト effect で update
+  //   しますが、Solid では描画の段の effect が新しい行の DOM より先に走りうるので、DOM を書き終えた後の effect で呼びます
+  //   (同じマイクロタスクの中 = 画面に出る前)。
+  connectController(
+    engine.autoHeightMeasurer,
+    () => ({
+      scrollContainerRef,
+      autoHeightActive: vertical().autoHeightActive,
+      minRowHeight: rowHeight(),
+      rowHeightStore: vertical().rowHeightStore,
+      rowMetrics: vertical().rowMetrics,
+      rowModel: rowModel(),
+      virtualRows: vertical().virtualRows,
+      viewportHeight: view().viewportHeight,
+      version: autoHeightSnapshot().version,
+      nonce: autoHeightSnapshot().nonce,
+    }),
+    'effect',
+  );
 
   // ── スクロールの同期(見える大きさ / scrollTop を view スライスへ) ──
   connectController(engine.scrollSync, () => ({
@@ -391,7 +418,8 @@ export function GridShell<T extends object>(props: SpreadsheetGridProps<T>, feat
   // ── モーション / 行の出入り(animateRows。React 版の engine.rowEnter と同じつなぎ) ──
   const prefersReducedMotion = createExternalStoreSignal(reducedMotionStore);
   const resolvedMotion = () => resolveGridMotion(props.motion ?? 'auto', prefersReducedMotion());
-  const animateRowsActive = () => (props.animateRows ?? true) && resolvedMotion() === 'on';
+  const animateRowsActive = () =>
+    (props.animateRows ?? true) && resolvedMotion() === 'on' && !autoHeightActive();
   connectController(engine.rowEnter, () => ({
     scrollContainerRef,
     skeletonEnter: false,
@@ -417,6 +445,18 @@ export function GridShell<T extends object>(props: SpreadsheetGridProps<T>, feat
   const editingCellPlacement = createMemo(() =>
     resolveCellPlacement(ui().editingCell, viewRowCount(), paneLayout(), vertical().rowMetrics),
   );
+  const editorAlignTop = createMemo(() => {
+    const editing = ui().editingCell;
+    const column = editing ? orderedColumns()[editing.col] : undefined;
+    const placement = editingCellPlacement();
+    return (
+      column !== undefined &&
+      placement !== null &&
+      autoHeightActive() &&
+      placement.rect.height > rowHeight() &&
+      (column.verticalAlign ?? props.verticalAlign ?? (column.autoHeight === true ? 'top' : 'center')) === 'top'
+    );
+  });
   const selectionExtents = createMemo(() => resolveSelectionExtents(ui().selection, paneLayout(), viewRowCount()));
   const selectionBand = createMemo(() =>
     resolveSelectionBand(selectionExtents(), vertical().windowFirstRow, vertical().windowLastRow, vertical().rowMetrics),
@@ -941,7 +981,7 @@ export function GridShell<T extends object>(props: SpreadsheetGridProps<T>, feat
     windowFirstRow: vertical().windowFirstRow,
     windowLastRow: vertical().windowLastRow,
     physicalBodyHeight: vertical().physicalBodyHeight,
-    measuredRowHeights: vertical().detailActive,
+    measuredRowHeights: autoHeightActive() || vertical().detailActive,
     rows: rows(),
     isServerSide: false,
     serverSideRefresh: noop,
@@ -1381,14 +1421,17 @@ export function GridShell<T extends object>(props: SpreadsheetGridProps<T>, feat
             align={editingSessionInfo()?.column.align}
             enterMove={props.editorEnterMove}
             domId={cellEditorDomId}
-            // 上にそろえたセル(auto-height の背の高い行)は機能(autoHeight)なので、段階 1 では常に false(React 版の機能なしと同じ)。
-            alignTop={false}
+            // 編集中のセルが上にそろえて描かれているか(GridBodyLayer の alignTop と同じ条件。複数行のエディタの 1 行目を
+            //   セルの文字にそろえる)。
+            alignTop={editorAlignTop()}
           />
           <GridBodyLayer<T>
             pane={pane}
             ownsRowHeader={ownsRowHeader()}
             leadingWidth={leadingWidth()}
             rowHeight={rowHeight()}
+            autoHeight={autoHeightActive()}
+            verticalAlign={props.verticalAlign}
             rowHeaderWidth={rowHeaderWidth()}
             rows={bodyRows()}
             entries={entries()}

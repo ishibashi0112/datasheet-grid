@@ -95,7 +95,7 @@ const baseColumns: GridColumn<Item>[] = [
     getValue: (row) => row.extra[key],
     setValue: (row, value) => ({ ...row, extra: { ...row.extra, [key]: Number(value) || 0 } }),
   })),
-  { key: 'note', title: 'メモ', width: 180, pinned: 'right', editor: { type: 'text', multiline: true } },
+  { key: 'note', title: 'メモ', width: 180, pinned: 'right', autoHeight: true, editor: { type: 'text', multiline: true } },
 ];
 
 function App() {
@@ -107,6 +107,7 @@ function App() {
   const [changes, setChanges] = createSignal(0);
   const [selected, setSelected] = createSignal('');
   const [expanded, setExpanded] = createSignal('');
+  const [autoHeight, setAutoHeight] = createSignal(false);
   // 「品名を左へ固定」で編集中の列のペインを変える(エディタが外れるときの blur で確定しないことの確かめ)。
   const columns = () =>
     pinName() ? baseColumns.map((column) => (column.key === 'name' ? { ...column, pinned: 'left' as const } : column)) : baseColumns;
@@ -130,6 +131,9 @@ function App() {
         <button type="button" data-testid="unmount" onClick={() => setMounted((v) => !v)}>
           グリッドを外す / 戻す
         </button>
+        <button type="button" data-testid="auto-height" onClick={() => setAutoHeight((v) => !v)}>
+          行の高さの自動調整
+        </button>
         <span data-testid="active">{active()}</span>
         <span data-testid="changes">{changes()}</span>
         <span data-testid="selected">{selected()}</span>
@@ -150,6 +154,8 @@ function App() {
             setRows(next);
           }}
           height={520}
+          // メモの列は autoHeight: 「行の高さの自動調整」で、改行のある行が伸びる。
+          autoHeight={autoHeight()}
           ariaLabel="在庫表"
           onActiveCellChange={(cell) => setActive(cell ? `${cell.columnKey} / ${String(cell.rowKey)}` : '')}
           enableRowSelection

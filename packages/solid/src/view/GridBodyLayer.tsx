@@ -11,6 +11,7 @@ import type {
   CellRenderState,
   CellStyleContext,
   GridRowKey,
+  GridVerticalAlign,
   RowModel,
   RowSelectionState,
 } from '@ishibashi0112/spreadsheet-grid-core';
@@ -58,6 +59,10 @@ type GridBodyLayerProps<T> = {
   rows: readonly GridBodyRowItem[];
   entries: readonly PaneColumnEntry<T>[];
   rowModel: RowModel<T>;
+  // auto-height(行の高さの実測)の行か。true かつ column.autoHeight のセルは中身を器に入れて測る(React 版と同じ)。
+  autoHeight: boolean;
+  // 背の高い行での縦の揃え(列の verticalAlign が優先)。
+  verticalAlign: GridVerticalAlign | undefined;
   labelViewIndexes?: ArrayLike<number> | undefined;
   ariaRowOffset: number;
   activeCell: CellCoord | null;
@@ -282,10 +287,27 @@ export function GridBodyLayer<T>(props: GridBodyLayerProps<T>) {
                         return note && context ? normalizeCellNote(note(context)) : null;
                       });
                       const tooltipText = () => resolveCellTooltipText(invalidMessage(), cellNote());
+                      // auto-height の列のセルは、箱はほかのセルと同じく行の高さで、中身を器(data-autoheight-content)に
+                      //   入れて器の高さを測ります(React 版 DU-32)。背の高い行での揃えは、未指定なら auto-height の列が上、
+                      //   ほかの列は真ん中(1 行の行ではどれも真ん中)。
+                      //   2 つの真偽値は 1 つの memo(1 = auto-height のセル、2 = 上にそろえる)にまとめます。auto-height の切り替えでは
+                      //   すべてのセルが走るので、セルごとの購読を 1 つにします(Solid の開発ビルドの HUGE_FAN_OUT は 2,000 から)。
+                      const autoHeightFlags = createMemo(() => {
+                        if (!props.autoHeight) {
+                          return 0;
+                        }
+                        const content = column().autoHeight === true;
+                        const top =
+                          rowSize() > props.rowHeight &&
+                          (column().verticalAlign ?? props.verticalAlign ?? (content ? 'top' : 'center')) === 'top';
+                        return (content ? 1 : 0) | (top ? 2 : 0);
+                      });
+                      const isAutoHeightCell = () => (autoHeightFlags() & 1) !== 0;
+                      const alignTop = () => (autoHeightFlags() & 2) !== 0;
                       const markOverflowTooltip = () =>
                         shouldMarkCellOverflowTooltip({
                           enabled: props.showCellOverflowTooltip,
-                          isAutoHeightCell: false,
+                          isAutoHeightCell: isAutoHeightCell(),
                           hasRenderCell: column().renderCell !== undefined,
                         });
                       const cell = () => ({ row: rowIndex(), col: colIndex() });
@@ -300,6 +322,7 @@ export function GridBodyLayer<T>(props: GridBodyLayerProps<T>) {
                           id={isActive() ? props.activeCellDomId : undefined}
                           aria-owns={isEditing() ? props.cellEditorDomId : undefined}
                           data-ssg-col-key={column().key}
+                          data-autoheight-cell={isAutoHeightCell() ? '' : undefined}
                           data-ssg-tooltip={tooltipText() ?? undefined}
                           data-ssg-tooltip-overflow={markOverflowTooltip() ? '' : undefined}
                           class={[
@@ -310,6 +333,8 @@ export function GridBodyLayer<T>(props: GridBodyLayerProps<T>) {
                             {
                               'ssg-body-cell--align-center': column().align === 'center',
                               'ssg-body-cell--align-right': column().align === 'right',
+                              'ssg-body-cell--autoheight': isAutoHeightCell(),
+                              'ssg-body-cell--valign-top': alignTop(),
                               'ssg-body-cell--readonly': readOnlyCell() && !isSelected(),
                               'ssg-body-cell--invalid': invalidMessage() !== null,
                               'ssg-body-cell--has-note': cellNote() !== null,
@@ -338,7 +363,14 @@ export function GridBodyLayer<T>(props: GridBodyLayerProps<T>) {
                             'z-index': isActive() ? 3 : 1,
                           }}
                         >
-                          {props.renderCellContent(currentRow(), column(), cellState)}
+                          <Show
+                            when={isAutoHeightCell()}
+                            fallback={props.renderCellContent(currentRow(), column(), cellState)}
+                          >
+                            <div class="ssg-autoheight-content" data-autoheight-content="">
+                              {props.renderCellContent(currentRow(), column(), cellState)}
+                            </div>
+                          </Show>
                         </div>
                       );
                     }}

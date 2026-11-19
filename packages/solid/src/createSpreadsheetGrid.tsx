@@ -15,7 +15,10 @@ export type CreateSpreadsheetGridOptions = {
 };
 
 // 機能が無いときに置き換える prop(シェルが機能の部品を呼ぶ前に、その prop で列や行の形を決めるもの)。
-const DISABLED_FEATURE_PROPS: { [K in GridFeatureName]?: Partial<SpreadsheetGridProps<object>> } = {};
+const DISABLED_FEATURE_PROPS: { [K in GridFeatureName]?: Partial<SpreadsheetGridProps<object>> } = {
+  // 行の高さの実測が無ければ autoHeight を切る。
+  autoHeight: { autoHeight: false },
+};
 
 export function createSpreadsheetGrid(options: CreateSpreadsheetGridOptions) {
   const features = options.features as unknown as SolidGridFeatures;

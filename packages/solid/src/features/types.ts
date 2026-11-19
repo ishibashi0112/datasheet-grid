@@ -10,6 +10,8 @@ import type { GridCoreFeatures } from '@ishibashi0112/spreadsheet-grid-core/inte
 export type SolidGridFeatures = {
   // エクスポート(命令的 API の exportCsv / downloadCsv / getExportData)。描画の部品は無い。
   export?: NonNullable<GridCoreFeatures['export']> | undefined;
+  // 行の高さの実測(autoHeight): 実測のコントローラ + 行高ストア(core)。描画の部品は無い(セルの器はシェルが描く)。
+  autoHeight?: NonNullable<GridCoreFeatures['autoHeight']> | undefined;
 };
 
 declare const gridFeatureBrand: unique symbol;

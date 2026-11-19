@@ -157,7 +157,7 @@ React 版の機能なしの構成と並べて、同じ props・同じ操作で D
 
 | # | 内容 | 状況 |
 | --- | --- | --- |
-| 2-1 | 機能を差し込む仕組み + 表示の機能 8 つ(totalRow / pinnedRows / conditionalFormat / selectionAggregates / scrollHint / motionExtras / export / autoHeight) | 作業中(2-1a: 仕組み(`features/types.ts` / `createSpreadsheetGrid.tsx` / `features/full.ts`、比べるテストの `features`)と export = 済み) |
+| 2-1 | 機能を差し込む仕組み + 表示の機能 8 つ(totalRow / pinnedRows / conditionalFormat / selectionAggregates / scrollHint / motionExtras / export / autoHeight) | 作業中(2-1a: 仕組み(`features/types.ts` / `createSpreadsheetGrid.tsx` / `features/full.ts`、比べるテストの `features`)と export = 済み。2-1b: autoHeight = 済み) |
 | 2-2 | 操作の機能 7 つ(find / fillHandle / columnReorder / rowDrag / columnAutosize / imeDirectInput / contextMenu) | まだ |
 | 2-3 | ポップアップ 3 つ(columnMenu / toolPanel / filtering) | まだ |
 | 2-4 | 行のモデル 3 つ(serverSide / labelRow / grouping) | まだ |

@@ -1,6 +1,6 @@
 // React 版(`/lite` に同じ機能を差し込んだもの)と Solid 版の機能を同じ操作で動かして、DOM と通知と命令的 API の結果が
 //   同じかを見る(段階 2-1)。
-import { beforeAll, describe, it } from 'vitest';
+import { afterAll, beforeAll, describe, it } from 'vitest';
 import { fireEvent } from '@solidjs/testing-library';
 import { installJsdomLayoutStubs } from '@ishibashi0112/spreadsheet-grid-core/testing';
 import { expectParity, type ParityContext } from './harness';
@@ -72,5 +72,80 @@ describe('エクスポート(export)', () => {
         },
       });
     }
+  });
+});
+
+
+describe('行の高さの自動調整(autoHeight)', () => {
+  // jsdom には折り返しが無いので、器(data-autoheight-content)の高さを文字数から決めます(12 文字で 1 行 = 20px)。
+  let restore: (() => void) | null = null;
+  beforeAll(() => {
+    const proto = Element.prototype;
+    const original = proto.getBoundingClientRect;
+    proto.getBoundingClientRect = function (this: Element) {
+      if (this instanceof HTMLElement && this.hasAttribute('data-autoheight-content')) {
+        const lines = Math.max(1, Math.ceil((this.textContent ?? '').length / 12));
+        const height = lines * 20;
+        return { x: 0, y: 0, top: 0, left: 0, bottom: height, right: 100, width: 100, height, toJSON: () => ({}) } as DOMRect;
+      }
+      return original.call(this);
+    };
+    restore = () => {
+      proto.getBoundingClientRect = original;
+    };
+  });
+  afterAll(() => restore?.());
+
+  const longRows = (count: number): Row[] =>
+    makeRows(count).map((row, index) => ({
+      ...row,
+      note: index % 4 === 1 ? 'とても長いメモの文章で、折り返して何行にもなります。'.repeat(1 + (index % 3)) : row.note,
+    }));
+  const autoColumns = [
+    ...columns.slice(0, 4),
+    { key: 'note', title: 'メモ', width: 160, autoHeight: true, editor: { type: 'text', multiline: true } },
+  ];
+
+  it.each([
+    ['あり', ['autoHeight']],
+    ['なし(固定の高さ)', []],
+  ])('autoHeight の列で行が伸び、背の高い行は上にそろえる・値を変えると測り直す・エディタも上にそろえる(機能%s)', async (_label, features) => {
+    await expectParity({
+      features,
+      props: () => ({
+        rows: longRows(12),
+        columns: autoColumns,
+        rowKeyGetter: (row: Row) => row.id,
+        height: 360,
+        autoHeight: true,
+      }),
+      watch: ['onRowsChange'],
+      steps: async (ctx) => {
+        await ctx.act(() => {}, 120);
+        ctx.snapshot('最初');
+        // 背の高い行(2 行目)のメモを短くする → 測り直して低くなる。
+        await ctx.setProps({
+          rows: (ctx.rows() as Row[]).map((row) => (row.id === 2 ? { ...row, note: '短い' } : row)),
+        });
+        await ctx.act(() => {}, 120);
+        ctx.snapshot('2 行目を短くする');
+        // 背の高い行(6 行目)の数量を編集する(真ん中の揃えの列)/ メモを編集する(上にそろえた複数行のエディタ)。
+        await ctx.act(() => {
+          fireEvent.dblClick(ctx.cell(5, 'note'));
+        });
+        ctx.snapshot('背の高い行のメモを編集する');
+        await ctx.act(() => {
+          fireEvent.keyDown(document.activeElement as Element, { key: 'Escape' });
+        });
+        const scroller = ctx.container.querySelector<HTMLElement>('.ssg-scroll-container');
+        await ctx.act(() => {
+          if (scroller) {
+            scroller.scrollTop = 200;
+            scroller.dispatchEvent(new Event('scroll'));
+          }
+        }, 120);
+        ctx.snapshot('少しスクロール');
+      },
+    });
   });
 });
