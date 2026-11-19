@@ -34,6 +34,20 @@ const createRows = (count: number): Item[] =>
     extra: Object.fromEntries(EXTRA_KEYS.map((key, k) => [key, (i * (k + 3)) % 1000])),
   }));
 
+// 表示だけの固定行(上: 目標、下: 前月と前年)。
+const pinnedRow = (id: number, name: string, qty: number, price: number): Item => ({
+  ...createRows(1)[0]!,
+  id,
+  name,
+  qty,
+  price,
+  note: '',
+  code: '',
+  done: false,
+});
+const PINNED_TOP = pinnedRow(-1, '目標', 90, 500);
+const PINNED_BOTTOM = [pinnedRow(-2, '前月', 40, 480), pinnedRow(-3, '前年', 35, 450)];
+
 const baseColumns: GridColumn<Item>[] = [
   { key: 'id', title: 'ID', width: 72, pinned: 'left', editable: false },
   { key: 'name', title: '品名', width: 160 },
@@ -55,6 +69,7 @@ const baseColumns: GridColumn<Item>[] = [
     validate: ({ value }) => (Number(value) <= 95 ? true : '95 以下にしてください'),
     cellNote: ({ row }) => (row.id % 50 === 0 ? '棚卸しで確認済み' : undefined),
     conditionalFormat: { dataBar: {} },
+    aggFunc: 'sum',
   },
   { key: 'done', title: '済', width: 60, editor: { type: 'checkbox' } },
   {
@@ -64,6 +79,7 @@ const baseColumns: GridColumn<Item>[] = [
     align: 'right',
     editor: { type: 'number' },
     conditionalFormat: { colorScale: {} },
+    aggFunc: 'avg',
   },
   { key: 'due', title: '期日', width: 130, editor: { type: 'date' } },
   {
@@ -118,6 +134,7 @@ function App() {
   const [selected, setSelected] = createSignal('');
   const [expanded, setExpanded] = createSignal('');
   const [autoHeight, setAutoHeight] = createSignal(false);
+  const [footer, setFooter] = createSignal(false);
   // 「品名を左へ固定」で編集中の列のペインを変える(エディタが外れるときの blur で確定しないことの確かめ)。
   const columns = () =>
     pinName() ? baseColumns.map((column) => (column.key === 'name' ? { ...column, pinned: 'left' as const } : column)) : baseColumns;
@@ -144,6 +161,9 @@ function App() {
         <button type="button" data-testid="auto-height" onClick={() => setAutoHeight((v) => !v)}>
           行の高さの自動調整
         </button>
+        <button type="button" data-testid="footer" onClick={() => setFooter((v) => !v)}>
+          合計行と固定行
+        </button>
         <span data-testid="active">{active()}</span>
         <span data-testid="changes">{changes()}</span>
         <span data-testid="selected">{selected()}</span>
@@ -166,6 +186,10 @@ function App() {
           height={520}
           // メモの列は autoHeight: 「行の高さの自動調整」で、改行のある行が伸びる。
           autoHeight={autoHeight()}
+          // 「合計行と固定行」: 数量の合計・単価の平均の合計行と、上下の固定行(表示だけの行)。
+          totalRow={footer()}
+          pinnedTopRows={footer() ? [PINNED_TOP] : undefined}
+          pinnedBottomRows={footer() ? PINNED_BOTTOM : undefined}
           ariaLabel="在庫表"
           onActiveCellChange={(cell) => setActive(cell ? `${cell.columnKey} / ${String(cell.rowKey)}` : '')}
           enableRowSelection

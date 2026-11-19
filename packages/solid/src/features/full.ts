@@ -2,10 +2,14 @@
 import { autoHeightFeature } from './autoHeight';
 import { conditionalFormatFeature } from './conditionalFormat';
 import { exportFeature } from './export';
+import { pinnedRowsFeature } from './pinnedRows';
+import { totalRowFeature } from './totalRow';
 import type { GridFeatures, SolidGridFeatures } from './types';
 
 export const fullGridFeatures = {
   export: exportFeature,
   autoHeight: autoHeightFeature,
   conditionalFormat: conditionalFormatFeature,
+  totalRow: totalRowFeature,
+  pinnedRows: pinnedRowsFeature,
 } satisfies Required<GridFeatures> as unknown as Required<SolidGridFeatures>;

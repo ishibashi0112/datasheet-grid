@@ -15,6 +15,7 @@ export type SpreadsheetGridSlotContext<T> = Core.SpreadsheetGridSlotContext<T, S
 export type GridClassNames = Core.GridClassNames<SolidGridTypes>;
 export type GridResolvedSlot = Core.GridResolvedSlot<SolidGridTypes>;
 export type GridResolvedSlots = Core.GridResolvedSlots<SolidGridTypes>;
+export type TotalRowCellContext<T> = Core.TotalRowCellContext<T, SolidGridTypes>;
 
 // 受ける props(React 版と同じ名前・同じ型)。段階 1 は React 版の機能なしの構成(`/lite` の
 //   createSpreadsheetGrid({ features: {} }))と同じ範囲で、受けられるものから順に足していきます。
@@ -90,7 +91,11 @@ type SupportedPropKeys =
   | 'selectedRowKeys'
   | 'onRowSelectionChange'
   | 'detailRow'
-  | 'onExpandedDetailRowKeysChange';
+  | 'onExpandedDetailRowKeysChange'
+  | 'totalRow'
+  | 'pinnedTopRows'
+  | 'pinnedBottomRows'
+  | 'pinnedBottomRowsPlacement';
 
 export type SpreadsheetGridProps<T> = Pick<Core.SpreadsheetGridProps<T, SolidGridTypes>, SupportedPropKeys> & {
   // Solid の ref は関数だけ(React の ref オブジェクトは無い)。命令的 API のハンドルを受け取ります。

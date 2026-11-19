@@ -3,9 +3,23 @@
 import { createContext, useContext } from 'solid-js';
 import {
   DEFAULT_GRID_LOCALE_TEXT,
+  type FeatureLocaleText,
   type ResolvedGridLocaleText,
 } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/localeText';
 
 export const GridLocaleTextContext = createContext<() => ResolvedGridLocaleText>(() => DEFAULT_GRID_LOCALE_TEXT);
 
 export const useGridLocaleText = (): (() => ResolvedGridLocaleText) => useContext(GridLocaleTextContext);
+
+// 機能の部品が文言を読みます。その機能だけが使う文言(D = core の logic/localeText<機能>.ts の表の型)は、機能の localeText として
+//   シェルが既定に重ねてあるので、型だけを足します(React 版と同じ。既定はその機能の部品だけが読み込む)。
+export const useFeatureLocaleText = <D>(): (() => FeatureLocaleText<D>) =>
+  useContext(GridLocaleTextContext) as () => FeatureLocaleText<D>;
+
+// 機能セットの各機能の文言の既定(localeText)を本体の既定に重ねます(シェルが 1 回だけ作る。React 版と同じ)。
+export const mergeFeatureLocaleDefaults = (features: object): ResolvedGridLocaleText =>
+  Object.assign(
+    {},
+    DEFAULT_GRID_LOCALE_TEXT,
+    ...Object.values(features).map((feature: { localeText?: object } | undefined) => feature?.localeText),
+  ) as ResolvedGridLocaleText;

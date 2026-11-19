@@ -11,7 +11,18 @@ import type {
   resolveColorScaleBackground,
   resolveDataBar,
 } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/conditionalFormat';
+import type {
+  formatTotalRowCellText,
+  resolveTotalRowCaption,
+  resolveTotalRowLabelColumnKey,
+} from '@ishibashi0112/spreadsheet-grid-core/internal/logic/totalRow';
+import type { GridLocaleText } from '@ishibashi0112/spreadsheet-grid-core';
 import type { GridChip } from '../view/GridChip';
+import type { GridTotalRow } from '../view/GridTotalRow';
+import type { GridPinnedRows } from '../view/GridPinnedRows';
+
+// 機能だけが使う文言の既定(core の logic/localeText<機能>.ts の表)。シェルが本体の既定に重ねて部品へ渡します(React 版と同じ)。
+type FeatureLocaleDefaults = { localeText?: Readonly<Partial<GridLocaleText>> | undefined };
 
 export type SolidGridFeatures = {
   // エクスポート(命令的 API の exportCsv / downloadCsv / getExportData)。描画の部品は無い。
@@ -27,6 +38,17 @@ export type SolidGridFeatures = {
         GridChip: typeof GridChip;
       })
     | undefined;
+  // 合計行(totalRow): 集計(core)+ 各ペインに描く部品 + 表示の純関数。
+  totalRow?:
+    | (NonNullable<GridCoreFeatures['totalRow']> & {
+        TotalRow: typeof GridTotalRow;
+        formatTotalRowCellText: typeof formatTotalRowCellText;
+        resolveTotalRowCaption: typeof resolveTotalRowCaption;
+        resolveTotalRowLabelColumnKey: typeof resolveTotalRowLabelColumnKey;
+      })
+    | undefined;
+  // 固定行(pinnedTopRows / pinnedBottomRows): 表示だけの行を各ペインに描く部品。
+  pinnedRows?: (FeatureLocaleDefaults & { PinnedRows: typeof GridPinnedRows }) | undefined;
 };
 
 declare const gridFeatureBrand: unique symbol;

@@ -243,3 +243,121 @@ describe('条件付き書式(conditionalFormat)', () => {
     });
   });
 });
+describe('合計行(totalRow)と固定行(pinnedRows)', () => {
+  type Line = { id: number | string; name: string; qty: number; price: number; done: boolean; score: number };
+  const lines = (count: number): Line[] =>
+    Array.from({ length: count }, (_, i) => ({
+      id: i + 1,
+      name: `品目 ${i + 1}`,
+      qty: i * 10,
+      price: 100 + (i % 7) * 25,
+      done: i % 2 === 0,
+      score: (i * 7) % 30,
+    }));
+  const lineColumns = [
+    { key: 'id', title: 'ID', width: 60, pinned: 'left', editable: false },
+    { key: 'name', title: '品名', width: 120 },
+    { key: 'qty', title: '数量', width: 80, align: 'right', editor: { type: 'number' }, aggFunc: 'sum' },
+    {
+      key: 'price',
+      title: '単価',
+      width: 90,
+      align: 'right',
+      editor: { type: 'number' },
+      aggFunc: 'avg',
+      valueFormatter: ({ value }: { value: unknown }) => `¥${String(value)}`,
+    },
+    { key: 'done', title: '済', width: 60, editor: { type: 'checkbox' }, aggFunc: 'count' },
+    {
+      key: 'score',
+      title: '点数',
+      width: 90,
+      align: 'right',
+      aggFunc: 'max',
+      conditionalFormat: { dataBar: {}, chips: (ctx: { value: unknown }) => (Number(ctx.value) > 20 ? 'good' : null) },
+      cellClassName: (ctx: { pinned?: string }) => (ctx.pinned ? `pinned-${ctx.pinned}` : undefined),
+      pinned: 'right',
+    },
+  ];
+  const pinnedTopRows: Line[] = [{ id: 'budget', name: '予算', qty: 999, price: 0, done: true, score: 25 }];
+  const pinnedBottomRows: Line[] = [
+    { id: 'tax', name: '消費税', qty: 10, price: 0, done: false, score: 5 },
+    { id: 'gross', name: '税込', qty: 110, price: 0, done: false, score: 29 },
+  ];
+
+  it.each([
+    ['あり', ['totalRow', 'pinnedRows', 'conditionalFormat', 'export']],
+    ['なし(エクスポートだけ)', ['export']],
+  ])('合計行・上下の固定行の描画・値の変更で合計が変わる・固定行は選べない・エクスポート(機能%s)', async (_label, features) => {
+    await expectParity({
+      features,
+      props: () => ({
+        rows: lines(9),
+        columns: lineColumns,
+        rowKeyGetter: (row: Line) => row.id,
+        height: 360,
+        totalRow: true,
+        pinnedTopRows,
+        pinnedBottomRows,
+        getRowClassName: (_row: Line, _index: number, ctx: { pinned?: string }) => (ctx.pinned ? `row-${ctx.pinned}` : undefined),
+      }),
+      watch: ['onRowsChange', 'onActiveCellChange', 'onHoveredRowChange'],
+      steps: async (ctx) => {
+        ctx.snapshot('最初');
+        // 本体の数量を変える → 合計が変わる。
+        await ctx.setProps({ rows: (ctx.rows() as Line[]).map((row) => (row.id === 2 ? { ...row, qty: 1000 } : row)) });
+        ctx.snapshot('数量を変える');
+        // 固定行のセルを押してもアクティブセルは変わらない。本体の行にホバーしてから固定行 / 合計行へ入るとホバーが外れる。
+        await ctx.act(() => {
+          fireEvent.pointerDown(ctx.cell(2, 'name'), pointer);
+          fireEvent.pointerUp(window, pointer);
+        });
+        await ctx.act(() => {
+          const pinnedCell = ctx.container.querySelector('.ssg-pinned-rows--top [data-ssg-col-key="name"]');
+          if (pinnedCell) {
+            fireEvent.pointerDown(pinnedCell, pointer);
+            fireEvent.pointerUp(window, pointer);
+          }
+        });
+        await ctx.act(() => {
+          ctx.hover(ctx.cell(3, 'qty'));
+        });
+        await ctx.act(() => {
+          const total = ctx.container.querySelector('.ssg-total-row');
+          if (total) {
+            ctx.hover(total);
+          }
+        });
+        ctx.snapshot('固定行を押す / 合計行へ入る');
+        // 最後の行で下へ → 固定行 / 合計行へは入らない。
+        await ctx.act(() => {
+          fireEvent.pointerDown(ctx.cell(8, 'qty'), pointer);
+          fireEvent.pointerUp(window, pointer);
+        });
+        await ctx.act(() => {
+          fireEvent.keyDown(ctx.shell(), { key: 'ArrowDown' });
+        });
+        ctx.snapshot('最後の行で下へ');
+        ctx.log('csv(合計行・固定行つき)', call(ctx, 'exportCsv', { includeTotalRow: true, includePinnedRows: true }));
+        ctx.log('data(既定)', call(ctx, 'getExportData'));
+        // 合計行のオプション(見出し・値・高さ・className・renderCell)と、下の固定行を合計行の下へ。
+        await ctx.setProps({
+          totalRow: {
+            label: '計',
+            height: 44,
+            values: { name: '9 品目' },
+            className: 'my-total',
+            renderCell: (c: { text: string; caption?: string; column: { key: string } }) =>
+              c.column.key === 'qty' ? `[${c.text}]` : `${c.caption ?? ''}${c.text}`,
+          },
+          pinnedBottomRowsPlacement: 'belowTotal',
+        });
+        ctx.snapshot('合計行のオプションと belowTotal');
+        ctx.log('csv(belowTotal)', call(ctx, 'exportCsv', { includeTotalRow: true, includePinnedRows: true }));
+        // 固定行を外す / 合計行を外す。
+        await ctx.setProps({ pinnedTopRows: [], pinnedBottomRows: undefined, totalRow: false });
+        ctx.snapshot('外す');
+      },
+    });
+  });
+});

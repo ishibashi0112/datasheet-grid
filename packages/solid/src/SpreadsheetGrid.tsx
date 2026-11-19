@@ -49,10 +49,8 @@ import { resolveGridThemeClassName } from '@ishibashi0112/spreadsheet-grid-core/
 import { MOTION_OFF_CLASS_NAME, resolveGridMotion } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/motion';
 import { systemColorSchemeStore } from '@ishibashi0112/spreadsheet-grid-core/internal/controllers/systemColorSchemeStore';
 import { reducedMotionStore } from '@ishibashi0112/spreadsheet-grid-core/internal/controllers/reducedMotionStore';
-import {
-  createLocaleTextResolver,
-  DEFAULT_GRID_LOCALE_TEXT,
-} from '@ishibashi0112/spreadsheet-grid-core/internal/logic/localeText';
+import { createLocaleTextResolver } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/localeText';
+import { EMPTY_TOTAL_ROW_CELLS } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/totalRow';
 import {
   resolveSlotFromSignature,
   resolveSlotMapFromSignature,
@@ -112,7 +110,7 @@ import type {
   SpreadsheetGridProps,
   SpreadsheetGridSlotContext,
 } from './model/gridTypes';
-import { GridLocaleTextContext } from './context/localeText';
+import { GridLocaleTextContext, mergeFeatureLocaleDefaults } from './context/localeText';
 import { createGridStoreSignals } from './primitives/gridStoreSignals';
 import { createExternalStoreSignal } from './primitives/externalStore';
 import { createGridViewSetters } from './primitives/viewSetters';
@@ -173,8 +171,8 @@ export function GridShell<T extends object>(props: SpreadsheetGridProps<T>, feat
   const columns = createMemo(() => props.columns as unknown as UnboundGridColumn<T>[]);
   const density = () => props.density ?? 'standard';
   const rowHeight = () => props.rowHeight ?? GRID_DENSITY_DIMENSIONS[density()].rowHeight;
-  // 機能なしの構成では固定行が無いので、列見出しの高さがそのまま見出しの帯の高さ(React 版の headerHeight)。
-  const headerHeight = () => props.headerHeight ?? GRID_DENSITY_DIMENSIONS[density()].headerHeight;
+  // 列見出しの行の高さ。本体の上端(headerHeight)は列見出し + 上の固定行(下の「合計行と固定行」)。
+  const columnHeaderHeight = () => props.headerHeight ?? GRID_DENSITY_DIMENSIONS[density()].headerHeight;
   const rowHeaderWidth = () => props.rowHeaderWidth ?? 56;
   const readOnly = () => props.readOnly ?? false;
   const enableRangeSelection = () => props.enableRangeSelection ?? true;
@@ -201,9 +199,42 @@ export function GridShell<T extends object>(props: SpreadsheetGridProps<T>, feat
     renderDetailToggleCell: renderDetailToggleCell as unknown as NonNullable<UnboundGridColumn<T>['renderCell']>,
   });
 
-  // ── 文言(React 版の createLocaleTextResolver(mergeFeatureLocaleDefaults(features))。機能なしなので既定の表だけ) ──
-  const resolveLocaleText = createLocaleTextResolver(DEFAULT_GRID_LOCALE_TEXT);
+  // ── 文言(既定の表に、機能セットの各機能の文言の既定を重ねる。React 版と同じ) ──
+  const resolveLocaleText = createLocaleTextResolver(mergeFeatureLocaleDefaults(features));
   const localeTexts = createMemo(() => resolveLocaleText(props.localeText));
+
+  // ── 合計行と固定行(機能。無ければ高さ 0 = 今までどおり) ──
+  //   合計行は列の aggFunc をフィルター後のデータ行で集計し、表の下端に sticky で固定する。固定行は表示だけの行(選択 / 編集 /
+  //   キー操作に入らない)。本体の上端(headerHeight)は列見出し + 上の固定行、下端に固定する高さ(footerHeight)は下の固定行 +
+  //   合計行として、今までの幾何(スクロール / 行を見せる位置 / ヒットテスト / 選択の枠)へそのまま通す(React 版と同じ)。
+  const totalRowFeature = features.totalRow;
+  const TotalRow = totalRowFeature?.TotalRow;
+  const PinnedRows = features.pinnedRows?.PinnedRows;
+  const totalRowOptions = createMemo(() =>
+    typeof props.totalRow === 'object' && props.totalRow !== null ? props.totalRow : null,
+  );
+  const totalRowEnabled = createMemo(
+    () => (props.totalRow === true || totalRowOptions() !== null) && totalRowFeature !== undefined,
+  );
+  const totalRowLabel = () => totalRowOptions()?.label ?? localeTexts().totalRowLabel;
+  const totalRowHeight = createMemo(() => (totalRowEnabled() ? Math.max(0, totalRowOptions()?.height ?? rowHeight()) : 0));
+  const pinnedTop = createMemo(() =>
+    PinnedRows && props.pinnedTopRows && props.pinnedTopRows.length > 0 ? props.pinnedTopRows : null,
+  );
+  const pinnedBottom = createMemo(() =>
+    PinnedRows && props.pinnedBottomRows && props.pinnedBottomRows.length > 0 ? props.pinnedBottomRows : null,
+  );
+  const pinnedTopCount = () => pinnedTop()?.length ?? 0;
+  const pinnedBottomCount = () => pinnedBottom()?.length ?? 0;
+  const headerHeight = createMemo(() => columnHeaderHeight() + pinnedTopCount() * rowHeight());
+  const footerHeight = createMemo(() => totalRowHeight() + pinnedBottomCount() * rowHeight());
+  // 下の固定行を合計行の下に置く('belowTotal')。合計行が無ければいつもどおり。高さは同じで、並び(描く順・sticky の bottom・
+  //   aria-rowindex・エクスポート)だけ変わる。
+  const pinnedBelowTotal = createMemo(
+    () => props.pinnedBottomRowsPlacement === 'belowTotal' && pinnedBottom() !== null && totalRowEnabled(),
+  );
+  // ドラッグのヒットテストと上の自動スクロールの帯に渡す、上端に固定する高さ(上の固定行があるときだけ)。
+  const stickyTopHeight = () => (pinnedTopCount() > 0 ? headerHeight() : 0);
 
   // ── エンジン(1 回だけ作る) ──
   const engine = createGridEngine<T>({
@@ -344,6 +375,31 @@ export function GridShell<T extends object>(props: SpreadsheetGridProps<T>, feat
   // 条件付き書式の機能(機能セットは作ったときに決まる)と、列ごとの min / max(ビューの行から。中身が同じなら同じ参照)。
   const conditionalFormatFeature = features.conditionalFormat;
   const conditionalFormatStats = createMemo(() => engine.resolveConditionalFormatStats(rowModel(), orderedColumns()));
+  // 合計行のセルの値(フィルター後のデータ行 = order から集計)と見出しを出す列。中身が同じなら同じ参照(React 版と同じ)。
+  const totalRowCells = createMemo(() =>
+    totalRowEnabled()
+      ? engine.resolveTotalRowCells({
+          rows: rows(),
+          order: order(),
+          columns: orderedColumns(),
+          values: totalRowOptions()?.values,
+        })
+      : EMPTY_TOTAL_ROW_CELLS,
+  );
+  const totalRowLabelColumnKey = createMemo(() =>
+    totalRowFeature ? totalRowFeature.resolveTotalRowLabelColumnKey(orderedColumns(), totalRowCells()) : null,
+  );
+  const totalRowSlotSignature = createMemo(() => serializeSlotValue(totalRowOptions()?.className));
+  const totalRowSlot = createMemo(() => resolveSlotFromSignature<JSX.CSSProperties>(totalRowSlotSignature()));
+  // エクスポートの includeTotalRow / includePinnedRows で出す行。
+  const totalRowExport = createMemo(() =>
+    totalRowEnabled() ? { cells: totalRowCells(), label: totalRowLabel() } : undefined,
+  );
+  const pinnedRowsExport = createMemo(() =>
+    pinnedTop() || pinnedBottom()
+      ? { top: pinnedTop() ?? [], bottom: pinnedBottom() ?? [], bottomAfterTotal: pinnedBelowTotal() }
+      : undefined,
+  );
   // auto-height が効いているか(真偽値だけの memo。すべてのセルが読むので、vertical の変化のたびに全セルを走らせない)。
   const autoHeightActive = createMemo(() => vertical().autoHeightActive);
   // 描く行(React 版の GridBodyLayer が virtualRowIndexes に無い行を飛ばすのと同じ)と、対応に使う rowKey。
@@ -391,7 +447,8 @@ export function GridShell<T extends object>(props: SpreadsheetGridProps<T>, feat
     scrollContainerRef,
     setViewState: store.setViewState,
     onScroll: props.onScroll,
-    footerHeight: 0,
+    // 見える高さは下端に固定する行(合計行 / 下の固定行)に隠れるぶんを除く。
+    footerHeight: footerHeight(),
   }));
 
   // ── 列の横の仮想化 ──
@@ -555,7 +612,7 @@ export function GridShell<T extends object>(props: SpreadsheetGridProps<T>, feat
       activeCellPinned: activeCellPlacement() !== null && activeCellPlacement()?.pane !== 'center',
       activeCell: ui().activeCell,
       verticalScaleFactor: vertical().verticalScaleFactor,
-      footerHeight: 0,
+      footerHeight: footerHeight(),
       stickyTopInset: undefined,
     }),
     'effect',
@@ -711,8 +768,8 @@ export function GridShell<T extends object>(props: SpreadsheetGridProps<T>, feat
     centerLeadingWidth: paneResolution().centerLeadingWidth,
     rightLeadingWidth: paneResolution().rightLeadingWidth,
     headerHeight: headerHeight(),
-    footerHeight: 0,
-    stickyTopHeight: 0,
+    footerHeight: footerHeight(),
+    stickyTopHeight: stickyTopHeight(),
     rowMetrics: vertical().rowMetrics,
     verticalScaleFactor: vertical().verticalScaleFactor,
     setHoveredRowIndex: applyHoveredRowChange,
@@ -994,9 +1051,9 @@ export function GridShell<T extends object>(props: SpreadsheetGridProps<T>, feat
     labelRowExport: undefined,
     localeTexts: localeTexts(),
     labelViewIndexes: undefined,
-    totalRowExport: undefined,
-    pinnedRowsExport: undefined,
-    footerHeight: 0,
+    totalRowExport: totalRowExport(),
+    pinnedRowsExport: pinnedRowsExport(),
+    footerHeight: footerHeight(),
     stickyTopInset: undefined,
     activeToolPanelTab: null,
     openToolPanel: noop,
@@ -1383,6 +1440,63 @@ export function GridShell<T extends object>(props: SpreadsheetGridProps<T>, feat
     const bodyHeight = () => headerHeight() + vertical().physicalBodyHeight;
     const activeRect = () => placementRectInPane(activeCellPlacement(), pane);
     const editorRect = () => placementRectInPane(editingCellPlacement(), pane);
+    // 表示だけの行(固定行 / 合計行)に入ったら行ホバーを外す(直前にいた本体の行を強調したままにしない)。
+    const clearHoveredRow = () => applyHoveredRowChange(null);
+    const renderPinnedRows = (position: 'top' | 'bottom') =>
+      PinnedRows ? (
+        <Show when={position === 'top' ? pinnedTop() : pinnedBottom()}>
+          {(pinnedRows) => (
+            <PinnedRows
+              pane={pane}
+              position={position}
+              ownsRowHeader={ownsRowHeader()}
+              leadingWidth={leadingWidth()}
+              rowHeaderWidth={rowHeaderWidth()}
+              rows={pinnedRows() as readonly T[]}
+              rowHeight={rowHeight()}
+              stickyOffset={position === 'top' ? columnHeaderHeight() : pinnedBelowTotal() ? 0 : totalRowHeight()}
+              bodyHeight={position === 'top' || pinnedBelowTotal() ? 0 : vertical().physicalBodyHeight}
+              entries={entries()}
+              rowKeyGetter={resolvedRowKeyGetter()}
+              ariaRowIndexStart={
+                position === 'top' ? 2 : viewRowCount() + 2 + pinnedTopCount() + (pinnedBelowTotal() ? 1 : 0)
+              }
+              getRowClassName={props.getRowClassName}
+              showCellOverflowTooltip={props.showCellOverflowTooltip ?? false}
+              conditionalFormat={conditionalFormatFeature}
+              conditionalFormatStats={conditionalFormatStats()}
+              slots={slots()}
+              onPointerEnter={clearHoveredRow}
+            />
+          )}
+        </Show>
+      ) : null;
+    const renderTotalRow = () =>
+      TotalRow ? (
+        <Show when={totalRowEnabled()}>
+          <TotalRow
+            pane={pane}
+            ownsRowHeader={ownsRowHeader()}
+            leadingWidth={leadingWidth()}
+            rowHeaderWidth={rowHeaderWidth()}
+            // 下の固定行があるときは本体ぶんの空きは固定行の器が持つ(合計行はその直後)。下の固定行を合計行の下に置くときは
+            //   合計行が持ち、sticky の bottom を固定行の高さぶん上げる。
+            bodyHeight={pinnedBottom() && !pinnedBelowTotal() ? 0 : vertical().physicalBodyHeight}
+            stickyBottom={pinnedBelowTotal() ? pinnedBottomCount() * rowHeight() : 0}
+            height={totalRowHeight()}
+            entries={entries()}
+            cells={totalRowCells()}
+            label={totalRowLabel()}
+            labelColumnKey={totalRowLabelColumnKey()}
+            ariaRowIndex={viewRowCount() + 2 + pinnedTopCount() + (pinnedBelowTotal() ? 0 : pinnedBottomCount())}
+            renderCell={totalRowOptions()?.renderCell}
+            rowClassName={totalRowSlot().className}
+            rowStyle={totalRowSlot().style}
+            slots={slots()}
+            onPointerEnter={clearHoveredRow}
+          />
+        </Show>
+      ) : null;
     return (
       <div
         style={{
@@ -1390,14 +1504,15 @@ export function GridShell<T extends object>(props: SpreadsheetGridProps<T>, feat
           overflow: 'clip',
           width: px(width()),
           'min-width': px(width()),
-          height: px(bodyHeight()),
+          // 下端に固定する行(合計行 / 下の固定行。箱の下端の sticky の行)の高さを足す。
+          height: px(bodyHeight() + footerHeight()),
         }}
       >
         <GridHeaderRow<T>
           pane={pane}
           ownsRowHeader={ownsRowHeader()}
           leadingWidth={leadingWidth()}
-          headerHeight={headerHeight()}
+          headerHeight={columnHeaderHeight()}
           rowHeaderWidth={rowHeaderWidth()}
           slots={slots()}
           isCornerHovered={view().isCornerHovered}
@@ -1423,6 +1538,8 @@ export function GridShell<T extends object>(props: SpreadsheetGridProps<T>, feat
             columnCommands.handleColumnResizePointerDown(column as unknown as UnboundGridColumn<T>, event)
           }
         />
+        {/* 上に固定する行(列見出しの直後の sticky の器)。 */}
+        {renderPinnedRows('top')}
         <div
           style={{
             position: 'absolute',
@@ -1485,7 +1602,7 @@ export function GridShell<T extends object>(props: SpreadsheetGridProps<T>, feat
             rows={bodyRows()}
             entries={entries()}
             rowModel={rowModel()}
-            ariaRowOffset={0}
+            ariaRowOffset={pinnedTopCount()}
             activeCell={ui().activeCell}
             editingCell={ui().editingCell}
             selection={selectionSnapshot()}
@@ -1525,6 +1642,11 @@ export function GridShell<T extends object>(props: SpreadsheetGridProps<T>, feat
             onCardFocusLost={detailRows.handleCardFocusLost}
           />
         </div>
+        {/* 下端の行(本体ぶんの空きの直後 = 箱の下端の sticky の行)。既定は下の固定行 → 合計行、'belowTotal' は合計行 → 固定行。 */}
+        <Show when={pinnedBelowTotal()} fallback={[renderPinnedRows('bottom'), renderTotalRow()]}>
+          {renderTotalRow()}
+          {renderPinnedRows('bottom')}
+        </Show>
       </div>
     );
   };
@@ -1602,7 +1724,7 @@ export function GridShell<T extends object>(props: SpreadsheetGridProps<T>, feat
             }}
             role="grid"
             aria-label={props.ariaLabel}
-            aria-rowcount={viewRowCount() + 1}
+            aria-rowcount={viewRowCount() + 1 + pinnedTopCount() + pinnedBottomCount() + (totalRowEnabled() ? 1 : 0)}
             aria-colcount={orderedColumns().length + 1}
             aria-multiselectable={enableRangeSelection() ? 'true' : undefined}
             aria-readonly={readOnly() ? 'true' : undefined}
@@ -1614,7 +1736,7 @@ export function GridShell<T extends object>(props: SpreadsheetGridProps<T>, feat
               style={{
                 width: px(paneResolution().totalScrollWidth),
                 'min-width': px(paneResolution().totalScrollWidth),
-                height: px(headerHeight() + vertical().physicalBodyHeight),
+                height: px(headerHeight() + vertical().physicalBodyHeight + footerHeight()),
               }}
             >
               <div
