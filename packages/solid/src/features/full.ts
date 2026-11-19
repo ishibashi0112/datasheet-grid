@@ -1,9 +1,16 @@
 // 全部入りの機能セットです(SpreadsheetGrid が使う)。Required で型付けし、機能を足したときにここへの入れ忘れを型で検出します。
 import { autoHeightFeature } from './autoHeight';
+import { columnAutosizeFeature } from './columnAutosize';
+import { columnReorderFeature } from './columnReorder';
 import { conditionalFormatFeature } from './conditionalFormat';
+import { contextMenuFeature } from './contextMenu';
 import { exportFeature } from './export';
+import { fillHandleFeature } from './fillHandle';
+import { findFeature } from './find';
+import { imeDirectInputFeature } from './imeDirectInput';
 import { motionExtrasFeature } from './motionExtras';
 import { pinnedRowsFeature } from './pinnedRows';
+import { rowDragFeature } from './rowDrag';
 import { scrollHintFeature } from './scrollHint';
 import { selectionAggregatesFeature } from './selectionAggregates';
 import { totalRowFeature } from './totalRow';
@@ -18,4 +25,11 @@ export const fullGridFeatures = {
   selectionAggregates: selectionAggregatesFeature,
   scrollHint: scrollHintFeature,
   motionExtras: motionExtrasFeature,
+  find: findFeature,
+  imeDirectInput: imeDirectInputFeature,
+  columnAutosize: columnAutosizeFeature,
+  columnReorder: columnReorderFeature,
+  rowDrag: rowDragFeature,
+  fillHandle: fillHandleFeature,
+  contextMenu: contextMenuFeature,
 } satisfies Required<GridFeatures> as unknown as Required<SolidGridFeatures>;

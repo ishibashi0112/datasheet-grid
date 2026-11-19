@@ -179,8 +179,11 @@ const findDanglingIdReferences = (roots: readonly Element[]): string[] => {
   return result;
 };
 
+// body 直下のグリッドの要素(ポップアップ / ツールチップ / ドラッグのゴースト。ゴーストはライトのテーマでは ssg- の class が無い)。
 const collectPortals = (container: HTMLElement): Element[] =>
-  Array.from(document.body.children).filter((element) => element !== container && element.matches('[class*="ssg-"]'));
+  Array.from(document.body.children).filter(
+    (element) => element !== container && element.matches('[class*="ssg-"], [data-grid-drag-ghost]'),
+  );
 
 async function runOne(framework: Framework, scenario: ParityScenario): Promise<ParityResult> {
   const container = document.createElement('div');

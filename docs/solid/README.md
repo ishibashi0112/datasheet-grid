@@ -157,10 +157,61 @@ React 版の機能なしの構成と並べて、同じ props・同じ操作で D
 
 | # | 内容 | 状況 |
 | --- | --- | --- |
-| 2-1 | 機能を差し込む仕組み + 表示の機能 8 つ(totalRow / pinnedRows / conditionalFormat / selectionAggregates / scrollHint / motionExtras / export / autoHeight) | 作業中(2-1a: 仕組み(`features/types.ts` / `createSpreadsheetGrid.tsx` / `features/full.ts`、比べるテストの `features`)と export = 済み。2-1b: autoHeight、2-1c: conditionalFormat、2-1d: totalRow + pinnedRows、2-1e: selectionAggregates、2-1f: scrollHint、2-1g: motionExtras = 済み) |
-| 2-2 | 操作の機能 7 つ(find / fillHandle / columnReorder / rowDrag / columnAutosize / imeDirectInput / contextMenu) | まだ |
+| 2-1 | 機能を差し込む仕組み + 表示の機能 8 つ(totalRow / pinnedRows / conditionalFormat / selectionAggregates / scrollHint / motionExtras / export / autoHeight) | 済み(PR #65、2026-11-19 マージ。2-1a: 仕組み(`features/types.ts` / `createSpreadsheetGrid.tsx` / `features/full.ts`、比べるテストの `features`)と export、2-1b: autoHeight、2-1c: conditionalFormat、2-1d: totalRow + pinnedRows、2-1e: selectionAggregates、2-1f: scrollHint、2-1g: motionExtras) |
+| 2-2 | 操作の機能 7 つ(find / fillHandle / columnReorder / rowDrag / columnAutosize / imeDirectInput / contextMenu) | 作業中(2-2a: find、2-2b: imeDirectInput、2-2c: columnAutosize、2-2d: columnReorder、2-2e: rowDrag、2-2f: fillHandle、2-2g: contextMenu = 済み。別視点のレビュー = 高 1・低 1 を直した) |
 | 2-3 | ポップアップ 3 つ(columnMenu / toolPanel / filtering) | まだ |
 | 2-4 | 行のモデル 3 つ(serverSide / labelRow / grouping) | まだ |
+
+### 2-2 で分かったこと(作業中)
+
+- **core と React 版は変えていない**: 7 つの機能はどれも core のコントローラ(findController / imeInputController /
+  columnAutosizeRunner / columnHeaderDragController / rowDragController ほか)をそのまま使い、Solid 版のシェルでつなぐだけで足りた。
+  行をドラッグで離したときのアクティブセルの列の選び方(React 版の `GridShell.tsx` の `commitRowMoveFromDrag`。1.0.2 の RV-F3 /
+  QA-6)は、React 版と同じ処理を Solid 版のシェルにも書いた(core へ寄せるのは React 版のコードを変えることになるので、段階 3 で
+  決める)。
+- **命令的 API の `moveRow` は機能が無くても動く**: React 版は行の移動の確定(`commitRowMove`)をシェルに置くので、`/lite` の
+  機能なしでも `moveRow` が動く。Solid 版は段階 1 で何もしない関数にしていたので、2-2e で React 版と同じにした(比べるテストの
+  機能なしの場面で確かめた)。
+- **ドラッグの後の滑り込みは描き終えた後の effect で**: 列 / 行のドラッグのコントローラは、確定した直後の 1 フレームの間だけ
+  滑り込みの用意を残す(次の `requestAnimationFrame` で捨てる)。Solid のふつうの effect は書き込みの後の同じマイクロタスクで
+  走るので、`createEffect(() => paneLayout(), applyReorderSettle)` で間に合う(Chromium で列の FLIP を確かめた)。行は React 版と
+  同じく行のキーで要素を使い回すので、`animateRows` の CSS の transition で滑る(コントローラの FLIP は差が 0 で何もしない。
+  React 版も同じ)。
+- **コントローラが DOM へ直接書く要素は作り直さない**: 行のドロップのガイド線のキャップの有無(中央のペインが行見出しを持つか)を
+  呼ぶ側の式で読んでいたため、列幅などでペインの解決が変わるたびに要素ごと作り直し、コントローラが書いた位置が消えていた
+  (比べるテストで見つけた)。class の中で読む形にした。
+- **比べるテストで気をつけること**: jsdom の要素の矩形はどれも同じ大きさなので、列のドラッグはいつも左の固定ペインにいる扱いに
+  なる(中央の中の並べ替えと実際の位置は Chromium で見る)。行のドラッグの縦の位置は行の高さの計算で決まるので jsdom でも通る。
+  ドラッグのゴーストはライトのテーマでは `ssg-` の class が無いので、body 直下の要素として `[data-grid-drag-ghost]` も控える
+  ようにした。見出しの普通のクリックは列の選択で、ソートは Shift + クリック。フィルハンドルのダブルクリックは押した時刻で決まる
+  ので、比べるテストではイベントの `timeStamp` をそろえて送る(React 版の結合テストと同じ)。
+- **表の状態が変わるたびに新しいオブジェクトになる値は、項目ごとに memo で受ける**: core の縦のレイアウトの答え
+  (`resolveVerticalLayout`)は呼ぶたびに新しいオブジェクトを返す(中の `rowMetrics` などは同じ参照)。フィルハンドルの
+  埋めたあとのボタンの位置をそれでまるごと読むと、別のセルを押しただけで位置を計算し直し、続いてコントローラがボタンを消した
+  ときにもう 1 回計算していた(Solid の開発時の EFFECT_RELAY_TEAR)。項目ごとの memo にし、ルートの `ssg-root--filling` も
+  真偽値の memo にして、Chromium のデモで警告が出ないことを確かめた。React 版は描くたびに計算し直すので、この差は無い。
+- **右クリックメニューの params を作る関数は React 版の写し**: 右クリックの対象を DOM から逆引きして params を作る 2 つの関数
+  (React 版の `features/contextMenu.tsx` の `buildBodyContextMenuParams` / `buildCellContextMenuParams`)はフレームワークに
+  依らないが、React 版の機能のファイルにあるので、Solid 版の `features/contextMenu.ts` へ同じ処理を写した(core へ寄せるかは
+  `commitRowMoveFromDrag` と一緒に段階 3 で決める)。シェルの配線(キーボードから開いた直後の contextmenu を 1 秒止める、
+  ポップアップを出している間はシェルを Tab の止まる先から外し、キー操作と貼り付けを止める、Escape をグリッドが受ける条件)は
+  React 版の `GridShell.tsx` と同じ。
+- **関数が変わったことを合図にするコントローラには、変わる関数を渡す**(別視点のレビューの高): 行のドラッグのコントローラは、
+  引いている間に掴んだ行の探し直しの関数(`locateDragRow`)が変わると、行が変わったとみなして掴んだ行を探し直す(1.0 前の最終
+  チェック FC-12。行が増えたら新しい位置へ、消えたらやめる)。React 版は `useCallback([rowModel, hasRowKeys])` で行の並びが
+  変わるたびに別の関数になるが、Solid 版は呼んだ時点の行を読む 1 つの関数にしていたので、引いている間に行が増えると別の行が
+  動き、掴んだ行が消えても止まらなかった。行の並びの memo で作り直すようにし、探し直しが掴んだ行の印を新しい行番号の要素へ
+  付け直せるよう、update を描いた後の effect にした(比べるテストに「引いている間に行が増える / 消える」を足した)。ほかの
+  コントローラ(fill / find / contextMenu / columnHeaderDrag)は関数の同一性を合図にしていない。
+- **描かれた後に合わせ直すコントローラには、描かれたことを伝える**(レビューの低): IME の入力受けは描かれていないセルへは
+  合わせられず、次の update で合わせ直す。React 版は描くたびに update するのでスクロールで描かれた後に合うが、Solid 版は
+  スクロールでは args が変わらず、Ctrl+End などで画面の外へ跳ぶと前のセルの位置に残っていた(変換を始めると直る)。
+  アクティブセルが描かれているかの memo(aria-activedescendant と共用)を args の関数で読むようにした。なお React 版でも、
+  PageDown のように先読みの行(描かれている)へ移ってからスクロールするときは、入力受けがスクロール前の位置に残る(Chromium で
+  16px。変換を始めると直る。core の imeInputController の待機中の位置合わせの話で、Solid 版はこの場面では合う)。直すかは
+  段階 3 で決める。
+- **ref の関数の中では `onCleanup` を呼べない**(Solid 2.0 の CLEANUP_IN_FORBIDDEN_SCOPE): コントローラの外側クリックの判定に
+  使うボタン / メニューの要素の控えは、部品の本体で `onCleanup` を登録して外したときに消す(React 版の ref の null)。
 
 ### 2-1 で分かったこと
 

@@ -24,13 +24,16 @@ import type {
 } from '@ishibashi0112/spreadsheet-grid-core';
 import { createGridEngine } from '@ishibashi0112/spreadsheet-grid-core/internal/engine/createGridEngine';
 import type { GridColumn as UnboundGridColumn } from '@ishibashi0112/spreadsheet-grid-core/internal/model/gridTypes.unbound';
+import type { AutosizeChipOf, AutosizeTotalRowText } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/columnAutosize';
 import { gridActions } from '@ishibashi0112/spreadsheet-grid-core/internal/model/gridActions';
 import { buildSelectionSnapshot, selectGlobalFilter } from '@ishibashi0112/spreadsheet-grid-core/internal/model/gridSelectors';
 import {
   buildColumnMeasurements,
+  computeSinglePaneColumnExtent,
   type ColumnPane,
   type PaneColumnEntry,
 } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/geometry';
+import { ROW_DRAG_HANDLE_COLUMN_KEY, moveArrayItem } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/rowReorder';
 import {
   resolveSelectionBand,
   resolveSelectionBandSegments,
@@ -64,7 +67,13 @@ import {
 } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/gridBarSummary';
 import { isCheckboxChecked } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/checkboxEditor';
 import { MAX_BODY_PX, resolvePageTargetRow } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/verticalGeometry';
-import { DEFAULT_DETAIL_ROW_HEIGHT, isDetailRowExpandable } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/detailRow';
+import {
+  DEFAULT_DETAIL_ROW_HEIGHT,
+  isControlColumnKey,
+  isDetailRowExpandable,
+  isInsideDetailCardOf,
+  resolveFirstDataColIndex,
+} from '@ishibashi0112/spreadsheet-grid-core/internal/logic/detailRow';
 import {
   createSelectedRowsInOrderCounter,
   getSelectAllState,
@@ -77,7 +86,7 @@ import {
 } from '@ishibashi0112/spreadsheet-grid-core/internal/utils/popupContainer';
 import { createCellCommands, writeCellValueTo } from '@ishibashi0112/spreadsheet-grid-core/internal/engine/cellCommands';
 import { getCellValue } from '@ishibashi0112/spreadsheet-grid-core/internal/utils/permissions';
-import { isImeComposingKeyEvent } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/domGuards';
+import { IME_INPUT_ATTRIBUTE, isImeComposingKeyEvent } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/domGuards';
 import {
   createKeyboardController,
   resolveFirstDataCell,
@@ -195,7 +204,8 @@ export function GridShell<T extends object>(props: SpreadsheetGridProps<T>, feat
   const columnInputs = () => ({
     columns: columns(),
     isServerSide: false,
-    enableRowDrag: false,
+    // 行ドラッグ(機能 rowDrag)。機能が無い構成では createSpreadsheetGrid が false にする。
+    enableRowDrag: props.enableRowDrag ?? false,
     hasRowsChange: props.onRowsChange != null,
     detailToggleColumnActive: detailToggleColumnActive(),
     renderDetailToggleCell: renderDetailToggleCell as unknown as NonNullable<UnboundGridColumn<T>['renderCell']>,
@@ -311,9 +321,12 @@ export function GridShell<T extends object>(props: SpreadsheetGridProps<T>, feat
       columnFilters: ui().filters.columnFilters,
       globalFilteredOrder: baseOrder(),
       sort: ui().sort,
-      rowDragAvailable: false,
+      rowDragAvailable: columnResolution().rowDragAvailable,
     }),
   );
+  // 行ドラッグの合成列があるか(ガイド線を描くか)と、いま動かせるか(表示順が rows の順のとき = ソート / フィルターなし)。
+  const rowDragAvailable = () => columnResolution().rowDragAvailable;
+  const rowDragOperable = () => orderResolution().rowDragOperable;
   const clientRowModel = createMemo(() =>
     engine.rowPipeline.resolveClientSideRowModel({
       rows: rows(),
@@ -391,6 +404,112 @@ export function GridShell<T extends object>(props: SpreadsheetGridProps<T>, feat
   const totalRowLabelColumnKey = createMemo(() =>
     totalRowFeature ? totalRowFeature.resolveTotalRowLabelColumnKey(orderedColumns(), totalRowCells()) : null,
   );
+  // ── 列幅の自動調整(機能 features/columnAutosize) ──
+  //   計測の時間分割ランナー(core)。合計行の表示(値と見出し / 見出しを出す列はその文言)・状態チップの枠・固定行も幅に
+  //   収めます(React 版と同じ)。機能セットに無ければ境界のダブルクリックは通常のリサイズ、autoSizeColumns は false 扱い。
+  const columnAutosizeFeature = features.columnAutosize;
+  const totalRowAutosizeTexts = createMemo(() => {
+    if (!totalRowEnabled() || !totalRowFeature) {
+      return undefined;
+    }
+    const { formatTotalRowCellText, resolveTotalRowCaption } = totalRowFeature;
+    const cells = totalRowCells();
+    const labelColumnKey = totalRowLabelColumnKey();
+    const texts = new Map<string, AutosizeTotalRowText>();
+    for (const column of orderedColumns()) {
+      const cell = cells.get(column.key);
+      if (cell) {
+        const text = formatTotalRowCellText(column, cell);
+        texts.set(column.key, { text, caption: text !== '' ? resolveTotalRowCaption(cell.kind, localeTexts()) : undefined });
+      } else if (column.key === labelColumnKey) {
+        texts.set(column.key, { text: totalRowLabel() });
+      }
+    }
+    return texts;
+  });
+  const pinnedAutosizeRows = createMemo(() =>
+    pinnedTop() || pinnedBottom() ? [...(pinnedTop() ?? []), ...(pinnedBottom() ?? [])] : undefined,
+  );
+  // 状態チップ(conditionalFormat.chips)のセルをチップの枠(余白とアイコン)ごと測るための中身。セルの描画と同じ文脈で
+  //   チップを決めます(選択などの状態は false)。条件付き書式の機能が無ければ渡しません(文字だけを測る)。
+  const autosizeChipOf = createMemo((): AutosizeChipOf<T> | undefined => {
+    const chipFeature = conditionalFormatFeature;
+    if (!chipFeature) {
+      return undefined;
+    }
+    const model = rowModel();
+    const columnsNow = orderedColumns();
+    const keyGetter = resolvedRowKeyGetter();
+    const topCount = pinnedTopCount();
+    return (row, column, viewIndex) => {
+      const chips = column.conditionalFormat?.chips;
+      if (!chips) {
+        return null;
+      }
+      const colIndex = columnsNow.findIndex((candidate) => candidate.key === column.key);
+      const value = getCellValue(row, column);
+      // 固定行は負の index(-1 - 上 + 下の通し番号)で来るので、本体の rowModel を引かず、描くときと同じ文脈(固定行の中の
+      //   位置・行キー・pinned)を作ります。
+      if (viewIndex < 0) {
+        const pinnedIndex = -1 - viewIndex;
+        const pinned = pinnedIndex < topCount ? 'top' : 'bottom';
+        const index = pinned === 'top' ? pinnedIndex : pinnedIndex - topCount;
+        const spec = chipFeature.resolveChipSpec<T>(chips, {
+          row,
+          rowIndex: index,
+          sourceRowIndex: index,
+          rowKey: keyGetter(row, index),
+          colIndex,
+          value,
+          column,
+          isActive: false,
+          isSelected: false,
+          isEditing: false,
+          readOnly: true,
+          pinned,
+        });
+        return spec ? { label: spec.label, icon: spec.icon !== false } : null;
+      }
+      const spec = chipFeature.resolveChipSpec<T>(chips, {
+        row,
+        rowIndex: viewIndex,
+        sourceRowIndex: model.getSourceIndex(viewIndex) ?? viewIndex,
+        rowKey: model.getRowKey(viewIndex) ?? viewIndex,
+        colIndex,
+        value,
+        column,
+        isActive: false,
+        isSelected: false,
+        isEditing: false,
+        readOnly: false,
+      });
+      return spec ? { label: spec.label, icon: spec.icon !== false } : null;
+    };
+  });
+  const columnAutosize = columnAutosizeFeature?.createColumnAutosize<T>(() => ({
+    rowModel: rowModel(),
+    gridRootRef,
+    columnWidths: paneResolution().effectiveColumnWidths,
+    dispatch,
+    totalRowTexts: totalRowAutosizeTexts(),
+    chipOf: autosizeChipOf(),
+    pinnedRows: pinnedAutosizeRows(),
+  }));
+  const isAutosizing = () => columnAutosize?.isAutosizing() ?? false;
+  // データを入れたときの列幅の自動調整(autoSizeColumns × rows の変化。core の宣言的なトリガー。React 版と同じくコミットの
+  //   後 = 'effect' で測る)。
+  connectController(
+    engine.autoSizeOnData,
+    () => ({
+      mode: columnAutosize ? (props.autoSizeColumns ?? false) : false,
+      isServerSide: false,
+      rows: rows(),
+      visibleColumns: visibleColumns(),
+      runAutosize: columnAutosize?.runAutosize ?? (() => Promise.resolve()),
+      gridRootRef,
+    }),
+    'effect',
+  );
   const totalRowSlotSignature = createMemo(() => serializeSlotValue(totalRowOptions()?.className));
   const totalRowSlot = createMemo(() => resolveSlotFromSignature<JSX.CSSProperties>(totalRowSlotSignature()));
   // エクスポートの includeTotalRow / includePinnedRows で出す行。
@@ -405,6 +524,8 @@ export function GridShell<T extends object>(props: SpreadsheetGridProps<T>, feat
   // スクロール位置インジケーター(機能 features/scrollHint。無い構成では常に null = ネイティブのスクロールバー)。表示行数が
   //   minRows 未満のあいだは待機(React 版と同じ)。
   const scrollHintFeature = features.scrollHint;
+  const findFeature = features.find;
+  const imeFeature = features.imeDirectInput;
   const resolvedScrollHint = createMemo(() =>
     scrollHintFeature ? scrollHintFeature.resolveScrollHintOptions<T, SolidGridTypes>(props.scrollHint) : null,
   );
@@ -484,6 +605,15 @@ export function GridShell<T extends object>(props: SpreadsheetGridProps<T>, feat
       .map((item) => entries[item.index])
       .filter((entry): entry is PaneColumnEntry<T> => Boolean(entry));
   });
+  // アクティブセルが描かれているか(core logic/cellPlacement。React 版と共用)。aria-activedescendant と、IME の入力受けを
+  //   描かれたセルへ合わせ直す合図に使います。
+  const activeCellRendered = createMemo(() =>
+    isActiveCellRendered(ui().activeCell, vertical().virtualRowIndexes, rowModel(), [
+      paneLayout().left.entries,
+      centerRenderEntries(),
+      paneLayout().right.entries,
+    ]),
+  );
   const columnMeasurements = createMemo(() =>
     buildColumnMeasurements(visibleColumns(), paneResolution().effectiveColumnWidths),
   );
@@ -932,10 +1062,207 @@ export function GridShell<T extends object>(props: SpreadsheetGridProps<T>, feat
     computeIsWholeGridSelected(ui().selection, viewRowCount(), visibleColumns().length),
   );
 
+  // ── フィルハンドル(機能 features/fillHandle) ──
+  //   選択範囲(無ければアクティブセル)の右下の四角を引いて、連続データ / セルのコピーで埋めます。書き込みは貼り付けと同じ規則
+  //   (編集可否 / reject / ラベル行・グループ行を飛ばす)で、履歴付きの handleRowsChange へ流します。readOnly・書き込み先なしでは
+  //   休眠(React 版と同じ)。機能セットに無ければ何も描かず、prop は何もしません。
+  const fillHandleFeature = features.fillHandle;
+  const fill = fillHandleFeature?.createFillHandle<T>({
+    fillHandle: () => props.fillHandle,
+    readOnly,
+    isServerSide: () => false,
+    rows,
+    rowModel,
+    orderedColumns,
+    uiState: ui,
+    serverSideQueryKey: () => '',
+    serverSideRefreshToken: () => undefined,
+    canEditCell: () => props.canEditCell,
+    dispatch,
+    hitTest: pointer.getCellCoordFromClientPoint,
+    scrollContainerRef,
+    gridRootRef,
+    footerHeight,
+    stickyTopHeight,
+    handleRowsChange,
+    amendRowsChange: history.amendRowsChange,
+    applyServerSideCellEdits: () => undefined,
+    viewRowCount,
+    paneLayout,
+    vertical,
+    viewportHeight: () => view().viewportHeight,
+    scrollTop: () => view().scrollTop,
+    headerHeight,
+  });
+
   const resolvePageRow = (fromRow: number, direction: 1 | -1): number => {
     const pageHeight = Math.max(view().viewportHeight - headerHeight(), rowHeight());
     return resolvePageTargetRow(vertical().rowMetrics, fromRow, direction, pageHeight);
   };
+
+  // ── セル内検索(機能 features/find) ──
+  //   実体は engine.find(core controllers/findController。走査は時間分割)。スナップショットを signal で受け、既定のセルの
+  //   描画でヒットを <mark> にし、右上に検索バーを出します。Ctrl / ⌘ + F はキー操作のコントローラ経由。機能セットに find が
+  //   無ければ prop は何もせず(Ctrl / ⌘ + F も横取りしない)、engine.find は何もしない代役(常に閉じたまま)です(React 版と同じ)。
+  const findEnabled = createMemo(() => props.find !== false && props.find !== undefined && findFeature !== undefined);
+  const findOptions = createMemo(() => (typeof props.find === 'object' ? props.find : null));
+  const findShortcut = createMemo(() => findEnabled() && (findOptions()?.shortcut ?? true));
+  const findSnapshot = createExternalStoreSignal(engine.find);
+  const FindBar = findFeature?.FindBar;
+  // 本体の行が読むヒットの表とカレントの番号(どちらも値だけの memo。開閉や件数だけの変化では行へ伝えない)。
+  const findIndex = createMemo(() => findSnapshot().index);
+  const findCurrentIndex = createMemo(() => findSnapshot().currentIndex);
+  connectController(engine.find, () => ({
+    enabled: findEnabled(),
+    rowModel: rowModel(),
+    columns: orderedColumns(),
+    caseSensitive: findOptions()?.caseSensitive ?? false,
+    // 条件付き書式の機能が無ければチップもデータバーも描かれないので、値の文字を探す(React 版 1.0.2 / QB-1)。
+    conditionalFormat: conditionalFormatFeature !== undefined,
+    // カレントのヒットへ: クリックと同じ 1 セルの選択 + 見える位置へのスクロール(命令的 API と同じ経路)。
+    onNavigate: (rowIndex: number, colIndex: number) => {
+      engine.gridApi.handle.selectCell(rowIndex, colIndex, { scrollIntoView: true });
+    },
+    onChange: props.onFindChange,
+  }));
+  const openFindFromShortcut = () => engine.find.open();
+  const closeFindAndRefocus = () => {
+    engine.find.close();
+    gridRootRef.current?.focus({ preventScroll: true });
+  };
+
+  // ── 右クリックメニュー(機能 features/contextMenu) ──
+  //   本体の右クリックはシェルの 1 つの委譲のハンドラ(onContextMenu)で受け、対象(セル / 行番号)を DOM から逆引きして
+  //   getContextMenuItems の項目でメニューを開きます。開かない対象や項目が空ならブラウザの標準のメニューのまま(空のパネルは
+  //   出さない)。キーボード(Shift+F10 / メニューキー)はアクティブセルのメニューをセルの左下に開き、先頭の項目へフォーカスを
+  //   移します。どれも React 版の GridShell.tsx と同じ処理です。機能セットに無ければ enableContextMenu は false(標準のメニュー)。
+  const contextMenuFeature = features.contextMenu;
+  const contextMenu = contextMenuFeature?.createCellContextMenu<T>({ gridRootRef });
+  const contextMenuActive = () =>
+    contextMenu !== undefined && (props.enableContextMenu ?? false) && props.getContextMenuItems !== undefined;
+  // グリッドのポップアップを出しているか(シェルの Tab の順・キー操作・貼り付けを止める。React 版の isAnyGridPopupOpen。
+  //   列メニュー / 列フィルター / ツールパネルは段階 2-3 で足す)。
+  const isAnyGridPopupOpen = () => contextMenu?.isOpen() ?? false;
+  // キーボードで開こうとした時刻(ms)と開いたか。続けてブラウザが送る contextmenu(Shift+F10 / メニューキーの既定の動作)で、
+  //   開いたときは標準のメニューを止め、開かなかった(項目が無い)ときは標準のメニューのままにします(項目をもう一度聞かない)。
+  let keyboardContextMenu: { at: number; opened: boolean } | null = null;
+  const openContextMenuForCell = (cell: CellCoord): boolean => {
+    const root = gridRootRef.current;
+    const columnsNow = untrack(orderedColumns);
+    const column = columnsNow[cell.col];
+    const getItems = props.getContextMenuItems;
+    if (!contextMenuActive() || !contextMenuFeature || !contextMenu || !getItems || !root || !column) {
+      return false;
+    }
+    // 展開行のカードの中の入れ子のグリッドのセルは数えません。セルが描かれていない(画面の外)ときは表の左上に出します。
+    const cellEl = Array.from(
+      root.querySelectorAll<HTMLElement>(`[data-row-index="${cell.row}"] [data-ssg-col-key]`),
+    ).find((element) => element.dataset.ssgColKey === column.key && !isInsideDetailCardOf(root, element));
+    const rect = (cellEl ?? root).getBoundingClientRect();
+    const state = untrack(ui);
+    const params = contextMenuFeature.buildCellContextMenuParams<T>({
+      cell,
+      clientX: rect.left,
+      clientY: cellEl ? rect.bottom : rect.top,
+      rowModel: untrack(rowModel),
+      orderedColumns: columnsNow,
+      selection: state.selection,
+      activeCell: state.activeCell,
+    });
+    if (!params) {
+      return false;
+    }
+    const items = getItems(params);
+    if (!items || items.length === 0) {
+      return false;
+    }
+    props.onContextMenuOpen?.(params);
+    contextMenu.open(params, items, { focus: 'firstItem' });
+    return true;
+  };
+  // キーの操作(keydown)から開くときの入口。開いたときは、続けて来るキーボードの contextmenu(右ボタン以外)を 1 秒の間に 1 回だけ
+  //   window の capture で止めます(Windows のメニューキーは keyup で contextmenu を送り、フォーカスはもう表の外へ移っている)。
+  const openContextMenuFromKeyboard = (cell: CellCoord): boolean => {
+    const opened = openContextMenuForCell(cell);
+    keyboardContextMenu = { at: performance.now(), opened };
+    if (opened && typeof window !== 'undefined') {
+      const stop = (): void => {
+        window.removeEventListener('contextmenu', onContextMenu, true);
+        window.removeEventListener('keydown', stop, true);
+        window.removeEventListener('pointerdown', stop, true);
+        window.clearTimeout(timer);
+      };
+      const onContextMenu = (event: MouseEvent): void => {
+        stop();
+        if (event.button !== 2) {
+          event.preventDefault();
+        }
+      };
+      const timer = window.setTimeout(stop, 1000);
+      window.addEventListener('contextmenu', onContextMenu, true);
+      window.addEventListener('keydown', stop, true);
+      window.addEventListener('pointerdown', stop, true);
+    }
+    return opened;
+  };
+  const handleBodyContextMenu = (event: MouseEvent & { currentTarget: HTMLDivElement }) => {
+    const getItems = props.getContextMenuItems;
+    if (!contextMenuActive() || !contextMenuFeature || !contextMenu || !getItems) {
+      return;
+    }
+    // キーボードから来た contextmenu(フォーカスを持つシェルか入力受けが対象で、右ボタンではない。Chrome は button が -1)。
+    //   直前にキーで開いたなら標準のメニューを止めるだけ、keydown を経ずに来た(OS がキーを contextmenu に変える)ならここで
+    //   開きます。検索欄などシェルの中の入力欄では標準のメニューのまま。
+    const target = event.target instanceof Element ? event.target : null;
+    const fromShellFocus = target !== null && (target === event.currentTarget || target.hasAttribute(IME_INPUT_ATTRIBUTE));
+    if (event.button !== 2 && fromShellFocus) {
+      const fromKeyboard = keyboardContextMenu;
+      if (fromKeyboard && performance.now() - fromKeyboard.at < 1000) {
+        if (fromKeyboard.opened) {
+          event.preventDefault();
+        }
+        return;
+      }
+      const activeCell = untrack(ui).activeCell;
+      if (activeCell && openContextMenuForCell(activeCell)) {
+        event.preventDefault();
+      }
+      return;
+    }
+    const state = untrack(ui);
+    const params = contextMenuFeature.buildBodyContextMenuParams<T>({
+      event,
+      rowModel: untrack(rowModel),
+      orderedColumns: untrack(orderedColumns),
+      selection: state.selection,
+      activeCell: state.activeCell,
+    });
+    if (!params) {
+      return;
+    }
+    const items = getItems(params);
+    // 空(または未定義)なら標準のメニューへ(空のパネルは出さない)。
+    if (!items || items.length === 0) {
+      return;
+    }
+    // ここで初めて標準のメニューを止め、グリッドのメニューを開きます。
+    event.preventDefault();
+    props.onContextMenuOpen?.(params);
+    contextMenu.open(params, items);
+  };
+  // 開いているメニュー(項目と位置と読み上げの名前)。閉じている間 / 位置が決まる前は null。
+  const contextMenuView = createMemo(() => {
+    const snapshot = contextMenu?.snapshot();
+    if (!snapshot?.state || !snapshot.layout) {
+      return null;
+    }
+    const texts = localeTexts() as unknown as { contextMenuRow: string; contextMenuCell: string };
+    return {
+      items: snapshot.state.items,
+      layout: snapshot.layout,
+      ariaLabel: snapshot.state.params.target.type === 'rowHeader' ? texts.contextMenuRow : texts.contextMenuCell,
+    };
+  });
 
   // ── キー操作 ──
   const keyboard = createKeyboardController<T>();
@@ -950,7 +1277,7 @@ export function GridShell<T extends object>(props: SpreadsheetGridProps<T>, feat
     setEditorInitialValue,
     dispatch,
     handleCopy: clipboard.handleCopy,
-    openFind: undefined,
+    openFind: findShortcut() ? openFindFromShortcut : undefined,
     handleCellDoubleClick: tryStartEditCell,
     isWholeGridSelected: isWholeGridSelected(),
     selectEntireGrid,
@@ -963,7 +1290,7 @@ export function GridShell<T extends object>(props: SpreadsheetGridProps<T>, feat
     onToggleDetailRow: detailRowEnabled() ? detailRows.toggleFromKeyboard : undefined,
     resolvePageRow,
     openColumnMenu: undefined,
-    openContextMenu: undefined,
+    openContextMenu: contextMenuActive() ? openContextMenuFromKeyboard : undefined,
     // 最終列の Tab: その行のカードが開いていればカードの最初の要素へ、無ければ表の直後の目印から既定の Tab(段階 2 C-N2 / F-10)。
     onTabPastLastColumn: detailRows.handleTabPastLastColumn,
   }));
@@ -999,6 +1326,53 @@ export function GridShell<T extends object>(props: SpreadsheetGridProps<T>, feat
     startEditWithValue: edit.startEditWithValue,
     dispatch,
   }));
+  // ── IME オンのままの直接入力(機能 features/imeDirectInput) ──
+  //   imeDirectInput が有効なときだけ、シェルの末尾の透明な入力受けへグリッドのフォーカスを置き、IME の変換をそこで始めます。
+  //   変換が確定したら、確定した文字を初期値に通常の編集を始めます(startEditWithValue)。本体は core
+  //   controllers/imeInputController(engine.imeInput)。入力受けの位置はセルの要素から測るので、セルを描いた後の 'effect' で
+  //   update します(React 版はレイアウト effect)。機能セットに無ければ無効(engine.imeInput も代役)です。
+  const imeDirectInputEnabled = createMemo(() => (props.imeDirectInput ?? false) && imeFeature !== undefined);
+  connectController(
+    engine.imeInput,
+    () => {
+      // 読むだけ(args には入れない): アクティブセルが描かれたら update し直します。コントローラは描かれていないセルへは
+      //   入力受けを合わせられず、次の update で合わせ直す作りで、React 版は描くたびに update するので、画面の外へ跳んだ
+      //   アクティブセル(Ctrl+End など)へもスクロールで描かれた後に合う。Solid 版はスクロールでは args が変わらないため。
+      activeCellRendered();
+      return {
+        enabled: imeDirectInputEnabled(),
+        gridRootRef,
+        editing: ui().editingCell !== null,
+        activeCell: ui().activeCell,
+        resolveCell: (cell: CellCoord) => {
+          const column = untrack(orderedColumns)[cell.col];
+          return column ? { colKey: column.key, align: column.align } : null;
+        },
+        canStartEdit: (cell: CellCoord) =>
+          imeFeature?.canStartImeEdit(
+            {
+              rowModel: untrack(rowModel),
+              columns: untrack(orderedColumns),
+              readOnly: untrack(readOnly),
+              canEditCell: untrack(() => props.canEditCell),
+            },
+            cell,
+          ) === true,
+        startEdit: edit.startEditWithValue,
+        // number の列は確定した文字を半角の数値の表記へ直して編集を始めます(読めない変換は捨てる)。
+        resolveEditText: (cell: CellCoord, text: string) =>
+          imeFeature ? imeFeature.resolveImeEditText(untrack(orderedColumns), cell, text) : text,
+      };
+    },
+    'effect',
+  );
+  // 入力受けを外したら(imeDirectInput を false にした)コントローラから切り離します(React 版の ref の null)。
+  createEffect(imeDirectInputEnabled, (enabled) => {
+    if (!enabled) {
+      engine.imeInput.attach(null);
+    }
+  });
+
   // ダブルクリック: 利用側の onCellDoubleClick が preventDefault しなければ編集を始める(React 版と同じ)。
   cellDoubleClickRef.current = (cell, event) => {
     if (engine.cellEventNotifier.notifyCellDoubleClick(cell, event)) {
@@ -1015,10 +1389,14 @@ export function GridShell<T extends object>(props: SpreadsheetGridProps<T>, feat
     isClaimedTarget: (target: Element, root: HTMLElement) => {
       const state = store.getState();
       if (!root.contains(target)) {
+        const popupOpen = untrack(isAnyGridPopupOpen);
         if (target.closest(GRID_POPUP_SELECTOR) !== null) {
-          return state.editingCell !== null;
+          return popupOpen || state.editingCell !== null;
         }
-        return false;
+        // 右クリックメニューは開くときにフォーカスを外す(blurForPopover)ので、Escape の対象は body になる。その Escape は
+        //   メニューを閉じるのに使う(React 版と同じ)。
+        const ownerDocument = target.ownerDocument;
+        return popupOpen && (target === ownerDocument.body || target === ownerDocument.documentElement);
       }
       if (target.closest('.ssg-cell-editor, [data-ssg-find-bar]') !== null) {
         return true;
@@ -1031,6 +1409,15 @@ export function GridShell<T extends object>(props: SpreadsheetGridProps<T>, feat
     },
   }));
   const handleShellKeyDown = (event: KeyboardEvent) => {
+    // ポップアップを出している間はグリッドのキー操作を止めます(React 版と同じ)。
+    if (!untrack(isAnyGridPopupOpen)) {
+      handleRootKeyDown(event);
+    }
+    if (isEscapeClaimedByGrid(event)) {
+      event.stopPropagation();
+    }
+  };
+  const handleRootKeyDown = (event: KeyboardEvent) => {
     keyboard.handleKeyDown({
       key: event.key,
       ctrlKey: event.ctrlKey,
@@ -1043,9 +1430,6 @@ export function GridShell<T extends object>(props: SpreadsheetGridProps<T>, feat
     });
     // セルや見出しの中の要素で Tab を押し、表の中にもう止まる要素が無いときは表の外へ(カードがあるときだけ)。
     detailRows.handleRootKeyDownAfter(event);
-    if (isEscapeClaimedByGrid(event)) {
-      event.stopPropagation();
-    }
   };
 
   // ── 列(並べ替え / 列幅のドラッグ。core engine/columnCommands) ──
@@ -1063,8 +1447,177 @@ export function GridShell<T extends object>(props: SpreadsheetGridProps<T>, feat
     closeColumnMenu: noop,
     openToolPanel: noop,
     openColumnFilterPopover: noop,
-    runAutosize: undefined,
+    runAutosize: columnAutosize?.runAutosize,
   }));
+
+  // ── 列見出しのドラッグによる並べ替え(機能 features/columnReorder。core controllers/columnHeaderDragController) ──
+  //   onColumnsChange があるときだけ見出しに grip を出します(React 版と同じ)。ドラッグ中は状態を変えず、ドロップの縦線 /
+  //   ゴースト / live 方式の追従はコントローラが DOM へ直接書きます。確定は columnCommands の applyColumnOrderAndPin。
+  //   live 方式は motion が 'off' のときゴーストへ(React 版と同じ)。
+  const columnReorder = features.columnReorder?.createColumnReorder<T>(() => ({
+    enabled: Boolean(props.onColumnsChange),
+    columns: columns(),
+    paneLayout: paneLayout(),
+    leftPaneScrollRef,
+    rightPaneScrollRef,
+    bodyScrollRef,
+    scrollContainerRef,
+    leftLeadingWidth: paneResolution().leftLeadingWidth,
+    centerLeadingWidth: paneResolution().centerLeadingWidth,
+    rightLeadingWidth: paneResolution().rightLeadingWidth,
+    applyColumnOrderAndPin: columnCommands.applyColumnOrderAndPin,
+    ghostSlot: slots().dragGhost,
+    motion: resolvedMotion() === 'off' ? 'ghost' : (props.columnDragMotion ?? 'ghost'),
+  }));
+  const columnDragHandler = createMemo(() =>
+    columnReorder && props.onColumnsChange ? columnReorder.onColumnDragHandlePointerDown : undefined,
+  );
+  // ドロップの縦線(各ペインに常設。表示と位置はコントローラが直接書く)。高さは見出しから合計行までを貫く(React 版と同じ)。
+  const renderColumnDropIndicator = (pane: ColumnPane) =>
+    columnReorder ? (
+      <div
+        ref={(element) => columnReorder.setIndicator(pane, element)}
+        class="ssg-col-drop-indicator"
+        style={{
+          position: 'absolute',
+          top: '0',
+          height: px(headerHeight() + vertical().physicalBodyHeight + footerHeight()),
+          transform: 'translateX(-1px)',
+          'pointer-events': 'none',
+          'z-index': 8,
+          display: 'none',
+        }}
+      />
+    ) : null;
+
+  // ── 行の移動(ドラッグの確定 / 命令的 API の moveRow。React 版と同じくシェルに置く = 機能が無くても moveRow は動く) ──
+  //   moveArrayItem が何もしない(同じ位置 / 範囲外)なら onRowsChange も onRowMove も呼びません。履歴(handleRowsChange)を
+  //   通すので元に戻せます。動かしたら true(ドラッグで離したときのアクティブセルを決めるため)。
+  const commitRowMove = (fromIndex: number, toIndex: number): boolean => {
+    const onRowsChange = handleRowsChange();
+    if (!onRowsChange) {
+      return false;
+    }
+    const currentRows = rows();
+    const next = moveArrayItem(currentRows, fromIndex, toIndex);
+    if (next === currentRows) {
+      return false;
+    }
+    const movedRow = currentRows[fromIndex] as T;
+    const nextRows = next as T[];
+    onRowsChange(nextRows);
+    props.onRowMove?.({
+      rowKey: resolvedRowKeyGetter()(movedRow, fromIndex),
+      fromIndex,
+      toIndex,
+      rows: nextRows,
+    });
+    return true;
+  };
+  const moveRowByKey = (rowKey: GridRowKey, toIndex: number) => {
+    const getKey = resolvedRowKeyGetter();
+    const fromIndex = rows().findIndex((row, index) => getKey(row, index) === rowKey);
+    if (fromIndex < 0) {
+      return;
+    }
+    commitRowMove(fromIndex, toIndex);
+  };
+  // ドラッグで離したとき: 行のホバーを外し、離した行(動かした先)をアクティブセルにする。列は今のアクティブセルの列(無いか
+  //   合成列なら先頭のデータ列)で、横の見える範囲に丸ごと無ければ、丸ごと見えている先頭のデータ列、それも無ければいちばん
+  //   広く見えているデータ列(React 版の GridShell.tsx の commitRowMoveFromDrag と同じ判断。1.0.2 の RV-F3 / QA-6)。
+  const commitRowMoveFromDrag = (fromIndex: number, toIndex: number) => {
+    const moved = commitRowMove(fromIndex, toIndex);
+    applyHoveredRowChange(null);
+    const columnsNow = orderedColumns();
+    const layout = paneLayout();
+    const resolution = paneResolution();
+    const isDataCol = (col: number) => {
+      const column = columnsNow[col];
+      return column !== undefined && !isControlColumnKey(column.key);
+    };
+    // 列の見えている幅と、丸ごと見えているか(固定ペインの列はいつも見えている)。
+    const resolveColVisibility = (col: number): { visible: number; whole: boolean } => {
+      const single = computeSinglePaneColumnExtent(layout, col);
+      const scrollElement = scrollContainerRef.current;
+      if (!single || single.pane !== 'center' || !scrollElement) {
+        return single !== null ? { visible: single.extent.width, whole: true } : { visible: 0, whole: false };
+      }
+      const left = resolution.leftPaneTotalWidth + resolution.centerLeadingWidth + single.extent.start;
+      const right = left + single.extent.width;
+      const visibleLeft = scrollElement.scrollLeft + resolution.leftPaneTotalWidth;
+      const visibleRight = scrollElement.scrollLeft + scrollElement.clientWidth - resolution.rightPaneTotalWidth;
+      return {
+        visible: Math.max(0, Math.min(right, visibleRight) - Math.max(left, visibleLeft)),
+        whole: left >= visibleLeft && right <= visibleRight,
+      };
+    };
+    const activeCol = store.getState().activeCell?.col;
+    let col = activeCol !== undefined && isDataCol(activeCol) ? activeCol : resolveFirstDataColIndex(columnsNow);
+    if (!resolveColVisibility(col).whole) {
+      let widest = -1;
+      let widestVisible = 0;
+      let wholeCol = -1;
+      for (let index = 0; index < columnsNow.length && wholeCol < 0; index += 1) {
+        if (!isDataCol(index)) {
+          continue;
+        }
+        const visibility = resolveColVisibility(index);
+        if (visibility.whole) {
+          wholeCol = index;
+        } else if (visibility.visible > widestVisible) {
+          widest = index;
+          widestVisible = visibility.visible;
+        }
+      }
+      if (wholeCol >= 0) {
+        col = wholeCol;
+      } else if (widest >= 0 && widestVisible > resolveColVisibility(col).visible) {
+        col = widest;
+      }
+    }
+    engine.gridApi.handle.selectCell(moved ? toIndex : fromIndex, col);
+  };
+
+  // ── 行ドラッグによる並べ替え(機能 features/rowDrag。core controllers/rowDragController) ──
+  //   ハンドル列(合成列)は enableRowDrag で core の列の解決が足し、セルの中身はハンドルの部品(renderCellContent)。
+  //   動かせるのは表示順が rows の順のときだけ(ソート / フィルター中はハンドルが淡色)。live 方式は motion が 'off' の
+  //   ときゴーストへ(React 版と同じ)。
+  const rowDragFeature = features.rowDrag;
+  const rowDrag = rowDragFeature?.createRowDrag<T>({
+    controller: () => ({
+      enabled: rowDragOperable(),
+      rowMetrics: vertical().rowMetrics,
+      headerHeight: headerHeight(),
+      footerHeight: footerHeight(),
+      stickyTopHeight: stickyTopHeight(),
+      verticalScaleFactor: vertical().verticalScaleFactor,
+      windowBaseOffsetPx: vertical().overlayBaseOffset,
+      scrollContainerRef,
+      bodyScrollRef,
+      gridRootRef,
+      commitRowMove: commitRowMoveFromDrag,
+      ghostSlot: slots().dragGhost,
+      motion: resolvedMotion() === 'off' ? 'ghost' : (props.rowDragMotion ?? 'ghost'),
+    }),
+    rowModel,
+    visibleColumns,
+    canDropRow: () => props.canDropRow,
+    rows,
+    resolveRowKey: resolvedRowKeyGetter,
+    hasRowKeys: () => props.rowKeyGetter !== undefined,
+    dragRowLabel: () => (localeTexts() as unknown as { dragRowLabel: string }).dragRowLabel,
+  });
+  // 行ドロップの位置のガイド線(各ペインの本体の層。左端のペインはキャップ付き)。キャップの有無は class の中で読む(呼ぶ側の式で
+  //   読むと、列幅などでペインの解決が変わるたびに要素ごと作り直し、コントローラが書いた位置が消えるため)。
+  const renderRowDropIndicator = (pane: ColumnPane, cap: () => boolean) =>
+    rowDrag ? (
+      <Show when={rowDragAvailable()}>
+        <div
+          ref={(element) => rowDrag.setIndicator(pane, element)}
+          class={['ssg-row-drop-indicator', { 'ssg-row-drop-indicator--cap': cap() }]}
+        />
+      </Show>
+    ) : null;
 
   // ── 見出しの角 / 行番号 / 列見出しのホバー ──
   const handleCornerHeaderPointerDown = (event: PointerEvent) => {
@@ -1139,7 +1692,7 @@ export function GridShell<T extends object>(props: SpreadsheetGridProps<T>, feat
     activeToolPanelTab: null,
     openToolPanel: noop,
     closeToolPanel: noop,
-    find: { open: noop, close: noop, next: noop, prev: noop },
+    find: { open: engine.find.open, close: engine.find.close, next: engine.find.next, prev: engine.find.prev },
     undoRows: history.undo,
     redoRows: history.redo,
     canUndoRows: history.canUndo,
@@ -1149,7 +1702,7 @@ export function GridShell<T extends object>(props: SpreadsheetGridProps<T>, feat
     detailRowEnabled: detailRowEnabled(),
     detailIsExpandable: props.detailRow?.isExpandable,
     detailIndexCacheRef: engine.detailIndexCache,
-    moveRowByKey: noop,
+    moveRowByKey,
     commitRowSelection: rowSelectionCommands.commitRowSelection,
     pendingRowSelection: rowSelectionCommands.pendingRowSelection,
     markApiScroll: () => {
@@ -1398,7 +1951,33 @@ export function GridShell<T extends object>(props: SpreadsheetGridProps<T>, feat
   // セルの中身。行と列が変わったときだけ作り直す(行の位置とアクティブ / 選択などの状態は cell から読んだときに引く)。
   //   行の並び(rowModel)や rows そのものは読まない(1 セルの編集で表のすべての renderCell を作り直さないように)。
   //   renderCell の本体で位置や状態を読めば、それが変わったときにその列のセルだけ作り直す(React で毎回呼ぶのと同じ結果)。
+  // 行ドラッグのハンドル列のセル。isRowDraggable が false の行には出さない(React 版の renderHandleCell と同じ)。押した時点の
+  //   行の位置でドラッグを始めます。
+  const RowDragHandle = rowDragFeature?.RowDragHandle;
+  const rowDragTexts = () => localeTexts() as unknown as { dragRow: string; dragRowDisabled: string };
+  const renderRowDragHandleCell = (row: T, cell: GridCellContentContext): JSX.Element => {
+    if (!RowDragHandle || !rowDrag) {
+      return null;
+    }
+    const draggable = createMemo(() => {
+      const isRowDraggable = props.isRowDraggable;
+      return !isRowDraggable || isRowDraggable(row, { rowKey: cell.rowKey, sourceRowIndex: cell.sourceRowIndex });
+    });
+    return (
+      <Show when={draggable()}>
+        <RowDragHandle
+          operable={rowDragOperable()}
+          tooltip={rowDragOperable() ? rowDragTexts().dragRow : rowDragTexts().dragRowDisabled}
+          onPointerDown={(event) => rowDrag.onRowDragHandlePointerDown(untrack(() => cell.rowIndex), event)}
+        />
+      </Show>
+    );
+  };
   const renderCellContent = (row: T, column: GridColumn<T>, cell: GridCellContentContext): JSX.Element => {
+    // 行ドラッグのハンドル列(合成列)の中身(機能 rowDrag)。
+    if (column.key === ROW_DRAG_HANDLE_COLUMN_KEY) {
+      return renderRowDragHandleCell(row, cell);
+    }
     const unbound = column as unknown as UnboundGridColumn<T>;
     const value = getCellValue(row, unbound);
     if (column.renderCell) {
@@ -1465,6 +2044,25 @@ export function GridShell<T extends object>(props: SpreadsheetGridProps<T>, feat
       );
     }
     const text = column.valueFormatter ? column.valueFormatter({ value, row, column }) : String(value ?? '');
+    // セル内検索のヒットを <mark> にします(既定のセルだけ。カレントは --current)。ヒットとカレントは cell から読んだときに引く
+    //   ので、変わったときは中の文字だけを描き直します(セルの箱と中身の span はそのまま)。
+    const splitFind = findFeature?.splitTextByFindRanges;
+    const highlightFind = (content: string): JSX.Element => {
+      const ranges = cell.findRanges;
+      if (!splitFind || !ranges || ranges.length === 0) {
+        return content;
+      }
+      return splitFind(content, ranges).map((segment) => {
+        const range = segment.range;
+        return range ? (
+          <mark class={['ssg-find-mark', { 'ssg-find-mark--current': range.matchIndex === cell.findCurrentIndex }]}>
+            {segment.text}
+          </mark>
+        ) : (
+          segment.text
+        );
+      });
+    };
     // 条件付き書式: データバーの showValue: false は文字を出さない(帯は GridBodyLayer が描く)。機能セットに無ければ指定を無視。
     //   valueFormatter は React 版と同じく先に呼ぶ。
     const formatRules = conditionalFormatFeature ? unbound.conditionalFormat : undefined;
@@ -1505,12 +2103,12 @@ export function GridShell<T extends object>(props: SpreadsheetGridProps<T>, feat
         }),
       );
       return (
-        <Show when={chip()} fallback={<span class="ssg-cell-value">{text}</span>}>
-          {(spec) => <GridChip spec={spec()}>{spec().label ?? text}</GridChip>}
+        <Show when={chip()} fallback={<span class="ssg-cell-value">{highlightFind(text)}</span>}>
+          {(spec) => <GridChip spec={spec()}>{highlightFind(spec().label ?? text)}</GridChip>}
         </Show>
       );
     }
-    return <span class="ssg-cell-value">{text}</span>;
+    return <span class="ssg-cell-value">{highlightFind(text)}</span>;
   };
 
   const pinnedPaneStyle = (side: 'left' | 'right', width: number, hasContent: boolean): JSX.CSSProperties => ({
@@ -1636,6 +2234,7 @@ export function GridShell<T extends object>(props: SpreadsheetGridProps<T>, feat
           onColumnResizePointerDown={(column, event) =>
             columnCommands.handleColumnResizePointerDown(column as unknown as UnboundGridColumn<T>, event)
           }
+          onColumnDragHandlePointerDown={columnDragHandler()}
         />
         {/* 上に固定する行(列見出しの直後の sticky の器)。 */}
         {renderPinnedRows('top')}
@@ -1695,6 +2294,16 @@ export function GridShell<T extends object>(props: SpreadsheetGridProps<T>, feat
             leadingWidth={leadingWidth()}
             baseOffset={vertical().overlayBaseOffset}
           />
+          {/* フィルハンドル: ハンドル / ドラッグ中の点線 / 埋めたあとのボタン。 */}
+          {fill && fillHandleFeature ? (
+            <fillHandleFeature.FillHandleLayer
+              fill={fill}
+              pane={pane}
+              headerHeight={headerHeight()}
+              leadingWidth={leadingWidth()}
+              baseOffset={vertical().overlayBaseOffset}
+            />
+          ) : null}
           <CellEditorLayer<T>
             rect={editorRect()}
             sessionId={editorSessionId()}
@@ -1723,6 +2332,8 @@ export function GridShell<T extends object>(props: SpreadsheetGridProps<T>, feat
             verticalAlign={props.verticalAlign}
             conditionalFormat={conditionalFormatFeature}
             conditionalFormatStats={conditionalFormatStats()}
+            findIndex={findIndex()}
+            findCurrentIndex={findCurrentIndex()}
             rowHeaderWidth={rowHeaderWidth()}
             rows={bodyRows()}
             entries={entries()}
@@ -1766,25 +2377,22 @@ export function GridShell<T extends object>(props: SpreadsheetGridProps<T>, feat
             onCardKeyDown={detailRows.handleCardKeyDown}
             onCardFocusLost={detailRows.handleCardFocusLost}
           />
+          {/* 行ドロップの位置のガイド線(左固定ペイン、または左固定ペインが無いときの中央 = 最左はキャップ付き)。 */}
+          {renderRowDropIndicator(pane, () => pane === 'left' || (pane === 'center' && ownsRowHeader()))}
         </div>
         {/* 下端の行(本体ぶんの空きの直後 = 箱の下端の sticky の行)。既定は下の固定行 → 合計行、'belowTotal' は合計行 → 固定行。 */}
         <Show when={pinnedBelowTotal()} fallback={[renderPinnedRows('bottom'), renderTotalRow()]}>
           {renderTotalRow()}
           {renderPinnedRows('bottom')}
         </Show>
+        {/* 中央ペインのドロップの縦線(左右のペインは、固定列が 0 本でも線を出せるよう外側の器に置く。React 版と同じ)。 */}
+        {pane === 'center' ? renderColumnDropIndicator('center') : null}
       </div>
     );
   };
 
-  // aria-activedescendant は参照先のセルが描かれているときだけ(core logic/cellPlacement。React 版と共用)。
-  const activeDescendantId = () =>
-    isActiveCellRendered(ui().activeCell, vertical().virtualRowIndexes, rowModel(), [
-      paneLayout().left.entries,
-      centerRenderEntries(),
-      paneLayout().right.entries,
-    ])
-      ? activeCellDomId
-      : undefined;
+  // aria-activedescendant は参照先のセルが描かれているときだけ(activeCellRendered)。
+  const activeDescendantId = () => (activeCellRendered() ? activeCellDomId : undefined);
 
   const emptyStateText = () =>
     rows().length === 0
@@ -1804,6 +2412,7 @@ export function GridShell<T extends object>(props: SpreadsheetGridProps<T>, feat
             [`ssg-root--density-${density()}`]: density() !== 'standard',
             [MOTION_OFF_CLASS_NAME]: resolvedMotion() === 'off',
             'ssg-root--selecting': ui().dragState?.type === 'selection',
+            'ssg-root--filling': fill?.filling() ?? false,
             'ssg-root--animate-rows': animateRowsActive(),
             'ssg-root--dim-readonly': props.dimReadOnlyCells ?? false,
             'ssg-root--fill-height': heightLayout().fillParent,
@@ -1819,18 +2428,26 @@ export function GridShell<T extends object>(props: SpreadsheetGridProps<T>, feat
             gridRootRef.current = element;
           }}
           class="ssg-shell"
-          tabindex={0}
+          style={{ cursor: isAutosizing() ? 'progress' : undefined }}
+          // ポップアップを出している間はシェルを Tab の止まる先から外します(React 版と同じ)。
+          tabindex={isAnyGridPopupOpen() ? -1 : 0}
           role="group"
           aria-activedescendant={activeDescendantId()}
           data-ssg-has-active-cell={ui().activeCell === null ? undefined : ''}
           onKeyDown={handleShellKeyDown}
-          onPaste={(event) =>
+          onPaste={(event) => {
+            // ポップアップを出している間は貼り付けを受けません(React 版はハンドラを外す)。
+            if (untrack(isAnyGridPopupOpen)) {
+              return;
+            }
             clipboard.handlePaste({
               clipboardData: event.clipboardData,
               preventDefault: () => event.preventDefault(),
               target: event.target,
-            })
-          }
+            });
+          }}
+          // 本体の右クリックの委譲(機能が無い・enableContextMenu でない・対象が無いときは素通しで標準のメニュー)。
+          onContextMenu={handleBodyContextMenu}
           onDragStart={(event) => pointer.handleNativeDragStart(event)}
           onPointerLeave={() => {
             applyHoveredRowChange(null);
@@ -1888,6 +2505,7 @@ export function GridShell<T extends object>(props: SpreadsheetGridProps<T>, feat
                     () => paneLayout().left.entries,
                   )}
                 </Show>
+                {renderColumnDropIndicator('left')}
               </div>
               <div
                 ref={(element) => {
@@ -1922,6 +2540,7 @@ export function GridShell<T extends object>(props: SpreadsheetGridProps<T>, feat
                     () => paneLayout().right.entries,
                   )}
                 </Show>
+                {renderColumnDropIndicator('right')}
               </div>
             </div>
             <Show when={viewRowCount() === 0}>
@@ -1959,8 +2578,64 @@ export function GridShell<T extends object>(props: SpreadsheetGridProps<T>, feat
               );
             }}
           </Show>
+          {/* 列幅の自動調整の計測中の overlay(遅れて出す。pointer-events: none で操作は素通し)。 */}
+          <Show when={isAutosizing()}>
+            <div class="ssg-autosize-overlay">
+              <span class="ssg-autosize-pill">{localeTexts().sizingColumns}</span>
+            </div>
+          </Show>
+          {/* セル内検索のバー(右上に浮く。見出しの直下)。開いているときだけ描きます。 */}
+          <Show when={findSnapshot().open}>
+            {FindBar && (
+              <FindBar
+                snapshot={findSnapshot()}
+                headerHeight={headerHeight()}
+                onQueryChange={engine.find.setQuery}
+                onNext={engine.find.next}
+                onPrev={engine.find.prev}
+                onClose={closeFindAndRefocus}
+                slot={slots().findBar}
+              />
+            )}
+          </Show>
+          {/* IME オンのままの直接入力の入力受け(imeDirectInput が有効なときだけ)。値 / 位置 / 変換中の見た目はコントローラが
+              直接扱います。Tab の順番には入れません(タブストップはシェルのまま)。 */}
+          <Show when={imeDirectInputEnabled()}>
+            <input
+              ref={(element) => engine.imeInput.attach(element)}
+              {...{ [IME_INPUT_ATTRIBUTE]: '' }}
+              class="ssg-ime-input"
+              type="text"
+              tabindex={-1}
+              autocomplete="off"
+              autocorrect="off"
+              autocapitalize="off"
+              spellcheck="false"
+              aria-label={localeTexts().cellInput}
+            />
+          </Show>
         </div>
         {bottomBar()}
+        {/* セル / 行番号の右クリックメニュー(グリッドの外のポップアップ)。 */}
+        {contextMenu && contextMenuFeature ? (
+          <Show when={contextMenuView()}>
+            {(open) => (
+              <contextMenuFeature.CellContextMenuPopover
+                items={open().items}
+                layout={open().layout}
+                panelRef={contextMenu.panelRef}
+                onRequestClose={contextMenu.close}
+                ariaLabel={open().ariaLabel}
+                themeClassName={portalClassName()}
+                slots={slots()}
+              />
+            )}
+          </Show>
+        ) : null}
+        {/* フィルハンドルの埋めたあとのメニュー / ドラッグ中の値のツールチップ(グリッドの外のポップアップ)。 */}
+        {fill && fillHandleFeature ? (
+          <fillHandleFeature.FillHandlePortals fill={fill} themeClassName={portalClassName()} />
+        ) : null}
       </div>
       </GridPortalContext>
     </GridLocaleTextContext>

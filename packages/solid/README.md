@@ -34,9 +34,20 @@ React 版と同じ DOM・class で描くので、React 版の `styles.css` を�
   core のコントローラで時間分割。利用側のバーの文脈の `selectionAggregates`)、スクロール位置インジケーター(`scrollHint`。
   行番号のバブル / ルーラー / ジャンプの線 / カスタムスクロールバー、`hintColumn` / `renderHint` / `trigger` / `minRows`)、
   動きの追加分(`highlightChanges` = 変わったセルのフラッシュと数値のトゥイーン、`showCopyRange` = コピー範囲の動く点線、
-  `hoverHighlight: 'cross'` = クロスヘア)
+  `hoverHighlight: 'cross'` = クロスヘア)、セル内検索(`find` / `onFindChange`、ハンドルの `openFind` / `closeFind` /
+  `findNext` / `findPrev`。右上のバーと既定のセルの `<mark>`)、IME オンのままの直接入力(`imeDirectInput`。
+  透明な入力受けで変換を始め、確定した文字で編集を始める。数値の列は全角の数字を半角へ)、列幅の自動調整(`autoSizeColumns`・
+  列の境界のダブルクリック。合計行・状態チップ・固定行も幅に収める。列メニューの項目は段階 2-3)、列の並べ替え
+  (`onColumnsChange` があるときの見出しの grip。固定ペインへも移せる、`columnDragMotion: 'ghost' | 'live'`、Escape でやめる)、
+  行のドラッグ(`enableRowDrag` / `isRowDraggable` / `canDropRow` / `onRowMove` / `rowDragMotion`。ハンドル列、ソート / フィルター中は
+  淡色)。ハンドルの `moveRow` は React 版と同じく機能が無くても動く、フィルハンドル(`fillHandle` / `getFillValue`。選択範囲の
+  右下の四角を引いて連続データ / コピーで埋める、Ctrl / ⌘ で入れ替え、Escape でやめる、埋めたあとのボタンとメニューで選び直す、
+  四角のダブルクリックで隣の列に合わせて下へ、元に戻す 1 回で埋める前へ)、右クリックメニュー(`enableContextMenu` /
+  `getContextMenuItems` / `onContextMenuOpen`。セル / 行番号の右クリック、Shift+F10 / メニューキーでアクティブセルのメニュー、
+  項目が空なら標準のメニュー、項目の 4 種類(action / label / separator / custom)、↑ / ↓ / Home / End、Escape・外を押す・
+  スクロールで閉じる)
 
-無いもの(段階 2 の残り): `/lite` の残りの 13 の機能(ラベル行・SSRM・行のグループ・列フィルター・検索などを含む)。
+無いもの(段階 2 の残り): `/lite` の残りの 6 の機能(列メニュー・ツールパネル・列フィルター・SSRM・ラベル行・行のグループ)。
 
 `renderCell` / `renderHeader` / `renderTopBar` / `renderBottomBar` は、React 版のように描き直しのたびに呼ぶのではなく、Solid の部品と
 同じく必要なときだけ呼びます: `renderCell` は行(と値)や列が変わったとき、`renderHeader` は列が変わったとき、バーは関数が変わった
@@ -47,7 +58,7 @@ React 版と同じ DOM・class で描くので、React 版の `styles.css` を�
 ## 使い方
 
 ```sh
-pnpm --filter ./packages/solid dev          # デモ(10,000 行 × 39 列。エディタ 6 種・行の選択・展開行・行の高さの自動調整・合計行と固定行・条件付き書式・選択範囲の集計・スクロールのヒント・変更のハイライト・クロスヘア・テーマ・列の固定・グリッドを外すボタン)
+pnpm --filter ./packages/solid dev          # デモ(10,000 行 × 39 列。エディタ 6 種・行の選択・展開行・行の高さの自動調整・合計行と固定行・条件付き書式・選択範囲の集計・スクロールのヒント・変更のハイライト・クロスヘア・セル内検索・IME の直接入力・列の並べ替えと行のドラッグ(ghost / live)・フィルハンドル・右クリックメニュー・テーマ・列の固定・グリッドを外すボタン)
 pnpm --filter ./packages/solid test         # jsdom のテスト(Solid の JSX 変換の vitest 設定。React 版と並べて比べるテストも)
 pnpm --filter ./packages/solid typecheck
 pnpm --filter ./packages/solid spike:build  # 大きさを測るためのライブラリビルド(dist/)
@@ -60,13 +71,16 @@ pnpm --filter ./packages/solid spike:build  # 大きさを測るためのライ�
 | `hooks/useGridStore.ts`(useSyncExternalStore) | `primitives/gridStoreSignals.ts`(store を signal に。購読は `onSettled`) |
 | `hooks/useController.ts` | `primitives/controller.ts`(`createRenderEffect` / `createEffect` で `update`) |
 | `hooks/useVirtualizerCore.ts` | `primitives/columnVirtualizer.ts` |
-| `GridShell.tsx`(5,246 行) | `SpreadsheetGrid.tsx`(約 1,970 行) |
+| `GridShell.tsx`(5,246 行) | `SpreadsheetGrid.tsx`(約 2,630 行) |
 | `view/GridHeaderRow.tsx` / `view/GridBodyLayer.tsx` | 同じ名前(`view/`) |
-| `view/DefaultGridTopBar.tsx` / `DefaultGridBottomBar.tsx` / `RowSelectionCheckbox.tsx` / `GridDetailLayer.tsx` / `DetailToggleButton.tsx` / `GridChip.tsx` / `GridTotalRow.tsx` / `GridPinnedRows.tsx` / `GridSelectionAggregates.tsx` / `GridScrollHint.tsx` | 同じ名前(`view/`) |
+| `view/DefaultGridTopBar.tsx` / `DefaultGridBottomBar.tsx` / `RowSelectionCheckbox.tsx` / `GridDetailLayer.tsx` / `DetailToggleButton.tsx` / `GridChip.tsx` / `GridTotalRow.tsx` / `GridPinnedRows.tsx` / `GridSelectionAggregates.tsx` / `GridScrollHint.tsx` / `GridFindBar.tsx` | 同じ名前(`view/`) |
+| `features/rowDrag.tsx` のハンドルのセル(`renderHandleCell`) | `view/RowDragHandle.tsx` |
+| `view/FillHandleLayer.tsx`(ハンドル / 点線 / ボタン / メニュー / ツールチップ) | 同じ名前(`view/`。ペインの層の `FillHandleLayer` とポップアップの `FillHandlePortals` の 2 つに) |
+| `view/CellContextMenuPopover.tsx` / `hooks/useCellContextMenuController.ts` / `features/contextMenu.tsx` の params を作る関数 | `view/CellContextMenuPopover.tsx` / `primitives/contextMenu.ts` / `features/contextMenu.ts` |
 | `CopyRangeOverlay.tsx` / `ColumnHoverOverlay.tsx` | `view/CopyRangeOverlay.tsx`(2 つをまとめた) |
 | `features/*`(機能の部品)/ `createSpreadsheetGrid.tsx` | 同じ名前(入れた機能だけ) |
 | `editors/*`(CellEditorLayer / 6 種のエディタ / CheckboxCell / CellEditorErrorBubble) | 同じ名前(`editors/`) |
-| `hooks/usePortalTokens.ts` / `editors/useTopAlignedInput.ts` / `hooks/useSelectionAggregates.ts` | `primitives/portalTokens.ts` / `primitives/topAlignedInput.ts` / `primitives/selectionAggregates.ts` |
+| `hooks/usePortalTokens.ts` / `editors/useTopAlignedInput.ts` / `hooks/useSelectionAggregates.ts` / `hooks/useColumnAutosizeRunner.ts` / `hooks/useColumnHeaderDragController.ts` / `hooks/useRowDragController.ts` / `features/fillHandle.tsx` + `hooks/useFillHandleController.ts` | `primitives/portalTokens.ts` / `primitives/topAlignedInput.ts` / `primitives/selectionAggregates.ts` / `primitives/columnAutosize.ts` / `primitives/columnReorder.ts` / `primitives/rowDrag.ts` / `primitives/fillHandle.ts` |
 | (ポップアップの置き場所の props) | `context/portal.ts`(表の root と描く場所) |
 | `hooks/useGridLocaleText.ts`(Context) | `context/localeText.ts` |
 | (React の `useSyncExternalStore`) | `primitives/externalStore.ts`(OS の配色 / 視差効果を減らす設定) |

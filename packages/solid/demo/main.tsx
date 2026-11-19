@@ -139,9 +139,19 @@ function App() {
   const [scrollHint, setScrollHint] = createSignal(false);
   const [highlight, setHighlight] = createSignal(false);
   const [cross, setCross] = createSignal(false);
+  const [find, setFind] = createSignal('');
+  const [ime, setIme] = createSignal(false);
+  // 見出しの grip で並べ替えた列(onColumnsChange で受ける)。「品名を左へ固定」を押すと元の並びへ戻す。
+  const [userColumns, setUserColumns] = createSignal<GridColumn<Item>[] | null>(null);
+  const [liveDrag, setLiveDrag] = createSignal(false);
+  const [rowDrag, setRowDrag] = createSignal(false);
+  const [fillHandle, setFillHandle] = createSignal(true);
+  const [contextMenu, setContextMenu] = createSignal(true);
+  const [menuAction, setMenuAction] = createSignal('');
   // 「品名を左へ固定」で編集中の列のペインを変える(エディタが外れるときの blur で確定しないことの確かめ)。
   const columns = () =>
-    pinName() ? baseColumns.map((column) => (column.key === 'name' ? { ...column, pinned: 'left' as const } : column)) : baseColumns;
+    userColumns() ??
+    (pinName() ? baseColumns.map((column) => (column.key === 'name' ? { ...column, pinned: 'left' as const } : column)) : baseColumns);
   let handle: SpreadsheetGridHandle<Item> | undefined;
   return (
     <div style={{ padding: '16px', 'font-family': 'system-ui, sans-serif' }}>
@@ -156,7 +166,14 @@ function App() {
         <button type="button" data-testid="theme" onClick={() => setDark((v) => !v)}>
           ライト / ダーク
         </button>
-        <button type="button" data-testid="pin-name" onClick={() => setPinName((v) => !v)}>
+        <button
+          type="button"
+          data-testid="pin-name"
+          onClick={() => {
+            setUserColumns(null);
+            setPinName((v) => !v);
+          }}
+        >
           品名を左へ固定
         </button>
         <button type="button" data-testid="unmount" onClick={() => setMounted((v) => !v)}>
@@ -180,10 +197,30 @@ function App() {
         <button type="button" data-testid="cross" onClick={() => setCross((v) => !v)}>
           クロスヘア
         </button>
+        <button type="button" data-testid="open-find" onClick={() => handle?.openFind('品目 12')}>
+          検索を開く
+        </button>
+        <button type="button" data-testid="ime" onClick={() => setIme((v) => !v)}>
+          IME の直接入力
+        </button>
+        <button type="button" data-testid="drag-motion" onClick={() => setLiveDrag((v) => !v)}>
+          ドラッグ: ghost / live
+        </button>
+        <button type="button" data-testid="row-drag" onClick={() => setRowDrag((v) => !v)}>
+          行のドラッグ
+        </button>
+        <button type="button" data-testid="fill-handle" onClick={() => setFillHandle((v) => !v)}>
+          フィルハンドル
+        </button>
+        <button type="button" data-testid="context-menu" onClick={() => setContextMenu((v) => !v)}>
+          右クリックメニュー
+        </button>
+        <span data-testid="find">{find()}</span>
         <span data-testid="active">{active()}</span>
         <span data-testid="changes">{changes()}</span>
         <span data-testid="selected">{selected()}</span>
         <span data-testid="expanded">{expanded()}</span>
+        <span data-testid="menu-action">{menuAction()}</span>
       </div>
       <Show when={mounted()}>
         <SpreadsheetGrid<Item>
@@ -214,6 +251,65 @@ function App() {
           //   コピー範囲の点線(showCopyRange)は既定でオン。
           highlightChanges={highlight()}
           hoverHighlight={cross() ? 'cross' : 'row'}
+          // セル内検索: グリッドにフォーカスがあるときの Ctrl / ⌘ + F か「検索を開く」(openFind)。
+          find
+          // 「IME の直接入力」: IME をオンにしたままセルで打ち始められる(変換の確定で編集を始める)。
+          imeDirectInput={ime()}
+          // 列の並べ替え: 見出しにホバーすると出る grip を引く(固定ペインへも移せる)。「ドラッグ: ghost / live」で live 方式に。
+          onColumnsChange={(next) => setUserColumns(next)}
+          columnDragMotion={liveDrag() ? 'live' : 'ghost'}
+          // 「行のドラッグ」: 左端のハンドルで行を並べ替える(ソート中は淡色)。7 の倍数の行は掴めず、先頭へは落とせない。
+          enableRowDrag={rowDrag()}
+          rowDragMotion={liveDrag() ? 'live' : 'ghost'}
+          isRowDraggable={(row) => row.id % 7 !== 0}
+          canDropRow={(params) => params.toIndex !== 0}
+          // フィルハンドル(既定でオン): 選択範囲の右下の四角を引いて連続データ / コピーで埋める。Ctrl / ⌘ で入れ替え、Escape でやめる。
+          //   埋めたあとのボタンで選び直せ、四角のダブルクリックで隣の列に合わせて下へ埋める。
+          fillHandle={fillHandle()}
+          // 「右クリックメニュー」(既定でオン): セル / 行番号の右クリックか Shift+F10 / メニューキーで開く。分類の列は項目なし
+          //   (ブラウザの標準のメニュー)。
+          enableContextMenu={contextMenu()}
+          getContextMenuItems={(params) => {
+            const target = params.target;
+            if (target.type === 'rowHeader') {
+              return [
+                {
+                  label: `${target.row.name} を削除`,
+                  danger: true,
+                  onSelect: () => {
+                    setRows((current) => current.filter((row) => row.id !== target.row.id));
+                    setMenuAction(`行を削除:${target.row.id}`);
+                  },
+                },
+              ];
+            }
+            if (target.column.key === 'category') {
+              return [];
+            }
+            return [
+              { kind: 'label', label: `${target.column.title} / ${target.row.name}` },
+              { label: '値を控える', icon: '⧉', onSelect: () => setMenuAction(`控える:${String(target.value)}`) },
+              { label: '使えない項目', disabled: true, onSelect: () => setMenuAction('使えない') },
+              { kind: 'separator' },
+              {
+                kind: 'custom',
+                render: ({ close }) => (
+                  <button
+                    type="button"
+                    data-testid="menu-custom"
+                    style={{ margin: '4px 8px' }}
+                    onClick={() => {
+                      setMenuAction('自由な項目');
+                      close();
+                    }}
+                  >
+                    自由に描いた項目
+                  </button>
+                ),
+              },
+            ];
+          }}
+          onFindChange={(params) => setFind(`${params.open ? 'open' : 'closed'}:${params.query}:${params.currentIndex ?? '-'}/${params.matchCount}`)}
           ariaLabel="在庫表"
           onActiveCellChange={(cell) => setActive(cell ? `${cell.columnKey} / ${String(cell.rowKey)}` : '')}
           enableRowSelection

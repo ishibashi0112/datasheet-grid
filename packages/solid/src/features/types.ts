@@ -25,6 +25,18 @@ import type { createSelectionAggregates } from '../primitives/selectionAggregate
 import type { GridScrollHint } from '../view/GridScrollHint';
 import type { ColumnHoverOverlay, CopyRangeOverlay } from '../view/CopyRangeOverlay';
 import type { resolveScrollHintOptions } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/scrollHint';
+import type { splitTextByFindRanges } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/find';
+import type { GridFindBar } from '../view/GridFindBar';
+import type { createColumnAutosize } from '../primitives/columnAutosize';
+import type { createColumnReorder } from '../primitives/columnReorder';
+import type { createRowDrag } from '../primitives/rowDrag';
+import type { RowDragHandle } from '../view/RowDragHandle';
+import type { createFillHandle } from '../primitives/fillHandle';
+import type { FillHandleLayer, FillHandlePortals } from '../view/FillHandleLayer';
+import type { createCellContextMenu } from '../primitives/contextMenu';
+import type { CellContextMenuPopover } from '../view/CellContextMenuPopover';
+import type { BodyContextMenuInput, CellContextMenuInput } from './contextMenu';
+import type { GridContextMenuParams } from '../model/gridTypes';
 
 // 機能だけが使う文言の既定(core の logic/localeText<機能>.ts の表)。シェルが本体の既定に重ねて部品へ渡します(React 版と同じ)。
 type FeatureLocaleDefaults = { localeText?: Readonly<Partial<GridLocaleText>> | undefined };
@@ -74,6 +86,39 @@ export type SolidGridFeatures = {
         CopyRangeOverlay: typeof CopyRangeOverlay;
         ColumnHoverOverlay: typeof ColumnHoverOverlay;
       })
+    | undefined;
+  // 列幅の自動調整: 計測の時間分割ランナー(core)の接続。描画の部品は無い(計測中の overlay はシェルが描く)。
+  columnAutosize?: { createColumnAutosize: typeof createColumnAutosize } | undefined;
+  // 列見出しのドラッグによる並べ替え: ドラッグのコントローラ(core)の接続。見出しの grip とドロップの縦線はシェルが描く。
+  columnReorder?: { createColumnReorder: typeof createColumnReorder } | undefined;
+  // 行ドラッグによる並べ替え: ドラッグのコントローラ(core)の接続 + ハンドル列のセルの部品。ガイド線はシェルが描く。
+  rowDrag?: (FeatureLocaleDefaults & { createRowDrag: typeof createRowDrag; RowDragHandle: typeof RowDragHandle }) | undefined;
+  // フィルハンドル: コントローラ(core)の接続と位置の計算 + 各ペインのハンドル / 点線 / ボタンとメニュー / ツールチップの部品。
+  fillHandle?:
+    | (FeatureLocaleDefaults & {
+        createFillHandle: typeof createFillHandle;
+        FillHandleLayer: typeof FillHandleLayer;
+        FillHandlePortals: typeof FillHandlePortals;
+      })
+    | undefined;
+  // 右クリックメニュー: コントローラ(core)の接続 + ポップアップの部品 + 右クリックの対象(セル / 行番号)の解決。
+  contextMenu?:
+    | (FeatureLocaleDefaults & {
+        createCellContextMenu: typeof createCellContextMenu;
+        CellContextMenuPopover: typeof CellContextMenuPopover;
+        buildBodyContextMenuParams: <T>(input: BodyContextMenuInput<T>) => GridContextMenuParams<T> | null;
+        buildCellContextMenuParams: <T>(input: CellContextMenuInput<T>) => GridContextMenuParams<T> | null;
+      })
+    | undefined;
+  // IME オンのままの直接入力: 透明な入力受けのコントローラ + 入力してよいセルの判定 + 編集の初期値の決定(いずれも core)。
+  imeDirectInput?: NonNullable<GridCoreFeatures['imeDirectInput']> | undefined;
+  // セル内検索: 検索のコントローラ(core)+ 右上の検索バーの部品 + ヒットを分ける純関数(既定のセルの <mark>)。
+  find?:
+    | (NonNullable<GridCoreFeatures['find']> &
+        FeatureLocaleDefaults & {
+          FindBar: typeof GridFindBar;
+          splitTextByFindRanges: typeof splitTextByFindRanges;
+        })
     | undefined;
 };
 
