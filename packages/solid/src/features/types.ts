@@ -31,6 +31,8 @@ import type { createColumnAutosize } from '../primitives/columnAutosize';
 import type { createColumnReorder } from '../primitives/columnReorder';
 import type { createRowDrag } from '../primitives/rowDrag';
 import type { RowDragHandle } from '../view/RowDragHandle';
+import type { createFillHandle } from '../primitives/fillHandle';
+import type { FillHandleLayer, FillHandlePortals } from '../view/FillHandleLayer';
 
 // 機能だけが使う文言の既定(core の logic/localeText<機能>.ts の表)。シェルが本体の既定に重ねて部品へ渡します(React 版と同じ)。
 type FeatureLocaleDefaults = { localeText?: Readonly<Partial<GridLocaleText>> | undefined };
@@ -87,6 +89,14 @@ export type SolidGridFeatures = {
   columnReorder?: { createColumnReorder: typeof createColumnReorder } | undefined;
   // 行ドラッグによる並べ替え: ドラッグのコントローラ(core)の接続 + ハンドル列のセルの部品。ガイド線はシェルが描く。
   rowDrag?: (FeatureLocaleDefaults & { createRowDrag: typeof createRowDrag; RowDragHandle: typeof RowDragHandle }) | undefined;
+  // フィルハンドル: コントローラ(core)の接続と位置の計算 + 各ペインのハンドル / 点線 / ボタンとメニュー / ツールチップの部品。
+  fillHandle?:
+    | (FeatureLocaleDefaults & {
+        createFillHandle: typeof createFillHandle;
+        FillHandleLayer: typeof FillHandleLayer;
+        FillHandlePortals: typeof FillHandlePortals;
+      })
+    | undefined;
   // IME オンのままの直接入力: 透明な入力受けのコントローラ + 入力してよいセルの判定 + 編集の初期値の決定(いずれも core)。
   imeDirectInput?: NonNullable<GridCoreFeatures['imeDirectInput']> | undefined;
   // セル内検索: 検索のコントローラ(core)+ 右上の検索バーの部品 + ヒットを分ける純関数(既定のセルの <mark>)。

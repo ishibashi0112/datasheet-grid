@@ -1052,6 +1052,39 @@ export function GridShell<T extends object>(props: SpreadsheetGridProps<T>, feat
     computeIsWholeGridSelected(ui().selection, viewRowCount(), visibleColumns().length),
   );
 
+  // ── フィルハンドル(機能 features/fillHandle) ──
+  //   選択範囲(無ければアクティブセル)の右下の四角を引いて、連続データ / セルのコピーで埋めます。書き込みは貼り付けと同じ規則
+  //   (編集可否 / reject / ラベル行・グループ行を飛ばす)で、履歴付きの handleRowsChange へ流します。readOnly・書き込み先なしでは
+  //   休眠(React 版と同じ)。機能セットに無ければ何も描かず、prop は何もしません。
+  const fillHandleFeature = features.fillHandle;
+  const fill = fillHandleFeature?.createFillHandle<T>({
+    fillHandle: () => props.fillHandle,
+    readOnly,
+    isServerSide: () => false,
+    rows,
+    rowModel,
+    orderedColumns,
+    uiState: ui,
+    serverSideQueryKey: () => '',
+    serverSideRefreshToken: () => undefined,
+    canEditCell: () => props.canEditCell,
+    dispatch,
+    hitTest: pointer.getCellCoordFromClientPoint,
+    scrollContainerRef,
+    gridRootRef,
+    footerHeight,
+    stickyTopHeight,
+    handleRowsChange,
+    amendRowsChange: history.amendRowsChange,
+    applyServerSideCellEdits: () => undefined,
+    viewRowCount,
+    paneLayout,
+    vertical,
+    viewportHeight: () => view().viewportHeight,
+    scrollTop: () => view().scrollTop,
+    headerHeight,
+  });
+
   const resolvePageRow = (fromRow: number, direction: 1 | -1): number => {
     const pageHeight = Math.max(view().viewportHeight - headerHeight(), rowHeight());
     return resolvePageTargetRow(vertical().rowMetrics, fromRow, direction, pageHeight);
@@ -2102,6 +2135,16 @@ export function GridShell<T extends object>(props: SpreadsheetGridProps<T>, feat
             leadingWidth={leadingWidth()}
             baseOffset={vertical().overlayBaseOffset}
           />
+          {/* フィルハンドル: ハンドル / ドラッグ中の点線 / 埋めたあとのボタン。 */}
+          {fill && fillHandleFeature ? (
+            <fillHandleFeature.FillHandleLayer
+              fill={fill}
+              pane={pane}
+              headerHeight={headerHeight()}
+              leadingWidth={leadingWidth()}
+              baseOffset={vertical().overlayBaseOffset}
+            />
+          ) : null}
           <CellEditorLayer<T>
             rect={editorRect()}
             sessionId={editorSessionId()}
@@ -2217,6 +2260,7 @@ export function GridShell<T extends object>(props: SpreadsheetGridProps<T>, feat
             [`ssg-root--density-${density()}`]: density() !== 'standard',
             [MOTION_OFF_CLASS_NAME]: resolvedMotion() === 'off',
             'ssg-root--selecting': ui().dragState?.type === 'selection',
+            'ssg-root--filling': fill?.filling() ?? false,
             'ssg-root--animate-rows': animateRowsActive(),
             'ssg-root--dim-readonly': props.dimReadOnlyCells ?? false,
             'ssg-root--fill-height': heightLayout().fillParent,
@@ -2413,6 +2457,10 @@ export function GridShell<T extends object>(props: SpreadsheetGridProps<T>, feat
           </Show>
         </div>
         {bottomBar()}
+        {/* フィルハンドルの埋めたあとのメニュー / ドラッグ中の値のツールチップ(グリッドの外のポップアップ)。 */}
+        {fill && fillHandleFeature ? (
+          <fillHandleFeature.FillHandlePortals fill={fill} themeClassName={portalClassName()} />
+        ) : null}
       </div>
       </GridPortalContext>
     </GridLocaleTextContext>

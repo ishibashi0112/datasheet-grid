@@ -81,6 +81,7 @@ type SupportedPropKeys =
   | 'canDropRow'
   | 'onRowMove'
   | 'rowDragMotion'
+  | 'fillHandle'
   | 'renderTopBar'
   | 'renderBottomBar'
   | 'initialState'

@@ -1,7 +1,7 @@
 // React 版(`/lite` に同じ機能を差し込んだもの)と Solid 版の操作の機能を同じ操作で動かして、DOM と通知と命令的 API の結果が
 //   同じかを見る(段階 2-2)。
 import { afterAll, beforeAll, describe, it } from 'vitest';
-import { fireEvent } from '@solidjs/testing-library';
+import { createEvent, fireEvent } from '@solidjs/testing-library';
 import { installJsdomLayoutStubs } from '@ishibashi0112/spreadsheet-grid-core/testing';
 import { expectParity, type ParityContext } from './harness';
 
@@ -608,4 +608,182 @@ describe('行のドラッグ(rowDrag)', () => {
       },
     });
   }, 20_000);
+});
+
+describe('フィルハンドル(fillHandle)', () => {
+  // 固定列なし(jsdom の矩形はどれも (0, 0) からなので、中央ペインの左端も 0)。見出し 40px・行 30px・行番号 56px。
+  const fillColumns = [
+    { key: 'id', title: 'ID', width: 60, editable: false },
+    { key: 'name', title: '品名', width: 120 },
+    { key: 'qty', title: '数量', width: 80, align: 'right', editor: { type: 'number' } },
+    { key: 'price', title: '単価', width: 90, align: 'right', editor: { type: 'number' } },
+    { key: 'status', title: '状態', width: 100 },
+  ];
+  // 数量 / 単価は先頭の 2 行だけ値があり、下は空(ダブルクリックは空のセルへ埋める)。
+  const fillRows = (): Row[] =>
+    makeRows(10).map((row, index) => ({
+      ...row,
+      qty: index < 2 ? [3, 8][index] : (null as unknown as number),
+      price: index < 2 ? [5, 7][index] : (null as unknown as number),
+    }));
+  const columnLeft = (col: number) => fillColumns.slice(0, col).reduce((sum, column) => sum + column.width, 0);
+  const cellPoint = (row: number, col: number) => ({
+    clientX: columnLeft(col) + (fillColumns[col]?.width ?? 0) / 2,
+    clientY: 40 + row * 30 + 15,
+  });
+  // 押した時刻(ダブルクリックの判定)をそろえて送る。
+  const send = (
+    target: Element | Window,
+    type: 'pointerDown' | 'pointerMove' | 'pointerUp',
+    init: { clientX: number; clientY: number; ctrlKey?: boolean },
+    timeStamp: number,
+  ) => {
+    const event = createEvent[type](target, { ...pointer, ...init });
+    Object.defineProperty(event, 'timeStamp', { value: timeStamp });
+    fireEvent(target, event);
+  };
+  const fillHandleOf = (ctx: ParityContext) => {
+    const element = ctx.container.querySelector('.ssg-fill-handle');
+    if (!element) {
+      throw new Error(`[${ctx.framework}] ハンドルがありません`);
+    }
+    return element;
+  };
+  const values = (ctx: ParityContext) =>
+    (ctx.rows() as Row[]).map((row) => `${row.name}/${row.qty}/${row.price}`).join(' | ');
+  const select = (ctx: ParityContext, start: [number, number], end: [number, number]) =>
+    ctx.act(() => {
+      call(ctx, 'selectRange', { start: { row: start[0], col: start[1] }, end: { row: end[0], col: end[1] } });
+    });
+  // ハンドルを押して、指定のセルまで引いて離す。
+  const dragTo = async (ctx: ParityContext, row: number, col: number, timeStamp: number, ctrlKey = false) => {
+    await ctx.act(() => {
+      send(fillHandleOf(ctx), 'pointerDown', { clientX: 0, clientY: 0 }, timeStamp);
+      send(window, 'pointerMove', { ...cellPoint(row, col), ctrlKey }, timeStamp + 50);
+    });
+    ctx.snapshot(`引いている(${row}, ${col})`);
+    await ctx.act(() => {
+      send(window, 'pointerUp', { ...cellPoint(row, col), ctrlKey }, timeStamp + 100);
+    });
+  };
+
+  it.each([
+    ['あり', ['fillHandle'], true],
+    ['あり・getFillValue', ['fillHandle'], 'getFillValue'],
+    ['なし(空)', [], true],
+  ])('引いて埋める・ボタンで選び直す・Ctrl・Escape・ダブルクリック・元に戻す・出さない条件(機能%s)', async (_label, features, option) => {
+    await expectParity({
+      features,
+      watch: ['onActiveCellChange'],
+      props: () => ({
+        rows: fillRows(),
+        columns: fillColumns,
+        rowKeyGetter: (row: Row) => row.id,
+        height: 400,
+        rowHeight: 30,
+        headerHeight: 40,
+        rowHeaderWidth: 56,
+        fillHandle:
+          option === 'getFillValue'
+            ? {
+                // 数値の列は既定の値の 2 倍を書く(ドラッグ中のツールチップでも呼ばれる)。
+                getFillValue: (params: { column: { key: string }; defaultValue: unknown }) =>
+                  params.column.key === 'qty' && typeof params.defaultValue === 'number'
+                    ? params.defaultValue * 2
+                    : params.defaultValue,
+              }
+            : option,
+      }),
+      steps: async (ctx) => {
+        ctx.snapshot('はじめ');
+        // 数量の 2 セル(3, 8)を選ぶと右下に四角が出る。
+        await select(ctx, [0, 2], [1, 2]);
+        ctx.snapshot('範囲を選ぶ');
+        const hasHandle = ctx.container.querySelector('.ssg-fill-handle') !== null;
+        ctx.log('ハンドル', hasHandle);
+        if (hasHandle) {
+          // 下の 5 行目まで引く(連続データ = 13, 18, 23)。
+          await dragTo(ctx, 4, 2, 1000);
+          ctx.snapshot('埋めた');
+          ctx.log('値(埋めた)', values(ctx));
+          // ボタンでメニューを開き、↓ で次の項目へ、「セルのコピー」を選び直す。
+          await ctx.act(() => {
+            const chip = ctx.container.querySelector('.ssg-fill-options');
+            if (chip) {
+              fireEvent.click(chip);
+            }
+          });
+          ctx.snapshot('メニューを開く');
+          await ctx.act(() => {
+            const menu = document.querySelector('.ssg-fill-menu');
+            if (menu) {
+              fireEvent.keyDown(document.activeElement ?? menu, { key: 'ArrowDown' });
+            }
+          });
+          ctx.snapshot('メニューで ↓');
+          await ctx.act(() => {
+            const items = document.querySelectorAll('.ssg-fill-menu [role="menuitemradio"]');
+            const copy = items[1];
+            if (copy) {
+              fireEvent.click(copy);
+            }
+          });
+          ctx.snapshot('コピーに選び直す');
+          ctx.log('値(コピー)', values(ctx));
+          // 元に戻す 1 回で埋める前へ。
+          await ctx.act(() => {
+            fireEvent.keyDown(ctx.shell(), { key: 'z', ctrlKey: true });
+          }, 120);
+          ctx.log('値(元に戻す)', values(ctx));
+          ctx.snapshot('元に戻す');
+          // 品名(文字)を Ctrl を押しながら下へ = 埋め方を入れ替える(連続データ)。
+          await select(ctx, [0, 1], [0, 1]);
+          await dragTo(ctx, 3, 1, 3000, true);
+          ctx.log('値(Ctrl)', values(ctx));
+          ctx.snapshot('Ctrl で埋めた');
+          // 引いている途中に Escape でやめる。
+          await select(ctx, [5, 2], [5, 2]);
+          await ctx.act(() => {
+            send(fillHandleOf(ctx), 'pointerDown', { clientX: 0, clientY: 0 }, 5000);
+            send(window, 'pointerMove', cellPoint(8, 2), 5050);
+          });
+          await ctx.act(() => {
+            ctx.log('Escape を止めたか', !fireEvent.keyDown(ctx.shell(), { key: 'Escape' }));
+          });
+          ctx.snapshot('Escape でやめる');
+          await ctx.act(() => {
+            send(window, 'pointerUp', cellPoint(8, 2), 5100);
+          });
+          ctx.log('値(Escape)', values(ctx));
+          // ダブルクリック: 隣の列に値が続くところまで下へ(単価。左隣の数量は空なので、右隣の状態に合わせて最後の行まで)。
+          await select(ctx, [0, 3], [1, 3]);
+          await ctx.act(() => {
+            send(fillHandleOf(ctx), 'pointerDown', { clientX: 0, clientY: 0 }, 7000);
+            send(window, 'pointerUp', { clientX: 0, clientY: 0 }, 7050);
+            send(fillHandleOf(ctx), 'pointerDown', { clientX: 0, clientY: 0 }, 7200);
+            send(window, 'pointerUp', { clientX: 0, clientY: 0 }, 7250);
+          });
+          ctx.log('値(ダブルクリック)', values(ctx));
+          ctx.snapshot('ダブルクリック');
+          // 編集中は出さない。
+          await select(ctx, [2, 2], [2, 2]);
+          await ctx.act(() => {
+            fireEvent.keyDown(ctx.shell(), { key: 'F2' });
+          });
+          ctx.snapshot('編集中');
+          await ctx.act(() => {
+            const input = ctx.container.querySelector('.ssg-cell-editor input');
+            if (input) {
+              fireEvent.keyDown(input, { key: 'Escape' });
+            }
+          });
+        }
+        // readOnly では出さない。
+        await ctx.setProps({ readOnly: true });
+        ctx.snapshot('readOnly');
+        await ctx.setProps({ readOnly: false, fillHandle: false });
+        ctx.snapshot('fillHandle なし');
+      },
+    });
+  }, 30_000);
 });

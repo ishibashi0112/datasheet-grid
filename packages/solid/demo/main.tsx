@@ -145,6 +145,7 @@ function App() {
   const [userColumns, setUserColumns] = createSignal<GridColumn<Item>[] | null>(null);
   const [liveDrag, setLiveDrag] = createSignal(false);
   const [rowDrag, setRowDrag] = createSignal(false);
+  const [fillHandle, setFillHandle] = createSignal(true);
   // 「品名を左へ固定」で編集中の列のペインを変える(エディタが外れるときの blur で確定しないことの確かめ)。
   const columns = () =>
     userColumns() ??
@@ -206,6 +207,9 @@ function App() {
         <button type="button" data-testid="row-drag" onClick={() => setRowDrag((v) => !v)}>
           行のドラッグ
         </button>
+        <button type="button" data-testid="fill-handle" onClick={() => setFillHandle((v) => !v)}>
+          フィルハンドル
+        </button>
         <span data-testid="find">{find()}</span>
         <span data-testid="active">{active()}</span>
         <span data-testid="changes">{changes()}</span>
@@ -253,6 +257,9 @@ function App() {
           rowDragMotion={liveDrag() ? 'live' : 'ghost'}
           isRowDraggable={(row) => row.id % 7 !== 0}
           canDropRow={(params) => params.toIndex !== 0}
+          // フィルハンドル(既定でオン): 選択範囲の右下の四角を引いて連続データ / コピーで埋める。Ctrl / ⌘ で入れ替え、Escape でやめる。
+          //   埋めたあとのボタンで選び直せ、四角のダブルクリックで隣の列に合わせて下へ埋める。
+          fillHandle={fillHandle()}
           onFindChange={(params) => setFind(`${params.open ? 'open' : 'closed'}:${params.query}:${params.currentIndex ?? '-'}/${params.matchCount}`)}
           ariaLabel="在庫表"
           onActiveCellChange={(cell) => setActive(cell ? `${cell.columnKey} / ${String(cell.rowKey)}` : '')}

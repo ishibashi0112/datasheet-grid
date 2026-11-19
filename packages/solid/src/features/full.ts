@@ -4,6 +4,7 @@ import { columnAutosizeFeature } from './columnAutosize';
 import { columnReorderFeature } from './columnReorder';
 import { conditionalFormatFeature } from './conditionalFormat';
 import { exportFeature } from './export';
+import { fillHandleFeature } from './fillHandle';
 import { findFeature } from './find';
 import { imeDirectInputFeature } from './imeDirectInput';
 import { motionExtrasFeature } from './motionExtras';
@@ -28,4 +29,5 @@ export const fullGridFeatures = {
   columnAutosize: columnAutosizeFeature,
   columnReorder: columnReorderFeature,
   rowDrag: rowDragFeature,
+  fillHandle: fillHandleFeature,
 } satisfies Required<GridFeatures> as unknown as Required<SolidGridFeatures>;

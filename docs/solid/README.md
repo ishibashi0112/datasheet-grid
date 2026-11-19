@@ -158,7 +158,7 @@ React 版の機能なしの構成と並べて、同じ props・同じ操作で D
 | # | 内容 | 状況 |
 | --- | --- | --- |
 | 2-1 | 機能を差し込む仕組み + 表示の機能 8 つ(totalRow / pinnedRows / conditionalFormat / selectionAggregates / scrollHint / motionExtras / export / autoHeight) | 済み(PR #65、2026-11-19 マージ。2-1a: 仕組み(`features/types.ts` / `createSpreadsheetGrid.tsx` / `features/full.ts`、比べるテストの `features`)と export、2-1b: autoHeight、2-1c: conditionalFormat、2-1d: totalRow + pinnedRows、2-1e: selectionAggregates、2-1f: scrollHint、2-1g: motionExtras) |
-| 2-2 | 操作の機能 7 つ(find / fillHandle / columnReorder / rowDrag / columnAutosize / imeDirectInput / contextMenu) | 作業中(2-2a: find、2-2b: imeDirectInput、2-2c: columnAutosize、2-2d: columnReorder、2-2e: rowDrag = 済み) |
+| 2-2 | 操作の機能 7 つ(find / fillHandle / columnReorder / rowDrag / columnAutosize / imeDirectInput / contextMenu) | 作業中(2-2a: find、2-2b: imeDirectInput、2-2c: columnAutosize、2-2d: columnReorder、2-2e: rowDrag、2-2f: fillHandle = 済み) |
 | 2-3 | ポップアップ 3 つ(columnMenu / toolPanel / filtering) | まだ |
 | 2-4 | 行のモデル 3 つ(serverSide / labelRow / grouping) | まだ |
 
@@ -183,7 +183,15 @@ React 版の機能なしの構成と並べて、同じ props・同じ操作で D
 - **比べるテストで気をつけること**: jsdom の要素の矩形はどれも同じ大きさなので、列のドラッグはいつも左の固定ペインにいる扱いに
   なる(中央の中の並べ替えと実際の位置は Chromium で見る)。行のドラッグの縦の位置は行の高さの計算で決まるので jsdom でも通る。
   ドラッグのゴーストはライトのテーマでは `ssg-` の class が無いので、body 直下の要素として `[data-grid-drag-ghost]` も控える
-  ようにした。見出しの普通のクリックは列の選択で、ソートは Shift + クリック。
+  ようにした。見出しの普通のクリックは列の選択で、ソートは Shift + クリック。フィルハンドルのダブルクリックは押した時刻で決まる
+  ので、比べるテストではイベントの `timeStamp` をそろえて送る(React 版の結合テストと同じ)。
+- **表の状態が変わるたびに新しいオブジェクトになる値は、項目ごとに memo で受ける**: core の縦のレイアウトの答え
+  (`resolveVerticalLayout`)は呼ぶたびに新しいオブジェクトを返す(中の `rowMetrics` などは同じ参照)。フィルハンドルの
+  埋めたあとのボタンの位置をそれでまるごと読むと、別のセルを押しただけで位置を計算し直し、続いてコントローラがボタンを消した
+  ときにもう 1 回計算していた(Solid の開発時の EFFECT_RELAY_TEAR)。項目ごとの memo にし、ルートの `ssg-root--filling` も
+  真偽値の memo にして、Chromium のデモで警告が出ないことを確かめた。React 版は描くたびに計算し直すので、この差は無い。
+- **ref の関数の中では `onCleanup` を呼べない**(Solid 2.0 の CLEANUP_IN_FORBIDDEN_SCOPE): コントローラの外側クリックの判定に
+  使うボタン / メニューの要素の控えは、部品の本体で `onCleanup` を登録して外したときに消す(React 版の ref の null)。
 
 ### 2-1 で分かったこと
 
