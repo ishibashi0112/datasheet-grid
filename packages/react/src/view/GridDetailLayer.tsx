@@ -3,6 +3,7 @@ import { useIsomorphicLayoutEffect } from '../hooks/useController';
 import type { VerticalRow } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/verticalGeometry';
 import { cx } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/cx';
 import { mergeStyles } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/slotProps';
+import { notifyDetailCardFocusLost } from '@ishibashi0112/spreadsheet-grid-core/internal/controllers/detailRowController';
 import type { GridResolvedSlot, GridResolvedSlots } from '../model/gridTypes';
 
 // 展開行(detail)レイヤーです(detail batch 3)。
@@ -60,17 +61,8 @@ function DetailCard({
   const cardRef = useRef<HTMLDivElement | null>(null);
   useIsomorphicLayoutEffect(() => {
     const card = cardRef.current;
-    return () => {
-      if (!onFocusLost || !card || !card.contains(document.activeElement)) {
-        return;
-      }
-      queueMicrotask(() => {
-        const active = document.activeElement;
-        if (!card.isConnected && (active === null || active === document.body)) {
-          onFocusLost();
-        }
-      });
-    };
+    // 変更(Solid 版 段階 1-3): 判定は core controllers/detailRowController(Solid 版と共用)。
+    return () => notifyDetailCardFocusLost(card, onFocusLost);
   }, [onFocusLost]);
   return (
     <div ref={cardRef} {...props}>
