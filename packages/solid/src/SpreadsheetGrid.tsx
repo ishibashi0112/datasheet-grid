@@ -186,7 +186,9 @@ export function SpreadsheetGrid<T extends object>(props: SpreadsheetGridProps<T>
   const enableSelectAllRows = () =>
     props.enableSelectAllRows ?? (enableRowSelection() && rowSelectionMode() === 'multiple');
   // 展開行(Master/Detail)。detailRow の指定が無ければ機能は休眠します。
-  const detailRowEnabled = () => props.detailRow != null;
+  // memo(renderCell の ctx.detail の getter が読むので、props がまとめて新しくなったとき(スプレッドで渡す書き方)に、
+  //   値が同じでもそれを本体で読むセルを作り直さないように)。
+  const detailRowEnabled = createMemo(() => props.detailRow != null);
   const detailToggleColumnActive = () => props.detailRow != null && props.detailRow.showToggleColumn !== false;
   const columnInputs = () => ({
     columns: columns(),
@@ -568,8 +570,10 @@ export function SpreadsheetGrid<T extends object>(props: SpreadsheetGridProps<T>
     setExpandedKeys: (keys: ReadonlySet<GridRowKey>) => dispatch(gridActions.setExpandedDetailRowKeys(keys)),
   }));
   // 行だけで論理の全高の上限を超える表(約 50 万行〜)では展開行を描けないので、トグルを出さずキーでも開閉しない(AP-26)。
-  const detailDrawable = () => vertical().baseRowMetrics.totalBodyHeight <= MAX_BODY_PX;
-  const hasDetailCards = () => detailRowEnabled() && vertical().detailEntries.length > 0;
+  //   どちらも memo(スクロールのたびに変わる縦のレイアウトから真偽だけを取り出す。renderCell の本体やトグル列の Show が
+  //   ctx.detail.expandable を読んでも、スクロールで作り直さず、isExpandable を呼び直さないように)。
+  const detailDrawable = createMemo(() => vertical().baseRowMetrics.totalBodyHeight <= MAX_BODY_PX);
+  const hasDetailCards = createMemo(() => detailRowEnabled() && vertical().detailEntries.length > 0);
   // 開閉(閉じる前にカードの中のフォーカスを表へ戻す)と、カードと Tab の順は core controllers/detailRowController(React 版と共用)。
   const detailRows = createDetailRowController<T>();
   connectController(detailRows, () => ({
@@ -1200,12 +1204,18 @@ export function SpreadsheetGrid<T extends object>(props: SpreadsheetGridProps<T>
     if (column.renderCell) {
       // ctx.detail(任意のセルからの展開行の開閉の口)。detailRow の指定がある間だけ渡し、値は読んだときに引きます。
       //   開閉は押した時点の行の位置で(React 版は描いた時点の位置。描き直すたびに新しくなるので同じ)。
+      //   expanded / expandable はこのセルの行の値だけの memo(開いている行の集合ぜんたいを読むと、どれか 1 行の開閉で
+      //   本体でこれを読むその列のすべてのセルを作り直すため)。
+      const expanded = createMemo(() => ui().expandedDetailRowKeys.has(cell.rowKey));
+      const expandable = createMemo(() =>
+        isDetailRowExpandable(detailDrawable(), props.detailRow?.isExpandable, row, cell.rowKey, cell.sourceRowIndex),
+      );
       const detail: CellDetailContext = {
         get expanded() {
-          return ui().expandedDetailRowKeys.has(cell.rowKey);
+          return expanded();
         },
         get expandable() {
-          return isDetailRowExpandable(detailDrawable(), props.detailRow?.isExpandable, row, cell.rowKey, cell.sourceRowIndex);
+          return expandable();
         },
         toggle: () => detailRows.toggleAt(cell.rowKey, untrack(() => cell.rowIndex)),
         setExpanded: (expanded: boolean) => detailRows.setExpandedAt(cell.rowKey, untrack(() => cell.rowIndex), expanded),

@@ -20,7 +20,7 @@ import {
   seedDetailIndexCache,
   type DetailIndexCacheHolder,
 } from '../logic/detailRow';
-import { isImeComposingKeyEvent } from '../logic/domGuards';
+import { isImeComposingKeyEvent, isTabKeyEvent } from '../logic/domGuards';
 import { findDetailCard, focusDetailCardEdge, isTabEdgeOfCard } from './detailTabOrder';
 
 type ElementRef = { readonly current: HTMLElement | null };
@@ -67,9 +67,10 @@ export type DetailRowController<T> = {
   handleRootKeyDownAfter: (event: KeyboardEvent) => void;
 };
 
-// 修飾キーつき / IME の変換中 / 既に処理された Tab は扱いません。
+// 修飾キーつき / IME の変換中 / 既に処理された Tab は扱いません。key は React の合成イベントと同じく keyCode でも見ます
+//   (logic/domGuards の isTabKeyEvent。WebKitGTK の Shift+Tab は key='Unidentified')。
 const isPlainTab = (event: KeyboardEvent): boolean =>
-  event.key === 'Tab' &&
+  isTabKeyEvent(event) &&
   !event.defaultPrevented &&
   !event.altKey &&
   !event.ctrlKey &&

@@ -448,4 +448,104 @@ describe('展開行(Master/Detail)', () => {
       },
     });
   });
+
+  // 別視点のレビュー(段階 1-3)の中 2 件と低 1 件: render / renderCell の本体で ctx を読む書き方(引数の分解など)でも、
+  //   その行の値が変わらない限り中身を作り直さない(React 版は同じ要素を使い回す)。
+  it('本体で ctx を読む render / renderCell: ほかの行の編集・並べ替え・ほかの行の開閉・行の追加とスクロールで中身を作り直さない', async () => {
+    type BodyCtx = { value: unknown; detail?: { expanded: boolean; expandable: boolean } };
+    const cellText = (ctx: BodyCtx) => {
+      // 本体で読む(Solid ではこの読み取りが追跡される)。
+      const expanded = ctx.detail?.expanded;
+      const expandable = ctx.detail?.expandable;
+      return `${String(ctx.value)}:${expanded ? '開' : '閉'}:${expandable ? '可' : '不可'}`;
+    };
+    await expectParity({
+      props: (framework) => ({
+        rows: makeRows(6),
+        columns: [
+          ...columns.slice(0, 1),
+          {
+            key: 'name',
+            title: '品名',
+            width: 160,
+            renderCell:
+              framework === 'react'
+                ? (ctx: BodyCtx) => createElement('span', { className: 'my-cell' }, cellText(ctx))
+                : (ctx: BodyCtx) => {
+                    const text = cellText(ctx);
+                    return <span class="my-cell">{text}</span>;
+                  },
+          },
+          ...columns.slice(2),
+        ],
+        rowKeyGetter: (row: Row) => row.id,
+        height: 360,
+        detailRow: {
+          height: 60,
+          isExpandable: (row: Row) => row.id !== 3,
+          render:
+            framework === 'react'
+              ? ({ row, collapse }: { row: Row; collapse: () => void }) =>
+                  createElement(
+                    'div',
+                    { className: 'detail-body' },
+                    createElement('span', { className: 'detail-title' }, row.name),
+                    createElement('input', { className: 'detail-input', 'aria-label': '詳細の入力' }),
+                    createElement('button', { type: 'button', className: 'detail-close', onClick: collapse }, '閉じる'),
+                  )
+              : ({ row, collapse }: { row: Row; collapse: () => void }) => {
+                  const name = row.name;
+                  return (
+                    <div class="detail-body">
+                      <span class="detail-title">{name}</span>
+                      <input class="detail-input" aria-label="詳細の入力" />
+                      <button type="button" class="detail-close" onClick={() => collapse()}>
+                        閉じる
+                      </button>
+                    </div>
+                  );
+                },
+        },
+      }),
+      watch: ['onExpandedDetailRowKeysChange'],
+      steps: async (ctx) => {
+        await ctx.act(() => {
+          (ctx.handle().setDetailRowExpanded as (key: number, expanded: boolean) => void)(2, true);
+        });
+        ctx.snapshot('2 を開く');
+        const cardInput = () =>
+          Array.from(ctx.container.querySelectorAll('[data-ssg-detail]'))
+            .find((element) => element.textContent?.startsWith('品目 2'))
+            ?.querySelector('.detail-input') ?? null;
+        ctx.track('2 のカードの入力欄', cardInput);
+        ctx.track('1 のセルの中身', () => ctx.container.querySelector('[data-row-key="1"] .my-cell'));
+        ctx.track('2 のセルの中身', () => ctx.container.querySelector('[data-row-key="2"] .my-cell'));
+        await ctx.setProps({
+          rows: (ctx.rows() as Row[]).map((row) => (row.id === 6 ? { ...row, name: '品目 6 改' } : row)),
+        });
+        ctx.snapshot('ほかの行(6)を書き換える');
+        for (let index = 0; index < 2; index += 1) {
+          await ctx.act(() => {
+            const header = ctx.header('qty');
+            fireEvent.pointerDown(header, { ...pointer, shiftKey: true });
+            fireEvent.pointerUp(window, { ...pointer, shiftKey: true });
+          });
+        }
+        ctx.snapshot('数量の降順');
+        await ctx.act(() => {
+          (ctx.handle().setDetailRowExpanded as (key: number, expanded: boolean) => void)(5, true);
+        });
+        ctx.snapshot('ほかの行(5)を開く');
+        await ctx.setProps({ rows: [...(ctx.rows() as Row[]), ...makeRows(40).slice(6)] });
+        const scroller = ctx.container.querySelector<HTMLElement>('.ssg-scroll-container');
+        await ctx.act(() => {
+          if (scroller) {
+            scroller.scrollTop = 10;
+            scroller.dispatchEvent(new Event('scroll'));
+          }
+        }, 120);
+        ctx.snapshot('行を足して少しスクロール');
+      },
+    });
+  });
 });

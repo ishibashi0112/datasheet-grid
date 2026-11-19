@@ -92,16 +92,20 @@ function DetailCard<T>(props: {
   const layer = props.layer;
   const rowKey = untrack(() => props.entry().rowKey);
   // 利用側の render へ渡す文脈。位置は読んだときに引く(並びが変わってもカードの中身を作り直さない。renderCell と同じ)。
+  //   行と元の位置はこの行の値だけの memo(rowModel はどの行が変わっても新しくなるので、そのまま読むと、render の本体で
+  //   ctx.row を読む書き方(引数の分解など)で、ほかの行の編集や並べ替えのたびに中身を作り直す)。
+  const row = createMemo(() => layer.rowModel.getRow(props.index()));
+  const sourceRowIndex = createMemo(() => layer.rowModel.getSourceIndex(props.index()) ?? props.index());
   const ctx: DetailRowRenderContext<T> = {
     get row() {
-      return layer.rowModel.getRow(props.index()) as T;
+      return row() as T;
     },
     rowKey,
     get rowIndex() {
       return props.index();
     },
     get sourceRowIndex() {
-      return layer.rowModel.getSourceIndex(props.index()) ?? props.index();
+      return sourceRowIndex();
     },
     collapse: () => layer.onCollapse?.(rowKey, untrack(props.index)),
   };
@@ -133,7 +137,7 @@ function DetailCard<T>(props: {
         onDragStart={stopPropagation}
         onDblClick={stopPropagation}
       >
-        <Show when={layer.rowModel.getRow(props.index()) !== undefined}>{layer.renderCard?.(ctx)}</Show>
+        <Show when={row() !== undefined}>{layer.renderCard?.(ctx)}</Show>
       </div>
     </div>
   );

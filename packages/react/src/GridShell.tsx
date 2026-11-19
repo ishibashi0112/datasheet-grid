@@ -758,7 +758,7 @@ export function useGridShell<T extends object>({
   const detailIndexCacheHolder = engine.detailIndexCache;
   // 変更(Solid 版 段階 1-3): 開閉(閉じる前にカードの中のフォーカスを表へ戻す = 段階 2 の確かめ直し C-N6 / C-N7)と、展開行の
   //   カードと Tab の順(段階 2 C-N2)は core controllers/detailRowController(Solid 版と共用)。接続(update)は下の
-  //   キー操作の後で行います(メソッドは参照安定で、呼ばれた時点の最新の args を読む)。
+  //   useControllerLifecycle で行います(メソッドは参照安定で、呼ばれた時点の最新の args を読む)。
   const [detailRows] = useState(createDetailRowController<T>);
   // 追加(label-row ②): ラベル行(見出し / 区切り行)のオプションを分解します(下流の memo 依存を
   //   プリミティブ / 関数参照にするため。labelRow オブジェクトをインラインで渡しても各段は揺れません)。

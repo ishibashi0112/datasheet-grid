@@ -169,6 +169,28 @@ describe('Tab の順', () => {
     expect(scrollCellIntoView).toHaveBeenCalledWith({ row: 1, col: 2 });
   });
 
+  it('key が Unidentified で keyCode が 9 の Shift+Tab も Tab とみなす(WebKitGTK。React の合成イベントと同じ判定)', () => {
+    const { controller, actions, scroll, shell } = setup([1]);
+    const card = scroll.querySelector<HTMLElement>('[data-ssg-detail]')!;
+    const first = document.getElementById('first-1')!;
+    first.focus();
+    const backward = keydown(first, { key: 'Unidentified', shiftKey: true });
+    Object.defineProperty(backward, 'keyCode', { value: 9 });
+    controller.handleCardKeyDown(backward, card, 1);
+    expect(backward.defaultPrevented).toBe(true);
+    expect(actions).toEqual([
+      gridActions.startSelection({ row: 1, col: 2 }),
+      gridActions.endSelection(),
+      gridActions.activateCell({ row: 1, col: 2 }),
+    ]);
+    expect(document.activeElement).toBe(shell);
+    // keyCode が 9 でない Unidentified は Tab ではない。
+    first.focus();
+    const other = keydown(first, { key: 'Unidentified', shiftKey: true });
+    controller.handleCardKeyDown(other, card, 1);
+    expect(other.defaultPrevented).toBe(false);
+  });
+
   it('カードの端でない要素 / 修飾キー / カードの外(portal)の要素の Tab は既定のまま', () => {
     const { controller, actions, scroll, after } = setup([1]);
     const card = scroll.querySelector<HTMLElement>('[data-ssg-detail]')!;
