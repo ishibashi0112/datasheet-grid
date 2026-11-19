@@ -53,7 +53,7 @@ import { resolveGridThemeClassName } from '@ishibashi0112/spreadsheet-grid-core/
 import { MOTION_OFF_CLASS_NAME, resolveGridMotion } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/motion';
 import { systemColorSchemeStore } from '@ishibashi0112/spreadsheet-grid-core/internal/controllers/systemColorSchemeStore';
 import { reducedMotionStore } from '@ishibashi0112/spreadsheet-grid-core/internal/controllers/reducedMotionStore';
-import { createLocaleTextResolver } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/localeText';
+import { createLocaleTextResolver, formatLocaleText } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/localeText';
 import { EMPTY_TOTAL_ROW_CELLS } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/totalRow';
 import {
   resolveSlotFromSignature,
@@ -188,6 +188,13 @@ export function GridShell<T extends object>(props: SpreadsheetGridProps<T>, feat
   const readOnly = () => props.readOnly ?? false;
   const enableRangeSelection = () => props.enableRangeSelection ?? true;
   const enableSorting = () => props.enableSorting ?? true;
+  // 手動ソート / 手動フィルター: 並びと状態の通知はそのままで、行の並べ替え / 絞り込みはしない(利用側が rows を並べて渡す)。
+  const manualSorting = () => props.manualSorting ?? false;
+  const manualFiltering = () => props.manualFiltering ?? false;
+  // グローバルフィルター(上部バーの検索欄)と列フィルター(機能 features/filtering。無い構成では createSpreadsheetGrid が
+  //   どちらも false にする)。
+  const globalFilterEnabled = () => props.enableGlobalFilter ?? true;
+  const columnFilterEnabled = () => props.enableColumnFilter ?? true;
   const enableRowHover = () => props.enableRowHover ?? true;
   const enableColumnResize = () => props.enableColumnResize ?? true;
   const activeRowFollowEnabled = () => (props.activeCellFollows ?? 'position') === 'row';
@@ -255,8 +262,8 @@ export function GridShell<T extends object>(props: SpreadsheetGridProps<T>, feat
     columnInputs: untrack(columnInputs),
     serverSide: {
       isServerSide: false,
-      enableGlobalFilter: false,
-      enableColumnFilter: false,
+      enableGlobalFilter: untrack(globalFilterEnabled),
+      enableColumnFilter: untrack(columnFilterEnabled),
       enableSorting: untrack(enableSorting),
     },
   });
@@ -311,19 +318,53 @@ export function GridShell<T extends object>(props: SpreadsheetGridProps<T>, feat
     previousColumnsForWidths = next;
   });
 
-  // ── 行(clientSide だけ。フィルター / グループ / ラベル行は機能なので無し) ──
+  // ── 行(clientSide だけ。グループ / ラベル行は機能なので無し) ──
   const baseOrder = createMemo(() => engine.rowPipeline.resolveBaseOrder(rows().length, null));
+  // フィルター(機能 features/filtering)。グローバルフィルターの適用(大きな表は時間分割)と相対日付プリセットの基準日。
+  //   列フィルターの段は行パイプライン(エンジンが機能から作る)が掛ける。無い構成では恒等の並びのまま(React 版と同じ)。
+  const globalFilterText = createMemo(() => selectGlobalFilter(ui()));
+  const columnFilters = createMemo(() => ui().filters.columnFilters);
+  const filterSortColumns = createMemo(() => columnResolution().filterSortColumns);
+  const filterOrder =
+    features.filtering?.createFilterOrder<T>({
+      rows,
+      baseOrder,
+      visibleColumns,
+      // 相対日付プリセットの範囲の解決は、フィルター / ソートの対象の列(非表示列を含む)で見る(React 版と同じ)。
+      effectiveColumns: filterSortColumns,
+      globalFilterText,
+      globalFilterMatch: () => props.globalFilterMatch ?? 'value',
+      globalFilterEnabled,
+      columnFilterEnabled,
+      columnFilters,
+      manualFiltering,
+      isServerSide: () => false,
+      dateRollover: engine.dateRollover,
+    }) ?? null;
+  const filteringAvailable = filterOrder !== null;
+  const globalFilteredOrder = filterOrder ? filterOrder.globalFilteredOrder : baseOrder;
+  const globalFilterStatus = filterOrder ? filterOrder.globalFilterStatus : () => 'idle' as const;
+  const globalFilterProgress = filterOrder ? filterOrder.globalFilterProgress : () => 1;
+  const relativeDateKey = filterOrder ? filterOrder.relativeDateKey : () => '';
   const orderResolution = createMemo(() =>
     engine.rowPipeline.resolveOrder({
       rows: rows(),
       labelLayout: null,
-      filterSortColumns: columnResolution().filterSortColumns,
-      columnFilters: ui().filters.columnFilters,
-      globalFilteredOrder: baseOrder(),
+      filterSortColumns: filterSortColumns(),
+      columnFilters: columnFilters(),
+      globalFilteredOrder: globalFilteredOrder(),
       sort: ui().sort,
       rowDragAvailable: columnResolution().rowDragAvailable,
+      manualFiltering: manualFiltering(),
+      manualSorting: manualSorting(),
+      relativeDateKey: relativeDateKey(),
     }),
   );
+  // 手動フィルターで rows が 0 件のとき、フィルターが載っていれば「一致する行がありません」を出す(絞り込みは外部で済んで
+  //   いるため、rows.length === 0 だけでは区別できない。React 版と同じ)。
+  const filterConditionsActive = () =>
+    globalFilterText().trim().length > 0 || Object.keys(columnFilters()).length > 0;
+  const manualFilterActive = () => manualFiltering() && filterConditionsActive();
   // 行ドラッグの合成列があるか(ガイド線を描くか)と、いま動かせるか(表示順が rows の順のとき = ソート / フィルターなし)。
   const rowDragAvailable = () => columnResolution().rowDragAvailable;
   const rowDragOperable = () => orderResolution().rowDragOperable;
@@ -338,7 +379,9 @@ export function GridShell<T extends object>(props: SpreadsheetGridProps<T>, feat
       collapsedGroupKeys: ui().collapsedGroupKeys,
       rowKeyGetter: resolvedRowKeyGetter(),
       sort: ui().sort,
-      sortActive: ui().sort.length > 0,
+      // 手動ソートでは並べ替えていない(グループ / ラベル行の並びも同じ。React 版と同じ)。
+      sortActive: !manualSorting() && ui().sort.length > 0,
+      manualSorting: manualSorting(),
     }),
   );
   const rowModel = () => clientRowModel().rowModel;
@@ -1769,17 +1812,20 @@ export function GridShell<T extends object>(props: SpreadsheetGridProps<T>, feat
     rows: rows(),
     columns: props.columns as GridColumn<T>[],
     visibleColumns: visibleColumns() as unknown as GridColumn<T>[],
-    globalFilterText: selectGlobalFilter(ui()),
-    columnFilterValues: ui().filters.columnFilters,
+    globalFilterText: globalFilterText(),
+    columnFilterValues: columnFilters(),
     sortState: ui().sort,
     activeCell: ui().activeCell,
     selection: ui().selection,
   }));
-  // 機能なしの構成ではフィルターが行に効かないので、状態にあっても「絞り込み: …」に数えない(React 版の filtersApplied)。
+  // フィルターの機能が無い構成ではフィルターが行に効かないので、状態にあっても「絞り込み: …」に数えない(React 版の
+  //   filtersApplied)。
   const derivedSummary = createMemo(
     (): SpreadsheetGridDerivedSummary =>
       buildGridDerivedSummary(
-        { ...slotContextBase(), globalFilterText: '', columnFilterValues: NO_COLUMN_FILTERS },
+        filteringAvailable
+          ? slotContextBase()
+          : { ...slotContextBase(), globalFilterText: '', columnFilterValues: NO_COLUMN_FILTERS },
         viewRowCount(),
         undefined,
         columnNamer(),
@@ -1812,8 +1858,8 @@ export function GridShell<T extends object>(props: SpreadsheetGridProps<T>, feat
       },
       setGlobalFilterText,
       derivedSummary: derivedSummary(),
-      globalFilterStatus: 'idle',
-      globalFilterProgress: 1,
+      globalFilterStatus: globalFilterStatus(),
+      globalFilterProgress: globalFilterProgress(),
       selectionAggregates: selectionAggregates(),
     };
   });
@@ -1833,6 +1879,9 @@ export function GridShell<T extends object>(props: SpreadsheetGridProps<T>, feat
     return render ? untrack(() => render(liveSlotContext)) : undefined;
   });
   const showTopBarSummary = () => props.showTopBarSummary ?? true;
+  // 既定の上部バーの検索欄は showTopBarFilter かつグローバルフィルターが有効なとき(無効な機能の入力欄は出さない)。要約も
+  //   検索欄も出さないときはバーごと描かない(空のバーを出さない。React 版と同じ)。
+  const showTopBarFilter = () => (props.showTopBarFilter ?? true) && globalFilterEnabled();
   // 上下のバー(React 版と同じ選び方: 出さない → 利用側のバー → 既定のバー)。条件は Show で分け、条件が変わったときだけ
   //   作り直す(props が広げ直されても既定のバーを作り直さない)。
   const topBar = () => (
@@ -1840,12 +1889,17 @@ export function GridShell<T extends object>(props: SpreadsheetGridProps<T>, feat
       <Show
         when={renderTopBarFn() !== undefined}
         fallback={
-          <Show when={showTopBarSummary()}>
+          <Show when={showTopBarSummary() || showTopBarFilter()}>
             <DefaultGridTopBar
               slot={slots().toolbar}
               derivedSummary={derivedSummary()}
+              globalFilterText={globalFilterText()}
+              setGlobalFilterText={setGlobalFilterText}
               showSummary={showTopBarSummary()}
+              showFilter={showTopBarFilter()}
               showCounts={props.showTopBarCounts ?? true}
+              globalFilterPlaceholder={props.globalFilterPlaceholder}
+              globalFilterIcon={props.globalFilterIcon}
             />
           </Show>
         }
@@ -2221,8 +2275,8 @@ export function GridShell<T extends object>(props: SpreadsheetGridProps<T>, feat
           entries={entries()}
           hoveredColumnIndex={view().hoveredColumnIndex}
           selection={selectionSnapshot()}
-          // 機能なしの構成ではフィルターが行に効かないので、見出しのフィルター中の印も出さない(React 版と同じ)。
-          columnFilterValues={NO_COLUMN_FILTERS}
+          // フィルターの機能が無い構成ではフィルターが行に効かないので、見出しのフィルター中の印も出さない(React 版と同じ)。
+          columnFilterValues={filteringAvailable ? columnFilters() : NO_COLUMN_FILTERS}
           sort={ui().sort}
           enableColumnResize={enableColumnResize()}
           onCornerPointerDown={handleCornerHeaderPointerDown}
@@ -2395,7 +2449,7 @@ export function GridShell<T extends object>(props: SpreadsheetGridProps<T>, feat
   const activeDescendantId = () => (activeCellRendered() ? activeCellDomId : undefined);
 
   const emptyStateText = () =>
-    rows().length === 0
+    rows().length === 0 && !manualFilterActive()
       ? (props.noRowsText ?? localeTexts().noRows)
       : (props.noMatchingRowsText ?? localeTexts().noMatchingRows);
 
@@ -2582,6 +2636,17 @@ export function GridShell<T extends object>(props: SpreadsheetGridProps<T>, feat
           <Show when={isAutosizing()}>
             <div class="ssg-autosize-overlay">
               <span class="ssg-autosize-pill">{localeTexts().sizingColumns}</span>
+            </div>
+          </Show>
+          {/* グローバルフィルターの適用中の overlay(しきい値を超える表の時間分割の間だけ。pointer-events: none)。 */}
+          <Show when={globalFilterStatus() === 'filtering'}>
+            <div class="ssg-filter-overlay">
+              <span class="ssg-filter-overlay-chip" role="status" aria-live="polite">
+                <span class="ssg-filter-spinner" aria-hidden="true" />
+                <span class="ssg-filter-overlay-text">
+                  {formatLocaleText(localeTexts().applyingFilter, { percent: Math.round(globalFilterProgress() * 100) })}
+                </span>
+              </span>
             </div>
           </Show>
           {/* セル内検索のバー(右上に浮く。見出しの直下)。開いているときだけ描きます。 */}

@@ -158,11 +158,24 @@ React 版の機能なしの構成と並べて、同じ props・同じ操作で D
 | # | 内容 | 状況 |
 | --- | --- | --- |
 | 2-1 | 機能を差し込む仕組み + 表示の機能 8 つ(totalRow / pinnedRows / conditionalFormat / selectionAggregates / scrollHint / motionExtras / export / autoHeight) | 済み(PR #65、2026-11-19 マージ。2-1a: 仕組み(`features/types.ts` / `createSpreadsheetGrid.tsx` / `features/full.ts`、比べるテストの `features`)と export、2-1b: autoHeight、2-1c: conditionalFormat、2-1d: totalRow + pinnedRows、2-1e: selectionAggregates、2-1f: scrollHint、2-1g: motionExtras) |
-| 2-2 | 操作の機能 7 つ(find / fillHandle / columnReorder / rowDrag / columnAutosize / imeDirectInput / contextMenu) | 作業中(2-2a: find、2-2b: imeDirectInput、2-2c: columnAutosize、2-2d: columnReorder、2-2e: rowDrag、2-2f: fillHandle、2-2g: contextMenu = 済み。別視点のレビュー = 高 1・低 1 を直した) |
-| 2-3 | ポップアップ 3 つ(columnMenu / toolPanel / filtering) | まだ |
+| 2-2 | 操作の機能 7 つ(find / fillHandle / columnReorder / rowDrag / columnAutosize / imeDirectInput / contextMenu) | 済み(PR #66、2026-11-19 マージ。2-2a: find、2-2b: imeDirectInput、2-2c: columnAutosize、2-2d: columnReorder、2-2e: rowDrag、2-2f: fillHandle、2-2g: contextMenu。別視点のレビュー = 高 1・低 1 を直した) |
+| 2-3 | ポップアップ 3 つ(columnMenu / toolPanel / filtering) | 作業中(2-3a: 行の絞り込み(グローバル / 列フィルターの適用・上部バーの検索欄・manualFiltering / manualSorting)= 済み。2-3b: 列メニュー、2-3c: 列フィルターのポップアップ、2-3d: ツールパネルとフィルターのチップのバー = まだ) |
 | 2-4 | 行のモデル 3 つ(serverSide / labelRow / grouping) | まだ |
 
-### 2-2 で分かったこと(作業中)
+### 2-3 で分かったこと(作業中)
+
+- **core と React 版は変えていない**(2-3a): 列フィルターの段(core `engine/columnFilterStage`)と相対日付プリセットの見張り
+  (`controllers/dateRolloverStore`)はエンジンが機能から作り、グローバルフィルターの適用は core のランナー
+  (`controllers/globalFilteredOrder`。5 万行を超える表は時間分割)を Solid 版の `primitives/filterOrder.ts` でつなぐだけで足りた。
+- **入力の遅延は無し**: React 版は列フィルターと検索の文字を `useDeferredValue` で遅らせる(チェックを続けて押したときに
+  行の絞り込みを後回しにするため)。Solid には同じ仕組みが無いので、その場で絞り込む(大きな表はランナーの時間分割なので入力は
+  詰まらない。10 万行のデモで、打っている間に「適用中 n%」の印が出て結果へ変わることを Chromium で確かめた)。
+- **同じ値の組なら計算し直さない**: グローバルフィルターの計算の key(rows / 恒等の並び / 対象の列 / 文字)は、列の解決が
+  別の理由で計算し直されても新しくならないよう、項目を比べる `equals` 付きの memo にした(React 版の `useMemo` の依存と同じ)。
+- **上部バーの検索欄**: 値は今の値と違うときだけ書く(セル内検索のバーと同じ。変換中の文字を消さない。Chromium の IME で確認)。
+  利用側が JSX で渡す左アイコン(`globalFilterIcon`)は、prop を読むたびに要素が作り直されるので memo で 1 回だけ読む。
+
+### 2-2 で分かったこと
 
 - **core と React 版は変えていない**: 7 つの機能はどれも core のコントローラ(findController / imeInputController /
   columnAutosizeRunner / columnHeaderDragController / rowDragController ほか)をそのまま使い、Solid 版のシェルでつなぐだけで足りた。

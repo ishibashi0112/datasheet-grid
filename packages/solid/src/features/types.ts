@@ -37,6 +37,7 @@ import type { createCellContextMenu } from '../primitives/contextMenu';
 import type { CellContextMenuPopover } from '../view/CellContextMenuPopover';
 import type { BodyContextMenuInput, CellContextMenuInput } from './contextMenu';
 import type { GridContextMenuParams } from '../model/gridTypes';
+import type { createFilterOrder } from '../primitives/filterOrder';
 
 // 機能だけが使う文言の既定(core の logic/localeText<機能>.ts の表)。シェルが本体の既定に重ねて部品へ渡します(React 版と同じ)。
 type FeatureLocaleDefaults = { localeText?: Readonly<Partial<GridLocaleText>> | undefined };
@@ -109,6 +110,14 @@ export type SolidGridFeatures = {
         buildBodyContextMenuParams: <T>(input: BodyContextMenuInput<T>) => GridContextMenuParams<T> | null;
         buildCellContextMenuParams: <T>(input: CellContextMenuInput<T>) => GridContextMenuParams<T> | null;
       })
+    | undefined;
+  // フィルター: 行パイプラインの列フィルターの段 + 相対日付プリセットの日付の変わり目の見張り(いずれも core。エンジンが作る)+
+  //   グローバルフィルターの適用(大きな表は時間分割)。
+  filtering?:
+    | (NonNullable<GridCoreFeatures['filtering']> &
+        FeatureLocaleDefaults & {
+          createFilterOrder: typeof createFilterOrder;
+        })
     | undefined;
   // IME オンのままの直接入力: 透明な入力受けのコントローラ + 入力してよいセルの判定 + 編集の初期値の決定(いずれも core)。
   imeDirectInput?: NonNullable<GridCoreFeatures['imeDirectInput']> | undefined;

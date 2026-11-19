@@ -18,4 +18,5 @@ export { columnReorderFeature } from './features/columnReorder';
 export { rowDragFeature } from './features/rowDrag';
 export { fillHandleFeature } from './features/fillHandle';
 export { contextMenuFeature } from './features/contextMenu';
+export { filteringFeature } from './features/filtering';
 export type { GridColumn, CellRenderContext, SpreadsheetGridHandle, SpreadsheetGridProps, SolidGridTypes } from './model/gridTypes';

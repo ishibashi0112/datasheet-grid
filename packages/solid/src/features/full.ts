@@ -6,6 +6,7 @@ import { conditionalFormatFeature } from './conditionalFormat';
 import { contextMenuFeature } from './contextMenu';
 import { exportFeature } from './export';
 import { fillHandleFeature } from './fillHandle';
+import { filteringFeature } from './filtering';
 import { findFeature } from './find';
 import { imeDirectInputFeature } from './imeDirectInput';
 import { motionExtrasFeature } from './motionExtras';
@@ -32,4 +33,5 @@ export const fullGridFeatures = {
   rowDrag: rowDragFeature,
   fillHandle: fillHandleFeature,
   contextMenu: contextMenuFeature,
+  filtering: filteringFeature,
 } satisfies Required<GridFeatures> as unknown as Required<SolidGridFeatures>;

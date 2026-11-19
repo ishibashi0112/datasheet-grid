@@ -45,9 +45,12 @@ React 版と同じ DOM・class で描くので、React 版の `styles.css` を�
   四角のダブルクリックで隣の列に合わせて下へ、元に戻す 1 回で埋める前へ)、右クリックメニュー(`enableContextMenu` /
   `getContextMenuItems` / `onContextMenuOpen`。セル / 行番号の右クリック、Shift+F10 / メニューキーでアクティブセルのメニュー、
   項目が空なら標準のメニュー、項目の 4 種類(action / label / separator / custom)、↑ / ↓ / Home / End、Escape・外を押す・
-  スクロールで閉じる)
+  スクロールで閉じる)、行の絞り込み(`enableGlobalFilter` / `globalFilterMatch` / `enableColumnFilter` / `manualFiltering` /
+  `manualSorting`。上部バーの検索欄 = `showTopBarFilter` / `globalFilterPlaceholder` / `globalFilterIcon`、大きな表は core の
+  ランナーで時間分割して適用中の印、`applyState` の列フィルターと相対日付プリセット。列フィルターのポップアップは段階 2-3c)
 
-無いもの(段階 2 の残り): `/lite` の残りの 6 の機能(列メニュー・ツールパネル・列フィルター・SSRM・ラベル行・行のグループ)。
+無いもの(段階 2 の残り): `/lite` の残りの 5 の機能(列メニュー・ツールパネル・SSRM・ラベル行・行のグループ)と、列フィルターの
+ポップアップ。
 
 `renderCell` / `renderHeader` / `renderTopBar` / `renderBottomBar` は、React 版のように描き直しのたびに呼ぶのではなく、Solid の部品と
 同じく必要なときだけ呼びます: `renderCell` は行(と値)や列が変わったとき、`renderHeader` は列が変わったとき、バーは関数が変わった

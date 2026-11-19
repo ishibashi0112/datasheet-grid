@@ -148,6 +148,8 @@ function App() {
   const [fillHandle, setFillHandle] = createSignal(true);
   const [contextMenu, setContextMenu] = createSignal(true);
   const [menuAction, setMenuAction] = createSignal('');
+  const [manual, setManual] = createSignal(false);
+  const [filters, setFilters] = createSignal('');
   // 「品名を左へ固定」で編集中の列のペインを変える(エディタが外れるときの blur で確定しないことの確かめ)。
   const columns = () =>
     userColumns() ??
@@ -215,7 +217,14 @@ function App() {
         <button type="button" data-testid="context-menu" onClick={() => setContextMenu((v) => !v)}>
           右クリックメニュー
         </button>
+        <button type="button" data-testid="big-rows" onClick={() => setRows(createRows(rows().length > 10_000 ? 10_000 : 100_000))}>
+          行: 1 万 / 10 万
+        </button>
+        <button type="button" data-testid="manual" onClick={() => setManual((v) => !v)}>
+          手動の絞り込み / 並べ替え: {manual() ? 'オン' : 'オフ'}
+        </button>
         <span data-testid="find">{find()}</span>
+        <span data-testid="filters">{filters()}</span>
         <span data-testid="active">{active()}</span>
         <span data-testid="changes">{changes()}</span>
         <span data-testid="selected">{selected()}</span>
@@ -269,6 +278,11 @@ function App() {
           // 「右クリックメニュー」(既定でオン): セル / 行番号の右クリックか Shift+F10 / メニューキーで開く。分類の列は項目なし
           //   (ブラウザの標準のメニュー)。
           enableContextMenu={contextMenu()}
+          // 絞り込み: 上部バーの検索欄(10 万行では時間分割で、適用中の印が出る)。「手動の絞り込み / 並べ替え」は状態と通知だけで
+          //   行は絞り込まない / 並べ替えない(利用側が rows を渡し直す使い方)。
+          manualFiltering={manual()}
+          manualSorting={manual()}
+          onFiltersChange={(next) => setFilters(JSON.stringify(next))}
           getContextMenuItems={(params) => {
             const target = params.target;
             if (target.type === 'rowHeader') {

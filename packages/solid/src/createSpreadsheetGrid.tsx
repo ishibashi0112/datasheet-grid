@@ -26,6 +26,8 @@ const DISABLED_FEATURE_PROPS: { [K in GridFeatureName]?: Partial<SpreadsheetGrid
   columnAutosize: { autoSizeColumns: false },
   // 右クリックメニューが無ければ enableContextMenu を切る(ブラウザの標準のメニューのまま。React 版と同じ)。
   contextMenu: { enableContextMenu: false },
+  // フィルターが無ければグローバル / 列フィルターを切る(上部バーの検索欄を出さない。上部バーの要約チップは残る。React 版と同じ)。
+  filtering: { enableColumnFilter: false, enableGlobalFilter: false },
 };
 
 export function createSpreadsheetGrid(options: CreateSpreadsheetGridOptions) {
