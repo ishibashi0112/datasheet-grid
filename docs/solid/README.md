@@ -162,6 +162,28 @@ React 版の機能なしの構成と並べて、同じ props・同じ操作で D
 | 2-3 | ポップアップ 3 つ(columnMenu / toolPanel / filtering) | まだ |
 | 2-4 | 行のモデル 3 つ(serverSide / labelRow / grouping) | まだ |
 
+### 2-1 で分かったこと
+
+- **機能の代役は要らない**: React 版は hook の呼ぶ順番を変えないために、無い機能にも代役の hook を入れる(`features/resolve.ts`)。
+  Solid には順番の決まりが無いので、シェルは `features.X` があるときだけ部品を作る / 描く。`DISABLED_FEATURE_PROPS` は、機能の
+  有無より前に行や列の形を決める prop(`autoHeight`)と、既定でオンの prop を機能なしで止めるもの(`motionExtras` の
+  `showCopyRange` など)だけ。エンジン側(core)の代役は React 版と同じく `createGridEngine` が入れる。
+- **機能だけの文言は文脈で渡す**: React 版はシェルが機能の文言を重ねた表を props で部品へ渡す所がある。Solid 版は
+  `mergeFeatureLocaleDefaults(features)` で重ねた表を文脈(`GridLocaleTextContext`)に置き、部品は
+  `useFeatureLocaleText<typeof DEFAULT_…_LOCALE_TEXT>()` で型だけ足して読む。
+- **全部のセルが読む値は memo に畳む**: `vertical()`(縦のレイアウト)や `autoHeightActive` のような大きな値をセルごとに読むと、
+  1 つの書き込みに数千の購読が付き、Solid の開発ビルドが HUGE_FAN_OUT を出す(2,000 から)。シェルで真偽値だけの memo
+  (`autoHeightActive`)にし、セルの中でもその列の判断を 1 つの memo(`autoHeightFlags`)にまとめた。
+- **DOM を書いた後に読むコントローラは 'effect' でつなぐ**: 変わったセルのフラッシュ(core の changeHighlightController)は
+  書き換わったセルの文字を旧値へ戻してから補間するので、`connectController(…, 'effect')`(セルの文字を書き終えた後。同じ
+  マイクロタスクの中なので画面には出ない)。行の高さの実測(autoHeightMeasurer)も同じ。
+- **測り直しの警告**: 合計行 / 固定行を出し入れすると、見える高さ(clientHeight から下端の行を引く)の測り直しで
+  EFFECT_RELAY_TEAR が出る(既知の列の仮想化のものと同じく「測る代わり」。packages/solid/README.md)。
+- **比べるテストで気をつけること**: React の `onPointerLeave` は `pointerout` から作られるので、`fireEvent.pointerLeave` だけでは
+  React 側が動かない(出るときは `pointerout` も送る。入るときの `ctx.hover` と同じ)。jsdom の `requestAnimationFrame` の時刻は
+  `performance.now()` とずれるので、数値のトゥイーンの途中の値は決まらない(トゥイーンは Chromium で確かめた)。`ctx.track` は
+  要素ができてから呼ぶ(無いうちに呼ぶと以後ずっと「作り直し」になる)。大きな選択の集計(時間分割)は待ってから控える。
+
 ## 段階 0 の中身
 
 | # | 内容 | 状況 |
