@@ -8,6 +8,7 @@ import { findFeature } from './find';
 import { imeDirectInputFeature } from './imeDirectInput';
 import { motionExtrasFeature } from './motionExtras';
 import { pinnedRowsFeature } from './pinnedRows';
+import { rowDragFeature } from './rowDrag';
 import { scrollHintFeature } from './scrollHint';
 import { selectionAggregatesFeature } from './selectionAggregates';
 import { totalRowFeature } from './totalRow';
@@ -26,4 +27,5 @@ export const fullGridFeatures = {
   imeDirectInput: imeDirectInputFeature,
   columnAutosize: columnAutosizeFeature,
   columnReorder: columnReorderFeature,
+  rowDrag: rowDragFeature,
 } satisfies Required<GridFeatures> as unknown as Required<SolidGridFeatures>;

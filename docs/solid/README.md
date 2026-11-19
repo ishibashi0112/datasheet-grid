@@ -158,9 +158,32 @@ React 版の機能なしの構成と並べて、同じ props・同じ操作で D
 | # | 内容 | 状況 |
 | --- | --- | --- |
 | 2-1 | 機能を差し込む仕組み + 表示の機能 8 つ(totalRow / pinnedRows / conditionalFormat / selectionAggregates / scrollHint / motionExtras / export / autoHeight) | 済み(PR #65、2026-11-19 マージ。2-1a: 仕組み(`features/types.ts` / `createSpreadsheetGrid.tsx` / `features/full.ts`、比べるテストの `features`)と export、2-1b: autoHeight、2-1c: conditionalFormat、2-1d: totalRow + pinnedRows、2-1e: selectionAggregates、2-1f: scrollHint、2-1g: motionExtras) |
-| 2-2 | 操作の機能 7 つ(find / fillHandle / columnReorder / rowDrag / columnAutosize / imeDirectInput / contextMenu) | 作業中(2-2a: find、2-2b: imeDirectInput、2-2c: columnAutosize、2-2d: columnReorder = 済み) |
+| 2-2 | 操作の機能 7 つ(find / fillHandle / columnReorder / rowDrag / columnAutosize / imeDirectInput / contextMenu) | 作業中(2-2a: find、2-2b: imeDirectInput、2-2c: columnAutosize、2-2d: columnReorder、2-2e: rowDrag = 済み) |
 | 2-3 | ポップアップ 3 つ(columnMenu / toolPanel / filtering) | まだ |
 | 2-4 | 行のモデル 3 つ(serverSide / labelRow / grouping) | まだ |
+
+### 2-2 で分かったこと(作業中)
+
+- **core と React 版は変えていない**: 7 つの機能はどれも core のコントローラ(findController / imeInputController /
+  columnAutosizeRunner / columnHeaderDragController / rowDragController ほか)をそのまま使い、Solid 版のシェルでつなぐだけで足りた。
+  行をドラッグで離したときのアクティブセルの列の選び方(React 版の `GridShell.tsx` の `commitRowMoveFromDrag`。1.0.2 の RV-F3 /
+  QA-6)は、React 版と同じ処理を Solid 版のシェルにも書いた(core へ寄せるのは React 版のコードを変えることになるので、段階 3 で
+  決める)。
+- **命令的 API の `moveRow` は機能が無くても動く**: React 版は行の移動の確定(`commitRowMove`)をシェルに置くので、`/lite` の
+  機能なしでも `moveRow` が動く。Solid 版は段階 1 で何もしない関数にしていたので、2-2e で React 版と同じにした(比べるテストの
+  機能なしの場面で確かめた)。
+- **ドラッグの後の滑り込みは描き終えた後の effect で**: 列 / 行のドラッグのコントローラは、確定した直後の 1 フレームの間だけ
+  滑り込みの用意を残す(次の `requestAnimationFrame` で捨てる)。Solid のふつうの effect は書き込みの後の同じマイクロタスクで
+  走るので、`createEffect(() => paneLayout(), applyReorderSettle)` で間に合う(Chromium で列の FLIP を確かめた)。行は React 版と
+  同じく行のキーで要素を使い回すので、`animateRows` の CSS の transition で滑る(コントローラの FLIP は差が 0 で何もしない。
+  React 版も同じ)。
+- **コントローラが DOM へ直接書く要素は作り直さない**: 行のドロップのガイド線のキャップの有無(中央のペインが行見出しを持つか)を
+  呼ぶ側の式で読んでいたため、列幅などでペインの解決が変わるたびに要素ごと作り直し、コントローラが書いた位置が消えていた
+  (比べるテストで見つけた)。class の中で読む形にした。
+- **比べるテストで気をつけること**: jsdom の要素の矩形はどれも同じ大きさなので、列のドラッグはいつも左の固定ペインにいる扱いに
+  なる(中央の中の並べ替えと実際の位置は Chromium で見る)。行のドラッグの縦の位置は行の高さの計算で決まるので jsdom でも通る。
+  ドラッグのゴーストはライトのテーマでは `ssg-` の class が無いので、body 直下の要素として `[data-grid-drag-ghost]` も控える
+  ようにした。見出しの普通のクリックは列の選択で、ソートは Shift + クリック。
 
 ### 2-1 で分かったこと
 

@@ -496,3 +496,116 @@ describe('列の並べ替え(columnReorder)', () => {
     });
   }, 20_000);
 });
+describe('行のドラッグ(rowDrag)', () => {
+  // 縦の位置は行の高さの計算で決まる(jsdom でも行ごとの矩形は要らない)。見出し 40px・行 36px なので、行 k の中ほどは
+  //   y = 40 + 36k + 18、行 k の上の境界の少し下は y = 40 + 36k + 4。
+  const rowY = (k: number) => 40 + 36 * k + 18;
+  const rowTopY = (k: number) => 40 + 36 * k + 4;
+  const handleOf = (ctx: ParityContext, row: number) => {
+    const element = ctx.container.querySelector(
+      `.ssg-body-row[data-row-index="${row}"] [data-ssg-col-key="__ssg_row_drag_handle__"] .ssg-row-drag-handle`,
+    );
+    if (!element) {
+      throw new Error(`[${ctx.framework}] ハンドルがありません: ${row}`);
+    }
+    return element;
+  };
+  const names = (ctx: ParityContext) => (ctx.rows() as Row[]).map((row) => row.id).join(' ');
+
+  it.each([
+    ['あり・ghost', ['rowDrag'], 'ghost', 'auto'],
+    ['あり・live', ['rowDrag'], 'live', 'auto'],
+    ['あり・live + motion off', ['rowDrag'], 'live', 'off'],
+    ['なし(空)', [], 'live', 'auto'],
+  ])('ハンドルで引いて落とす・Escape・isRowDraggable・canDropRow・ソート中・moveRow・元に戻す(機能%s)', async (_label, features, rowDragMotion, motion) => {
+    await expectParity({
+      features,
+      watch: ['onRowMove', 'onActiveCellChange'],
+      props: () => ({
+        rows: makeRows(8),
+        columns,
+        rowKeyGetter: (row: Row) => row.id,
+        height: 400,
+        enableRowDrag: true,
+        rowDragMotion,
+        motion,
+        // 3 の倍数の id の行は掴めない。先頭(スロット 0)へは落とせない。
+        isRowDraggable: (row: Row) => row.id % 3 !== 0,
+        canDropRow: (params: { toIndex: number }) => params.toIndex !== 0,
+      }),
+      steps: async (ctx) => {
+        ctx.snapshot('はじめ');
+        const hasHandle = ctx.container.querySelector('.ssg-row-drag-handle') !== null;
+        ctx.log('ハンドル', hasHandle);
+        if (hasHandle) {
+          // 2 行目(id 2)を 5 行目の上へ。
+          await ctx.act(() => {
+            fireEvent.pointerDown(handleOf(ctx, 1), { ...pointer, clientX: 30, clientY: rowY(1) });
+            fireEvent.pointerMove(window, { ...pointer, clientX: 30, clientY: rowY(2) });
+            fireEvent.pointerMove(window, { ...pointer, clientX: 30, clientY: rowTopY(5) });
+          });
+          ctx.snapshot('引いている');
+          await ctx.act(() => {
+            fireEvent.pointerUp(window, { ...pointer, clientX: 30, clientY: rowTopY(5) });
+          }, 450);
+          ctx.snapshot('落とす');
+          ctx.log('行の並び(落とす)', names(ctx));
+          // Escape でやめる。
+          await ctx.act(() => {
+            fireEvent.pointerDown(handleOf(ctx, 3), { ...pointer, clientX: 30, clientY: rowY(3) });
+            fireEvent.pointerMove(window, { ...pointer, clientX: 30, clientY: rowTopY(7) });
+          });
+          await ctx.act(() => {
+            ctx.log('Escape を止めたか', !fireEvent.keyDown(ctx.shell(), { key: 'Escape' }));
+          }, 450);
+          ctx.snapshot('Escape でやめる');
+          await ctx.act(() => {
+            fireEvent.pointerUp(window, { ...pointer, clientX: 30, clientY: rowTopY(7) });
+          }, 450);
+          ctx.log('行の並び(Escape)', names(ctx));
+          // 先頭へは落とせない(canDropRow)。
+          await ctx.act(() => {
+            fireEvent.pointerDown(handleOf(ctx, 3), { ...pointer, clientX: 30, clientY: rowY(3) });
+            fireEvent.pointerMove(window, { ...pointer, clientX: 30, clientY: rowY(2) });
+            fireEvent.pointerMove(window, { ...pointer, clientX: 30, clientY: rowTopY(0) });
+          });
+          ctx.snapshot('落とせない位置');
+          await ctx.act(() => {
+            fireEvent.pointerUp(window, { ...pointer, clientX: 30, clientY: rowTopY(0) });
+          }, 450);
+          ctx.log('行の並び(canDropRow)', names(ctx));
+          // 元に戻す(行の移動も履歴に入る)。
+          await ctx.act(() => {
+            fireEvent.keyDown(ctx.shell(), { key: 'z', ctrlKey: true });
+          }, 120);
+          ctx.log('行の並び(元に戻す)', names(ctx));
+          ctx.snapshot('元に戻す');
+        }
+        // 命令的 API の moveRow(機能が無くても動く)。
+        await ctx.act(() => {
+          call(ctx, 'moveRow', 7, 0);
+        }, 450);
+        ctx.log('行の並び(moveRow)', names(ctx));
+        ctx.snapshot('moveRow');
+        // ソート中はハンドルが淡色になり、押すとセルの選択になる(Shift + 見出しでソート)。
+        await ctx.act(() => {
+          const header = ctx.header('qty');
+          fireEvent.pointerDown(header, { ...pointer, shiftKey: true });
+          fireEvent.pointerUp(window, { ...pointer, shiftKey: true });
+        });
+        ctx.log('ソートの印', ctx.header('qty').getAttribute('aria-sort'));
+        ctx.snapshot('ソート中');
+        if (hasHandle) {
+          await ctx.act(() => {
+            fireEvent.pointerDown(handleOf(ctx, 1), { ...pointer, clientX: 30, clientY: rowY(1) });
+            fireEvent.pointerUp(window, { ...pointer, clientX: 30, clientY: rowY(1) });
+          });
+          ctx.snapshot('ソート中にハンドルを押す');
+        }
+        // enableRowDrag を外す。
+        await ctx.setProps({ enableRowDrag: false });
+        ctx.snapshot('enableRowDrag なし');
+      },
+    });
+  }, 20_000);
+});

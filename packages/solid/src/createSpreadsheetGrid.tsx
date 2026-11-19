@@ -16,6 +16,8 @@ export type CreateSpreadsheetGridOptions = {
 
 // 機能が無いときに置き換える prop(シェルが機能の部品を呼ぶ前に、その prop で列や行の形を決めるもの)。
 const DISABLED_FEATURE_PROPS: { [K in GridFeatureName]?: Partial<SpreadsheetGridProps<object>> } = {
+  // 行ドラッグが無ければ enableRowDrag を切る(ハンドル列もガイド線も出ない。React 版と同じ)。
+  rowDrag: { enableRowDrag: false },
   // 行の高さの実測が無ければ autoHeight を切る。
   autoHeight: { autoHeight: false },
   // 動きの追加分が無ければ、変わったセルのフラッシュ / コピー範囲の点線 / クロスヘアを止める(React 版と同じ)。

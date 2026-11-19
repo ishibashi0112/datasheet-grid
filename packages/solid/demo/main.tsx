@@ -143,7 +143,8 @@ function App() {
   const [ime, setIme] = createSignal(false);
   // 見出しの grip で並べ替えた列(onColumnsChange で受ける)。「品名を左へ固定」を押すと元の並びへ戻す。
   const [userColumns, setUserColumns] = createSignal<GridColumn<Item>[] | null>(null);
-  const [liveColumnDrag, setLiveColumnDrag] = createSignal(false);
+  const [liveDrag, setLiveDrag] = createSignal(false);
+  const [rowDrag, setRowDrag] = createSignal(false);
   // 「品名を左へ固定」で編集中の列のペインを変える(エディタが外れるときの blur で確定しないことの確かめ)。
   const columns = () =>
     userColumns() ??
@@ -199,8 +200,11 @@ function App() {
         <button type="button" data-testid="ime" onClick={() => setIme((v) => !v)}>
           IME の直接入力
         </button>
-        <button type="button" data-testid="column-drag" onClick={() => setLiveColumnDrag((v) => !v)}>
-          列のドラッグ: ghost / live
+        <button type="button" data-testid="drag-motion" onClick={() => setLiveDrag((v) => !v)}>
+          ドラッグ: ghost / live
+        </button>
+        <button type="button" data-testid="row-drag" onClick={() => setRowDrag((v) => !v)}>
+          行のドラッグ
         </button>
         <span data-testid="find">{find()}</span>
         <span data-testid="active">{active()}</span>
@@ -241,9 +245,14 @@ function App() {
           find
           // 「IME の直接入力」: IME をオンにしたままセルで打ち始められる(変換の確定で編集を始める)。
           imeDirectInput={ime()}
-          // 列の並べ替え: 見出しにホバーすると出る grip を引く(固定ペインへも移せる)。「列のドラッグ」で live 方式に。
+          // 列の並べ替え: 見出しにホバーすると出る grip を引く(固定ペインへも移せる)。「ドラッグ: ghost / live」で live 方式に。
           onColumnsChange={(next) => setUserColumns(next)}
-          columnDragMotion={liveColumnDrag() ? 'live' : 'ghost'}
+          columnDragMotion={liveDrag() ? 'live' : 'ghost'}
+          // 「行のドラッグ」: 左端のハンドルで行を並べ替える(ソート中は淡色)。7 の倍数の行は掴めず、先頭へは落とせない。
+          enableRowDrag={rowDrag()}
+          rowDragMotion={liveDrag() ? 'live' : 'ghost'}
+          isRowDraggable={(row) => row.id % 7 !== 0}
+          canDropRow={(params) => params.toIndex !== 0}
           onFindChange={(params) => setFind(`${params.open ? 'open' : 'closed'}:${params.query}:${params.currentIndex ?? '-'}/${params.matchCount}`)}
           ariaLabel="在庫表"
           onActiveCellChange={(cell) => setActive(cell ? `${cell.columnKey} / ${String(cell.rowKey)}` : '')}

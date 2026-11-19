@@ -29,9 +29,11 @@ import { gridActions } from '@ishibashi0112/spreadsheet-grid-core/internal/model
 import { buildSelectionSnapshot, selectGlobalFilter } from '@ishibashi0112/spreadsheet-grid-core/internal/model/gridSelectors';
 import {
   buildColumnMeasurements,
+  computeSinglePaneColumnExtent,
   type ColumnPane,
   type PaneColumnEntry,
 } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/geometry';
+import { ROW_DRAG_HANDLE_COLUMN_KEY, moveArrayItem } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/rowReorder';
 import {
   resolveSelectionBand,
   resolveSelectionBandSegments,
@@ -65,7 +67,12 @@ import {
 } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/gridBarSummary';
 import { isCheckboxChecked } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/checkboxEditor';
 import { MAX_BODY_PX, resolvePageTargetRow } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/verticalGeometry';
-import { DEFAULT_DETAIL_ROW_HEIGHT, isDetailRowExpandable } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/detailRow';
+import {
+  DEFAULT_DETAIL_ROW_HEIGHT,
+  isControlColumnKey,
+  isDetailRowExpandable,
+  resolveFirstDataColIndex,
+} from '@ishibashi0112/spreadsheet-grid-core/internal/logic/detailRow';
 import {
   createSelectedRowsInOrderCounter,
   getSelectAllState,
@@ -196,7 +203,8 @@ export function GridShell<T extends object>(props: SpreadsheetGridProps<T>, feat
   const columnInputs = () => ({
     columns: columns(),
     isServerSide: false,
-    enableRowDrag: false,
+    // 行ドラッグ(機能 rowDrag)。機能が無い構成では createSpreadsheetGrid が false にする。
+    enableRowDrag: props.enableRowDrag ?? false,
     hasRowsChange: props.onRowsChange != null,
     detailToggleColumnActive: detailToggleColumnActive(),
     renderDetailToggleCell: renderDetailToggleCell as unknown as NonNullable<UnboundGridColumn<T>['renderCell']>,
@@ -312,9 +320,12 @@ export function GridShell<T extends object>(props: SpreadsheetGridProps<T>, feat
       columnFilters: ui().filters.columnFilters,
       globalFilteredOrder: baseOrder(),
       sort: ui().sort,
-      rowDragAvailable: false,
+      rowDragAvailable: columnResolution().rowDragAvailable,
     }),
   );
+  // 行ドラッグの合成列があるか(ガイド線を描くか)と、いま動かせるか(表示順が rows の順のとき = ソート / フィルターなし)。
+  const rowDragAvailable = () => columnResolution().rowDragAvailable;
+  const rowDragOperable = () => orderResolution().rowDragOperable;
   const clientRowModel = createMemo(() =>
     engine.rowPipeline.resolveClientSideRowModel({
       rows: rows(),
@@ -1287,6 +1298,135 @@ export function GridShell<T extends object>(props: SpreadsheetGridProps<T>, feat
       />
     ) : null;
 
+  // ── 行の移動(ドラッグの確定 / 命令的 API の moveRow。React 版と同じくシェルに置く = 機能が無くても moveRow は動く) ──
+  //   moveArrayItem が何もしない(同じ位置 / 範囲外)なら onRowsChange も onRowMove も呼びません。履歴(handleRowsChange)を
+  //   通すので元に戻せます。動かしたら true(ドラッグで離したときのアクティブセルを決めるため)。
+  const commitRowMove = (fromIndex: number, toIndex: number): boolean => {
+    const onRowsChange = handleRowsChange();
+    if (!onRowsChange) {
+      return false;
+    }
+    const currentRows = rows();
+    const next = moveArrayItem(currentRows, fromIndex, toIndex);
+    if (next === currentRows) {
+      return false;
+    }
+    const movedRow = currentRows[fromIndex] as T;
+    const nextRows = next as T[];
+    onRowsChange(nextRows);
+    props.onRowMove?.({
+      rowKey: resolvedRowKeyGetter()(movedRow, fromIndex),
+      fromIndex,
+      toIndex,
+      rows: nextRows,
+    });
+    return true;
+  };
+  const moveRowByKey = (rowKey: GridRowKey, toIndex: number) => {
+    const getKey = resolvedRowKeyGetter();
+    const fromIndex = rows().findIndex((row, index) => getKey(row, index) === rowKey);
+    if (fromIndex < 0) {
+      return;
+    }
+    commitRowMove(fromIndex, toIndex);
+  };
+  // ドラッグで離したとき: 行のホバーを外し、離した行(動かした先)をアクティブセルにする。列は今のアクティブセルの列(無いか
+  //   合成列なら先頭のデータ列)で、横の見える範囲に丸ごと無ければ、丸ごと見えている先頭のデータ列、それも無ければいちばん
+  //   広く見えているデータ列(React 版の GridShell.tsx の commitRowMoveFromDrag と同じ判断。1.0.2 の RV-F3 / QA-6)。
+  const commitRowMoveFromDrag = (fromIndex: number, toIndex: number) => {
+    const moved = commitRowMove(fromIndex, toIndex);
+    applyHoveredRowChange(null);
+    const columnsNow = orderedColumns();
+    const layout = paneLayout();
+    const resolution = paneResolution();
+    const isDataCol = (col: number) => {
+      const column = columnsNow[col];
+      return column !== undefined && !isControlColumnKey(column.key);
+    };
+    // 列の見えている幅と、丸ごと見えているか(固定ペインの列はいつも見えている)。
+    const resolveColVisibility = (col: number): { visible: number; whole: boolean } => {
+      const single = computeSinglePaneColumnExtent(layout, col);
+      const scrollElement = scrollContainerRef.current;
+      if (!single || single.pane !== 'center' || !scrollElement) {
+        return single !== null ? { visible: single.extent.width, whole: true } : { visible: 0, whole: false };
+      }
+      const left = resolution.leftPaneTotalWidth + resolution.centerLeadingWidth + single.extent.start;
+      const right = left + single.extent.width;
+      const visibleLeft = scrollElement.scrollLeft + resolution.leftPaneTotalWidth;
+      const visibleRight = scrollElement.scrollLeft + scrollElement.clientWidth - resolution.rightPaneTotalWidth;
+      return {
+        visible: Math.max(0, Math.min(right, visibleRight) - Math.max(left, visibleLeft)),
+        whole: left >= visibleLeft && right <= visibleRight,
+      };
+    };
+    const activeCol = store.getState().activeCell?.col;
+    let col = activeCol !== undefined && isDataCol(activeCol) ? activeCol : resolveFirstDataColIndex(columnsNow);
+    if (!resolveColVisibility(col).whole) {
+      let widest = -1;
+      let widestVisible = 0;
+      let wholeCol = -1;
+      for (let index = 0; index < columnsNow.length && wholeCol < 0; index += 1) {
+        if (!isDataCol(index)) {
+          continue;
+        }
+        const visibility = resolveColVisibility(index);
+        if (visibility.whole) {
+          wholeCol = index;
+        } else if (visibility.visible > widestVisible) {
+          widest = index;
+          widestVisible = visibility.visible;
+        }
+      }
+      if (wholeCol >= 0) {
+        col = wholeCol;
+      } else if (widest >= 0 && widestVisible > resolveColVisibility(col).visible) {
+        col = widest;
+      }
+    }
+    engine.gridApi.handle.selectCell(moved ? toIndex : fromIndex, col);
+  };
+
+  // ── 行ドラッグによる並べ替え(機能 features/rowDrag。core controllers/rowDragController) ──
+  //   ハンドル列(合成列)は enableRowDrag で core の列の解決が足し、セルの中身はハンドルの部品(renderCellContent)。
+  //   動かせるのは表示順が rows の順のときだけ(ソート / フィルター中はハンドルが淡色)。live 方式は motion が 'off' の
+  //   ときゴーストへ(React 版と同じ)。
+  const rowDragFeature = features.rowDrag;
+  const rowDrag = rowDragFeature?.createRowDrag<T>({
+    controller: () => ({
+      enabled: rowDragOperable(),
+      rowMetrics: vertical().rowMetrics,
+      headerHeight: headerHeight(),
+      footerHeight: footerHeight(),
+      stickyTopHeight: stickyTopHeight(),
+      verticalScaleFactor: vertical().verticalScaleFactor,
+      windowBaseOffsetPx: vertical().overlayBaseOffset,
+      scrollContainerRef,
+      bodyScrollRef,
+      gridRootRef,
+      commitRowMove: commitRowMoveFromDrag,
+      ghostSlot: slots().dragGhost,
+      motion: resolvedMotion() === 'off' ? 'ghost' : (props.rowDragMotion ?? 'ghost'),
+    }),
+    rowModel,
+    visibleColumns,
+    canDropRow: () => props.canDropRow,
+    rows,
+    resolveRowKey: resolvedRowKeyGetter,
+    hasRowKeys: () => props.rowKeyGetter !== undefined,
+    dragRowLabel: () => (localeTexts() as unknown as { dragRowLabel: string }).dragRowLabel,
+  });
+  // 行ドロップの位置のガイド線(各ペインの本体の層。左端のペインはキャップ付き)。キャップの有無は class の中で読む(呼ぶ側の式で
+  //   読むと、列幅などでペインの解決が変わるたびに要素ごと作り直し、コントローラが書いた位置が消えるため)。
+  const renderRowDropIndicator = (pane: ColumnPane, cap: () => boolean) =>
+    rowDrag ? (
+      <Show when={rowDragAvailable()}>
+        <div
+          ref={(element) => rowDrag.setIndicator(pane, element)}
+          class={['ssg-row-drop-indicator', { 'ssg-row-drop-indicator--cap': cap() }]}
+        />
+      </Show>
+    ) : null;
+
   // ── 見出しの角 / 行番号 / 列見出しのホバー ──
   const handleCornerHeaderPointerDown = (event: PointerEvent) => {
     event.preventDefault();
@@ -1370,7 +1510,7 @@ export function GridShell<T extends object>(props: SpreadsheetGridProps<T>, feat
     detailRowEnabled: detailRowEnabled(),
     detailIsExpandable: props.detailRow?.isExpandable,
     detailIndexCacheRef: engine.detailIndexCache,
-    moveRowByKey: noop,
+    moveRowByKey,
     commitRowSelection: rowSelectionCommands.commitRowSelection,
     pendingRowSelection: rowSelectionCommands.pendingRowSelection,
     markApiScroll: () => {
@@ -1619,7 +1759,33 @@ export function GridShell<T extends object>(props: SpreadsheetGridProps<T>, feat
   // セルの中身。行と列が変わったときだけ作り直す(行の位置とアクティブ / 選択などの状態は cell から読んだときに引く)。
   //   行の並び(rowModel)や rows そのものは読まない(1 セルの編集で表のすべての renderCell を作り直さないように)。
   //   renderCell の本体で位置や状態を読めば、それが変わったときにその列のセルだけ作り直す(React で毎回呼ぶのと同じ結果)。
+  // 行ドラッグのハンドル列のセル。isRowDraggable が false の行には出さない(React 版の renderHandleCell と同じ)。押した時点の
+  //   行の位置でドラッグを始めます。
+  const RowDragHandle = rowDragFeature?.RowDragHandle;
+  const rowDragTexts = () => localeTexts() as unknown as { dragRow: string; dragRowDisabled: string };
+  const renderRowDragHandleCell = (row: T, cell: GridCellContentContext): JSX.Element => {
+    if (!RowDragHandle || !rowDrag) {
+      return null;
+    }
+    const draggable = createMemo(() => {
+      const isRowDraggable = props.isRowDraggable;
+      return !isRowDraggable || isRowDraggable(row, { rowKey: cell.rowKey, sourceRowIndex: cell.sourceRowIndex });
+    });
+    return (
+      <Show when={draggable()}>
+        <RowDragHandle
+          operable={rowDragOperable()}
+          tooltip={rowDragOperable() ? rowDragTexts().dragRow : rowDragTexts().dragRowDisabled}
+          onPointerDown={(event) => rowDrag.onRowDragHandlePointerDown(untrack(() => cell.rowIndex), event)}
+        />
+      </Show>
+    );
+  };
   const renderCellContent = (row: T, column: GridColumn<T>, cell: GridCellContentContext): JSX.Element => {
+    // 行ドラッグのハンドル列(合成列)の中身(機能 rowDrag)。
+    if (column.key === ROW_DRAG_HANDLE_COLUMN_KEY) {
+      return renderRowDragHandleCell(row, cell);
+    }
     const unbound = column as unknown as UnboundGridColumn<T>;
     const value = getCellValue(row, unbound);
     if (column.renderCell) {
@@ -2009,6 +2175,8 @@ export function GridShell<T extends object>(props: SpreadsheetGridProps<T>, feat
             onCardKeyDown={detailRows.handleCardKeyDown}
             onCardFocusLost={detailRows.handleCardFocusLost}
           />
+          {/* 行ドロップの位置のガイド線(左固定ペイン、または左固定ペインが無いときの中央 = 最左はキャップ付き)。 */}
+          {renderRowDropIndicator(pane, () => pane === 'left' || (pane === 'center' && ownsRowHeader()))}
         </div>
         {/* 下端の行(本体ぶんの空きの直後 = 箱の下端の sticky の行)。既定は下の固定行 → 合計行、'belowTotal' は合計行 → 固定行。 */}
         <Show when={pinnedBelowTotal()} fallback={[renderPinnedRows('bottom'), renderTotalRow()]}>
