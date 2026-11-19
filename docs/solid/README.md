@@ -159,7 +159,7 @@ React 版の機能なしの構成と並べて、同じ props・同じ操作で D
 | --- | --- | --- |
 | 2-1 | 機能を差し込む仕組み + 表示の機能 8 つ(totalRow / pinnedRows / conditionalFormat / selectionAggregates / scrollHint / motionExtras / export / autoHeight) | 済み(PR #65、2026-11-19 マージ。2-1a: 仕組み(`features/types.ts` / `createSpreadsheetGrid.tsx` / `features/full.ts`、比べるテストの `features`)と export、2-1b: autoHeight、2-1c: conditionalFormat、2-1d: totalRow + pinnedRows、2-1e: selectionAggregates、2-1f: scrollHint、2-1g: motionExtras) |
 | 2-2 | 操作の機能 7 つ(find / fillHandle / columnReorder / rowDrag / columnAutosize / imeDirectInput / contextMenu) | 済み(PR #66、2026-11-19 マージ。2-2a: find、2-2b: imeDirectInput、2-2c: columnAutosize、2-2d: columnReorder、2-2e: rowDrag、2-2f: fillHandle、2-2g: contextMenu。別視点のレビュー = 高 1・低 1 を直した) |
-| 2-3 | ポップアップ 3 つ(columnMenu / toolPanel / filtering) | 作業中(2-3a: 行の絞り込み(グローバル / 列フィルターの適用・上部バーの検索欄・manualFiltering / manualSorting)= 済み。2-3b: 列メニュー、2-3c: 列フィルターのポップアップ、2-3d: ツールパネルとフィルターのチップのバー = まだ) |
+| 2-3 | ポップアップ 3 つ(columnMenu / toolPanel / filtering) | 作業中(2-3a: 行の絞り込み(グローバル / 列フィルターの適用・上部バーの検索欄・manualFiltering / manualSorting)、2-3b: 列メニュー = 済み。2-3c: 列フィルターのポップアップ、2-3d: ツールパネルとフィルターのチップのバー = まだ) |
 | 2-4 | 行のモデル 3 つ(serverSide / labelRow / grouping) | まだ |
 
 ### 2-3 で分かったこと(作業中)
@@ -174,6 +174,14 @@ React 版の機能なしの構成と並べて、同じ props・同じ操作で D
   別の理由で計算し直されても新しくならないよう、項目を比べる `equals` 付きの memo にした(React 版の `useMemo` の依存と同じ)。
 - **上部バーの検索欄**: 値は今の値と違うときだけ書く(セル内検索のバーと同じ。変換中の文字を消さない。Chromium の IME で確認)。
   利用側が JSX で渡す左アイコン(`globalFilterIcon`)は、prop を読むたびに要素が作り直されるので memo で 1 回だけ読む。
+- **列メニューも core のコントローラのまま**(2-3b): 位置・閉じ方・フォーカス・↑ ↓ の移動は core の
+  `controllers/columnMenuController`、項目の処理は engine の `columnCommands`(段階 1 でつないだもの)で、Solid 版は
+  ポップアップの部品(`view/ColumnMenuPopover.tsx`。React 版と同じ DOM)と見出しの ⋮ を足しただけ。開いたまま別の列へ
+  切り替えたときの小メニューの閉じ方は、React 版の「列が変わったら state を戻す effect」ではなく、開いた列のキーと一緒に
+  覚えて比べる形にした(effect の中で signal へ書かない)。フィルター… / 並び替えを管理… などの、ほかのポップアップを開く
+  項目は 2-3c / 2-3d でつなぐ。
+- **比べるテストの時間切れに注意**: 1 つの場面で手順が多いと vitest の既定の 5 秒を超え、時間切れの場面の React 版の
+  ポップアップが body に残って、次の場面の控えに混ざった(差の原因が分かりにくい)。手順の多い場面は `20_000` を渡す。
 
 ### 2-2 で分かったこと
 

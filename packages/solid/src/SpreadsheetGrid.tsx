@@ -72,6 +72,7 @@ import {
   isControlColumnKey,
   isDetailRowExpandable,
   isInsideDetailCardOf,
+  isSyntheticColumnKey,
   resolveFirstDataColIndex,
 } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/detailRow';
 import {
@@ -1174,6 +1175,35 @@ export function GridShell<T extends object>(props: SpreadsheetGridProps<T>, feat
     gridRootRef.current?.focus({ preventScroll: true });
   };
 
+  // ── 列メニュー(機能 features/columnMenu) ──
+  //   見出しの ⋮(マウスは pointerdown、タッチとキーボードは click で開く)/ 見出しの右クリック / アクティブセルの Alt+↓ で開き、
+  //   項目の処理は engine の columnCommands。機能セットに無ければ ⋮ も見出しの右クリックも出さない(React 版と同じ)。
+  const columnMenuFeature = features.columnMenu;
+  const enableColumnMenu = () => props.enableColumnMenu ?? true;
+  const columnMenu = columnMenuFeature?.createColumnMenu<T>({
+    visibleColumns,
+    enableColumnMenu,
+    gridRootRef,
+  });
+  const columnMenuEnabled = () => enableColumnMenu() && columnMenu !== undefined;
+  // Alt+↓ でアクティブセルの列のメニューを開く(列の見出しのセルの下に出す)。見出しが描かれていない(横の仮想化で外れた)列や、
+  //   ⋮ の無い列(合成列)では開かず、↓ のまま(React 版と同じ)。
+  const openColumnMenuForCell = (col: number): boolean => {
+    const column = untrack(orderedColumns)[col];
+    const root = gridRootRef.current;
+    if (!columnMenu || !column || !root || isSyntheticColumnKey(column.key)) {
+      return false;
+    }
+    const header = Array.from(root.querySelectorAll<HTMLElement>('.ssg-header-cell[data-ssg-col-key]')).find(
+      (cell) => cell.dataset.ssgColKey === column.key,
+    );
+    if (!header) {
+      return false;
+    }
+    columnMenu.openFromKeyboard(column, header);
+    return true;
+  };
+
   // ── 右クリックメニュー(機能 features/contextMenu) ──
   //   本体の右クリックはシェルの 1 つの委譲のハンドラ(onContextMenu)で受け、対象(セル / 行番号)を DOM から逆引きして
   //   getContextMenuItems の項目でメニューを開きます。開かない対象や項目が空ならブラウザの標準のメニューのまま(空のパネルは
@@ -1184,8 +1214,8 @@ export function GridShell<T extends object>(props: SpreadsheetGridProps<T>, feat
   const contextMenuActive = () =>
     contextMenu !== undefined && (props.enableContextMenu ?? false) && props.getContextMenuItems !== undefined;
   // グリッドのポップアップを出しているか(シェルの Tab の順・キー操作・貼り付けを止める。React 版の isAnyGridPopupOpen。
-  //   列メニュー / 列フィルター / ツールパネルは段階 2-3 で足す)。
-  const isAnyGridPopupOpen = () => contextMenu?.isOpen() ?? false;
+  //   列フィルター / ツールパネルは段階 2-3 の続きで足す)。
+  const isAnyGridPopupOpen = () => (columnMenu?.isOpen() ?? false) || (contextMenu?.isOpen() ?? false);
   // キーボードで開こうとした時刻(ms)と開いたか。続けてブラウザが送る contextmenu(Shift+F10 / メニューキーの既定の動作)で、
   //   開いたときは標準のメニューを止め、開かなかった(項目が無い)ときは標準のメニューのままにします(項目をもう一度聞かない)。
   let keyboardContextMenu: { at: number; opened: boolean } | null = null;
@@ -1332,7 +1362,7 @@ export function GridShell<T extends object>(props: SpreadsheetGridProps<T>, feat
     onToggleGroup: noop,
     onToggleDetailRow: detailRowEnabled() ? detailRows.toggleFromKeyboard : undefined,
     resolvePageRow,
-    openColumnMenu: undefined,
+    openColumnMenu: columnMenuEnabled() ? openColumnMenuForCell : undefined,
     openContextMenu: contextMenuActive() ? openContextMenuFromKeyboard : undefined,
     // 最終列の Tab: その行のカードが開いていればカードの最初の要素へ、無ければ表の直後の目印から既定の Tab(段階 2 C-N2 / F-10)。
     onTabPastLastColumn: detailRows.handleTabPastLastColumn,
@@ -1487,7 +1517,7 @@ export function GridShell<T extends object>(props: SpreadsheetGridProps<T>, feat
     enableSorting: enableSorting(),
     sort: ui().sort,
     globalFilterText: selectGlobalFilter(ui()),
-    closeColumnMenu: noop,
+    closeColumnMenu: columnMenu?.close ?? noop,
     openToolPanel: noop,
     openColumnFilterPopover: noop,
     runAutosize: columnAutosize?.runAutosize,
@@ -2289,6 +2319,11 @@ export function GridShell<T extends object>(props: SpreadsheetGridProps<T>, feat
             columnCommands.handleColumnResizePointerDown(column as unknown as UnboundGridColumn<T>, event)
           }
           onColumnDragHandlePointerDown={columnDragHandler()}
+          enableColumnMenu={columnMenuEnabled()}
+          openedMenuColumnKey={columnMenu?.openedColumnKey() ?? null}
+          onColumnMenuButtonPointerDown={columnMenu?.openFromButton}
+          onColumnMenuButtonClick={columnMenu?.openFromButtonClick}
+          onColumnHeaderContextMenu={columnMenu?.openFromContextMenu}
         />
         {/* 上に固定する行(列見出しの直後の sticky の器)。 */}
         {renderPinnedRows('top')}
@@ -2681,6 +2716,39 @@ export function GridShell<T extends object>(props: SpreadsheetGridProps<T>, feat
           </Show>
         </div>
         {bottomBar()}
+        {/* 列メニュー(グリッドの外のポップアップ)。 */}
+        {columnMenu && columnMenuFeature ? (
+          <Show when={columnMenu.openedColumn()}>
+            {(column) => (
+              <Show when={columnMenu.layout()}>
+                {(layout) => (
+                  <columnMenuFeature.ColumnMenuPopover
+                    slots={slots()}
+                    themeClassName={portalClassName()}
+                    title={column().title || column().key}
+                    columnKey={column().key}
+                    canFilter={columnFilterEnabled() && Boolean(column().filterType)}
+                    onOpenFilter={() => columnCommands.handleColumnMenuOpenFilter(column())}
+                    canSort={enableSorting()}
+                    sortDirection={ui().sort.find((entry) => entry.columnKey === column().key)?.direction ?? null}
+                    onSortChange={(direction) => columnCommands.handleColumnMenuSortChange(column().key, direction)}
+                    canManageFilters={columnFilterEnabled()}
+                    pinned={column().pinned}
+                    canChangePinned={props.onColumnsChange !== undefined}
+                    layout={layout()}
+                    panelRef={columnMenu.panelRef}
+                    onPinnedChange={columnCommands.handleColumnMenuPinnedChange}
+                    onAutosizeColumn={columnAutosize ? columnCommands.handleColumnMenuAutosizeColumn : undefined}
+                    onAutosizeAllColumns={columnAutosize ? columnCommands.handleColumnMenuAutosizeAllColumns : undefined}
+                    canResetColumns={props.onColumnsChange !== undefined}
+                    onResetColumns={columnCommands.handleColumnMenuResetColumns}
+                    onRequestClose={columnMenu.close}
+                  />
+                )}
+              </Show>
+            )}
+          </Show>
+        ) : null}
         {/* セル / 行番号の右クリックメニュー(グリッドの外のポップアップ)。 */}
         {contextMenu && contextMenuFeature ? (
           <Show when={contextMenuView()}>

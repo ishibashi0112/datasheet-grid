@@ -38,6 +38,8 @@ import type { CellContextMenuPopover } from '../view/CellContextMenuPopover';
 import type { BodyContextMenuInput, CellContextMenuInput } from './contextMenu';
 import type { GridContextMenuParams } from '../model/gridTypes';
 import type { createFilterOrder } from '../primitives/filterOrder';
+import type { createColumnMenu } from '../primitives/columnMenu';
+import type { ColumnMenuPopover } from '../view/ColumnMenuPopover';
 
 // 機能だけが使う文言の既定(core の logic/localeText<機能>.ts の表)。シェルが本体の既定に重ねて部品へ渡します(React 版と同じ)。
 type FeatureLocaleDefaults = { localeText?: Readonly<Partial<GridLocaleText>> | undefined };
@@ -118,6 +120,13 @@ export type SolidGridFeatures = {
         FeatureLocaleDefaults & {
           createFilterOrder: typeof createFilterOrder;
         })
+    | undefined;
+  // 列メニュー: コントローラ(core)の接続 + ポップアップの部品。
+  columnMenu?:
+    | (FeatureLocaleDefaults & {
+        createColumnMenu: typeof createColumnMenu;
+        ColumnMenuPopover: typeof ColumnMenuPopover;
+      })
     | undefined;
   // IME オンのままの直接入力: 透明な入力受けのコントローラ + 入力してよいセルの判定 + 編集の初期値の決定(いずれも core)。
   imeDirectInput?: NonNullable<GridCoreFeatures['imeDirectInput']> | undefined;

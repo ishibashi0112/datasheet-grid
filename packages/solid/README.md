@@ -47,9 +47,11 @@ React 版と同じ DOM・class で描くので、React 版の `styles.css` を�
   項目が空なら標準のメニュー、項目の 4 種類(action / label / separator / custom)、↑ / ↓ / Home / End、Escape・外を押す・
   スクロールで閉じる)、行の絞り込み(`enableGlobalFilter` / `globalFilterMatch` / `enableColumnFilter` / `manualFiltering` /
   `manualSorting`。上部バーの検索欄 = `showTopBarFilter` / `globalFilterPlaceholder` / `globalFilterIcon`、大きな表は core の
-  ランナーで時間分割して適用中の印、`applyState` の列フィルターと相対日付プリセット。列フィルターのポップアップは段階 2-3c)
+  ランナーで時間分割して適用中の印、`applyState` の列フィルターと相対日付プリセット。列フィルターのポップアップは段階 2-3c)、
+列メニュー(`enableColumnMenu`。見出しの ⋮ / 見出しの右クリック / Alt+↓、昇順・降順、列の固定の小メニュー、幅の自動調整、
+列のリセット。フィルター… / 管理の項目は段階 2-3c / 2-3d)
 
-無いもの(段階 2 の残り): `/lite` の残りの 5 の機能(列メニュー・ツールパネル・SSRM・ラベル行・行のグループ)と、列フィルターの
+無いもの(段階 2 の残り): `/lite` の残りの 4 の機能(ツールパネル・SSRM・ラベル行・行のグループ)と、列フィルターの
 ポップアップ。
 
 `renderCell` / `renderHeader` / `renderTopBar` / `renderBottomBar` は、React 版のように描き直しのたびに呼ぶのではなく、Solid の部品と

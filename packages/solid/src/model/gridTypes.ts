@@ -55,6 +55,7 @@ type SupportedPropKeys =
   | 'globalFilterMatch'
   | 'enableColumnFilter'
   | 'manualFiltering'
+  | 'enableColumnMenu'
   | 'enableColumnResize'
   | 'onColumnsChange'
   | 'showValidationMarks'

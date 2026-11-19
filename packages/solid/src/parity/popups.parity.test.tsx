@@ -247,3 +247,157 @@ describe('行の絞り込み(filtering)', () => {
     });
   });
 });
+
+describe('列メニュー(columnMenu)', () => {
+  const focused = () => document.activeElement ?? document.body;
+  const menuItem = (label: string) =>
+    Array.from(document.querySelectorAll<HTMLElement>('.ssg-menu-item')).find((el) => el.textContent?.includes(label));
+  const menuButton = (ctx: ParityContext, key: string) =>
+    ctx.header(key).querySelector<HTMLButtonElement>('.ssg-icon-btn');
+  const clickItem = async (ctx: ParityContext, label: string) => {
+    await ctx.act(() => {
+      const item = menuItem(label);
+      if (!item) {
+        throw new Error(`[${ctx.framework}] 項目がありません: ${label}`);
+      }
+      fireEvent.click(item, { detail: 1 });
+    });
+  };
+  const openByButton = async (ctx: ParityContext, key: string) => {
+    await ctx.act(() => {
+      const button = menuButton(ctx, key);
+      if (!button) {
+        throw new Error(`[${ctx.framework}] ⋮ がありません: ${key}`);
+      }
+      fireEvent.pointerDown(button, { ...pointer, pointerType: 'mouse' });
+      fireEvent.pointerUp(button, { ...pointer, pointerType: 'mouse' });
+      fireEvent.click(button, { detail: 1 });
+    });
+  };
+  const key = async (ctx: ParityContext, init: KeyboardEventInit & { key: string }) => {
+    await ctx.act(() => {
+      fireEvent.keyDown(focused(), init);
+    });
+  };
+
+  it.each([
+    ['あり', ['columnMenu']],
+    ['あり + 幅の自動調整', ['columnMenu', 'columnAutosize']],
+    ['なし', []],
+  ])('⋮ / 右クリック / Alt+↓ で開き、並び替え・固定・リセット・閉じ方(機能%s)', async (_label, features) => {
+    await expectParity({
+      features,
+      watch: ['onSortChange', 'onColumnsChange'],
+      props: () => ({ rows: makeRows(12), columns, rowKeyGetter: (row: Row) => row.id, height: 360 }),
+      steps: async (ctx) => {
+        ctx.snapshot('最初(見出しの ⋮)');
+        if (!menuButton(ctx, 'qty')) {
+          // 機能なし: 右クリックはブラウザの標準のメニューのまま。
+          await ctx.act(() => {
+            ctx.log('見出しの右クリックの標準のメニューを止めたか', !fireEvent.contextMenu(ctx.header('qty'), { clientX: 200, clientY: 40 }));
+          });
+          ctx.snapshot('機能なしの右クリック');
+          return;
+        }
+        // ⋮(マウスは pointerdown で開く)。開いた後はパネルにフォーカス。
+        await openByButton(ctx, 'qty');
+        ctx.snapshot('⋮ で開いた');
+        await key(ctx, { key: 'ArrowDown' });
+        ctx.snapshot('↓ で先頭の項目へ');
+        await key(ctx, { key: 'End' });
+        ctx.snapshot('End で最後の項目へ');
+        // 昇順(閉じてグリッドへフォーカス)。
+        await clickItem(ctx, '昇順で並び替え');
+        ctx.snapshot('昇順を選んだ');
+        // もう一度開いて同じ向き = 解除。
+        await openByButton(ctx, 'qty');
+        ctx.snapshot('昇順の ✓');
+        await clickItem(ctx, '昇順で並び替え');
+        ctx.snapshot('昇順を外した');
+        // 同じ ⋮ をもう一度押すと閉じる。
+        await openByButton(ctx, 'name');
+        await openByButton(ctx, 'name');
+        ctx.snapshot('同じ ⋮ で閉じた');
+        // 見出しの右クリック(押した位置に開く)。
+        await ctx.act(() => {
+          ctx.log('見出しの右クリックの標準のメニューを止めたか', !fireEvent.contextMenu(ctx.header('city'), { clientX: 300, clientY: 40 }));
+        });
+        ctx.snapshot('右クリックで開いた');
+        // 列の固定の小メニュー(マウスのホバーで開く)。
+        await ctx.act(() => {
+          const pin = menuItem('列の固定');
+          if (pin) {
+            fireEvent.pointerOver(pin, { pointerType: 'mouse' });
+            fireEvent.pointerEnter(pin, { pointerType: 'mouse' });
+          }
+        });
+        ctx.snapshot('列の固定の小メニュー');
+        // 別の項目へホバーすると閉じる。
+        await ctx.act(() => {
+          const other = menuItem('列のリセット');
+          if (other) {
+            fireEvent.pointerOver(other, { pointerType: 'mouse' });
+            fireEvent.pointerEnter(other, { pointerType: 'mouse' });
+          }
+        });
+        ctx.snapshot('別の項目へホバー');
+        // 押して開き、左に固定。
+        await clickItem(ctx, '列の固定');
+        await clickItem(ctx, '左に固定');
+        ctx.snapshot('左に固定を選んだ');
+        // キーボード: アクティブセルで Alt+↓(先頭の項目へ)→ 列の固定で → → 小メニューの先頭 → ← で戻る → Escape。
+        await ctx.act(() => {
+          fireEvent.pointerDown(ctx.cell(2, 'name'), pointer);
+          fireEvent.pointerUp(window, pointer);
+        });
+        await ctx.act(() => {
+          fireEvent.keyDown(ctx.shell(), { key: 'ArrowDown', altKey: true });
+        });
+        ctx.snapshot('Alt+↓ で開いた');
+        await ctx.act(() => {
+          menuItem('列の固定')?.focus();
+        });
+        await key(ctx, { key: 'ArrowRight' });
+        ctx.snapshot('→ で小メニュー');
+        await key(ctx, { key: 'ArrowLeft' });
+        ctx.snapshot('← で戻った');
+        await key(ctx, { key: 'Escape' });
+        ctx.snapshot('Escape で閉じた');
+        // Tab で閉じる / 外を押して閉じる。
+        await openByButton(ctx, 'qty');
+        await key(ctx, { key: 'Tab' });
+        ctx.snapshot('Tab で閉じた');
+        await openByButton(ctx, 'qty');
+        await ctx.act(() => {
+          fireEvent.pointerDown(document.body, pointer);
+        });
+        ctx.snapshot('外を押して閉じた');
+        // 列のリセットと幅の自動調整(機能があるときだけ項目が出る)。
+        await openByButton(ctx, 'qty');
+        ctx.log('幅の自動調整の項目', menuItem('この列の幅を自動調整') !== undefined);
+        await clickItem(ctx, '列のリセット');
+        ctx.snapshot('列のリセット');
+        // ⋮ を出さない(enableColumnMenu: false)。
+        await ctx.setProps({ enableColumnMenu: false });
+        ctx.snapshot('enableColumnMenu: false');
+        await ctx.act(() => {
+          ctx.log('無効の右クリックの標準のメニューを止めたか', !fireEvent.contextMenu(ctx.header('qty'), { clientX: 200, clientY: 40 }));
+        });
+      },
+    });
+  }, 20_000);
+
+  it('onColumnsChange が無いときの固定の小メニューとリセット、並び替えなし(enableSorting: false)', async () => {
+    await expectParity({
+      features: ['columnMenu'],
+      props: () => ({ rows: makeRows(6), columns, rowKeyGetter: (row: Row) => row.id, height: 300, enableSorting: false }),
+      steps: async (ctx) => {
+        await openByButton(ctx, 'qty');
+        await clickItem(ctx, '列の固定');
+        ctx.snapshot('固定できない小メニュー(注記)');
+        await key(ctx, { key: 'Escape' });
+        ctx.snapshot('閉じた');
+      },
+    });
+  });
+});

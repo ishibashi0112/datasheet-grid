@@ -1,7 +1,7 @@
 // 列見出しの行(1 つのペインぶん)。React 版の view/GridHeaderRow.tsx と同じ DOM と class。
 //   段階 1(機能なし)の範囲: コーナー(# / 全選択のチェック)・見出しの文字(renderHeader)・並びの印・フィルター中の印・
 //   列幅のつまみ。列の並べ替えのつまみ(grip)は機能 columnReorder で、シェルが onColumnDragHandlePointerDown を渡したときだけ
-//   描きます。列メニューの ⋮ は機能(columnMenu。段階 2-3)なので、まだ置き場の .ssg-header-actions だけです。
+//   描きます。列メニューの ⋮ と見出しの右クリックは機能 columnMenu で、シェルが enableColumnMenu を true にしたときだけ出します。
 import { For, Show, createMemo } from 'solid-js';
 import type {
   ColumnFilterValue,
@@ -57,6 +57,16 @@ type GridHeaderRowProps<T> = {
   onColumnResizePointerDown: (column: GridColumn<T>, event: PointerEvent) => void;
   // 列の並べ替えの grip の pointerdown(機能 columnReorder。onColumnsChange があるときだけ。無ければ grip を出さない)。
   onColumnDragHandlePointerDown?: ((column: GridColumn<T>, event: PointerEvent & { currentTarget: HTMLElement }) => void) | undefined;
+  // 列メニュー(機能 columnMenu)。false のときは ⋮ を出さず、右クリックもブラウザの標準のメニューのまま。
+  enableColumnMenu: boolean;
+  // メニューを開いている列のキー(⋮ の active の表示と aria-expanded)。
+  openedMenuColumnKey: string | null;
+  // ⋮ の pointerdown(マウスはここで開く)と click(タッチとキーボードはここで開く)。見出しの右クリック。
+  onColumnMenuButtonPointerDown?:
+    | ((column: GridColumn<T>, event: PointerEvent & { currentTarget: HTMLButtonElement }) => void)
+    | undefined;
+  onColumnMenuButtonClick?: ((column: GridColumn<T>, event: MouseEvent & { currentTarget: HTMLButtonElement }) => void) | undefined;
+  onColumnHeaderContextMenu?: ((column: GridColumn<T>, event: MouseEvent) => void) | undefined;
 };
 
 // React 版の <svg focusable="false">(Solid の型には focusable が無いので属性として渡す)。
@@ -170,7 +180,9 @@ export function GridHeaderRow<T>(props: GridHeaderRowProps<T>) {
                 // 合成列は列メニューの対象外(ブラウザのメニューも出さない)。ほかの列のメニューは機能(columnMenu)。
                 if (isSynthetic()) {
                   event.preventDefault();
+                  return;
                 }
+                props.onColumnHeaderContextMenu?.(column(), event);
               }}
               class={[
                 'ssg-header-cell',
@@ -250,6 +262,27 @@ export function GridHeaderRow<T>(props: GridHeaderRowProps<T>) {
                       </svg>
                     </span>
                   )}
+                </Show>
+                {/* 列メニューの ⋮(合成列には出さない)。Tab の止まる先には入れない(キー操作はグリッドの本体で行う)。 */}
+                <Show when={props.enableColumnMenu && !isSynthetic()}>
+                  <button
+                    type="button"
+                    tabindex={-1}
+                    data-ssg-tooltip={texts().columnMenu}
+                    aria-label={formatLocaleText(texts().columnMenuFor, { column: column().title?.trim() || column().key })}
+                    aria-haspopup="menu"
+                    aria-expanded={props.openedMenuColumnKey === column().key ? 'true' : 'false'}
+                    onPointerDown={(event) => props.onColumnMenuButtonPointerDown?.(column(), event)}
+                    onClick={(event) => props.onColumnMenuButtonClick?.(column(), event)}
+                    class={[
+                      'ssg-icon-btn',
+                      { 'ssg-icon-btn--active': props.openedMenuColumnKey === column().key },
+                      props.slots.iconButton?.className,
+                    ]}
+                    style={props.slots.iconButton?.style}
+                  >
+                    ⋮
+                  </button>
                 </Show>
               </div>
               <Show when={column().resizable ?? props.enableColumnResize}>
