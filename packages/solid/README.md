@@ -62,8 +62,8 @@ pnpm --filter ./packages/solid spike:build  # 大きさを測るためのライ�
 | `hooks/useVirtualizerCore.ts` | `primitives/columnVirtualizer.ts` |
 | `GridShell.tsx`(5,246 行) | `SpreadsheetGrid.tsx`(約 1,590 行) |
 | `view/GridHeaderRow.tsx` / `view/GridBodyLayer.tsx` | 同じ名前(`view/`) |
-| `view/DefaultGridTopBar.tsx` / `DefaultGridBottomBar.tsx` / `RowSelectionCheckbox.tsx` / `GridDetailLayer.tsx` / `DetailToggleButton.tsx` / `GridChip.tsx` / `GridTotalRow.tsx` / `GridPinnedRows.tsx` / `GridSelectionAggregates.tsx` / `GridScrollHint.tsx` |
-| `CopyRangeOverlay.tsx` / `ColumnHoverOverlay.tsx` | `view/CopyRangeOverlay.tsx`(2 つをまとめた) | 同じ名前(`view/`) |
+| `view/DefaultGridTopBar.tsx` / `DefaultGridBottomBar.tsx` / `RowSelectionCheckbox.tsx` / `GridDetailLayer.tsx` / `DetailToggleButton.tsx` / `GridChip.tsx` / `GridTotalRow.tsx` / `GridPinnedRows.tsx` / `GridSelectionAggregates.tsx` / `GridScrollHint.tsx` | 同じ名前(`view/`) |
+| `CopyRangeOverlay.tsx` / `ColumnHoverOverlay.tsx` | `view/CopyRangeOverlay.tsx`(2 つをまとめた) |
 | `features/*`(機能の部品)/ `createSpreadsheetGrid.tsx` | 同じ名前(入れた機能だけ) |
 | `editors/*`(CellEditorLayer / 6 種のエディタ / CheckboxCell / CellEditorErrorBubble) | 同じ名前(`editors/`) |
 | `hooks/usePortalTokens.ts` / `editors/useTopAlignedInput.ts` / `hooks/useSelectionAggregates.ts` | `primitives/portalTokens.ts` / `primitives/topAlignedInput.ts` / `primitives/selectionAggregates.ts` |
