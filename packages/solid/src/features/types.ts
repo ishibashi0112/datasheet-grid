@@ -77,6 +77,8 @@ export type SolidGridFeatures = {
         ColumnHoverOverlay: typeof ColumnHoverOverlay;
       })
     | undefined;
+  // IME オンのままの直接入力: 透明な入力受けのコントローラ + 入力してよいセルの判定 + 編集の初期値の決定(いずれも core)。
+  imeDirectInput?: NonNullable<GridCoreFeatures['imeDirectInput']> | undefined;
   // セル内検索: 検索のコントローラ(core)+ 右上の検索バーの部品 + ヒットを分ける純関数(既定のセルの <mark>)。
   find?:
     | (NonNullable<GridCoreFeatures['find']> &

@@ -3,6 +3,7 @@ import { autoHeightFeature } from './autoHeight';
 import { conditionalFormatFeature } from './conditionalFormat';
 import { exportFeature } from './export';
 import { findFeature } from './find';
+import { imeDirectInputFeature } from './imeDirectInput';
 import { motionExtrasFeature } from './motionExtras';
 import { pinnedRowsFeature } from './pinnedRows';
 import { scrollHintFeature } from './scrollHint';
@@ -20,4 +21,5 @@ export const fullGridFeatures = {
   scrollHint: scrollHintFeature,
   motionExtras: motionExtrasFeature,
   find: findFeature,
+  imeDirectInput: imeDirectInputFeature,
 } satisfies Required<GridFeatures> as unknown as Required<SolidGridFeatures>;

@@ -207,3 +207,84 @@ describe('セル内検索(find)', () => {
     });
   }, 20_000);
 });
+
+describe('IME オンのままの直接入力(imeDirectInput)', () => {
+  const imeInput = (ctx: ParityContext) => ctx.container.querySelector<HTMLInputElement>('.ssg-ime-input');
+  // 入力受けで変換して確定する(jsdom には IME が無いので、ブラウザと同じ順でイベントを送る)。
+  const compose = async (ctx: ParityContext, text: string) => {
+    const input = imeInput(ctx);
+    if (!input) {
+      return;
+    }
+    await ctx.act(() => {
+      fireEvent.compositionStart(input, { data: '' });
+    });
+    ctx.snapshot(`「${text}」を変換中`);
+    await ctx.act(() => {
+      input.value = text;
+      fireEvent.input(input, { data: text, isComposing: true });
+      fireEvent.compositionEnd(input, { data: text });
+    });
+  };
+
+  it.each([
+    ['あり', ['imeDirectInput']],
+    ['なし(空)', []],
+  ])('入力受けへのフォーカス・変換の確定で編集・数値の列・編集できない列・無効にする(機能%s)', async (_label, features) => {
+    await expectParity({
+      features,
+      watch: ['onRowsChange'],
+      props: () => ({ rows: makeRows(8), columns, rowKeyGetter: (row: Row) => row.id, height: 360, imeDirectInput: true }),
+      steps: async (ctx) => {
+        await ctx.act(() => {
+          fireEvent.pointerDown(ctx.cell(1, 'name'), pointer);
+          fireEvent.pointerUp(window, pointer);
+        });
+        ctx.snapshot('セルを押す(入力受けへフォーカス)');
+        await compose(ctx, 'あいう');
+        ctx.snapshot('「あいう」を確定(編集を始める)');
+        const editor = ctx.container.querySelector<HTMLInputElement>('.ssg-cell-editor-input');
+        if (editor) {
+          await ctx.act(() => {
+            fireEvent.keyDown(editor, { key: 'Enter' });
+          }, 120);
+        }
+        ctx.snapshot('Enter で確定(下のセルへ・入力受けへ戻る)');
+        // 数値の列: 全角の数字は半角へ。
+        await ctx.act(() => {
+          fireEvent.pointerDown(ctx.cell(3, 'qty'), pointer);
+          fireEvent.pointerUp(window, pointer);
+        });
+        await compose(ctx, '１２３');
+        ctx.snapshot('数値の列で「１２３」を確定');
+        await ctx.act(() => {
+          fireEvent.keyDown(ctx.container.querySelector('.ssg-cell-editor-input') ?? ctx.shell(), {
+            key: 'Escape',
+          });
+        }, 120);
+        // 数値として読めない変換は捨てる。
+        await compose(ctx, 'あ');
+        ctx.snapshot('数値の列で「あ」(捨てる)');
+        // 編集できない列(id)。
+        await ctx.act(() => {
+          fireEvent.pointerDown(ctx.cell(2, 'id'), pointer);
+          fireEvent.pointerUp(window, pointer);
+        });
+        await compose(ctx, 'え');
+        ctx.snapshot('編集できない列で「え」(捨てる)');
+        // 命令的 API の focus() も入力受けへ。
+        await ctx.act(() => {
+          (ctx.container.querySelector('.ssg-shell') as HTMLElement | null)?.blur();
+          call(ctx, 'focus');
+        });
+        ctx.snapshot('focus()');
+        await ctx.setProps({ imeDirectInput: false });
+        ctx.snapshot('imeDirectInput={false}');
+        await ctx.act(() => {
+          call(ctx, 'focus');
+        });
+        ctx.snapshot('無効の後の focus()');
+      },
+    });
+  }, 20_000);
+});

@@ -35,9 +35,10 @@ React 版と同じ DOM・class で描くので、React 版の `styles.css` を�
   行番号のバブル / ルーラー / ジャンプの線 / カスタムスクロールバー、`hintColumn` / `renderHint` / `trigger` / `minRows`)、
   動きの追加分(`highlightChanges` = 変わったセルのフラッシュと数値のトゥイーン、`showCopyRange` = コピー範囲の動く点線、
   `hoverHighlight: 'cross'` = クロスヘア)、セル内検索(`find` / `onFindChange`、ハンドルの `openFind` / `closeFind` /
-  `findNext` / `findPrev`。右上のバーと既定のセルの `<mark>`)
+  `findNext` / `findPrev`。右上のバーと既定のセルの `<mark>`)、IME オンのままの直接入力(`imeDirectInput`。
+  透明な入力受けで変換を始め、確定した文字で編集を始める。数値の列は全角の数字を半角へ)
 
-無いもの(段階 2 の残り): `/lite` の残りの 12 の機能(ラベル行・SSRM・行のグループ・列フィルター・右クリックメニューなどを含む)。
+無いもの(段階 2 の残り): `/lite` の残りの 11 の機能(ラベル行・SSRM・行のグループ・列フィルター・右クリックメニューなどを含む)。
 
 `renderCell` / `renderHeader` / `renderTopBar` / `renderBottomBar` は、React 版のように描き直しのたびに呼ぶのではなく、Solid の部品と
 同じく必要なときだけ呼びます: `renderCell` は行(と値)や列が変わったとき、`renderHeader` は列が変わったとき、バーは関数が変わった
@@ -48,7 +49,7 @@ React 版と同じ DOM・class で描くので、React 版の `styles.css` を�
 ## 使い方
 
 ```sh
-pnpm --filter ./packages/solid dev          # デモ(10,000 行 × 39 列。エディタ 6 種・行の選択・展開行・行の高さの自動調整・合計行と固定行・条件付き書式・選択範囲の集計・スクロールのヒント・変更のハイライト・クロスヘア・セル内検索・テーマ・列の固定・グリッドを外すボタン)
+pnpm --filter ./packages/solid dev          # デモ(10,000 行 × 39 列。エディタ 6 種・行の選択・展開行・行の高さの自動調整・合計行と固定行・条件付き書式・選択範囲の集計・スクロールのヒント・変更のハイライト・クロスヘア・セル内検索・IME の直接入力・テーマ・列の固定・グリッドを外すボタン)
 pnpm --filter ./packages/solid test         # jsdom のテスト(Solid の JSX 変換の vitest 設定。React 版と並べて比べるテストも)
 pnpm --filter ./packages/solid typecheck
 pnpm --filter ./packages/solid spike:build  # 大きさを測るためのライブラリビルド(dist/)

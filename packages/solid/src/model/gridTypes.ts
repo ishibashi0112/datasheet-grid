@@ -73,6 +73,7 @@ type SupportedPropKeys =
   | 'hoverHighlight'
   | 'find'
   | 'onFindChange'
+  | 'imeDirectInput'
   | 'renderTopBar'
   | 'renderBottomBar'
   | 'initialState'

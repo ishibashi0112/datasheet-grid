@@ -77,7 +77,7 @@ import {
 } from '@ishibashi0112/spreadsheet-grid-core/internal/utils/popupContainer';
 import { createCellCommands, writeCellValueTo } from '@ishibashi0112/spreadsheet-grid-core/internal/engine/cellCommands';
 import { getCellValue } from '@ishibashi0112/spreadsheet-grid-core/internal/utils/permissions';
-import { isImeComposingKeyEvent } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/domGuards';
+import { IME_INPUT_ATTRIBUTE, isImeComposingKeyEvent } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/domGuards';
 import {
   createKeyboardController,
   resolveFirstDataCell,
@@ -406,6 +406,7 @@ export function GridShell<T extends object>(props: SpreadsheetGridProps<T>, feat
   //   minRows 未満のあいだは待機(React 版と同じ)。
   const scrollHintFeature = features.scrollHint;
   const findFeature = features.find;
+  const imeFeature = features.imeDirectInput;
   const resolvedScrollHint = createMemo(() =>
     scrollHintFeature ? scrollHintFeature.resolveScrollHintOptions<T, SolidGridTypes>(props.scrollHint) : null,
   );
@@ -1031,6 +1032,47 @@ export function GridShell<T extends object>(props: SpreadsheetGridProps<T>, feat
     startEditWithValue: edit.startEditWithValue,
     dispatch,
   }));
+  // ── IME オンのままの直接入力(機能 features/imeDirectInput) ──
+  //   imeDirectInput が有効なときだけ、シェルの末尾の透明な入力受けへグリッドのフォーカスを置き、IME の変換をそこで始めます。
+  //   変換が確定したら、確定した文字を初期値に通常の編集を始めます(startEditWithValue)。本体は core
+  //   controllers/imeInputController(engine.imeInput)。入力受けの位置はセルの要素から測るので、セルを描いた後の 'effect' で
+  //   update します(React 版はレイアウト effect)。機能セットに無ければ無効(engine.imeInput も代役)です。
+  const imeDirectInputEnabled = createMemo(() => (props.imeDirectInput ?? false) && imeFeature !== undefined);
+  connectController(
+    engine.imeInput,
+    () => ({
+      enabled: imeDirectInputEnabled(),
+      gridRootRef,
+      editing: ui().editingCell !== null,
+      activeCell: ui().activeCell,
+      resolveCell: (cell: CellCoord) => {
+        const column = untrack(orderedColumns)[cell.col];
+        return column ? { colKey: column.key, align: column.align } : null;
+      },
+      canStartEdit: (cell: CellCoord) =>
+        imeFeature?.canStartImeEdit(
+          {
+            rowModel: untrack(rowModel),
+            columns: untrack(orderedColumns),
+            readOnly: untrack(readOnly),
+            canEditCell: untrack(() => props.canEditCell),
+          },
+          cell,
+        ) === true,
+      startEdit: edit.startEditWithValue,
+      // number の列は確定した文字を半角の数値の表記へ直して編集を始めます(読めない変換は捨てる)。
+      resolveEditText: (cell: CellCoord, text: string) =>
+        imeFeature ? imeFeature.resolveImeEditText(untrack(orderedColumns), cell, text) : text,
+    }),
+    'effect',
+  );
+  // 入力受けを外したら(imeDirectInput を false にした)コントローラから切り離します(React 版の ref の null)。
+  createEffect(imeDirectInputEnabled, (enabled) => {
+    if (!enabled) {
+      engine.imeInput.attach(null);
+    }
+  });
+
   // ダブルクリック: 利用側の onCellDoubleClick が preventDefault しなければ編集を始める(React 版と同じ)。
   cellDoubleClickRef.current = (cell, event) => {
     if (engine.cellEventNotifier.notifyCellDoubleClick(cell, event)) {
@@ -2025,6 +2067,22 @@ export function GridShell<T extends object>(props: SpreadsheetGridProps<T>, feat
                 slot={slots().findBar}
               />
             )}
+          </Show>
+          {/* IME オンのままの直接入力の入力受け(imeDirectInput が有効なときだけ)。値 / 位置 / 変換中の見た目はコントローラが
+              直接扱います。Tab の順番には入れません(タブストップはシェルのまま)。 */}
+          <Show when={imeDirectInputEnabled()}>
+            <input
+              ref={(element) => engine.imeInput.attach(element)}
+              {...{ [IME_INPUT_ATTRIBUTE]: '' }}
+              class="ssg-ime-input"
+              type="text"
+              tabindex={-1}
+              autocomplete="off"
+              autocorrect="off"
+              autocapitalize="off"
+              spellcheck="false"
+              aria-label={localeTexts().cellInput}
+            />
           </Show>
         </div>
         {bottomBar()}
