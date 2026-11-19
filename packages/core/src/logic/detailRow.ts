@@ -250,6 +250,16 @@ export const resolveDetailRowExtras = <T>({
   return extras;
 };
 
+// 追加(Solid 版 段階 1-3): その行を開閉できるか(行が多すぎて展開行を描けない間は false = 1.0.1 / AP-26、detailRow.isExpandable の
+//   判定。未指定なら開閉できる)。renderCell の ctx.detail.expandable / トグル列 / キーの開閉で使います。
+export const isDetailRowExpandable = <T>(
+  drawable: boolean,
+  isExpandable: ((row: T, ctx: { rowKey: GridRowKey; sourceRowIndex: number }) => boolean) | undefined,
+  row: T,
+  rowKey: GridRowKey,
+  sourceRowIndex: number,
+): boolean => drawable && (isExpandable ? isExpandable(row, { rowKey, sourceRowIndex }) : true);
+
 // トグル時に「そのセルの view index」でキャッシュを seed します(serverSide でも走査なしで解決できる)。
 export const seedDetailIndexCache = (
   cache: DetailIndexCache,

@@ -16,6 +16,12 @@ export const isPrintableKey = (event: {
 export const isImeComposingKeyEvent = (event: { isComposing?: boolean; keyCode?: number }): boolean =>
   event.isComposing === true || event.keyCode === 229;
 
+// 追加(Solid 版 段階 1-3): Tab キーか。key が 'Unidentified' のときは keyCode(9)で見ます(WebKitGTK の WebDriver は
+//   Shift+Tab の keydown を key='Unidentified' で送る。React の合成イベントは key を keyCode から 'Tab' に直すので、
+//   元のイベント(nativeEvent / Solid)を読むところはこれで React の合成イベントと同じ判定にそろえます)。
+export const isTabKeyEvent = (event: { key: string; keyCode?: number }): boolean =>
+  event.key === 'Tab' || (event.key === 'Unidentified' && event.keyCode === 9);
+
 // 追加(G-2): IME オンのままの直接入力(imeDirectInput)の入力受けに付ける属性です。入力受けは編集していない
 //   あいだグリッドのフォーカスを持つ透明な input で、キー操作 / 貼り付けはグリッド本体と同じ扱いにします。
 export const IME_INPUT_ATTRIBUTE = 'data-ssg-ime-input';
