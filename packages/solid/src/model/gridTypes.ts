@@ -67,6 +67,7 @@ type SupportedPropKeys =
   | 'showTopBarCounts'
   | 'showBottomBarCounts'
   | 'showSelectionAggregates'
+  | 'scrollHint'
   | 'renderTopBar'
   | 'renderBottomBar'
   | 'initialState'

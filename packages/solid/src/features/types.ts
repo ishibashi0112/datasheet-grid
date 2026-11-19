@@ -22,6 +22,8 @@ import type { GridTotalRow } from '../view/GridTotalRow';
 import type { GridPinnedRows } from '../view/GridPinnedRows';
 import type { GridSelectionAggregates } from '../view/GridSelectionAggregates';
 import type { createSelectionAggregates } from '../primitives/selectionAggregates';
+import type { GridScrollHint } from '../view/GridScrollHint';
+import type { resolveScrollHintOptions } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/scrollHint';
 
 // 機能だけが使う文言の既定(core の logic/localeText<機能>.ts の表)。シェルが本体の既定に重ねて部品へ渡します(React 版と同じ)。
 type FeatureLocaleDefaults = { localeText?: Readonly<Partial<GridLocaleText>> | undefined };
@@ -56,6 +58,13 @@ export type SolidGridFeatures = {
     | (FeatureLocaleDefaults & {
         createSelectionAggregates: typeof createSelectionAggregates;
         SelectionAggregates: typeof GridSelectionAggregates;
+      })
+    | undefined;
+  // スクロール位置インジケーター(行番号のバブル / カスタムスクロールバー / ルーラー): オプションの解決(core)+ 描画の部品。
+  scrollHint?:
+    | (FeatureLocaleDefaults & {
+        resolveScrollHintOptions: typeof resolveScrollHintOptions;
+        ScrollHint: typeof GridScrollHint;
       })
     | undefined;
 };

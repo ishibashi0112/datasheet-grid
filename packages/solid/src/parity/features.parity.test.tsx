@@ -443,3 +443,123 @@ describe('選択範囲の集計(selectionAggregates)', () => {
     });
   });
 });
+
+describe('スクロール位置インジケーター(scrollHint)', () => {
+  const scrollTo = async (ctx: ParityContext, top: number, waitMs = 120) => {
+    const scroller = ctx.container.querySelector<HTMLElement>('.ssg-scroll-container');
+    if (!scroller) {
+      throw new Error('スクロールの器がありません');
+    }
+    await ctx.act(() => {
+      scroller.scrollTop = top;
+      scroller.dispatchEvent(new Event('scroll'));
+    }, waitMs);
+  };
+  const scroller = (ctx: ParityContext) => ctx.container.querySelector<HTMLElement>('.ssg-scroll-container') as HTMLElement;
+
+  it.each([
+    ['あり', ['scrollHint']],
+    ['なし(空)', []],
+  ])('バブル・ルーラー・ジャンプの線・カスタムスクロールバー・止まると消える・minRows(機能%s)', async (_label, features) => {
+    await expectParity({
+      features,
+      props: () => ({ rows: makeRows(300), columns, rowKeyGetter: (row: Row) => row.id, height: 360, scrollHint: true }),
+      steps: async (ctx) => {
+        ctx.snapshot('最初(スクロールしていない)');
+        ctx.track('バブル', () => ctx.container.querySelector('.ssg-scroll-hint-bubble'));
+        await scrollTo(ctx, 3000);
+        ctx.snapshot('スクロール中');
+        await scrollTo(ctx, 4200);
+        ctx.snapshot('さらにスクロール');
+        // 止まってから 1 秒で消える。
+        await ctx.act(() => {}, 1200);
+        ctx.snapshot('止まって 1 秒後');
+        // ガターの上のポインタでジャンプの線(ルーラーも出る)。
+        const gutter = () => ctx.container.querySelector<HTMLElement>('.ssg-scroll-hint-scrollbar');
+        await ctx.act(() => {
+          const target = gutter();
+          if (target) {
+            fireEvent.pointerEnter(target, { clientY: 200 });
+            fireEvent.pointerMove(target, { clientY: 200, pointerId: 1 });
+          }
+        });
+        ctx.snapshot('ガターの上のポインタ');
+        // ガターを押すとそこへ飛ぶ(scrollTop を書くだけ。scroll はテストから送る)。
+        await ctx.act(() => {
+          const target = gutter();
+          if (target) {
+            target.setPointerCapture = () => {};
+            target.releasePointerCapture = () => {};
+            fireEvent.pointerDown(target, { clientY: 300, pointerId: 1, button: 0 });
+          }
+        });
+        ctx.log('ガターを押した後の scrollTop', scroller(ctx).scrollTop);
+        await scrollTo(ctx, scroller(ctx).scrollTop);
+        ctx.snapshot('ガターを押す');
+        await ctx.act(() => {
+          const target = gutter();
+          if (target) {
+            fireEvent.pointerMove(target, { clientY: 120, pointerId: 1 });
+            fireEvent.pointerUp(target, { clientY: 120, pointerId: 1 });
+            fireEvent.pointerLeave(target);
+          }
+        });
+        ctx.log('ドラッグした後の scrollTop', scroller(ctx).scrollTop);
+        await scrollTo(ctx, scroller(ctx).scrollTop);
+        ctx.snapshot('ドラッグして離す');
+        await ctx.setProps({ scrollHint: { minRows: 1000 } });
+        ctx.snapshot('minRows に足りない');
+      },
+    });
+  }, 20_000);
+
+  it.each([
+    ['あり', ['scrollHint']],
+    ['なし(空)', []],
+  ])('hintColumn / renderHint・trigger の always と hover・ネイティブのバー(機能%s)', async (_label, features) => {
+    const { createElement } = await import('react');
+    await expectParity({
+      features,
+      props: (framework) => ({
+        rows: makeRows(300),
+        columns,
+        rowKeyGetter: (row: Row) => row.id,
+        height: 360,
+        scrollHint: {
+          scrollbar: false,
+          trigger: 'always',
+          renderHint:
+            framework === 'react'
+              ? ({ rowData }: { rowData?: Row }) =>
+                  rowData ? createElement('b', { className: 'hint' }, `「${rowData.name}」`) : null
+              : ({ rowData }: { rowData?: Row }) => (rowData ? <b class="hint">{`「${rowData.name}」`}</b> : null),
+        },
+      }),
+      steps: async (ctx) => {
+        await scrollTo(ctx, 1800);
+        ctx.snapshot('always + renderHint(Solid は要素)');
+        // ネイティブのバーの帯の上のポインタでジャンプの線(補足つき)。
+        await ctx.act(() => {
+          fireEvent.pointerMove(scroller(ctx), { clientX: 790, clientY: 250, pointerId: 1 });
+        });
+        ctx.snapshot('帯の上のポインタ');
+        await ctx.act(() => {
+          fireEvent.pointerLeave(scroller(ctx));
+        });
+        await ctx.setProps({ scrollHint: { scrollbar: false, ruler: false, trigger: 'hover', hintColumn: 'note' } });
+        // スクロールが止まって 1 秒たつまでは出ている。
+        await ctx.act(() => {}, 1200);
+        ctx.snapshot('hover(まだ入っていない)・hintColumn');
+        await ctx.act(() => {
+          fireEvent.pointerEnter(scroller(ctx));
+        });
+        ctx.snapshot('hover(入った)');
+        // 先頭が 103 行目(メモのある行)。
+        await scrollTo(ctx, 3672);
+        ctx.snapshot('hintColumn の値のある行');
+        await ctx.setProps({ localeText: { scrollHintRow: 'Row {row}' } });
+        ctx.snapshot('文言の差し替え');
+      },
+    });
+  }, 20_000);
+});

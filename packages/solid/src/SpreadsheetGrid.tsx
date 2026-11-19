@@ -107,6 +107,7 @@ import {
 import type {
   GridClassNames,
   GridColumn,
+  SolidGridTypes,
   SpreadsheetGridProps,
   SpreadsheetGridSlotContext,
 } from './model/gridTypes';
@@ -400,6 +401,17 @@ export function GridShell<T extends object>(props: SpreadsheetGridProps<T>, feat
       ? { top: pinnedTop() ?? [], bottom: pinnedBottom() ?? [], bottomAfterTotal: pinnedBelowTotal() }
       : undefined,
   );
+  // スクロール位置インジケーター(機能 features/scrollHint。無い構成では常に null = ネイティブのスクロールバー)。表示行数が
+  //   minRows 未満のあいだは待機(React 版と同じ)。
+  const scrollHintFeature = features.scrollHint;
+  const resolvedScrollHint = createMemo(() =>
+    scrollHintFeature ? scrollHintFeature.resolveScrollHintOptions<T, SolidGridTypes>(props.scrollHint) : null,
+  );
+  const activeScrollHint = createMemo(() => {
+    const resolved = resolvedScrollHint();
+    return resolved !== null && viewRowCount() >= resolved.minRows ? resolved : null;
+  });
+  const customScrollbar = createMemo(() => activeScrollHint()?.scrollbar === true);
   // auto-height が効いているか(真偽値だけの memo。すべてのセルが読むので、vertical の変化のたびに全セルを走らせない)。
   const autoHeightActive = createMemo(() => vertical().autoHeightActive);
   // 描く行(React 版の GridBodyLayer が virtualRowIndexes に無い行を飛ばすのと同じ)と、対応に使う rowKey。
@@ -1745,7 +1757,8 @@ export function GridShell<T extends object>(props: SpreadsheetGridProps<T>, feat
             aria-colcount={orderedColumns().length + 1}
             aria-multiselectable={enableRangeSelection() ? 'true' : undefined}
             aria-readonly={readOnly() ? 'true' : undefined}
-            class="ssg-scroll-container"
+            // カスタムスクロールバーのときはネイティブの縦のバーを隠し、右端にガターぶんの余白を空ける(GridScrollHint が描く)。
+            class={['ssg-scroll-container', { 'ssg-scroll-container--custom-scrollbar': customScrollbar() }]}
             style={toSolidStyle(heightLayout().scrollContainerStyle)}
           >
             <div
@@ -1823,6 +1836,25 @@ export function GridShell<T extends object>(props: SpreadsheetGridProps<T>, feat
             aria-hidden="true"
             onFocus={(event) => detailRows.handleTableExitFocus(event.relatedTarget)}
           />
+          <Show when={scrollHintFeature !== undefined && activeScrollHint()}>
+            {(options) => {
+              const ScrollHint = scrollHintFeature!.ScrollHint;
+              return (
+                <ScrollHint<T>
+                  slot={slots().scrollHint}
+                  options={options()}
+                  scrollContainerRef={scrollContainerRef}
+                  scrollTop={view().scrollTop}
+                  viewportHeight={view().viewportHeight}
+                  headerHeight={headerHeight()}
+                  physicalBodyHeight={vertical().physicalBodyHeight}
+                  verticalScaleFactor={vertical().verticalScaleFactor}
+                  rowMetrics={vertical().rowMetrics}
+                  rowModel={rowModel()}
+                />
+              );
+            }}
+          </Show>
         </div>
         {bottomBar()}
       </div>
