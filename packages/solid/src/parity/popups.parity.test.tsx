@@ -401,3 +401,361 @@ describe('列メニュー(columnMenu)', () => {
     });
   });
 });
+describe('列フィルターのポップオーバー(filtering + columnMenu)', () => {
+  beforeAll(async () => {
+    // React 版はポップオーバーの部品を遅れて読み込むので、先に読んでおく(開いた直後に同じ DOM を比べるため)。
+    const reactLite = (await import(/* @vite-ignore */ new URL('../../../react/src/lite.ts', import.meta.url).pathname)) as {
+      preloadGridPopups: () => Promise<void>;
+    };
+    await reactLite.preloadGridPopups();
+  });
+
+  const focused = () => document.activeElement ?? document.body;
+  const popover = () => document.querySelector<HTMLElement>('.ssg-filter-popover');
+  const inPopover = <E extends Element = HTMLElement>(selector: string): E | null =>
+    popover()?.querySelector<E>(selector) ?? null;
+  const allInPopover = <E extends Element = HTMLElement>(selector: string): E[] =>
+    Array.from(popover()?.querySelectorAll<E>(selector) ?? []);
+  const menuItem = (label: string) =>
+    Array.from(document.querySelectorAll<HTMLElement>('.ssg-menu-item')).find((el) => el.textContent?.includes(label));
+  const menuButton = (ctx: ParityContext, key: string) =>
+    ctx.header(key).querySelector<HTMLButtonElement>('.ssg-icon-btn');
+  const pressMenuButton = async (ctx: ParityContext, key: string) => {
+    await ctx.act(() => {
+      const button = menuButton(ctx, key);
+      if (!button) {
+        throw new Error(`[${ctx.framework}] ⋮ がありません: ${key}`);
+      }
+      fireEvent.pointerDown(button, { ...pointer, pointerType: 'mouse' });
+      fireEvent.pointerUp(button, { ...pointer, pointerType: 'mouse' });
+      fireEvent.click(button, { detail: 1 });
+    });
+  };
+  // 列メニューの「フィルター…」から開く(項目が無ければ false)。
+  const openFilter = async (ctx: ParityContext, key: string): Promise<boolean> => {
+    await pressMenuButton(ctx, key);
+    const item = menuItem('フィルター…');
+    if (!item) {
+      await ctx.act(() => {
+        fireEvent.keyDown(focused(), { key: 'Escape' });
+      });
+      return false;
+    }
+    await ctx.act(() => {
+      fireEvent.click(item, { detail: 1 });
+    });
+    return true;
+  };
+  const press = async (ctx: ParityContext, element: Element | null | undefined, label: string) => {
+    await ctx.act(() => {
+      if (!element) {
+        throw new Error(`[${ctx.framework}] 押す要素がありません: ${label}`);
+      }
+      fireEvent.pointerDown(element, pointer);
+    });
+  };
+  const type = async (ctx: ParityContext, element: Element | null | undefined, value: string) => {
+    await ctx.act(() => {
+      if (!element) {
+        throw new Error(`[${ctx.framework}] 入力欄がありません`);
+      }
+      fireEvent.input(element, { target: { value } });
+    });
+  };
+  const keyOn = async (ctx: ParityContext, element: Element | null | undefined, init: KeyboardEventInit & { key: string }) => {
+    await ctx.act(() => {
+      fireEvent.keyDown(element ?? focused(), init);
+    });
+  };
+  const change = async (ctx: ParityContext, element: Element | null | undefined, value: string) => {
+    await ctx.act(() => {
+      if (!element) {
+        throw new Error(`[${ctx.framework}] select がありません`);
+      }
+      fireEvent.change(element, { target: { value } });
+    });
+  };
+  const optionCheckbox = (label: string) =>
+    allInPopover<HTMLLabelElement>('.ssg-filter-option').find((el) => el.textContent === label)?.querySelector('input');
+  const click = async (ctx: ParityContext, element: Element | null | undefined, label: string) => {
+    await ctx.act(() => {
+      if (!element) {
+        throw new Error(`[${ctx.framework}] クリックする要素がありません: ${label}`);
+      }
+      fireEvent.click(element);
+    });
+  };
+
+  it.each([
+    ['あり', ['filtering', 'columnMenu']],
+    ['なし', ['columnMenu']],
+  ])('text / number / set / date の列と、閉じ方・Tab の巡回・⋮ で閉じる(機能%s)', async (_label, features) => {
+    await expectParity({
+      features,
+      watch: ['onFiltersChange'],
+      // 行のフェードイン(前に行が現れてから 1 秒の間は付けない)は時間で変わるので止める。
+      props: () => ({ rows: makeRows(16), columns, rowKeyGetter: (row: Row) => row.id, height: 360, animateRows: false }),
+      steps: async (ctx) => {
+        if (!(await openFilter(ctx, 'name'))) {
+          ctx.snapshot('機能なし(フィルター… が無い)');
+          return;
+        }
+        ctx.snapshot('品名(text)を開いた');
+        await type(ctx, inPopover('.ssg-filter-input'), '品目 1');
+        ctx.snapshot('打った(まだ適用しない)');
+        await keyOn(ctx, inPopover('.ssg-filter-input'), { key: 'Enter' });
+        ctx.snapshot('Enter で適用して閉じた');
+        await openFilter(ctx, 'name');
+        ctx.snapshot('開き直した(今の値)');
+        await press(ctx, inPopover('.ssg-filter-btn-secondary'), 'クリア');
+        ctx.snapshot('クリアで外して閉じた');
+
+        // number: 演算子を範囲に、値を 2 つ、適用。
+        await openFilter(ctx, 'qty');
+        ctx.snapshot('数量(number)を開いた');
+        await change(ctx, inPopover('.ssg-filter-select'), 'between');
+        ctx.snapshot('範囲に変えた');
+        const [min, max] = allInPopover<HTMLInputElement>('.ssg-filter-input');
+        await type(ctx, min, '50');
+        await type(ctx, max, '100');
+        await press(ctx, inPopover('.ssg-filter-btn-primary'), '適用');
+        ctx.snapshot('範囲を適用した');
+        await openFilter(ctx, 'qty');
+        ctx.snapshot('開き直した(範囲の下書き)');
+        await keyOn(ctx, inPopover('.ssg-filter-select'), { key: 'Escape' });
+        ctx.snapshot('Escape で閉じた');
+        await ctx.act(() => {
+          call(ctx, 'applyState', { filters: { globalText: '', columnFilters: {} } });
+        });
+
+        // set: チェックはすぐ反映、検索の Enter で当たった値だけ、すべて選択、クリア。
+        await openFilter(ctx, 'city');
+        ctx.snapshot('都市(set)を開いた');
+        await click(ctx, optionCheckbox('東京'), '東京');
+        ctx.snapshot('東京を外した(すぐ反映)');
+        await type(ctx, inPopover('.ssg-filter-input'), '大');
+        ctx.snapshot('「大」で検索');
+        await keyOn(ctx, inPopover('.ssg-filter-input'), { key: 'Enter' });
+        ctx.snapshot('Enter で大阪だけにして閉じた');
+        await openFilter(ctx, 'city');
+        await click(ctx, inPopover('.ssg-filter-selectall input'), 'すべて選択');
+        ctx.snapshot('すべて選択を押した');
+        await click(ctx, inPopover('.ssg-filter-selectall input'), 'すべて選択');
+        ctx.snapshot('すべて選択をもう一度');
+        await press(ctx, inPopover('.ssg-filter-btn-secondary'), 'クリア');
+        ctx.snapshot('クリア(閉じない)');
+        await press(ctx, inPopover('.ssg-filter-btn-primary'), '閉じる');
+        ctx.snapshot('閉じるで閉じた');
+
+        // Tab はパネルの中で回る / ボタンの Escape で閉じる。
+        await openFilter(ctx, 'day');
+        ctx.snapshot('日付(date = 文字)を開いた');
+        await ctx.act(() => {
+          inPopover<HTMLButtonElement>('.ssg-filter-btn-primary')?.focus();
+        });
+        await keyOn(ctx, focused(), { key: 'Tab' });
+        ctx.snapshot('最後のボタンの Tab で先頭へ');
+        await keyOn(ctx, focused(), { key: 'Tab', shiftKey: true });
+        ctx.snapshot('先頭の Shift+Tab で最後へ');
+        await keyOn(ctx, focused(), { key: 'Escape' });
+        ctx.snapshot('ボタンの Escape で閉じた');
+
+        // 外を押して閉じる / 開いたまま ⋮ を押すとフィルターを閉じてメニューを開く。
+        await openFilter(ctx, 'name');
+        await ctx.act(() => {
+          fireEvent.pointerDown(document.body, pointer);
+        });
+        ctx.snapshot('外を押して閉じた');
+        await openFilter(ctx, 'city');
+        await pressMenuButton(ctx, 'qty');
+        ctx.snapshot('開いたまま ⋮ を押した');
+        await keyOn(ctx, focused(), { key: 'Escape' });
+        ctx.snapshot('メニューを Escape で閉じた');
+        // enableColumnFilter: false では「フィルター…」を出さない。
+        await ctx.setProps({ enableColumnFilter: false });
+        await pressMenuButton(ctx, 'name');
+        ctx.log('enableColumnFilter: false のフィルター… の項目', menuItem('フィルター…') !== undefined);
+        await keyOn(ctx, focused(), { key: 'Escape' });
+      },
+    });
+  }, 30_000);
+
+  const comboColumns = [
+    { key: 'id', title: 'ID', width: 60, pinned: 'left', editable: false },
+    { key: 'name', title: '品名', width: 120, filterType: 'textSet' },
+    { key: 'qty', title: '数量', width: 80, align: 'right', editor: { type: 'number' }, filterType: 'numberSet' },
+    { key: 'city', title: '都市', width: 100, filterType: 'select' },
+    { key: 'day', title: '日付', width: 110, filterType: 'dateSet', editor: { type: 'date' } },
+    { key: 'code', title: 'コード', width: 80, filterType: 'auto' },
+  ];
+
+  it('textSet / numberSet / select / dateSet / auto の列', async () => {
+    await expectParity({
+      features: ['filtering', 'columnMenu'],
+      watch: ['onFiltersChange'],
+      props: () => ({
+        rows: makeRows(40),
+        columns: comboColumns,
+        rowKeyGetter: (row: Row) => row.id,
+        height: 360,
+        animateRows: false,
+      }),
+      steps: async (ctx) => {
+        // textSet: 条件で値の候補が絞られ、条件も値もすぐ反映。
+        await openFilter(ctx, 'name');
+        ctx.snapshot('品名(textSet)を開いた');
+        await type(ctx, inPopover('.ssg-filter-cond-values .ssg-filter-input'), '品目 1');
+        ctx.snapshot('条件「品目 1 を含む」');
+        await click(ctx, optionCheckbox('品目 10'), '品目 10');
+        ctx.snapshot('品目 10 を外した');
+        await press(ctx, allInPopover('.ssg-filter-sec-clear')[0], '条件のクリア');
+        ctx.snapshot('条件だけクリア');
+        await press(ctx, allInPopover('.ssg-filter-sec-clear')[1], '値のクリア');
+        ctx.snapshot('値もクリア');
+        await press(ctx, inPopover('.ssg-filter-btn-primary'), '閉じる');
+
+        // numberSet: 演算子を以上にして 200。
+        await openFilter(ctx, 'qty');
+        ctx.snapshot('数量(numberSet)を開いた');
+        await change(ctx, inPopover('.ssg-filter-select'), 'gte');
+        await type(ctx, inPopover('.ssg-filter-cond-values .ssg-filter-input'), '200');
+        ctx.snapshot('200 以上');
+        await keyOn(ctx, inPopover('.ssg-filter-cond-values .ssg-filter-input'), { key: 'Escape' });
+        ctx.snapshot('Escape で閉じた(条件は掛かったまま)');
+
+        // select: 候補から選んで Enter。
+        await openFilter(ctx, 'city');
+        ctx.snapshot('都市(select)を開いた');
+        await change(ctx, inPopover('select'), '大阪');
+        await keyOn(ctx, inPopover('select'), { key: 'Enter' });
+        ctx.snapshot('大阪を Enter で適用');
+
+        // dateSet: 年の木、開閉、行の文字のクリック、チップ、演算子と日付の欄、カレンダー。
+        await openFilter(ctx, 'day');
+        ctx.snapshot('日付(dateSet)を開いた');
+        await press(ctx, inPopover('.ssg-filter-tree-toggle:not(.ssg-filter-tree-toggle--placeholder)'), '年の開閉');
+        ctx.snapshot('年を開いた');
+        await click(ctx, allInPopover('.ssg-filter-option')[1], '月の行');
+        ctx.snapshot('月の行の文字を押した');
+        await press(ctx, inPopover('.ssg-filter-preset-chip'), '今日のチップ');
+        ctx.snapshot('今日のチップ');
+        await change(ctx, inPopover('.ssg-filter-select'), 'onOrAfter');
+        ctx.snapshot('以降に変えた(チップは外れる)');
+        await type(ctx, inPopover('.ssg-dp-input'), '2020/1/1');
+        await keyOn(ctx, inPopover('.ssg-dp-input'), { key: 'Enter' });
+        ctx.snapshot('2020/1/1 以降');
+        await type(ctx, inPopover('.ssg-dp-input'), 'あいう');
+        await keyOn(ctx, inPopover('.ssg-dp-input'), { key: 'Enter' });
+        ctx.snapshot('読めない日付(赤い枠)');
+        await press(ctx, inPopover('.ssg-dp-cal-btn'), 'カレンダー');
+        ctx.snapshot('カレンダーを開いた');
+        await press(ctx, inPopover('.ssg-dp-nav-title'), '上の段');
+        ctx.snapshot('月の段');
+        await press(ctx, inPopover('.ssg-dp-nav-title'), '上の段');
+        ctx.snapshot('年の段');
+        await press(ctx, allInPopover('.ssg-dp-foot-btn')[0], '戻る');
+        ctx.snapshot('戻るで月の段');
+        await keyOn(ctx, inPopover('.ssg-dp-cal-btn'), { key: 'Escape' });
+        ctx.snapshot('ボタンの Escape でカレンダーだけ閉じた');
+        await keyOn(ctx, focused(), { key: 'Escape' });
+        ctx.snapshot('入力欄の Escape で閉じた');
+
+        // auto: 開いたときに種別を推定する(数の列 → numberSet)。
+        await openFilter(ctx, 'code');
+        ctx.snapshot('コード(auto)を開いた');
+        await press(ctx, inPopover('.ssg-filter-btn-primary'), '閉じる');
+        ctx.log('getState', call(ctx, 'getState'));
+      },
+    });
+  }, 30_000);
+
+  it('getFilterOptions(取っている間 / 打ち切り / 失敗と再試行)と renderFilterDateInput', async () => {
+    const { createElement } = await import('react');
+    const pending = new Map<string, Array<{ resolve: (value: unknown) => void; reject: (reason: unknown) => void }>>();
+    await expectParity({
+      features: ['filtering', 'columnMenu'],
+      watch: ['onFiltersChange'],
+      props: (framework) => ({
+        rows: makeRows(20),
+        columns: [
+          ...comboColumns.slice(0, 3),
+          { key: 'city', title: '都市', width: 100, filterType: 'set' },
+          { key: 'day', title: '日付', width: 110, filterType: 'dateSet' },
+        ],
+        rowKeyGetter: (row: Row) => row.id,
+        height: 360,
+        animateRows: false,
+        getFilterOptions: () => {
+          const list = pending.get(framework) ?? [];
+          pending.set(framework, list);
+          return new Promise((resolve, reject) => list.push({ resolve, reject }));
+        },
+        renderFilterDateInput: (ctx: { value: string; onChange: (value: string) => void; ariaLabel: string; slot: string; columnKey: string }) =>
+          framework === 'react'
+            ? createElement('input', {
+                className: 'custom-date',
+                'data-slot': ctx.slot,
+                'data-column': ctx.columnKey,
+                'aria-label': ctx.ariaLabel,
+                defaultValue: ctx.value,
+                onChange: (event: { target: HTMLInputElement }) => ctx.onChange(event.target.value),
+              })
+            : (
+                <input
+                  class="custom-date"
+                  data-slot={ctx.slot}
+                  data-column={ctx.columnKey}
+                  aria-label={ctx.ariaLabel}
+                  value={ctx.value}
+                  onInput={(event) => ctx.onChange(event.currentTarget.value)}
+                />
+              ),
+      }),
+      steps: async (ctx) => {
+        const settle = async (mode: 'resolve' | 'reject', value: unknown) => {
+          await ctx.act(() => {
+            const next = pending.get(ctx.framework)?.shift();
+            if (mode === 'resolve') {
+              next?.resolve(value);
+            } else {
+              next?.reject(value);
+            }
+          });
+        };
+        await openFilter(ctx, 'city');
+        ctx.snapshot('set: 取っている間');
+        await settle('resolve', {
+          options: [
+            { label: '東京', value: '東京' },
+            { label: '大阪', value: '大阪' },
+          ],
+          truncated: true,
+        });
+        ctx.snapshot('set: 届いた(打ち切りの注記)');
+        await press(ctx, inPopover('.ssg-filter-btn-primary'), '閉じる');
+        await openFilter(ctx, 'name');
+        ctx.snapshot('textSet: 取っている間(条件の欄はそのまま)');
+        await settle('reject', new Error('サーバーが落ちています'));
+        ctx.snapshot('textSet: 失敗(再試行)');
+        await press(ctx, inPopover('.ssg-filter-error button'), '再試行');
+        ctx.snapshot('再試行で取り直し中');
+        await settle('resolve', { options: [{ label: '品目 1', value: '品目 1' }] });
+        ctx.snapshot('再試行で届いた');
+        await press(ctx, inPopover('.ssg-filter-btn-primary'), '閉じる');
+        // renderFilterDateInput(範囲で 2 つ)。
+        await openFilter(ctx, 'day');
+        await settle('resolve', { options: [] });
+        await change(ctx, inPopover('.ssg-filter-select'), 'range');
+        ctx.snapshot('日付の入力欄の差し替え(範囲)');
+        await ctx.act(() => {
+          const input = inPopover<HTMLInputElement>('.custom-date[data-slot="from"]');
+          if (input) {
+            fireEvent.input(input, { target: { value: '2026-01-01' } });
+          }
+        });
+        ctx.snapshot('差し替えの欄で開始日');
+        await press(ctx, inPopover('.ssg-filter-btn-primary'), '閉じる');
+      },
+    });
+  }, 30_000);
+});

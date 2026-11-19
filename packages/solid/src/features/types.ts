@@ -38,6 +38,8 @@ import type { CellContextMenuPopover } from '../view/CellContextMenuPopover';
 import type { BodyContextMenuInput, CellContextMenuInput } from './contextMenu';
 import type { GridContextMenuParams } from '../model/gridTypes';
 import type { createFilterOrder } from '../primitives/filterOrder';
+import type { createFilterPopover } from '../primitives/filterPopover';
+import type { ColumnFilterPopoverHost } from '../view/ColumnFilterPopoverHost';
 import type { createColumnMenu } from '../primitives/columnMenu';
 import type { ColumnMenuPopover } from '../view/ColumnMenuPopover';
 
@@ -114,11 +116,14 @@ export type SolidGridFeatures = {
       })
     | undefined;
   // フィルター: 行パイプラインの列フィルターの段 + 相対日付プリセットの日付の変わり目の見張り(いずれも core。エンジンが作る)+
-  //   グローバルフィルターの適用(大きな表は時間分割)。
+  //   グローバルフィルターの適用(大きな表は時間分割)+ 列フィルターのポップオーバー(コントローラの接続と、候補の収集・
+  //   コマンド・描画の部品)。
   filtering?:
     | (NonNullable<GridCoreFeatures['filtering']> &
         FeatureLocaleDefaults & {
           createFilterOrder: typeof createFilterOrder;
+          createFilterPopover: typeof createFilterPopover;
+          FilterPopoverHost: typeof ColumnFilterPopoverHost;
         })
     | undefined;
   // 列メニュー: コントローラ(core)の接続 + ポップアップの部品。

@@ -45,7 +45,9 @@ const normalizeAttributes = (element: Element, ids: IdMap): string => {
   const parts: string[] = [];
   const names = element.getAttributeNames().sort();
   for (const name of names) {
-    if (name === 'value' && element.tagName === 'INPUT') {
+    // 入力欄の value と、チェックボックスの checked は属性ではなくプロパティで比べる(下)。React は制御された checked を
+    //   最初に描いたときだけ属性にも書く(後の変化は属性に出ない)ので、属性は比べても意味が無い。
+    if ((name === 'value' || name === 'checked') && element.tagName === 'INPUT') {
       continue;
     }
     const raw = element.getAttribute(name) ?? '';
@@ -101,6 +103,10 @@ const serialize = (node: Node, depth: number, ids: IdMap, lines: string[]): void
     if (tag === 'input' || tag === 'textarea' || tag === 'select') {
       // 入力欄の今の値(属性ではなくプロパティ)も比べる。
       lines.push(`${indent}  value=${JSON.stringify((element as HTMLInputElement).value)}`);
+      const input = element as HTMLInputElement;
+      if (tag === 'input' && (input.type === 'checkbox' || input.type === 'radio')) {
+        lines.push(`${indent}  checked=${input.checked}${input.indeterminate ? ' indeterminate' : ''}`);
+      }
     }
     if (tag !== 'textarea') {
       serialize(element, depth + 1, ids, lines);

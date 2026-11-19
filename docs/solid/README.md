@@ -159,7 +159,7 @@ React 版の機能なしの構成と並べて、同じ props・同じ操作で D
 | --- | --- | --- |
 | 2-1 | 機能を差し込む仕組み + 表示の機能 8 つ(totalRow / pinnedRows / conditionalFormat / selectionAggregates / scrollHint / motionExtras / export / autoHeight) | 済み(PR #65、2026-11-19 マージ。2-1a: 仕組み(`features/types.ts` / `createSpreadsheetGrid.tsx` / `features/full.ts`、比べるテストの `features`)と export、2-1b: autoHeight、2-1c: conditionalFormat、2-1d: totalRow + pinnedRows、2-1e: selectionAggregates、2-1f: scrollHint、2-1g: motionExtras) |
 | 2-2 | 操作の機能 7 つ(find / fillHandle / columnReorder / rowDrag / columnAutosize / imeDirectInput / contextMenu) | 済み(PR #66、2026-11-19 マージ。2-2a: find、2-2b: imeDirectInput、2-2c: columnAutosize、2-2d: columnReorder、2-2e: rowDrag、2-2f: fillHandle、2-2g: contextMenu。別視点のレビュー = 高 1・低 1 を直した) |
-| 2-3 | ポップアップ 3 つ(columnMenu / toolPanel / filtering) | 作業中(2-3a: 行の絞り込み(グローバル / 列フィルターの適用・上部バーの検索欄・manualFiltering / manualSorting)、2-3b: 列メニュー = 済み。2-3c: 列フィルターのポップアップ、2-3d: ツールパネルとフィルターのチップのバー = まだ) |
+| 2-3 | ポップアップ 3 つ(columnMenu / toolPanel / filtering) | 作業中(2-3a: 行の絞り込み(グローバル / 列フィルターの適用・上部バーの検索欄・manualFiltering / manualSorting)、2-3b: 列メニュー、2-3c: 列フィルターのポップアップ = 済み。2-3d: ツールパネルとフィルターのチップのバー = まだ) |
 | 2-4 | 行のモデル 3 つ(serverSide / labelRow / grouping) | まだ |
 
 ### 2-3 で分かったこと(作業中)
@@ -180,6 +180,21 @@ React 版の機能なしの構成と並べて、同じ props・同じ操作で D
   切り替えたときの小メニューの閉じ方は、React 版の「列が変わったら state を戻す effect」ではなく、開いた列のキーと一緒に
   覚えて比べる形にした(effect の中で signal へ書かない)。フィルター… / 並び替えを管理… などの、ほかのポップアップを開く
   項目は 2-3c / 2-3d でつなぐ。
+- **列フィルターのポップアップも core のまま**(2-3c): 位置・高さ・閉じ方・開いた後のフォーカス・下書きは core の
+  `controllers/filterPopoverController`、候補は `selectOptionsCollector`(5 万行までその場、超えたら時間分割)と
+  `asyncSelectOptionsSource`(`getFilterOptions`)、派生値と操作は engine の `filterPopoverCommands` で、Solid 版は部品
+  (`view/ColumnFilterPopover.tsx` / `ColumnFilterPopoverHost.tsx` / `FilterDateField.tsx`。React 版と同じ DOM)と
+  `primitives/filterPopover.ts` を足しただけ。コントローラの `update` は「パネルの要素の signal」も読むふつうの effect で渡す
+  (高さの測り直しと開いた後のフォーカスの予約はパネルが描かれてから要る。React 版はコミット後のレイアウト effect)。
+- **ref の中で `onCleanup` は書けない**: Solid 2.0 は ref の関数の中の `onCleanup` を止める(CLEANUP_IN_FORBIDDEN_SCOPE)。
+  要素を外へ渡す ref(入力欄の控えなど)は、部品の本体で後片付けを登録して ref の関数を返す小さな工場(`createHeldRef`)にした。
+- **チェックボックスは制御された形に**: Solid は `checked` を属性ではなくプロパティで書くので、押したときにブラウザが変えた
+  チェックを戻してから操作を呼ぶ(`primitives/inputValue.ts` の `controlledToggle`。中間の印 `indeterminate` も同じく)。
+  比べるテストの DOM の正規化は、`checked` を属性ではなくプロパティで比べる(React は描いたときに属性も書く)。
+- **遅延読み込みはまだ無し**: React 版はポップアップの部品を別のチャンクにして暇なときに読む(`preloadGridPopups`)。Solid 版は
+  今は本体に入れたまま(大きさを測る段階 3 で決める)。候補の控えを残すため、ホストの部品は閉じている間も外さない。
+- **行のフェードインは比べるテストで止める**: animateRows のフェードインは「前に行が現れてから 1 秒の間は付けない」(B-07)ので、
+  手順の間の時間で付く / 付かないが変わる(1.1 秒待つと React 版と Solid 版はそろう)。行を出し入れする場面は `animateRows: false`。
 - **比べるテストの時間切れに注意**: 1 つの場面で手順が多いと vitest の既定の 5 秒を超え、時間切れの場面の React 版の
   ポップアップが body に残って、次の場面の控えに混ざった(差の原因が分かりにくい)。手順の多い場面は `20_000` を渡す。
 

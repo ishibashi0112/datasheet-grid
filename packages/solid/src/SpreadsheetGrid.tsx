@@ -1175,6 +1175,19 @@ export function GridShell<T extends object>(props: SpreadsheetGridProps<T>, feat
     gridRootRef.current?.focus({ preventScroll: true });
   };
 
+  // ── 列フィルターのポップオーバー(機能 features/filtering) ──
+  //   列メニューの「フィルター…」から開き(ツールパネルの ✎ / フィルターを追加は段階 2-3d)、見出しの下に出します。中身(候補の
+  //   収集・コマンド・描画)は機能の FilterPopoverHost。機能セットに無ければ開かない(React 版と同じ)。
+  const filterPopover = features.filtering?.createFilterPopover<T>({
+    visibleColumns,
+    columnFilters,
+    columnFilterEnabled,
+    gridRootRef,
+    isServerSide: () => false,
+    rows,
+  });
+  const FilterPopoverHost = features.filtering?.FilterPopoverHost;
+
   // ── 列メニュー(機能 features/columnMenu) ──
   //   見出しの ⋮(マウスは pointerdown、タッチとキーボードは click で開く)/ 見出しの右クリック / アクティブセルの Alt+↓ で開き、
   //   項目の処理は engine の columnCommands。機能セットに無ければ ⋮ も見出しの右クリックも出さない(React 版と同じ)。
@@ -1186,6 +1199,16 @@ export function GridShell<T extends object>(props: SpreadsheetGridProps<T>, feat
     gridRootRef,
   });
   const columnMenuEnabled = () => enableColumnMenu() && columnMenu !== undefined;
+  // 列フィルターを開いたまま ⋮ を押したら、フィルターを閉じてからメニューを開きます(⋮ の pointerdown は見出しの列の選択と
+  //   ぶつからないよう伝播を止めるので、フィルターの「外を押したら閉じる」に届かない。React 版の 1.0.2 / C-09)。
+  const openColumnMenuFromButton = columnMenu
+    ? (column: GridColumn<T>, event: PointerEvent & { currentTarget: HTMLButtonElement }) => {
+        if (filterPopover && untrack(filterPopover.isOpen) && event.button === 0) {
+          filterPopover.close();
+        }
+        columnMenu.openFromButton(column, event);
+      }
+    : undefined;
   // Alt+↓ でアクティブセルの列のメニューを開く(列の見出しのセルの下に出す)。見出しが描かれていない(横の仮想化で外れた)列や、
   //   ⋮ の無い列(合成列)では開かず、↓ のまま(React 版と同じ)。
   const openColumnMenuForCell = (col: number): boolean => {
@@ -1214,8 +1237,9 @@ export function GridShell<T extends object>(props: SpreadsheetGridProps<T>, feat
   const contextMenuActive = () =>
     contextMenu !== undefined && (props.enableContextMenu ?? false) && props.getContextMenuItems !== undefined;
   // グリッドのポップアップを出しているか(シェルの Tab の順・キー操作・貼り付けを止める。React 版の isAnyGridPopupOpen。
-  //   列フィルター / ツールパネルは段階 2-3 の続きで足す)。
-  const isAnyGridPopupOpen = () => (columnMenu?.isOpen() ?? false) || (contextMenu?.isOpen() ?? false);
+  //   ツールパネルは段階 2-3d で足す)。
+  const isAnyGridPopupOpen = () =>
+    (filterPopover?.isOpen() ?? false) || (columnMenu?.isOpen() ?? false) || (contextMenu?.isOpen() ?? false);
   // キーボードで開こうとした時刻(ms)と開いたか。続けてブラウザが送る contextmenu(Shift+F10 / メニューキーの既定の動作)で、
   //   開いたときは標準のメニューを止め、開かなかった(項目が無い)ときは標準のメニューのままにします(項目をもう一度聞かない)。
   let keyboardContextMenu: { at: number; opened: boolean } | null = null;
@@ -1519,7 +1543,7 @@ export function GridShell<T extends object>(props: SpreadsheetGridProps<T>, feat
     globalFilterText: selectGlobalFilter(ui()),
     closeColumnMenu: columnMenu?.close ?? noop,
     openToolPanel: noop,
-    openColumnFilterPopover: noop,
+    openColumnFilterPopover: filterPopover?.open ?? noop,
     runAutosize: columnAutosize?.runAutosize,
   }));
 
@@ -2321,7 +2345,7 @@ export function GridShell<T extends object>(props: SpreadsheetGridProps<T>, feat
           onColumnDragHandlePointerDown={columnDragHandler()}
           enableColumnMenu={columnMenuEnabled()}
           openedMenuColumnKey={columnMenu?.openedColumnKey() ?? null}
-          onColumnMenuButtonPointerDown={columnMenu?.openFromButton}
+          onColumnMenuButtonPointerDown={openColumnMenuFromButton}
           onColumnMenuButtonClick={columnMenu?.openFromButtonClick}
           onColumnHeaderContextMenu={columnMenu?.openFromContextMenu}
         />
@@ -2748,6 +2772,22 @@ export function GridShell<T extends object>(props: SpreadsheetGridProps<T>, feat
               </Show>
             )}
           </Show>
+        ) : null}
+        {/* 列フィルターのポップオーバー(グリッドの外のポップアップ。閉じている間は何も描かない)。 */}
+        {filterPopover && FilterPopoverHost ? (
+          <FilterPopoverHost
+            filterPopover={filterPopover}
+            rows={rows()}
+            columnFilters={columnFilters()}
+            globalFilterText={globalFilterText()}
+            getFilterOptions={props.getFilterOptions as never}
+            isServerSide={false}
+            dispatch={dispatch}
+            renderFilterDateInput={props.renderFilterDateInput}
+            popoverSlot={slots().popover}
+            themeClassName={portalClassName()}
+            localeTexts={localeTexts()}
+          />
         ) : null}
         {/* セル / 行番号の右クリックメニュー(グリッドの外のポップアップ)。 */}
         {contextMenu && contextMenuFeature ? (
