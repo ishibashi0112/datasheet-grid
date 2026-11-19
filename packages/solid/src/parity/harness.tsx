@@ -1,5 +1,5 @@
 // React 版と Solid 版を同じ props・同じ操作で動かし、操作ごとの DOM と通知(on* の呼ばれ方)を比べるための道具。
-//   React 版は `/lite` の createSpreadsheetGrid({ features: {} })(機能なし)をソースのまま描く(vitest.config.ts で
+//   React 版は `/lite` の createSpreadsheetGrid({ features })(既定は機能なし)をソースのまま描く(vitest.config.ts で
 //   React のファイルには Solid の JSX 変換を掛けない)。2 つは同じ document で順に動かす(同時に置くとフォーカスを
 //   取り合うため)。
 //   - 操作は ctx.act(() => …) の中で行う(React は act、Solid は flush で書き込みを反映し、どちらも数フレーム待つ)。
@@ -10,21 +10,53 @@ import { createElement, act as reactAct, useState, type ComponentType } from 're
 import { createRoot } from 'react-dom/client';
 import { createSignal, flush } from 'solid-js';
 import { render } from '@solidjs/web';
-import { SpreadsheetGrid } from '../SpreadsheetGrid';
+import * as SolidLite from '../index';
 import { normalizeDom } from './normalizeDom';
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
-// 機能なしの React 版(Solid 版の段階 1 と同じ範囲)。React 版のソースは型検査で辿らないよう、パスを変数にして読む
-// (このパッケージの tsconfig は Solid の JSX なので、React 版の .tsx は検査できない)。
-const REACT_LITE_MODULE = new URL('../../../react/src/createSpreadsheetGrid.tsx', import.meta.url).pathname;
+// React 版の `/lite`(createSpreadsheetGrid と機能の部品)。React 版のソースは型検査で辿らないよう、パスを変数にして読む
+// (このパッケージの tsconfig は Solid の JSX なので、React 版の .tsx は検査できない)。機能は場面の features の名前で
+// 両方に同じものを差し込む(既定は機能なし = Solid 版の段階 1 と同じ範囲)。部品は `<名前>Feature`(React 版の `/lite` と
+// Solid 版の入口で同じ名前)。
+const REACT_LITE_MODULE = new URL('../../../react/src/lite.ts', import.meta.url).pathname;
 type ReactGridComponent = ComponentType<Record<string, unknown>>;
-let reactGridPromise: Promise<ReactGridComponent> | null = null;
-const loadReactGrid = (): Promise<ReactGridComponent> =>
-  (reactGridPromise ??= import(/* @vite-ignore */ REACT_LITE_MODULE).then(
-    (module: { createSpreadsheetGrid: (options: { features: object }) => unknown }) =>
-      module.createSpreadsheetGrid({ features: {} }) as ReactGridComponent,
-  ));
+type SolidGridComponent = (props: Record<string, unknown>) => ReturnType<typeof SolidLite.SpreadsheetGrid>;
+const reactGridCache = new Map<string, Promise<ReactGridComponent>>();
+const solidGridCache = new Map<string, SolidGridComponent>();
+const pickFeatures = (module: Record<string, unknown>, names: readonly string[]): Record<string, unknown> =>
+  Object.fromEntries(
+    names.map((name) => {
+      const part = module[`${name}Feature`];
+      if (part === undefined) {
+        throw new Error(`機能の部品がありません: ${name}Feature`);
+      }
+      return [name, part];
+    }),
+  );
+const loadReactGrid = (names: readonly string[]): Promise<ReactGridComponent> => {
+  const key = names.join(',');
+  let promise = reactGridCache.get(key);
+  if (!promise) {
+    promise = import(/* @vite-ignore */ REACT_LITE_MODULE).then(
+      (module: Record<string, unknown> & { createSpreadsheetGrid: (options: { features: object }) => unknown }) =>
+        module.createSpreadsheetGrid({ features: pickFeatures(module, names) }) as ReactGridComponent,
+    );
+    reactGridCache.set(key, promise);
+  }
+  return promise;
+};
+const loadSolidGrid = (names: readonly string[]): SolidGridComponent => {
+  const key = names.join(',');
+  let grid = solidGridCache.get(key);
+  if (!grid) {
+    grid = SolidLite.createSpreadsheetGrid({
+      features: pickFeatures(SolidLite as unknown as Record<string, unknown>, names) as SolidLite.GridFeatures,
+    }) as unknown as SolidGridComponent;
+    solidGridCache.set(key, grid);
+  }
+  return grid;
+};
 
 export type Framework = 'react' | 'solid';
 
@@ -60,6 +92,8 @@ export type ParityScenario = {
   props: (framework: Framework) => Record<string, unknown>;
   // 引数ごと控える通知の名前(props に無ければ控えるだけの関数を入れる)。
   watch?: readonly string[];
+  // 両方に差し込む機能の名前(`/lite` の機能セットのキー。既定は機能なし)。
+  features?: readonly string[];
   // rows を制御する(onRowsChange で受けた行へ差し替える)。既定 true。
   controlledRows?: boolean;
   steps: (ctx: ParityContext) => Promise<void>;
@@ -193,7 +227,7 @@ async function runOne(framework: Framework, scenario: ParityScenario): Promise<P
   };
 
   if (framework === 'react') {
-    const ReactGrid = await loadReactGrid();
+    const ReactGrid = await loadReactGrid(scenario.features ?? []);
     const root = createRoot(container);
     function Host() {
       const [props, setProps] = useState(baseProps);
@@ -222,7 +256,7 @@ async function runOne(framework: Framework, scenario: ParityScenario): Promise<P
       const [rows, setRows] = createSignal<readonly unknown[]>(currentRows);
       setSolidProps = (patch) => setProps((previous) => ({ ...previous, ...wrapCallbacks(patch) }));
       setSolidRows = (next) => setRows(() => next);
-      const Grid = SpreadsheetGrid as unknown as (props: Record<string, unknown>) => ReturnType<typeof SpreadsheetGrid>;
+      const Grid = loadSolidGrid(scenario.features ?? []);
       return (
         <Grid
           {...props()}

@@ -118,6 +118,7 @@ import { createExternalStoreSignal } from './primitives/externalStore';
 import { createGridViewSetters } from './primitives/viewSetters';
 import { connectController } from './primitives/controller';
 import { createColumnVirtualizer } from './primitives/columnVirtualizer';
+import type { SolidGridFeatures } from './features/types';
 import { px, toSolidStyle } from './primitives/style';
 import { createLiveObject } from './primitives/liveObject';
 import { GridHeaderRow } from './view/GridHeaderRow';
@@ -165,7 +166,8 @@ const SLOT_CONTEXT_KEYS = Object.keys({
   selectionAggregates: true,
 } satisfies Record<keyof SpreadsheetGridSlotContext<unknown>, true>) as (keyof SpreadsheetGridSlotContext<unknown>)[];
 
-export function SpreadsheetGrid<T extends object>(props: SpreadsheetGridProps<T>): JSX.Element {
+// シェルの本体です。機能セット(features)は createSpreadsheetGrid が渡します(全部入りは下の SpreadsheetGrid)。
+export function GridShell<T extends object>(props: SpreadsheetGridProps<T>, features: SolidGridFeatures): JSX.Element {
   // ── props(既定値つきの読み取り。本体では読まず、関数 / memo の中で読む。既定値は React 版の GridShell と同じ) ──
   const rows = createMemo(() => (props.rows ?? EMPTY_ROWS) as T[]);
   const columns = createMemo(() => props.columns as unknown as UnboundGridColumn<T>[]);
@@ -205,7 +207,7 @@ export function SpreadsheetGrid<T extends object>(props: SpreadsheetGridProps<T>
 
   // ── エンジン(1 回だけ作る) ──
   const engine = createGridEngine<T>({
-    features: {},
+    features,
     initialState: untrack(() => props.initialState),
     columnInputs: untrack(columnInputs),
     serverSide: {
@@ -1597,5 +1599,3 @@ export function SpreadsheetGrid<T extends object>(props: SpreadsheetGridProps<T>
     </GridLocaleTextContext>
   );
 }
-
-export default SpreadsheetGrid;

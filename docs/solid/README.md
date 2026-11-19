@@ -149,6 +149,19 @@ React 版の機能なしの構成と並べて、同じ props・同じ操作で D
 - **比べるテストの書き方**: React の onPointerEnter は pointerover から作られ、Solid は pointerenter のリスナーを要素へ直接付けるので、
   ホバーはブラウザと同じく両方を送る(`ctx.hover`)。差は `PARITY_DUMP=<dir>` で書き出して `diff -u` で見る。
 
+## 段階 2 の中身
+
+`/lite` の 21 の機能を、React 版と同じ名前の部品(`<名前>Feature`)と `createSpreadsheetGrid({ features })` で差し込む形で
+足す。比べるテストは場面ごとに両方へ同じ機能を差し込む(`expectParity({ features: ['export'], … })`)。4 つの PR に分ける
+(2026-11-19 にユーザーへ伝えた順。フィルターは SSRM の取り直しの条件に使うので SSRM より前)。
+
+| # | 内容 | 状況 |
+| --- | --- | --- |
+| 2-1 | 機能を差し込む仕組み + 表示の機能 8 つ(totalRow / pinnedRows / conditionalFormat / selectionAggregates / scrollHint / motionExtras / export / autoHeight) | 作業中(2-1a: 仕組み(`features/types.ts` / `createSpreadsheetGrid.tsx` / `features/full.ts`、比べるテストの `features`)と export = 済み) |
+| 2-2 | 操作の機能 7 つ(find / fillHandle / columnReorder / rowDrag / columnAutosize / imeDirectInput / contextMenu) | まだ |
+| 2-3 | ポップアップ 3 つ(columnMenu / toolPanel / filtering) | まだ |
+| 2-4 | 行のモデル 3 つ(serverSide / labelRow / grouping) | まだ |
+
 ## 段階 0 の中身
 
 | # | 内容 | 状況 |
