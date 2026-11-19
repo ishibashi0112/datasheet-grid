@@ -1,5 +1,5 @@
 // 試作のデモ: 10,000 行の編集できる在庫表(左右の固定列 + 横に長い列で縦横の仮想化を確かめる)。
-import { createSignal } from 'solid-js';
+import { Show, createSignal, onSettled } from 'solid-js';
 import { render } from '@solidjs/web';
 import '../../react/src/styles.css';
 import { SpreadsheetGrid, type GridColumn, type SpreadsheetGridHandle } from '../src';
@@ -11,6 +11,8 @@ type Item = {
   qty: number;
   price: number;
   note: string;
+  due: string;
+  code: string;
   done: boolean;
   extra: Record<string, number>;
 };
@@ -25,26 +27,66 @@ const createRows = (count: number): Item[] =>
     category: CATEGORIES[i % CATEGORIES.length] ?? '',
     qty: (i * 7) % 100,
     price: 100 + ((i * 37) % 900),
-    note: '',
+    note: i % 10 === 0 ? '1 行目\n2 行目' : '',
+    due: `2026-${String((i % 12) + 1).padStart(2, '0')}-${String((i % 28) + 1).padStart(2, '0')}`,
+    code: `A${String(i + 1).padStart(4, '0')}`,
     done: i % 3 === 0,
     extra: Object.fromEntries(EXTRA_KEYS.map((key, k) => [key, (i * (k + 3)) % 1000])),
   }));
 
-const columns: GridColumn<Item>[] = [
+const baseColumns: GridColumn<Item>[] = [
   { key: 'id', title: 'ID', width: 72, pinned: 'left', editable: false },
   { key: 'name', title: '品名', width: 160 },
-  { key: 'category', title: '分類', width: 100 },
+  {
+    key: 'category',
+    title: '分類',
+    width: 100,
+    editor: { type: 'select', options: CATEGORIES.map((value) => ({ value, label: value })) },
+  },
   {
     key: 'qty',
     title: '数量',
     width: 90,
     align: 'right',
-    editor: { type: 'number' },
+    editor: { type: 'number', min: 0, step: 1 },
+    validationMode: 'reject',
     validate: ({ value }) => (Number(value) <= 95 ? true : '95 以下にしてください'),
     cellNote: ({ row }) => (row.id % 50 === 0 ? '棚卸しで確認済み' : undefined),
   },
   { key: 'done', title: '済', width: 60, editor: { type: 'checkbox' } },
   { key: 'price', title: '単価', width: 100, align: 'right', editor: { type: 'number' } },
+  { key: 'due', title: '期日', width: 130, editor: { type: 'date' } },
+  {
+    key: 'code',
+    title: 'コード(custom)',
+    width: 130,
+    editor: {
+      type: 'custom',
+      // 自作のエディタ: Enter で大文字にして確定、Escape で取り消し。フォーカスは利用側が置く。
+      render: (ctx) => {
+        let input: HTMLInputElement | undefined;
+        onSettled(() => input?.focus());
+        return (
+          <input
+            ref={(element) => {
+              input = element;
+            }}
+            class="ssg-cell-editor-input"
+            value={ctx.initialText}
+            onKeyDown={(event) => {
+              if (event.key === 'Enter') {
+                event.preventDefault();
+                ctx.commit(event.currentTarget.value.toUpperCase(), 'down');
+              } else if (event.key === 'Escape') {
+                event.preventDefault();
+                ctx.cancel();
+              }
+            }}
+          />
+        );
+      },
+    },
+  },
   ...EXTRA_KEYS.map<GridColumn<Item>>((key) => ({
     key,
     title: key.toUpperCase(),
@@ -53,12 +95,19 @@ const columns: GridColumn<Item>[] = [
     getValue: (row) => row.extra[key],
     setValue: (row, value) => ({ ...row, extra: { ...row.extra, [key]: Number(value) || 0 } }),
   })),
-  { key: 'note', title: 'メモ', width: 180, pinned: 'right' },
+  { key: 'note', title: 'メモ', width: 180, pinned: 'right', editor: { type: 'text', multiline: true } },
 ];
 
 function App() {
   const [rows, setRows] = createSignal(createRows(10_000));
   const [active, setActive] = createSignal('');
+  const [dark, setDark] = createSignal(false);
+  const [pinName, setPinName] = createSignal(false);
+  const [mounted, setMounted] = createSignal(true);
+  const [changes, setChanges] = createSignal(0);
+  // 「品名を左へ固定」で編集中の列のペインを変える(エディタが外れるときの blur で確定しないことの確かめ)。
+  const columns = () =>
+    pinName() ? baseColumns.map((column) => (column.key === 'name' ? { ...column, pinned: 'left' as const } : column)) : baseColumns;
   let handle: SpreadsheetGridHandle<Item> | undefined;
   return (
     <div style={{ padding: '16px', 'font-family': 'system-ui, sans-serif' }}>
@@ -70,21 +119,37 @@ function App() {
         <button type="button" data-testid="undo" onClick={() => handle?.undo()}>
           元に戻す
         </button>
+        <button type="button" data-testid="theme" onClick={() => setDark((v) => !v)}>
+          ライト / ダーク
+        </button>
+        <button type="button" data-testid="pin-name" onClick={() => setPinName((v) => !v)}>
+          品名を左へ固定
+        </button>
+        <button type="button" data-testid="unmount" onClick={() => setMounted((v) => !v)}>
+          グリッドを外す / 戻す
+        </button>
         <span data-testid="active">{active()}</span>
+        <span data-testid="changes">{changes()}</span>
       </div>
-      <SpreadsheetGrid<Item>
-        ref={(h) => {
-          handle = h;
-          (window as unknown as { gridHandle: unknown }).gridHandle = h;
-        }}
-        rows={rows()}
-        columns={columns}
-        rowKeyGetter={(row) => row.id}
-        onRowsChange={setRows}
-        height={520}
-        ariaLabel="在庫表"
-        onActiveCellChange={(cell) => setActive(cell ? `${cell.columnKey} / ${String(cell.rowKey)}` : '')}
-      />
+      <Show when={mounted()}>
+        <SpreadsheetGrid<Item>
+          ref={(h) => {
+            handle = h;
+            (window as unknown as { gridHandle: unknown }).gridHandle = h;
+          }}
+          rows={rows()}
+          columns={columns()}
+          theme={dark() ? 'dark' : 'light'}
+          rowKeyGetter={(row) => row.id}
+          onRowsChange={(next) => {
+            setChanges((count) => count + 1);
+            setRows(next);
+          }}
+          height={520}
+          ariaLabel="在庫表"
+          onActiveCellChange={(cell) => setActive(cell ? `${cell.columnKey} / ${String(cell.rowKey)}` : '')}
+        />
+      </Show>
     </div>
   );
 }

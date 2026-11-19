@@ -3,6 +3,8 @@
 //   - id(React の useId と Solid の createUniqueId で形が違う)は出てきた順の番号へ置き換え、id を指す属性
 //     (aria-activedescendant など)も同じ番号へ。
 //   - コメントと空の文字は捨て、隣り合う文字はつなぐ(フレームワークが文字を分けて置く差を消す)。
+//   - 入力欄は今の値(プロパティ)を比べ、input の value 属性と textarea の中の文字は見ない(React は制御された入力欄の
+//     defaultValue = value 属性 / textarea の中の文字も書き、Solid はプロパティだけを書く。画面と読み上げに出るのはプロパティ)。
 //   違いが出たら、行の差分でどの要素のどの属性かが分かる。
 
 const ID_REFERENCE_ATTRIBUTES = new Set([
@@ -43,6 +45,9 @@ const normalizeAttributes = (element: Element, ids: IdMap): string => {
   const parts: string[] = [];
   const names = element.getAttributeNames().sort();
   for (const name of names) {
+    if (name === 'value' && element.tagName === 'INPUT') {
+      continue;
+    }
     const raw = element.getAttribute(name) ?? '';
     let value: string;
     if (name === 'class') {
@@ -97,7 +102,9 @@ const serialize = (node: Node, depth: number, ids: IdMap, lines: string[]): void
       // 入力欄の今の値(属性ではなくプロパティ)も比べる。
       lines.push(`${indent}  value=${JSON.stringify((element as HTMLInputElement).value)}`);
     }
-    serialize(element, depth + 1, ids, lines);
+    if (tag !== 'textarea') {
+      serialize(element, depth + 1, ids, lines);
+    }
   }
   flushText();
 };

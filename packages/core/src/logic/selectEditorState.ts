@@ -1,6 +1,7 @@
 // 追加(editor: select): select エディタの純粋ロジック(初期ハイライト / ハイライト移動 /
 //   タイプアヘッド / ドロップダウン配置)です。DOM 非依存のため単体テストで網羅します。
-import type { GridSelectEditorOption } from '../model/gridTypes.unbound';
+import type { EditorCommitDirection, EditorEnterMove, GridSelectEditorOption } from '../model/gridTypes.unbound';
+import { resolveEnterDirection } from './editorKeys';
 
 // ドロップダウンの配置定数です(行高は styles.css の .ssg-select-editor-option と揃えます)。
 export const SELECT_POPOVER_MIN_WIDTH = 180;
@@ -140,4 +141,83 @@ export const findOptionByComposedText = (
   }
   const contains = labels.findIndex((label) => label.includes(query));
   return contains >= 0 ? contains : null;
+};
+
+// 追加(dogfood DF-13): PageUp / PageDown で動かす候補の数です。
+export const SELECT_PAGE_STEP = 8;
+
+// 追加(Solid 版 段階 1-2): select エディタのキーの割り当て(React 版の editors/SelectCellEditor.tsx と同じ。Solid 版が使います)。
+//   React 版は同じ割り当てを展開したまま持ちます(この関数へ寄せるとフル版が 0.08KB 増えるため。変えるときは両方を直す。
+//   Solid 版の React 版と並べて比べるテストが差を見つけます)。IME の変換中のキーは呼ぶ側が先に除きます(変換の始まりに表示中の名前を選ぶため)。割り当てたキーは preventDefault して
+//   から呼ぶ側の関数を呼び、それ以外は既定の動作のままにします。
+//   - ArrowUp / ArrowDown は 1 つずつ、Home / End は先頭 / 末尾、PageUp / PageDown は SELECT_PAGE_STEP 件ずつ(端で止まる。
+//     候補が無いときの Home / End / PageUp / PageDown は何もしない。これまではブラウザの既定の動作でグリッドがスクロールし、
+//     エディタが画面の外へ出ていた。DF-13)。onMove には今のハイライトから行き先を決める関数を渡します
+//   - Enter はハイライト中の候補で確定して enterMove の向きへ、Tab は左右へ、Escape は取り消し
+//   - 修飾キー(Ctrl / ⌘ / Alt)の無い印字キーはタイプアヘッド(label の前方一致へ)
+export type SelectEditorKeyEventLike = {
+  key: string;
+  shiftKey: boolean;
+  ctrlKey: boolean;
+  metaKey: boolean;
+  altKey: boolean;
+  preventDefault: () => void;
+};
+
+export type SelectEditorKeyOptions = {
+  optionCount: number;
+  enterMove: EditorEnterMove | undefined;
+  onMove: (next: (current: number) => number) => void;
+  onCommit: (direction: EditorCommitDirection | undefined) => void;
+  onCancel: () => void;
+  onTypeahead: (key: string) => void;
+};
+
+export const handleSelectEditorKeyDown = (event: SelectEditorKeyEventLike, options: SelectEditorKeyOptions): void => {
+  const { key } = event;
+  const count = options.optionCount;
+  if (key === 'ArrowDown' || key === 'ArrowUp' || key === 'Home' || key === 'End' || key === 'PageUp' || key === 'PageDown') {
+    event.preventDefault();
+    if (key === 'ArrowDown' || key === 'ArrowUp' || count > 0) {
+      options.onMove((current) => moveSelectHighlight(key, current, count));
+    }
+  } else if (key === 'Enter' || key === 'Tab') {
+    event.preventDefault();
+    options.onCommit(key === 'Enter' ? resolveEnterDirection(options.enterMove) : event.shiftKey ? 'left' : 'right');
+  } else if (key === 'Escape') {
+    event.preventDefault();
+    options.onCancel();
+  } else if (key.length === 1 && !event.ctrlKey && !event.metaKey && !event.altKey) {
+    event.preventDefault();
+    options.onTypeahead(key);
+  }
+};
+
+// 上下の矢印 / Home / End / PageUp / PageDown の行き先(端で止まる)。ハイライトが無い(-1)ときの PageUp / PageDown は先頭から
+//   数えます。
+export const moveSelectHighlight = (key: string, current: number, optionCount: number): number => {
+  if (key === 'ArrowDown' || key === 'ArrowUp') {
+    return moveHighlight(current, key === 'ArrowDown' ? 1 : -1, optionCount);
+  }
+  if (key === 'Home' || key === 'End') {
+    return key === 'Home' ? 0 : optionCount - 1;
+  }
+  const base = current < 0 ? 0 : current;
+  return Math.min(Math.max(base + (key === 'PageDown' ? SELECT_PAGE_STEP : -SELECT_PAGE_STEP), 0), optionCount - 1);
+};
+
+// 開いたときのハイライトとタイプアヘッドの状態(React 版の SelectCellEditor と同じ。React 版は大きさのため展開したまま)。印字キー / IME 確定で編集を始めたとき(initialText)は、タイプアヘッドを
+//   1 回適用した状態から始めます(続けて打つと前方一致を伸ばせるよう、バッファも引き継ぐ。audit RD-9)。一致が無ければ今の値。
+export const resolveSelectEditorStart = (
+  options: GridSelectEditorOption[],
+  value: unknown,
+  initialText: string | undefined,
+  now: number,
+): { highlight: number; typeahead: SelectTypeaheadState } => {
+  const fallback = resolveInitialHighlight(options, value);
+  if (!initialText) {
+    return { highlight: fallback, typeahead: createTypeaheadState() };
+  }
+  const result = typeaheadJump(createTypeaheadState(), initialText, now, options);
+  return { highlight: result.index ?? fallback, typeahead: result.state };
 };

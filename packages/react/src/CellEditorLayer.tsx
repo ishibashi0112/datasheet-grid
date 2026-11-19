@@ -13,6 +13,7 @@ import { SelectCellEditor } from './editors/SelectCellEditor';
 import { DateCellEditor } from './editors/DateCellEditor';
 import { CustomCellEditor } from './editors/CustomCellEditor';
 import { toDateInputValue } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/editorValues';
+import { resolveTypedStartText } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/editorStart';
 import { cx } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/cx';
 import type { GridResolvedSlots } from './model/gridTypes';
 import { useGridLocaleText } from './hooks/useGridLocaleText';
@@ -217,9 +218,7 @@ export function CellEditorLayer<T>({
         ariaLabel={editLabel}
         enterMove={enterMove}
         initialValue={toDateInputValue(editorSession ? editorSession.value : initialValue)}
-        initialText={
-          editorSession && initialValue !== String(editorSession.value ?? '') ? initialValue : undefined
-        }
+        initialText={editorSession ? resolveTypedStartText(initialValue, editorSession.value) : undefined}
         onCommit={onCommit}
         onCancel={onCancel}
         align={align}
@@ -268,9 +267,7 @@ export function CellEditorLayer<T>({
         value={editorSession?.value}
         // 修正(audit RD-9): 印字キー / IME 確定での開始(初期値がセル値の文字列と異なる)ならタイプアヘッドに使います。
         //   F2 / Enter / ダブルクリックでの開始はセル値の文字列が初期値のため使いません。
-        initialText={
-          editorSession && initialValue !== String(editorSession.value ?? '') ? initialValue : undefined
-        }
+        initialText={editorSession ? resolveTypedStartText(initialValue, editorSession.value) : undefined}
         onCommit={onCommit}
         onCancel={onCancel}
         align={align}

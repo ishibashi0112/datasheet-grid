@@ -1,6 +1,6 @@
 // checkbox エディタの列のセル(押すと値を反転)。React 版の editors/CheckboxCell.tsx と同じ DOM と class。
 import type { GridResolvedSlot } from '../model/gridTypes';
-import { RowSelectionCheckbox } from './RowSelectionCheckbox';
+import { RowSelectionCheckbox } from '../view/RowSelectionCheckbox';
 
 type CheckboxCellProps = {
   checked: boolean;

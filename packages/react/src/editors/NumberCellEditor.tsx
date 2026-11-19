@@ -17,10 +17,9 @@ import { CellEditorErrorBubble } from './CellEditorErrorBubble';
 import { useTopAlignedInput } from './useTopAlignedInput';
 import { cx } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/cx';
 import {
-  isNumberInputPrefix,
-  normalizeNumberText,
-  toNumberInputText,
-} from '@ishibashi0112/spreadsheet-grid-core/internal/logic/editorValues';
+  resolveNumberEditorCommitValue,
+  resolveNumberEditorStart,
+} from '@ishibashi0112/spreadsheet-grid-core/internal/logic/editorStart';
 
 type NumberCellEditorProps = {
   // 追加(1.0.1 / 2026-11-09 実アプリの総点検 AP-34): 入力欄の読み上げの名前(「(列名) を編集」。枠の group と同じ)。
@@ -61,13 +60,8 @@ export function NumberCellEditor({
   //   文字列の値 → '1234' / '12')。数値に直せない初期値(英字や空白から打ち始めた / 数値でない文字列の値)は text で開き、
   //   その文字をそのまま見せます(type="number" は value に入れると空に見えるのに、確定ではその文字が書かれていた。
   //   Chrome は console に「cannot be parsed」の警告も出していた)。
-  const [start] = useState(() => {
-    if (initialValue === '' || isNumberInputPrefix(initialValue)) {
-      return { text: initialValue, textMode: initialValue !== '' };
-    }
-    const numberText = toNumberInputText(initialValue);
-    return numberText !== null ? { text: numberText, textMode: false } : { text: initialValue, textMode: true };
-  });
+  //   変更(Solid 版 段階 1-2): 決め方は core logic/editorStart の resolveNumberEditorStart(Solid 版と共用)。
+  const [start] = useState(() => resolveNumberEditorStart(initialValue));
   const [draftValue, setDraftValue] = useState(start.text);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   // 追加(数値の打ち始め): 初期値が数値の書き始め("-" / "+" / "." など)のセッションは type="text" で開きます。
@@ -77,7 +71,7 @@ export function NumberCellEditor({
   //   reject)で、書き始めのまま(「-」だけ等)なら空文字にします。このセッションでは ArrowUp / ArrowDown のステップは
   //   ありません。セッションの途中で type は切り替えません(キャレットが飛ぶため)。
   const textMode = start.textMode;
-  const commitValue = textMode && isNumberInputPrefix(normalizeNumberText(draftValue)) ? '' : draftValue;
+  const commitValue = resolveNumberEditorCommitValue(draftValue, textMode);
 
   // マウント時(= 編集セッション開始時)に自動フォーカスします。
   //   ※ type="number" は setSelectionRange 非対応(例外を投げるブラウザあり)のため focus のみ。text のときは

@@ -7,7 +7,9 @@ import {
   computeSelectPopoverPlacement,
   createTypeaheadState,
   moveHighlight,
+  moveSelectHighlight,
   resolveInitialHighlight,
+  handleSelectEditorKeyDown,
   resolveSelectOptionRowHeight,
   typeaheadJump,
 } from './selectEditorState';
@@ -170,5 +172,66 @@ describe('findOptionByComposedText', () => {
     expect(findOptionByComposedText(owners, 'ｓ')).toBe(1);
     expect(findOptionByComposedText(owners, 'ＳＡ')).toBe(1);
     expect(findOptionByComposedText(owners, 'fu')).toBe(2);
+  });
+});
+
+describe('handleSelectEditorKeyDown / moveSelectHighlight(Solid 版 段階 1-2 で React 版から移した割り当て)', () => {
+  const run = (
+    key: string,
+    optionCount = 3,
+    enterMove: 'none' | undefined = undefined,
+    mods: Partial<{ shiftKey: boolean; ctrlKey: boolean; metaKey: boolean; altKey: boolean }> = {},
+  ) => {
+    const calls: unknown[] = [];
+    let prevented = false;
+    handleSelectEditorKeyDown(
+      {
+        key,
+        shiftKey: false,
+        ctrlKey: false,
+        metaKey: false,
+        altKey: false,
+        ...mods,
+        preventDefault: () => {
+          prevented = true;
+        },
+      },
+      {
+        optionCount,
+        enterMove,
+        onMove: (next) => calls.push(['move', next(1)]),
+        onCommit: (direction) => calls.push(['commit', direction]),
+        onCancel: () => calls.push(['cancel']),
+        onTypeahead: (typed) => calls.push(['typeahead', typed]),
+      },
+    );
+    return { calls, prevented };
+  };
+
+  it('矢印は候補が無くても動かし、Home / End / PageUp / PageDown は候補が無ければ止めるだけ', () => {
+    expect(run('ArrowDown', 0)).toEqual({ calls: [['move', 0]], prevented: true });
+    expect(run('Home', 0)).toEqual({ calls: [], prevented: true });
+    expect(run('End', 3)).toEqual({ calls: [['move', 2]], prevented: true });
+  });
+
+  it('Enter は enterMove の向き、Tab は左右、Escape は取り消し', () => {
+    expect(run('Enter').calls).toEqual([['commit', 'down']]);
+    expect(run('Enter', 3, 'none').calls).toEqual([['commit', undefined]]);
+    expect(run('Tab', 3, undefined, { shiftKey: true }).calls).toEqual([['commit', 'left']]);
+    expect(run('Escape').calls).toEqual([['cancel']]);
+  });
+
+  it('修飾キーの無い印字キーだけタイプアヘッド(ほかは既定の動作のまま)', () => {
+    expect(run('a')).toEqual({ calls: [['typeahead', 'a']], prevented: true });
+    expect(run('a', 3, undefined, { ctrlKey: true })).toEqual({ calls: [], prevented: false });
+    expect(run('F5')).toEqual({ calls: [], prevented: false });
+  });
+
+  it('行き先は端で止まる(PageUp / PageDown は 8 件ずつ)', () => {
+    expect(moveSelectHighlight('ArrowDown', 2, 3)).toBe(2);
+    expect(moveSelectHighlight('ArrowUp', 0, 3)).toBe(0);
+    expect(moveSelectHighlight('End', 0, 20)).toBe(19);
+    expect(moveSelectHighlight('PageDown', -1, 20)).toBe(8);
+    expect(moveSelectHighlight('PageUp', 5, 20)).toBe(0);
   });
 });

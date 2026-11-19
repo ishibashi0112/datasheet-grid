@@ -23,9 +23,51 @@ React 版の機能なしの構成と並べて、同じ props・同じ操作で D
 
 | # | 内容 | 状況 |
 | --- | --- | --- |
-| 1-1 | 見出しとセル: 見出し(renderHeader・並びの印・列幅のつまみ・角)、セル(renderCell・valueFormatter・cellClassName・メモ・入力の検査の印・checkbox のセル・ARIA)、上下のバー、空の表示、テーマ・密度・モーション・classNames、ツールチップ、Tab でグリッドの外へ、通知(onStateChange / onSortChange / onScroll / onCellClick ほか)。共通の部品を core へ(下部バーの文字列 = core `logic/gridBarSummary`、renderHeader の中のボタンの判定 = core `logic/domGuards`)。React 版と並べて比べるテスト | 済み(比べる場面 11 で DOM・フォーカス・要素の使い回し・id の参照・通知が一致。別視点のレビューの指摘も直した。PR #62 を見てもらう) |
-| 1-2 | エディタ 6 種(text / number / select / date / checkbox / custom)・入力の検査(reject)・エラーの吹き出し | まだ |
+| 1-1 | 見出しとセル: 見出し(renderHeader・並びの印・列幅のつまみ・角)、セル(renderCell・valueFormatter・cellClassName・メモ・入力の検査の印・checkbox のセル・ARIA)、上下のバー、空の表示、テーマ・密度・モーション・classNames、ツールチップ、Tab でグリッドの外へ、通知(onStateChange / onSortChange / onScroll / onCellClick ほか)。共通の部品を core へ(下部バーの文字列 = core `logic/gridBarSummary`、renderHeader の中のボタンの判定 = core `logic/domGuards`)。React 版と並べて比べるテスト | 済み(比べる場面 11 で DOM・フォーカス・要素の使い回し・id の参照・通知が一致。別視点のレビューの指摘も直した。PR #62 でマージ済み) |
+| 1-2 | エディタ 6 種(text / number / select / date / checkbox / custom)・入力の検査(reject)・エラーの吹き出し | 済み(1-2c: 別視点のレビュー = 高 1・中 2・低 3 を直した。比べる場面 13 で DOM・フォーカス・通知が一致、Solid だけのテスト 1、Chromium のデモで実際のキー入力・IME・吹き出しの置き方・エディタが外れるときを確かめた。全ゲートと React 版のハーネス Chromium 941 / 941・Firefox 865 / 865・WebKit 861 / 864(FAIL は既知の BR-3・BR-4 だけ。1.2.0 と同じ数)。1-2b: Solid のエディタ 6 種と比べるテスト = 済み。1-2a: エディタの判断と DOM の処理を core へ = 済み。エラーの吹き出しの置き方 `utils/errorBubblePlacement`、複数行の入力欄の大きさと改行 `utils/multilineEditor`、見えている範囲 `utils/editorVisibleBounds`(React 版から移動)、number / date の開く値と確定する値 `logic/editorStart`、select のキーと開いたときのハイライト `logic/selectEditorState`(React 版はフル版が 0.08KB 増えるので展開したまま)。フル版 149.71KB) |
 | 1-3 | 行の選択(チェックボックス)・展開行・フォーカスの順 | まだ |
+
+### 1-2 で分かったこと
+
+- **Solid 2.0 の `value` は式で結ぶと描き直しのたびに書き直される**: コンパイラは同じ要素の動く属性(min / max / aria-invalid /
+  class / style など)を 1 つの effect にまとめ、`value` はそのどれかが変わるたびに書き直す(同じ値でも)。number エディタを
+  `value={start.text}`(式)にしていたら、reject でエラーの印が付いた描き直しで打った文字が開いたときの値へ戻った(比べる
+  テストで見つけた)。下書きの signal を結ぶ形にしても、type="number" の「-」「1e」だけの打ちかけや欄が欠けた date は入力欄の
+  value が '' のまま input が来るので、'' を書いて見えている文字を消した(別視点のレビューの高。jsdom では出ず Chromium で
+  確かめた)。→ text / number / date は `value` を素の変数で渡して作ったときに 1 回だけ入れる(コンパイラは素の変数を動かない
+  値として 1 回だけ書く)。select は表示する名前が変わるので、今の値と違うときだけ書く effect にした(React 版の制御された入力欄
+  と同じ。IME の変換中に同じ値を書かない)。
+- **custom エディタのフォーカスは利用側**: React 版の例は `autoFocus` で入力欄へフォーカスを置くが、Solid 2.0 の `autofocus` は
+  属性を書くだけで後から足した要素にはフォーカスが動かない。Solid 版では `onSettled(() => input.focus())` で置く(デモと比べる
+  テストもこの形)。段階 3 の Solid 版のドキュメントに書く。
+- **effect の後半で signal を読まない**: Solid の開発ビルドが STRICT_READ_UNTRACKED を出した(エディタの入力欄の ref の signal・
+  セルの高さを effect の後半や `onSettled` で読んでいた)。→ 前半(compute)で読んだ値を後半へ渡し、1 回だけの読み取りは
+  `untrack` で明示した。
+- **select の一覧は `Portal`(`@solidjs/web`)で描く場所へ**: 描く場所(既定はグリッドを囲むダイアログの中、無ければ body)は
+  シェルが `context/portal.ts` で渡し、開いている間だけ決める(React 版の `resolvePopupContainer` と同じ)。テーマのトークンの
+  写しと transform の打ち消しは core の `watchPortalTokens` / `syncPopupOrigin` をそのまま使う。
+- **比べるテストで見たもの**: text(打ち始め・F2・Esc・Tab・外へのフォーカス)、複数行(修飾キー付きの Enter で改行)、number
+  (「-」から打ち始めると text の入力欄)、reject(吹き出し・打ち直すと消える・Esc / 外へのフォーカスは取り消し)、select
+  (矢印 / Home / End / PageDown・タイプアヘッド・押して選ぶ・打ち始め・IME の変換中の文字と確定した文字の候補)、date(文字から
+  打ち始め・読めない文字の吹き出し)、checkbox(Space・Enter / F2 では開かない・読み取り専用)、custom(ctx の値・commit / cancel)、
+  編集中に上へ行が足されたとき、`editorEnterMove`。Chromium のデモ(`pnpm --filter ./packages/solid dev`)では、実際のキー入力・
+  CDP の IME・候補のクリック・吹き出しが見えている範囲に収まること・複数行の高さの伸びも確かめた。
+- **エディタが外れるときの blur**: Chromium はフォーカスのある要素を DOM から外すと同期で blur を出す。React は DOM を書き換える
+  間のイベントを止めるので届かないが、Solid は届くので、グリッドの破棄・編集中の列の固定(ペインが変わる)・editor の差し替えで
+  打ちかけを確定していた(別視点のレビューの中)。→ エディタの `onCleanup` で印を立てて、その後の blur では確定 / 取り消しを
+  しない(列の固定では新しいペインで開き直す = React 版と同じ。Chromium で確かめ、印を外すと再び確定することも確かめた)。
+- **custom の ctx はセッションが終わった後もそのセッションの値**: getter が今の編集のセルを読んでいたので、別のセルの編集が
+  始まった後に古い ctx の `rowKey` / `row` を読むと新しいセルを指した(サーバーで検査してから commit する作りで効く。
+  レビューの中)。→ セッションの番号が同じ間だけ追従する memo で受ける(`editorBehavior.test.tsx`。修正を外すと落ちる)。
+- **ポップアップのトークンは createEffect で測る**: 一覧の中身は後から作られるので、その class の描き直しより先に測ると、
+  開いたままテーマを変えたときに利用側が `.ssg-root` で上書きしたトークンが写らなかった(レビューの低)。描画の effect の後に
+  動く createEffect にした(React 版はコミット後のレイアウト effect)。select の候補は位置で使い回す(`For keyed={false}`)、
+  空のエラーの文言でも吹き出しを出す(Show の when は '' を偽とみなすので箱に入れる)も直した。
+- **後の段階で気をつけること(レビューの低)**: custom で開いた時点に行が無い(SSRM の読み込み中)と描かない / custom の `render`
+  は開いたときのものを使う(columns を差し替えても開いている間は替えない。Solid 版のドキュメントに書く)/ style の式が
+  オブジェクトから undefined になると style 属性ごと消える(autoHeight の上そろえの padding と混ぜるとき)。
+- **jsdom に無いもの**: 吹き出しの置き方(上へ / 左へずらす / 折り返す)は core `utils/errorBubblePlacement` のテスト(jsdom で
+  矩形を差し替える)と Chromium で見る。比べるテストの jsdom は矩形が 0 なので、React 版・Solid 版とも下のまま。
 
 ### 1-1 で分かったこと
 
