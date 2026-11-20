@@ -70,8 +70,8 @@ set / select / numberSet / textSet / dateSet / auto。見出しの下に開く�
 取得の失敗と保存の失敗のバー(再試行 / 閉じる)、書き戻しは楽観更新と失敗の巻き戻し・セルの保存の印、`updateRows` が無ければ
 編集しない、ラベル行と一緒に使える、ハンドルの `refreshServerSide` / `retryServerSideLoads`)
 
-段階 2 の機能(`/lite` の 21)はこれで全部。開発時の警告(行のグループ化とラベル行の併用・サーバーサイドで使えない prop など)は
-段階 3 でまとめて足す。
+段階 2 の機能(`/lite` の 21)はこれで全部。開発時の警告(使われたのに機能セットに無い prop とメソッド・行のグループ化とラベル行の
+併用・サーバーサイドで使えない prop など)は React 版と同じ条件と文言で出す(本番では出さない。`src/devWarnings.ts`)。
 
 `renderCell` / `renderHeader` / `renderTopBar` / `renderBottomBar` は、React 版のように描き直しのたびに呼ぶのではなく、Solid の部品と
 同じく必要なときだけ呼びます: `renderCell` は行(と値)や列が変わったとき、`renderHeader` は列が変わったとき、バーは関数が変わった

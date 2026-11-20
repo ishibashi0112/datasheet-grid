@@ -37,6 +37,13 @@ jobs:
       - name: Test
         run: pnpm test
 
+      # 追加(Solid 版 段階 3-1): Solid 版(packages/solid。まだ公開していない)の型チェックとテスト。ルートの tsc / vitest の
+      #   対象外なので別に回す。React 版と並べて同じ props・同じ操作で DOM と通知を比べるテスト(src/parity)を含む。
+      - name: Solid (typecheck + test)
+        run: |
+          pnpm --filter ./packages/solid run typecheck
+          pnpm --filter ./packages/solid test
+
       - name: Build library
         run: pnpm run build:lib
 

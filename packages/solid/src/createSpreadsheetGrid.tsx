@@ -2,10 +2,12 @@
 //   - features に無い機能のモジュールは import されないので、束ねた JS から消えます。
 //   - 無い機能の prop は何もしません。シェルが機能の有無より前に分岐に使う prop は、無い機能なら「使わない」値に置き換えて
 //     渡します(DISABLED_FEATURE_PROPS。React 版と同じ表を、Solid 版に入った機能の分だけ)。
-//   - 開発時の警告(無い機能の prop / メソッド)は段階 3 で足します。
+//   - 開発時だけ、無い機能の prop とメソッド(exportCsv / openFilterManager など)を console.warn で知らせます(devWarnings.ts。
+//     React 版と同じ文言と回数)。
 import { merge } from 'solid-js';
 import type { JSX } from '@solidjs/web';
 import { GridShell } from './SpreadsheetGrid';
+import { createUnregisteredFeatureWarnings, withMethodWarningFeatures } from './devWarnings';
 import type { GridFeatureName, GridFeatures, SolidGridFeatures } from './features/types';
 import type { SpreadsheetGridProps } from './model/gridTypes';
 
@@ -44,8 +46,11 @@ export function createSpreadsheetGrid(options: CreateSpreadsheetGridOptions) {
     }
   }
   const hasOverrides = Object.keys(overrides).length > 0;
+  const shellFeatures = withMethodWarningFeatures(features);
   return function SpreadsheetGrid<T extends object>(props: SpreadsheetGridProps<T>): JSX.Element {
+    // 機能が無いときの置き換えの前の props で見る(使われたのに効かない prop を知らせる)。
+    createUnregisteredFeatureWarnings(props, features);
     // merge は props の getter を保ったまま上書きします(スプレッドで写すと props の追従が切れる)。
-    return GridShell<T>(hasOverrides ? merge(props, overrides as Partial<SpreadsheetGridProps<T>>) : props, features);
+    return GridShell<T>(hasOverrides ? merge(props, overrides as Partial<SpreadsheetGridProps<T>>) : props, shellFeatures);
   };
 }

@@ -14,7 +14,7 @@ Claude Doc「Solid 2.0 版の試作の報告」)。試作の中身と分かっ�
 | 0 | core へ寄せる整理(React 版の公開 API と見た目は不変)+ 試作の `packages/solid`(非公開) | 1 | React 版は patch / minor に混ぜる |
 | 1 | Solid 版の本体(React の `/lite` の機能なし = `createSpreadsheetGrid({ features: {} })` と同じ範囲: 見出しとセル・列幅・ソート・ツールチップ・エディタ 6 種・入力の検査・行の選択・展開行・ARIA) | 3 | — |
 | 2 | 21 の機能(`/lite` の部品と同じ名前で。ラベル行・SSRM・行のグループもここ = React 版でも機能のため) | 3〜4 | — |
-| 3 | ハーネス(3 ブラウザ)・`types:check`・`size:check`・ドキュメント・サンプル | 2 | `@ishibashi0112/spreadsheet-grid-solid` 0.x |
+| 3 | 開発時の警告と CI・ハーネス(3 ブラウザ)・`types:check`・`size:check`・ドキュメント・サンプル(下の「段階 3 の中身」) | 3 | `@ishibashi0112/spreadsheet-grid-solid` 0.1.0(React 版と core の 1.2.1 の後) |
 
 ## 段階 1 の中身
 
@@ -211,7 +211,7 @@ React 版の機能なしの構成と並べて、同じ props・同じ操作で D
   確認で見つけた)。「フィルターを追加」の select は選んだらすぐ空に戻す(React 版と同じ)。
 - **行のグループ化の部分は 2-4 で**: 列の一覧の「グループ化中」の印、並び替え / フィルターの一覧のグループ元の列は、grouping を
   つなぐ 2-4 で足す(今は groupColumns を渡していない。→ 2-4a でつないだ)。React 版にある「ツールパネルが無いときに `openFilterManager` を呼んだ
-  ときの開発時の警告」は段階 3 の開発時の警告でまとめて足す。
+  ときの開発時の警告」は段階 3 の開発時の警告でまとめて足す(→ 3-1 で足した)。
 - **別視点のレビューで直したもの**: (中)種別を推定した列('auto')の列フィルターで、下書きを変えるたびに開いている列が
   新しいオブジェクトになり(core の `resolveOpenedFilterColumn` が `{ ...column, filterType }` を作る)、相対の期間のチップと
   差し替えた日付欄が作り直されてフォーカスが外れていた。開いている列は列のキー・種別・列の定義が変わったときだけ作り直し、
@@ -337,7 +337,7 @@ React 版の機能なしの構成と並べて、同じ props・同じ操作で D
   の行が替わった `onActiveCellChange` など)、その順番は React 版と違うことがある。React 版は passive effect を宣言の順に走らせ、
   Solid の effect は宣言の順に走るとは限らない(並べ替えでは Solid 版が `onStateChange` を先に呼ぶ)。それぞれの通知の中身と
   回数は同じ。比べるテストのその場面は片方の通知だけを控え、状態は `getState` で見る。
-- **開発時の警告は段階 3**: React 版の「行のグループ化とラベル行は併用できない」の警告(`console.warn`)は、ほかの開発時の警告
+- **開発時の警告は段階 3**(→ 3-1 で足した): React 版の「行のグループ化とラベル行は併用できない」の警告(`console.warn`)は、ほかの開発時の警告
   (足りない機能の警告など)と一緒に段階 3 で足す(Solid 版にはまだ開発時の警告の仕組みが無い)。サーバーサイドの警告
   (`rowGroup` は使えない・auto-height は使えない・`moveRow` は何もしない)も同じ(動き = 無視する / 何もしないは React 版と同じに
   してある)。
@@ -372,6 +372,44 @@ React 版の機能なしの構成と並べて、同じ props・同じ操作で D
   なので、読み込み中の行・依頼の範囲と query・失敗のバーも比べられる。時間で外れる印(届いた行のフェードイン 1.5 秒・保存できた
   ✓ 1.3 秒・スクロール中の印 0.12 秒)は、外れる時刻が両者の待ち方で前後するので、最初のテスト以外は `motion: 'off'` にし、✓ と
   スクロール中の印は外れるまで待ってから次へ進む。
+
+## 段階 3 の中身
+
+公開の準備。2026-11-20 にユーザーがおすすめの案を選んだ: 3-1 → 3-2 → 3-3 の順に PR を出し、React 版と core を 1.2.1 で出して
+(前に決めた 12 本のアプリの確かめ直しと npm の 1.2.0 との比べの後)から、Solid 版を 0.1.0 で出す。Solid 版の版は 0.1.0 から
+独自に数え、core の内部の部品を使うので依存する core の版に固定する。React 版と同じ処理を写している 2 つ(右クリックメニューの
+引数を作る関数、行ドラッグを離した後の列の選び方)は今は core へ寄せない(React 版のコードが変わるため)。React 版の既知の低
+(PageDown の後に IME の入力受けが 16px ずれる)は段階 3 では直さない。ポップアップの遅延読み込みは 3-3 で大きさを測ってから
+決める。
+
+| # | 内容 | 状況 |
+| --- | --- | --- |
+| 3-1 | 開発時の警告(React 版と同じ条件・文言・回数)と、Solid 版の型チェックとテストを CI へ | 済み(警告と、React 版と比べるテスト 8 本・CI の手順。別視点のレビュー = 中 1・低 1 を直した。Solid 版の全体 145 / 145) |
+| 3-2 | 実ブラウザのハーネス(`audit/harness` の確認)を Solid 版でも Chromium / Firefox / WebKit で回し、違いを直す | まだ |
+| 3-3 | パッケージの形(dist と型)・`size:check` / `types:check` に Solid 版・StackBlitz のサンプル・README とドキュメントサイトの「Solid で使う」 | まだ |
+
+### 3-1 で分かったこと
+
+- **警告は `src/devWarnings.ts` に集めた**: 機能セットに無い機能の prop の表(React 版の `hooks/useUnregisteredFeatureWarnings.ts` と
+  同じ)、エクスポートのメソッドの代役(React 版の `features/resolve.ts` の `inertExportFeature`)、`openFilterManager` の足りない
+  機能(ツールパネル / フィルター)、フィルターの機能が無いのに入ったフィルターの状態、シェルの警告(サーバーサイドの rowGroup /
+  行のグループ化とラベル行の併用 / auto-height のサーバーサイドと 5 万行の上限 / 展開行の高さの上限 / サーバーサイドの
+  `moveRow()`)。文言は React 版と同じで、1 回だけの記録は core `logic/featureWarnings` を共有する。core と React 版は変えていない。
+- **本番では消える**: どれも `process.env.NODE_ENV === 'production'` のときは何もしない関数に差し替わる(React 版と core と同じ
+  判定。利用側のバンドラが置き換える)。dist を esbuild で `production` に束ねると、警告の文と prop の表とエクスポートの代役が
+  残らないことを確かめた。
+- **入れなかった警告**: React 版の「コンポーネントの中で `createSpreadsheetGrid` を呼んで、描くたびに作り直している」の警告。
+  Solid の部品の関数は 1 回しか呼ばれないので、部品の中で呼んでも描き直しのたびに作り直すことは無い。
+- **比べるテストの作り**(`src/parity/devWarnings.parity.test.tsx`): `console.warn` を控え、React 版と Solid 版を描く前に core の
+  「1 回だけ」の記録を消す(`resetUnregisteredFeatureWarnings`。2 つの版で 1 つのモジュールを共有するため)。警告の順番は比べない
+  (React 版は passive effect を宣言の順に、Solid 版の effect は順番が違うことがある)。
+- **CI**: Solid 版の型チェックとテスト(`pnpm --filter ./packages/solid run typecheck` / `test`。約 2 分)を CI の手順に足した。
+- **別視点のレビューで直したもの**: Solid 2.0 の `createEffect` は compute の値を比べない(effect は値が同じでも走る)。compute が
+  読む `columnResolution()` は解決し直すたびに新しいオブジェクトを返すので、rowGroup の列の数が同じまま `columns` を新しい配列に
+  替えただけで、サーバーサイドの rowGroup と、グループ化とラベル行の併用の警告がもう 1 回出ていた(中。React 版は deps が同じなら
+  出さない)。compute を `createMemo`(`===` で比べる)に通してから effect へつなぐ(`createChangeEffect`)。スクロールのたびに
+  auto-height と展開行の effect が走っていたもの(低。1 回だけの記録で警告の数は同じ)も一緒に消えた。比べるテストに「見出しだけ
+  替えた」手順を足した(直す前の Solid 版で落ちることを確かめた)。
 
 ## 段階 0 の中身
 
