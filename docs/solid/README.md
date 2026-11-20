@@ -160,7 +160,7 @@ React 版の機能なしの構成と並べて、同じ props・同じ操作で D
 | 2-1 | 機能を差し込む仕組み + 表示の機能 8 つ(totalRow / pinnedRows / conditionalFormat / selectionAggregates / scrollHint / motionExtras / export / autoHeight) | 済み(PR #65、2026-11-19 マージ。2-1a: 仕組み(`features/types.ts` / `createSpreadsheetGrid.tsx` / `features/full.ts`、比べるテストの `features`)と export、2-1b: autoHeight、2-1c: conditionalFormat、2-1d: totalRow + pinnedRows、2-1e: selectionAggregates、2-1f: scrollHint、2-1g: motionExtras) |
 | 2-2 | 操作の機能 7 つ(find / fillHandle / columnReorder / rowDrag / columnAutosize / imeDirectInput / contextMenu) | 済み(PR #66、2026-11-19 マージ。2-2a: find、2-2b: imeDirectInput、2-2c: columnAutosize、2-2d: columnReorder、2-2e: rowDrag、2-2f: fillHandle、2-2g: contextMenu。別視点のレビュー = 高 1・低 1 を直した) |
 | 2-3 | ポップアップ 3 つ(columnMenu / toolPanel / filtering) | 済み(PR #67、2026-11-20 マージ。2-3a: 行の絞り込み(グローバル / 列フィルターの適用・上部バーの検索欄・manualFiltering / manualSorting)、2-3b: 列メニュー、2-3c: 列フィルターのポップアップ、2-3d: ツールパネル(フィルター / 列 / 並び替えのタブ)とフィルターのチップのバー = 済み。別視点のレビュー = 中 1・低 2 を直した) |
-| 2-4 | 行のモデル 3 つ(serverSide / labelRow / grouping) | 作業中(2-4a: 行のグループ化 = 済み、2-4b: ラベル行 = 済み) |
+| 2-4 | 行のモデル 3 つ(serverSide / labelRow / grouping) | 作業中(2-4a: 行のグループ化 = 済み、2-4b: ラベル行 = 済み、2-4c: サーバーサイドの行モデル = 済み。次は別視点のレビュー → PR) |
 
 ### 2-3 で分かったこと
 
@@ -338,7 +338,34 @@ React 版の機能なしの構成と並べて、同じ props・同じ操作で D
   Solid の effect は宣言の順に走るとは限らない(並べ替えでは Solid 版が `onStateChange` を先に呼ぶ)。それぞれの通知の中身と
   回数は同じ。比べるテストのその場面は片方の通知だけを控え、状態は `getState` で見る。
 - **開発時の警告は段階 3**: React 版の「行のグループ化とラベル行は併用できない」の警告(`console.warn`)は、ほかの開発時の警告
-  (足りない機能の警告など)と一緒に段階 3 で足す(Solid 版にはまだ開発時の警告の仕組みが無い)。
+  (足りない機能の警告など)と一緒に段階 3 で足す(Solid 版にはまだ開発時の警告の仕組みが無い)。サーバーサイドの警告
+  (`rowGroup` は使えない・auto-height は使えない・`moveRow` は何もしない)も同じ(動き = 無視する / 何もしないは React 版と同じに
+  してある)。
+- **サーバーサイドの行モデルも core のまま**(2-4c): ブロックの読み込みとキャッシュ・query の変化で捨てて読み直す・取得の失敗と
+  再試行・書き戻しの楽観更新と巻き戻し(core `controllers/serverSideRowModel`)、query の組み立てと debounce
+  (`rowPipeline.resolveServerSideQuery` / `engine.serverSideQueryStore`)、セルの保存の印(`controllers/saveStatusController`)、
+  届いた行のフェードイン(`controllers/rowEnterController`)はどれも core。Solid 版は機能の部品(`features/serverSide.ts` =
+  core の 1 つ + `primitives/serverSide.ts`(コントローラのつなぎ)+ `view/GridServerSideErrorBars.tsx` /
+  `view/GridBodySkeletonRow.tsx`)とシェルのつなぎ(rows を空に、編集できるか = `updateRows` が無ければ編集しない、書き込み口を
+  エディタ / 貼り付け / Delete / チェックボックス / フィルハンドルへ、query が変わったら先頭へ戻して展開行を閉じる、描く窓の
+  行を行モデルへ知らせる、元に戻す / 行の追従 / 合計行の集計 / 列メニューのグループ化はサーバーサイドでは止める)だけ。
+- **読み込み中の行のキー**: 本体の keyed の `For` のキーを、届いていない行は `__ssg_skeleton__:<位置>`(React 版の key と同じ。
+  データ行のキー = 1 始まりの id などとぶつからない)にした。届くとキーが変わって本物の行の要素に替わり、行モデルの
+  フェードイン(skeleton → 行の差し替え)が React 版と同じ DOM の変化で動く。
+- **機能が無いときは dataSource を外す**: `createSpreadsheetGrid` の `merge(props, { dataSource: undefined })` で `undefined` が
+  元の値を上書きすることを確かめた(機能なしの構成の比べるテストで、clientSide の空の表になり `getRows` を呼ばない。React 版の
+  `DISABLED_FEATURE_PROPS` と同じ)。
+- **途中で dataSource を渡すときは作り直す**: 行の数とキャッシュの大きさは作ったときの `dataSource` で決まる(React 版と同じ。
+  API リファレンスの「実行時にモードを切り替える場合は `key` を変えて再マウント」)。デモの「サーバーサイド」は keyed の `Show` で
+  作り直す。
+- **開発時の性能の知らせ(EFFECT_RELAY_TEAR)**: query が変わったとき、行モデルのコントローラは effect の中で新しい行モデルを
+  出すので、query と行モデルの両方を読む effect(フィルハンドルのつなぎなど)が 2 回走る。0 件になったときの選択を詰める
+  effect も同じ。React 版も同じ所で 2 回描く(レイアウト effect / effect の中の setState)ので、列の仮想化の計測と同じく受け入れる
+  (Chromium のデモの確かめでもこの 2 つだけ)。
+- **比べるテスト**(`src/parity/serverSide.parity.test.tsx`): サーバーは答えを手で返す擬似のもの(依頼を溜めて respond / fail)
+  なので、読み込み中の行・依頼の範囲と query・失敗のバーも比べられる。時間で外れる印(届いた行のフェードイン 1.5 秒・保存できた
+  ✓ 1.3 秒・スクロール中の印 0.12 秒)は、外れる時刻が両者の待ち方で前後するので、最初のテスト以外は `motion: 'off'` にし、✓ と
+  スクロール中の印は外れるまで待ってから次へ進む。
 
 ## 段階 0 の中身
 

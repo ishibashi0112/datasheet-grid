@@ -1,5 +1,5 @@
-// React 版(`/lite` に同じ機能を差し込んだもの)と Solid 版の行のグループ化 / ラベル行 / サーバーサイドの行モデルを同じ操作で
-//   動かして、DOM と通知と命令的 API の結果が同じかを見る(段階 2-4)。
+// React 版(`/lite` に同じ機能を差し込んだもの)と Solid 版の行のグループ化 / ラベル行を同じ操作で動かして、DOM と通知と
+//   命令的 API の結果が同じかを見る(段階 2-4。サーバーサイドの行モデルは serverSide.parity.test.tsx)。
 import { beforeAll, describe, it } from 'vitest';
 import { createElement } from 'react';
 import { fireEvent } from '@solidjs/testing-library';

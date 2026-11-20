@@ -63,10 +63,15 @@ set / select / numberSet / textSet / dateSet / auto。見出しの下に開く�
 ラベル行(`labelRow` = `isLabelRow` / `getLabel` / `render` / `height` / `className` / `sticky` / `sortMode` / `keepEmptySections` /
 `exportText`。全幅の帯と横にスクロールしても左に残る中身、行番号・下部バーの番地と件数はラベル行を飛ばす、セクションの中の
 並び替え、縦スクロールの固定と次の見出しでの押し上げ、上へ見せる行は固定した帯の下に合わせる、列フィルターの候補はデータ行
-だけ、エクスポートの `includeLabelRows`)
+だけ、エクスポートの `includeLabelRows`)、
+サーバーサイドの行モデル(`dataSource` = `getRows` / `updateRows` / `initialRowCount` / `blockSize` / `maxCachedBlocks`、
+`serverSideRefreshToken` / `onServerSideLoadError` / `onServerSideWriteError` / `showSaveStatus`。見えている範囲をブロックで読み、
+届くまでは読み込み中の行(届くと上から順にフェードイン)、並べ替え / 検索 / 列フィルターは debounce してサーバーへ送り先頭へ戻す、
+取得の失敗と保存の失敗のバー(再試行 / 閉じる)、書き戻しは楽観更新と失敗の巻き戻し・セルの保存の印、`updateRows` が無ければ
+編集しない、ラベル行と一緒に使える、ハンドルの `refreshServerSide` / `retryServerSideLoads`)
 
-無いもの(段階 2 の残り): `/lite` の残りの 1 つの機能(SSRM)。開発時の警告(行のグループ化とラベル行の併用など)は段階 3 で
-まとめて足す。
+段階 2 の機能(`/lite` の 21)はこれで全部。開発時の警告(行のグループ化とラベル行の併用・サーバーサイドで使えない prop など)は
+段階 3 でまとめて足す。
 
 `renderCell` / `renderHeader` / `renderTopBar` / `renderBottomBar` は、React 版のように描き直しのたびに呼ぶのではなく、Solid の部品と
 同じく必要なときだけ呼びます: `renderCell` は行(と値)や列が変わったとき、`renderHeader` は列が変わったとき、バーは関数が変わった

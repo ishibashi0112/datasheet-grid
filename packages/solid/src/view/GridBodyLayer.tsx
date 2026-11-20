@@ -76,6 +76,9 @@ export type GridBodyRowItem = {
   start: number;
   size: number | undefined;
   key: string;
+  // サーバーサイドでまだ届いていない行(読み込み中の行を描く)。キーはデータ行と名前空間を分けた `__ssg_skeleton__:<位置>`
+  //   なので、行が届くとキーが変わり、本物の行に差し替わる(React 版と同じ)。
+  skeleton: boolean;
 };
 
 type GridBodyLayerProps<T> = {
@@ -105,6 +108,8 @@ type GridBodyLayerProps<T> = {
   //   通し番号になる。無ければ view index + 1)。
   labelRowLayer: GridBodyLabelRowLayer<T> | undefined;
   labelViewIndexes?: ArrayLike<number> | undefined;
+  // 読み込み中の行の部品(サーバーサイドのときだけ。機能 features/serverSide)。
+  skeletonRow: NonNullable<SolidGridFeatures['serverSide']>['BodySkeletonRow'] | undefined;
   ariaRowOffset: number;
   activeCell: CellCoord | null;
   editingCell: CellCoord | null;
@@ -139,6 +144,32 @@ export function GridBodyLayer<T>(props: GridBodyLayerProps<T>) {
         // 位置は memo で受ける(描く行の配列は作り直されるたびに新しいオブジェクトになるので、値が同じなら先へ伝えない。
         //   素の関数のままだと、ホバーやスクロールのたびに見えているすべてのセルの中身を作り直す)。
         const rowIndex = createMemo(() => item().index);
+        // 読み込み中の行(サーバーサイドでまだ届いていない行)。キーに印があるので、この要素の間は読み込み中の行のまま(届くと
+        //   キーが変わって本物の行の要素に替わる)。
+        const SkeletonRow = untrack(() => (item().skeleton ? props.skeletonRow : undefined));
+        if (SkeletonRow) {
+          return (
+            <SkeletonRow
+              pane={props.pane}
+              ownsRowHeader={props.ownsRowHeader}
+              leadingWidth={props.leadingWidth}
+              rowIndex={rowIndex()}
+              top={item().start}
+              rowHeight={item().size ?? props.rowHeight}
+              ariaRowOffset={props.ariaRowOffset}
+              rowHeaderWidth={props.rowHeaderWidth}
+              entries={props.entries}
+              isRowHovered={props.hoveredRowIndex === rowIndex()}
+              showRowCheckbox={props.enableRowSelection}
+              onRowHeaderPointerDown={props.onRowHeaderPointerDown}
+              onRowHeaderPointerEnter={props.onRowHeaderPointerEnter}
+              onRowHeaderPointerLeave={props.onRowHeaderPointerLeave}
+              onCellPointerDown={props.onCellPointerDown}
+              onCellPointerEnter={props.onCellPointerEnter}
+              slots={props.slots}
+            />
+          );
+        }
         const row = () => props.rowModel.getRow(rowIndex());
         // グループ行(グループ化している間だけ rowModel が getGroupRow を持つ。getRow は undefined なので下のデータ行は描かない)。
         //   行のキーの名前空間がデータ行と違う(core の groupRowKey)ので、同じ項目がグループ行とデータ行の間で入れ替わることはない。

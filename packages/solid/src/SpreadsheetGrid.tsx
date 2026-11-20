@@ -158,6 +158,7 @@ import { DefaultGridTopBar } from './view/DefaultGridTopBar';
 import { DefaultGridBottomBar } from './view/DefaultGridBottomBar';
 
 const EMPTY_ROWS: never[] = [];
+const NEVER_EDITABLE = () => false;
 const NO_COLUMNS: never[] = [];
 const NO_COLUMN_FILTERS: Record<string, never> = {};
 // 展開トグル列(合成列)のセル。開閉できる行だけ ▸ / ▾ を出します(React 版の renderDetailToggleCell と同じ)。
@@ -194,7 +195,11 @@ const SLOT_CONTEXT_KEYS = Object.keys({
 // シェルの本体です。機能セット(features)は createSpreadsheetGrid が渡します(全部入りは下の SpreadsheetGrid)。
 export function GridShell<T extends object>(props: SpreadsheetGridProps<T>, features: SolidGridFeatures): JSX.Element {
   // ── props(既定値つきの読み取り。本体では読まず、関数 / memo の中で読む。既定値は React 版の GridShell と同じ) ──
-  const rows = createMemo(() => (props.rows ?? EMPTY_ROWS) as T[]);
+  // サーバーサイドの行モデル(機能 features/serverSide。dataSource を渡したとき。無い構成では createSpreadsheetGrid が
+  //   dataSource を外すので clientSide)。dataSource があるときは rows を空として扱う(ドキュメントどおり「無視」。React 版と同じ)。
+  const serverSideFeature = features.serverSide;
+  const isServerSide = createMemo(() => props.dataSource != null);
+  const rows = createMemo(() => (props.dataSource != null ? EMPTY_ROWS : (props.rows ?? EMPTY_ROWS)) as T[]);
   const columns = createMemo(() => props.columns as unknown as UnboundGridColumn<T>[]);
   const density = () => props.density ?? 'standard';
   const rowHeight = () => props.rowHeight ?? GRID_DENSITY_DIMENSIONS[density()].rowHeight;
@@ -213,7 +218,8 @@ export function GridShell<T extends object>(props: SpreadsheetGridProps<T>, feat
   const columnFilterEnabled = () => props.enableColumnFilter ?? true;
   const enableRowHover = () => props.enableRowHover ?? true;
   const enableColumnResize = () => props.enableColumnResize ?? true;
-  const activeRowFollowEnabled = () => (props.activeCellFollows ?? 'position') === 'row';
+  // サーバーサイドは対象外(React 版と同じ)。
+  const activeRowFollowEnabled = () => (props.activeCellFollows ?? 'position') === 'row' && !isServerSide();
   // 行の選択(チェックボックス)。全選択の既定は enableRowSelection && multiple(React 版と同じ)。
   const enableRowSelection = () => props.enableRowSelection ?? false;
   const rowSelectionMode = () => props.rowSelectionMode ?? 'multiple';
@@ -226,7 +232,7 @@ export function GridShell<T extends object>(props: SpreadsheetGridProps<T>, feat
   const detailToggleColumnActive = () => props.detailRow != null && props.detailRow.showToggleColumn !== false;
   const columnInputs = () => ({
     columns: columns(),
-    isServerSide: false,
+    isServerSide: isServerSide(),
     // 行ドラッグ(機能 rowDrag)。機能が無い構成では createSpreadsheetGrid が false にする。
     enableRowDrag: props.enableRowDrag ?? false,
     hasRowsChange: props.onRowsChange != null,
@@ -277,7 +283,7 @@ export function GridShell<T extends object>(props: SpreadsheetGridProps<T>, feat
     initialState: untrack(() => props.initialState),
     columnInputs: untrack(columnInputs),
     serverSide: {
-      isServerSide: false,
+      isServerSide: untrack(isServerSide),
       enableGlobalFilter: untrack(globalFilterEnabled),
       enableColumnFilter: untrack(columnFilterEnabled),
       enableSorting: untrack(enableSorting),
@@ -366,7 +372,10 @@ export function GridShell<T extends object>(props: SpreadsheetGridProps<T>, feat
 
   // ── 行(clientSide だけ) ──
   // ラベル行の配置(rows / 述語が変わったときだけ 1 パス)。
-  const labelLayout = createMemo(() => engine.rowPipeline.resolveLabelRowLayout(rows(), labelIsLabelRow()));
+  //   サーバーサイドでは rows が空なので見ない(ラベル行は行モデルのラッパが述語で見分ける。下の rowModel)。
+  const labelLayout = createMemo(() =>
+    engine.rowPipeline.resolveLabelRowLayout(rows(), isServerSide() ? undefined : labelIsLabelRow()),
+  );
   // 列フィルターの候補(set / textSet の rows からの自動収集)はデータ行だけから集める(ラベル行の値や、ラベル行の空の値による
   //   「(空白)」を混ぜない。React 版の DF-12)。ラベル行が無ければ rows のまま。
   const filterCandidateRows = createMemo(() => {
@@ -413,7 +422,7 @@ export function GridShell<T extends object>(props: SpreadsheetGridProps<T>, feat
       columnFilterEnabled,
       columnFilters,
       manualFiltering,
-      isServerSide: () => false,
+      isServerSide,
       dateRollover: engine.dateRollover,
     }) ?? null;
   const filteringAvailable = filterOrder !== null;
@@ -462,7 +471,59 @@ export function GridShell<T extends object>(props: SpreadsheetGridProps<T>, feat
       manualSorting: manualSorting(),
     }),
   );
-  const rowModel = () => clientRowModel().rowModel;
+  // ── サーバーサイドの行モデル(機能 features/serverSide) ──
+  //   並び / 列フィルター / グローバルフィルターの状態から query を組み立て、debounce した query と安定したキーを行モデルの
+  //   コントローラへ渡す(入力欄の文字はすぐ状態へ入り、サーバーへ送るのは打ち終わってから。React 版と同じ)。clientSide では
+  //   空の query のまま。
+  const liveServerSideQuery = createMemo(() =>
+    engine.rowPipeline.resolveServerSideQuery({
+      isServerSide: isServerSide(),
+      globalFilterEnabled: globalFilterEnabled(),
+      globalText: globalFilterText(),
+      columnFilterEnabled: columnFilterEnabled(),
+      columnFilters: columnFilters(),
+      sortingEnabled: enableSorting(),
+      sort: ui().sort,
+      relativeDateKey: relativeDateKey(),
+    }),
+  );
+  connectController(engine.serverSideQueryStore, () => ({ value: liveServerSideQuery(), enabled: isServerSide() }));
+  const serverSideQuerySnapshot = createExternalStoreSignal(engine.serverSideQueryStore);
+  const serverSideQueryKey = createMemo(() => serverSideQuerySnapshot().queryKey);
+  const serverSide = serverSideFeature?.createServerSide<T>(() => ({
+    dataSource: props.dataSource,
+    rowKeyGetter: resolvedRowKeyGetter(),
+    query: serverSideQuerySnapshot().query,
+    queryKey: serverSideQuerySnapshot().queryKey,
+    refreshToken: props.serverSideRefreshToken,
+    onLoadError: props.onServerSideLoadError,
+    onWriteError: props.onServerSideWriteError,
+    // 書き戻しのセル単位の保存状態(pending → ok | failed)を saveStatusController へ。
+    onWriteStateChange: engine.saveStatus.handle,
+  }));
+  // 以降はすべてこの行モデル越しに読む。サーバーサイドでラベル行を使うときは述語のラッパ(ラベル行では getRow が undefined、
+  //   getLabelRow が記述子)を被せる(React 版と同じ)。
+  const rowModel = createMemo(() => {
+    if (!isServerSide() || !serverSide) {
+      return clientRowModel().rowModel;
+    }
+    const base = serverSide.rowModel();
+    const isLabelRow = labelIsLabelRow();
+    const getLabel = labelGetLabel();
+    return isLabelRow && getLabel && labelRowFeature
+      ? labelRowFeature.wrapRowModelWithLabelRows(base, isLabelRow, getLabel)
+      : base;
+  });
+  // 編集できるか: サーバーサイドで書き戻し先(dataSource.updateRows)が無い間は、すべてのセルを編集できない(書き戻せない編集を
+  //   開かせない。編集の始まり方のすべてと、セルの readOnly の表示がここでそろう。React 版と同じ)。
+  const canEditCell = createMemo(() =>
+    isServerSide() && !(serverSide?.canUpdateRows() ?? false) ? NEVER_EDITABLE : props.canEditCell,
+  );
+  // サーバーサイドのセルの書き込み口(書き戻し先があるときだけ。編集 / 貼り付け / 消去 / チェックボックスは rows を作り直す代わりに
+  //   ここへ書く。楽観更新・ロールバック・失敗の通知はコントローラ)。
+  const applyServerSideCellEdits = createMemo(() =>
+    isServerSide() && serverSide?.canUpdateRows() ? serverSide.applyCellEdits : undefined,
+  );
   const viewRowCount = createMemo(() => rowModel().getRowCount());
   const viewColCount = () => orderedColumns().length;
   const order = () => orderResolution().order;
@@ -500,7 +561,7 @@ export function GridShell<T extends object>(props: SpreadsheetGridProps<T>, feat
   const autoHeightSnapshot = createExternalStoreSignal(engine.autoHeightMeasurer);
   const vertical = createMemo(() =>
     engine.resolveVerticalLayout({
-      isServerSide: false,
+      isServerSide: isServerSide(),
       autoHeight: props.autoHeight ?? false,
       visibleColumns: visibleColumns(),
       viewRowCount: viewRowCount(),
@@ -578,7 +639,8 @@ export function GridShell<T extends object>(props: SpreadsheetGridProps<T>, feat
     totalRowEnabled()
       ? engine.resolveTotalRowCells({
           rows: rows(),
-          order: order(),
+          // サーバーサイドは values だけ(rows が無いので集計しない。React 版と同じ)。
+          order: isServerSide() ? null : order(),
           columns: orderedColumns(),
           values: totalRowOptions()?.values,
         })
@@ -685,7 +747,7 @@ export function GridShell<T extends object>(props: SpreadsheetGridProps<T>, feat
     engine.autoSizeOnData,
     () => ({
       mode: columnAutosize ? (props.autoSizeColumns ?? false) : false,
-      isServerSide: false,
+      isServerSide: isServerSide(),
       rows: rows(),
       visibleColumns: visibleColumns(),
       runAutosize: columnAutosize?.runAutosize ?? (() => Promise.resolve()),
@@ -723,16 +785,26 @@ export function GridShell<T extends object>(props: SpreadsheetGridProps<T>, feat
   const bodyRows = createMemo((): GridBodyRowItem[] => {
     const { virtualRows, virtualRowIndexes } = vertical();
     const model = rowModel();
+    const serverSideActive = isServerSide();
     const items: GridBodyRowItem[] = [];
     for (const virtualRow of virtualRows) {
       if (!virtualRowIndexes.has(virtualRow.index)) {
         continue;
       }
+      // サーバーサイドでまだ届いていない行は読み込み中の行。キーはデータ行のキー(1 始まりの id など)とぶつからないよう
+      //   名前空間を分ける(React 版と同じ `__ssg_skeleton__:<位置>`)。
+      const skeleton =
+        serverSideActive &&
+        model.getRow(virtualRow.index) === undefined &&
+        model.getLabelRow?.(virtualRow.index) === undefined;
       items.push({
         index: virtualRow.index,
         start: virtualRow.start,
         size: virtualRow.size,
-        key: String(model.getRowKey(virtualRow.index) ?? virtualRow.index),
+        key: skeleton
+          ? `__ssg_skeleton__:${virtualRow.index}`
+          : String(model.getRowKey(virtualRow.index) ?? virtualRow.index),
+        skeleton,
       });
     }
     return items;
@@ -767,6 +839,63 @@ export function GridShell<T extends object>(props: SpreadsheetGridProps<T>, feat
     // 見える高さは下端に固定する行(合計行 / 下の固定行)に隠れるぶんを除く。
     footerHeight: footerHeight(),
   }));
+
+  // ── サーバーサイドの行モデルへの読み込みの依頼と、query が変わったときの後始末(React 版と同じ) ──
+  //   query(debounce した queryKey)が変わったら先頭へスクロールを戻す(結果が総入れ替えになるので、同じ位置に別の行が来る
+  //   違和感を避ける)。マウントのときは scrollTop がもう 0 なので何も変わらない。前に見たキーと比べ、本当に変わったときだけ。
+  let lastServerSideQueryKey: string | null = null;
+  createEffect(
+    () => (isServerSide() ? serverSideQueryKey() : null),
+    (key) => {
+      if (key === null) {
+        lastServerSideQueryKey = null;
+        return;
+      }
+      const previousKey = lastServerSideQueryKey;
+      lastServerSideQueryKey = key;
+      if (previousKey === key) {
+        return;
+      }
+      const element = scrollContainerRef.current;
+      if (element) {
+        element.scrollTop = 0;
+      }
+      // scroll イベントを待たずに view スライスも 0 へ(1 フレーム遅れないように)。
+      store.setViewState({ scrollTop: 0 });
+    },
+  );
+  // query が変わったら展開行をすべて閉じる(結果が総入れ替えになり、届いていない行があるのでキーから位置を探せず、古い位置の
+  //   まま別の行の下にカードが残りうるため)。空から空は reducer が何もしない。
+  let lastDetailQueryKey: string | null = null;
+  createEffect(
+    () => (isServerSide() && detailRowEnabled() ? serverSideQueryKey() : null),
+    (key) => {
+      if (key === null) {
+        lastDetailQueryKey = null;
+        return;
+      }
+      const previousKey = lastDetailQueryKey;
+      lastDetailQueryKey = key;
+      if (previousKey === key) {
+        return;
+      }
+      engine.detailIndexCache.reset();
+      dispatch(gridActions.setExpandedDetailRowKeys(new Set<GridRowKey>()));
+    },
+  );
+  // 描く窓(overscan 込み)の行を行モデルへ知らせる(届いていないブロックを読み込む。end は含まない)。queryKey も見るのは、
+  //   query が変わってキャッシュを捨てた直後に窓が同じでも(先頭のまま件数も同じなど)読み込み直すため。
+  const windowFirstRow = createMemo(() => vertical().windowFirstRow);
+  const windowLastRow = createMemo(() => vertical().windowLastRow);
+  createEffect(
+    () => [isServerSide(), windowFirstRow(), windowLastRow(), serverSideQueryKey()] as const,
+    ([serverSideActive, firstRow, lastRow]) => {
+      if (!serverSideActive || !serverSide || lastRow < firstRow) {
+        return;
+      }
+      serverSide.requestRange(firstRow, lastRow + 1);
+    },
+  );
 
   // ── 列の横の仮想化 ──
   const centerEntries = () => paneLayout().center.entries;
@@ -804,21 +933,23 @@ export function GridShell<T extends object>(props: SpreadsheetGridProps<T>, feat
   // ── モーション / 行の出入り(animateRows。React 版の engine.rowEnter と同じつなぎ) ──
   const prefersReducedMotion = createExternalStoreSignal(reducedMotionStore);
   const resolvedMotion = () => resolveGridMotion(props.motion ?? 'auto', prefersReducedMotion());
+  // 行の並び替えのアニメは auto-height(行の高さの実測で transform が動く)とサーバーサイド(ブロックが届くと行が差し替わる)では止める。
+  //   サーバーサイドのスケルトンが本物の行へ差し替わったときは、モーションが on ならセルを上から順にフェードインする。
   const animateRowsActive = () =>
-    (props.animateRows ?? true) && resolvedMotion() === 'on' && !autoHeightActive();
+    (props.animateRows ?? true) && resolvedMotion() === 'on' && !autoHeightActive() && !isServerSide();
   connectController(engine.rowEnter, () => ({
     scrollContainerRef,
-    skeletonEnter: false,
+    skeletonEnter: isServerSide() && resolvedMotion() === 'on',
     mountEnter: animateRowsActive(),
   }));
   // 変わったセルのフラッシュ + 数値のトゥイーン(highlightChanges。機能 motionExtras。無い構成ではエンジンの代役で何もしない)。
   //   rows の参照が変わったとき、描いているセルのうち値が変わったものへ直付けする。コントローラは書き換わった DOM の文字を
   //   旧値へ戻してから補間するので、セルの文字を書き終えた後の effect で呼ぶ(React 版はコミット後のレイアウト effect)。
-  //   SSRM では止める(React 版と同じ。Solid 版の SSRM は段階 2-4)。
+  //   サーバーサイドでは止める(React 版と同じ)。
   connectController(
     engine.changeHighlight,
     () => ({
-      enabled: (props.highlightChanges ?? false) && resolvedMotion() === 'on',
+      enabled: (props.highlightChanges ?? false) && !isServerSide() && resolvedMotion() === 'on',
       rows: rows(),
       rowKeyGetter: resolvedRowKeyGetter(),
       columns: visibleColumns(),
@@ -826,6 +957,14 @@ export function GridShell<T extends object>(props: SpreadsheetGridProps<T>, feat
     }),
     'effect',
   );
+  // サーバーサイドの書き戻しのセル単位の保存状態(data-ssg-save + 保存中の印 + 失敗のチップ。showSaveStatus、既定 true)。
+  //   状態はエンジンの saveStatus が行モデルの onWriteStateChange から受け、ここでは表示の有無と文言を渡す(React 版と同じ)。
+  connectController(engine.saveStatus, () => ({
+    scrollContainerRef,
+    shellRef: gridRootRef,
+    enabled: (props.showSaveStatus ?? true) && isServerSide(),
+    failedText: localeTexts().saveFailedCell,
+  }));
 
   // ── テーマ(OS の配色の外部 store も signal にする) ──
   const systemPrefersDark = createExternalStoreSignal(systemColorSchemeStore);
@@ -1025,7 +1164,9 @@ export function GridShell<T extends object>(props: SpreadsheetGridProps<T>, feat
   // フィルターで隠れている行があるときのフィルター後のデータ行(見出しのチェックボックスは見えている行だけを選ぶ / 外す。
   //   1.0.1 / AP-03)。機能なしの構成ではフィルターが行に効かないので、ふつうは null。
   const filteredDataRows = createMemo(() =>
-    order().length < baseOrder().length ? { rows: rows(), order: order(), rowKeyGetter: resolvedRowKeyGetter() } : null,
+    !isServerSide() && order().length < baseOrder().length
+      ? { rows: rows(), order: order(), rowKeyGetter: resolvedRowKeyGetter() }
+      : null,
   );
   // 見出しの全選択のチェックの 3 状態(none / some / all)。選択・行・並びが同じ間は数え直さない(1.0.1 のレビュー RA-7)。
   const countSelectedRowsInOrder = createSelectedRowsInOrderCounter();
@@ -1058,7 +1199,8 @@ export function GridShell<T extends object>(props: SpreadsheetGridProps<T>, feat
     'effect',
   );
   connectController(engine.detailKeysPruner, () => ({
-    enabled: detailRowEnabled(),
+    // サーバーサイドは rows がすべての行ではないので見ない(React 版と同じ)。
+    enabled: detailRowEnabled() && !isServerSide(),
     rows: rows(),
     expandedKeys: ui().expandedDetailRowKeys,
     keyOf: resolvedRowKeyGetter(),
@@ -1237,7 +1379,8 @@ export function GridShell<T extends object>(props: SpreadsheetGridProps<T>, feat
     activeCell: ui().activeCell,
     onRowsChange: props.onRowsChange,
     dispatch,
-    enabled: (props.enableUndoRedo ?? true) && !readOnly(),
+    // サーバーサイドは rows を持たず戻す先が無いので無効(React 版と同じ)。
+    enabled: (props.enableUndoRedo ?? true) && !readOnly() && !isServerSide(),
     limit: props.undoHistoryLimit ?? 100,
     onUndoRedoStateChange: props.onUndoRedoStateChange,
     onAfterRestore: (activeCell: CellCoord | null) => {
@@ -1266,7 +1409,7 @@ export function GridShell<T extends object>(props: SpreadsheetGridProps<T>, feat
     // イベントの時点の状態は store から読む(core controllers/liveUiState)。
     getUiState: store.getState,
     readOnly: readOnly(),
-    canEditCell: props.canEditCell,
+    canEditCell: canEditCell(),
     rowKeyGetter: resolvedRowKeyGetter(),
     onCopied: (selection: NonNullable<ReturnType<typeof store.getState>['selection']>) => {
       const state = store.getState();
@@ -1290,7 +1433,7 @@ export function GridShell<T extends object>(props: SpreadsheetGridProps<T>, feat
     pasteFillsSelection: props.pasteFillsSelection,
     onRowsChange: handleRowsChange(),
     onColumnsChange: props.onColumnsChange,
-    applyServerSideCellEdits: undefined,
+    applyServerSideCellEdits: applyServerSideCellEdits(),
     isRowExportable: props.isRowExportable,
     dispatch,
   }));
@@ -1306,14 +1449,14 @@ export function GridShell<T extends object>(props: SpreadsheetGridProps<T>, feat
   const fill = fillHandleFeature?.createFillHandle<T>({
     fillHandle: () => props.fillHandle,
     readOnly,
-    isServerSide: () => false,
+    isServerSide,
     rows,
     rowModel,
     orderedColumns,
     uiState: ui,
-    serverSideQueryKey: () => '',
-    serverSideRefreshToken: () => undefined,
-    canEditCell: () => props.canEditCell,
+    serverSideQueryKey,
+    serverSideRefreshToken: () => props.serverSideRefreshToken,
+    canEditCell,
     dispatch,
     hitTest: pointer.getCellCoordFromClientPoint,
     scrollContainerRef,
@@ -1322,7 +1465,7 @@ export function GridShell<T extends object>(props: SpreadsheetGridProps<T>, feat
     stickyTopHeight,
     handleRowsChange,
     amendRowsChange: history.amendRowsChange,
-    applyServerSideCellEdits: () => undefined,
+    applyServerSideCellEdits,
     viewRowCount,
     paneLayout,
     vertical,
@@ -1375,7 +1518,7 @@ export function GridShell<T extends object>(props: SpreadsheetGridProps<T>, feat
     columnFilters,
     columnFilterEnabled,
     gridRootRef,
-    isServerSide: () => false,
+    isServerSide,
     rows,
     isLabelRow: () => (labelRowEnabled() ? labelIsLabelRow() : undefined),
     // グループ化している間のグループ元の列(表示から外れているが絞り込める。見出しの代わりに自動グループ列の下に開く)。
@@ -1596,7 +1739,7 @@ export function GridShell<T extends object>(props: SpreadsheetGridProps<T>, feat
     rowModel: rowModel(),
     visibleColumns: orderedColumns(),
     readOnly: readOnly(),
-    canEditCell: props.canEditCell,
+    canEditCell: canEditCell(),
     setEditorInitialValue,
     dispatch,
     handleCopy: clipboard.handleCopy,
@@ -1627,12 +1770,12 @@ export function GridShell<T extends object>(props: SpreadsheetGridProps<T>, feat
     rowModel: rowModel(),
     setEditorInitialValue,
     onRowsChange: handleRowsChange(),
-    applyServerSideCellEdits: undefined,
+    applyServerSideCellEdits: applyServerSideCellEdits(),
     dispatch,
     gridRootRef,
     editorActionGuardRef,
     readOnly: readOnly(),
-    canEditCell: props.canEditCell,
+    canEditCell: canEditCell(),
     localeTexts: localeTexts(),
     followsRow: activeRowFollowEnabled(),
   }));
@@ -1643,9 +1786,9 @@ export function GridShell<T extends object>(props: SpreadsheetGridProps<T>, feat
     uiState: ui(),
     getUiState: store.getState,
     readOnly: readOnly(),
-    canEditCell: props.canEditCell,
+    canEditCell: canEditCell(),
     handleRowsChange: handleRowsChange(),
-    applyServerSideCellEdits: undefined,
+    applyServerSideCellEdits: applyServerSideCellEdits(),
     startEditWithValue: edit.startEditWithValue,
     dispatch,
   }));
@@ -1677,7 +1820,7 @@ export function GridShell<T extends object>(props: SpreadsheetGridProps<T>, feat
               rowModel: untrack(rowModel),
               columns: untrack(orderedColumns),
               readOnly: untrack(readOnly),
-              canEditCell: untrack(() => props.canEditCell),
+              canEditCell: untrack(canEditCell),
             },
             cell,
           ) === true,
@@ -1833,6 +1976,7 @@ export function GridShell<T extends object>(props: SpreadsheetGridProps<T>, feat
   const columnMenuGroupingAvailable = createMemo(
     () =>
       groupingFeature !== undefined &&
+      !isServerSide() &&
       !labelRowEnabled() &&
       props.onColumnsChange !== undefined &&
       columns().some((column) => column.rowGroup !== undefined),
@@ -1903,6 +2047,10 @@ export function GridShell<T extends object>(props: SpreadsheetGridProps<T>, feat
     return true;
   };
   const moveRowByKey = (rowKey: GridRowKey, toIndex: number) => {
+    // clientSide(rows + onRowsChange)専用。サーバーサイドでは何もしない(React 版と同じ。開発時の警告は段階 3)。
+    if (isServerSide()) {
+      return;
+    }
     const getKey = resolvedRowKeyGetter();
     const fromIndex = rows().findIndex((row, index) => getKey(row, index) === rowKey);
     if (fromIndex < 0) {
@@ -2065,9 +2213,9 @@ export function GridShell<T extends object>(props: SpreadsheetGridProps<T>, feat
     physicalBodyHeight: vertical().physicalBodyHeight,
     measuredRowHeights: autoHeightActive() || vertical().detailActive,
     rows: rows(),
-    isServerSide: false,
-    serverSideRefresh: noop,
-    serverSideRetryFailed: noop,
+    isServerSide: isServerSide(),
+    serverSideRefresh: serverSide?.refresh ?? noop,
+    serverSideRetryFailed: serverSide?.retryFailedBlocks ?? noop,
     resolvedRowKeyGetter: resolvedRowKeyGetter(),
     isRowExportable: props.isRowExportable,
     labelRowExport: labelRowExport(),
@@ -2173,9 +2321,9 @@ export function GridShell<T extends object>(props: SpreadsheetGridProps<T>, feat
           ? slotContextBase()
           : { ...slotContextBase(), globalFilterText: '', columnFilterValues: NO_COLUMN_FILTERS },
         // 件数はグループ行 / ラベル行を除くデータ行の数(slotContext.filteredRows と同じ)。分母(総データ行数)はラベル行を除く
-        //   (ラベル行が無ければ rows の数)。
+        //   (ラベル行が無ければ rows の数)。サーバーサイドは rows が空なので、サーバーが返した今の条件での件数(React 版と同じ)。
         leafRowCount(),
-        labelLayout()?.dataRowCount,
+        isServerSide() ? viewRowCount() : labelLayout()?.dataRowCount,
         columnNamer(),
         rowNumberer(),
         localeTexts(),
@@ -2346,7 +2494,7 @@ export function GridShell<T extends object>(props: SpreadsheetGridProps<T>, feat
       return;
     }
     writeCellValueTo(
-      { rows: untrack(rows), rowModel: model, handleRowsChange: untrack(handleRowsChange), applyServerSideCellEdits: undefined },
+      { rows: untrack(rows), rowModel: model, handleRowsChange: untrack(handleRowsChange), applyServerSideCellEdits: untrack(applyServerSideCellEdits) },
       viewIndex,
       row,
       column,
@@ -2764,6 +2912,7 @@ export function GridShell<T extends object>(props: SpreadsheetGridProps<T>, feat
             collapsedGroupKeys={ui().collapsedGroupKeys}
             onGroupToggle={handleGroupToggle}
             labelRowLayer={pane === 'center' ? labelRowLayerCenter() : labelRowLayerBand()}
+            skeletonRow={isServerSide() ? serverSideFeature?.BodySkeletonRow : undefined}
             labelViewIndexes={labelViewIndexes()}
             rowHeaderWidth={rowHeaderWidth()}
             rows={bodyRows()}
@@ -2778,7 +2927,7 @@ export function GridShell<T extends object>(props: SpreadsheetGridProps<T>, feat
             enableRowSelection={enableRowSelection()}
             rowSelectionState={ui().rowSelection}
             readOnly={readOnly()}
-            canEditCell={props.canEditCell}
+            canEditCell={canEditCell()}
             showValidationMarks={props.showValidationMarks ?? true}
             showCellOverflowTooltip={props.showCellOverflowTooltip ?? false}
             getRowClassName={props.getRowClassName}
@@ -2825,8 +2974,9 @@ export function GridShell<T extends object>(props: SpreadsheetGridProps<T>, feat
   // aria-activedescendant は参照先のセルが描かれているときだけ(activeCellRendered)。
   const activeDescendantId = () => (activeCellRendered() ? activeCellDomId : undefined);
 
+  // サーバーサイドは rows がいつも空なので、絞り込みの条件があるかで文言を分ける(React 版と同じ)。
   const emptyStateText = () =>
-    rows().length === 0 && !manualFilterActive()
+    (isServerSide() ? !filterConditionsActive() : rows().length === 0 && !manualFilterActive())
       ? (props.noRowsText ?? localeTexts().noRows)
       : (props.noMatchingRowsText ?? localeTexts().noMatchingRows);
 
@@ -3067,6 +3217,18 @@ export function GridShell<T extends object>(props: SpreadsheetGridProps<T>, feat
               />
             )}
           </Show>
+          {/* サーバーサイドのエラーバー(取得の失敗の再試行 / 保存の失敗。機能 features/serverSide の部品)。 */}
+          {serverSide && serverSideFeature ? (
+            <Show when={isServerSide()}>
+              <serverSideFeature.ErrorBars
+                loadError={serverSide.loadError()}
+                writeError={serverSide.writeError()}
+                onRetry={serverSide.retryFailedBlocks}
+                slot={slots().errorBar}
+                localeTexts={localeTexts()}
+              />
+            </Show>
+          ) : null}
           {/* IME オンのままの直接入力の入力受け(imeDirectInput が有効なときだけ)。値 / 位置 / 変換中の見た目はコントローラが
               直接扱います。Tab の順番には入れません(タブストップはシェルのまま)。 */}
           <Show when={imeDirectInputEnabled()}>
@@ -3149,7 +3311,7 @@ export function GridShell<T extends object>(props: SpreadsheetGridProps<T>, feat
             columnFilters={columnFilters()}
             globalFilterText={globalFilterText()}
             getFilterOptions={props.getFilterOptions as never}
-            isServerSide={false}
+            isServerSide={isServerSide()}
             dispatch={dispatch}
             renderFilterDateInput={props.renderFilterDateInput}
             popoverSlot={slots().popover}

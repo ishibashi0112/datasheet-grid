@@ -51,6 +51,9 @@ import type { createColumnMenu } from '../primitives/columnMenu';
 import type { ColumnMenuPopover } from '../view/ColumnMenuPopover';
 import type { GridBodyGroupRow } from '../view/GridBodyGroupRow';
 import type { GridBodyLabelRow } from '../view/GridBodyLabelRow';
+import type { createServerSide } from '../primitives/serverSide';
+import type { GridServerSideErrorBars } from '../view/GridServerSideErrorBars';
+import type { GridBodySkeletonRow } from '../view/GridBodySkeletonRow';
 import type { GridStickyLabelLayer } from '../view/GridStickyLabelLayer';
 
 // 機能だけが使う文言の既定(core の logic/localeText<機能>.ts の表)。シェルが本体の既定に重ねて部品へ渡します(React 版と同じ)。
@@ -163,6 +166,16 @@ export type SolidGridFeatures = {
     | undefined;
   // ラベル行(labelRow): 配置 / 表示順 / 行のモデル / serverSide のラッパ / 縦スクロールの固定の解決(core)+ 帯の行と
   //   縦スクロールの固定の層の部品。
+  // サーバーサイドの行モデル(SSRM。dataSource): 保存状態の表示(core)+ 行モデルのコントローラの接続・内蔵のエラーバー・
+  //   読み込み中の行の部品。
+  serverSide?:
+    | (NonNullable<GridCoreFeatures['serverSide']> &
+        FeatureLocaleDefaults & {
+          createServerSide: typeof createServerSide;
+          ErrorBars: typeof GridServerSideErrorBars;
+          BodySkeletonRow: typeof GridBodySkeletonRow;
+        })
+    | undefined;
   labelRow?:
     | (NonNullable<GridCoreFeatures['labelRow']> & {
         BodyLabelRow: typeof GridBodyLabelRow;

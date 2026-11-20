@@ -3,7 +3,9 @@
 import { Show, createSignal, onSettled } from 'solid-js';
 import { render } from '@solidjs/web';
 import '../../react/src/styles.css';
+import type { ServerSideDataSource } from '@ishibashi0112/spreadsheet-grid-core';
 import { SpreadsheetGrid, type GridColumn, type SpreadsheetGridHandle } from '../src';
+import { createFakeDataSource } from './fakeServer';
 
 type Item = {
   id: number;
@@ -173,6 +175,8 @@ function App() {
   const [grouped, setGrouped] = createSignal(false);
   const [labels, setLabels] = createSignal(false);
   const shownRows = () => (labels() ? withLabelRows(rows()) : rows());
+  // 「サーバーサイド」: 押した時点の行をブラウザの中の擬似サーバーへ渡し、dataSource で読む(rows は使われない)。
+  const [dataSource, setDataSource] = createSignal<ServerSideDataSource<Item> | undefined>(undefined);
   // 「品名を左へ固定」で編集中の列のペインを変える(エディタが外れるときの blur で確定しないことの確かめ)。
   //   「分類でグループ化」は分類の列の rowGroup を true に(false でも書いておくと、列メニューに「この列でグループ化」が出る)。
   const columns = () =>
@@ -269,6 +273,16 @@ function App() {
         <button type="button" data-testid="labels" onClick={() => setLabels((v) => !v)}>
           ラベル行
         </button>
+        <button
+          type="button"
+          data-testid="server-side"
+          onClick={() => setDataSource((current) => (current ? undefined : createFakeDataSource(shownRows())))}
+        >
+          サーバーサイド
+        </button>
+        <button type="button" data-testid="refresh-server-side" onClick={() => handle?.refreshServerSide()}>
+          取り直し
+        </button>
         <span data-testid="find">{find()}</span>
         <span data-testid="filters">{filters()}</span>
         <span data-testid="active">{active()}</span>
@@ -277,13 +291,20 @@ function App() {
         <span data-testid="expanded">{expanded()}</span>
         <span data-testid="menu-action">{menuAction()}</span>
       </div>
-      <Show when={mounted()}>
+      {/* 「サーバーサイド」を切り替えたら作り直す(行の数などは作ったときの dataSource で決まるので、途中で dataSource を
+          渡し替えるときは作り直す。React 版で key を変えるのと同じ)。 */}
+      <Show when={mounted() ? { dataSource: dataSource() } : undefined} keyed>
+        {(mode) => (
         <SpreadsheetGrid<Item>
           ref={(h) => {
             handle = h;
             (window as unknown as { gridHandle: unknown }).gridHandle = h;
           }}
           rows={shownRows()}
+          // 「サーバーサイド」: 見えている範囲を 100 行のブロックで擬似サーバーから読む(0.5 秒の遅延。届くまでは読み込み中の行)。
+          //   並べ替え / 上部バーの検索 / 列フィルター(text)はサーバーで行う。検索に「エラー」を含めると取得に失敗し(エラーバーの
+          //   再試行)、品名を「失敗」に書き換えると保存に失敗する(値が戻る)。
+          dataSource={mode.dataSource}
           columns={columns()}
           theme={dark() ? 'dark' : 'light'}
           rowKeyGetter={(row) => row.id}
@@ -398,6 +419,7 @@ function App() {
           }}
           onExpandedDetailRowKeysChange={(keys) => setExpanded(Array.from(keys).join(','))}
         />
+        )}
       </Show>
     </div>
   );

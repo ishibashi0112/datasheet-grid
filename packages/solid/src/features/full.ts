@@ -12,6 +12,7 @@ import { findFeature } from './find';
 import { groupingFeature } from './grouping';
 import { imeDirectInputFeature } from './imeDirectInput';
 import { labelRowFeature } from './labelRow';
+import { serverSideFeature } from './serverSide';
 import { motionExtrasFeature } from './motionExtras';
 import { pinnedRowsFeature } from './pinnedRows';
 import { rowDragFeature } from './rowDrag';
@@ -42,4 +43,5 @@ export const fullGridFeatures = {
   toolPanel: toolPanelFeature,
   grouping: groupingFeature,
   labelRow: labelRowFeature,
+  serverSide: serverSideFeature,
 } satisfies Required<GridFeatures> as unknown as Required<SolidGridFeatures>;
