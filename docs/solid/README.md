@@ -384,7 +384,7 @@ React 版の機能なしの構成と並べて、同じ props・同じ操作で D
 
 | # | 内容 | 状況 |
 | --- | --- | --- |
-| 3-1 | 開発時の警告(React 版と同じ条件・文言・回数)と、Solid 版の型チェックとテストを CI へ | 済み(警告と、React 版と比べるテスト 8 本・CI の手順。Solid 版の全体 145 / 145) |
+| 3-1 | 開発時の警告(React 版と同じ条件・文言・回数)と、Solid 版の型チェックとテストを CI へ | 済み(警告と、React 版と比べるテスト 8 本・CI の手順。別視点のレビュー = 中 1・低 1 を直した。Solid 版の全体 145 / 145) |
 | 3-2 | 実ブラウザのハーネス(`audit/harness` の確認)を Solid 版でも Chromium / Firefox / WebKit で回し、違いを直す | まだ |
 | 3-3 | パッケージの形(dist と型)・`size:check` / `types:check` に Solid 版・StackBlitz のサンプル・README とドキュメントサイトの「Solid で使う」 | まだ |
 
@@ -404,6 +404,12 @@ React 版の機能なしの構成と並べて、同じ props・同じ操作で D
   「1 回だけ」の記録を消す(`resetUnregisteredFeatureWarnings`。2 つの版で 1 つのモジュールを共有するため)。警告の順番は比べない
   (React 版は passive effect を宣言の順に、Solid 版の effect は順番が違うことがある)。
 - **CI**: Solid 版の型チェックとテスト(`pnpm --filter ./packages/solid run typecheck` / `test`。約 2 分)を CI の手順に足した。
+- **別視点のレビューで直したもの**: Solid 2.0 の `createEffect` は compute の値を比べない(effect は値が同じでも走る)。compute が
+  読む `columnResolution()` は解決し直すたびに新しいオブジェクトを返すので、rowGroup の列の数が同じまま `columns` を新しい配列に
+  替えただけで、サーバーサイドの rowGroup と、グループ化とラベル行の併用の警告がもう 1 回出ていた(中。React 版は deps が同じなら
+  出さない)。compute を `createMemo`(`===` で比べる)に通してから effect へつなぐ(`createChangeEffect`)。スクロールのたびに
+  auto-height と展開行の effect が走っていたもの(低。1 回だけの記録で警告の数は同じ)も一緒に消えた。比べるテストに「見出しだけ
+  替えた」手順を足した(直す前の Solid 版で落ちることを確かめた)。
 
 ## 段階 0 の中身
 

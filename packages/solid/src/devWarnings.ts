@@ -8,7 +8,7 @@
 //   prop の判定表ごと消える)。React 版と core と同じ(import.meta.env.DEV はライブラリのビルド時に固定されるので使わない)。
 //   React 版の「コンポーネントの中で createSpreadsheetGrid を呼んで描くたびに作り直している」の警告は入れません(Solid の
 //   部品の関数は 1 回しか呼ばれないので、部品の中で呼んでも描き直しのたびに作り直すことは無い)。
-import { createEffect } from 'solid-js';
+import { createEffect, createMemo } from 'solid-js';
 import { AUTO_HEIGHT_MAX_ROWS, MAX_BODY_PX } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/verticalGeometry';
 import { createInertExportCommands } from '@ishibashi0112/spreadsheet-grid-core/internal/engine/features';
 import {
@@ -23,6 +23,13 @@ import type { SpreadsheetGridProps } from './model/gridTypes';
 declare const process: { env: { NODE_ENV?: string } };
 
 const noop = () => {};
+
+// 値が変わったときだけ effect を走らせる(React 版の useEffect の deps と同じ)。Solid 2.0 の createEffect は compute の値を
+//   比べない(compute が読む memo が新しいオブジェクトを返すたびに、値が同じでも effect が走る)ので、compute を memo
+//   (=== で比べる)に通してからつなぐ。
+const createChangeEffect = <V>(compute: () => V, effect: (value: V) => void): void => {
+  createEffect(createMemo(compute), effect);
+};
 
 type FeaturePropCheck = {
   prop: string;
@@ -118,7 +125,7 @@ function createUnregisteredFeatureWarningsInDev<T extends object>(
   props: SpreadsheetGridProps<T>,
   features: SolidGridFeatures,
 ): void {
-  createEffect(
+  createChangeEffect(
     () =>
       (Object.keys(FEATURE_PROPS) as GridFeatureName[])
         .filter((name) => features[name] === undefined)
@@ -227,7 +234,7 @@ export type ShellDevWarningArgs = {
 function createShellDevWarningsInDev(args: ShellDevWarningArgs): void {
   // サーバーサイドで rowGroup の列があるとき(例外は投げず、グループ化を無視して表示する)。React 版は [isServerSide,
   //   groupColumns.length] が変わるたびに出す。
-  createEffect(
+  createChangeEffect(
     () => (args.isServerSide() ? args.groupColumnCount() : 0),
     (count) => {
       if (count > 0) {
@@ -239,7 +246,7 @@ function createShellDevWarningsInDev(args: ShellDevWarningArgs): void {
     },
   );
   // 行のグループ化とラベル行の併用(グループ化している間はラベル行を出さない)。
-  createEffect(
+  createChangeEffect(
     () => args.rowGroupingActive() && args.labelRowEnabled(),
     (both) => {
       if (both) {
@@ -252,7 +259,7 @@ function createShellDevWarningsInDev(args: ShellDevWarningArgs): void {
   );
   const warned = new Set<string>();
   // auto-height が使えないとき(サーバーサイド / 行数の上限。uniform の行の高さにする)。
-  createEffect(
+  createChangeEffect(
     () =>
       args.autoHeight() && args.hasAutoHeightColumn()
         ? args.isServerSide()
@@ -280,7 +287,7 @@ function createShellDevWarningsInDev(args: ShellDevWarningArgs): void {
     },
   );
   // 展開行が描けない高さ(行の高さの合計 + 帯の高さが上限を超える。開いた状態は保つ)。
-  createEffect(
+  createChangeEffect(
     () => args.detailRowEnabled() && args.detailExtraCount() > 0 && !args.detailActive(),
     (overflow) => {
       if (overflow) {
@@ -295,7 +302,7 @@ function createShellDevWarningsInDev(args: ShellDevWarningArgs): void {
   );
   // フィルターの機能が無いのにフィルターの状態(applyState / setGlobalFilterText)が入ったとき(効かないことに気づけるように)。
   if (!args.filteringAvailable) {
-    createEffect(
+    createChangeEffect(
       () => args.globalFilterText().trim() !== '' || args.columnFilterCount() > 0,
       (hasFilterState) => {
         if (hasFilterState) {

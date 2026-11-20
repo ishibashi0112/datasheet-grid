@@ -191,6 +191,15 @@ describe('開発時の警告', () => {
           call(ctx, 'moveRow', 2, 4);
         });
         logWarnings(ctx, 'moveRow を 2 回');
+        // rowGroup の列の数が同じなら、columns を新しい配列に替えても出し直さない(React 版の deps は列の数)。
+        await ctx.setProps({
+          columns: [
+            { key: 'id', title: '番号', width: 60 },
+            { key: 'region', title: '地域', width: 80, rowGroup: true },
+            { key: 'note', title: 'メモ', width: 140, autoHeight: true },
+          ],
+        });
+        logWarnings(ctx, '見出しだけ替えた');
         // rowGroup の列が増えると出し直す(React 版は列の数が変わるたびに出す)。auto-height は 1 回だけ。
         await ctx.setProps({
           columns: [
@@ -225,6 +234,15 @@ describe('開発時の警告', () => {
       },
       steps: async (ctx) => {
         logWarnings(ctx, '描いたとき');
+        // グループ化もラベル行もそのままなら、columns を新しい配列に替えても出し直さない。
+        await ctx.setProps({
+          columns: [
+            { key: 'id', title: '番号', width: 60 },
+            { key: 'region', title: '地域', width: 80, rowGroup: true },
+            { key: 'name', title: '品名', width: 140 },
+          ],
+        });
+        logWarnings(ctx, '見出しだけ替えた');
         // グループ化を外して戻すと、また出す(React 版と同じ)。
         await ctx.setProps({
           columns: [
