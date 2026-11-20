@@ -214,12 +214,15 @@ export function GridBodyLayer<T>(props: GridBodyLayerProps<T>) {
                 const layer = () => props.labelRowLayer;
                 const LabelRow = untrack(layer)?.Row;
                 const labelSlot = createMemo(() => resolveSlotProps<JSX.CSSProperties>(layer()?.resolveRowSlot(label())));
+                // 行のキーは値の memo で受ける(行モデルをそのまま読むと、render の本体で rowKey を読んだときにどのデータ行の
+                //   書き換えでも中身を作り直す)。
+                const labelRowKey = createMemo((): GridRowKey => props.rowModel.getRowKey(rowIndex()) ?? rowIndex());
                 return LabelRow ? (
                   <LabelRow
                     pane={props.pane}
                     ownsRowHeader={props.ownsRowHeader}
                     rowIndex={rowIndex()}
-                    rowKey={props.rowModel.getRowKey(rowIndex()) ?? rowIndex()}
+                    rowKey={labelRowKey()}
                     top={item().start}
                     ariaRowOffset={props.ariaRowOffset}
                     rowHeight={item().size ?? props.rowHeight}

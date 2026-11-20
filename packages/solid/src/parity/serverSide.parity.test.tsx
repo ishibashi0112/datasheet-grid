@@ -244,6 +244,32 @@ describe('サーバーサイドの行モデル(serverSide)', () => {
     });
   }, 20000);
 
+  // 行が少ないと、ビューポートを測った後も描く窓(overscan 込み)が変わらない。最初に知らせた窓が読み込まれること
+  //   (最初の update の query の同期で取得の予約が消えない)。
+  it('行が少なく描く窓が変わらない表でも最初のブロックを読む', async () => {
+    let server: FakeServer = createFakeServer();
+    await expectParity({
+      features: ['serverSide'],
+      props: () => {
+        server = createFakeServer({ rows: ALL_ROWS.slice(0, 8) });
+        return {
+          dataSource: server.dataSource,
+          columns,
+          rowKeyGetter: (row: Row) => row.id,
+          rowHeight: 30,
+          height: 360,
+          motion: 'off',
+        };
+      },
+      steps: async (ctx) => {
+        ctx.snapshot('最初(読み込み中の行)');
+        await waitForRequests(ctx);
+        await ctx.act(() => server.respond(ctx));
+        ctx.snapshot('最初のブロックが届いた');
+      },
+    });
+  }, 20000);
+
   it('取得の失敗・エラーバー(再試行 / 閉じる)・onServerSideLoadError・retryServerSideLoads', async () => {
     let server: FakeServer = createFakeServer();
     await expectParity({

@@ -447,6 +447,39 @@ describe('ラベル行(labelRow)', () => {
     });
   });
 
+  // render の本体で読んだ値(ここではラベルと行のキー)が変わらなければ、ほかのデータ行を書き換えても中身を作り直さない
+  //   (React 版はメモの行の再描画で同じ要素を使い回す。中の入力欄のフォーカスや打ちかけの文字が消えない)。
+  it('ラベル行の中身(render)は、ほかのデータ行を書き換えても作り直さない', async () => {
+    await expectParity({
+      features: ['labelRow'],
+      props: (framework) => ({
+        rows: makeRows(),
+        columns,
+        rowKeyGetter: (row: Row) => row.id,
+        height: 400,
+        animateRows: false,
+        labelRow: {
+          isLabelRow,
+          getLabel,
+          render:
+            framework === 'react'
+              ? ({ label, rowKey }: { label: string; rowKey: unknown }) =>
+                  createElement('b', { className: 'my-label' }, `${label} ${String(rowKey)}`)
+              : ({ label, rowKey }: { label: string; rowKey: unknown }) => {
+                  const text = `${label} ${String(rowKey)}`;
+                  return <b class="my-label">{text}</b>;
+                },
+        },
+      }),
+      steps: async (ctx) => {
+        ctx.track('S1 の中身', () => ctx.container.querySelector('[data-pane="center"][data-ssg-label-row][data-row-index="0"] .my-label'));
+        ctx.snapshot('最初');
+        await ctx.setProps({ rows: ctx.rows().map((row) => ((row as Row).id === 's2-1' ? { ...(row as Row), qty: 99 } : row)) });
+        ctx.snapshot('S2 のデータ行を書き換えた');
+      },
+    });
+  });
+
   it('縦スクロールの固定(sticky)と、上へ見せる行を帯の下に合わせる', async () => {
     const manyRows: Row[] = [];
     for (let s = 1; s <= 6; s += 1) {

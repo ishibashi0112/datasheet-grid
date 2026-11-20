@@ -160,7 +160,7 @@ React 版の機能なしの構成と並べて、同じ props・同じ操作で D
 | 2-1 | 機能を差し込む仕組み + 表示の機能 8 つ(totalRow / pinnedRows / conditionalFormat / selectionAggregates / scrollHint / motionExtras / export / autoHeight) | 済み(PR #65、2026-11-19 マージ。2-1a: 仕組み(`features/types.ts` / `createSpreadsheetGrid.tsx` / `features/full.ts`、比べるテストの `features`)と export、2-1b: autoHeight、2-1c: conditionalFormat、2-1d: totalRow + pinnedRows、2-1e: selectionAggregates、2-1f: scrollHint、2-1g: motionExtras) |
 | 2-2 | 操作の機能 7 つ(find / fillHandle / columnReorder / rowDrag / columnAutosize / imeDirectInput / contextMenu) | 済み(PR #66、2026-11-19 マージ。2-2a: find、2-2b: imeDirectInput、2-2c: columnAutosize、2-2d: columnReorder、2-2e: rowDrag、2-2f: fillHandle、2-2g: contextMenu。別視点のレビュー = 高 1・低 1 を直した) |
 | 2-3 | ポップアップ 3 つ(columnMenu / toolPanel / filtering) | 済み(PR #67、2026-11-20 マージ。2-3a: 行の絞り込み(グローバル / 列フィルターの適用・上部バーの検索欄・manualFiltering / manualSorting)、2-3b: 列メニュー、2-3c: 列フィルターのポップアップ、2-3d: ツールパネル(フィルター / 列 / 並び替えのタブ)とフィルターのチップのバー = 済み。別視点のレビュー = 中 1・低 2 を直した) |
-| 2-4 | 行のモデル 3 つ(serverSide / labelRow / grouping) | 作業中(2-4a: 行のグループ化 = 済み、2-4b: ラベル行 = 済み、2-4c: サーバーサイドの行モデル = 済み。次は別視点のレビュー → PR) |
+| 2-4 | 行のモデル 3 つ(serverSide / labelRow / grouping) | 作業中(2-4a: 行のグループ化 = 済み、2-4b: ラベル行 = 済み、2-4c: サーバーサイドの行モデル = 済み。別視点のレビュー = 高 1・中 1 を直した。次は PR) |
 
 ### 2-3 で分かったこと
 
@@ -355,6 +355,12 @@ React 版の機能なしの構成と並べて、同じ props・同じ操作で D
 - **機能が無いときは dataSource を外す**: `createSpreadsheetGrid` の `merge(props, { dataSource: undefined })` で `undefined` が
   元の値を上書きすることを確かめた(機能なしの構成の比べるテストで、clientSide の空の表になり `getRows` を呼ばない。React 版の
   `DISABLED_FEATURE_PROPS` と同じ)。
+- **別視点のレビューで直したもの**(2-4): 行が少ない(描く窓がビューポートを測る前後で変わらない)サーバーサイドの表で
+  `getRows` を一度も呼ばず、読み込み中の行のまま止まっていた(最初の update が onSettled まで遅れるため、シェルの effect の
+  描く窓の知らせが先に届き、最初の update の query の同期で取得の予約ごと捨てられていた。React 版は update = レイアウト
+  effect → 知らせ = passive effect の順)。`primitives/serverSide.ts` で最初の update より前の知らせを控えて直後に渡す。
+  本体のラベル行の `render` の本体で `rowKey` を読むと、どのデータ行の書き換えでも中身を作り直していた(行のキーを行モデル
+  から直接読んでいた。値の memo で受ける)。どちらも比べるテストに足した。
 - **途中で dataSource を渡すときは作り直す**: 行の数とキャッシュの大きさは作ったときの `dataSource` で決まる(React 版と同じ。
   API リファレンスの「実行時にモードを切り替える場合は `key` を変えて再マウント」)。デモの「サーバーサイド」は keyed の `Show` で
   作り直す。
