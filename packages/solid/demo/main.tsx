@@ -3,7 +3,9 @@
 import { Show, createSignal, onSettled } from 'solid-js';
 import { render } from '@solidjs/web';
 import '../../react/src/styles.css';
+import type { ServerSideDataSource } from '@ishibashi0112/spreadsheet-grid-core';
 import { SpreadsheetGrid, type GridColumn, type SpreadsheetGridHandle } from '../src';
+import { createFakeDataSource } from './fakeServer';
 
 type Item = {
   id: number;
@@ -47,6 +49,20 @@ const pinnedRow = (id: number, name: string, qty: number, price: number): Item =
   done: false,
 });
 const PINNED_TOP = pinnedRow(-1, '目標', 90, 500);
+// 「ラベル行」: 50 行ごとに見出しの行を挟む(id が LABEL_ID_BASE 以下の行。編集の結果からは外して控える)。
+const LABEL_ID_BASE = -1000;
+const isLabelItem = (row: Item) => row.id <= LABEL_ID_BASE;
+const withLabelRows = (rows: Item[]): Item[] => {
+  const result: Item[] = [];
+  rows.forEach((row, index) => {
+    if (index % 50 === 0) {
+      const section = index / 50 + 1;
+      result.push({ ...pinnedRow(LABEL_ID_BASE - section, `セクション ${section}(${index + 1} 〜 ${Math.min(index + 50, rows.length)} 行目)`, 0, 0) });
+    }
+    result.push(row);
+  });
+  return result;
+};
 const PINNED_BOTTOM = [pinnedRow(-2, '前月', 40, 480), pinnedRow(-3, '前年', 35, 450)];
 
 const baseColumns: GridColumn<Item>[] = [
@@ -156,10 +172,22 @@ function App() {
   const [manual, setManual] = createSignal(false);
   const [filters, setFilters] = createSignal('');
   const [chipBar, setChipBar] = createSignal(false);
+  const [grouped, setGrouped] = createSignal(false);
+  const [labels, setLabels] = createSignal(false);
+  const shownRows = () => (labels() ? withLabelRows(rows()) : rows());
+  // 「サーバーサイド」: 押した時点の行をブラウザの中の擬似サーバーへ渡し、dataSource で読む(rows は使われない)。
+  const [dataSource, setDataSource] = createSignal<ServerSideDataSource<Item> | undefined>(undefined);
   // 「品名を左へ固定」で編集中の列のペインを変える(エディタが外れるときの blur で確定しないことの確かめ)。
+  //   「分類でグループ化」は分類の列の rowGroup を true に(false でも書いておくと、列メニューに「この列でグループ化」が出る)。
   const columns = () =>
     userColumns() ??
-    (pinName() ? baseColumns.map((column) => (column.key === 'name' ? { ...column, pinned: 'left' as const } : column)) : baseColumns);
+    baseColumns.map((column) =>
+      column.key === 'name' && pinName()
+        ? { ...column, pinned: 'left' as const }
+        : column.key === 'category'
+          ? { ...column, rowGroup: grouped() }
+          : column,
+    );
   let handle: SpreadsheetGridHandle<Item> | undefined;
   return (
     <div style={{ padding: '16px', 'font-family': 'system-ui, sans-serif' }}>
@@ -232,6 +260,29 @@ function App() {
         <button type="button" data-testid="chip-bar" onClick={() => setChipBar((v) => !v)}>
           フィルターのチップ
         </button>
+        <button
+          type="button"
+          data-testid="group"
+          onClick={() => {
+            setUserColumns(null);
+            setGrouped((v) => !v);
+          }}
+        >
+          分類でグループ化
+        </button>
+        <button type="button" data-testid="labels" onClick={() => setLabels((v) => !v)}>
+          ラベル行
+        </button>
+        <button
+          type="button"
+          data-testid="server-side"
+          onClick={() => setDataSource((current) => (current ? undefined : createFakeDataSource(shownRows())))}
+        >
+          サーバーサイド
+        </button>
+        <button type="button" data-testid="refresh-server-side" onClick={() => handle?.refreshServerSide()}>
+          取り直し
+        </button>
         <span data-testid="find">{find()}</span>
         <span data-testid="filters">{filters()}</span>
         <span data-testid="active">{active()}</span>
@@ -240,21 +291,30 @@ function App() {
         <span data-testid="expanded">{expanded()}</span>
         <span data-testid="menu-action">{menuAction()}</span>
       </div>
-      <Show when={mounted()}>
+      {/* 「サーバーサイド」を切り替えたら作り直す(行の数などは作ったときの dataSource で決まるので、途中で dataSource を
+          渡し替えるときは作り直す。React 版で key を変えるのと同じ)。 */}
+      <Show when={mounted() ? { dataSource: dataSource() } : undefined} keyed>
+        {(mode) => (
         <SpreadsheetGrid<Item>
           ref={(h) => {
             handle = h;
             (window as unknown as { gridHandle: unknown }).gridHandle = h;
           }}
-          rows={rows()}
+          rows={shownRows()}
+          // 「サーバーサイド」: 見えている範囲を 100 行のブロックで擬似サーバーから読む(0.5 秒の遅延。届くまでは読み込み中の行)。
+          //   並べ替え / 上部バーの検索 / 列フィルター(text)はサーバーで行う。検索に「エラー」を含めると取得に失敗し(エラーバーの
+          //   再試行)、品名を「失敗」に書き換えると保存に失敗する(値が戻る)。
+          dataSource={mode.dataSource}
           columns={columns()}
           theme={dark() ? 'dark' : 'light'}
           rowKeyGetter={(row) => row.id}
           onRowsChange={(next) => {
             setChanges((count) => count + 1);
-            setRows(next);
+            setRows(labels() ? next.filter((row) => !isLabelItem(row)) : next);
           }}
           height={520}
+          // 「ラベル行」: 50 行ごとの見出しの行(縦にスクロールしても今のセクションの見出しが上に残る)。
+          labelRow={labels() ? { isLabelRow: isLabelItem, getLabel: (row) => row.name, sticky: true } : undefined}
           // メモの列は autoHeight: 「行の高さの自動調整」で、改行のある行が伸びる。
           autoHeight={autoHeight()}
           // 「合計行と固定行」: 数量の合計・単価の平均の合計行と、上下の固定行(表示だけの行)。
@@ -359,6 +419,7 @@ function App() {
           }}
           onExpandedDetailRowKeysChange={(keys) => setExpanded(Array.from(keys).join(','))}
         />
+        )}
       </Show>
     </div>
   );

@@ -56,9 +56,22 @@ set / select / numberSet / textSet / dateSet / auto。見出しの下に開く�
 `closeFilterManager` で開く、表の右上に開いてヘッダーを掴んで動かせる、Tab はパネルの中で回る、Escape は列フィルターの
 ポップアップ → パネルの順に閉じる。フィルターのタブ = 適用中の一覧・✎ で列へ移って開く・外す・追加・すべてクリア、列のタブ =
 検索・表示の切り替え・⠿ で並べ替え・列のリセット、並び替えのタブ = 基準の追加・向き・列の変更・⠿ で並べ替え・削除)、
-フィルターのチップのバー(`showFilterChipBar`。押すと見えていない列へも横にスクロールして開く)
+フィルターのチップのバー(`showFilterChipBar`。押すと見えていない列へも横にスクロールして開く)、
+行のグループ化(列の `rowGroup` / `aggFunc` / `includeGroupingInState`。自動グループ列、開閉のボタン / 行のダブルクリック /
+アクティブセルの Enter・Space、集計は合計行と同じ書式、グループ元の列で検索・絞り込み・並び替え、列メニューのグループ化 /
+外す、ハンドルの `setGroupCollapsed` / `expandAllGroups` / `collapseAllGroups` / `getGroupRows`)、
+ラベル行(`labelRow` = `isLabelRow` / `getLabel` / `render` / `height` / `className` / `sticky` / `sortMode` / `keepEmptySections` /
+`exportText`。全幅の帯と横にスクロールしても左に残る中身、行番号・下部バーの番地と件数はラベル行を飛ばす、セクションの中の
+並び替え、縦スクロールの固定と次の見出しでの押し上げ、上へ見せる行は固定した帯の下に合わせる、列フィルターの候補はデータ行
+だけ、エクスポートの `includeLabelRows`)、
+サーバーサイドの行モデル(`dataSource` = `getRows` / `updateRows` / `initialRowCount` / `blockSize` / `maxCachedBlocks`、
+`serverSideRefreshToken` / `onServerSideLoadError` / `onServerSideWriteError` / `showSaveStatus`。見えている範囲をブロックで読み、
+届くまでは読み込み中の行(届くと上から順にフェードイン)、並べ替え / 検索 / 列フィルターは debounce してサーバーへ送り先頭へ戻す、
+取得の失敗と保存の失敗のバー(再試行 / 閉じる)、書き戻しは楽観更新と失敗の巻き戻し・セルの保存の印、`updateRows` が無ければ
+編集しない、ラベル行と一緒に使える、ハンドルの `refreshServerSide` / `retryServerSideLoads`)
 
-無いもの(段階 2 の残り): `/lite` の残りの 3 の機能(SSRM・ラベル行・行のグループ)。
+段階 2 の機能(`/lite` の 21)はこれで全部。開発時の警告(行のグループ化とラベル行の併用・サーバーサイドで使えない prop など)は
+段階 3 でまとめて足す。
 
 `renderCell` / `renderHeader` / `renderTopBar` / `renderBottomBar` は、React 版のように描き直しのたびに呼ぶのではなく、Solid の部品と
 同じく必要なときだけ呼びます: `renderCell` は行(と値)や列が変わったとき、`renderHeader` は列が変わったとき、バーは関数が変わった
@@ -82,9 +95,9 @@ pnpm --filter ./packages/solid spike:build  # 大きさを測るためのライ�
 | `hooks/useGridStore.ts`(useSyncExternalStore) | `primitives/gridStoreSignals.ts`(store を signal に。購読は `onSettled`) |
 | `hooks/useController.ts` | `primitives/controller.ts`(`createRenderEffect` / `createEffect` で `update`) |
 | `hooks/useVirtualizerCore.ts` | `primitives/columnVirtualizer.ts` |
-| `GridShell.tsx`(5,246 行) | `SpreadsheetGrid.tsx`(約 2,980 行) |
+| `GridShell.tsx`(5,246 行) | `SpreadsheetGrid.tsx`(約 3,040 行) |
 | `view/GridHeaderRow.tsx` / `view/GridBodyLayer.tsx` | 同じ名前(`view/`) |
-| `view/DefaultGridTopBar.tsx` / `DefaultGridBottomBar.tsx` / `RowSelectionCheckbox.tsx` / `GridDetailLayer.tsx` / `DetailToggleButton.tsx` / `GridChip.tsx` / `GridTotalRow.tsx` / `GridPinnedRows.tsx` / `GridSelectionAggregates.tsx` / `GridScrollHint.tsx` / `GridFindBar.tsx` | 同じ名前(`view/`) |
+| `view/DefaultGridTopBar.tsx` / `DefaultGridBottomBar.tsx` / `RowSelectionCheckbox.tsx` / `GridDetailLayer.tsx` / `DetailToggleButton.tsx` / `GridChip.tsx` / `GridTotalRow.tsx` / `GridPinnedRows.tsx` / `GridSelectionAggregates.tsx` / `GridScrollHint.tsx` / `GridFindBar.tsx` / `GridBodyGroupRow.tsx` | 同じ名前(`view/`) |
 | `features/rowDrag.tsx` のハンドルのセル(`renderHandleCell`) | `view/RowDragHandle.tsx` |
 | `view/FillHandleLayer.tsx`(ハンドル / 点線 / ボタン / メニュー / ツールチップ) | 同じ名前(`view/`。ペインの層の `FillHandleLayer` とポップアップの `FillHandlePortals` の 2 つに) |
 | `view/CellContextMenuPopover.tsx` / `hooks/useCellContextMenuController.ts` / `features/contextMenu.tsx` の params を作る関数 | `view/CellContextMenuPopover.tsx` / `primitives/contextMenu.ts` / `features/contextMenu.ts` |

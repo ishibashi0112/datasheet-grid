@@ -28,6 +28,11 @@ const DISABLED_FEATURE_PROPS: { [K in GridFeatureName]?: Partial<SpreadsheetGrid
   contextMenu: { enableContextMenu: false },
   // フィルターが無ければグローバル / 列フィルターを切る(上部バーの検索欄を出さない。上部バーの要約チップは残る。React 版と同じ)。
   filtering: { enableColumnFilter: false, enableGlobalFilter: false },
+  // ラベル行が無ければ labelRow を外す(述語に当たる行もデータ行として並ぶ。エクスポートの対象からも外さない。React 版と同じ。
+  //   Solid の merge は undefined でも上書きする)。
+  labelRow: { labelRow: undefined },
+  // サーバーサイドの行モデルが無ければ dataSource を外す(clientSide として rows を描く。React 版と同じ)。
+  serverSide: { dataSource: undefined },
 };
 
 export function createSpreadsheetGrid(options: CreateSpreadsheetGridOptions) {

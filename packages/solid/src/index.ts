@@ -21,4 +21,7 @@ export { contextMenuFeature } from './features/contextMenu';
 export { filteringFeature } from './features/filtering';
 export { columnMenuFeature } from './features/columnMenu';
 export { toolPanelFeature } from './features/toolPanel';
+export { groupingFeature } from './features/grouping';
+export { labelRowFeature } from './features/labelRow';
+export { serverSideFeature } from './features/serverSide';
 export type { GridColumn, CellRenderContext, SpreadsheetGridHandle, SpreadsheetGridProps, SolidGridTypes } from './model/gridTypes';

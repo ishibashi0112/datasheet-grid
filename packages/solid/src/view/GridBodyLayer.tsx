@@ -1,5 +1,5 @@
 // 本体の行とセル(1 つのペインぶん)。React 版の view/GridBodyLayer.tsx(GridBodyLayer + GridBodyRow)と同じ DOM と class。
-//   段階 1(機能なし)の範囲はデータ行だけ。グループ行(grouping)・ラベル行(labelRow)・読み込み中の行(serverSide)・
+//   データ行と、グループ行(grouping)・ラベル行(labelRow。どちらも部品は機能から)。読み込み中の行(serverSide)・
 //   auto-height(autoHeight)・条件付き書式(conditionalFormat)は機能(段階 2)で、シェルが機能の有無を props で渡します。
 //   行は rowKey、セルは列の key で対応させます(React 版の key と同じ。並びが変わっても同じ要素が新しい位置へ動くので、
 //   animateRows の transition が効く)。
@@ -10,6 +10,7 @@ import type {
   CellCoord,
   CellRenderState,
   CellStyleContext,
+  GridLabelRow,
   GridRowKey,
   GridVerticalAlign,
   RowModel,
@@ -28,11 +29,29 @@ import { formatLocaleText } from '@ishibashi0112/spreadsheet-grid-core/internal/
 import type { ConditionalFormatStatsMap } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/conditionalFormat';
 import type { FindIndex, FindRange } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/find';
 import type { SolidGridFeatures } from '../features/types';
-import type { GridColumn, GridResolvedSlots, SolidGridTypes, SpreadsheetGridProps } from '../model/gridTypes';
+import type {
+  GridColumn,
+  GridResolvedSlots,
+  GridSlotProps,
+  SolidGridTypes,
+  SpreadsheetGridProps,
+} from '../model/gridTypes';
 import { useGridLocaleText } from '../context/localeText';
 import { px } from '../primitives/style';
 import { RowSelectionCheckbox } from './RowSelectionCheckbox';
 import type { GridPaneKind } from './GridHeaderRow';
+import type { GridLabelRowRenderContent } from './GridBodyLabelRow';
+
+// ラベル行の描き方(ラベル行の機能があり labelRow を渡したときだけ。中身は中央ペインだけ、ほかのペインは帯だけ = renderContent が
+//   null。中身の sticky の左と幅は展開行のカードと同じ値)。
+export type GridBodyLabelRowLayer<T> = {
+  Row: NonNullable<SolidGridFeatures['labelRow']>['BodyLabelRow'];
+  renderContent: GridLabelRowRenderContent<T> | null;
+  contentStickyLeft: number;
+  contentWidth: number;
+  // labelRow.className を行ごとに解決したもの。
+  resolveRowSlot: (labelRow: GridLabelRow<T>) => GridSlotProps | undefined;
+};
 
 // 描く行(core の縦のレイアウトの virtualRows のうち描くもの + 対応に使う rowKey)。
 // セルの中身へ渡す位置と状態。どれも読んだときに引く(中身は行・列が変わったときだけ作り直す。位置や状態を読んだ式だけが
@@ -57,6 +76,9 @@ export type GridBodyRowItem = {
   start: number;
   size: number | undefined;
   key: string;
+  // サーバーサイドでまだ届いていない行(読み込み中の行を描く)。キーはデータ行と名前空間を分けた `__ssg_skeleton__:<位置>`
+  //   なので、行が届くとキーが変わり、本物の行に差し替わる(React 版と同じ)。
+  skeleton: boolean;
 };
 
 type GridBodyLayerProps<T> = {
@@ -78,7 +100,16 @@ type GridBodyLayerProps<T> = {
   // セル内検索のヒット(rowIndex → colIndex → 範囲。検索の機能が無い / 閉じているときは空)とカレントのヒットの番号。
   findIndex: FindIndex;
   findCurrentIndex: number | null;
+  // 行のグループ化の機能(無い構成ではグループ行を作らない)と、折りたたんでいるグループのキー・開閉の処理。
+  grouping: SolidGridFeatures['grouping'];
+  collapsedGroupKeys: ReadonlySet<string>;
+  onGroupToggle: (groupKey: string) => void;
+  // ラベル行の描き方(無ければラベル行を作らない)と、表示中のラベル行の view index(昇順。データ行の行番号はラベル行を飛ばした
+  //   通し番号になる。無ければ view index + 1)。
+  labelRowLayer: GridBodyLabelRowLayer<T> | undefined;
   labelViewIndexes?: ArrayLike<number> | undefined;
+  // 読み込み中の行の部品(サーバーサイドのときだけ。機能 features/serverSide)。
+  skeletonRow: NonNullable<SolidGridFeatures['serverSide']>['BodySkeletonRow'] | undefined;
   ariaRowOffset: number;
   activeCell: CellCoord | null;
   editingCell: CellCoord | null;
@@ -113,355 +144,448 @@ export function GridBodyLayer<T>(props: GridBodyLayerProps<T>) {
         // 位置は memo で受ける(描く行の配列は作り直されるたびに新しいオブジェクトになるので、値が同じなら先へ伝えない。
         //   素の関数のままだと、ホバーやスクロールのたびに見えているすべてのセルの中身を作り直す)。
         const rowIndex = createMemo(() => item().index);
+        // 読み込み中の行(サーバーサイドでまだ届いていない行)。キーに印があるので、この要素の間は読み込み中の行のまま(届くと
+        //   キーが変わって本物の行の要素に替わる)。
+        const SkeletonRow = untrack(() => (item().skeleton ? props.skeletonRow : undefined));
+        if (SkeletonRow) {
+          return (
+            <SkeletonRow
+              pane={props.pane}
+              ownsRowHeader={props.ownsRowHeader}
+              leadingWidth={props.leadingWidth}
+              rowIndex={rowIndex()}
+              top={item().start}
+              rowHeight={item().size ?? props.rowHeight}
+              ariaRowOffset={props.ariaRowOffset}
+              rowHeaderWidth={props.rowHeaderWidth}
+              entries={props.entries}
+              isRowHovered={props.hoveredRowIndex === rowIndex()}
+              showRowCheckbox={props.enableRowSelection}
+              onRowHeaderPointerDown={props.onRowHeaderPointerDown}
+              onRowHeaderPointerEnter={props.onRowHeaderPointerEnter}
+              onRowHeaderPointerLeave={props.onRowHeaderPointerLeave}
+              onCellPointerDown={props.onCellPointerDown}
+              onCellPointerEnter={props.onCellPointerEnter}
+              slots={props.slots}
+            />
+          );
+        }
         const row = () => props.rowModel.getRow(rowIndex());
+        // グループ行(グループ化している間だけ rowModel が getGroupRow を持つ。getRow は undefined なので下のデータ行は描かない)。
+        //   行のキーの名前空間がデータ行と違う(core の groupRowKey)ので、同じ項目がグループ行とデータ行の間で入れ替わることはない。
+        const groupRow = createMemo(() => (props.grouping ? props.rowModel.getGroupRow?.(rowIndex()) : undefined));
+        // ラベル行(ラベル行があるときだけ rowModel が getLabelRow を持つ。getRow は undefined)。ラベル行のキーはその行の
+        //   rowKeyGetter の値で、データ行と同じ名前空間(ラベル行かは述語で決まるので、述語が変わると同じ項目のまま入れ替わる)。
+        const labelRow = createMemo(() =>
+          props.labelRowLayer ? props.rowModel.getLabelRow?.(rowIndex()) : undefined,
+        );
         return (
-          <Show when={row()}>
-            {(currentRow) => {
-              const rowKey = (): GridRowKey => props.rowModel.getRowKey(rowIndex()) ?? rowIndex();
-              const sourceRowIndex = () => props.rowModel.getSourceIndex(rowIndex()) ?? rowIndex();
-              // 行の高さは値だけの memo(項目のオブジェクトはスクロールのたびに新しくなる)。
-              const rowSize = createMemo(() => item().size ?? props.rowHeight);
-              const isRowChecked = createMemo(() =>
-                props.enableRowSelection ? resolveIsRowSelected(props.rowSelectionState, rowKey()) : false,
-              );
-              const isRowSelected = createMemo(
-                () =>
-                  props.selection.kind === 'row' &&
-                  rowIndex() >= props.selection.startRow &&
-                  rowIndex() <= props.selection.endRow,
-              );
-              // この行で選ばれている列の範囲(React 版の selectedColStart / selectedColEnd。無ければ -1)。
-              const selectedColRange = createMemo((): readonly [number, number] => {
-                const selection = props.selection;
-                if (selection.kind === 'col') {
-                  return [selection.startCol, selection.endCol];
-                }
-                if (selection.kind === 'cell' && rowIndex() >= selection.startRow && rowIndex() <= selection.endRow) {
-                  return [selection.startCol, selection.endCol];
-                }
-                return NO_SELECTED_COLUMNS;
-              });
-              const selectedColStart = () => selectedColRange()[0];
-              const selectedColEnd = () => selectedColRange()[1];
-              const activeCol = createMemo(() => (props.activeCell?.row === rowIndex() ? props.activeCell.col : -1));
-              // セル内検索: この行のヒットと、この行にカレントのヒットがあればその番号(無ければ null)。どちらも行ごとの memo に
-              //   して、セルは行の値だけを読みます(ヒットの表やカレントの番号をセルごとに読むと、1 回の検索に数千の購読が付く)。
-              const rowFindHits = createMemo(() => props.findIndex.get(rowIndex()));
-              const rowFindCurrent = createMemo((): number | null => {
-                const hits = rowFindHits();
-                const current = hits ? props.findCurrentIndex : null;
-                if (!hits || current === null) {
-                  return null;
-                }
-                for (const ranges of hits.values()) {
-                  if (ranges.some((range) => range.matchIndex === current)) {
-                    return current;
+          <>
+            <Show when={groupRow()}>
+              {(group) => {
+                const GroupRow = untrack(() => props.grouping)?.BodyGroupRow;
+                return GroupRow ? (
+                  <GroupRow
+                    pane={props.pane}
+                    ownsRowHeader={props.ownsRowHeader}
+                    leadingWidth={props.leadingWidth}
+                    rowIndex={rowIndex()}
+                    top={item().start}
+                    rowHeight={item().size ?? props.rowHeight}
+                    rowHeaderWidth={props.rowHeaderWidth}
+                    entries={props.entries}
+                    ariaRowOffset={props.ariaRowOffset}
+                    isRowHovered={props.hoveredRowIndex === rowIndex()}
+                    showRowCheckbox={props.enableRowSelection}
+                    groupRow={group()}
+                    isCollapsed={props.collapsedGroupKeys.has(group().groupKey)}
+                    onGroupToggle={props.onGroupToggle}
+                    onRowHeaderPointerEnter={props.onRowHeaderPointerEnter}
+                    onRowHeaderPointerLeave={props.onRowHeaderPointerLeave}
+                    onCellPointerDown={props.onCellPointerDown}
+                    onCellPointerEnter={props.onCellPointerEnter}
+                    slots={props.slots}
+                  />
+                ) : null;
+              }}
+            </Show>
+            <Show when={labelRow()}>
+              {(label) => {
+                const layer = () => props.labelRowLayer;
+                const LabelRow = untrack(layer)?.Row;
+                const labelSlot = createMemo(() => resolveSlotProps<JSX.CSSProperties>(layer()?.resolveRowSlot(label())));
+                // 行のキーは値の memo で受ける(行モデルをそのまま読むと、render の本体で rowKey を読んだときにどのデータ行の
+                //   書き換えでも中身を作り直す)。
+                const labelRowKey = createMemo((): GridRowKey => props.rowModel.getRowKey(rowIndex()) ?? rowIndex());
+                return LabelRow ? (
+                  <LabelRow
+                    pane={props.pane}
+                    ownsRowHeader={props.ownsRowHeader}
+                    rowIndex={rowIndex()}
+                    rowKey={labelRowKey()}
+                    top={item().start}
+                    ariaRowOffset={props.ariaRowOffset}
+                    rowHeight={item().size ?? props.rowHeight}
+                    rowHeaderWidth={props.rowHeaderWidth}
+                    labelRow={label()}
+                    renderContent={layer()?.renderContent ?? null}
+                    contentStickyLeft={layer()?.contentStickyLeft ?? 0}
+                    contentWidth={layer()?.contentWidth ?? 0}
+                    rowClassName={labelSlot().className}
+                    rowStyle={labelSlot().style}
+                    slots={props.slots}
+                  />
+                ) : null;
+              }}
+            </Show>
+            <Show when={row()}>
+              {(currentRow) => {
+                const rowKey = (): GridRowKey => props.rowModel.getRowKey(rowIndex()) ?? rowIndex();
+                const sourceRowIndex = () => props.rowModel.getSourceIndex(rowIndex()) ?? rowIndex();
+                // 行の高さは値だけの memo(項目のオブジェクトはスクロールのたびに新しくなる)。
+                const rowSize = createMemo(() => item().size ?? props.rowHeight);
+                const isRowChecked = createMemo(() =>
+                  props.enableRowSelection ? resolveIsRowSelected(props.rowSelectionState, rowKey()) : false,
+                );
+                const isRowSelected = createMemo(
+                  () =>
+                    props.selection.kind === 'row' &&
+                    rowIndex() >= props.selection.startRow &&
+                    rowIndex() <= props.selection.endRow,
+                );
+                // この行で選ばれている列の範囲(React 版の selectedColStart / selectedColEnd。無ければ -1)。
+                const selectedColRange = createMemo((): readonly [number, number] => {
+                  const selection = props.selection;
+                  if (selection.kind === 'col') {
+                    return [selection.startCol, selection.endCol];
                   }
-                }
-                return null;
-              });
-              const editingCol = createMemo(() => (props.editingCell?.row === rowIndex() ? props.editingCell.col : -1));
-              const isHovered = createMemo(() => props.hoveredRowIndex === rowIndex());
-              const rowSlot = createMemo(() =>
-                resolveSlotProps<JSX.CSSProperties>(
-                  props.getRowClassName?.(currentRow(), rowIndex(), {
-                    row: currentRow(),
-                    rowIndex: rowIndex(),
-                    sourceRowIndex: sourceRowIndex(),
-                    rowKey: rowKey(),
-                    isSelected: isRowChecked(),
-                  }),
-                ),
-              );
-              const rowNumber = () =>
-                props.labelViewIndexes ? resolveDataRowNumber(props.labelViewIndexes, rowIndex()) : rowIndex() + 1;
-              return (
-                <div
-                  data-pane={props.pane}
-                  data-row-index={rowIndex()}
-                  role="row"
-                  aria-rowindex={rowIndex() + 2 + props.ariaRowOffset}
-                  aria-selected={props.enableRowSelection ? (isRowChecked() ? 'true' : 'false') : undefined}
-                  data-row-key={String(rowKey())}
-                  class={[
-                    'ssg-body-row',
-                    rowSlot().className,
-                    props.slots.bodyRow?.className,
-                    { 'ssg-body-row--checked': isRowChecked() },
-                  ]}
-                  style={{
-                    ...props.slots.bodyRow?.style,
-                    ...rowSlot().style,
-                    height: px(rowSize()),
-                    transform: `translateY(${item().start}px)`,
-                  }}
-                >
-                  <Show when={props.ownsRowHeader}>
-                    <div
-                      role="rowheader"
-                      aria-colindex={1}
-                      onPointerDown={(event) => props.onRowHeaderPointerDown(rowIndex(), event)}
-                      onPointerEnter={(event) => props.onRowHeaderPointerEnter(rowIndex(), event)}
-                      onPointerLeave={() => props.onRowHeaderPointerLeave(rowIndex())}
-                      class={[
-                        'ssg-header-cell',
-                        'ssg-row-header-cell',
-                        rowSlot().className,
-                        props.slots.rowHeaderCell?.className,
-                        {
-                          'ssg-row-header-cell--checkbox': props.enableRowSelection,
-                          'ssg-header-cell--selected': props.isWholeGridSelected || isRowSelected(),
-                          'ssg-header-cell--hovered': isHovered(),
-                        },
-                      ]}
-                      style={{
-                        ...props.slots.rowHeaderCell?.style,
-                        ...rowSlot().style,
-                        width: px(props.rowHeaderWidth),
-                        'min-width': px(props.rowHeaderWidth),
-                        height: px(rowSize()),
-                      }}
-                    >
-                      <Show when={props.enableRowSelection} fallback={rowNumber()}>
-                        <RowSelectionCheckbox
-                          slot={props.slots.checkbox}
-                          label={formatLocaleText(texts().selectRow, { row: rowNumber() })}
-                          state={isRowChecked() ? 'checked' : 'unchecked'}
-                        />
-                      </Show>
-                    </div>
-                  </Show>
-                  <For each={props.entries} keyed={(entry) => entry.column.key}>
-                    {(entry) => {
-                      const unbound = createMemo(() => entry().column);
-                      const column = () => unbound() as unknown as GridColumn<T>;
-                      const colIndex = createMemo(() => entry().logicalIndex);
-                      const size = () => entry().paneLocalSize;
-                      const isActive = () => activeCol() === colIndex();
-                      const isEditing = () => editingCol() === colIndex();
-                      const isSelected = () =>
-                        isRowSelected() ||
-                        (selectedColStart() >= 0 && colIndex() >= selectedColStart() && colIndex() <= selectedColEnd());
-                      const readOnlyCell = createMemo(
-                        () =>
-                          !isCellEditable(
-                            { readOnly: props.readOnly, canEditCell: props.canEditCell },
-                            rowIndex(),
-                            colIndex(),
-                            currentRow(),
-                            unbound(),
-                            props.canEditCell ? { sourceRowIndex: sourceRowIndex(), rowKey: rowKey() } : undefined,
-                          ),
-                      );
-                      const value = () => getCellValue(currentRow(), unbound());
-                      const findRanges = createMemo(() => rowFindHits()?.get(colIndex()));
-                      // セルの中身へ渡す位置と操作の状態は、読んだときに引く形にする(中身を作る式が読まないように)。
-                      //   クリックの pointerdown でアクティブセルが変わるたびに中身を作り直すと、pointerup が別の要素に落ちて
-                      //   click が起きない(チェックボックスのセルや renderCell のボタンが押せない)。並べ替えで行の位置が
-                      //   変わるたびに作り直すと、renderCell の中の入力欄のフォーカスが外れる。React は同じ要素を使い回す。
-                      const cellRowKey = untrack(rowKey);
-                      const cellState: GridCellContentContext = {
-                        get rowIndex() {
-                          return rowIndex();
-                        },
-                        get colIndex() {
-                          return colIndex();
-                        },
-                        get sourceRowIndex() {
-                          return sourceRowIndex();
-                        },
-                        rowKey: cellRowKey,
-                        get findRanges() {
-                          return findRanges();
-                        },
-                        get findCurrentIndex() {
-                          return rowFindCurrent();
-                        },
-                        get isActive() {
-                          return isActive();
-                        },
-                        get isSelected() {
-                          return isSelected();
-                        },
-                        get isEditing() {
-                          return isEditing();
-                        },
-                        get readOnly() {
-                          return readOnlyCell();
-                        },
-                      };
-                      // セルの書式とメモに渡す文脈(どちらも無い列では作らない。React 版と同じ)。
-                      const styleContext = createMemo((): CellStyleContext<T, SolidGridTypes> | null =>
-                        typeof column().cellClassName === 'function' || column().cellNote
-                          ? {
-                              row: currentRow(),
-                              rowIndex: rowIndex(),
-                              sourceRowIndex: sourceRowIndex(),
-                              rowKey: rowKey(),
-                              colIndex: colIndex(),
-                              value: value(),
-                              column: column(),
-                              isActive: isActive(),
-                              isSelected: isSelected(),
-                              isEditing: isEditing(),
-                              readOnly: readOnlyCell(),
-                            }
-                          : null,
-                      );
-                      const conditionalCell = createMemo(() => {
-                        const cellClassName = column().cellClassName;
-                        const context = styleContext();
-                        return resolveSlotProps<JSX.CSSProperties>(
-                          typeof cellClassName === 'function' ? (context ? cellClassName(context) : undefined) : cellClassName,
-                        );
-                      });
-                      // 条件付き書式(データバー / カラースケール)。指定のある列だけ値と集計を読みます(React 版と同じ)。
-                      //   帯は .ssg-cf-bar(絶対配置・文字の下)、背景色は inline の color-mix()(文字色は変えない)。
-                      const formatRules = () => (props.conditionalFormat ? column().conditionalFormat : undefined);
-                      const dataBar = createMemo(() => {
-                        const feature = props.conditionalFormat;
-                        const rules = formatRules();
-                        return feature && rules?.dataBar
-                          ? feature.resolveDataBar(rules.dataBar, value(), props.conditionalFormatStats.get(column().key))
-                          : null;
-                      });
-                      const scaleBackground = createMemo(() => {
-                        const feature = props.conditionalFormat;
-                        const rules = formatRules();
-                        return feature && rules?.colorScale
-                          ? feature.resolveColorScaleBackground(
-                              rules.colorScale,
-                              value(),
-                              props.conditionalFormatStats.get(column().key),
-                            )
-                          : null;
-                      });
-                      const dataBarColor = () => {
-                        const bar = dataBar();
-                        const rules = formatRules()?.dataBar;
-                        return bar ? (bar.negative ? rules?.negativeColor : rules?.color) : undefined;
-                      };
-                      const invalidMessage = createMemo(() =>
-                        props.showValidationMarks && hasCellValidation(unbound())
-                          ? getInvalidMessage(unbound(), currentRow(), value(), texts())
-                          : null,
-                      );
-                      const cellNote = createMemo(() => {
-                        const note = column().cellNote;
-                        const context = styleContext();
-                        return note && context ? normalizeCellNote(note(context)) : null;
-                      });
-                      const tooltipText = () => resolveCellTooltipText(invalidMessage(), cellNote());
-                      // auto-height の列のセルは、箱はほかのセルと同じく行の高さで、中身を器(data-autoheight-content)に
-                      //   入れて器の高さを測ります(React 版 DU-32)。背の高い行での揃えは、未指定なら auto-height の列が上、
-                      //   ほかの列は真ん中(1 行の行ではどれも真ん中)。
-                      //   2 つの真偽値は 1 つの memo(1 = auto-height のセル、2 = 上にそろえる)にまとめます。auto-height の切り替えでは
-                      //   すべてのセルが走るので、セルごとの購読を 1 つにします(Solid の開発ビルドの HUGE_FAN_OUT は 2,000 から)。
-                      const autoHeightFlags = createMemo(() => {
-                        if (!props.autoHeight) {
-                          return 0;
-                        }
-                        const content = column().autoHeight === true;
-                        const top =
-                          rowSize() > props.rowHeight &&
-                          (column().verticalAlign ?? props.verticalAlign ?? (content ? 'top' : 'center')) === 'top';
-                        return (content ? 1 : 0) | (top ? 2 : 0);
-                      });
-                      const isAutoHeightCell = () => (autoHeightFlags() & 1) !== 0;
-                      const alignTop = () => (autoHeightFlags() & 2) !== 0;
-                      const markOverflowTooltip = () =>
-                        shouldMarkCellOverflowTooltip({
-                          enabled: props.showCellOverflowTooltip,
-                          isAutoHeightCell: isAutoHeightCell(),
-                          hasRenderCell: column().renderCell !== undefined,
-                        });
-                      const cell = () => ({ row: rowIndex(), col: colIndex() });
-                      return (
-                        <div
-                          role="gridcell"
-                          aria-colindex={colIndex() + 2}
-                          aria-selected={isSelected() ? 'true' : 'false'}
-                          aria-readonly={readOnlyCell() ? 'true' : undefined}
-                          aria-invalid={invalidMessage() !== null ? 'true' : undefined}
-                          aria-description={tooltipText() ?? undefined}
-                          id={isActive() ? props.activeCellDomId : undefined}
-                          aria-owns={isEditing() ? props.cellEditorDomId : undefined}
-                          data-ssg-col-key={column().key}
-                          data-autoheight-cell={isAutoHeightCell() ? '' : undefined}
-                          data-ssg-tooltip={tooltipText() ?? undefined}
-                          data-ssg-tooltip-overflow={markOverflowTooltip() ? '' : undefined}
-                          class={[
-                            'ssg-body-cell',
-                            rowSlot().className,
-                            conditionalCell().className,
-                            props.slots.bodyCell?.className,
-                            {
-                              'ssg-body-cell--align-center': column().align === 'center',
-                              'ssg-body-cell--align-right': column().align === 'right',
-                              'ssg-body-cell--cf-bar': dataBar() !== null,
-                              'ssg-body-cell--cf-scale': scaleBackground() !== null,
-                              'ssg-body-cell--chip-compact':
-                                formatRules()?.chips !== undefined && size() < CHIP_COMPACT_MAX_WIDTH,
-                              'ssg-body-cell--autoheight': isAutoHeightCell(),
-                              'ssg-body-cell--valign-top': alignTop(),
-                              'ssg-body-cell--readonly': readOnlyCell() && !isSelected(),
-                              'ssg-body-cell--invalid': invalidMessage() !== null,
-                              'ssg-body-cell--has-note': cellNote() !== null,
-                              'ssg-body-cell--row-hovered': isHovered(),
-                            },
-                          ]}
-                          onPointerDown={(event) => {
-                            if (event.target instanceof Element && event.target.closest('.ssg-detail-toggle')) {
-                              return;
-                            }
-                            props.onCellPointerDown(cell(), event);
-                          }}
-                          onPointerEnter={(event) => props.onCellPointerEnter(cell(), event)}
-                          onClick={(event) => props.onCellClick(cell(), event)}
-                          onDblClick={(event) => props.onCellDoubleClick(cell(), event)}
-                          style={{
-                            ...props.slots.bodyCell?.style,
-                            ...(scaleBackground() !== null ? { 'background-color': scaleBackground() as string } : null),
-                            ...rowSlot().style,
-                            ...conditionalCell().style,
-                            left: px(props.leadingWidth + entry().paneLocalStart),
-                            width: px(size()),
-                            'min-width': px(size()),
-                            height: px(rowSize()),
-                            'word-break': column().wordBreak,
-                            'line-break': column().lineBreak,
-                            'z-index': isActive() ? 3 : 1,
-                          }}
-                        >
-                          <Show when={dataBar()}>
-                            {(bar) => (
-                              <span
-                                class={['ssg-cf-bar', { 'ssg-cf-bar--negative': bar().negative }]}
-                                style={{
-                                  left: `${bar().start}%`,
-                                  width: `${bar().end - bar().start}%`,
-                                  ...(dataBarColor() ? { 'background-color': dataBarColor() } : null),
-                                }}
-                                aria-hidden="true"
-                              />
-                            )}
-                          </Show>
-                          <Show
-                            when={isAutoHeightCell()}
-                            fallback={props.renderCellContent(currentRow(), column(), cellState)}
-                          >
-                            <div class="ssg-autoheight-content" data-autoheight-content="">
-                              {props.renderCellContent(currentRow(), column(), cellState)}
-                            </div>
-                          </Show>
-                        </div>
-                      );
+                  if (selection.kind === 'cell' && rowIndex() >= selection.startRow && rowIndex() <= selection.endRow) {
+                    return [selection.startCol, selection.endCol];
+                  }
+                  return NO_SELECTED_COLUMNS;
+                });
+                const selectedColStart = () => selectedColRange()[0];
+                const selectedColEnd = () => selectedColRange()[1];
+                const activeCol = createMemo(() => (props.activeCell?.row === rowIndex() ? props.activeCell.col : -1));
+                // セル内検索: この行のヒットと、この行にカレントのヒットがあればその番号(無ければ null)。どちらも行ごとの memo に
+                //   して、セルは行の値だけを読みます(ヒットの表やカレントの番号をセルごとに読むと、1 回の検索に数千の購読が付く)。
+                const rowFindHits = createMemo(() => props.findIndex.get(rowIndex()));
+                const rowFindCurrent = createMemo((): number | null => {
+                  const hits = rowFindHits();
+                  const current = hits ? props.findCurrentIndex : null;
+                  if (!hits || current === null) {
+                    return null;
+                  }
+                  for (const ranges of hits.values()) {
+                    if (ranges.some((range) => range.matchIndex === current)) {
+                      return current;
+                    }
+                  }
+                  return null;
+                });
+                const editingCol = createMemo(() => (props.editingCell?.row === rowIndex() ? props.editingCell.col : -1));
+                const isHovered = createMemo(() => props.hoveredRowIndex === rowIndex());
+                const rowSlot = createMemo(() =>
+                  resolveSlotProps<JSX.CSSProperties>(
+                    props.getRowClassName?.(currentRow(), rowIndex(), {
+                      row: currentRow(),
+                      rowIndex: rowIndex(),
+                      sourceRowIndex: sourceRowIndex(),
+                      rowKey: rowKey(),
+                      isSelected: isRowChecked(),
+                    }),
+                  ),
+                );
+                const rowNumber = () =>
+                  props.labelViewIndexes ? resolveDataRowNumber(props.labelViewIndexes, rowIndex()) : rowIndex() + 1;
+                return (
+                  <div
+                    data-pane={props.pane}
+                    data-row-index={rowIndex()}
+                    role="row"
+                    aria-rowindex={rowIndex() + 2 + props.ariaRowOffset}
+                    aria-selected={props.enableRowSelection ? (isRowChecked() ? 'true' : 'false') : undefined}
+                    data-row-key={String(rowKey())}
+                    class={[
+                      'ssg-body-row',
+                      rowSlot().className,
+                      props.slots.bodyRow?.className,
+                      { 'ssg-body-row--checked': isRowChecked() },
+                    ]}
+                    style={{
+                      ...props.slots.bodyRow?.style,
+                      ...rowSlot().style,
+                      height: px(rowSize()),
+                      transform: `translateY(${item().start}px)`,
                     }}
-                  </For>
-                </div>
-              );
-            }}
-          </Show>
+                  >
+                    <Show when={props.ownsRowHeader}>
+                      <div
+                        role="rowheader"
+                        aria-colindex={1}
+                        onPointerDown={(event) => props.onRowHeaderPointerDown(rowIndex(), event)}
+                        onPointerEnter={(event) => props.onRowHeaderPointerEnter(rowIndex(), event)}
+                        onPointerLeave={() => props.onRowHeaderPointerLeave(rowIndex())}
+                        class={[
+                          'ssg-header-cell',
+                          'ssg-row-header-cell',
+                          rowSlot().className,
+                          props.slots.rowHeaderCell?.className,
+                          {
+                            'ssg-row-header-cell--checkbox': props.enableRowSelection,
+                            'ssg-header-cell--selected': props.isWholeGridSelected || isRowSelected(),
+                            'ssg-header-cell--hovered': isHovered(),
+                          },
+                        ]}
+                        style={{
+                          ...props.slots.rowHeaderCell?.style,
+                          ...rowSlot().style,
+                          width: px(props.rowHeaderWidth),
+                          'min-width': px(props.rowHeaderWidth),
+                          height: px(rowSize()),
+                        }}
+                      >
+                        <Show when={props.enableRowSelection} fallback={rowNumber()}>
+                          <RowSelectionCheckbox
+                            slot={props.slots.checkbox}
+                            label={formatLocaleText(texts().selectRow, { row: rowNumber() })}
+                            state={isRowChecked() ? 'checked' : 'unchecked'}
+                          />
+                        </Show>
+                      </div>
+                    </Show>
+                    <For each={props.entries} keyed={(entry) => entry.column.key}>
+                      {(entry) => {
+                        const unbound = createMemo(() => entry().column);
+                        const column = () => unbound() as unknown as GridColumn<T>;
+                        const colIndex = createMemo(() => entry().logicalIndex);
+                        const size = () => entry().paneLocalSize;
+                        const isActive = () => activeCol() === colIndex();
+                        const isEditing = () => editingCol() === colIndex();
+                        const isSelected = () =>
+                          isRowSelected() ||
+                          (selectedColStart() >= 0 && colIndex() >= selectedColStart() && colIndex() <= selectedColEnd());
+                        const readOnlyCell = createMemo(
+                          () =>
+                            !isCellEditable(
+                              { readOnly: props.readOnly, canEditCell: props.canEditCell },
+                              rowIndex(),
+                              colIndex(),
+                              currentRow(),
+                              unbound(),
+                              props.canEditCell ? { sourceRowIndex: sourceRowIndex(), rowKey: rowKey() } : undefined,
+                            ),
+                        );
+                        const value = () => getCellValue(currentRow(), unbound());
+                        const findRanges = createMemo(() => rowFindHits()?.get(colIndex()));
+                        // セルの中身へ渡す位置と操作の状態は、読んだときに引く形にする(中身を作る式が読まないように)。
+                        //   クリックの pointerdown でアクティブセルが変わるたびに中身を作り直すと、pointerup が別の要素に落ちて
+                        //   click が起きない(チェックボックスのセルや renderCell のボタンが押せない)。並べ替えで行の位置が
+                        //   変わるたびに作り直すと、renderCell の中の入力欄のフォーカスが外れる。React は同じ要素を使い回す。
+                        const cellRowKey = untrack(rowKey);
+                        const cellState: GridCellContentContext = {
+                          get rowIndex() {
+                            return rowIndex();
+                          },
+                          get colIndex() {
+                            return colIndex();
+                          },
+                          get sourceRowIndex() {
+                            return sourceRowIndex();
+                          },
+                          rowKey: cellRowKey,
+                          get findRanges() {
+                            return findRanges();
+                          },
+                          get findCurrentIndex() {
+                            return rowFindCurrent();
+                          },
+                          get isActive() {
+                            return isActive();
+                          },
+                          get isSelected() {
+                            return isSelected();
+                          },
+                          get isEditing() {
+                            return isEditing();
+                          },
+                          get readOnly() {
+                            return readOnlyCell();
+                          },
+                        };
+                        // セルの書式とメモに渡す文脈(どちらも無い列では作らない。React 版と同じ)。
+                        const styleContext = createMemo((): CellStyleContext<T, SolidGridTypes> | null =>
+                          typeof column().cellClassName === 'function' || column().cellNote
+                            ? {
+                                row: currentRow(),
+                                rowIndex: rowIndex(),
+                                sourceRowIndex: sourceRowIndex(),
+                                rowKey: rowKey(),
+                                colIndex: colIndex(),
+                                value: value(),
+                                column: column(),
+                                isActive: isActive(),
+                                isSelected: isSelected(),
+                                isEditing: isEditing(),
+                                readOnly: readOnlyCell(),
+                              }
+                            : null,
+                        );
+                        const conditionalCell = createMemo(() => {
+                          const cellClassName = column().cellClassName;
+                          const context = styleContext();
+                          return resolveSlotProps<JSX.CSSProperties>(
+                            typeof cellClassName === 'function' ? (context ? cellClassName(context) : undefined) : cellClassName,
+                          );
+                        });
+                        // 条件付き書式(データバー / カラースケール)。指定のある列だけ値と集計を読みます(React 版と同じ)。
+                        //   帯は .ssg-cf-bar(絶対配置・文字の下)、背景色は inline の color-mix()(文字色は変えない)。
+                        const formatRules = () => (props.conditionalFormat ? column().conditionalFormat : undefined);
+                        const dataBar = createMemo(() => {
+                          const feature = props.conditionalFormat;
+                          const rules = formatRules();
+                          return feature && rules?.dataBar
+                            ? feature.resolveDataBar(rules.dataBar, value(), props.conditionalFormatStats.get(column().key))
+                            : null;
+                        });
+                        const scaleBackground = createMemo(() => {
+                          const feature = props.conditionalFormat;
+                          const rules = formatRules();
+                          return feature && rules?.colorScale
+                            ? feature.resolveColorScaleBackground(
+                                rules.colorScale,
+                                value(),
+                                props.conditionalFormatStats.get(column().key),
+                              )
+                            : null;
+                        });
+                        const dataBarColor = () => {
+                          const bar = dataBar();
+                          const rules = formatRules()?.dataBar;
+                          return bar ? (bar.negative ? rules?.negativeColor : rules?.color) : undefined;
+                        };
+                        const invalidMessage = createMemo(() =>
+                          props.showValidationMarks && hasCellValidation(unbound())
+                            ? getInvalidMessage(unbound(), currentRow(), value(), texts())
+                            : null,
+                        );
+                        const cellNote = createMemo(() => {
+                          const note = column().cellNote;
+                          const context = styleContext();
+                          return note && context ? normalizeCellNote(note(context)) : null;
+                        });
+                        const tooltipText = () => resolveCellTooltipText(invalidMessage(), cellNote());
+                        // auto-height の列のセルは、箱はほかのセルと同じく行の高さで、中身を器(data-autoheight-content)に
+                        //   入れて器の高さを測ります(React 版 DU-32)。背の高い行での揃えは、未指定なら auto-height の列が上、
+                        //   ほかの列は真ん中(1 行の行ではどれも真ん中)。
+                        //   2 つの真偽値は 1 つの memo(1 = auto-height のセル、2 = 上にそろえる)にまとめます。auto-height の切り替えでは
+                        //   すべてのセルが走るので、セルごとの購読を 1 つにします(Solid の開発ビルドの HUGE_FAN_OUT は 2,000 から)。
+                        const autoHeightFlags = createMemo(() => {
+                          if (!props.autoHeight) {
+                            return 0;
+                          }
+                          const content = column().autoHeight === true;
+                          const top =
+                            rowSize() > props.rowHeight &&
+                            (column().verticalAlign ?? props.verticalAlign ?? (content ? 'top' : 'center')) === 'top';
+                          return (content ? 1 : 0) | (top ? 2 : 0);
+                        });
+                        const isAutoHeightCell = () => (autoHeightFlags() & 1) !== 0;
+                        const alignTop = () => (autoHeightFlags() & 2) !== 0;
+                        const markOverflowTooltip = () =>
+                          shouldMarkCellOverflowTooltip({
+                            enabled: props.showCellOverflowTooltip,
+                            isAutoHeightCell: isAutoHeightCell(),
+                            hasRenderCell: column().renderCell !== undefined,
+                          });
+                        const cell = () => ({ row: rowIndex(), col: colIndex() });
+                        return (
+                          <div
+                            role="gridcell"
+                            aria-colindex={colIndex() + 2}
+                            aria-selected={isSelected() ? 'true' : 'false'}
+                            aria-readonly={readOnlyCell() ? 'true' : undefined}
+                            aria-invalid={invalidMessage() !== null ? 'true' : undefined}
+                            aria-description={tooltipText() ?? undefined}
+                            id={isActive() ? props.activeCellDomId : undefined}
+                            aria-owns={isEditing() ? props.cellEditorDomId : undefined}
+                            data-ssg-col-key={column().key}
+                            data-autoheight-cell={isAutoHeightCell() ? '' : undefined}
+                            data-ssg-tooltip={tooltipText() ?? undefined}
+                            data-ssg-tooltip-overflow={markOverflowTooltip() ? '' : undefined}
+                            class={[
+                              'ssg-body-cell',
+                              rowSlot().className,
+                              conditionalCell().className,
+                              props.slots.bodyCell?.className,
+                              {
+                                'ssg-body-cell--align-center': column().align === 'center',
+                                'ssg-body-cell--align-right': column().align === 'right',
+                                'ssg-body-cell--cf-bar': dataBar() !== null,
+                                'ssg-body-cell--cf-scale': scaleBackground() !== null,
+                                'ssg-body-cell--chip-compact':
+                                  formatRules()?.chips !== undefined && size() < CHIP_COMPACT_MAX_WIDTH,
+                                'ssg-body-cell--autoheight': isAutoHeightCell(),
+                                'ssg-body-cell--valign-top': alignTop(),
+                                'ssg-body-cell--readonly': readOnlyCell() && !isSelected(),
+                                'ssg-body-cell--invalid': invalidMessage() !== null,
+                                'ssg-body-cell--has-note': cellNote() !== null,
+                                'ssg-body-cell--row-hovered': isHovered(),
+                              },
+                            ]}
+                            onPointerDown={(event) => {
+                              if (event.target instanceof Element && event.target.closest('.ssg-detail-toggle')) {
+                                return;
+                              }
+                              props.onCellPointerDown(cell(), event);
+                            }}
+                            onPointerEnter={(event) => props.onCellPointerEnter(cell(), event)}
+                            onClick={(event) => props.onCellClick(cell(), event)}
+                            onDblClick={(event) => props.onCellDoubleClick(cell(), event)}
+                            style={{
+                              ...props.slots.bodyCell?.style,
+                              ...(scaleBackground() !== null ? { 'background-color': scaleBackground() as string } : null),
+                              ...rowSlot().style,
+                              ...conditionalCell().style,
+                              left: px(props.leadingWidth + entry().paneLocalStart),
+                              width: px(size()),
+                              'min-width': px(size()),
+                              height: px(rowSize()),
+                              'word-break': column().wordBreak,
+                              'line-break': column().lineBreak,
+                              'z-index': isActive() ? 3 : 1,
+                            }}
+                          >
+                            <Show when={dataBar()}>
+                              {(bar) => (
+                                <span
+                                  class={['ssg-cf-bar', { 'ssg-cf-bar--negative': bar().negative }]}
+                                  style={{
+                                    left: `${bar().start}%`,
+                                    width: `${bar().end - bar().start}%`,
+                                    ...(dataBarColor() ? { 'background-color': dataBarColor() } : null),
+                                  }}
+                                  aria-hidden="true"
+                                />
+                              )}
+                            </Show>
+                            <Show
+                              when={isAutoHeightCell()}
+                              fallback={props.renderCellContent(currentRow(), column(), cellState)}
+                            >
+                              <div class="ssg-autoheight-content" data-autoheight-content="">
+                                {props.renderCellContent(currentRow(), column(), cellState)}
+                              </div>
+                            </Show>
+                          </div>
+                        );
+                      }}
+                    </For>
+                  </div>
+                );
+              }}
+            </Show>
+          </>
         );
       }}
     </For>
