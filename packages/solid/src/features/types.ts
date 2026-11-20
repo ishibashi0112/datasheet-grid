@@ -37,6 +37,18 @@ import type { createCellContextMenu } from '../primitives/contextMenu';
 import type { CellContextMenuPopover } from '../view/CellContextMenuPopover';
 import type { BodyContextMenuInput, CellContextMenuInput } from './contextMenu';
 import type { GridContextMenuParams } from '../model/gridTypes';
+import type { createFilterOrder } from '../primitives/filterOrder';
+import type { createFilterPopover } from '../primitives/filterPopover';
+import type { ColumnFilterPopoverHost } from '../view/ColumnFilterPopoverHost';
+import type { createFilterManagement } from '../primitives/filterManagement';
+import type { GridFilterChipBar } from '../view/GridFilterChipBar';
+import type { createToolPanel } from '../primitives/toolPanel';
+import type { ToolPanel } from '../view/ToolPanel';
+import type { FilterManagementPanel } from '../view/FilterManagementPanel';
+import type { ColumnChooserPanel } from '../view/ColumnChooserPanel';
+import type { SortManagementPanel } from '../view/SortManagementPanel';
+import type { createColumnMenu } from '../primitives/columnMenu';
+import type { ColumnMenuPopover } from '../view/ColumnMenuPopover';
 
 // 機能だけが使う文言の既定(core の logic/localeText<機能>.ts の表)。シェルが本体の既定に重ねて部品へ渡します(React 版と同じ)。
 type FeatureLocaleDefaults = { localeText?: Readonly<Partial<GridLocaleText>> | undefined };
@@ -108,6 +120,36 @@ export type SolidGridFeatures = {
         CellContextMenuPopover: typeof CellContextMenuPopover;
         buildBodyContextMenuParams: <T>(input: BodyContextMenuInput<T>) => GridContextMenuParams<T> | null;
         buildCellContextMenuParams: <T>(input: CellContextMenuInput<T>) => GridContextMenuParams<T> | null;
+      })
+    | undefined;
+  // フィルター: 行パイプラインの列フィルターの段 + 相対日付プリセットの日付の変わり目の見張り(いずれも core。エンジンが作る)+
+  //   グローバルフィルターの適用(大きな表は時間分割)+ 列フィルターのポップオーバー(コントローラの接続と、候補の収集・
+  //   コマンド・描画の部品)+ 適用中のフィルターの一覧と列へ移って開く処理 + フィルターのチップのバー。
+  filtering?:
+    | (NonNullable<GridCoreFeatures['filtering']> &
+        FeatureLocaleDefaults & {
+          createFilterOrder: typeof createFilterOrder;
+          createFilterPopover: typeof createFilterPopover;
+          FilterPopoverHost: typeof ColumnFilterPopoverHost;
+          createFilterManagement: typeof createFilterManagement;
+          FilterChipBar: typeof GridFilterChipBar;
+        })
+    | undefined;
+  // ツールパネル(フィルター / 列 / 並び替えの 3 タブ): コントローラ(core)の接続 + 枠と 3 つのタブの中身の部品。
+  toolPanel?:
+    | {
+        createToolPanel: typeof createToolPanel;
+        ToolPanel: typeof ToolPanel;
+        FilterManagementPanel: typeof FilterManagementPanel;
+        ColumnChooserPanel: typeof ColumnChooserPanel;
+        SortManagementPanel: typeof SortManagementPanel;
+      }
+    | undefined;
+  // 列メニュー: コントローラ(core)の接続 + ポップアップの部品。
+  columnMenu?:
+    | (FeatureLocaleDefaults & {
+        createColumnMenu: typeof createColumnMenu;
+        ColumnMenuPopover: typeof ColumnMenuPopover;
       })
     | undefined;
   // IME オンのままの直接入力: 透明な入力受けのコントローラ + 入力してよいセルの判定 + 編集の初期値の決定(いずれも core)。

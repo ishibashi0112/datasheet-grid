@@ -14,12 +14,17 @@ export function createPortalTokens(
   portal: () => HTMLElement | undefined,
   modifierClassName: () => string | undefined,
   layout: () => unknown,
+  // origin: false = トークンを写すだけ(ずれの打ち消しはしない。親のポップアップの中に absolute で置く小メニュー)。
+  options?: { origin?: boolean | undefined },
 ): void {
   const { source } = useGridPortal();
   createEffect(
     () => [portal(), modifierClassName()] as const,
     ([element]) => (element ? watchPortalTokens(source, element) : undefined),
   );
+  if (options?.origin === false) {
+    return;
+  }
   createEffect(
     () => [portal(), layout()] as const,
     ([element]) => {

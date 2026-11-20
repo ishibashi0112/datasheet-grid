@@ -158,11 +158,74 @@ React 版の機能なしの構成と並べて、同じ props・同じ操作で D
 | # | 内容 | 状況 |
 | --- | --- | --- |
 | 2-1 | 機能を差し込む仕組み + 表示の機能 8 つ(totalRow / pinnedRows / conditionalFormat / selectionAggregates / scrollHint / motionExtras / export / autoHeight) | 済み(PR #65、2026-11-19 マージ。2-1a: 仕組み(`features/types.ts` / `createSpreadsheetGrid.tsx` / `features/full.ts`、比べるテストの `features`)と export、2-1b: autoHeight、2-1c: conditionalFormat、2-1d: totalRow + pinnedRows、2-1e: selectionAggregates、2-1f: scrollHint、2-1g: motionExtras) |
-| 2-2 | 操作の機能 7 つ(find / fillHandle / columnReorder / rowDrag / columnAutosize / imeDirectInput / contextMenu) | 作業中(2-2a: find、2-2b: imeDirectInput、2-2c: columnAutosize、2-2d: columnReorder、2-2e: rowDrag、2-2f: fillHandle、2-2g: contextMenu = 済み。別視点のレビュー = 高 1・低 1 を直した) |
-| 2-3 | ポップアップ 3 つ(columnMenu / toolPanel / filtering) | まだ |
+| 2-2 | 操作の機能 7 つ(find / fillHandle / columnReorder / rowDrag / columnAutosize / imeDirectInput / contextMenu) | 済み(PR #66、2026-11-19 マージ。2-2a: find、2-2b: imeDirectInput、2-2c: columnAutosize、2-2d: columnReorder、2-2e: rowDrag、2-2f: fillHandle、2-2g: contextMenu。別視点のレビュー = 高 1・低 1 を直した) |
+| 2-3 | ポップアップ 3 つ(columnMenu / toolPanel / filtering) | 作業中(2-3a: 行の絞り込み(グローバル / 列フィルターの適用・上部バーの検索欄・manualFiltering / manualSorting)、2-3b: 列メニュー、2-3c: 列フィルターのポップアップ、2-3d: ツールパネル(フィルター / 列 / 並び替えのタブ)とフィルターのチップのバー = 済み。別視点のレビュー = 中 1・低 2 を直した) |
 | 2-4 | 行のモデル 3 つ(serverSide / labelRow / grouping) | まだ |
 
-### 2-2 で分かったこと(作業中)
+### 2-3 で分かったこと
+
+- **core と React 版は変えていない**(2-3a): 列フィルターの段(core `engine/columnFilterStage`)と相対日付プリセットの見張り
+  (`controllers/dateRolloverStore`)はエンジンが機能から作り、グローバルフィルターの適用は core のランナー
+  (`controllers/globalFilteredOrder`。5 万行を超える表は時間分割)を Solid 版の `primitives/filterOrder.ts` でつなぐだけで足りた。
+- **入力の遅延は無し**: React 版は列フィルターと検索の文字を `useDeferredValue` で遅らせる(チェックを続けて押したときに
+  行の絞り込みを後回しにするため)。Solid には同じ仕組みが無いので、その場で絞り込む(大きな表はランナーの時間分割なので入力は
+  詰まらない。10 万行のデモで、打っている間に「適用中 n%」の印が出て結果へ変わることを Chromium で確かめた)。
+- **同じ値の組なら計算し直さない**: グローバルフィルターの計算の key(rows / 恒等の並び / 対象の列 / 文字)は、列の解決が
+  別の理由で計算し直されても新しくならないよう、項目を比べる `equals` 付きの memo にした(React 版の `useMemo` の依存と同じ)。
+- **上部バーの検索欄**: 値は今の値と違うときだけ書く(セル内検索のバーと同じ。変換中の文字を消さない。Chromium の IME で確認)。
+  利用側が JSX で渡す左アイコン(`globalFilterIcon`)は、prop を読むたびに要素が作り直されるので memo で 1 回だけ読む。
+- **列メニューも core のコントローラのまま**(2-3b): 位置・閉じ方・フォーカス・↑ ↓ の移動は core の
+  `controllers/columnMenuController`、項目の処理は engine の `columnCommands`(段階 1 でつないだもの)で、Solid 版は
+  ポップアップの部品(`view/ColumnMenuPopover.tsx`。React 版と同じ DOM)と見出しの ⋮ を足しただけ。開いたまま別の列へ
+  切り替えたときの小メニューの閉じ方は、React 版の「列が変わったら state を戻す effect」ではなく、開いた列のキーと一緒に
+  覚えて比べる形にした(effect の中で signal へ書かない)。フィルター… / 並び替えを管理… などの、ほかのポップアップを開く
+  項目は 2-3c / 2-3d でつなぐ。
+- **列フィルターのポップアップも core のまま**(2-3c): 位置・高さ・閉じ方・開いた後のフォーカス・下書きは core の
+  `controllers/filterPopoverController`、候補は `selectOptionsCollector`(5 万行までその場、超えたら時間分割)と
+  `asyncSelectOptionsSource`(`getFilterOptions`)、派生値と操作は engine の `filterPopoverCommands` で、Solid 版は部品
+  (`view/ColumnFilterPopover.tsx` / `ColumnFilterPopoverHost.tsx` / `FilterDateField.tsx`。React 版と同じ DOM)と
+  `primitives/filterPopover.ts` を足しただけ。コントローラの `update` は「パネルの要素の signal」も読むふつうの effect で渡す
+  (高さの測り直しと開いた後のフォーカスの予約はパネルが描かれてから要る。React 版はコミット後のレイアウト effect)。
+- **ref の中で `onCleanup` は書けない**: Solid 2.0 は ref の関数の中の `onCleanup` を止める(CLEANUP_IN_FORBIDDEN_SCOPE)。
+  要素を外へ渡す ref(入力欄の控えなど)は、部品の本体で後片付けを登録して ref の関数を返す小さな工場(`createHeldRef`)にした。
+- **チェックボックスは制御された形に**: Solid は `checked` を属性ではなくプロパティで書くので、押したときにブラウザが変えた
+  チェックを戻してから操作を呼ぶ(`primitives/inputValue.ts` の `controlledToggle`。中間の印 `indeterminate` も同じく)。
+  比べるテストの DOM の正規化は、`checked` を属性ではなくプロパティで比べる(React は描いたときに属性も書く)。
+- **遅延読み込みはまだ無し**: React 版はポップアップの部品を別のチャンクにして暇なときに読む(`preloadGridPopups`)。Solid 版は
+  今は本体に入れたまま(大きさを測る段階 3 で決める)。候補の控えを残すため、ホストの部品は閉じている間も外さない。
+- **行のフェードインは比べるテストで止める**: animateRows のフェードインは「前に行が現れてから 1 秒の間は付けない」(B-07)ので、
+  手順の間の時間で付く / 付かないが変わる(1.1 秒待つと React 版と Solid 版はそろう)。行を出し入れする場面は `animateRows: false`。
+- **比べるテストの時間切れに注意**: 1 つの場面で手順が多いと vitest の既定の 5 秒を超え、時間切れの場面の React 版の
+  ポップアップが body に残って、次の場面の控えに混ざった(差の原因が分かりにくい)。手順の多い場面は `20_000` を渡す。
+- **ツールパネルも core のまま**(2-3d): 位置・幅・閉じ方(外を押す / Escape。列フィルターのポップアップが開いていれば先に
+  それを閉じる)・開いたまま開き直したときの数は core の `controllers/toolPanelController`、ヘッダーを掴んで動かすのは
+  `panelHeaderDragController`、タブの中の操作は engine の `columnCommands`(段階 1 でつないだもの)で、Solid 版は部品
+  (`view/ToolPanel.tsx` / `FilterManagementPanel.tsx` / `ColumnChooserPanel.tsx` / `SortManagementPanel.tsx` /
+  `GridFilterChipBar.tsx`。React 版と同じ DOM)と `primitives/toolPanel.ts` / `filterManagement.ts` を足しただけ。React 版と
+  同じく、filtering と columnMenu のどちらも無いときはツールパネルを差し込んでも動かさない。
+- **パネルは開いている間だけ描く**: 開いたときのフォーカス(選ばれているタブへ)は部品の `onSettled` で、開いたまま開き直した
+  ときの枠の光り(`flashTick` が増えたとき)は、開いたときの値を控えて比べる effect にした(開いたときの値では光らせない)。
+- **一覧は keyed の `For`**: タブ・フィルターの一覧・列の一覧・並び替えの基準は、どれもキーで行を使い回す(押した直後に行の
+  要素が作り直されるとフォーカスが外れる)。列の一覧の行の区分(左固定 / 中央 / 右固定)は、区分の `For` の値ではなく項目の
+  `pane` から読む(`For` の子の関数の中で親の値を読むと Solid 2.0 の開発時の警告 STRICT_READ_UNTRACKED になる。Chromium の
+  確認で見つけた)。「フィルターを追加」の select は選んだらすぐ空に戻す(React 版と同じ)。
+- **行のグループ化の部分は 2-4 で**: 列の一覧の「グループ化中」の印、並び替え / フィルターの一覧のグループ元の列は、grouping を
+  つなぐ 2-4 で足す(今は groupColumns を渡していない)。React 版にある「ツールパネルが無いときに `openFilterManager` を呼んだ
+  ときの開発時の警告」は段階 3 の開発時の警告でまとめて足す。
+- **別視点のレビューで直したもの**: (中)種別を推定した列('auto')の列フィルターで、下書きを変えるたびに開いている列が
+  新しいオブジェクトになり(core の `resolveOpenedFilterColumn` が `{ ...column, filterType }` を作る)、相対の期間のチップと
+  差し替えた日付欄が作り直されてフォーカスが外れていた。開いている列は列のキー・種別・列の定義が変わったときだけ作り直し、
+  チップの `For` は id で使い回す。(低)チップや一覧から列へ移った直後に表を外すと、見出しを待つ rAF が外した表のポップアップを
+  開いてフォーカスを奪っていた(React 版は外すと ref が null になって止まる。Solid 版の ref は外した後も要素を指すので、rAF を
+  控えて後片付けで止める)。(低)利用側が props を signal の広げで渡すと、ポップアップの部品の本体で描く場所を決めるときの
+  `props.popupContainer` の読み取りが開発時の警告 STRICT_READ_UNTRACKED になっていた(追跡しない読み取りにした)。どれも
+  再発を防ぐテストを足した(比べるテスト 1 つ + `shellBehavior.test.tsx` に 2 つ)。
+- **React 版の既存の不具合を 1 つ見つけた(直していない)**: ツールパネルを開いたまま開き直したときの枠の光り
+  (`ssg-toolpanel--flash`)は、`styles.css` の後ろにあるポップアップの出現のアニメ(`.ssg-popover { animation: ssg-pop-in … }`。
+  0.46.1 の M-7 で追加)が同じ詳細度で上書きするので、0.46.1 から光っていない(クラスは付くが `animationend` が来ないので
+  残ったまま)。Solid 版は同じ CSS を使うので同じ見た目。直すのは React 版の CSS の変更になるので、ユーザーに聞いてから別に行う。
+
+### 2-2 で分かったこと
 
 - **core と React 版は変えていない**: 7 つの機能はどれも core のコントローラ(findController / imeInputController /
   columnAutosizeRunner / columnHeaderDragController / rowDragController ほか)をそのまま使い、Solid 版のシェルでつなぐだけで足りた。

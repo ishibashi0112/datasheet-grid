@@ -45,9 +45,20 @@ React 版と同じ DOM・class で描くので、React 版の `styles.css` を�
   四角のダブルクリックで隣の列に合わせて下へ、元に戻す 1 回で埋める前へ)、右クリックメニュー(`enableContextMenu` /
   `getContextMenuItems` / `onContextMenuOpen`。セル / 行番号の右クリック、Shift+F10 / メニューキーでアクティブセルのメニュー、
   項目が空なら標準のメニュー、項目の 4 種類(action / label / separator / custom)、↑ / ↓ / Home / End、Escape・外を押す・
-  スクロールで閉じる)
+  スクロールで閉じる)、行の絞り込み(`enableGlobalFilter` / `globalFilterMatch` / `enableColumnFilter` / `manualFiltering` /
+  `manualSorting`。上部バーの検索欄 = `showTopBarFilter` / `globalFilterPlaceholder` / `globalFilterIcon`、大きな表は core の
+  ランナーで時間分割して適用中の印、`applyState` の列フィルターと相対日付プリセット)、
+列メニュー(`enableColumnMenu`。見出しの ⋮ / 見出しの右クリック / Alt+↓、昇順・降順、列の固定の小メニュー、幅の自動調整、
+列のリセット、フィルター…、並び替えを管理… / フィルターを管理… / 列の表示)、列フィルターのポップアップ(列の `filterType` = text / number / date /
+set / select / numberSet / textSet / dateSet / auto。見出しの下に開く、Tab はパネルの中で回る、Escape・外を押す・⋮ で閉じる、
+候補は仮想化、`getFilterOptions` の非同期の候補、日付のカレンダーと相対日付プリセット、`renderFilterDateInput` の差し替え)、
+ツールパネル(フィルター / 列 / 並び替えのタブ。列メニュー・上部バーの絞り込みのチップ・ハンドルの `openFilterManager` /
+`closeFilterManager` で開く、表の右上に開いてヘッダーを掴んで動かせる、Tab はパネルの中で回る、Escape は列フィルターの
+ポップアップ → パネルの順に閉じる。フィルターのタブ = 適用中の一覧・✎ で列へ移って開く・外す・追加・すべてクリア、列のタブ =
+検索・表示の切り替え・⠿ で並べ替え・列のリセット、並び替えのタブ = 基準の追加・向き・列の変更・⠿ で並べ替え・削除)、
+フィルターのチップのバー(`showFilterChipBar`。押すと見えていない列へも横にスクロールして開く)
 
-無いもの(段階 2 の残り): `/lite` の残りの 6 の機能(列メニュー・ツールパネル・列フィルター・SSRM・ラベル行・行のグループ)。
+無いもの(段階 2 の残り): `/lite` の残りの 3 の機能(SSRM・ラベル行・行のグループ)。
 
 `renderCell` / `renderHeader` / `renderTopBar` / `renderBottomBar` は、React 版のように描き直しのたびに呼ぶのではなく、Solid の部品と
 同じく必要なときだけ呼びます: `renderCell` は行(と値)や列が変わったとき、`renderHeader` は列が変わったとき、バーは関数が変わった
@@ -58,7 +69,7 @@ React 版と同じ DOM・class で描くので、React 版の `styles.css` を�
 ## 使い方
 
 ```sh
-pnpm --filter ./packages/solid dev          # デモ(10,000 行 × 39 列。エディタ 6 種・行の選択・展開行・行の高さの自動調整・合計行と固定行・条件付き書式・選択範囲の集計・スクロールのヒント・変更のハイライト・クロスヘア・セル内検索・IME の直接入力・列の並べ替えと行のドラッグ(ghost / live)・フィルハンドル・右クリックメニュー・テーマ・列の固定・グリッドを外すボタン)
+pnpm --filter ./packages/solid dev          # デモ(10,000 行 × 39 列。エディタ 6 種・行の選択・展開行・行の高さの自動調整・合計行と固定行・条件付き書式・選択範囲の集計・スクロールのヒント・変更のハイライト・クロスヘア・セル内検索・IME の直接入力・列の並べ替えと行のドラッグ(ghost / live)・フィルハンドル・右クリックメニュー・列フィルターとツールパネル・フィルターのチップ・テーマ・列の固定・グリッドを外すボタン)
 pnpm --filter ./packages/solid test         # jsdom のテスト(Solid の JSX 変換の vitest 設定。React 版と並べて比べるテストも)
 pnpm --filter ./packages/solid typecheck
 pnpm --filter ./packages/solid spike:build  # 大きさを測るためのライブラリビルド(dist/)
@@ -71,12 +82,15 @@ pnpm --filter ./packages/solid spike:build  # 大きさを測るためのライ�
 | `hooks/useGridStore.ts`(useSyncExternalStore) | `primitives/gridStoreSignals.ts`(store を signal に。購読は `onSettled`) |
 | `hooks/useController.ts` | `primitives/controller.ts`(`createRenderEffect` / `createEffect` で `update`) |
 | `hooks/useVirtualizerCore.ts` | `primitives/columnVirtualizer.ts` |
-| `GridShell.tsx`(5,246 行) | `SpreadsheetGrid.tsx`(約 2,630 行) |
+| `GridShell.tsx`(5,246 行) | `SpreadsheetGrid.tsx`(約 2,980 行) |
 | `view/GridHeaderRow.tsx` / `view/GridBodyLayer.tsx` | 同じ名前(`view/`) |
 | `view/DefaultGridTopBar.tsx` / `DefaultGridBottomBar.tsx` / `RowSelectionCheckbox.tsx` / `GridDetailLayer.tsx` / `DetailToggleButton.tsx` / `GridChip.tsx` / `GridTotalRow.tsx` / `GridPinnedRows.tsx` / `GridSelectionAggregates.tsx` / `GridScrollHint.tsx` / `GridFindBar.tsx` | 同じ名前(`view/`) |
 | `features/rowDrag.tsx` のハンドルのセル(`renderHandleCell`) | `view/RowDragHandle.tsx` |
 | `view/FillHandleLayer.tsx`(ハンドル / 点線 / ボタン / メニュー / ツールチップ) | 同じ名前(`view/`。ペインの層の `FillHandleLayer` とポップアップの `FillHandlePortals` の 2 つに) |
 | `view/CellContextMenuPopover.tsx` / `hooks/useCellContextMenuController.ts` / `features/contextMenu.tsx` の params を作る関数 | `view/CellContextMenuPopover.tsx` / `primitives/contextMenu.ts` / `features/contextMenu.ts` |
+| `view/ColumnFilterPopover.tsx` / `view/FilterDateField.tsx` / `features/filtering.tsx` の `useFilterPopover`(+ `hooks/useFilterPopoverController.ts`)/ 同じく `useFilterPopoverContent` | `view/ColumnFilterPopover.tsx` / `view/FilterDateField.tsx` / `primitives/filterPopover.ts` / `view/ColumnFilterPopoverHost.tsx` |
+| `view/ToolPanel.tsx` / `FilterManagementPanel.tsx` / `ColumnChooserPanel.tsx` / `SortManagementPanel.tsx` / `GridFilterChipBar.tsx` | 同じ名前(`view/`。後ろの 2 つのパネルの ⠿ の形は `view/DragHandleGlyph.tsx` に分けた) |
+| `features/toolPanel.ts` の `useToolPanel`(+ `hooks/useToolPanelController.ts`)/ `features/filtering.tsx` の `useFilterManagement` | `primitives/toolPanel.ts` / `primitives/filterManagement.ts` |
 | `CopyRangeOverlay.tsx` / `ColumnHoverOverlay.tsx` | `view/CopyRangeOverlay.tsx`(2 つをまとめた) |
 | `features/*`(機能の部品)/ `createSpreadsheetGrid.tsx` | 同じ名前(入れた機能だけ) |
 | `editors/*`(CellEditorLayer / 6 種のエディタ / CheckboxCell / CellEditorErrorBubble) | 同じ名前(`editors/`) |

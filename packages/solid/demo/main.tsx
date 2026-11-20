@@ -1,4 +1,5 @@
-// 試作のデモ: 10,000 行の編集できる在庫表(左右の固定列 + 横に長い列で縦横の仮想化を確かめる。数量・単価・分類に条件付き書式)。
+// 試作のデモ: 10,000 行の編集できる在庫表(左右の固定列 + 横に長い列で縦横の仮想化を確かめる。数量・単価・分類に条件付き書式。
+//   品名 / 分類 / 数量 / 単価 / 期日 / コードは列メニューの「フィルター…」で列フィルター)。
 import { Show, createSignal, onSettled } from 'solid-js';
 import { render } from '@solidjs/web';
 import '../../react/src/styles.css';
@@ -50,12 +51,13 @@ const PINNED_BOTTOM = [pinnedRow(-2, '前月', 40, 480), pinnedRow(-3, '前年',
 
 const baseColumns: GridColumn<Item>[] = [
   { key: 'id', title: 'ID', width: 72, pinned: 'left', editable: false },
-  { key: 'name', title: '品名', width: 160 },
+  { key: 'name', title: '品名', width: 160, filterType: 'text' },
   {
     key: 'category',
     title: '分類',
     width: 100,
     editor: { type: 'select', options: CATEGORIES.map((value) => ({ value, label: value })) },
+    filterType: 'set',
     // 条件付き書式の状態チップ。
     conditionalFormat: { chips: { 文具: 'info', 食品: 'good', 家電: 'warning', 衣料: 'neutral', 工具: 'critical' } },
   },
@@ -65,6 +67,7 @@ const baseColumns: GridColumn<Item>[] = [
     width: 90,
     align: 'right',
     editor: { type: 'number', min: 0, step: 1 },
+    filterType: 'numberSet',
     validationMode: 'reject',
     validate: ({ value }) => (Number(value) <= 95 ? true : '95 以下にしてください'),
     cellNote: ({ row }) => (row.id % 50 === 0 ? '棚卸しで確認済み' : undefined),
@@ -78,14 +81,16 @@ const baseColumns: GridColumn<Item>[] = [
     width: 100,
     align: 'right',
     editor: { type: 'number' },
+    filterType: 'number',
     conditionalFormat: { colorScale: {} },
     aggFunc: 'avg',
   },
-  { key: 'due', title: '期日', width: 130, editor: { type: 'date' } },
+  { key: 'due', title: '期日', width: 130, editor: { type: 'date' }, filterType: 'dateSet' },
   {
     key: 'code',
     title: 'コード(custom)',
     width: 130,
+    filterType: 'auto',
     editor: {
       type: 'custom',
       // 自作のエディタ: Enter で大文字にして確定、Escape で取り消し。フォーカスは利用側が置く。
@@ -148,6 +153,9 @@ function App() {
   const [fillHandle, setFillHandle] = createSignal(true);
   const [contextMenu, setContextMenu] = createSignal(true);
   const [menuAction, setMenuAction] = createSignal('');
+  const [manual, setManual] = createSignal(false);
+  const [filters, setFilters] = createSignal('');
+  const [chipBar, setChipBar] = createSignal(false);
   // 「品名を左へ固定」で編集中の列のペインを変える(エディタが外れるときの blur で確定しないことの確かめ)。
   const columns = () =>
     userColumns() ??
@@ -215,7 +223,17 @@ function App() {
         <button type="button" data-testid="context-menu" onClick={() => setContextMenu((v) => !v)}>
           右クリックメニュー
         </button>
+        <button type="button" data-testid="big-rows" onClick={() => setRows(createRows(rows().length > 10_000 ? 10_000 : 100_000))}>
+          行: 1 万 / 10 万
+        </button>
+        <button type="button" data-testid="manual" onClick={() => setManual((v) => !v)}>
+          手動の絞り込み / 並べ替え: {manual() ? 'オン' : 'オフ'}
+        </button>
+        <button type="button" data-testid="chip-bar" onClick={() => setChipBar((v) => !v)}>
+          フィルターのチップ
+        </button>
         <span data-testid="find">{find()}</span>
+        <span data-testid="filters">{filters()}</span>
         <span data-testid="active">{active()}</span>
         <span data-testid="changes">{changes()}</span>
         <span data-testid="selected">{selected()}</span>
@@ -269,6 +287,14 @@ function App() {
           // 「右クリックメニュー」(既定でオン): セル / 行番号の右クリックか Shift+F10 / メニューキーで開く。分類の列は項目なし
           //   (ブラウザの標準のメニュー)。
           enableContextMenu={contextMenu()}
+          // 絞り込み: 上部バーの検索欄(10 万行では時間分割で、適用中の印が出る)。「手動の絞り込み / 並べ替え」は状態と通知だけで
+          //   行は絞り込まない / 並べ替えない(利用側が rows を渡し直す使い方)。
+          manualFiltering={manual()}
+          manualSorting={manual()}
+          onFiltersChange={(next) => setFilters(JSON.stringify(next))}
+          // 「フィルターのチップ」: 適用中の列フィルターを上部バーの下にチップで並べる。ツールパネル(フィルター / 列 / 並び替え)は
+          //   列メニューの「並び替えを管理…」「フィルターを管理…」「列の表示」か、上部バーの絞り込みのチップで開く。
+          showFilterChipBar={chipBar()}
           getContextMenuItems={(params) => {
             const target = params.target;
             if (target.type === 'rowHeader') {
