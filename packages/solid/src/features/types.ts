@@ -49,6 +49,7 @@ import type { ColumnChooserPanel } from '../view/ColumnChooserPanel';
 import type { SortManagementPanel } from '../view/SortManagementPanel';
 import type { createColumnMenu } from '../primitives/columnMenu';
 import type { ColumnMenuPopover } from '../view/ColumnMenuPopover';
+import type { GridBodyGroupRow } from '../view/GridBodyGroupRow';
 
 // 機能だけが使う文言の既定(core の logic/localeText<機能>.ts の表)。シェルが本体の既定に重ねて部品へ渡します(React 版と同じ)。
 type FeatureLocaleDefaults = { localeText?: Readonly<Partial<GridLocaleText>> | undefined };
@@ -154,6 +155,10 @@ export type SolidGridFeatures = {
     | undefined;
   // IME オンのままの直接入力: 透明な入力受けのコントローラ + 入力してよいセルの判定 + 編集の初期値の決定(いずれも core)。
   imeDirectInput?: NonNullable<GridCoreFeatures['imeDirectInput']> | undefined;
+  // 行のグループ化(列の rowGroup / aggFunc): グループのツリーの構築と開閉の適用(core)+ グループ行の部品。
+  grouping?:
+    | (NonNullable<GridCoreFeatures['grouping']> & FeatureLocaleDefaults & { BodyGroupRow: typeof GridBodyGroupRow })
+    | undefined;
   // セル内検索: 検索のコントローラ(core)+ 右上の検索バーの部品 + ヒットを分ける純関数(既定のセルの <mark>)。
   find?:
     | (NonNullable<GridCoreFeatures['find']> &

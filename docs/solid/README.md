@@ -159,8 +159,8 @@ React 版の機能なしの構成と並べて、同じ props・同じ操作で D
 | --- | --- | --- |
 | 2-1 | 機能を差し込む仕組み + 表示の機能 8 つ(totalRow / pinnedRows / conditionalFormat / selectionAggregates / scrollHint / motionExtras / export / autoHeight) | 済み(PR #65、2026-11-19 マージ。2-1a: 仕組み(`features/types.ts` / `createSpreadsheetGrid.tsx` / `features/full.ts`、比べるテストの `features`)と export、2-1b: autoHeight、2-1c: conditionalFormat、2-1d: totalRow + pinnedRows、2-1e: selectionAggregates、2-1f: scrollHint、2-1g: motionExtras) |
 | 2-2 | 操作の機能 7 つ(find / fillHandle / columnReorder / rowDrag / columnAutosize / imeDirectInput / contextMenu) | 済み(PR #66、2026-11-19 マージ。2-2a: find、2-2b: imeDirectInput、2-2c: columnAutosize、2-2d: columnReorder、2-2e: rowDrag、2-2f: fillHandle、2-2g: contextMenu。別視点のレビュー = 高 1・低 1 を直した) |
-| 2-3 | ポップアップ 3 つ(columnMenu / toolPanel / filtering) | 作業中(2-3a: 行の絞り込み(グローバル / 列フィルターの適用・上部バーの検索欄・manualFiltering / manualSorting)、2-3b: 列メニュー、2-3c: 列フィルターのポップアップ、2-3d: ツールパネル(フィルター / 列 / 並び替えのタブ)とフィルターのチップのバー = 済み。別視点のレビュー = 中 1・低 2 を直した) |
-| 2-4 | 行のモデル 3 つ(serverSide / labelRow / grouping) | まだ |
+| 2-3 | ポップアップ 3 つ(columnMenu / toolPanel / filtering) | 済み(PR #67、2026-11-20 マージ。2-3a: 行の絞り込み(グローバル / 列フィルターの適用・上部バーの検索欄・manualFiltering / manualSorting)、2-3b: 列メニュー、2-3c: 列フィルターのポップアップ、2-3d: ツールパネル(フィルター / 列 / 並び替えのタブ)とフィルターのチップのバー = 済み。別視点のレビュー = 中 1・低 2 を直した) |
+| 2-4 | 行のモデル 3 つ(serverSide / labelRow / grouping) | 作業中(2-4a: 行のグループ化 = 済み) |
 
 ### 2-3 で分かったこと
 
@@ -210,7 +210,7 @@ React 版の機能なしの構成と並べて、同じ props・同じ操作で D
   `pane` から読む(`For` の子の関数の中で親の値を読むと Solid 2.0 の開発時の警告 STRICT_READ_UNTRACKED になる。Chromium の
   確認で見つけた)。「フィルターを追加」の select は選んだらすぐ空に戻す(React 版と同じ)。
 - **行のグループ化の部分は 2-4 で**: 列の一覧の「グループ化中」の印、並び替え / フィルターの一覧のグループ元の列は、grouping を
-  つなぐ 2-4 で足す(今は groupColumns を渡していない)。React 版にある「ツールパネルが無いときに `openFilterManager` を呼んだ
+  つなぐ 2-4 で足す(今は groupColumns を渡していない。→ 2-4a でつないだ)。React 版にある「ツールパネルが無いときに `openFilterManager` を呼んだ
   ときの開発時の警告」は段階 3 の開発時の警告でまとめて足す。
 - **別視点のレビューで直したもの**: (中)種別を推定した列('auto')の列フィルターで、下書きを変えるたびに開いている列が
   新しいオブジェクトになり(core の `resolveOpenedFilterColumn` が `{ ...column, filterType }` を作る)、相対の期間のチップと
@@ -306,6 +306,23 @@ React 版の機能なしの構成と並べて、同じ props・同じ操作で D
   飛ぶ(見た目だけの差)。
 - **2-4 で確かめること**: React 版の `DISABLED_FEATURE_PROPS` は `undefined` を入れて prop を切る(`dataSource` / `labelRow`)。
   Solid の `merge(props, overrides)` で `undefined` が元の値を上書きするかを、serverSide / labelRow を移すときに確かめる。
+
+### 2-4 で分かったこと
+
+- **core と React 版は変えていない**(2-4a): グループのツリーと集計(core `logic/grouping`)、自動グループ列を足す列の解決
+  (core `engine/columnLayout` の `createColumnResolver(features)`)、グループ行を挟む行のモデル(core `engine/rowPipeline`)、
+  Enter / Space の開閉(core `controllers/keyboardController`)、命令的 API(`setGroupCollapsed` / `expandAllGroups` /
+  `collapseAllGroups` / `getGroupRows`)、列メニューのグループ化 / 外す(core `engine/columnCommands`)はどれも core のまま。
+  Solid 版は機能の部品(`features/grouping.ts` = core の 2 つ + グループ行の部品 `view/GridBodyGroupRow.tsx`)とシェルの
+  つなぎ(グループ元の列をグローバルフィルター / 列フィルター / ツールパネルの並び替えと列の一覧へ、件数はグループ行を除く
+  データ行の数、`includeGroupingInState`)だけを足した。
+- **グループ行もキーで対応させる**: 本体の行は keyed の `For`(キー = rowModel の `getRowKey`)。グループ行のキーは core の
+  `groupRowKey`(データ行と名前空間が違う)なので、同じ項目がグループ行とデータ行の間で入れ替わることはない。項目ごとに
+  `getGroupRow` を memo で見て、グループ行なら機能の部品、データ行なら今までの行を描く(グループ行では `getRow` が undefined)。
+  開閉・並べ替え・行の追加でもグループ行の要素は同じまま(比べるテストの `ctx.track`)。
+- **残した違い**: 行が現れたときのフェードイン(animateRows)の印 `ssg-body-row--enter` は、React 版は行の className が
+  変わる(チェックを入れるなど)と描き直しで外れ、Solid 版は animationend(無ければ 1.5 秒後)まで残る(見た目の終わりは同じ)。
+  jsdom には animationend が無いので、比べるテストの該当の場面は `animateRows: false` にした。
 
 ## 段階 0 の中身
 

@@ -307,6 +307,13 @@ export function GridShell<T extends object>(props: SpreadsheetGridProps<T>, feat
   const columnResolution = createMemo(() => engine.resolveColumns(columnInputs()));
   const visibleColumns = () => columnResolution().visibleColumns;
   const orderedColumns = () => columnResolution().orderedColumns;
+  // 行のグループ化(機能 features/grouping。無い構成では列の解決がいつも無効にする)。rowGroup の列(columns の順 = 階層の順)と
+  //   aggFunc の列は全列の定義から(表示の影響を受けない)。
+  const rowGroupingActive = () => columnResolution().rowGroupingActive;
+  const groupColumns = () => columnResolution().groupColumns;
+  const aggColumns = () => columnResolution().aggColumns;
+  // グループ化している間のグループ元の列(表示から外れているが、絞り込み / 並び替え / 検索の対象)。していなければ空。
+  const activeGroupColumns = createMemo((): UnboundGridColumn<T>[] => (rowGroupingActive() ? groupColumns() : NO_COLUMNS));
   const resolvedRowKeyGetter = createMemo(() => props.rowKeyGetter ?? ((_row: T, index: number) => index));
   const selectionSnapshot = createMemo(() => buildSelectionSnapshot(ui().selection));
   const paneResolution = createMemo(() =>
@@ -326,18 +333,24 @@ export function GridShell<T extends object>(props: SpreadsheetGridProps<T>, feat
     previousColumnsForWidths = next;
   });
 
-  // ── 行(clientSide だけ。グループ / ラベル行は機能なので無し) ──
+  // ── 行(clientSide だけ。ラベル行は段階 2-4b) ──
   const baseOrder = createMemo(() => engine.rowPipeline.resolveBaseOrder(rows().length, null));
   // フィルター(機能 features/filtering)。グローバルフィルターの適用(大きな表は時間分割)と相対日付プリセットの基準日。
   //   列フィルターの段は行パイプライン(エンジンが機能から作る)が掛ける。無い構成では恒等の並びのまま(React 版と同じ)。
   const globalFilterText = createMemo(() => selectGlobalFilter(ui()));
   const columnFilters = createMemo(() => ui().filters.columnFilters);
   const filterSortColumns = createMemo(() => columnResolution().filterSortColumns);
+  // グローバルフィルターの対象の列。グループ化している間はグループ元の列(自動グループ列に値が出ている列)も含める(React 版の
+  //   DU-05。グループ化した「関東」で探して 0 件にならない)。
+  const globalFilterColumns = createMemo(() => {
+    const groups = activeGroupColumns();
+    return groups.length > 0 ? [...visibleColumns(), ...groups] : visibleColumns();
+  });
   const filterOrder =
     features.filtering?.createFilterOrder<T>({
       rows,
       baseOrder,
-      visibleColumns,
+      visibleColumns: globalFilterColumns,
       // 相対日付プリセットの範囲の解決は、フィルター / ソートの対象の列(非表示列を含む)で見る(React 版と同じ)。
       effectiveColumns: filterSortColumns,
       globalFilterText,
@@ -380,10 +393,10 @@ export function GridShell<T extends object>(props: SpreadsheetGridProps<T>, feat
     engine.rowPipeline.resolveClientSideRowModel({
       rows: rows(),
       order: orderResolution().order,
-      rowGroupingActive: false,
+      rowGroupingActive: rowGroupingActive(),
       labelLayout: null,
-      groupColumns: NO_COLUMNS,
-      aggColumns: NO_COLUMNS,
+      groupColumns: groupColumns(),
+      aggColumns: aggColumns(),
       collapsedGroupKeys: ui().collapsedGroupKeys,
       rowKeyGetter: resolvedRowKeyGetter(),
       sort: ui().sort,
@@ -396,6 +409,13 @@ export function GridShell<T extends object>(props: SpreadsheetGridProps<T>, feat
   const viewRowCount = createMemo(() => rowModel().getRowCount());
   const viewColCount = () => orderedColumns().length;
   const order = () => orderResolution().order;
+  // グループのツリー(命令的 API の一括の開閉 / getGroupRows。グループ化していなければ null)と、グループ行を除くデータ行の数
+  //   (行の選択の件数 / バーの件数。表示行の数 viewRowCount はグループ行込みで、仮想化・ヒットテスト・キー操作の範囲はそちら)。
+  const groupTree = () => clientRowModel().groupTree;
+  const leafRowCount = createMemo(() => (clientRowModel().groupedDisplay ? order().length : viewRowCount()));
+  // グループ行の開閉(開閉のボタン / 行のダブルクリック / アクティブセルの Enter・Space)。
+  const handleGroupToggle = (groupKey: string) => dispatch(gridActions.toggleGroupCollapsed(groupKey));
+  const groupingFeature = features.grouping;
   const getFilteredRows = createMemo(() => {
     const currentOrder = order();
     const currentRows = rows();
@@ -904,7 +924,7 @@ export function GridShell<T extends object>(props: SpreadsheetGridProps<T>, feat
           countSelectedRowsInOrder(ui().rowSelection, filtered.rows, filtered.order, filtered.rowKeyGetter),
           filtered.order.length,
         )
-      : getSelectAllState(ui().rowSelection, viewRowCount());
+      : getSelectAllState(ui().rowSelection, leafRowCount());
   });
   const rowSelectionCommands = engine.rowSelectionCommands;
   connectController(rowSelectionCommands, () => ({
@@ -913,7 +933,7 @@ export function GridShell<T extends object>(props: SpreadsheetGridProps<T>, feat
     rowSelectionMode: rowSelectionMode(),
     onRowSelectionChange: props.onRowSelectionChange,
     controlledRowSelectionModel: controlledRowSelectionModel(),
-    leafRowCount: viewRowCount(),
+    leafRowCount: leafRowCount(),
     filteredDataRows: filteredDataRows(),
     dispatch,
   }));
@@ -1192,6 +1212,8 @@ export function GridShell<T extends object>(props: SpreadsheetGridProps<T>, feat
     gridRootRef,
     isServerSide: () => false,
     rows,
+    // グループ化している間のグループ元の列(表示から外れているが絞り込める。見出しの代わりに自動グループ列の下に開く)。
+    groupColumns: activeGroupColumns,
   });
   const FilterPopoverHost = features.filtering?.FilterPopoverHost;
   const filteringFeature = features.filtering;
@@ -1421,7 +1443,7 @@ export function GridShell<T extends object>(props: SpreadsheetGridProps<T>, feat
     onClearSelection: clearSelectedCells,
     enableClearOnDelete: props.enableClearOnDelete ?? true,
     onToggleCheckboxCell: cells.toggleCheckbox,
-    onToggleGroup: noop,
+    onToggleGroup: handleGroupToggle,
     onToggleDetailRow: detailRowEnabled() ? detailRows.toggleFromKeyboard : undefined,
     resolvePageRow,
     openColumnMenu: columnMenuEnabled() ? openColumnMenuForCell : undefined,
@@ -1599,6 +1621,7 @@ export function GridShell<T extends object>(props: SpreadsheetGridProps<T>, feat
     centerLeadingWidth: () => paneResolution().centerLeadingWidth,
     rightPaneTotalWidth: () => paneResolution().rightPaneTotalWidth,
     openColumnFilterPopover: filterPopover?.open ?? noop,
+    groupColumns: activeGroupColumns,
     localeTexts,
   });
   // ツールパネルの「列」タブへ渡す全列(見えていない列も。所属のペインは固定の指定から)。
@@ -1608,11 +1631,14 @@ export function GridShell<T extends object>(props: SpreadsheetGridProps<T>, feat
       title: column.title || column.key,
       visible: column.visible !== false,
       pane: getColumnPane(column),
+      // グループ化している間のグループ元の列は表示を切り替えられない印(React 版の DF-22)。
+      grouped: rowGroupingActive() && column.rowGroup === true ? true : undefined,
     })),
   );
-  // ツールパネルの「並び替え」タブへ渡す、並び替えに選べる列(見えている列。合成列は除く)。
+  // ツールパネルの「並び替え」タブへ渡す、並び替えに選べる列(見えている列 + グループ化している間のグループ元の列 = グループ元の
+  //   列のソートでグループごと並び替わる。合成列は除く。React 版と同じ)。
   const sortManagerColumns = createMemo(() =>
-    visibleColumns()
+    [...visibleColumns(), ...activeGroupColumns()]
       .filter((column) => !isSyntheticColumnKey(column.key))
       .map((column) => ({ key: column.key, title: column.title || column.key })),
   );
@@ -1633,6 +1659,16 @@ export function GridShell<T extends object>(props: SpreadsheetGridProps<T>, feat
       }
       return { tab, label: texts.toolPanelColumns };
     }),
+  );
+
+  // 列メニューのグループ化の入口。列のどれかに rowGroup を書いている(false を含む = グループ化を使う表)ときだけ出す(グループ化を
+  //   使わない表のメニューは変えない)。列の定義は controlled なので onColumnsChange が要り、グループ化の機能・clientSide が条件
+  //   (React 版と同じ。ラベル行なしの条件は段階 2-4b で足す)。集計のある列(aggFunc)はグループ化の対象に出さない。
+  const columnMenuGroupingAvailable = createMemo(
+    () =>
+      groupingFeature !== undefined &&
+      props.onColumnsChange !== undefined &&
+      columns().some((column) => column.rowGroup !== undefined),
   );
 
   // ── 列見出しのドラッグによる並べ替え(機能 features/columnReorder。core controllers/columnHeaderDragController) ──
@@ -1839,14 +1875,14 @@ export function GridShell<T extends object>(props: SpreadsheetGridProps<T>, feat
     dispatch,
     rowModel: rowModel(),
     viewRowCount: viewRowCount(),
-    leafRowCount: viewRowCount(),
-    groupTree: null,
+    leafRowCount: leafRowCount(),
+    groupTree: groupTree(),
     rowMetrics: vertical().rowMetrics,
     paneLayout: paneLayout(),
     orderedColumns: orderedColumns(),
     columns: columns(),
     onColumnsChange: props.onColumnsChange,
-    includeGroupingInState: false,
+    includeGroupingInState: props.includeGroupingInState ?? false,
     uiState: ui(),
     getUiState: store.getState,
     focusGrid: () => gridRootRef.current?.focus({ preventScroll: true }),
@@ -1909,7 +1945,7 @@ export function GridShell<T extends object>(props: SpreadsheetGridProps<T>, feat
       dragState: ui().dragState,
       columns: columns(),
       collapsedGroupKeys: ui().collapsedGroupKeys,
-      includeGroupingInState: false,
+      includeGroupingInState: props.includeGroupingInState ?? false,
       onStateChange: props.onStateChange,
       onFiltersChange: props.onFiltersChange,
       onSortChange: props.onSortChange,
@@ -1968,7 +2004,8 @@ export function GridShell<T extends object>(props: SpreadsheetGridProps<T>, feat
         filteringAvailable
           ? slotContextBase()
           : { ...slotContextBase(), globalFilterText: '', columnFilterValues: NO_COLUMN_FILTERS },
-        viewRowCount(),
+        // 件数はグループ行を除くデータ行の数(slotContext.filteredRows と同じ)。
+        leafRowCount(),
         undefined,
         columnNamer(),
         rowNumberer,
@@ -2538,6 +2575,9 @@ export function GridShell<T extends object>(props: SpreadsheetGridProps<T>, feat
             conditionalFormatStats={conditionalFormatStats()}
             findIndex={findIndex()}
             findCurrentIndex={findCurrentIndex()}
+            grouping={groupingFeature}
+            collapsedGroupKeys={ui().collapsedGroupKeys}
+            onGroupToggle={handleGroupToggle}
             rowHeaderWidth={rowHeaderWidth()}
             rows={bodyRows()}
             entries={entries()}
@@ -2873,6 +2913,26 @@ export function GridShell<T extends object>(props: SpreadsheetGridProps<T>, feat
                     onOpenColumnChooser={toolPanel ? columnCommands.handleColumnMenuOpenChooser : undefined}
                     canResetColumns={props.onColumnsChange !== undefined}
                     onResetColumns={columnCommands.handleColumnMenuResetColumns}
+                    onGroupByColumn={
+                      // 表に出ている最後のデータ列は出さない(自動グループ列だけが残ると列メニューが無くなり、「グループ化を外す」へ
+                      //   戻れない。React 版と同じ)。
+                      columnMenuGroupingAvailable() &&
+                      column().aggFunc == null &&
+                      column().rowGroup !== true &&
+                      visibleColumns().some(
+                        (candidate) =>
+                          candidate.key !== column().key &&
+                          candidate.rowGroup !== true &&
+                          !isSyntheticColumnKey(candidate.key),
+                      )
+                        ? () => columnCommands.handleColumnMenuGroupBy(column().key)
+                        : undefined
+                    }
+                    onUngroup={
+                      columnMenuGroupingAvailable() && rowGroupingActive()
+                        ? columnCommands.handleColumnMenuUngroup
+                        : undefined
+                    }
                     onRequestClose={columnMenu.close}
                   />
                 )}

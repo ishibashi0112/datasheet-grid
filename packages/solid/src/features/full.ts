@@ -9,6 +9,7 @@ import { exportFeature } from './export';
 import { fillHandleFeature } from './fillHandle';
 import { filteringFeature } from './filtering';
 import { findFeature } from './find';
+import { groupingFeature } from './grouping';
 import { imeDirectInputFeature } from './imeDirectInput';
 import { motionExtrasFeature } from './motionExtras';
 import { pinnedRowsFeature } from './pinnedRows';
@@ -38,4 +39,5 @@ export const fullGridFeatures = {
   filtering: filteringFeature,
   columnMenu: columnMenuFeature,
   toolPanel: toolPanelFeature,
+  grouping: groupingFeature,
 } satisfies Required<GridFeatures> as unknown as Required<SolidGridFeatures>;

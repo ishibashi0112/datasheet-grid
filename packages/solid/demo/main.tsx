@@ -156,10 +156,18 @@ function App() {
   const [manual, setManual] = createSignal(false);
   const [filters, setFilters] = createSignal('');
   const [chipBar, setChipBar] = createSignal(false);
+  const [grouped, setGrouped] = createSignal(false);
   // 「品名を左へ固定」で編集中の列のペインを変える(エディタが外れるときの blur で確定しないことの確かめ)。
+  //   「分類でグループ化」は分類の列の rowGroup を true に(false でも書いておくと、列メニューに「この列でグループ化」が出る)。
   const columns = () =>
     userColumns() ??
-    (pinName() ? baseColumns.map((column) => (column.key === 'name' ? { ...column, pinned: 'left' as const } : column)) : baseColumns);
+    baseColumns.map((column) =>
+      column.key === 'name' && pinName()
+        ? { ...column, pinned: 'left' as const }
+        : column.key === 'category'
+          ? { ...column, rowGroup: grouped() }
+          : column,
+    );
   let handle: SpreadsheetGridHandle<Item> | undefined;
   return (
     <div style={{ padding: '16px', 'font-family': 'system-ui, sans-serif' }}>
@@ -231,6 +239,16 @@ function App() {
         </button>
         <button type="button" data-testid="chip-bar" onClick={() => setChipBar((v) => !v)}>
           フィルターのチップ
+        </button>
+        <button
+          type="button"
+          data-testid="group"
+          onClick={() => {
+            setUserColumns(null);
+            setGrouped((v) => !v);
+          }}
+        >
+          分類でグループ化
         </button>
         <span data-testid="find">{find()}</span>
         <span data-testid="filters">{filters()}</span>

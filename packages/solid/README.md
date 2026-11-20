@@ -56,9 +56,12 @@ set / select / numberSet / textSet / dateSet / auto。見出しの下に開く�
 `closeFilterManager` で開く、表の右上に開いてヘッダーを掴んで動かせる、Tab はパネルの中で回る、Escape は列フィルターの
 ポップアップ → パネルの順に閉じる。フィルターのタブ = 適用中の一覧・✎ で列へ移って開く・外す・追加・すべてクリア、列のタブ =
 検索・表示の切り替え・⠿ で並べ替え・列のリセット、並び替えのタブ = 基準の追加・向き・列の変更・⠿ で並べ替え・削除)、
-フィルターのチップのバー(`showFilterChipBar`。押すと見えていない列へも横にスクロールして開く)
+フィルターのチップのバー(`showFilterChipBar`。押すと見えていない列へも横にスクロールして開く)、
+行のグループ化(列の `rowGroup` / `aggFunc` / `includeGroupingInState`。自動グループ列、開閉のボタン / 行のダブルクリック /
+アクティブセルの Enter・Space、集計は合計行と同じ書式、グループ元の列で検索・絞り込み・並び替え、列メニューのグループ化 /
+外す、ハンドルの `setGroupCollapsed` / `expandAllGroups` / `collapseAllGroups` / `getGroupRows`)
 
-無いもの(段階 2 の残り): `/lite` の残りの 3 の機能(SSRM・ラベル行・行のグループ)。
+無いもの(段階 2 の残り): `/lite` の残りの 2 つの機能(SSRM・ラベル行)。
 
 `renderCell` / `renderHeader` / `renderTopBar` / `renderBottomBar` は、React 版のように描き直しのたびに呼ぶのではなく、Solid の部品と
 同じく必要なときだけ呼びます: `renderCell` は行(と値)や列が変わったとき、`renderHeader` は列が変わったとき、バーは関数が変わった
@@ -82,9 +85,9 @@ pnpm --filter ./packages/solid spike:build  # 大きさを測るためのライ�
 | `hooks/useGridStore.ts`(useSyncExternalStore) | `primitives/gridStoreSignals.ts`(store を signal に。購読は `onSettled`) |
 | `hooks/useController.ts` | `primitives/controller.ts`(`createRenderEffect` / `createEffect` で `update`) |
 | `hooks/useVirtualizerCore.ts` | `primitives/columnVirtualizer.ts` |
-| `GridShell.tsx`(5,246 行) | `SpreadsheetGrid.tsx`(約 2,980 行) |
+| `GridShell.tsx`(5,246 行) | `SpreadsheetGrid.tsx`(約 3,040 行) |
 | `view/GridHeaderRow.tsx` / `view/GridBodyLayer.tsx` | 同じ名前(`view/`) |
-| `view/DefaultGridTopBar.tsx` / `DefaultGridBottomBar.tsx` / `RowSelectionCheckbox.tsx` / `GridDetailLayer.tsx` / `DetailToggleButton.tsx` / `GridChip.tsx` / `GridTotalRow.tsx` / `GridPinnedRows.tsx` / `GridSelectionAggregates.tsx` / `GridScrollHint.tsx` / `GridFindBar.tsx` | 同じ名前(`view/`) |
+| `view/DefaultGridTopBar.tsx` / `DefaultGridBottomBar.tsx` / `RowSelectionCheckbox.tsx` / `GridDetailLayer.tsx` / `DetailToggleButton.tsx` / `GridChip.tsx` / `GridTotalRow.tsx` / `GridPinnedRows.tsx` / `GridSelectionAggregates.tsx` / `GridScrollHint.tsx` / `GridFindBar.tsx` / `GridBodyGroupRow.tsx` | 同じ名前(`view/`) |
 | `features/rowDrag.tsx` のハンドルのセル(`renderHandleCell`) | `view/RowDragHandle.tsx` |
 | `view/FillHandleLayer.tsx`(ハンドル / 点線 / ボタン / メニュー / ツールチップ) | 同じ名前(`view/`。ペインの層の `FillHandleLayer` とポップアップの `FillHandlePortals` の 2 つに) |
 | `view/CellContextMenuPopover.tsx` / `hooks/useCellContextMenuController.ts` / `features/contextMenu.tsx` の params を作る関数 | `view/CellContextMenuPopover.tsx` / `primitives/contextMenu.ts` / `features/contextMenu.ts` |
