@@ -59,9 +59,14 @@ set / select / numberSet / textSet / dateSet / auto。見出しの下に開く�
 フィルターのチップのバー(`showFilterChipBar`。押すと見えていない列へも横にスクロールして開く)、
 行のグループ化(列の `rowGroup` / `aggFunc` / `includeGroupingInState`。自動グループ列、開閉のボタン / 行のダブルクリック /
 アクティブセルの Enter・Space、集計は合計行と同じ書式、グループ元の列で検索・絞り込み・並び替え、列メニューのグループ化 /
-外す、ハンドルの `setGroupCollapsed` / `expandAllGroups` / `collapseAllGroups` / `getGroupRows`)
+外す、ハンドルの `setGroupCollapsed` / `expandAllGroups` / `collapseAllGroups` / `getGroupRows`)、
+ラベル行(`labelRow` = `isLabelRow` / `getLabel` / `render` / `height` / `className` / `sticky` / `sortMode` / `keepEmptySections` /
+`exportText`。全幅の帯と横にスクロールしても左に残る中身、行番号・下部バーの番地と件数はラベル行を飛ばす、セクションの中の
+並び替え、縦スクロールの固定と次の見出しでの押し上げ、上へ見せる行は固定した帯の下に合わせる、列フィルターの候補はデータ行
+だけ、エクスポートの `includeLabelRows`)
 
-無いもの(段階 2 の残り): `/lite` の残りの 2 つの機能(SSRM・ラベル行)。
+無いもの(段階 2 の残り): `/lite` の残りの 1 つの機能(SSRM)。開発時の警告(行のグループ化とラベル行の併用など)は段階 3 で
+まとめて足す。
 
 `renderCell` / `renderHeader` / `renderTopBar` / `renderBottomBar` は、React 版のように描き直しのたびに呼ぶのではなく、Solid の部品と
 同じく必要なときだけ呼びます: `renderCell` は行(と値)や列が変わったとき、`renderHeader` は列が変わったとき、バーは関数が変わった

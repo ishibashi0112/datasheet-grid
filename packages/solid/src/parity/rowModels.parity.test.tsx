@@ -1,6 +1,7 @@
 // React 版(`/lite` に同じ機能を差し込んだもの)と Solid 版の行のグループ化 / ラベル行 / サーバーサイドの行モデルを同じ操作で
 //   動かして、DOM と通知と命令的 API の結果が同じかを見る(段階 2-4)。
 import { beforeAll, describe, it } from 'vitest';
+import { createElement } from 'react';
 import { fireEvent } from '@solidjs/testing-library';
 import { installJsdomLayoutStubs } from '@ishibashi0112/spreadsheet-grid-core/testing';
 import { expectParity, type ParityContext } from './harness';
@@ -246,6 +247,285 @@ describe('行のグループ化(grouping)', () => {
         await clickItem('グループ化を外す');
         await ctx.setProps({ columns: latestColumns[ctx.framework] });
         ctx.snapshot('グループ化を外した');
+      },
+    });
+  });
+});
+
+describe('ラベル行(labelRow)', () => {
+  type Row = { id: string; kind?: 'label'; name: string; qty: number; note: string };
+  // [S1] 3 行 / [S2] 4 行 / [S3] 0 行 / [S4] 2 行。
+  const makeRows = (): Row[] => {
+    const sections: [string, number][] = [
+      ['s1', 3],
+      ['s2', 4],
+      ['s3', 0],
+      ['s4', 2],
+    ];
+    const rows: Row[] = [];
+    let n = 0;
+    for (const [id, count] of sections) {
+      rows.push({ id, kind: 'label', name: `セクション ${id.slice(1)}`, qty: 0, note: '' });
+      for (let i = 0; i < count; i += 1) {
+        n += 1;
+        rows.push({ id: `${id}-${i + 1}`, name: `品目 ${n}`, qty: (n * 37) % 100, note: n % 2 === 0 ? `メモ ${n}` : '' });
+      }
+    }
+    return rows;
+  };
+  const columns = [
+    { key: 'id', title: 'ID', width: 80, pinned: 'left', editable: false },
+    { key: 'name', title: '品名', width: 140, filterType: 'set' },
+    { key: 'qty', title: '数量', width: 90, align: 'right', editor: { type: 'number', min: 0 }, filterType: 'number' },
+    { key: 'note', title: 'メモ', width: 140, pinned: 'right' },
+  ];
+  const isLabelRow = (row: Row) => row.kind === 'label';
+  const getLabel = (row: Row) => row.name;
+  const labelRowOf = (ctx: ParityContext, rowIndex: number, pane = 'center') => {
+    const element = ctx.container.querySelector<HTMLElement>(`[data-pane="${pane}"][data-ssg-label-row][data-row-index="${rowIndex}"]`);
+    if (!element) {
+      throw new Error(`[${ctx.framework}] ラベル行がありません: ${rowIndex}`);
+    }
+    return element;
+  };
+
+  it.each([
+    ['あり', ['labelRow']],
+    ['なし(ラベル行もデータ行のまま)', []],
+  ])('帯と中身・行番号・下部バー・キー操作・ホバー・セクションの中の並び替え・エクスポート・検査(機能%s)', async (_label, features) => {
+    await expectParity({
+      features,
+      // 1 回の操作で別々の通知(並べ替えでの onStateChange と onActiveCellChange)が呼ばれるときの順番は React 版と違うことがある
+      //   (docs/solid/README.md の「残した違い」)ので、状態は getState で見る。
+      watch: ['onActiveCellChange'],
+      props: () => ({
+        rows: makeRows(),
+        columns,
+        rowKeyGetter: (row: Row) => row.id,
+        height: 400,
+        labelRow: { isLabelRow, getLabel },
+        // 行が現れたときのフェードイン(animateRows)の印は、React 版は行の className が変わると描き直しで外れ、Solid 版は
+        //   animationend まで残る(グループ化の検査と同じ理由で比べない)。
+        animateRows: false,
+      }),
+      steps: async (ctx) => {
+        ctx.snapshot('最初');
+        // データ行のセルを押して ↓ でラベル行をまたぐ。
+        await press(ctx, ctx.cell(2, 'name'));
+        ctx.snapshot('品目 2 を押した');
+        await key(ctx, { key: 'ArrowDown' });
+        ctx.snapshot('↓');
+        await key(ctx, { key: 'ArrowDown' });
+        ctx.snapshot('もう一度 ↓');
+        await key(ctx, { key: 'ArrowDown', shiftKey: true });
+        ctx.snapshot('Shift + ↓');
+        // セルにホバー → ラベル行へ動かすと行のホバーが消える。
+        await ctx.act(() => {
+          ctx.hover(ctx.cell(5, 'qty'));
+        });
+        ctx.snapshot('セルにホバー');
+        if (features.length > 0) {
+          await ctx.act(() => {
+            ctx.hover(labelRowOf(ctx, 4));
+          });
+          ctx.snapshot('ラベル行にホバー');
+        }
+        // 見出しの Shift + 押すで数量の並び(ラベル行の位置は動かず、セクションの中で並ぶ)。
+        await ctx.act(() => {
+          fireEvent.pointerDown(ctx.header('qty'), { ...pointer, shiftKey: true });
+          fireEvent.pointerUp(window, { ...pointer, shiftKey: true });
+        });
+        ctx.snapshot('数量で並べた');
+        ctx.log('getState', call(ctx, 'getState'));
+        ctx.log('getExportData', call(ctx, 'getExportData'));
+        ctx.log('getExportData(includeLabelRows)', call(ctx, 'getExportData', { includeLabelRows: true }));
+        ctx.log('getExportData(raw, includeLabelRows)', call(ctx, 'getExportData', { scope: 'raw', includeLabelRows: true }));
+        ctx.log('getInvalidCells', call(ctx, 'getInvalidCells'));
+        // 全体を選ぶ(角)と下部バーの件数。
+        await ctx.act(() => {
+          const corner = ctx.container.querySelector<HTMLElement>('.ssg-corner-cell');
+          if (!corner) {
+            throw new Error(`[${ctx.framework}] 角がありません`);
+          }
+          fireEvent.pointerDown(corner, pointer);
+          fireEvent.pointerUp(window, pointer);
+        });
+        ctx.snapshot('全体を選んだ');
+        // 行を足す(ラベル行の件数が変わる)。
+        await ctx.setProps({
+          rows: [...makeRows(), { id: 's5', kind: 'label', name: 'セクション 5', qty: 0, note: '' }, { id: 's5-1', name: '新', qty: 1, note: '' }],
+        });
+        ctx.snapshot('行を足した');
+      },
+    });
+  });
+
+  it('render / height / className(関数)/ sortMode / keepEmptySections / 列フィルターの候補 / 機能を切ったときの列メニュー', async () => {
+    const reactRender = (ctx: { label: string; sectionRowCount: number | undefined; rowIndex: number; rowKey: unknown; sourceRowIndex: number }) =>
+      createElement(
+        'b',
+        { className: 'my-label', 'data-key': String(ctx.rowKey) },
+        `${ctx.label} (${String(ctx.sectionRowCount)}) #${ctx.rowIndex} @${ctx.sourceRowIndex}`,
+      );
+    const solidRender = (ctx: { label: string; sectionRowCount: number | undefined; rowIndex: number; rowKey: unknown; sourceRowIndex: number }) => (
+      <b class="my-label" data-key={String(ctx.rowKey)}>
+        {`${ctx.label} (${String(ctx.sectionRowCount)}) #${ctx.rowIndex} @${ctx.sourceRowIndex}`}
+      </b>
+    );
+    await expectParity({
+      features: ['labelRow', 'filtering', 'columnMenu'],
+      watch: ['onFiltersChange', 'onSortChange'],
+      props: (framework) => ({
+        rows: makeRows(),
+        columns: columns.map((column) => (column.key === 'name' ? { ...column, rowGroup: false } : column)),
+        rowKeyGetter: (row: Row) => row.id,
+        height: 400,
+        onColumnsChange: () => {},
+        animateRows: false,
+        labelRow: {
+          isLabelRow,
+          getLabel,
+          render: framework === 'react' ? reactRender : solidRender,
+          height: 44,
+          className: (row: Row) => (row.id === 's2' ? 'is-second' : 'is-label'),
+          sortMode: 'follow',
+          keepEmptySections: true,
+          exportText: (row: Row, column: { key: string }) => (column.key === 'name' ? `【${row.name}】` : ''),
+        },
+      }),
+      steps: async (ctx) => {
+        ctx.snapshot('最初');
+        // 列メニュー(ラベル行がある表ではグループ化の項目を出さない)。
+        await ctx.act(() => {
+          const button = ctx.header('name').querySelector<HTMLButtonElement>('.ssg-icon-btn');
+          if (!button) {
+            throw new Error(`[${ctx.framework}] ⋮ がありません`);
+          }
+          fireEvent.pointerDown(button, { ...pointer, pointerType: 'mouse' });
+          fireEvent.pointerUp(button, { ...pointer, pointerType: 'mouse' });
+          fireEvent.click(button, { detail: 1 });
+        });
+        ctx.snapshot('品名の列メニュー');
+        // フィルター…(set の候補はデータ行の値だけ)。
+        await ctx.act(() => {
+          const item = Array.from(document.querySelectorAll<HTMLElement>('.ssg-menu-item')).find((el) =>
+            el.textContent?.includes('フィルター…'),
+          );
+          if (!item) {
+            throw new Error(`[${ctx.framework}] フィルター… がありません`);
+          }
+          fireEvent.click(item, { detail: 1 });
+        });
+        ctx.snapshot('品名のフィルター');
+        await ctx.act(() => {
+          fireEvent.keyDown(focused(), { key: 'Escape' });
+        });
+        // 並び(follow: 全体の順のまま、各セクションの最初の行の前にラベル行)。
+        await ctx.act(() => {
+          call(ctx, 'applyState', { sort: [{ columnKey: 'qty', direction: 'desc' }] });
+        });
+        ctx.snapshot('数量の降順(follow)');
+        // 絞り込み(空のセクションも出す)。
+        await ctx.act(() => {
+          call(ctx, 'applyState', { filters: { globalFilterText: '', columnFilters: { qty: { kind: 'number', operator: 'gte', value: 50 } } } });
+        });
+        ctx.snapshot('数量 50 以上(keepEmptySections)');
+        ctx.log('getExportData(includeLabelRows)', call(ctx, 'getExportData', { includeLabelRows: true }));
+        // sortMode: 'hide'(並べている間はラベル行を出さない)・className を文字列に・高さを戻す。
+        await ctx.setProps({
+          labelRow: { isLabelRow, getLabel, sortMode: 'hide', className: 'plain-label' },
+        });
+        ctx.snapshot('hide');
+        await ctx.act(() => {
+          call(ctx, 'applyState', { sort: [], filters: { globalFilterText: '', columnFilters: {} } });
+        });
+        ctx.snapshot('並びと絞り込みを外した(hide でも出る)');
+        // labelRow を外すとふつうのデータ行に戻る。
+        await ctx.setProps({ labelRow: undefined });
+        ctx.snapshot('labelRow を外した');
+      },
+    });
+  });
+
+  it('縦スクロールの固定(sticky)と、上へ見せる行を帯の下に合わせる', async () => {
+    const manyRows: Row[] = [];
+    for (let s = 1; s <= 6; s += 1) {
+      manyRows.push({ id: `s${s}`, kind: 'label', name: `セクション ${s}`, qty: 0, note: '' });
+      for (let i = 1; i <= 5; i += 1) {
+        manyRows.push({ id: `${s}-${i}`, name: `row ${s}-${i}`, qty: i, note: '' });
+      }
+    }
+    await expectParity({
+      features: ['labelRow'],
+      props: () => ({
+        rows: manyRows,
+        columns,
+        rowKeyGetter: (row: Row) => row.id,
+        rowHeight: 30,
+        headerHeight: 40,
+        height: 300,
+        animateRows: false,
+        labelRow: { isLabelRow, getLabel, sticky: true },
+      }),
+      steps: async (ctx) => {
+        const scroller = ctx.container.querySelector<HTMLElement>('.ssg-scroll-container');
+        if (!scroller) {
+          throw new Error('スクロールの器がありません');
+        }
+        const scrollTo = async (top: number) => {
+          await ctx.act(() => {
+            scroller.scrollTop = top;
+            scroller.dispatchEvent(new Event('scroll'));
+          }, 60);
+        };
+        ctx.snapshot('先頭(固定なし)');
+        await scrollTo(45);
+        ctx.snapshot('セクション 1 の途中');
+        ctx.track('固定した帯(中央)', () => ctx.container.querySelector('[data-pane="center"][data-ssg-sticky-label] .ssg-label-row-content'));
+        await scrollTo(160);
+        ctx.snapshot('次のラベルが押し上げる');
+        await scrollTo(190);
+        ctx.snapshot('セクション 2 に交代');
+        // ホバー(固定した帯の上では行のホバーを出さない)。
+        await ctx.act(() => {
+          ctx.hover(ctx.cell(8, 'name'));
+        });
+        await ctx.act(() => {
+          const sticky = ctx.container.querySelector('[data-pane="center"][data-ssg-sticky-label]');
+          if (!sticky) {
+            throw new Error(`[${ctx.framework}] 固定した帯がありません`);
+          }
+          ctx.hover(sticky);
+        });
+        ctx.snapshot('固定した帯にホバー');
+        // ↑ で帯の裏に入る行へ: 帯の下に合わせる(scrollTo の呼び出しを控える。jsdom の scrollHeight は 0 で、スクロールできる
+        //   量が 0 に詰められるので、器の scrollHeight を足す)。
+        const calls: number[] = [];
+        Object.defineProperty(scroller, 'scrollHeight', { configurable: true, get: () => 10000 });
+        scroller.scrollTo = ((options: ScrollToOptions) => {
+          calls.push(options.top ?? Number.NaN);
+        }) as typeof scroller.scrollTo;
+        await ctx.act(() => {
+          call(ctx, 'selectCell', 8, 1);
+          ctx.shell().focus();
+        });
+        await ctx.act(() => {
+          fireEvent.keyDown(ctx.shell(), { key: 'ArrowUp' });
+        });
+        ctx.log('↑ の後', [call(ctx, 'getActiveCell'), calls.at(-1)]);
+        await ctx.act(() => {
+          fireEvent.keyDown(ctx.shell(), { key: 'Home', ctrlKey: true });
+        });
+        ctx.log('Ctrl+Home の後', [call(ctx, 'getActiveCell'), calls.at(-1)]);
+        await ctx.act(() => {
+          call(ctx, 'scrollToRow', 9, { align: 'start' });
+        });
+        await ctx.act(() => {
+          call(ctx, 'scrollToRow', 6, { align: 'start' });
+        });
+        ctx.log('scrollTo の位置', calls);
+        await scrollTo(0);
+        ctx.snapshot('先頭へ戻した');
       },
     });
   });

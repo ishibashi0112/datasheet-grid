@@ -47,6 +47,20 @@ const pinnedRow = (id: number, name: string, qty: number, price: number): Item =
   done: false,
 });
 const PINNED_TOP = pinnedRow(-1, '目標', 90, 500);
+// 「ラベル行」: 50 行ごとに見出しの行を挟む(id が LABEL_ID_BASE 以下の行。編集の結果からは外して控える)。
+const LABEL_ID_BASE = -1000;
+const isLabelItem = (row: Item) => row.id <= LABEL_ID_BASE;
+const withLabelRows = (rows: Item[]): Item[] => {
+  const result: Item[] = [];
+  rows.forEach((row, index) => {
+    if (index % 50 === 0) {
+      const section = index / 50 + 1;
+      result.push({ ...pinnedRow(LABEL_ID_BASE - section, `セクション ${section}(${index + 1} 〜 ${Math.min(index + 50, rows.length)} 行目)`, 0, 0) });
+    }
+    result.push(row);
+  });
+  return result;
+};
 const PINNED_BOTTOM = [pinnedRow(-2, '前月', 40, 480), pinnedRow(-3, '前年', 35, 450)];
 
 const baseColumns: GridColumn<Item>[] = [
@@ -157,6 +171,8 @@ function App() {
   const [filters, setFilters] = createSignal('');
   const [chipBar, setChipBar] = createSignal(false);
   const [grouped, setGrouped] = createSignal(false);
+  const [labels, setLabels] = createSignal(false);
+  const shownRows = () => (labels() ? withLabelRows(rows()) : rows());
   // 「品名を左へ固定」で編集中の列のペインを変える(エディタが外れるときの blur で確定しないことの確かめ)。
   //   「分類でグループ化」は分類の列の rowGroup を true に(false でも書いておくと、列メニューに「この列でグループ化」が出る)。
   const columns = () =>
@@ -250,6 +266,9 @@ function App() {
         >
           分類でグループ化
         </button>
+        <button type="button" data-testid="labels" onClick={() => setLabels((v) => !v)}>
+          ラベル行
+        </button>
         <span data-testid="find">{find()}</span>
         <span data-testid="filters">{filters()}</span>
         <span data-testid="active">{active()}</span>
@@ -264,15 +283,17 @@ function App() {
             handle = h;
             (window as unknown as { gridHandle: unknown }).gridHandle = h;
           }}
-          rows={rows()}
+          rows={shownRows()}
           columns={columns()}
           theme={dark() ? 'dark' : 'light'}
           rowKeyGetter={(row) => row.id}
           onRowsChange={(next) => {
             setChanges((count) => count + 1);
-            setRows(next);
+            setRows(labels() ? next.filter((row) => !isLabelItem(row)) : next);
           }}
           height={520}
+          // 「ラベル行」: 50 行ごとの見出しの行(縦にスクロールしても今のセクションの見出しが上に残る)。
+          labelRow={labels() ? { isLabelRow: isLabelItem, getLabel: (row) => row.name, sticky: true } : undefined}
           // メモの列は autoHeight: 「行の高さの自動調整」で、改行のある行が伸びる。
           autoHeight={autoHeight()}
           // 「合計行と固定行」: 数量の合計・単価の平均の合計行と、上下の固定行(表示だけの行)。

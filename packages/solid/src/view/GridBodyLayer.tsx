@@ -1,5 +1,5 @@
 // 本体の行とセル(1 つのペインぶん)。React 版の view/GridBodyLayer.tsx(GridBodyLayer + GridBodyRow)と同じ DOM と class。
-//   データ行と、グループ行(grouping。部品は機能から)。ラベル行(labelRow)・読み込み中の行(serverSide)・
+//   データ行と、グループ行(grouping)・ラベル行(labelRow。どちらも部品は機能から)。読み込み中の行(serverSide)・
 //   auto-height(autoHeight)・条件付き書式(conditionalFormat)は機能(段階 2)で、シェルが機能の有無を props で渡します。
 //   行は rowKey、セルは列の key で対応させます(React 版の key と同じ。並びが変わっても同じ要素が新しい位置へ動くので、
 //   animateRows の transition が効く)。
@@ -10,6 +10,7 @@ import type {
   CellCoord,
   CellRenderState,
   CellStyleContext,
+  GridLabelRow,
   GridRowKey,
   GridVerticalAlign,
   RowModel,
@@ -28,11 +29,29 @@ import { formatLocaleText } from '@ishibashi0112/spreadsheet-grid-core/internal/
 import type { ConditionalFormatStatsMap } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/conditionalFormat';
 import type { FindIndex, FindRange } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/find';
 import type { SolidGridFeatures } from '../features/types';
-import type { GridColumn, GridResolvedSlots, SolidGridTypes, SpreadsheetGridProps } from '../model/gridTypes';
+import type {
+  GridColumn,
+  GridResolvedSlots,
+  GridSlotProps,
+  SolidGridTypes,
+  SpreadsheetGridProps,
+} from '../model/gridTypes';
 import { useGridLocaleText } from '../context/localeText';
 import { px } from '../primitives/style';
 import { RowSelectionCheckbox } from './RowSelectionCheckbox';
 import type { GridPaneKind } from './GridHeaderRow';
+import type { GridLabelRowRenderContent } from './GridBodyLabelRow';
+
+// ラベル行の描き方(ラベル行の機能があり labelRow を渡したときだけ。中身は中央ペインだけ、ほかのペインは帯だけ = renderContent が
+//   null。中身の sticky の左と幅は展開行のカードと同じ値)。
+export type GridBodyLabelRowLayer<T> = {
+  Row: NonNullable<SolidGridFeatures['labelRow']>['BodyLabelRow'];
+  renderContent: GridLabelRowRenderContent<T> | null;
+  contentStickyLeft: number;
+  contentWidth: number;
+  // labelRow.className を行ごとに解決したもの。
+  resolveRowSlot: (labelRow: GridLabelRow<T>) => GridSlotProps | undefined;
+};
 
 // 描く行(core の縦のレイアウトの virtualRows のうち描くもの + 対応に使う rowKey)。
 // セルの中身へ渡す位置と状態。どれも読んだときに引く(中身は行・列が変わったときだけ作り直す。位置や状態を読んだ式だけが
@@ -82,6 +101,9 @@ type GridBodyLayerProps<T> = {
   grouping: SolidGridFeatures['grouping'];
   collapsedGroupKeys: ReadonlySet<string>;
   onGroupToggle: (groupKey: string) => void;
+  // ラベル行の描き方(無ければラベル行を作らない)と、表示中のラベル行の view index(昇順。データ行の行番号はラベル行を飛ばした
+  //   通し番号になる。無ければ view index + 1)。
+  labelRowLayer: GridBodyLabelRowLayer<T> | undefined;
   labelViewIndexes?: ArrayLike<number> | undefined;
   ariaRowOffset: number;
   activeCell: CellCoord | null;
@@ -121,6 +143,11 @@ export function GridBodyLayer<T>(props: GridBodyLayerProps<T>) {
         // グループ行(グループ化している間だけ rowModel が getGroupRow を持つ。getRow は undefined なので下のデータ行は描かない)。
         //   行のキーの名前空間がデータ行と違う(core の groupRowKey)ので、同じ項目がグループ行とデータ行の間で入れ替わることはない。
         const groupRow = createMemo(() => (props.grouping ? props.rowModel.getGroupRow?.(rowIndex()) : undefined));
+        // ラベル行(ラベル行があるときだけ rowModel が getLabelRow を持つ。getRow は undefined)。ラベル行のキーはその行の
+        //   rowKeyGetter の値で、データ行と同じ名前空間(ラベル行かは述語で決まるので、述語が変わると同じ項目のまま入れ替わる)。
+        const labelRow = createMemo(() =>
+          props.labelRowLayer ? props.rowModel.getLabelRow?.(rowIndex()) : undefined,
+        );
         return (
           <>
             <Show when={groupRow()}>
@@ -146,6 +173,32 @@ export function GridBodyLayer<T>(props: GridBodyLayerProps<T>) {
                     onRowHeaderPointerLeave={props.onRowHeaderPointerLeave}
                     onCellPointerDown={props.onCellPointerDown}
                     onCellPointerEnter={props.onCellPointerEnter}
+                    slots={props.slots}
+                  />
+                ) : null;
+              }}
+            </Show>
+            <Show when={labelRow()}>
+              {(label) => {
+                const layer = () => props.labelRowLayer;
+                const LabelRow = untrack(layer)?.Row;
+                const labelSlot = createMemo(() => resolveSlotProps<JSX.CSSProperties>(layer()?.resolveRowSlot(label())));
+                return LabelRow ? (
+                  <LabelRow
+                    pane={props.pane}
+                    ownsRowHeader={props.ownsRowHeader}
+                    rowIndex={rowIndex()}
+                    rowKey={props.rowModel.getRowKey(rowIndex()) ?? rowIndex()}
+                    top={item().start}
+                    ariaRowOffset={props.ariaRowOffset}
+                    rowHeight={item().size ?? props.rowHeight}
+                    rowHeaderWidth={props.rowHeaderWidth}
+                    labelRow={label()}
+                    renderContent={layer()?.renderContent ?? null}
+                    contentStickyLeft={layer()?.contentStickyLeft ?? 0}
+                    contentWidth={layer()?.contentWidth ?? 0}
+                    rowClassName={labelSlot().className}
+                    rowStyle={labelSlot().style}
                     slots={props.slots}
                   />
                 ) : null;

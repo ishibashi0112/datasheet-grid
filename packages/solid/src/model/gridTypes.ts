@@ -15,6 +15,7 @@ export type SpreadsheetGridSlotContext<T> = Core.SpreadsheetGridSlotContext<T, S
 export type GridClassNames = Core.GridClassNames<SolidGridTypes>;
 export type GridResolvedSlot = Core.GridResolvedSlot<SolidGridTypes>;
 export type GridResolvedSlots = Core.GridResolvedSlots<SolidGridTypes>;
+export type GridSlotProps = Core.GridSlotProps<SolidGridTypes>;
 export type TotalRowCellContext<T> = Core.TotalRowCellContext<T, SolidGridTypes>;
 export type GridContextMenuItem = Core.GridContextMenuItem<SolidGridTypes>;
 export type GridContextMenuParams<T> = Core.GridContextMenuParams<T, SolidGridTypes>;
@@ -130,7 +131,8 @@ type SupportedPropKeys =
   | 'pinnedTopRows'
   | 'pinnedBottomRows'
   | 'pinnedBottomRowsPlacement'
-  | 'includeGroupingInState';
+  | 'includeGroupingInState'
+  | 'labelRow';
 
 export type SpreadsheetGridProps<T> = Pick<Core.SpreadsheetGridProps<T, SolidGridTypes>, SupportedPropKeys> & {
   // Solid の ref は関数だけ(React の ref オブジェクトは無い)。命令的 API のハンドルを受け取ります。

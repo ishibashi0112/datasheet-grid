@@ -160,7 +160,7 @@ React 版の機能なしの構成と並べて、同じ props・同じ操作で D
 | 2-1 | 機能を差し込む仕組み + 表示の機能 8 つ(totalRow / pinnedRows / conditionalFormat / selectionAggregates / scrollHint / motionExtras / export / autoHeight) | 済み(PR #65、2026-11-19 マージ。2-1a: 仕組み(`features/types.ts` / `createSpreadsheetGrid.tsx` / `features/full.ts`、比べるテストの `features`)と export、2-1b: autoHeight、2-1c: conditionalFormat、2-1d: totalRow + pinnedRows、2-1e: selectionAggregates、2-1f: scrollHint、2-1g: motionExtras) |
 | 2-2 | 操作の機能 7 つ(find / fillHandle / columnReorder / rowDrag / columnAutosize / imeDirectInput / contextMenu) | 済み(PR #66、2026-11-19 マージ。2-2a: find、2-2b: imeDirectInput、2-2c: columnAutosize、2-2d: columnReorder、2-2e: rowDrag、2-2f: fillHandle、2-2g: contextMenu。別視点のレビュー = 高 1・低 1 を直した) |
 | 2-3 | ポップアップ 3 つ(columnMenu / toolPanel / filtering) | 済み(PR #67、2026-11-20 マージ。2-3a: 行の絞り込み(グローバル / 列フィルターの適用・上部バーの検索欄・manualFiltering / manualSorting)、2-3b: 列メニュー、2-3c: 列フィルターのポップアップ、2-3d: ツールパネル(フィルター / 列 / 並び替えのタブ)とフィルターのチップのバー = 済み。別視点のレビュー = 中 1・低 2 を直した) |
-| 2-4 | 行のモデル 3 つ(serverSide / labelRow / grouping) | 作業中(2-4a: 行のグループ化 = 済み) |
+| 2-4 | 行のモデル 3 つ(serverSide / labelRow / grouping) | 作業中(2-4a: 行のグループ化 = 済み、2-4b: ラベル行 = 済み) |
 
 ### 2-3 で分かったこと
 
@@ -323,6 +323,22 @@ React 版の機能なしの構成と並べて、同じ props・同じ操作で D
 - **残した違い**: 行が現れたときのフェードイン(animateRows)の印 `ssg-body-row--enter` は、React 版は行の className が
   変わる(チェックを入れるなど)と描き直しで外れ、Solid 版は animationend(無ければ 1.5 秒後)まで残る(見た目の終わりは同じ)。
   jsdom には animationend が無いので、比べるテストの該当の場面は `animateRows: false` にした。
+- **ラベル行も core のまま**(2-4b): 配置(`resolveLabelRowLayout`)・表示順とセクション(`createLabelRowModel`。sortMode /
+  keepEmptySections)・縦の高さ(`labelRow.height`)・固定の帯の位置(`resolveStickyLabel`)・行番号と番地(`resolveDataRowNumber` /
+  `createDataRowNumberer`)・エクスポート / 検査の除外(core `engine/exportCommands` / `gridApi`)はどれも core。Solid 版は機能の
+  部品(`features/labelRow.ts` = core の 6 つ + `view/GridBodyLabelRow.tsx` / `view/GridStickyLabelLayer.tsx`)とシェルのつなぎ
+  (列フィルターの候補と 'auto' の推定からラベル行を外す、固定の帯の高さ = `stickyTopInset` をアクティブセルの追従と
+  `scrollToRow` へ、列メニューのグループ化はラベル行の表では出さない、ラベル行へのホバーで行 / 列の帯を外す)だけ。
+- **ラベル行の中身を作り直すとき**: 本体のラベル行は keyed の `For` の項目ごとに 1 回だけ `render` を呼ぶ(ラベル・件数・位置は
+  読んだときに引く)。固定の帯は 1 つの要素を使い回すので、別のラベル行に替わったとき(行のキーが変わったとき)と `render` が
+  変わったときに中身を作り直す(React 版は記述子が変わると `render` を呼び直す。Solid で作り直さないと、`render` の本体で読んだ
+  値が前のラベル行のまま残る)。
+- **残した違い(通知の順番)**: 1 回の操作で別々の通知が呼ばれるとき(見出しで並べ替えたときの `onStateChange` と、アクティブセル
+  の行が替わった `onActiveCellChange` など)、その順番は React 版と違うことがある。React 版は passive effect を宣言の順に走らせ、
+  Solid の effect は宣言の順に走るとは限らない(並べ替えでは Solid 版が `onStateChange` を先に呼ぶ)。それぞれの通知の中身と
+  回数は同じ。比べるテストのその場面は片方の通知だけを控え、状態は `getState` で見る。
+- **開発時の警告は段階 3**: React 版の「行のグループ化とラベル行は併用できない」の警告(`console.warn`)は、ほかの開発時の警告
+  (足りない機能の警告など)と一緒に段階 3 で足す(Solid 版にはまだ開発時の警告の仕組みが無い)。
 
 ## 段階 0 の中身
 

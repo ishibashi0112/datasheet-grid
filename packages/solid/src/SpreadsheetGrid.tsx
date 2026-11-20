@@ -18,6 +18,7 @@ import type {
   CellDetailContext,
   CellRenderContext,
   EditorCommitDirection,
+  GridLabelRow,
   GridRowKey,
   RowSelectionModel,
   SpreadsheetGridDerivedSummary,
@@ -58,6 +59,7 @@ import { createLocaleTextResolver, formatLocaleText } from '@ishibashi0112/sprea
 import { EMPTY_TOTAL_ROW_CELLS } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/totalRow';
 import {
   resolveSlotFromSignature,
+  resolveSlotProps,
   resolveSlotMapFromSignature,
   serializeSlotValue,
 } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/slotProps';
@@ -67,7 +69,12 @@ import {
   createDataRowNumberer,
 } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/gridBarSummary';
 import { isCheckboxChecked } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/checkboxEditor';
-import { MAX_BODY_PX, resolvePageTargetRow } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/verticalGeometry';
+import {
+  MAX_BODY_PX,
+  physicalToLogicalScrollTop,
+  resolvePageTargetRow,
+} from '@ishibashi0112/spreadsheet-grid-core/internal/logic/verticalGeometry';
+import type { StickyTopInset } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/scrollTargets';
 import {
   DEFAULT_DETAIL_ROW_HEIGHT,
   isControlColumnKey,
@@ -133,7 +140,14 @@ import type { SolidGridFeatures } from './features/types';
 import { px, toSolidStyle } from './primitives/style';
 import { createLiveObject } from './primitives/liveObject';
 import { GridHeaderRow } from './view/GridHeaderRow';
-import { GridBodyLayer, type GridBodyRowItem, type GridCellContentContext } from './view/GridBodyLayer';
+import {
+  GridBodyLayer,
+  type GridBodyLabelRowLayer,
+  type GridBodyRowItem,
+  type GridCellContentContext,
+} from './view/GridBodyLayer';
+import type { GridLabelRowRenderContent } from './view/GridBodyLabelRow';
+import type { GridStickyLabelEntry } from './view/GridStickyLabelLayer';
 import { Overlay, type OverlayRect } from './view/Overlay';
 import { GridDetailLayer } from './view/GridDetailLayer';
 import { DetailToggleButton } from './view/DetailToggleButton';
@@ -333,8 +347,48 @@ export function GridShell<T extends object>(props: SpreadsheetGridProps<T>, feat
     previousColumnsForWidths = next;
   });
 
-  // ── 行(clientSide だけ。ラベル行は段階 2-4b) ──
-  const baseOrder = createMemo(() => engine.rowPipeline.resolveBaseOrder(rows().length, null));
+  // ── ラベル行(機能 features/labelRow。無い構成では createSpreadsheetGrid が labelRow を外す) ──
+  //   labelRow の各項目は値ごとの memo にする(labelRow のオブジェクトをインラインで渡しても各段が揺れない。React 版と同じ)。
+  const labelRowFeature = features.labelRow;
+  const labelIsLabelRow = createMemo(() => props.labelRow?.isLabelRow);
+  const labelGetLabel = createMemo(() => props.labelRow?.getLabel);
+  const labelRender = createMemo(() => props.labelRow?.render);
+  const labelRowClassName = createMemo(() => props.labelRow?.className);
+  const labelRowHeightOption = createMemo(() => props.labelRow?.height);
+  const labelSortMode = createMemo(() => props.labelRow?.sortMode ?? 'section');
+  const labelSticky = createMemo(() => props.labelRow?.sticky === true);
+  const labelExportText = createMemo(() => props.labelRow?.exportText);
+  const labelKeepEmptySections = createMemo(() => props.labelRow?.keepEmptySections ?? false);
+  const labelRowEnabled = createMemo(
+    () => labelIsLabelRow() != null && labelGetLabel() != null && labelRowFeature !== undefined,
+  );
+  const StickyLabelLayer = labelRowFeature?.StickyLabelLayer;
+
+  // ── 行(clientSide だけ) ──
+  // ラベル行の配置(rows / 述語が変わったときだけ 1 パス)。
+  const labelLayout = createMemo(() => engine.rowPipeline.resolveLabelRowLayout(rows(), labelIsLabelRow()));
+  // 列フィルターの候補(set / textSet の rows からの自動収集)はデータ行だけから集める(ラベル行の値や、ラベル行の空の値による
+  //   「(空白)」を混ぜない。React 版の DF-12)。ラベル行が無ければ rows のまま。
+  const filterCandidateRows = createMemo(() => {
+    const layout = labelLayout();
+    const currentRows = rows();
+    if (!layout) {
+      return currentRows;
+    }
+    const labels = layout.labelIndexes;
+    const dataRows: T[] = [];
+    let next = 0;
+    for (let index = 0; index < currentRows.length; index += 1) {
+      if (next < labels.length && labels[next] === index) {
+        next += 1;
+        continue;
+      }
+      dataRows.push(currentRows[index] as T);
+    }
+    return dataRows;
+  });
+  // ラベル行があるときはラベル行を除いた恒等の並び(データ行だけ)。
+  const baseOrder = createMemo(() => engine.rowPipeline.resolveBaseOrder(rows().length, labelLayout()));
   // フィルター(機能 features/filtering)。グローバルフィルターの適用(大きな表は時間分割)と相対日付プリセットの基準日。
   //   列フィルターの段は行パイプライン(エンジンが機能から作る)が掛ける。無い構成では恒等の並びのまま(React 版と同じ)。
   const globalFilterText = createMemo(() => selectGlobalFilter(ui()));
@@ -370,7 +424,7 @@ export function GridShell<T extends object>(props: SpreadsheetGridProps<T>, feat
   const orderResolution = createMemo(() =>
     engine.rowPipeline.resolveOrder({
       rows: rows(),
-      labelLayout: null,
+      labelLayout: labelLayout(),
       filterSortColumns: filterSortColumns(),
       columnFilters: columnFilters(),
       globalFilteredOrder: globalFilteredOrder(),
@@ -394,7 +448,10 @@ export function GridShell<T extends object>(props: SpreadsheetGridProps<T>, feat
       rows: rows(),
       order: orderResolution().order,
       rowGroupingActive: rowGroupingActive(),
-      labelLayout: null,
+      labelLayout: labelLayout(),
+      labelSortMode: labelSortMode(),
+      keepEmptySections: labelKeepEmptySections(),
+      getLabel: labelGetLabel(),
       groupColumns: groupColumns(),
       aggColumns: aggColumns(),
       collapsedGroupKeys: ui().collapsedGroupKeys,
@@ -412,7 +469,12 @@ export function GridShell<T extends object>(props: SpreadsheetGridProps<T>, feat
   // グループのツリー(命令的 API の一括の開閉 / getGroupRows。グループ化していなければ null)と、グループ行を除くデータ行の数
   //   (行の選択の件数 / バーの件数。表示行の数 viewRowCount はグループ行込みで、仮想化・ヒットテスト・キー操作の範囲はそちら)。
   const groupTree = () => clientRowModel().groupTree;
-  const leafRowCount = createMemo(() => (clientRowModel().groupedDisplay ? order().length : viewRowCount()));
+  // ラベル行の表示順(ラベル行の view index の並びなど。ラベル行が無い / グループ化しているときは null)。
+  const labelDisplay = () => clientRowModel().labelDisplay;
+  const labelViewIndexes = createMemo(() => labelDisplay()?.labelViewIndexes);
+  const leafRowCount = createMemo(() =>
+    clientRowModel().groupedDisplay || clientRowModel().labelDisplay ? order().length : viewRowCount(),
+  );
   // グループ行の開閉(開閉のボタン / 行のダブルクリック / アクティブセルの Enter・Space)。
   const handleGroupToggle = (groupKey: string) => dispatch(gridActions.toggleGroupCollapsed(groupKey));
   const groupingFeature = features.grouping;
@@ -455,9 +517,59 @@ export function GridShell<T extends object>(props: SpreadsheetGridProps<T>, feat
       detailHeight: props.detailRow?.height ?? DEFAULT_DETAIL_ROW_HEIGHT,
       detailIsExpandable: props.detailRow?.isExpandable,
       detailIndexCacheRef: engine.detailIndexCache,
-      labelDisplay: null,
+      labelDisplay: labelDisplay(),
+      labelRowHeight: labelRowHeightOption(),
     }),
   );
+  // ラベル行の縦スクロールの固定(labelRow.sticky)。scrollTop(論理)から今のセクションのラベル行と押し上げる量を求めて、各ペインの
+  //   固定の層へ渡します。固定の帯がヘッダーの直下で行を隠す高さ(stickyTopInset)は、アクティブセルの追従と scrollToRow /
+  //   scrollToCell が上へ見せる行を帯の裏に置かないために使います(React 版と同じ)。
+  const stickyLabelIndexes = createMemo(() => {
+    const indexes = labelViewIndexes();
+    return labelSticky() && labelRowFeature && indexes && indexes.length > 0 ? indexes : null;
+  });
+  const stickyLabelEntry = createMemo((): GridStickyLabelEntry<T> | null => {
+    const indexes = stickyLabelIndexes();
+    if (!indexes || !labelRowFeature) {
+      return null;
+    }
+    const resolution = labelRowFeature.resolveStickyLabel(
+      indexes,
+      vertical().rowMetrics,
+      physicalToLogicalScrollTop(view().scrollTop, vertical().verticalScaleFactor),
+    );
+    if (!resolution) {
+      return null;
+    }
+    const model = rowModel();
+    const descriptor = model.getLabelRow?.(resolution.labelViewIndex);
+    if (!descriptor) {
+      return null;
+    }
+    return {
+      labelRow: descriptor,
+      rowIndex: resolution.labelViewIndex,
+      rowKey: model.getRowKey(resolution.labelViewIndex) ?? resolution.labelViewIndex,
+      height: resolution.height,
+      pushOffset: resolution.pushOffset,
+    };
+  });
+  const stickyTopInset = createMemo((): StickyTopInset | undefined => {
+    const indexes = stickyLabelIndexes();
+    const feature = labelRowFeature;
+    if (!indexes || !feature) {
+      return undefined;
+    }
+    const rowMetrics = vertical().rowMetrics;
+    return {
+      visibleAt: (logicalScrollTop) => {
+        const resolution = feature.resolveStickyLabel(indexes, rowMetrics, logicalScrollTop);
+        return resolution ? Math.max(resolution.height - resolution.pushOffset, 0) : 0;
+      },
+      // 上端が rowTop の行を可視域の先頭に置いたときの帯(その行が属するセクションのラベル。行がラベル行なら無し)。
+      coveringRowAt: (rowTop) => feature.resolveStickyLabel(indexes, rowMetrics, rowTop)?.height ?? 0,
+    };
+  });
   // 条件付き書式の機能(機能セットは作ったときに決まる)と、列ごとの min / max(ビューの行から。中身が同じなら同じ参照)。
   const conditionalFormatFeature = features.conditionalFormat;
   const conditionalFormatStats = createMemo(() => engine.resolveConditionalFormatStats(rowModel(), orderedColumns()));
@@ -894,7 +1006,7 @@ export function GridShell<T extends object>(props: SpreadsheetGridProps<T>, feat
       activeCell: ui().activeCell,
       verticalScaleFactor: vertical().verticalScaleFactor,
       footerHeight: footerHeight(),
-      stickyTopInset: undefined,
+      stickyTopInset: stickyTopInset(),
     }),
     'effect',
   );
@@ -989,6 +1101,59 @@ export function GridShell<T extends object>(props: SpreadsheetGridProps<T>, feat
   const detailCardSlotSignature = createMemo(() => serializeSlotValue(props.detailRow?.className));
   const detailCardSlot = createMemo(() => resolveSlotFromSignature<JSX.CSSProperties>(detailCardSlotSignature()));
   const collapseDetailRow = (rowKey: GridRowKey, viewIndex: number) => detailRows.setExpandedAt(rowKey, viewIndex, false);
+
+  // ── ラベル行の描き方 ──
+  //   中身は labelRow.render に LabelRowRenderContext を渡す(無ければ getLabel の文字を既定の見た目で)。中身は中央ペインにだけ描き、
+  //   sticky の左と幅は展開行のカードと同じ値(React 版と同じ)。
+  const renderLabelRowContent = createMemo((): GridLabelRowRenderContent<T> => {
+    const render = labelRender();
+    return render
+      ? (ctx) => render(ctx)
+      : (ctx) => (
+          <span class="ssg-label-row-content--default ssg-label-row-default">
+            <span class="ssg-label-row-text">{ctx.label}</span>
+          </span>
+        );
+  });
+  const resolveLabelRowSlot = (labelRow: GridLabelRow<T>) => {
+    const className = labelRowClassName();
+    return typeof className === 'function' ? className(labelRow.row) : className;
+  };
+  const labelRowLayerCenter = createMemo((): GridBodyLabelRowLayer<T> | undefined =>
+    labelRowEnabled() && labelRowFeature
+      ? {
+          Row: labelRowFeature.BodyLabelRow,
+          renderContent: renderLabelRowContent(),
+          contentStickyLeft: detailCardStickyLeft(),
+          contentWidth: detailCardWidth(),
+          resolveRowSlot: resolveLabelRowSlot,
+        }
+      : undefined,
+  );
+  const labelRowLayerBand = createMemo((): GridBodyLabelRowLayer<T> | undefined =>
+    labelRowEnabled() && labelRowFeature
+      ? {
+          Row: labelRowFeature.BodyLabelRow,
+          renderContent: null,
+          contentStickyLeft: 0,
+          contentWidth: 0,
+          resolveRowSlot: resolveLabelRowSlot,
+        }
+      : undefined,
+  );
+  const stickyLabelSlot = createMemo(() => {
+    const entry = stickyLabelEntry();
+    return resolveSlotProps<JSX.CSSProperties>(entry ? resolveLabelRowSlot(entry.labelRow) : undefined);
+  });
+  // 命令的 API(exportCsv / getExportData / getInvalidCells)へ渡すラベル行の設定(ラベル行の機能が無い構成ではラベル行をデータ行
+  //   として扱うので渡さない)。
+  const labelRowExport = createMemo(() => {
+    const isLabelRow = labelIsLabelRow();
+    const getLabel = labelGetLabel();
+    return labelRowEnabled() && isLabelRow && getLabel
+      ? { isLabelRow, getLabel, exportText: labelExportText() }
+      : undefined;
+  });
 
   // ── セルの通知(クリック / ダブルクリック / アクティブセル) ──
   connectController(engine.cellEventNotifier, () => ({
@@ -1212,6 +1377,7 @@ export function GridShell<T extends object>(props: SpreadsheetGridProps<T>, feat
     gridRootRef,
     isServerSide: () => false,
     rows,
+    isLabelRow: () => (labelRowEnabled() ? labelIsLabelRow() : undefined),
     // グループ化している間のグループ元の列(表示から外れているが絞り込める。見出しの代わりに自動グループ列の下に開く)。
     groupColumns: activeGroupColumns,
   });
@@ -1663,10 +1829,11 @@ export function GridShell<T extends object>(props: SpreadsheetGridProps<T>, feat
 
   // 列メニューのグループ化の入口。列のどれかに rowGroup を書いている(false を含む = グループ化を使う表)ときだけ出す(グループ化を
   //   使わない表のメニューは変えない)。列の定義は controlled なので onColumnsChange が要り、グループ化の機能・clientSide が条件
-  //   (React 版と同じ。ラベル行なしの条件は段階 2-4b で足す)。集計のある列(aggFunc)はグループ化の対象に出さない。
+  //   ・ラベル行なし(React 版と同じ)。集計のある列(aggFunc)はグループ化の対象に出さない。
   const columnMenuGroupingAvailable = createMemo(
     () =>
       groupingFeature !== undefined &&
+      !labelRowEnabled() &&
       props.onColumnsChange !== undefined &&
       columns().some((column) => column.rowGroup !== undefined),
   );
@@ -1903,13 +2070,13 @@ export function GridShell<T extends object>(props: SpreadsheetGridProps<T>, feat
     serverSideRetryFailed: noop,
     resolvedRowKeyGetter: resolvedRowKeyGetter(),
     isRowExportable: props.isRowExportable,
-    labelRowExport: undefined,
+    labelRowExport: labelRowExport(),
     localeTexts: localeTexts(),
-    labelViewIndexes: undefined,
+    labelViewIndexes: labelViewIndexes(),
     totalRowExport: totalRowExport(),
     pinnedRowsExport: pinnedRowsExport(),
     footerHeight: footerHeight(),
-    stickyTopInset: undefined,
+    stickyTopInset: stickyTopInset(),
     activeToolPanelTab: toolPanel?.activeTab() ?? null,
     openToolPanel: toolPanel?.open ?? noop,
     closeToolPanel: toolPanel?.close ?? noop,
@@ -1985,7 +2152,8 @@ export function GridShell<T extends object>(props: SpreadsheetGridProps<T>, feat
       rowDrag: localeTexts().rowDragColumnName,
     }),
   );
-  const rowNumberer = createDataRowNumberer(undefined);
+  // 番地と行数はラベル行を飛ばして数えます(行見出しの番号とそろえる)。
+  const rowNumberer = createMemo(() => createDataRowNumberer(labelViewIndexes()));
   const slotContextBase = createMemo(() => ({
     rows: rows(),
     columns: props.columns as GridColumn<T>[],
@@ -2004,11 +2172,12 @@ export function GridShell<T extends object>(props: SpreadsheetGridProps<T>, feat
         filteringAvailable
           ? slotContextBase()
           : { ...slotContextBase(), globalFilterText: '', columnFilterValues: NO_COLUMN_FILTERS },
-        // 件数はグループ行を除くデータ行の数(slotContext.filteredRows と同じ)。
+        // 件数はグループ行 / ラベル行を除くデータ行の数(slotContext.filteredRows と同じ)。分母(総データ行数)はラベル行を除く
+        //   (ラベル行が無ければ rows の数)。
         leafRowCount(),
-        undefined,
+        labelLayout()?.dataRowCount,
         columnNamer(),
-        rowNumberer,
+        rowNumberer(),
         localeTexts(),
       ),
   );
@@ -2479,6 +2648,22 @@ export function GridShell<T extends object>(props: SpreadsheetGridProps<T>, feat
         />
         {/* 上に固定する行(列見出しの直後の sticky の器)。 */}
         {renderPinnedRows('top')}
+        {/* ラベル行の縦スクロールの固定の層(見出しの直後の sticky。中身は中央ペインだけ)。 */}
+        {StickyLabelLayer ? (
+          <StickyLabelLayer
+            pane={pane}
+            ownsRowHeader={ownsRowHeader()}
+            entry={stickyLabelEntry()}
+            headerHeight={headerHeight()}
+            rowHeaderWidth={rowHeaderWidth()}
+            renderContent={pane === 'center' ? renderLabelRowContent() : null}
+            contentStickyLeft={pane === 'center' ? detailCardStickyLeft() : 0}
+            contentWidth={pane === 'center' ? detailCardWidth() : 0}
+            rowClassName={stickyLabelSlot().className}
+            rowStyle={stickyLabelSlot().style}
+            slots={slots()}
+          />
+        ) : null}
         <div
           style={{
             position: 'absolute',
@@ -2578,6 +2763,8 @@ export function GridShell<T extends object>(props: SpreadsheetGridProps<T>, feat
             grouping={groupingFeature}
             collapsedGroupKeys={ui().collapsedGroupKeys}
             onGroupToggle={handleGroupToggle}
+            labelRowLayer={pane === 'center' ? labelRowLayerCenter() : labelRowLayerBand()}
+            labelViewIndexes={labelViewIndexes()}
             rowHeaderWidth={rowHeaderWidth()}
             rows={bodyRows()}
             entries={entries()}
@@ -2713,6 +2900,19 @@ export function GridShell<T extends object>(props: SpreadsheetGridProps<T>, feat
               setHoveredColumnIndex(null);
             }
           }}
+          // ラベル行(全幅の帯。固定した帯も)には行のホバーも列の帯も出さない(ラベル行にはセルの pointerenter が無いので、
+          //   セルからラベル行へ動かしたときに前の行のホバーと列の帯が残る。React 版と同じ)。
+          onPointerOver={(event) => {
+            if (
+              event.target instanceof Element &&
+              event.target.closest('[data-ssg-label-row], [data-ssg-sticky-label]') !== null
+            ) {
+              applyHoveredRowChange(null);
+              if (hoverCross()) {
+                setHoveredColumnIndex(null);
+              }
+            }
+          }}
           onFocusOut={(event) => {
             if (!event.currentTarget.contains(event.relatedTarget as Node | null) && document.hasFocus()) {
               event.currentTarget.removeAttribute('data-ssg-pointer');
@@ -2831,6 +3031,7 @@ export function GridShell<T extends object>(props: SpreadsheetGridProps<T>, feat
                   verticalScaleFactor={vertical().verticalScaleFactor}
                   rowMetrics={vertical().rowMetrics}
                   rowModel={rowModel()}
+                  labelViewIndexes={labelViewIndexes()}
                 />
               );
             }}
@@ -2944,7 +3145,7 @@ export function GridShell<T extends object>(props: SpreadsheetGridProps<T>, feat
         {filterPopover && FilterPopoverHost ? (
           <FilterPopoverHost
             filterPopover={filterPopover}
-            rows={rows()}
+            rows={filterCandidateRows()}
             columnFilters={columnFilters()}
             globalFilterText={globalFilterText()}
             getFilterOptions={props.getFilterOptions as never}
