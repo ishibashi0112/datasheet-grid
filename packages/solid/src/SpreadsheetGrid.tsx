@@ -156,6 +156,7 @@ import { CellEditorLayer, type CellEditorSession } from './editors/CellEditorLay
 import { GridPortalContext } from './context/portal';
 import { DefaultGridTopBar } from './view/DefaultGridTopBar';
 import { DefaultGridBottomBar } from './view/DefaultGridBottomBar';
+import { createShellDevWarnings, warnMoveRowOnServerSide, withOpenToolPanelWarnings } from './devWarnings';
 
 const EMPTY_ROWS: never[] = [];
 const NEVER_EDITABLE = () => false;
@@ -582,6 +583,22 @@ export function GridShell<T extends object>(props: SpreadsheetGridProps<T>, feat
       labelRowHeight: labelRowHeightOption(),
     }),
   );
+  // 開発時の警告(React 版の GridShell.tsx と同じ条件と文言。本番では何もしない)。
+  createShellDevWarnings({
+    filteringAvailable: features.filtering !== undefined,
+    isServerSide,
+    groupColumnCount: () => groupColumns().length,
+    rowGroupingActive,
+    labelRowEnabled,
+    autoHeight: () => props.autoHeight ?? false,
+    hasAutoHeightColumn: () => vertical().hasAutoHeightColumn,
+    viewRowCount,
+    detailRowEnabled,
+    detailExtraCount: () => vertical().detailExtras.length,
+    detailActive: () => vertical().detailActive,
+    globalFilterText,
+    columnFilterCount: () => Object.keys(columnFilters()).length,
+  });
   // ラベル行の縦スクロールの固定(labelRow.sticky)。scrollTop(論理)から今のセクションのラベル行と押し上げる量を求めて、各ペインの
   //   固定の層へ渡します。固定の帯がヘッダーの直下で行を隠す高さ(stickyTopInset)は、アクティブセルの追従と scrollToRow /
   //   scrollToCell が上へ見せる行を帯の裏に置かないために使います(React 版と同じ)。
@@ -1582,6 +1599,8 @@ export function GridShell<T extends object>(props: SpreadsheetGridProps<T>, feat
     suppressEscape: () => filterPopover?.isOpen() ?? false,
     onSuppressedEscape: () => filterPopover?.close(),
   });
+  // ツールパネルを開く関数(列メニューの項目とハンドルの openFilterManager)。開発時は、足りない機能で開けないときに警告する。
+  const openToolPanel = withOpenToolPanelWarnings(toolPanel?.open, features);
   // 既定の上部バーの絞り込みのチップでフィルターのタブを開け閉めします(別のタブを出しているときはフィルターのタブへ切り替える)。
   const toggleFilterManager = () => {
     if (!toolPanel) {
@@ -1911,7 +1930,7 @@ export function GridShell<T extends object>(props: SpreadsheetGridProps<T>, feat
     sort: ui().sort,
     globalFilterText: selectGlobalFilter(ui()),
     closeColumnMenu: columnMenu?.close ?? noop,
-    openToolPanel: toolPanel?.open ?? noop,
+    openToolPanel,
     openColumnFilterPopover: filterPopover?.open ?? noop,
     runAutosize: columnAutosize?.runAutosize,
   }));
@@ -2047,8 +2066,9 @@ export function GridShell<T extends object>(props: SpreadsheetGridProps<T>, feat
     return true;
   };
   const moveRowByKey = (rowKey: GridRowKey, toIndex: number) => {
-    // clientSide(rows + onRowsChange)専用。サーバーサイドでは何もしない(React 版と同じ。開発時の警告は段階 3)。
+    // clientSide(rows + onRowsChange)専用。サーバーサイドでは何もしない(開発時は警告する。React 版と同じ)。
     if (isServerSide()) {
+      warnMoveRowOnServerSide();
       return;
     }
     const getKey = resolvedRowKeyGetter();
@@ -2226,7 +2246,7 @@ export function GridShell<T extends object>(props: SpreadsheetGridProps<T>, feat
     footerHeight: footerHeight(),
     stickyTopInset: stickyTopInset(),
     activeToolPanelTab: toolPanel?.activeTab() ?? null,
-    openToolPanel: toolPanel?.open ?? noop,
+    openToolPanel,
     closeToolPanel: toolPanel?.close ?? noop,
     find: { open: engine.find.open, close: engine.find.close, next: engine.find.next, prev: engine.find.prev },
     undoRows: history.undo,
