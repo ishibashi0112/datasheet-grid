@@ -159,7 +159,7 @@ React 版の機能なしの構成と並べて、同じ props・同じ操作で D
 | --- | --- | --- |
 | 2-1 | 機能を差し込む仕組み + 表示の機能 8 つ(totalRow / pinnedRows / conditionalFormat / selectionAggregates / scrollHint / motionExtras / export / autoHeight) | 済み(PR #65、2026-11-19 マージ。2-1a: 仕組み(`features/types.ts` / `createSpreadsheetGrid.tsx` / `features/full.ts`、比べるテストの `features`)と export、2-1b: autoHeight、2-1c: conditionalFormat、2-1d: totalRow + pinnedRows、2-1e: selectionAggregates、2-1f: scrollHint、2-1g: motionExtras) |
 | 2-2 | 操作の機能 7 つ(find / fillHandle / columnReorder / rowDrag / columnAutosize / imeDirectInput / contextMenu) | 済み(PR #66、2026-11-19 マージ。2-2a: find、2-2b: imeDirectInput、2-2c: columnAutosize、2-2d: columnReorder、2-2e: rowDrag、2-2f: fillHandle、2-2g: contextMenu。別視点のレビュー = 高 1・低 1 を直した) |
-| 2-3 | ポップアップ 3 つ(columnMenu / toolPanel / filtering) | 作業中(2-3a: 行の絞り込み(グローバル / 列フィルターの適用・上部バーの検索欄・manualFiltering / manualSorting)、2-3b: 列メニュー、2-3c: 列フィルターのポップアップ = 済み。2-3d: ツールパネルとフィルターのチップのバー = まだ) |
+| 2-3 | ポップアップ 3 つ(columnMenu / toolPanel / filtering) | 作業中(2-3a: 行の絞り込み(グローバル / 列フィルターの適用・上部バーの検索欄・manualFiltering / manualSorting)、2-3b: 列メニュー、2-3c: 列フィルターのポップアップ、2-3d: ツールパネル(フィルター / 列 / 並び替えのタブ)とフィルターのチップのバー = 済み。別視点のレビュー = まだ) |
 | 2-4 | 行のモデル 3 つ(serverSide / labelRow / grouping) | まだ |
 
 ### 2-3 で分かったこと(作業中)
@@ -197,6 +197,25 @@ React 版の機能なしの構成と並べて、同じ props・同じ操作で D
   手順の間の時間で付く / 付かないが変わる(1.1 秒待つと React 版と Solid 版はそろう)。行を出し入れする場面は `animateRows: false`。
 - **比べるテストの時間切れに注意**: 1 つの場面で手順が多いと vitest の既定の 5 秒を超え、時間切れの場面の React 版の
   ポップアップが body に残って、次の場面の控えに混ざった(差の原因が分かりにくい)。手順の多い場面は `20_000` を渡す。
+- **ツールパネルも core のまま**(2-3d): 位置・幅・閉じ方(外を押す / Escape。列フィルターのポップアップが開いていれば先に
+  それを閉じる)・開いたまま開き直したときの数は core の `controllers/toolPanelController`、ヘッダーを掴んで動かすのは
+  `panelHeaderDragController`、タブの中の操作は engine の `columnCommands`(段階 1 でつないだもの)で、Solid 版は部品
+  (`view/ToolPanel.tsx` / `FilterManagementPanel.tsx` / `ColumnChooserPanel.tsx` / `SortManagementPanel.tsx` /
+  `GridFilterChipBar.tsx`。React 版と同じ DOM)と `primitives/toolPanel.ts` / `filterManagement.ts` を足しただけ。React 版と
+  同じく、filtering と columnMenu のどちらも無いときはツールパネルを差し込んでも動かさない。
+- **パネルは開いている間だけ描く**: 開いたときのフォーカス(選ばれているタブへ)は部品の `onSettled` で、開いたまま開き直した
+  ときの枠の光り(`flashTick` が増えたとき)は、開いたときの値を控えて比べる effect にした(開いたときの値では光らせない)。
+- **一覧は keyed の `For`**: タブ・フィルターの一覧・列の一覧・並び替えの基準は、どれもキーで行を使い回す(押した直後に行の
+  要素が作り直されるとフォーカスが外れる)。列の一覧の行の区分(左固定 / 中央 / 右固定)は、区分の `For` の値ではなく項目の
+  `pane` から読む(`For` の子の関数の中で親の値を読むと Solid 2.0 の開発時の警告 STRICT_READ_UNTRACKED になる。Chromium の
+  確認で見つけた)。「フィルターを追加」の select は選んだらすぐ空に戻す(React 版と同じ)。
+- **行のグループ化の部分は 2-4 で**: 列の一覧の「グループ化中」の印、並び替え / フィルターの一覧のグループ元の列は、grouping を
+  つなぐ 2-4 で足す(今は groupColumns を渡していない)。React 版にある「ツールパネルが無いときに `openFilterManager` を呼んだ
+  ときの開発時の警告」は段階 3 の開発時の警告でまとめて足す。
+- **React 版の既存の不具合を 1 つ見つけた(直していない)**: ツールパネルを開いたまま開き直したときの枠の光り
+  (`ssg-toolpanel--flash`)は、`styles.css` の後ろにあるポップアップの出現のアニメ(`.ssg-popover { animation: ssg-pop-in … }`。
+  0.46.1 の M-7 で追加)が同じ詳細度で上書きするので、0.46.1 から光っていない(クラスは付くが `animationend` が来ないので
+  残ったまま)。Solid 版は同じ CSS を使うので同じ見た目。直すのは React 版の CSS の変更になるので、ユーザーに聞いてから別に行う。
 
 ### 2-2 で分かったこと
 

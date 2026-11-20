@@ -155,6 +155,7 @@ function App() {
   const [menuAction, setMenuAction] = createSignal('');
   const [manual, setManual] = createSignal(false);
   const [filters, setFilters] = createSignal('');
+  const [chipBar, setChipBar] = createSignal(false);
   // 「品名を左へ固定」で編集中の列のペインを変える(エディタが外れるときの blur で確定しないことの確かめ)。
   const columns = () =>
     userColumns() ??
@@ -228,6 +229,9 @@ function App() {
         <button type="button" data-testid="manual" onClick={() => setManual((v) => !v)}>
           手動の絞り込み / 並べ替え: {manual() ? 'オン' : 'オフ'}
         </button>
+        <button type="button" data-testid="chip-bar" onClick={() => setChipBar((v) => !v)}>
+          フィルターのチップ
+        </button>
         <span data-testid="find">{find()}</span>
         <span data-testid="filters">{filters()}</span>
         <span data-testid="active">{active()}</span>
@@ -288,6 +292,9 @@ function App() {
           manualFiltering={manual()}
           manualSorting={manual()}
           onFiltersChange={(next) => setFilters(JSON.stringify(next))}
+          // 「フィルターのチップ」: 適用中の列フィルターを上部バーの下にチップで並べる。ツールパネル(フィルター / 列 / 並び替え)は
+          //   列メニューの「並び替えを管理…」「フィルターを管理…」「列の表示」か、上部バーの絞り込みのチップで開く。
+          showFilterChipBar={chipBar()}
           getContextMenuItems={(params) => {
             const target = params.target;
             if (target.type === 'rowHeader') {

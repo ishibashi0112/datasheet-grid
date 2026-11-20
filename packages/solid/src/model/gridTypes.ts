@@ -56,6 +56,7 @@ type SupportedPropKeys =
   | 'enableColumnFilter'
   | 'manualFiltering'
   | 'getFilterOptions'
+  | 'showFilterChipBar'
   | 'renderFilterDateInput'
   | 'enableColumnMenu'
   | 'enableColumnResize'

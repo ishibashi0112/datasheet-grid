@@ -11,7 +11,7 @@
 //   - 部品の本体では props を直接読まない(Solid 2.0 は本体での読み取りを警告する)。props は関数や memo の中で読む。
 //   - React の onXxxCapture / onBlur / onFocus(子孫からも上がってくる)は、Solid では capture のリスナーを自分で付ける /
 //     onFocusOut / onFocusIn にします。
-import { For, Show, createEffect, createMemo, createUniqueId, onCleanup, onSettled, untrack } from 'solid-js';
+import { For, Match, Show, Switch, createEffect, createMemo, createUniqueId, onCleanup, onSettled, untrack } from 'solid-js';
 import type { JSX } from '@solidjs/web';
 import type {
   CellCoord,
@@ -30,6 +30,7 @@ import { buildSelectionSnapshot, selectGlobalFilter } from '@ishibashi0112/sprea
 import {
   buildColumnMeasurements,
   computeSinglePaneColumnExtent,
+  getColumnPane,
   type ColumnPane,
   type PaneColumnEntry,
 } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/geometry';
@@ -1176,7 +1177,7 @@ export function GridShell<T extends object>(props: SpreadsheetGridProps<T>, feat
   };
 
   // ── 列フィルターのポップオーバー(機能 features/filtering) ──
-  //   列メニューの「フィルター…」から開き(ツールパネルの ✎ / フィルターを追加は段階 2-3d)、見出しの下に出します。中身(候補の
+  //   列メニューの「フィルター…」/ ツールパネルの ✎ とフィルターを追加 / チップのバーから開き、見出しの下に出します。中身(候補の
   //   収集・コマンド・描画)は機能の FilterPopoverHost。機能セットに無ければ開かない(React 版と同じ)。
   const filterPopover = features.filtering?.createFilterPopover<T>({
     visibleColumns,
@@ -1187,6 +1188,7 @@ export function GridShell<T extends object>(props: SpreadsheetGridProps<T>, feat
     rows,
   });
   const FilterPopoverHost = features.filtering?.FilterPopoverHost;
+  const filteringFeature = features.filtering;
 
   // ── 列メニュー(機能 features/columnMenu) ──
   //   見出しの ⋮(マウスは pointerdown、タッチとキーボードは click で開く)/ 見出しの右クリック / アクティブセルの Alt+↓ で開き、
@@ -1227,6 +1229,34 @@ export function GridShell<T extends object>(props: SpreadsheetGridProps<T>, feat
     return true;
   };
 
+  // ── ツールパネル(機能 features/toolPanel。フィルター / 列 / 並び替えの 3 タブ) ──
+  //   タブの可否は機能のフラグ(フィルター = enableColumnFilter / 列 = enableColumnMenu / 並び替え = enableSorting)。開く入口は
+  //   列メニューの 3 項目・上部バーの絞り込みのチップ・ハンドルの openFilterManager。列メニューもフィルターも無い構成では入口が
+  //   無いので作りません(React 版と同じ)。列フィルターのポップオーバーの中の押下では閉じず、ポップオーバーが開いている間の
+  //   Escape はポップオーバーを閉じます(1 回目 = ポップオーバー / 2 回目 = パネル)。
+  const toolPanelFeature =
+    features.filtering !== undefined || features.columnMenu !== undefined ? features.toolPanel : undefined;
+  const toolPanel = toolPanelFeature?.createToolPanel({
+    canUseFilterTab: columnFilterEnabled,
+    canUseColumnsTab: enableColumnMenu,
+    canUseSortTab: enableSorting,
+    gridRootRef,
+    alliedRef: filterPopover?.panelRef,
+    suppressEscape: () => filterPopover?.isOpen() ?? false,
+    onSuppressedEscape: () => filterPopover?.close(),
+  });
+  // 既定の上部バーの絞り込みのチップでフィルターのタブを開け閉めします(別のタブを出しているときはフィルターのタブへ切り替える)。
+  const toggleFilterManager = () => {
+    if (!toolPanel) {
+      return;
+    }
+    if (untrack(toolPanel.activeTab) === 'filter') {
+      toolPanel.close();
+    } else {
+      toolPanel.open('filter');
+    }
+  };
+
   // ── 右クリックメニュー(機能 features/contextMenu) ──
   //   本体の右クリックはシェルの 1 つの委譲のハンドラ(onContextMenu)で受け、対象(セル / 行番号)を DOM から逆引きして
   //   getContextMenuItems の項目でメニューを開きます。開かない対象や項目が空ならブラウザの標準のメニューのまま(空のパネルは
@@ -1236,10 +1266,12 @@ export function GridShell<T extends object>(props: SpreadsheetGridProps<T>, feat
   const contextMenu = contextMenuFeature?.createCellContextMenu<T>({ gridRootRef });
   const contextMenuActive = () =>
     contextMenu !== undefined && (props.enableContextMenu ?? false) && props.getContextMenuItems !== undefined;
-  // グリッドのポップアップを出しているか(シェルの Tab の順・キー操作・貼り付けを止める。React 版の isAnyGridPopupOpen。
-  //   ツールパネルは段階 2-3d で足す)。
+  // グリッドのポップアップを出しているか(シェルの Tab の順・キー操作・貼り付けを止める。React 版の isAnyGridPopupOpen)。
   const isAnyGridPopupOpen = () =>
-    (filterPopover?.isOpen() ?? false) || (columnMenu?.isOpen() ?? false) || (contextMenu?.isOpen() ?? false);
+    (filterPopover?.isOpen() ?? false) ||
+    (columnMenu?.isOpen() ?? false) ||
+    (toolPanel ? toolPanel.activeTab() !== null : false) ||
+    (contextMenu?.isOpen() ?? false);
   // キーボードで開こうとした時刻(ms)と開いたか。続けてブラウザが送る contextmenu(Shift+F10 / メニューキーの既定の動作)で、
   //   開いたときは標準のメニューを止め、開かなかった(項目が無い)ときは標準のメニューのままにします(項目をもう一度聞かない)。
   let keyboardContextMenu: { at: number; opened: boolean } | null = null;
@@ -1542,10 +1574,60 @@ export function GridShell<T extends object>(props: SpreadsheetGridProps<T>, feat
     sort: ui().sort,
     globalFilterText: selectGlobalFilter(ui()),
     closeColumnMenu: columnMenu?.close ?? noop,
-    openToolPanel: noop,
+    openToolPanel: toolPanel?.open ?? noop,
     openColumnFilterPopover: filterPopover?.open ?? noop,
     runAutosize: columnAutosize?.runAutosize,
   }));
+
+  // ── 適用中のフィルターの一覧と、列へ移ってフィルターを開く処理(機能 features/filtering。ツールパネルのフィルターのタブと
+  //   チップのバーが使う) ──
+  const filterManagement = features.filtering?.createFilterManagement<T>({
+    columns,
+    orderedColumns,
+    visibleColumns,
+    columnFilters,
+    scrollContainerRef,
+    gridRootRef,
+    paneLayout,
+    leftPaneTotalWidth: () => paneResolution().leftPaneTotalWidth,
+    centerLeadingWidth: () => paneResolution().centerLeadingWidth,
+    rightPaneTotalWidth: () => paneResolution().rightPaneTotalWidth,
+    openColumnFilterPopover: filterPopover?.open ?? noop,
+    localeTexts,
+  });
+  // ツールパネルの「列」タブへ渡す全列(見えていない列も。所属のペインは固定の指定から)。
+  const columnChooserItems = createMemo(() =>
+    columns().map((column) => ({
+      key: column.key,
+      title: column.title || column.key,
+      visible: column.visible !== false,
+      pane: getColumnPane(column),
+    })),
+  );
+  // ツールパネルの「並び替え」タブへ渡す、並び替えに選べる列(見えている列。合成列は除く)。
+  const sortManagerColumns = createMemo(() =>
+    visibleColumns()
+      .filter((column) => !isSyntheticColumnKey(column.key))
+      .map((column) => ({ key: column.key, title: column.title || column.key })),
+  );
+  // タブのバッジ: フィルター = 適用中の列フィルターの数 + グローバル(文字があれば 1)/ 並び替え = 基準の数。
+  const showGlobalFilterRow = () => globalFilterEnabled() && globalFilterText().trim().length > 0;
+  const toolPanelTabs = createMemo(() =>
+    (toolPanel?.availableTabs() ?? []).map((tab) => {
+      const texts = localeTexts();
+      if (tab === 'filter') {
+        return {
+          tab,
+          label: texts.toolPanelFilters,
+          badge: (filterManagement?.entries().length ?? 0) + (showGlobalFilterRow() ? 1 : 0),
+        };
+      }
+      if (tab === 'sort') {
+        return { tab, label: texts.toolPanelSort, badge: ui().sort.length };
+      }
+      return { tab, label: texts.toolPanelColumns };
+    }),
+  );
 
   // ── 列見出しのドラッグによる並べ替え(機能 features/columnReorder。core controllers/columnHeaderDragController) ──
   //   onColumnsChange があるときだけ見出しに grip を出します(React 版と同じ)。ドラッグ中は状態を変えず、ドロップの縦線 /
@@ -1786,9 +1868,9 @@ export function GridShell<T extends object>(props: SpreadsheetGridProps<T>, feat
     pinnedRowsExport: pinnedRowsExport(),
     footerHeight: footerHeight(),
     stickyTopInset: undefined,
-    activeToolPanelTab: null,
-    openToolPanel: noop,
-    closeToolPanel: noop,
+    activeToolPanelTab: toolPanel?.activeTab() ?? null,
+    openToolPanel: toolPanel?.open ?? noop,
+    closeToolPanel: toolPanel?.close ?? noop,
     find: { open: engine.find.open, close: engine.find.close, next: engine.find.next, prev: engine.find.prev },
     undoRows: history.undo,
     redoRows: history.redo,
@@ -1954,6 +2036,9 @@ export function GridShell<T extends object>(props: SpreadsheetGridProps<T>, feat
               showCounts={props.showTopBarCounts ?? true}
               globalFilterPlaceholder={props.globalFilterPlaceholder}
               globalFilterIcon={props.globalFilterIcon}
+              // 絞り込みのチップでツールパネルのフィルターのタブを開け閉めする(フィルターかツールパネルが無ければ押せない span)。
+              onFilterSummaryClick={columnFilterEnabled() && toolPanel ? toggleFilterManager : undefined}
+              filterPanelOpen={toolPanel?.activeTab() === 'filter'}
             />
           </Show>
         }
@@ -2536,6 +2621,19 @@ export function GridShell<T extends object>(props: SpreadsheetGridProps<T>, feat
         style={{ ...toSolidStyle(heightLayout().rootStyle), ...slots().root?.style, ...props.style }}
       >
         {topBar()}
+        {/* フィルターのチップのバー(showFilterChipBar)。適用中の列フィルターをチップで並べる(0 件なら出さない)。 */}
+        {filterManagement && filteringFeature ? (
+          <Show when={props.showFilterChipBar}>
+            <filteringFeature.FilterChipBar
+              slot={slots().filterChipBar}
+              entries={filterManagement.entries()}
+              canFilter={columnFilterEnabled()}
+              onEditFilter={filterManagement.jumpToColumnFilter}
+              onClearFilter={columnCommands.handleFilterManagerClearFilter}
+              onClearAllFilters={columnCommands.handleFilterManagerClearAll}
+            />
+          </Show>
+        ) : null}
         <div
           ref={(element) => {
             gridRootRef.current = element;
@@ -2756,7 +2854,9 @@ export function GridShell<T extends object>(props: SpreadsheetGridProps<T>, feat
                     canSort={enableSorting()}
                     sortDirection={ui().sort.find((entry) => entry.columnKey === column().key)?.direction ?? null}
                     onSortChange={(direction) => columnCommands.handleColumnMenuSortChange(column().key, direction)}
+                    onOpenSortManager={toolPanel ? columnCommands.handleColumnMenuOpenSortManager : undefined}
                     canManageFilters={columnFilterEnabled()}
+                    onOpenFilterManager={toolPanel ? columnCommands.handleColumnMenuOpenFilterManager : undefined}
                     pinned={column().pinned}
                     canChangePinned={props.onColumnsChange !== undefined}
                     layout={layout()}
@@ -2764,6 +2864,7 @@ export function GridShell<T extends object>(props: SpreadsheetGridProps<T>, feat
                     onPinnedChange={columnCommands.handleColumnMenuPinnedChange}
                     onAutosizeColumn={columnAutosize ? columnCommands.handleColumnMenuAutosizeColumn : undefined}
                     onAutosizeAllColumns={columnAutosize ? columnCommands.handleColumnMenuAutosizeAllColumns : undefined}
+                    onOpenColumnChooser={toolPanel ? columnCommands.handleColumnMenuOpenChooser : undefined}
                     canResetColumns={props.onColumnsChange !== undefined}
                     onResetColumns={columnCommands.handleColumnMenuResetColumns}
                     onRequestClose={columnMenu.close}
@@ -2788,6 +2889,71 @@ export function GridShell<T extends object>(props: SpreadsheetGridProps<T>, feat
             themeClassName={portalClassName()}
             localeTexts={localeTexts()}
           />
+        ) : null}
+        {/* ツールパネル(グリッドの外のポップアップ。開いている間だけ描く)。タブを切り替えると中身を作り直す(タブの中の検索の
+            文字などは戻る。React 版と同じ)。 */}
+        {toolPanel && toolPanelFeature ? (
+          <Show when={toolPanel.activeTab()}>
+            {(tab) => (
+              <Show when={toolPanel.layout()}>
+                {(layout) => (
+                  <toolPanelFeature.ToolPanel
+                    popoverSlot={slots().popover}
+                    themeClassName={portalClassName()}
+                    activeTab={tab()}
+                    flashTick={toolPanel.flashTick()}
+                    tabs={toolPanelTabs()}
+                    layout={layout()}
+                    panelRef={toolPanel.panelRef}
+                    onSelectTab={toolPanel.open}
+                    onRequestClose={toolPanel.close}
+                    onPanelMove={toolPanel.move}
+                  >
+                    <Switch>
+                      <Match when={tab() === 'filter'}>
+                        <toolPanelFeature.FilterManagementPanel
+                          entries={filterManagement?.entries() ?? []}
+                          addableColumns={filterManagement?.addableColumns() ?? []}
+                          showGlobalFilterRow={showGlobalFilterRow()}
+                          globalFilterText={globalFilterText()}
+                          canFilter={columnFilterEnabled()}
+                          onEditFilter={filterManagement?.jumpToColumnFilter ?? noop}
+                          onAddFilter={filterManagement?.jumpToColumnFilter ?? noop}
+                          onClearFilter={columnCommands.handleFilterManagerClearFilter}
+                          onClearAllFilters={columnCommands.handleFilterManagerClearAll}
+                          onClearGlobalFilter={columnCommands.handleFilterManagerClearGlobal}
+                        />
+                      </Match>
+                      <Match when={tab() === 'columns'}>
+                        <toolPanelFeature.ColumnChooserPanel
+                          items={columnChooserItems()}
+                          canToggle={props.onColumnsChange !== undefined}
+                          onToggleColumnVisibility={columnCommands.handleColumnChooserToggleVisibility}
+                          onShowAllColumns={columnCommands.handleColumnChooserShowAll}
+                          onHideAllColumns={columnCommands.handleColumnChooserHideAll}
+                          onResetColumns={columnCommands.handleColumnChooserReset}
+                          onReorderColumns={columnCommands.handleColumnChooserReorder}
+                        />
+                      </Match>
+                      <Match when={tab() === 'sort'}>
+                        <toolPanelFeature.SortManagementPanel
+                          entries={ui().sort}
+                          columns={sortManagerColumns()}
+                          canSort={enableSorting()}
+                          onAddLevel={columnCommands.handleSortManagerAddLevel}
+                          onChangeDirection={columnCommands.handleSortManagerChangeDirection}
+                          onChangeColumn={columnCommands.handleSortManagerChangeColumn}
+                          onRemoveLevel={columnCommands.handleSortManagerRemoveLevel}
+                          onClearAll={columnCommands.handleSortManagerClearAll}
+                          onMove={columnCommands.handleSortManagerMove}
+                        />
+                      </Match>
+                    </Switch>
+                  </toolPanelFeature.ToolPanel>
+                )}
+              </Show>
+            )}
+          </Show>
         ) : null}
         {/* セル / 行番号の右クリックメニュー(グリッドの外のポップアップ)。 */}
         {contextMenu && contextMenuFeature ? (

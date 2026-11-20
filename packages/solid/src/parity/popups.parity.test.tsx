@@ -759,3 +759,366 @@ describe('列フィルターのポップオーバー(filtering + columnMenu)', (
     });
   }, 30_000);
 });
+
+describe('ツールパネル(toolPanel)とフィルターのチップのバー', () => {
+  beforeAll(async () => {
+    // React 版はツールパネルと列フィルターの部品を遅れて読み込むので、先に読んでおく(開いた直後に同じ DOM を比べるため)。
+    const reactLite = (await import(/* @vite-ignore */ new URL('../../../react/src/lite.ts', import.meta.url).pathname)) as {
+      preloadGridPopups: () => Promise<void>;
+    };
+    await reactLite.preloadGridPopups();
+  });
+
+  type ColumnLike = { key: string; visible?: boolean; pinned?: string };
+  const focused = () => document.activeElement ?? document.body;
+  const panel = () => document.querySelector<HTMLElement>('.ssg-toolpanel');
+  const inPanel = <E extends Element = HTMLElement>(selector: string): E | null =>
+    panel()?.querySelector<E>(selector) ?? null;
+  const allInPanel = <E extends Element = HTMLElement>(selector: string): E[] =>
+    Array.from(panel()?.querySelectorAll<E>(selector) ?? []);
+  const tab = (label: string) =>
+    allInPanel<HTMLButtonElement>('[role="tab"]').find((el) => el.textContent?.startsWith(label)) ?? null;
+  const menuItem = (label: string) =>
+    Array.from(document.querySelectorAll<HTMLElement>('.ssg-menu-item')).find((el) => el.textContent?.includes(label));
+  // パネルの中のどこにフォーカスがあるか(控えの「フォーカス」はグリッドの外の要素をタグだけで書くので、ここで詳しく控える)。
+  const logFocus = (ctx: ParityContext, label: string) => {
+    const active = document.activeElement;
+    ctx.log(
+      `フォーカス(${label})`,
+      active && active !== document.body
+        ? `${active.tagName.toLowerCase()}.${Array.from(active.classList).sort().join('.')} ${JSON.stringify(active.textContent?.slice(0, 16) ?? '')}`
+        : 'なし',
+    );
+  };
+  const describeColumns = (next: readonly ColumnLike[] | null) =>
+    next === null
+      ? 'なし'
+      : next.map((column) => `${column.key}${column.visible === false ? ':hidden' : ''}${column.pinned ? `:${column.pinned}` : ''}`).join(' ');
+  const click = async (ctx: ParityContext, element: Element | null | undefined, label: string) => {
+    await ctx.act(() => {
+      if (!element) {
+        throw new Error(`[${ctx.framework}] クリックする要素がありません: ${label}`);
+      }
+      fireEvent.click(element, { detail: 1 });
+    });
+  };
+  const keyOn = async (ctx: ParityContext, element: Element | null | undefined, init: KeyboardEventInit & { key: string }) => {
+    await ctx.act(() => {
+      fireEvent.keyDown(element ?? focused(), init);
+    });
+  };
+  // ✎ / フィルターを追加 / チップは列へ移ってから数フレーム後に開く。
+  const waitFrames = (ctx: ParityContext) => ctx.act(() => {}, 120);
+  const openColumnMenu = async (ctx: ParityContext, key: string): Promise<boolean> => {
+    const button = ctx.header(key).querySelector<HTMLButtonElement>('.ssg-icon-btn');
+    if (!button) {
+      return false;
+    }
+    await ctx.act(() => {
+      fireEvent.pointerDown(button, { ...pointer, pointerType: 'mouse' });
+      fireEvent.pointerUp(button, { ...pointer, pointerType: 'mouse' });
+      fireEvent.click(button, { detail: 1 });
+    });
+    return true;
+  };
+  // ⠿ を引いて落とす(jsdom の行の矩形は top 0 / 高さ 400 なので、y = 100 は先頭の前、y = 300 は末尾)。
+  const dragHandle = async (ctx: ParityContext, handle: HTMLElement | null | undefined, fromY: number, toY: number) => {
+    await ctx.act(() => {
+      if (!handle) {
+        throw new Error(`[${ctx.framework}] ⠿ がありません`);
+      }
+      (handle as HTMLElement & { setPointerCapture: () => void }).setPointerCapture = () => {};
+      fireEvent.pointerDown(handle, { ...pointer, clientY: fromY });
+      fireEvent.pointerMove(handle, { ...pointer, clientY: toY });
+    });
+    ctx.snapshot('⠿ を引いている');
+    await ctx.act(() => {
+      fireEvent.pointerUp(handle!, { ...pointer, clientY: toY });
+    });
+  };
+
+  const featureSets = [
+    ['全部', ['filtering', 'columnMenu', 'toolPanel']],
+    ['フィルターなし', ['columnMenu', 'toolPanel']],
+    ['列メニューなし', ['filtering', 'toolPanel']],
+    ['ツールパネルなし', ['filtering', 'columnMenu']],
+    ['ツールパネルだけ', ['toolPanel']],
+  ] as const;
+
+  it.each(featureSets)(
+    'フィルターのタブ・チップのバー・上部バーの絞り込みのチップ・✎ と列フィルター・Escape の順(%s)',
+    async (_label, features) => {
+      await expectParity({
+        features,
+        watch: ['onFiltersChange'],
+        props: () => ({
+          rows: makeRows(16),
+          columns,
+          rowKeyGetter: (row: Row) => row.id,
+          height: 360,
+          animateRows: false,
+          showFilterChipBar: true,
+        }),
+        steps: async (ctx) => {
+          ctx.snapshot('最初');
+          await ctx.act(() => {
+            call(ctx, 'applyState', {
+              filters: {
+                globalText: '品目',
+                columnFilters: {
+                  qty: { kind: 'number', raw: '>20', parsed: { mode: 'comparison', operator: '>', value: 20 } },
+                  city: { kind: 'set', values: ['東京', '大阪'] },
+                },
+              },
+            });
+          });
+          ctx.snapshot('フィルター 3 つ(チップのバー)');
+          await ctx.act(() => {
+            call(ctx, 'openFilterManager');
+          });
+          ctx.snapshot('openFilterManager');
+          logFocus(ctx, '開いた');
+          if (!panel()) {
+            // ツールパネルが無い / フィルターが無い構成では開かない。チップのバーのチップから列フィルターを開く。
+            const chip = ctx.container.querySelector<HTMLButtonElement>('.ssg-filter-chip-label');
+            if (chip && !chip.disabled) {
+              await click(ctx, chip, 'チップ');
+              await waitFrames(ctx);
+              ctx.snapshot('チップで列フィルターを開いた');
+              await keyOn(ctx, null, { key: 'Escape' });
+            }
+            const clearOne = ctx.container.querySelector<HTMLButtonElement>('.ssg-filter-chip-clear');
+            if (clearOne) {
+              await click(ctx, clearOne, 'チップの ×');
+              ctx.snapshot('チップの × で外した');
+              await click(ctx, ctx.container.querySelector('.ssg-filter-chip-bar-clear-all'), 'すべてクリア');
+              ctx.snapshot('チップのバーのすべてクリア');
+            }
+            return;
+          }
+          // 上部バーの絞り込みのチップで閉じて、もう一度開く。
+          const summaryChip = () => ctx.container.querySelector<HTMLElement>('button.ssg-bar-chip');
+          await click(ctx, summaryChip(), '絞り込みのチップ');
+          ctx.snapshot('絞り込みのチップで閉じた');
+          await click(ctx, summaryChip(), '絞り込みのチップ');
+          ctx.snapshot('絞り込みのチップで開いた');
+          // ✎ で列フィルターを開く(パネルは開いたまま)。Escape は 1 回目 = ポップオーバー、2 回目 = パネル。
+          const editButtons = allInPanel<HTMLButtonElement>('.ssg-filter-manage-icon-btn:not(.ssg-filter-manage-icon-btn--danger)');
+          await click(ctx, editButtons[1], '✎(都市)');
+          await waitFrames(ctx);
+          ctx.snapshot('✎ で都市のフィルターを開いた');
+          // ポップオーバーの中の押下ではパネルは閉じない。
+          await ctx.act(() => {
+            const option = document.querySelector('.ssg-filter-popover .ssg-filter-option input');
+            if (option) {
+              fireEvent.pointerDown(option, pointer);
+            }
+          });
+          ctx.snapshot('ポップオーバーの中を押した');
+          await keyOn(ctx, null, { key: 'Escape' });
+          ctx.snapshot('Escape 1 回目(ポップオーバーだけ閉じた)');
+          await keyOn(ctx, null, { key: 'Escape' });
+          ctx.snapshot('Escape 2 回目(パネルを閉じた)');
+          logFocus(ctx, 'Escape 2 回目');
+          // 開き直して、× で 1 つ外す / グローバルの × / すべてクリア。
+          await ctx.act(() => {
+            call(ctx, 'openFilterManager');
+          });
+          await click(ctx, allInPanel('.ssg-filter-manage-row:not(.ssg-filter-manage-row--global) .ssg-filter-manage-icon-btn--danger')[0], '×');
+          ctx.snapshot('× で数量を外した');
+          await click(ctx, inPanel('.ssg-filter-manage-row--global .ssg-filter-manage-icon-btn--danger'), 'グローバルの ×');
+          ctx.snapshot('グローバルの × で外した');
+          await click(ctx, inPanel('.ssg-filter-manage-clear-all'), 'すべてクリア');
+          ctx.snapshot('すべてクリア');
+          // フィルターを追加: 品名を選ぶと列へ移って開く(選んだ値は空へ戻る)。
+          await ctx.act(() => {
+            const select = inPanel<HTMLSelectElement>('.ssg-filter-manage-add');
+            if (select) {
+              fireEvent.change(select, { target: { value: 'name' } });
+            }
+          });
+          ctx.log('追加の選択の値', inPanel<HTMLSelectElement>('.ssg-filter-manage-add')?.value ?? null);
+          await waitFrames(ctx);
+          ctx.snapshot('フィルターを追加で品名を開いた');
+          await keyOn(ctx, null, { key: 'Escape' });
+          // チップのバーのチップから開く(パネルを開いたまま)。
+          await ctx.act(() => {
+            call(ctx, 'applyState', { filters: { globalText: '', columnFilters: { name: { kind: 'text', value: '1' } } } });
+          });
+          await click(ctx, ctx.container.querySelector('.ssg-filter-chip-label'), 'チップ');
+          await waitFrames(ctx);
+          ctx.snapshot('チップで品名を開いた');
+          await keyOn(ctx, null, { key: 'Escape' });
+          await keyOn(ctx, null, { key: 'Escape' });
+          ctx.snapshot('両方閉じた');
+          // closeFilterManager は別のタブを出しているときは閉じない。
+          await ctx.act(() => {
+            call(ctx, 'openFilterManager');
+          });
+          await ctx.act(() => {
+            call(ctx, 'closeFilterManager');
+          });
+          ctx.snapshot('closeFilterManager');
+        },
+      });
+    },
+    30_000,
+  );
+
+  it.each(featureSets)(
+    '列 / 並び替えのタブ・列メニューの入口・開き直しの光・ヘッダーを掴んで動かす・Tab の巡回・外を押して閉じる(%s)',
+    async (_label, features) => {
+      let latest: readonly ColumnLike[] | null = null;
+      await expectParity({
+        features,
+        watch: ['onSortChange'],
+        props: () => ({
+          rows: makeRows(16),
+          columns,
+          rowKeyGetter: (row: Row) => row.id,
+          height: 360,
+          animateRows: false,
+          onColumnsChange: (next: readonly ColumnLike[]) => {
+            latest = next;
+          },
+        }),
+        steps: async (ctx) => {
+          const commit = async (label: string) => {
+            ctx.log(`onColumnsChange(${label})`, describeColumns(latest));
+            if (latest !== null) {
+              await ctx.setProps({ columns: latest });
+            }
+            latest = null;
+            ctx.snapshot(label);
+          };
+          // 列メニューの「列の表示」で列のタブを開く(列メニューが無ければ openFilterManager → 列のタブへ)。
+          if (await openColumnMenu(ctx, 'qty')) {
+            ctx.snapshot('列メニュー(ツールパネルの入口)');
+            const item = menuItem('列の表示');
+            if (item) {
+              await click(ctx, item, '列の表示');
+            } else {
+              await keyOn(ctx, null, { key: 'Escape' });
+            }
+          } else {
+            await ctx.act(() => {
+              call(ctx, 'openFilterManager');
+            });
+            if (panel()) {
+              await click(ctx, tab('列'), '列のタブ');
+            }
+          }
+          await ctx.act(() => {}, 60);
+          ctx.snapshot('列のタブ');
+          logFocus(ctx, '列のタブ');
+          if (!panel()) {
+            return;
+          }
+          // 検索 → 消す。
+          await ctx.act(() => {
+            const input = inPanel('.ssg-chooser-search-input');
+            if (input) {
+              fireEvent.input(input, { target: { value: '数' } });
+            }
+          });
+          ctx.snapshot('「数」で検索');
+          await ctx.act(() => {
+            const input = inPanel('.ssg-chooser-search-input');
+            if (input) {
+              fireEvent.input(input, { target: { value: '' } });
+            }
+          });
+          // 数量を外す → すべて表示 → 1 列を残して外す → リセット。
+          const toggle = (label: string) =>
+            allInPanel<HTMLButtonElement>('.ssg-chooser-toggle').find((el) => el.textContent === label) ?? null;
+          await click(ctx, toggle('数量'), '数量');
+          await commit('数量を外した');
+          await click(ctx, inPanel('.ssg-chooser-master-btn'), 'すべて表示');
+          await commit('すべて表示');
+          await click(ctx, inPanel('.ssg-chooser-master-btn'), '1 列を残して外す');
+          await commit('1 列を残して外した');
+          await click(ctx, inPanel('.ssg-chooser-reset-btn'), '列のリセット');
+          await commit('列のリセット');
+          // ⠿ で品名を中央の区分の末尾へ。
+          const chooserHandles = allInPanel<HTMLElement>('[data-chooser-pane="center"] .ssg-chooser-handle');
+          await dragHandle(ctx, chooserHandles[0], 100, 300);
+          await commit('品名を末尾へ');
+
+          // 並び替えのタブ: 基準を 2 つ、向き・列を変え、⠿ で入れ替え、削除、すべてクリア。
+          await click(ctx, tab('並び替え'), '並び替えのタブ');
+          await ctx.act(() => {}, 60);
+          ctx.snapshot('並び替えのタブ');
+          logFocus(ctx, '並び替えのタブ');
+          await click(ctx, inPanel('.ssg-sort-footer-btn--add'), '基準を追加');
+          await click(ctx, inPanel('.ssg-sort-footer-btn--add'), '基準を追加');
+          ctx.snapshot('基準を 2 つ');
+          await click(ctx, allInPanel('.ssg-sort-level')[1]?.querySelectorAll('.ssg-sort-dir-btn')[1], '降順');
+          ctx.snapshot('2 つ目を降順');
+          await ctx.act(() => {
+            const select = allInPanel<HTMLSelectElement>('.ssg-sort-select')[0];
+            if (select) {
+              fireEvent.change(select, { target: { value: 'city' } });
+            }
+          });
+          ctx.snapshot('1 つ目の列を都市へ');
+          await dragHandle(ctx, allInPanel<HTMLElement>('.ssg-sort-handle')[1], 300, 100);
+          ctx.snapshot('2 つ目を先頭へ');
+          await click(ctx, allInPanel('.ssg-sort-delete')[0], '削除');
+          ctx.snapshot('先頭を削除');
+          await click(ctx, inPanel('.ssg-sort-footer-btn--clear'), 'すべてクリア');
+          ctx.snapshot('並び替えのすべてクリア');
+          // 開いている間に列のタブへ切り替えると検索欄へフォーカスが移る。
+          await click(ctx, tab('列'), '列のタブ');
+          await ctx.act(() => {}, 60);
+          logFocus(ctx, '開いている間に列のタブへ');
+          await click(ctx, tab('並び替え'), '並び替えのタブ');
+
+          // 開いたまま列メニューの「並び替えを管理…」→ 枠が光る(同じタブでも)。
+          if (await openColumnMenu(ctx, 'name')) {
+            const item = menuItem('並び替えを管理…');
+            if (item) {
+              await click(ctx, item, '並び替えを管理…');
+              ctx.snapshot('開いたまま並び替えを管理…(光る)');
+            } else {
+              await keyOn(ctx, null, { key: 'Escape' });
+            }
+          }
+          // ヘッダーを掴んで動かす。
+          await ctx.act(() => {
+            const header = inPanel('.ssg-toolpanel-header');
+            if (header) {
+              fireEvent.pointerDown(header, { ...pointer, clientX: 300, clientY: 40 });
+              fireEvent.pointerMove(window, { ...pointer, clientX: 200, clientY: 120 });
+              fireEvent.pointerUp(window, { ...pointer, clientX: 200, clientY: 120 });
+            }
+          });
+          ctx.snapshot('ヘッダーを掴んで動かした');
+          // Tab はパネルの中で回る。
+          await ctx.act(() => {
+            const buttons = allInPanel<HTMLButtonElement>('button:not(:disabled)');
+            buttons[buttons.length - 1]?.focus();
+          });
+          await keyOn(ctx, null, { key: 'Tab' });
+          ctx.snapshot('最後のボタンの Tab で先頭へ');
+          logFocus(ctx, 'Tab');
+          await keyOn(ctx, null, { key: 'Tab', shiftKey: true });
+          ctx.snapshot('先頭の Shift+Tab で最後へ');
+          logFocus(ctx, 'Shift+Tab');
+          // 外(グリッドのセル)を押すと閉じる。
+          await ctx.act(() => {
+            fireEvent.pointerDown(ctx.cell(1, 'name'), pointer);
+            fireEvent.pointerUp(window, pointer);
+          });
+          ctx.snapshot('セルを押して閉じた');
+          // ハンドルで開き、Escape で閉じる。
+          await ctx.act(() => {
+            call(ctx, 'openFilterManager');
+          });
+          await keyOn(ctx, null, { key: 'Escape' });
+          ctx.snapshot('Escape で閉じた');
+        },
+      });
+    },
+    30_000,
+  );
+});

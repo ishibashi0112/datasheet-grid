@@ -40,6 +40,13 @@ import type { GridContextMenuParams } from '../model/gridTypes';
 import type { createFilterOrder } from '../primitives/filterOrder';
 import type { createFilterPopover } from '../primitives/filterPopover';
 import type { ColumnFilterPopoverHost } from '../view/ColumnFilterPopoverHost';
+import type { createFilterManagement } from '../primitives/filterManagement';
+import type { GridFilterChipBar } from '../view/GridFilterChipBar';
+import type { createToolPanel } from '../primitives/toolPanel';
+import type { ToolPanel } from '../view/ToolPanel';
+import type { FilterManagementPanel } from '../view/FilterManagementPanel';
+import type { ColumnChooserPanel } from '../view/ColumnChooserPanel';
+import type { SortManagementPanel } from '../view/SortManagementPanel';
 import type { createColumnMenu } from '../primitives/columnMenu';
 import type { ColumnMenuPopover } from '../view/ColumnMenuPopover';
 
@@ -117,14 +124,26 @@ export type SolidGridFeatures = {
     | undefined;
   // フィルター: 行パイプラインの列フィルターの段 + 相対日付プリセットの日付の変わり目の見張り(いずれも core。エンジンが作る)+
   //   グローバルフィルターの適用(大きな表は時間分割)+ 列フィルターのポップオーバー(コントローラの接続と、候補の収集・
-  //   コマンド・描画の部品)。
+  //   コマンド・描画の部品)+ 適用中のフィルターの一覧と列へ移って開く処理 + フィルターのチップのバー。
   filtering?:
     | (NonNullable<GridCoreFeatures['filtering']> &
         FeatureLocaleDefaults & {
           createFilterOrder: typeof createFilterOrder;
           createFilterPopover: typeof createFilterPopover;
           FilterPopoverHost: typeof ColumnFilterPopoverHost;
+          createFilterManagement: typeof createFilterManagement;
+          FilterChipBar: typeof GridFilterChipBar;
         })
+    | undefined;
+  // ツールパネル(フィルター / 列 / 並び替えの 3 タブ): コントローラ(core)の接続 + 枠と 3 つのタブの中身の部品。
+  toolPanel?:
+    | {
+        createToolPanel: typeof createToolPanel;
+        ToolPanel: typeof ToolPanel;
+        FilterManagementPanel: typeof FilterManagementPanel;
+        ColumnChooserPanel: typeof ColumnChooserPanel;
+        SortManagementPanel: typeof SortManagementPanel;
+      }
     | undefined;
   // 列メニュー: コントローラ(core)の接続 + ポップアップの部品。
   columnMenu?:

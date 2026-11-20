@@ -15,6 +15,7 @@ import { pinnedRowsFeature } from './pinnedRows';
 import { rowDragFeature } from './rowDrag';
 import { scrollHintFeature } from './scrollHint';
 import { selectionAggregatesFeature } from './selectionAggregates';
+import { toolPanelFeature } from './toolPanel';
 import { totalRowFeature } from './totalRow';
 import type { GridFeatures, SolidGridFeatures } from './types';
 
@@ -36,4 +37,5 @@ export const fullGridFeatures = {
   contextMenu: contextMenuFeature,
   filtering: filteringFeature,
   columnMenu: columnMenuFeature,
+  toolPanel: toolPanelFeature,
 } satisfies Required<GridFeatures> as unknown as Required<SolidGridFeatures>;
