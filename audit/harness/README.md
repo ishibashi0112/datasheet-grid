@@ -13,7 +13,7 @@ vp install
 pnpm run audit:dev
 
 # 3. 別ターミナルでシナリオを実行(PASS / FAIL を標準出力に出す)
-pnpm run audit:test            # 基本 + 1M 行 + SSRM + ライフサイクル + 機能群 + 所見追試 + 集計 + 合計行 + フィルハンドル + 見送り分 + 遅延読み込み + 優先順位 + 1.0 前の最終チェック + アプリを作って確かめたチェック(段階 1 / DevBI / 段階 2)+ 英語 + ダイアログの中のポップアップ + 固定行
+pnpm run audit:test            # 基本 + 1M 行 + SSRM + ライフサイクル + 機能群 + 所見追試 + 集計 + 合計行 + フィルハンドル + 見送り分 + 遅延読み込み + 優先順位 + 1.0 前の最終チェック + アプリを作って確かめたチェック(段階 1 / DevBI / 段階 2)+ 英語 + ダイアログの中のポップアップ + 固定行 + 1.2.0 + ツールパネルの枠の光り
 node audit/harness/t-basic.mjs # 個別に 1 本だけ
 node audit/harness/perf-big.mjs            # 1M 行の計測(dev ビルド)
 HARNESS_BASE=http://127.0.0.1:5178/ node audit/harness/perf-big.mjs  # 本番ビルド(vp build → vp preview --port 5178)に対して
@@ -35,6 +35,7 @@ HARNESS_BASE=http://127.0.0.1:5178/ node audit/harness/perf-big.mjs  # 本番ビ
 - `t-popups.mjs` はダイアログの中のグリッドのポップアップ(1.1.0 / AP-07 `popupContainer`。ハーネスは `?s=dialog&host=native` = `<dialog>` の `showModal()` / `?s=dialog&host=radixlike` = Radix の Dialog の模擬(`role="dialog"` + translate で真ん中 + body の pointer-events: none + 外側のフォーカス / 押下の記録)): 列メニュー・列フィルターの入力・右クリックメニュー(`Shift+F10` も)・select の候補・ツールパネル・ツールチップ・列ドラッグのゴーストがダイアログの中に出て、見えて押せて、位置がトリガーに合う / Radix の模擬で外側のイベントが起きない / `popupContainer="body"` にすると body の直下で押せない(1.0.2 までの不具合の再現)/ ダイアログの無いページは今までどおり body の直下で translate なし。
 - `t-pinned.mjs` は固定行(1.1.0 `pinnedTopRows` / `pinnedBottomRows`): 3 ペインに描く / 上は列見出しのすぐ下・下は合計行のすぐ上 / スクロール範囲が固定行ぶん伸びる / スクロール・`Ctrl+Home` / `Ctrl+End` / `↑` / `scrollToRow` で本体の行が固定行の裏に隠れない / 横スクロールと固定列で見出しと揃う / 行ホバーが外れる / 押しても選択・編集が動かない / 範囲選択のドラッグを固定行の上へ動かすと上へ自動スクロール / `aria-rowcount` と行の番号 / エクスポートの `includePinnedRows` / ダークの色 / 列ドラッグ(live)で固定行のセルも付いてくる / 行が少ないとき / 100 万行(scroll-space)/ SSRM。スクリーンショット `.out/pinned-light.png` / `pinned-dark.png`。
 - `t-v120.mjs` は 1.2.0 の追加と修正: 1 セル / 2 行のコピーを範囲へ貼ると範囲を埋める・元に戻す 1 回・`pasteFillsSelection={false}` は 1 回だけ(A-08)/ `activeCellFollows` の `'position'` と `'row'`(並びが変わっても押した行に付いていく・スクロールしない・位置だけでは `onActiveCellChange` を呼ばない・矢印キーでそこまで動く。B-04)/ `isAtBottom()` と `onScroll` の `atBottom`(basic / 100 万行)/ 右クリックメニューの名前(RV3-H2)/ 背の高い行の上にそろえたセルの 1 行のエディタ / `canDropRow`(E-07)/ タッチの端末のメニューの項目の高さ(L-12。CDP のタッチの模擬)。最後に 1.2.0 の見直し(QG / QH)の修正: 全選択は並びが変わってもそのまま(QG-1)・列幅のドラッグ中に並びが変わっても付いていく(QG-4)・下の固定行の上の行のエラーの吹き出し(QH-6)・タッチの右クリックメニューが画面に収まる(QH-2)・select の候補の一覧がスクロールしない(QH-1)・右寄せの見出しの ⋮ とつまみ(QH-4)・列フィルターとツールパネルの的の大きさ(QH-5)・上が見出しに隠れたセルと拡大縮小の中の IME の変換中の入力受け(QH-3 / QH-7)。タッチと IME は Chromium だけ(ほかは skip)。
+- `t-toolpanel-flash.mjs` はツールパネルを開いたまま開き直したときの枠の光り(0.46.1 から出ていなかった。2026-11-20 に Solid 版の確認で見つけた): 開いた直後は光らない / 開き直すと光り、終われば `ssg-toolpanel--flash` が外れる / 現れるときの動きをやり直さない(パネルが薄くならない)/ 続けて開き直しても光る / `motion="off"` では光らない。
 - `t-verify.mjs` は監査所見(RD-1 / RD-2 / C-1 / L-01 / C-3 / B-01 / B-02 / B-03 / V-02 …)の再現スクリプト。修正後は FAIL → PASS に変わることを確認する回帰テストとして使う。
 
 ## 他のブラウザで回す(2026-10-28 追加)

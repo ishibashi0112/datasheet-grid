@@ -2214,7 +2214,9 @@
      別タブ切替)したとき、パネルがどこに出ているかを一瞬示すフラッシュ。クラス
      (--flash)は JS(ToolPanel の flashTick effect)が直付けし animationend で除去する
      一過性演出(ヘッダージャンプ ssg-header-cell--jump-flash と同方式)。accent リングを
-     出して通常影へ戻す。prefers-reduced-motion では抑制する。 */
+     出して通常影へ戻す。prefers-reduced-motion では抑制する。
+     変更(Solid 版の確認で見つけた不具合): 光らせる規則はポップアップの出現のアニメ(.ssg-popover の ssg-pop-in)の後ろへ
+     移しました(ここにあると、後ろの出現のアニメが同じ詳細度で上書きして 0.46.1 から光っていなかった)。 */
   @keyframes ssg-toolpanel-flash {
     0% {
       box-shadow:
@@ -2225,15 +2227,6 @@
     100% {
       box-shadow: var(--ssg-panel-shadow);
     }
-  }
-  .ssg-toolpanel--flash {
-    animation: ssg-toolpanel-flash 0.45s ease-out;
-  }
-  /* 変更(motion-0): 抑制の判定を prefers-reduced-motion の直接参照から motion prop の修飾子へ(auto では同義。
-     'on' では OS 設定に関わらず動く)。パネル root 自身に修飾子が付くため自己参照も含めます。 */
-  .ssg-motion-off .ssg-toolpanel--flash,
-  .ssg-motion-off.ssg-toolpanel--flash {
-    animation: none;
   }
 
   /* ヘッダー(SegmentedControl + ×)。--draggable(FM-4)併用で掴んで移動できる。 */
@@ -3435,6 +3428,18 @@
   .ssg-select-editor-popover,
   .ssg-popover,
   .ssg-dp-panel {
+    animation: ssg-pop-in var(--ssg-motion-fast) var(--ssg-motion-ease);
+  }
+  /* ツールパネルの枠の光り(--flash。上の ssg-toolpanel-flash の説明)。出現のアニメを先頭に残したまま光りを足します
+     (名前の同じアニメは続きとして扱われるので、クラスの付け外しで出現をやり直さない)。モーションを止めているときは
+     光らせません(パネル root 自身に修飾子が付くため自己参照も含めます)。 */
+  .ssg-popover.ssg-toolpanel--flash {
+    animation:
+      ssg-pop-in var(--ssg-motion-fast) var(--ssg-motion-ease),
+      ssg-toolpanel-flash 0.45s ease-out;
+  }
+  .ssg-motion-off .ssg-popover.ssg-toolpanel--flash,
+  .ssg-motion-off.ssg-popover.ssg-toolpanel--flash {
     animation: ssg-pop-in var(--ssg-motion-fast) var(--ssg-motion-ease);
   }
   /* 追加(1.1.0 の見直し): ポップアップの root は押せるようにします(Mantine の Modal の inner のように pointer-events: none の
