@@ -289,7 +289,13 @@ export function GridShell<T extends object>(props: SpreadsheetGridProps<T>, feat
   const cellDoubleClickRef: MutableRef<(cell: CellCoord, event: MouseEvent) => void> = { current: noop };
 
   // ── ポップアップの置き場(ツールチップ / エディタのポップアップ。core utils/popupContainer) ──
-  const getPopupContainer = () => resolvePopupContainer(gridRootRef.current, props.popupContainer ?? 'auto');
+  //   開いたとき(イベントや部品の本体)に 1 回読んで決めるものなので追跡しない(部品の本体で props を読むと Solid 2.0 の開発時の
+  //   警告 STRICT_READ_UNTRACKED になる。別視点のレビュー)。
+  const getPopupContainer = () =>
+    resolvePopupContainer(
+      gridRootRef.current,
+      untrack(() => props.popupContainer) ?? 'auto',
+    );
   // エディタのポップアップへ渡す文脈(トークンを写す元 = シェル、描く場所)。
   const portalContext = { source: () => gridRootRef.current, container: getPopupContainer };
   onSettled(() => {

@@ -615,7 +615,7 @@ function DateConditionEditor(props: DateConditionEditorProps) {
                 />
               }
             >
-              {renderSlot('to')}
+              {untrack(() => renderSlot('to'))}
             </Show>
           </Show>
         </div>
@@ -623,14 +623,15 @@ function DateConditionEditor(props: DateConditionEditorProps) {
       {/* チップは列の構成(dateFilterPresets)から。空の構成ではチップの行ごと出しません。 */}
       <Show when={props.presets.length > 0}>
         <div class="ssg-filter-presets">
-          <For each={props.presets}>
+          {/* id で使い回します(押した直後にチップの要素が作り直されるとフォーカスが外れる。React 版の key と同じ)。 */}
+          <For each={props.presets} keyed={(option) => option.id}>
             {(option) => (
               <button
                 type="button"
-                {...pressHandlers(() => togglePreset(option.id))}
-                class={['ssg-filter-preset-chip', { 'ssg-filter-preset-chip--active': props.draft.preset === option.id }]}
+                {...pressHandlers(() => togglePreset(option().id))}
+                class={['ssg-filter-preset-chip', { 'ssg-filter-preset-chip--active': props.draft.preset === option().id }]}
               >
-                {option.label}
+                {option().label}
               </button>
             )}
           </For>

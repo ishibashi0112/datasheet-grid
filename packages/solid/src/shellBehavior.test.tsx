@@ -4,7 +4,7 @@ import { beforeAll, describe, expect, it, vi } from 'vitest';
 import { createSignal, flush } from 'solid-js';
 import { fireEvent, render } from '@solidjs/testing-library';
 import { installJsdomLayoutStubs } from '@ishibashi0112/spreadsheet-grid-core/testing';
-import { SpreadsheetGrid, type GridColumn } from './index';
+import { SpreadsheetGrid, type GridColumn, type SpreadsheetGridHandle } from './index';
 
 type Row = { id: number; name: string; qty: number };
 
@@ -138,5 +138,86 @@ describe('シェルの振る舞い', () => {
     fireEvent.click(cell);
     flush();
     expect(targets).toEqual([cell]);
+  });
+
+  // 段階 2-3 の別視点のレビュー: 見出しが描かれるのを待つ rAF が、表を外した後に動いてポップアップのコントローラを開いていた。
+  it('チップから列フィルターへ移った直後に表を外しても、外した表はフォーカスを奪わずリスナーも付けない', async () => {
+    const outside = document.createElement('input');
+    document.body.appendChild(outside);
+    const { container, unmount } = render(() => (
+      <SpreadsheetGrid<Row>
+        rows={makeRows(5)}
+        columns={columns.map((column) => (column.key === 'name' ? { ...column, filterType: 'text' as const } : column))}
+        rowKeyGetter={(row) => row.id}
+        enableColumnFilter
+        showFilterChipBar
+        initialState={{ filters: { globalText: '', columnFilters: { name: { kind: 'text', value: '品目' } } } }}
+      />
+    ));
+    flush();
+    const chip = container.querySelector<HTMLElement>('.ssg-filter-chip-label');
+    expect(chip).not.toBeNull();
+    fireEvent.click(chip as HTMLElement);
+    flush();
+    unmount();
+    const added = vi.spyOn(window, 'addEventListener');
+    outside.focus();
+    await new Promise((resolve) => setTimeout(resolve, 150));
+    const popupListeners = added.mock.calls.filter(([type]) => type === 'keydown' || type === 'pointerdown');
+    added.mockRestore();
+    expect(document.activeElement).toBe(outside);
+    expect(popupListeners).toEqual([]);
+    outside.remove();
+  });
+
+  // 段階 2-3 の別視点のレビュー: ポップアップの部品の本体で描く場所を決めるときに props を追跡の外で読み、開くたびに Solid 2.0 の
+  //   開発時の警告 STRICT_READ_UNTRACKED が出ていた。
+  it('列メニュー・列フィルター・ツールパネルを開いても、Solid の開発時の警告を出さない', async () => {
+    const settle = () => new Promise((resolve) => setTimeout(resolve, 60));
+    const warn = vi.spyOn(console, 'warn');
+    let handle: SpreadsheetGridHandle<Row> | undefined;
+    // 利用側が props を signal の広げで渡す形(props の読み取りが反応する値になる。比べるテストの形と同じ)。
+    const { container, unmount } = render(() => {
+      const [gridProps] = createSignal({
+        rows: makeRows(5),
+        columns: columns.map((column) => (column.key === 'name' ? { ...column, filterType: 'text' as const } : column)),
+        rowKeyGetter: (row: Row) => row.id,
+        enableColumnFilter: true,
+        enableColumnMenu: true,
+      });
+      return (
+        <SpreadsheetGrid<Row>
+          {...gridProps()}
+          ref={(h) => {
+            handle = h;
+          }}
+        />
+      );
+    });
+    flush();
+    await settle();
+    const menuButton = container.querySelector<HTMLElement>('.ssg-header-cell[data-ssg-col-key="name"] .ssg-icon-btn');
+    expect(menuButton).not.toBeNull();
+    fireEvent.pointerDown(menuButton as HTMLElement, { button: 0, pointerId: 1, pointerType: 'mouse' });
+    fireEvent.pointerUp(menuButton as HTMLElement, { button: 0, pointerId: 1, pointerType: 'mouse' });
+    fireEvent.click(menuButton as HTMLElement, { detail: 1 });
+    flush();
+    await settle();
+    const filterItem = Array.from(document.querySelectorAll<HTMLElement>('.ssg-menu-item')).find((item) =>
+      item.textContent?.includes('フィルター…'),
+    );
+    expect(filterItem).toBeDefined();
+    fireEvent.click(filterItem as HTMLElement, { detail: 1 });
+    flush();
+    await settle();
+    expect(document.querySelector('.ssg-filter-popover')).not.toBeNull();
+    handle?.openFilterManager();
+    flush();
+    await settle();
+    expect(document.querySelector('.ssg-toolpanel')).not.toBeNull();
+    const strictWarnings = warn.mock.calls.filter((call) => String(call[0]).includes('STRICT_READ_UNTRACKED'));
+    warn.mockRestore();
+    unmount();
+    expect(strictWarnings).toEqual([]);
   });
 });

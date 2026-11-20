@@ -758,6 +758,77 @@ describe('列フィルターのポップオーバー(filtering + columnMenu)', (
       },
     });
   }, 30_000);
+
+  // 別視点のレビュー: 種別を推定した列('auto' → dateSet)で、下書きを変えるたびにチップと差し替えた日付欄が作り直されて
+  //   フォーカスが外れていた(種別を明示した列では起きない)。
+  it("'auto' の日付の列のチップと差し替えた日付欄は、下書きを変えても同じ要素のまま", async () => {
+    const { createElement } = await import('react');
+    await expectParity({
+      features: ['filtering', 'columnMenu'],
+      watch: ['onFiltersChange'],
+      props: (framework) => ({
+        rows: makeRows(20),
+        columns: [
+          { key: 'id', title: 'ID', width: 60, pinned: 'left', editable: false },
+          { key: 'day', title: '日付', width: 110, filterType: 'auto', editor: { type: 'date' } },
+        ],
+        rowKeyGetter: (row: Row) => row.id,
+        height: 360,
+        animateRows: false,
+        renderFilterDateInput: (ctx: { value: string; onChange: (value: string) => void; ariaLabel: string; slot: string }) =>
+          framework === 'react'
+            ? createElement('input', {
+                className: 'custom-date',
+                'data-slot': ctx.slot,
+                'aria-label': ctx.ariaLabel,
+                defaultValue: ctx.value,
+                onChange: (event: { target: HTMLInputElement }) => ctx.onChange(event.target.value),
+              })
+            : (
+                <input
+                  class="custom-date"
+                  data-slot={ctx.slot}
+                  aria-label={ctx.ariaLabel}
+                  value={ctx.value}
+                  onInput={(event) => ctx.onChange(event.currentTarget.value)}
+                />
+              ),
+      }),
+      steps: async (ctx) => {
+        await openFilter(ctx, 'day');
+        ctx.snapshot('日付(auto → dateSet)を開いた');
+        // チップをキーボードで押す(フォーカスを置いて Enter = click の detail 0)。
+        const chip = inPopover<HTMLButtonElement>('.ssg-filter-preset-chip');
+        await ctx.act(() => {
+          chip?.focus();
+          if (chip) {
+            fireEvent.click(chip, { detail: 0 });
+          }
+        });
+        ctx.log('チップを押した後も同じ要素でフォーカスもそのまま', chip?.isConnected === true && document.activeElement === chip);
+        ctx.snapshot('今日のチップ');
+        // 範囲にして、終わりの欄にフォーカスを置いたまま開始の欄を変える。
+        await change(ctx, inPopover('.ssg-filter-select'), 'range');
+        const to = inPopover<HTMLInputElement>('.custom-date[data-slot="to"]');
+        await ctx.act(() => {
+          to?.focus();
+          const from = inPopover<HTMLInputElement>('.custom-date[data-slot="from"]');
+          if (from) {
+            fireEvent.input(from, { target: { value: '2026-01-01' } });
+          }
+        });
+        ctx.log('開始の欄を変えても終わりの欄は同じ要素でフォーカスもそのまま', to?.isConnected === true && document.activeElement === to);
+        await ctx.act(() => {
+          if (to) {
+            fireEvent.input(to, { target: { value: '2026-02-01' } });
+          }
+        });
+        ctx.log('終わりの欄を変えても同じ要素', to?.isConnected === true && document.activeElement === to);
+        ctx.snapshot('範囲を入れた');
+        await press(ctx, inPopover('.ssg-filter-btn-primary'), '閉じる');
+      },
+    });
+  }, 30_000);
 });
 
 describe('ツールパネル(toolPanel)とフィルターのチップのバー', () => {

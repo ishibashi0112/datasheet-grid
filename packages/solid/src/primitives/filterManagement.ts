@@ -5,7 +5,7 @@
 //     分かるように出します(✎ は使えない)。行のグループ化の最中のグループ元の列は「(グループ化中)」で、✎ で開ける。
 //   - 対象の列へ移るとき: 中央のペインの列なら見える所まで横にスクロールし、見出しのセルが描かれるのを rAF で待って(最大 8 回)
 //     から開き、見出しを一瞬光らせます(列の仮想化で描かれていない列は、開いても位置が決まらないため)。
-import { createMemo, untrack } from 'solid-js';
+import { createMemo, onCleanup, untrack } from 'solid-js';
 import {
   createColumnFilterDescribeOptions,
   describeColumnFilterValue,
@@ -107,6 +107,25 @@ export function createFilterManagement<T>(inputs: FilterManagementInputs<T>): Fi
       }));
   });
 
+  // 見出しが描かれるのを待つ rAF は、表を外したら止めます(React 版は外すと ref が null になり tryOpen が何もしない。Solid 版の
+  //   ref は外した後も要素を指すので、止めないと外した表のポップアップのコントローラが動いてフォーカスを奪う。別視点のレビュー)。
+  const pendingFrames = new Set<number>();
+  let disposed = false;
+  onCleanup(() => {
+    disposed = true;
+    for (const frame of pendingFrames) {
+      cancelAnimationFrame(frame);
+    }
+    pendingFrames.clear();
+  });
+  const scheduleFrame = (callback: () => void) => {
+    const frame = requestAnimationFrame(() => {
+      pendingFrames.delete(frame);
+      callback();
+    });
+    pendingFrames.add(frame);
+  };
+
   // 押したとき(イベントの中)に呼ばれるので、今の値を読むだけ。
   const jumpToColumnFilter = (columnKey: string) =>
     untrack(() => {
@@ -154,13 +173,13 @@ export function createFilterManagement<T>(inputs: FilterManagementInputs<T>): Fi
       };
       const tryOpen = (attempt: number) => {
         // 外れた後に遅れて動いたときは何もしません。
-        if (!inputs.gridRootRef.current) {
+        if (disposed || !inputs.gridRootRef.current) {
           return;
         }
         const cell = findHeaderCell();
         if (cell === null) {
           if (attempt < 8) {
-            requestAnimationFrame(() => tryOpen(attempt + 1));
+            scheduleFrame(() => tryOpen(attempt + 1));
           }
           return;
         }
@@ -174,7 +193,7 @@ export function createFilterManagement<T>(inputs: FilterManagementInputs<T>): Fi
         cell.classList.add(JUMP_FLASH_CLASS_NAME);
         cell.addEventListener('animationend', () => cell.classList.remove(JUMP_FLASH_CLASS_NAME), { once: true });
       };
-      requestAnimationFrame(() => tryOpen(0));
+      scheduleFrame(() => tryOpen(0));
     });
 
   return { entries, addableColumns, jumpToColumnFilter };

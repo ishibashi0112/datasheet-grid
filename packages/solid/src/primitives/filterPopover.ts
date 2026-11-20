@@ -130,12 +130,21 @@ export function createFilterPopover<T>(inputs: FilterPopoverInputs<T>): FilterPo
     },
     'effect',
   );
-  const openedColumn = createMemo(() => resolveOpenedFilterColumn(popoverColumns(), state()));
+  // 開いている列は、列のキーと種別と列の定義が変わったときだけ作り直します。state には下書きも入っていて、種別を推定した
+  //   列('auto')では core が毎回 { ...column, filterType } を作るので、state をそのまま読むと打つたびに新しい列になり、
+  //   その先(相対の期間のチップ・差し替えた日付欄)が作り直されてフォーカスが外れる(別視点のレビュー)。
+  const openedColumnKey = createMemo(() => state()?.columnKey ?? null);
+  const openedFilterType = createMemo(() => state()?.filterType ?? null);
+  const openedColumn = createMemo(() => {
+    openedColumnKey();
+    openedFilterType();
+    return resolveOpenedFilterColumn(popoverColumns(), untrack(state));
+  });
   return {
     state,
     layout,
     openedColumn,
-    openedFilterType: createMemo(() => state()?.filterType ?? null),
+    openedFilterType,
     isOpen: createMemo(() => state() !== null),
     setPanel: (element) => {
       controller.panelRef.current = element;
