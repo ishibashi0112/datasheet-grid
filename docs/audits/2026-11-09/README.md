@@ -505,3 +505,38 @@ G = batch 1 / 2 / 4 / 5 / 10 / 11 / 12 のロジックと状態、H = batch 3 / 
 | QH-6 | 低 | 既定の並びで、見えている最後の行のエラーの吹き出しが下の固定行に隠れる(1.1.0 から) | 直した(見えている範囲に上下の固定行も入れる。core `utils/gridVisibleBand` を共用) |
 | QH-7 | 低 | `transform: scale()` の中で IME の変換中の入力受けの位置と大きさが二重に縮む(0.44.0 から) | 直した(倍率で割る) |
 | QH-メモ | 低 | `CellEditorContext.initialText` の開発メモが 1 文字のまま | 直した |
+
+### 1.2.1 の確かめ直し(2026-11-21)
+
+1.2.1 は機能の追加の無い版で、中身は Solid 版を作るために React 版の中の判断と DOM の処理を core へ移した作り替え(キーボード・マウス・クリップボードがイベントの時点の状態を store から読む形、セルの置き場所とコマンド、下部バーの文字、エディタの判断と DOM の処理、展開行の開閉とカードの `Tab` の順 ほか。記録は `docs/solid/README.md`)と、ツールパネルを開き直したときの光り(PR #68)・`scrollToBottom()` の後の末尾への合わせ直し(core の内部。afe72a5 / 54f2ed5)の 2 つの修正。作り替えで React 版の挙動が変わっていないかを、main ba1f3b6 を pack した候補(版の番号は 1.2.0 のまま)と npm の 1.2.0 で比べた。
+
+- **公開物の比べ**: React 版の入口の d.ts(`index` / `lite` / `ai` / `common` / `model/gridTypes`)・core の `gridTypes.core.d.ts`・同梱の API_REFERENCE.md / README / Skill・両方の package.json(版を除く)は 1.2.0 と同じ。違うのは JS・CSS(光りの規則)と、内部の部品 `./internal/*` の d.ts(core に 16 のモジュールが増え、React 版の内部の d.ts が 1 つ減った)。
+- **アプリでの比べ**: 手順は `audit/dogfood/2026-11-09/REVERIFY-BRIEF-1.2.1.md`(4 人 × 3 本)。同じアプリへ 2 つの版を入れ替え、印(core の `settleBottomPin` と style.css の `.ssg-popover.ssg-toolpanel--flash`)で入った版を確かめてから、前に書いたスクリプトと新しく書いた手順を両方で回し、DOM・`document.activeElement`・コールバックの引数・クリップボード・エクスポート・`getState()` を手順ごとに突き合わせた(dev と本番、StrictMode)。
+- **結果**: 12 本とも回帰は無し。違いは 2 つで、どちらも候補が正しいか見た目が同じ(下の表の RV5-1 / RV5-2)。ツールパネルの光りの修正は K(テストと型)を除く 11 本で確かめた(列メニューの「並び替えを管理…」「フィルターを管理…」・チップ・`openFilterManager()`・タブの切り替え、dev と本番、React 18 でも。現れる途中に開き直しても現れる動きはやり直さず、`motion="off"` と「視差効果を減らす」では光らない。1.2.0 は光らない)。
+- **大きさ**: `size:check` は full 149.85 / lite 87.24 / standard 110.58 / ai 14.03KB(1.2.0 から full +0.31 / lite +0.34 / standard +0.36KB = core へ移して関数に分けたぶん。上限 150.1 / 87.5 / 110.8 / 14.6KB の中。full の残りは 0.25KB)。利用側で束ねた初期 JS の gzip(E。esbuild)も同じく +0.3〜0.4KB で、全部入りと `/lite` を混ぜた構成だけ 187.13 → 183.57KB(−3.56)。J / L の本番 JS は +0.20 / +0.24KB、Next.js 15 の First Load は 242 → 243kB。
+- **ハーネス**: 3 つのブラウザの最後の結果は段階 3-2 の Chromium 952 / 952・Firefox 876 / 876・WebKit 872 / 875(FAIL は既知の BR-3・BR-4 だけ)。その後 React 版と core は変えていない(段階 3-2b / 3-3 は Solid 版とスクリプトだけ)。
+
+| アプリ | 比べた範囲 |
+| --- | --- |
+| A 経費精算 | 新しい手順 4 組(92 / 40 / 55 段と `scrollToBottom()` の 5 通り)+ 前に書いた 28 本、dev と本番。複数行のエディタ(Enter / Alt+Enter / Tab)・検査の吹き出し(mark / reject)・Excel からの貼り付け・フィルハンドル・`imeDirectInput`(CDP の変換)・グリッドの上のフォームとのフォーカス |
+| B 株価ボード | 70 段と、39 段を 4 通り(既定 / `activeCellFollows: 'row'` / `applyRows` / 両方。乱数は種つき)と 18 段 × 2 + 前の 17 本。更新中のソート・選択・コピー・集計・メモの編集、英語の下部バー |
+| C シフト表 | 96 手順(1.2.0 の dev / 本番・候補の dev / 本番がすべて一致)+ 前の 31 本。固定列と中央をまたぐ範囲・`renderHeader` の中のボタン・select エディタのキー・ラベル行・`hoverHighlight: 'cross'` |
+| D SaaS 管理画面 | 68 段(dev 各 2 回 / 本番 各 1 回)+ 追加の手順 + 前の 21 本(毎回 DB を初期化)。SSRM の編集と書き戻し・失敗のロールバック・`scrollToBottom()`・ハイドレーション(警告なし)・`next build` + `next start` |
+| E 商品マスタ | 100 段(dev は公開版 2 回 / 候補 1 回、本番 各 1 回、`motion="off"` と既定)+ 前の 24 本(本番)。custom エディタ(Mantine の `Select`)のキーとポータル・行のドラッグ・Modal の中・`/lite` の大きさ |
+| F 見積書(React 18.3) | 3 組(約 70 / 22 / 11 段)を dev と本番 + 前の 33 本(出力が 1 文字も違わない)。custom エディタと `imeDirectInput`・展開行のカードの `Tab` の順・autoHeight の末尾・React 18 の警告 |
+| G ログビューア | キー 39 手順・マウス 31 手順(固定列をまたぐ範囲・行 / 列見出し・右クリックメニュー・展開行のカード)・末尾を追う 29 手順を 100 万行と 4 万行で(ガイドの書き方。`onScroll` の `source` / `atBottom` と `isAtBottom()` も)・`scrollToBottom()` の後 −1〜1500ms に行を足す合わせ直し 16 通り × dev / 本番(ずれを 2 秒まで測り、両方の版で数値まで同じ)・検索 14 手順・列メニューと列フィルター 13 手順 + 前の 4 本 |
+| H WBS | 編集 38 手順(複数行・select・number / date の検査)・クリップボード 26 手順(グループ行をまたぐ範囲)・グループ 32 手順・行選択 13 手順・展開行 27 手順・そのほか 22 手順・`includeGroupingInState` 7 手順 + 前の 11 本。コールバック(`onRowsChange` の差分 / `onColumnsChange` / `onStateChange` / `onRowSelectionChange` / `onExpandedDetailRowKeysChange`)も同じ |
+| I AI 売上分析 | `/ai` のバーと表 42 手順(絞り込みの後の選択・集計・Ctrl+A のコピー・グループ化の後の頼み)・表の基本 61 手順(`renderHeader` の中のボタン・入力欄・ドラッグ、密度 compact / comfortable)+ 前の 15 本(英語を含む)。console は両方の版で警告なし |
+| J ダッシュボード | 266 段 × dev / 本番(Radix の Dialog / ネイティブの `<dialog>` / なし)+ モーションありの 52 段 + 前の 31 本 + 置き場所の 72 段(`density` / autoHeight / エディタの位置 / 吹き出し)+ エクスポート |
+| K テストと SSR と型 | vitest の React 19(83 件 / 29 ファイル)・StrictMode 75 件・React 18(50 件)・React 18 の StrictMode 42 件・Jest 4 件の結果が両方の版で同じ、SSR 10 通りの出力がバイト単位で同じ、Next.js 15、型のライブラリの d.ts 8 通り + pnpm が同じ |
+| L モバイル・タッチ・a11y(React 18.3) | 56 段(ariaSnapshot + axe)× dev / 本番、e2e の dev 46 本・本番 16 本。axe の JSON が完全に一致 |
+
+| ID | 重要度 | アプリ | 内容 | 対応 |
+| --- | --- | --- | --- | --- |
+| RV5-1 | 低 | J / K | 1 つのタスクの中で続けて送ったキー(テストで `fireEvent.keyDown` を 1 つの `act()` の中で続けて呼ぶ・`dispatchEvent` を同期で続けて呼ぶ)を、1.2.0 は前のキーの結果を見ずに処理していた(`↓` `↓` `Shift+→` `Shift+↓` でアクティブセルが動かない、`→` を 3 回で 1 つ、`Tab` を 2 回で 1 つ、`↓` と `F2` の後に打って `Enter` で元の行に書かれる)。候補はキーの順どおりに効く。人が打つキー・user-event・Playwright の `keyboard.press` は 1 つずつ別のタスクなので両方同じ | 候補が正しい(作り替え 60979f0 = イベントの時点の状態を store から読む形の効果)。CHANGELOG の「修正」に記載(1.2.0 の結果に合わせた利用側のテストは変わりうる) |
+| RV5-2 | 低 | J / A / E / F | `motion="off"` で開いたまま開き直したツールパネルの `animation-name` が、1.2.0 は `none`、候補は `ssg-pop-in` の 0 秒(`getAnimations()` は空で、見た目は同じ) | 記録だけ |
+| RV5-3 | 低 | A | エディタを開いたまま別のセルを押し、約 1 フレーム以内に打つと先頭の文字しか残らない(50ms 以上空ければ落ちない。`A/cmp/m1-type-after-click.cjs`)。1.2.0 から | 記録だけ(次の版の候補) |
+| RV5-4 | 低 | C / I | 狭い列(46px。I は 100px の右寄せ)では、ホバーで出る `.ssg-header-actions`(幅 40px・見出しの高さいっぱい)が `renderHeader` の中身を覆い、そこのボタンを押すと列が選ばれて `onClick` が呼ばれない(API リファレンスの「中に置いたボタンを押したときは列の範囲選択を始めない」と食い違う。96px なら正しい。`C/cmp/dbg-hdr-narrow.cjs`)。1.2.0 から | 記録だけ(次の版の候補) |
+| RV5-参考 | — | J / A / D / G / H / I | ツールパネルを「列」のタブで開いた状態から、チップ / `openFilterManager()` でフィルターのタブへ切り替えるとフォーカスが body に落ちる(J。1.2.0 から)/ number エディタで打った後の `↓` は確定ではなく値が 1 減る(`type="number"` のブラウザの既定。A)/ 固定の行の高さの表で `scrollToBottom()` の直後に行を足すと末尾から 36px 離れる(D)、autoHeight の絞り込み中に `scrollToBottom()` の 1.5 秒後に足すと 912px 上に残る(G。どちらも「約 1 秒の合わせ直し」の外で、ガイドの書き方 = 足す前の `isAtBottom()` + effect で `scrollToBottom()` なら追い続ける。両方の版で同じ)/ `Ctrl+X` は何もしない(H / I。キー操作の表に無い = 仕様)。どれも 1.2.0 と同じ | 記録だけ |
+
+手順の注意(次に同じ確かめをするとき): Playwright の `page.mouse.click(x, y, { modifiers })` は修飾キーを無視するので、Shift+クリックは `keyboard.down('Shift')` で押さえる(A / B / C は直して回し直した。D / E / F / J の補助関数の Shift+クリックの手順は Shift なしで回った可能性があるが、Shift+クリックは A / B / C で両方同じ)。pnpm のアプリへ候補の tarball を入れるときは `pnpm-workspace.yaml` の overrides で core の tarball を指す(React 版の依存の 1.2.0 が npm の core に解決されるため)。
