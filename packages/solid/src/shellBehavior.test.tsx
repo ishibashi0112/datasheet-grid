@@ -220,4 +220,138 @@ describe('シェルの振る舞い', () => {
     unmount();
     expect(strictWarnings).toEqual([]);
   });
+
+  // 段階 3-2b(速さ)の別視点のレビューの指摘の回帰テスト。セルの省略できる機能の値は、使う列のセルだけ memo にする
+  //   (primitives/memoWhen)。作った後に機能を足したセルも、初めて読んだときに memo になり、ホバーのたびに利用側の関数を
+  //   呼び直さない。数 px のスクロールでは、残ったセルの属性の effect が走らない(wordBreak の読み取りで数える。属性と style は
+  //   セルごとに 1 つの effect にまとまる)。
+  it('後から足した検査・メモ・書式は、ホバーやスクロールのたびに呼び直さない', () => {
+    const counts = { validate: 0, note: 0, className: 0, wordBreak: 0 };
+    const plain: GridColumn<Row>[] = [
+      { key: 'id', title: 'ID', width: 60, pinned: 'left', editable: false },
+      { key: 'name', title: '品名', width: 120 },
+      { key: 'qty', title: '数量', width: 80 },
+    ];
+    const decorated: GridColumn<Row>[] = [
+      plain[0] as GridColumn<Row>,
+      {
+        key: 'name',
+        title: '品名',
+        width: 120,
+        cellClassName: (ctx) => {
+          counts.className += 1;
+          return ctx.isActive ? 'my-active' : undefined;
+        },
+        cellNote: (ctx) => {
+          counts.note += 1;
+          return ctx.row.id === 2 ? '確認済み' : undefined;
+        },
+      },
+      {
+        key: 'qty',
+        title: '数量',
+        width: 80,
+        get wordBreak() {
+          counts.wordBreak += 1;
+          return undefined;
+        },
+        validate: (ctx) => {
+          counts.validate += 1;
+          return (ctx.value as number) >= 5 ? '5 未満' : true;
+        },
+      },
+    ];
+    let setColumns: (next: GridColumn<Row>[]) => void = () => {};
+    let setMarks: (next: boolean) => void = () => {};
+    const { container, unmount } = render(() => {
+      const [cols, set] = createSignal(plain);
+      const [marks, setMarksSignal] = createSignal(false);
+      setColumns = (next) => set(() => next);
+      setMarks = setMarksSignal;
+      return (
+        <SpreadsheetGrid<Row>
+          rows={makeRows(500)}
+          columns={cols()}
+          showValidationMarks={marks()}
+          rowKeyGetter={(row) => row.id}
+          height={360}
+        />
+      );
+    });
+    flush();
+    setColumns(decorated);
+    setMarks(true);
+    flush();
+    expect(cellOf(container, 1, 'name').getAttribute('data-ssg-tooltip')).toBe('確認済み');
+    expect(cellOf(container, 5, 'qty').getAttribute('aria-invalid')).toBe('true');
+    const hover = (target: Element) => {
+      fireEvent.pointerOver(target, { pointerId: 1 });
+      fireEvent.pointerEnter(target, { pointerId: 1 });
+      flush();
+    };
+    counts.validate = counts.note = counts.className = 0;
+    hover(cellOf(container, 1, 'qty'));
+    hover(cellOf(container, 2, 'qty'));
+    hover(cellOf(container, 3, 'name'));
+    expect(counts).toMatchObject({ validate: 0, note: 0, className: 0 });
+    const scroller = container.querySelector<HTMLElement>('.ssg-scroll-container') as HTMLElement;
+    counts.wordBreak = 0;
+    scroller.scrollTop = 3;
+    fireEvent.scroll(scroller);
+    flush();
+    expect(counts.wordBreak).toBe(0);
+    unmount();
+  });
+
+  it('autoHeight を切り替えても、Solid の開発ビルドの HUGE_FAN_OUT を出さない(セルは行ごとの値を読む)', async () => {
+    const settle = () => new Promise((resolve) => setTimeout(resolve, 30));
+    installJsdomLayoutStubs({ width: 2000, height: 700 });
+    const warn = vi.spyOn(console, 'warn');
+    type Wide = { id: number } & Record<string, number>;
+    const wideColumns: GridColumn<Wide>[] = Array.from({ length: 60 }, (_, i) => ({
+      key: `c${i}`,
+      title: `c${i}`,
+      width: 40,
+      ...(i === 1 ? { autoHeight: true } : {}),
+    }));
+    const wideRows: Wide[] = Array.from(
+      { length: 300 },
+      (_, r) => Object.fromEntries([['id', r], ...wideColumns.map((column) => [column.key, r])]) as Wide,
+    );
+    let setAuto: (next: boolean) => void = () => {};
+    const { container, unmount } = render(() => {
+      const [auto, set] = createSignal(false);
+      setAuto = set;
+      return (
+        <SpreadsheetGrid<Wide>
+          rows={wideRows}
+          columns={wideColumns}
+          rowKeyGetter={(row) => row.id}
+          height={700}
+          autoHeight={auto()}
+        />
+      );
+    });
+    try {
+      flush();
+      await settle();
+      flush();
+      expect(container.querySelectorAll('[role="gridcell"]').length).toBeGreaterThan(1000);
+      warn.mockClear();
+      setAuto(true);
+      flush();
+      await settle();
+      flush();
+      setAuto(false);
+      flush();
+      await settle();
+      flush();
+      const fanOut = warn.mock.calls.map((call) => String(call[0])).filter((message) => message.includes('FAN_OUT'));
+      expect(fanOut).toEqual([]);
+    } finally {
+      unmount();
+      warn.mockRestore();
+      installJsdomLayoutStubs({ width: 800, height: 400 });
+    }
+  });
 });

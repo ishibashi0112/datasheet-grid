@@ -38,6 +38,7 @@ import type {
 } from '../model/gridTypes';
 import { useGridLocaleText } from '../context/localeText';
 import { px } from '../primitives/style';
+import { createMemoWhen } from '../primitives/memoWhen';
 import { RowSelectionCheckbox } from './RowSelectionCheckbox';
 import type { GridPaneKind } from './GridHeaderRow';
 import type { GridLabelRowRenderContent } from './GridBodyLabelRow';
@@ -284,6 +285,10 @@ export function GridBodyLayer<T>(props: GridBodyLayerProps<T>) {
                   return null;
                 });
                 const editingCol = createMemo(() => (props.editingCell?.row === rowIndex() ? props.editingCell.col : -1));
+                // auto-height を使っているか(行ごとの memo)。セルは memo を作らないときに読むたびにこれを見るので、シェルの値を
+                //   直接読ませない(auto-height の切り替えで、シェルの値の購読がセルの数の 2 倍になる。Solid の開発ビルドの
+                //   HUGE_FAN_OUT は 2,000 から)。
+                const rowAutoHeight = createMemo(() => !!props.autoHeight);
                 const isHovered = createMemo(() => props.hoveredRowIndex === rowIndex());
                 const rowSlot = createMemo(() =>
                   resolveSlotProps<JSX.CSSProperties>(
@@ -377,7 +382,13 @@ export function GridBodyLayer<T>(props: GridBodyLayerProps<T>) {
                             ),
                         );
                         const value = () => getCellValue(currentRow(), unbound());
-                        const findRanges = createMemo(() => rowFindHits()?.get(colIndex()));
+                        // 省略できる機能の値は、その機能を使う列(行)のセルだけ memo にします(primitives/memoWhen。遠くへスクロール
+                        //   するたびに見えているセルを作り直すので、使わない機能の memo を作らない)。
+                        const findRanges = createMemoWhen(
+                          () => rowFindHits()?.has(colIndex()) === true,
+                          () => rowFindHits()?.get(colIndex()),
+                          undefined,
+                        );
                         // セルの中身へ渡す位置と操作の状態は、読んだときに引く形にする(中身を作る式が読まないように)。
                         //   クリックの pointerdown でアクティブセルが変わるたびに中身を作り直すと、pointerup が別の要素に落ちて
                         //   click が起きない(チェックボックスのセルや renderCell のボタンが押せない)。並べ替えで行の位置が
@@ -414,82 +425,100 @@ export function GridBodyLayer<T>(props: GridBodyLayerProps<T>) {
                           },
                         };
                         // セルの書式とメモに渡す文脈(どちらも無い列では作らない。React 版と同じ)。
-                        const styleContext = createMemo((): CellStyleContext<T, SolidGridTypes> | null =>
-                          typeof column().cellClassName === 'function' || column().cellNote
-                            ? {
-                                row: currentRow(),
-                                rowIndex: rowIndex(),
-                                sourceRowIndex: sourceRowIndex(),
-                                rowKey: rowKey(),
-                                colIndex: colIndex(),
-                                value: value(),
-                                column: column(),
-                                isActive: isActive(),
-                                isSelected: isSelected(),
-                                isEditing: isEditing(),
-                                readOnly: readOnlyCell(),
-                              }
-                            : null,
+                        const needsStyleContext = () => typeof column().cellClassName === 'function' || !!column().cellNote;
+                        const styleContext = createMemoWhen(
+                          needsStyleContext,
+                          (): CellStyleContext<T, SolidGridTypes> | null => ({
+                            row: currentRow(),
+                            rowIndex: rowIndex(),
+                            sourceRowIndex: sourceRowIndex(),
+                            rowKey: rowKey(),
+                            colIndex: colIndex(),
+                            value: value(),
+                            column: column(),
+                            isActive: isActive(),
+                            isSelected: isSelected(),
+                            isEditing: isEditing(),
+                            readOnly: readOnlyCell(),
+                          }),
+                          null,
                         );
-                        const conditionalCell = createMemo(() => {
-                          const cellClassName = column().cellClassName;
-                          const context = styleContext();
-                          return resolveSlotProps<JSX.CSSProperties>(
-                            typeof cellClassName === 'function' ? (context ? cellClassName(context) : undefined) : cellClassName,
-                          );
-                        });
+                        const conditionalCell = createMemoWhen(
+                          () => column().cellClassName !== undefined,
+                          () => {
+                            const cellClassName = column().cellClassName;
+                            const context = styleContext();
+                            return resolveSlotProps<JSX.CSSProperties>(
+                              typeof cellClassName === 'function' ? (context ? cellClassName(context) : undefined) : cellClassName,
+                            );
+                          },
+                          resolveSlotProps<JSX.CSSProperties>(undefined),
+                        );
                         // 条件付き書式(データバー / カラースケール)。指定のある列だけ値と集計を読みます(React 版と同じ)。
                         //   帯は .ssg-cf-bar(絶対配置・文字の下)、背景色は inline の color-mix()(文字色は変えない)。
                         const formatRules = () => (props.conditionalFormat ? column().conditionalFormat : undefined);
-                        const dataBar = createMemo(() => {
-                          const feature = props.conditionalFormat;
-                          const rules = formatRules();
-                          return feature && rules?.dataBar
-                            ? feature.resolveDataBar(rules.dataBar, value(), props.conditionalFormatStats.get(column().key))
-                            : null;
-                        });
-                        const scaleBackground = createMemo(() => {
-                          const feature = props.conditionalFormat;
-                          const rules = formatRules();
-                          return feature && rules?.colorScale
-                            ? feature.resolveColorScaleBackground(
-                                rules.colorScale,
-                                value(),
-                                props.conditionalFormatStats.get(column().key),
-                              )
-                            : null;
-                        });
+                        const dataBar = createMemoWhen(
+                          () => formatRules()?.dataBar !== undefined,
+                          () => {
+                            const feature = props.conditionalFormat;
+                            const rules = formatRules();
+                            return feature && rules?.dataBar
+                              ? feature.resolveDataBar(rules.dataBar, value(), props.conditionalFormatStats.get(column().key))
+                              : null;
+                          },
+                          null,
+                        );
+                        const scaleBackground = createMemoWhen(
+                          () => formatRules()?.colorScale !== undefined,
+                          () => {
+                            const feature = props.conditionalFormat;
+                            const rules = formatRules();
+                            return feature && rules?.colorScale
+                              ? feature.resolveColorScaleBackground(
+                                  rules.colorScale,
+                                  value(),
+                                  props.conditionalFormatStats.get(column().key),
+                                )
+                              : null;
+                          },
+                          null,
+                        );
                         const dataBarColor = () => {
                           const bar = dataBar();
                           const rules = formatRules()?.dataBar;
                           return bar ? (bar.negative ? rules?.negativeColor : rules?.color) : undefined;
                         };
-                        const invalidMessage = createMemo(() =>
-                          props.showValidationMarks && hasCellValidation(unbound())
-                            ? getInvalidMessage(unbound(), currentRow(), value(), texts())
-                            : null,
+                        const invalidMessage = createMemoWhen(
+                          () => !!props.showValidationMarks && hasCellValidation(unbound()),
+                          () => getInvalidMessage(unbound(), currentRow(), value(), texts()),
+                          null,
                         );
-                        const cellNote = createMemo(() => {
-                          const note = column().cellNote;
-                          const context = styleContext();
-                          return note && context ? normalizeCellNote(note(context)) : null;
-                        });
+                        const cellNote = createMemoWhen(
+                          () => !!column().cellNote,
+                          () => {
+                            const note = column().cellNote;
+                            const context = styleContext();
+                            return note && context ? normalizeCellNote(note(context)) : null;
+                          },
+                          null,
+                        );
                         const tooltipText = () => resolveCellTooltipText(invalidMessage(), cellNote());
                         // auto-height の列のセルは、箱はほかのセルと同じく行の高さで、中身を器(data-autoheight-content)に
                         //   入れて器の高さを測ります(React 版 DU-32)。背の高い行での揃えは、未指定なら auto-height の列が上、
                         //   ほかの列は真ん中(1 行の行ではどれも真ん中)。
-                        //   2 つの真偽値は 1 つの memo(1 = auto-height のセル、2 = 上にそろえる)にまとめます。auto-height の切り替えでは
-                        //   すべてのセルが走るので、セルごとの購読を 1 つにします(Solid の開発ビルドの HUGE_FAN_OUT は 2,000 から)。
-                        const autoHeightFlags = createMemo(() => {
-                          if (!props.autoHeight) {
-                            return 0;
-                          }
-                          const content = column().autoHeight === true;
-                          const top =
-                            rowSize() > props.rowHeight &&
-                            (column().verticalAlign ?? props.verticalAlign ?? (content ? 'top' : 'center')) === 'top';
-                          return (content ? 1 : 0) | (top ? 2 : 0);
-                        });
+                        //   2 つの真偽値は 1 つの値(1 = auto-height のセル、2 = 上にそろえる)にまとめます。auto-height を使わない
+                        //   ときは memo を作らず、行ごとの rowAutoHeight だけを読みます。
+                        const autoHeightFlags = createMemoWhen(
+                          rowAutoHeight,
+                          () => {
+                            const content = column().autoHeight === true;
+                            const top =
+                              rowSize() > props.rowHeight &&
+                              (column().verticalAlign ?? props.verticalAlign ?? (content ? 'top' : 'center')) === 'top';
+                            return (content ? 1 : 0) | (top ? 2 : 0);
+                          },
+                          0,
+                        );
                         const isAutoHeightCell = () => (autoHeightFlags() & 1) !== 0;
                         const alignTop = () => (autoHeightFlags() & 2) !== 0;
                         const markOverflowTooltip = () =>
