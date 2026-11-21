@@ -10,7 +10,7 @@
 //   - 暇なときの先読みが終わっても、セルを描き直さない。
 //   - ツールパネルは閉じて開き直しても、開き直しの光りを出さない(Solid 版は閉じている間は描かない)。
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
-import { flush } from 'solid-js';
+import { createSignal, flush } from 'solid-js';
 import { installJsdomLayoutStubs } from '@ishibashi0112/spreadsheet-grid-core/testing';
 import type { GridColumn, SpreadsheetGridHandle } from './index';
 
@@ -143,6 +143,20 @@ describe('ポップアップの部品の遅延読み込み', () => {
     await wait(500);
     expect(lazyPopups.filterPopoverModule.getSnapshot()).toBeNull();
     expect(lazyPopups.toolPanelModule.getSnapshot()).toBeNull();
+  });
+
+  it('列の定義を続けて差し替えても、先読みの予約をやり直さずに先読みする', async () => {
+    // 先読みの条件(filterType のある列があるか)は列を読むので、真のまま列が変わるたびに予約を取り消していると、
+    //   予約(jsdom は 200ms)より短い間隔で列を差し替え続ける画面では先読みが起きない(段階 3-3 のレビュー)。
+    const { SpreadsheetGrid } = entry;
+    const [currentColumns, setCurrentColumns] = createSignal(columns);
+    mount(() => <SpreadsheetGrid<Row> columns={currentColumns()} rows={rows} />);
+    for (let i = 0; i < 8; i += 1) {
+      await wait(80);
+      setCurrentColumns(columns.map((column) => ({ ...column })));
+      flush();
+    }
+    expect(lazyPopups.filterPopoverModule.getSnapshot()).not.toBeNull();
   });
 
   it('filterType のある列が無い表では、フィルターのポップオーバーを先読みしない(ツールパネルは先読みする)', async () => {

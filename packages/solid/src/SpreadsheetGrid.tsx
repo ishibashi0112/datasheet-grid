@@ -12,6 +12,7 @@
 //   - React の onXxxCapture / onBlur / onFocus(子孫からも上がってくる)は、Solid では capture のリスナーを自分で付ける /
 //     onFocusOut / onFocusIn にします。
 import { For, Match, Show, Switch, createEffect, createMemo, createUniqueId, onCleanup, onSettled, untrack } from 'solid-js';
+import type { Ref } from 'solid-js';
 import type { JSX } from '@solidjs/web';
 import type {
   CellCoord,
@@ -170,6 +171,15 @@ const renderDetailToggleCell = (ctx: CellRenderContext<unknown>): JSX.Element =>
   </Show>
 );
 const noop = () => {};
+// 追加(段階 3-3 のレビュー): ref(solid-js の Ref)へハンドルを渡します。関数はそのまま呼び、配列は中の関数を順に呼ぶ
+//   (@solidjs/web の applyRef と同じ。変数の ref はコンパイラが代入の関数に書き換えて渡す)。関数でない値は何もしない。
+const applyHandleRef = <H,>(ref: Ref<H> | undefined, handle: H): void => {
+  if (typeof ref === 'function') {
+    (ref as (value: H) => void)(handle);
+  } else if (Array.isArray(ref)) {
+    for (const item of ref) applyHandleRef(item, handle);
+  }
+};
 
 type MutableRef<V> = { current: V };
 
@@ -2348,7 +2358,7 @@ export function GridShell<T extends object>(props: SpreadsheetGridProps<T>, feat
     { name: 'gridApiBottomPin' },
   );
   onSettled(() => {
-    props.ref?.(engine.gridApi.handle);
+    applyHandleRef(props.ref, engine.gridApi.handle);
   });
 
   // ── 状態の通知(onStateChange / onFiltersChange / onSortChange) ──

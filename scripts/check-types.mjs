@@ -259,7 +259,9 @@ try {
   // ── Solid 版: npm + solid-js 2.0(core も直接の依存に入れる)と、pnpm(Solid 版だけに依存)──
   //   type-tests/solid だけを写します(React の型を入れないので、React 版の type-tests は検査できない)。
   const solidVersions = JSON.parse(readFileSync(join(root, 'packages/solid/package.json'), 'utf8')).devDependencies;
-  const solidDeps = { 'solid-js': `^${solidVersions['solid-js']}`, '@solidjs/web': `^${solidVersions['@solidjs/web']}` };
+  // devDependencies が範囲(`^2.0.0` など)で書かれていてもそのまま使う(固定の版なら `^` を付ける)。
+  const asRange = (version) => (/^[\^~<>=]/.test(version) ? version : `^${version}`);
+  const solidDeps = { 'solid-js': asRange(solidVersions['solid-js']), '@solidjs/web': asRange(solidVersions['@solidjs/web']) };
   const copySolidTests = (dir) => {
     cpSync(join(root, 'type-tests', 'solid'), dir, { recursive: true, filter: (source) => !/[\\/](node_modules|out)$/.test(source) });
   };

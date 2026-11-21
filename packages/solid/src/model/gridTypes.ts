@@ -1,5 +1,6 @@
 // Solid 版の型の束ね。core の公開型は描画の型(node / style)を束ね型 F で受けるので、Solid の JSX.Element と
 //   JSX.CSSProperties を入れるだけで同じ列定義・props の型が使えます(React 版の model/gridTypes.ts と同じ作り)。
+import type { Ref } from 'solid-js';
 import type { JSX } from '@solidjs/web';
 import type * as Core from '@ishibashi0112/spreadsheet-grid-core';
 
@@ -69,10 +70,11 @@ export type GridClassNames = Core.GridClassNames<SolidGridTypes>;
  * `SpreadsheetGrid` の props。React 版と同じ props です(各フィールドの説明は JSDoc と React 版に同梱の `API_REFERENCE.md`)。
  */
 export type SpreadsheetGridProps<T, L extends T = T> = Core.SpreadsheetGridProps<T, SolidGridTypes, L> & {
-  // Solid の ref は関数だけ(React の ref オブジェクトは無い)。命令的 API のハンドルを受け取ります。
+  // Solid の ref(React の ref オブジェクトは無い)。命令的 API のハンドルを受け取ります。変更(段階 3-3 のレビュー): 関数だけ
+  //   でなく、Solid の DOM の ref と同じく変数(コンパイラが代入の関数に書き換える)と、関数の配列も受ける(solid-js の Ref)。
   /**
-   * 命令的 API(`SpreadsheetGridHandle`)を受け取る ref。Solid の ref と同じく関数で受けます。
-   * 例: `let grid: SpreadsheetGridHandle<Row> | undefined` → `<SpreadsheetGrid ref={(h) => (grid = h)} … />`。
+   * 命令的 API(`SpreadsheetGridHandle`)を受け取る ref。Solid の DOM の ref と同じく、変数か関数で受けます。
+   * 例: `let grid!: SpreadsheetGridHandle<Row>` → `<SpreadsheetGrid ref={grid} … />`、または `ref={(handle) => (grid = handle)}`。
    */
-  ref?: ((handle: Core.SpreadsheetGridHandle<T>) => void) | undefined;
+  ref?: Ref<Core.SpreadsheetGridHandle<T>> | undefined;
 };

@@ -103,11 +103,15 @@ const coreDistPlugin = {
 // dist がソースより古いかを調べます(ビルドし忘れの計測を防ぐ)。パッケージごと(core / react)に、ソースの
 //   うちビルドに入るファイル(テスト・テスト用の補助・.md を除く)の最新の更新時刻と dist の入口を比べます。
 const isBuildSource = (name) => /\.(ts|tsx|css)$/.test(name) && !/\.test\.tsx?$/.test(name);
+// 変更(Solid 版 段階 3-3 のレビュー): ビルドに入らないテストの部品のディレクトリ(Solid 版の src/parity = tsconfig.lib.json の
+//   exclude と同じ)は見ない(直しただけで dist が古いと警告していた)。
+const TEST_ONLY_DIRS = new Set([`${ROOT}packages/solid/src/parity`]);
 const newestMtime = (dir) => {
   let newest = 0;
   for (const entry of readdirSync(dir, { withFileTypes: true })) {
     const path = `${dir}/${entry.name}`;
     if (entry.isDirectory()) {
+      if (TEST_ONLY_DIRS.has(path)) continue;
       newest = Math.max(newest, newestMtime(path));
     } else if (isBuildSource(entry.name)) {
       newest = Math.max(newest, statSync(path).mtimeMs);
@@ -209,13 +213,51 @@ const checkLiteDistShape = () => {
   return problems;
 };
 
+// 追加(Solid 版 段階 3-3 のレビュー): Solid 版の 2 つの入口(DOM 向けの dist/index.js と、solid 条件の
+//   dist/source/index.jsx)が、列フィルターのポップオーバーとツールパネルを import() で後から読む形かを確かめます。
+//   入口から静的 import でたどれるファイルにそのチャンクがあると、初期 JS に入ってしまう(この計測は esbuild で束ね直すので、
+//   入口の形が崩れても数字に出ないことがある)。
+const SOLID_DIST = `${ROOT}packages/solid/dist/`;
+const SOLID_LAZY_CHUNKS = ['ColumnFilterPopover', 'toolPanelViews'];
+// 複数行の import / export の文も拾う(esbuild の出力は 1 つの import を複数行に書く)。
+const STATIC_RELATIVE_IMPORT = /(?:^|\n)\s*(?:import|export)\s[^;]*?from\s*"(\.[^"]+)"|(?:^|\n)\s*import\s*"(\.[^"]+)"/g;
+const DYNAMIC_RELATIVE_IMPORT = /import\(\s*"(\.[^"]+)"\s*\)/g;
+const checkSolidDistShape = () => {
+  const problems = [];
+  for (const entry of ['index.js', 'source/index.jsx']) {
+    const entryPath = `${SOLID_DIST}${entry}`;
+    const lazyTargets = [...readFileSync(entryPath, 'utf8').matchAll(DYNAMIC_RELATIVE_IMPORT)].map((match) =>
+      resolvePath(dirname(entryPath), match[1]),
+    );
+    for (const name of SOLID_LAZY_CHUNKS) {
+      if (!lazyTargets.some((target) => target.split('/').pop().startsWith(`${name}-`))) {
+        problems.push(`Solid 版の dist/${entry} が ${name} のチャンクを import() で読んでいません`);
+      }
+    }
+    const reachable = new Set();
+    const walk = (file) => {
+      if (reachable.has(file)) return;
+      reachable.add(file);
+      for (const match of readFileSync(file, 'utf8').matchAll(STATIC_RELATIVE_IMPORT)) {
+        walk(resolvePath(dirname(file), match[1] ?? match[2]));
+      }
+    };
+    walk(entryPath);
+    for (const target of lazyTargets) {
+      if (reachable.has(target)) {
+        problems.push(`Solid 版の dist/${entry} から後から読むチャンク(${target.slice(SOLID_DIST.length)})へ静的 import でたどれます`);
+      }
+    }
+  }
+  return problems;
+};
+
 // 追加(semver / 1.0 の準備): React 版の dist(js / cjs / d.ts)が core を参照する形を確かめ、崩れていれば理由を返します
 //   (Solid 版の dist(js / jsx / d.ts)も同じ。Solid 版 段階 3-3)。
 //   使ってよいのは入口(`…-core`)/ `…-core/testing` / `…-core/internal/<dir>/<module>` だけで、旧サブパス
 //   (`…-core/<dir>/<module>`。0.60.0 で非推奨、0.61.0 で exports から消した)が残ると、React 版が壊れます。
 //   src の import は eslint の no-restricted-imports で止めていますが、d.ts の `import("…")` は tsc が書くもので、
 //   どちらのパスを書くかは core の exports のキーで決まるため(`./*` があった 0.60.0 まではキーの順 = `./internal/*` が前)、ここで dist を見ます。
-const SOLID_DIST = `${ROOT}packages/solid/dist/`;
 const CORE_SPECIFIER = /(["'])@ishibashi0112\/spreadsheet-grid-core((?:\/[^"']*)?)\1/g;
 const checkCoreImportPaths = () => {
   const problems = new Set();
@@ -383,6 +425,14 @@ if (args.has('--check')) {
       console.error(`size: ${problem}`);
     }
     console.error('/lite の dist の形は vite.lite.config.ts の先頭のコメントを参照してください。');
+    process.exit(1);
+  }
+  const solidShapeProblems = checkSolidDistShape();
+  if (solidShapeProblems.length > 0) {
+    for (const problem of solidShapeProblems) {
+      console.error(`size: ${problem}`);
+    }
+    console.error('Solid 版の後から読む部品は packages/solid/src/view/lazyPopups.ts と scripts/build-source.mjs(splitting)を参照してください。');
     process.exit(1);
   }
   const coreImportProblems = checkCoreImportPaths();

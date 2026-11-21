@@ -16,7 +16,7 @@ Peer dependencies: `solid-js` / `@solidjs/web` `^2.0.0`. Supported browsers: Chr
 import '@ishibashi0112/spreadsheet-grid-solid/style.css'
 ```
 
-The package follows the Solid convention for libraries: the `solid` export condition points at JSX source (`dist/source/`), which your bundler compiles with your own Solid settings (DOM or SSR, dev or prod). With Vite, use `@solidjs/vite-plugin` 3 (Vite 8 or later). SSR (for example SolidStart) needs this form. Tools without the `solid` condition get the DOM build (`dist/index.js`, ESM only).
+The package follows the Solid convention for libraries: the `solid` export condition points at JSX source (`dist/source/`), which your bundler compiles with your own Solid settings (DOM or SSR, dev or prod). With Vite, use `@solidjs/vite-plugin` 3 (Vite 8 or later). SSR (for example SolidStart) needs this form. Tools without the `solid` condition get the DOM build (`dist/index.js`, ESM only). In Node (for example tests with Vitest and jsdom), resolve with the `solid` or `browser` condition, which `@solidjs/vite-plugin` sets: with Node's default conditions `@solidjs/web` resolves to its server build and the DOM build fails with "Client-only API called on the server side".
 
 `style.layer.css` and the design-system themes (`themes/astryx.css` / `themes/mantine.css` / `themes/heroui.css` / `themes/shadcn.css`) are the same files as in the React version ([installation](https://datasheet-grid.vercel.app/docs/installation), [design systems](https://datasheet-grid.vercel.app/docs/guides/design-systems)).
 
@@ -65,7 +65,7 @@ The feature names and what they enable are listed in the React version's `API_RE
 
 ## Differences from the React version
 
-- **`ref` is a function.** `ref={(handle) => (grid = handle)}` gives you a `SpreadsheetGridHandle<T>` with the same methods.
+- **`ref` works like Solid's DOM refs.** `let grid!: SpreadsheetGridHandle<Row>` with `ref={grid}`, or `ref={(handle) => (grid = handle)}`, gives you the handle with the same methods (there are no React ref objects).
 - **Render functions run only when needed.** `renderCell` runs again when its row, value or column changes, `renderHeader` when its column changes, and the bar renderers when the function changes; not on every update as in React. Positions and states in the context (`rowIndex`, `isActive`, the bar context and so on) are reactive: read them inside JSX and they stay current. Reading them in the function body makes the content re-created whenever they change.
 - **Not available:** the natural-language filter (`/ai`, `GridAskBar`).
 - Everything else (props, column options, handle methods, callbacks, CSS classes and tokens) is the same as in [`API_REFERENCE.md`](https://github.com/ishibashi0112/datasheet-grid/blob/main/packages/react/API_REFERENCE.md) of the React version.
@@ -80,7 +80,7 @@ The feature names and what they enable are listed in the React version's `API_RE
 
 ## Versioning
 
-This package has its own version (0.x), separate from the React version and the core, and depends on the core of exactly one version. Before 1.0, minor releases may include breaking changes; they are listed in the [changelog](https://github.com/ishibashi0112/datasheet-grid/blob/main/CHANGELOG.md). TypeScript 5.8 or later is supported (`moduleResolution` `bundler` or `nodenext`, `jsx: "preserve"`, `jsxImportSource: "@solidjs/web"`).
+This package has its own version (0.x), separate from the React version and the core, and depends on the core of exactly one version. Before 1.0, minor releases may include breaking changes; they are listed in the [changelog](https://github.com/ishibashi0112/datasheet-grid/blob/main/CHANGELOG.md). TypeScript 5.8 or later is supported (`moduleResolution` `bundler` or `nodenext`, `jsx: "preserve"`, `jsxImportSource: "@solidjs/web"`). A library built on this package that exports inferred types should list this package and the core (the version this package depends on) in `peerDependencies`.
 
 ## License
 
@@ -96,7 +96,7 @@ Solid 2.0 向けの仮想化スプレッドシート / データグリッドで�
 
 `npm install @ishibashi0112/spreadsheet-grid-solid` で入れます(peer は `solid-js` / `@solidjs/web` の `^2.0.0`)。CSS は `import '@ishibashi0112/spreadsheet-grid-solid/style.css'` を 1 回読み込みます。`style.layer.css` とデザインシステムのテーマ(`themes/*.css`)は React 版と同じファイルです。
 
-パッケージは Solid のライブラリの慣例どおり、`solid` 条件で JSX のままのソース(`dist/source/`)を渡し、利用側のバンドラが自分の Solid の設定(DOM / SSR・開発 / 本番)でコンパイルします。Vite では `@solidjs/vite-plugin` 3(Vite 8 以上)を使ってください。SSR(SolidStart など)はこの形が要ります。`solid` 条件の無いツールは DOM 向けにコンパイル済みの `dist/index.js`(ESM だけ)を読みます。
+パッケージは Solid のライブラリの慣例どおり、`solid` 条件で JSX のままのソース(`dist/source/`)を渡し、利用側のバンドラが自分の Solid の設定(DOM / SSR・開発 / 本番)でコンパイルします。Vite では `@solidjs/vite-plugin` 3(Vite 8 以上)を使ってください。SSR(SolidStart など)はこの形が要ります。`solid` 条件の無いツールは DOM 向けにコンパイル済みの `dist/index.js`(ESM だけ)を読みます。Node の中(Vitest と jsdom のテストなど)では `solid` か `browser` の条件で解決してください(`@solidjs/vite-plugin` が付けます)。Node の既定の条件では `@solidjs/web` がサーバー向けのビルドになり、DOM 向けのビルドは「Client-only API called on the server side」で止まります。
 
 使い方は上の Quick start のとおりです(`rows={rows()}` のように signal を呼んで渡し、編集は `onRowsChange` で受け取って signal へ戻す)。ブラウザで動かせるサンプル(編集できる在庫表 10,000 行)は [`examples/solid`](https://github.com/ishibashi0112/datasheet-grid/tree/main/examples/solid) にあります。英語の文言は `@ishibashi0112/spreadsheet-grid-solid/locales/en` の `localeTextEn` を `localeText` に渡します。
 
@@ -108,7 +108,7 @@ Solid 2.0 向けの仮想化スプレッドシート / データグリッドで�
 
 ### React 版との違い
 
-- **`ref` は関数で受け取ります。** `ref={(handle) => (grid = handle)}` で、同じメソッドを持つ `SpreadsheetGridHandle<T>` を受け取れます。
+- **`ref` は Solid の DOM の ref と同じです。** `let grid!: SpreadsheetGridHandle<Row>` と `ref={grid}`、または `ref={(handle) => (grid = handle)}` で、同じメソッドを持つハンドルを受け取れます(React の ref オブジェクトはありません)。
 - **描く関数は必要なときだけ呼びます。** `renderCell` は行・値・列が変わったとき、`renderHeader` は列が変わったとき、バーの関数は関数が変わったときだけ呼び直します(React 版のように更新のたびには呼びません)。文脈の位置と状態(`rowIndex` / `isActive` / バーの文脈など)は読んだときに引くので、JSX の中で読めば追従します。関数の本体で読むと、それが変わるたびに中身を作り直します。
 - **ありません:** ことばで絞り込み(`/ai` の `GridAskBar`)。
 - そのほか(props・列の定義・ハンドルのメソッド・通知・CSS のクラスとトークン)は React 版の [`API_REFERENCE.md`](https://github.com/ishibashi0112/datasheet-grid/blob/main/packages/react/API_REFERENCE.md) と同じです。
@@ -123,7 +123,7 @@ Solid 2.0 向けの仮想化スプレッドシート / データグリッドで�
 
 ### バージョンの方針
 
-このパッケージは React 版・コアとは別の版(0.x)で、コアには同じ 1 つの版で依存します。1.0 より前は minor でも壊す変更が入ることがあり、[変更履歴](https://github.com/ishibashi0112/datasheet-grid/blob/main/CHANGELOG.md)に書きます。TypeScript は 5.8 以上(`moduleResolution` は `bundler` / `nodenext`、`jsx: "preserve"`・`jsxImportSource: "@solidjs/web"`)です。
+このパッケージは React 版・コアとは別の版(0.x)で、コアには同じ 1 つの版で依存します。1.0 より前は minor でも壊す変更が入ることがあり、[変更履歴](https://github.com/ishibashi0112/datasheet-grid/blob/main/CHANGELOG.md)に書きます。TypeScript は 5.8 以上(`moduleResolution` は `bundler` / `nodenext`、`jsx: "preserve"`・`jsxImportSource: "@solidjs/web"`)です。このパッケージの上に作ったライブラリが推論した型を export するときは、このパッケージと core(このパッケージが依存する版)を `peerDependencies` に入れてください。
 
 ## License
 

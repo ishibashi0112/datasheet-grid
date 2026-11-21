@@ -8,7 +8,7 @@
 //     確かめたいとき / 画面を移る前の先読み)。
 //   - 読み込みに失敗したら console.error に出し、開いていた状態を閉じます(見えないポップアップが開いたままだと表のキー操作が
 //     止まったままになるため。React 版と同じ)。
-import { createEffect } from 'solid-js';
+import { createEffect, createMemo } from 'solid-js';
 import { createLazyModule, type LazyModule } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/lazyModule';
 import { scheduleIdleTask } from '@ishibashi0112/spreadsheet-grid-core/internal/utils/scheduler';
 import { createExternalStoreSignal } from '../primitives/externalStore';
@@ -47,8 +47,11 @@ export function createLazyModuleSignal<M>(module: LazyModule<M>, options: LazyMo
   const loaded = createExternalStoreSignal(module, `${name}Module`);
   // 開かれたのに読み込んでいなければ、その場で読み込みます。失敗が届く前に閉じられたら閉じ直しません(閉じると表へフォーカスを
   //   戻すため。React 版と同じ)。
+  //   変更(段階 3-3 のレビュー): 条件は memo にしてから effect へ渡す(Solid 2.0 の effect は、compute が同じ値を返しても
+  //   読んだ signal が変わるたびに走り直して前の cleanup を呼ぶ。条件が真のまま列やタブが変わるたびに、読み込みの見張りや
+  //   先読みの予約をやり直さないように。React 版の effect の依存が真偽だけなのと同じ)。
   createEffect(
-    () => options.needed() && loaded() === null,
+    createMemo(() => options.needed() && loaded() === null),
     (shouldLoad) => {
       if (!shouldLoad) {
         return;
@@ -68,7 +71,7 @@ export function createLazyModuleSignal<M>(module: LazyModule<M>, options: LazyMo
   );
   // 使える機能なら、描いた後の暇なときに先読みします(effect は描いた後に走る)。
   createEffect(
-    () => options.prefetch() && module.getSnapshot() === null,
+    createMemo(() => options.prefetch() && module.getSnapshot() === null),
     (shouldPrefetch) => {
       if (!shouldPrefetch) {
         return;

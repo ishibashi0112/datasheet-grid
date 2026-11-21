@@ -85,6 +85,15 @@ export const grid = (rows: Sale[]) => (
 export const state = (): GridState | undefined => handle?.getState();
 export const restored = (saved: GridState) => restoreColumnsFromState(columns, saved);
 
+// Solid の DOM の ref と同じく、変数(コンパイラが代入の関数に書き換える)と関数の配列も受ける
+// eslint-disable-next-line no-unassigned-vars -- Solid のコンパイラが ref={byVariable} を代入に書き換える
+let byVariable!: SpreadsheetGridHandle<Sale>;
+export const variableRef = (rows: Sale[]) => <SpreadsheetGrid<Sale> ref={byVariable} rows={rows} columns={columns} />;
+export const arrayRef = (rows: Sale[]) => (
+  <SpreadsheetGrid<Sale> ref={[(h) => expectAssignable<SpreadsheetGridHandle<Sale>>(h), undefined]} rows={rows} columns={columns} />
+);
+export const variableState = (): GridState => byVariable.getState();
+
 export const refObject = (rows: Sale[]) => (
   // @ts-expect-error React の ref オブジェクトは渡せない(Solid の ref は関数)
   <SpreadsheetGrid<Sale> ref={{ current: null }} rows={rows} columns={columns} />
