@@ -403,6 +403,9 @@ export const createGridApi = <T,>(features: Pick<GridCoreFeatures, 'export' | 'g
         left: el.scrollLeft,
       });
       bottomPin = s.measuredRowHeights ? { pinnedTop: el.scrollTop, until: Date.now() + BOTTOM_PIN_MS } : null;
+      // 追加(Solid 版 段階 3-2): 合わせ直すのは固定した後の総高の変化だけ(deferBottomPin のとき、固定する前の update で
+      //   立てた印を持ち越さない。React 版は update の中で必ず下ろすので、ここではいつも false)。
+      bottomPinHeightChanged = false;
     },
 
     // スクロール位置(px)の取得 / 設定。値は生の scrollTop / scrollLeft(onScroll と同一基準)。
