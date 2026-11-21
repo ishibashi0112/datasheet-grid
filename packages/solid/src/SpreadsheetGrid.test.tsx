@@ -134,4 +134,28 @@ describe('Solid 版の試作', () => {
     expect(handle?.getState().columnWidths).toBeDefined();
     expect(container.querySelector('.ssg-active-cell-overlay')).not.toBeNull();
   });
+
+  it('ref は Solid の DOM の ref と同じく、変数と関数の配列でも受ける(段階 3-3 のレビュー)', () => {
+    // 変数の ref はコンパイラが代入の関数に書き換える(let で宣言した変数だけ)。
+    // eslint-disable-next-line no-unassigned-vars -- Solid のコンパイラが ref={byVariable} を代入に書き換える
+    let byVariable!: SpreadsheetGridHandle<Row>;
+    const byArray: SpreadsheetGridHandle<Row>[] = [];
+    const view = render(() => (
+      <>
+        <SpreadsheetGrid<Row> ref={byVariable} rows={makeRows(5)} columns={columns} height={200} />
+        <SpreadsheetGrid<Row>
+          ref={[(h) => byArray.push(h), [(h) => byArray.push(h)]]}
+          rows={makeRows(5)}
+          columns={columns}
+          height={200}
+        />
+      </>
+    ));
+    flush();
+    expect(typeof byVariable?.getState).toBe('function');
+    expect(byArray).toHaveLength(2);
+    expect(byArray[0]).toBe(byArray[1]);
+    expect(byArray[0]).not.toBe(byVariable);
+    view.unmount();
+  });
 });

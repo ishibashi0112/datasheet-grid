@@ -86,8 +86,8 @@ SSG_AUDIT_FRAMEWORK=solid node audit/harness/t-basic.mjs
 
 - 最初の行は `BROWSER <名前> <版> / FRAMEWORK solid`。
 - React 版との違い: `&strict=1`(StrictMode)は普通に描くだけ、`__activity(false)`(`<Activity>` で隠す)は `display: none` で
-  隠すだけ、`__renderCount` は部品の関数が動いた回数(Solid は最初の 1 回)。`t-lazy` は Solid 版にポップアップの部品の遅延読み込みが
-  無いので全体を SKIP にする(`pw.mjs` の `SUPPORTS.lazyPopups`)。
+  隠すだけ、`__renderCount` は部品の関数が動いた回数(Solid は最初の 1 回)。`t-lazy` も同じく回す(段階 3-3 から Solid 版も列フィルターの
+  ポップオーバーとツールパネルの部品を後から読む。dev では `view/ColumnFilterPopover.tsx` / `view/toolPanelViews.ts` の別のモジュール)。
 - Solid 版の dev サーバーは依存の事前バンドルを `node_modules/.vite-audit-harness-solid` に置く(React 版と同じ `node_modules/.vite` を
   使うと、片方が作り直したときにもう片方が `504 Outdated Optimize Dep` で開けなくなる)。
 - Solid の Vite プラグインは `vite dev` で既定で Performance パネルのトラックを入れ、その計測(`solid-js/attribution`)で描き直しが

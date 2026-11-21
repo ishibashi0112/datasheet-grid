@@ -1,157 +1,130 @@
-# Solid 2.0 版の試作(非公開)
+# @ishibashi0112/spreadsheet-grid-solid
 
-2026-11-17 の Solid 2.0 正式版(solid-js / @solidjs/web 2.0.0)を受けて、core(`@ishibashi0112/spreadsheet-grid-core`)の上に
-Solid のシェルを載せられるか・どれくらいの作業になるかを確かめるための試作です。**npm には出しません**(`private: true`)。
-ルートのゲート(`tsc -b` / `tsc -p tsconfig.vitest.json` / `vp test`)の対象外で、eslint は React の hooks の規則だけを外して検査します。
+A virtualized spreadsheet / data grid for Solid 2.0 (~1M rows, pinned columns, Excel-like editing / selection / clipboard, filters & sorting, client-side and server-side row models). It is the Solid version of [`@ishibashi0112/spreadsheet-grid`](https://www.npmjs.com/package/@ishibashi0112/spreadsheet-grid) (React): the same props, column options, imperative handle, CSS and look, built on the same framework-independent core. 日本語は下にあります。
 
-## 動くもの
+**[Docs & live demo](https://datasheet-grid.vercel.app)** (written for the React version; the props are the same) · [GitHub](https://github.com/ishibashi0112/datasheet-grid) · [Changelog](https://github.com/ishibashi0112/datasheet-grid/blob/main/CHANGELOG.md)
 
-React 版と同じ DOM・class で描くので、React 版の `styles.css` をそのまま使っています。段階 1 の範囲は React 版の機能なしの構成
-(`/lite` の `createSpreadsheetGrid({ features: {} })`)で、`src/parity/` のテストで React 版と DOM と通知が同じかを比べています。
-
-- 表示: 行の縦の仮想化(core の `resolveVerticalLayout`)、列の横の仮想化(`@tanstack/virtual-core` を自前でつなぐ)、左右の固定列、
-  上下のバー(`renderTopBar` / `renderBottomBar` も)、空の表示、テーマ・密度・モーション・`classNames`、ツールチップ
-- 見出し: `renderHeader`、Shift+クリックで並べ替え(印と優先度)、列幅のドラッグ、列の選択、左上の角で全選択
-- セル: `renderCell`・`valueFormatter`・`cellClassName`・`getRowClassName`・メモ(`cellNote`)・入力の検査の印(`validate`)・checkbox のセル
-- 選択とキー操作: core の keyboardController / pointerInteractionsController(範囲選択・行番号・矢印 / Ctrl+矢印 / Home / End /
-  PageUp / PageDown / Ctrl+A / Delete / Ctrl+Z / Ctrl+Y、最後の列の Tab でグリッドの外へ)
-- 編集: エディタ 6 種(text・複数行の text / number / select / date / checkbox / custom。打ち始め / ダブルクリック / F2 / Enter /
-  Tab / Esc / 外をクリックで確定)、入力の検査の reject とエラーの吹き出し、元に戻す
-- コピー・貼り付け: core の clipboardController(Excel と同じ TSV、範囲いっぱいの貼り付け)
-- 行の選択: チェックボックス(`enableRowSelection` / `rowSelectionMode` / `enableSelectAllRows` / `selectedRowKeys` / `rowSelection` /
-  `onRowSelectionChange`)。行番号のクリック・Shift で範囲・ドラッグ・左上の角で全選択 / 解除
-- 展開行: `detailRow`(トグル列・`isExpandable`・`className`・高さ・中身の `collapse`)と `onExpandedDetailRowKeysChange`。トグル列の
-  セルの Enter / Space、最終列の Tab でカードへ・カードの端の Tab / Shift+Tab・表の外から戻る(core の `detailRowController`)
-- 命令的 API: core の gridApi のハンドルをそのまま(`ref` は関数で受ける)
-- 通知: `onActiveCellChange` / `onCellClick` / `onCellDoubleClick` / `onStateChange` / `onSortChange` / `onFiltersChange` / `onScroll` /
-  `onColumnsChange` / `onUndoRedoStateChange` / `onHoveredRowChange`
-
-- 機能(段階 2。React 版の `/lite` と同じく `createSpreadsheetGrid({ features: { export: exportFeature } })` で選んで差し込む。
-  `SpreadsheetGrid` は全部入り): エクスポート(`exportCsv` / `downloadCsv` / `getExportData`)、行の高さの自動調整(`autoHeight` /
-  `estimateRowHeight` / `verticalAlign`、列の `autoHeight` / `verticalAlign`)、条件付き書式(列の `conditionalFormat` =
-  データバー / カラースケール / 状態チップ)、合計行(`totalRow`。列の `aggFunc`)、固定行(`pinnedTopRows` / `pinnedBottomRows` /
-  `pinnedBottomRowsPlacement`)、選択範囲の集計(`showSelectionAggregates`。下部バーの平均 / データの個数 / 合計、大きな選択は
-  core のコントローラで時間分割。利用側のバーの文脈の `selectionAggregates`)、スクロール位置インジケーター(`scrollHint`。
-  行番号のバブル / ルーラー / ジャンプの線 / カスタムスクロールバー、`hintColumn` / `renderHint` / `trigger` / `minRows`)、
-  動きの追加分(`highlightChanges` = 変わったセルのフラッシュと数値のトゥイーン、`showCopyRange` = コピー範囲の動く点線、
-  `hoverHighlight: 'cross'` = クロスヘア)、セル内検索(`find` / `onFindChange`、ハンドルの `openFind` / `closeFind` /
-  `findNext` / `findPrev`。右上のバーと既定のセルの `<mark>`)、IME オンのままの直接入力(`imeDirectInput`。
-  透明な入力受けで変換を始め、確定した文字で編集を始める。数値の列は全角の数字を半角へ)、列幅の自動調整(`autoSizeColumns`・
-  列の境界のダブルクリック。合計行・状態チップ・固定行も幅に収める。列メニューの項目は段階 2-3)、列の並べ替え
-  (`onColumnsChange` があるときの見出しの grip。固定ペインへも移せる、`columnDragMotion: 'ghost' | 'live'`、Escape でやめる)、
-  行のドラッグ(`enableRowDrag` / `isRowDraggable` / `canDropRow` / `onRowMove` / `rowDragMotion`。ハンドル列、ソート / フィルター中は
-  淡色)。ハンドルの `moveRow` は React 版と同じく機能が無くても動く、フィルハンドル(`fillHandle` / `getFillValue`。選択範囲の
-  右下の四角を引いて連続データ / コピーで埋める、Ctrl / ⌘ で入れ替え、Escape でやめる、埋めたあとのボタンとメニューで選び直す、
-  四角のダブルクリックで隣の列に合わせて下へ、元に戻す 1 回で埋める前へ)、右クリックメニュー(`enableContextMenu` /
-  `getContextMenuItems` / `onContextMenuOpen`。セル / 行番号の右クリック、Shift+F10 / メニューキーでアクティブセルのメニュー、
-  項目が空なら標準のメニュー、項目の 4 種類(action / label / separator / custom)、↑ / ↓ / Home / End、Escape・外を押す・
-  スクロールで閉じる)、行の絞り込み(`enableGlobalFilter` / `globalFilterMatch` / `enableColumnFilter` / `manualFiltering` /
-  `manualSorting`。上部バーの検索欄 = `showTopBarFilter` / `globalFilterPlaceholder` / `globalFilterIcon`、大きな表は core の
-  ランナーで時間分割して適用中の印、`applyState` の列フィルターと相対日付プリセット)、
-列メニュー(`enableColumnMenu`。見出しの ⋮ / 見出しの右クリック / Alt+↓、昇順・降順、列の固定の小メニュー、幅の自動調整、
-列のリセット、フィルター…、並び替えを管理… / フィルターを管理… / 列の表示)、列フィルターのポップアップ(列の `filterType` = text / number / date /
-set / select / numberSet / textSet / dateSet / auto。見出しの下に開く、Tab はパネルの中で回る、Escape・外を押す・⋮ で閉じる、
-候補は仮想化、`getFilterOptions` の非同期の候補、日付のカレンダーと相対日付プリセット、`renderFilterDateInput` の差し替え)、
-ツールパネル(フィルター / 列 / 並び替えのタブ。列メニュー・上部バーの絞り込みのチップ・ハンドルの `openFilterManager` /
-`closeFilterManager` で開く、表の右上に開いてヘッダーを掴んで動かせる、Tab はパネルの中で回る、Escape は列フィルターの
-ポップアップ → パネルの順に閉じる。フィルターのタブ = 適用中の一覧・✎ で列へ移って開く・外す・追加・すべてクリア、列のタブ =
-検索・表示の切り替え・⠿ で並べ替え・列のリセット、並び替えのタブ = 基準の追加・向き・列の変更・⠿ で並べ替え・削除)、
-フィルターのチップのバー(`showFilterChipBar`。押すと見えていない列へも横にスクロールして開く)、
-行のグループ化(列の `rowGroup` / `aggFunc` / `includeGroupingInState`。自動グループ列、開閉のボタン / 行のダブルクリック /
-アクティブセルの Enter・Space、集計は合計行と同じ書式、グループ元の列で検索・絞り込み・並び替え、列メニューのグループ化 /
-外す、ハンドルの `setGroupCollapsed` / `expandAllGroups` / `collapseAllGroups` / `getGroupRows`)、
-ラベル行(`labelRow` = `isLabelRow` / `getLabel` / `render` / `height` / `className` / `sticky` / `sortMode` / `keepEmptySections` /
-`exportText`。全幅の帯と横にスクロールしても左に残る中身、行番号・下部バーの番地と件数はラベル行を飛ばす、セクションの中の
-並び替え、縦スクロールの固定と次の見出しでの押し上げ、上へ見せる行は固定した帯の下に合わせる、列フィルターの候補はデータ行
-だけ、エクスポートの `includeLabelRows`)、
-サーバーサイドの行モデル(`dataSource` = `getRows` / `updateRows` / `initialRowCount` / `blockSize` / `maxCachedBlocks`、
-`serverSideRefreshToken` / `onServerSideLoadError` / `onServerSideWriteError` / `showSaveStatus`。見えている範囲をブロックで読み、
-届くまでは読み込み中の行(届くと上から順にフェードイン)、並べ替え / 検索 / 列フィルターは debounce してサーバーへ送り先頭へ戻す、
-取得の失敗と保存の失敗のバー(再試行 / 閉じる)、書き戻しは楽観更新と失敗の巻き戻し・セルの保存の印、`updateRows` が無ければ
-編集しない、ラベル行と一緒に使える、ハンドルの `refreshServerSide` / `retryServerSideLoads`)
-
-段階 2 の機能(`/lite` の 21)はこれで全部。開発時の警告(使われたのに機能セットに無い prop とメソッド・行のグループ化とラベル行の
-併用・サーバーサイドで使えない prop など)は React 版と同じ条件と文言で出す(本番では出さない。`src/devWarnings.ts`)。
-
-`renderCell` / `renderHeader` / `renderTopBar` / `renderBottomBar` は、React 版のように描き直しのたびに呼ぶのではなく、Solid の部品と
-同じく必要なときだけ呼びます: `renderCell` は行(と値)や列が変わったとき、`renderHeader` は列が変わったとき、バーは関数が変わった
-ときだけ。位置(`rowIndex` など)・状態(`isActive` など)・バーの文脈(`derivedSummary` など)は読んだときに引くので、JSX の中で
-読めば追従します(本体で読むと、それが変わったときに呼び直します)。要素を作り直さないので、中のボタンや入力欄のクリックと
-フォーカスが保たれます。
-
-## 使い方
+## Install
 
 ```sh
-pnpm --filter ./packages/solid dev          # デモ(10,000 行 × 39 列。エディタ 6 種・行の選択・展開行・行の高さの自動調整・合計行と固定行・条件付き書式・選択範囲の集計・スクロールのヒント・変更のハイライト・クロスヘア・セル内検索・IME の直接入力・列の並べ替えと行のドラッグ(ghost / live)・フィルハンドル・右クリックメニュー・列フィルターとツールパネル・フィルターのチップ・テーマ・列の固定・グリッドを外すボタン)
-pnpm --filter ./packages/solid test         # jsdom のテスト(Solid の JSX 変換の vitest 設定。React 版と並べて比べるテストも)
-pnpm --filter ./packages/solid typecheck
-pnpm --filter ./packages/solid spike:build  # 大きさを測るためのライブラリビルド(dist/)
+npm install @ishibashi0112/spreadsheet-grid-solid
 ```
 
-## 作り
+Peer dependencies: `solid-js` / `@solidjs/web` `^2.0.0`. Supported browsers: Chrome / Edge 111+, Firefox 121+, Safari 16.4+. Import the CSS once:
 
-| React 版 | 試作 |
-| --- | --- |
-| `hooks/useGridStore.ts`(useSyncExternalStore) | `primitives/gridStoreSignals.ts`(store を signal に。購読は `onSettled`) |
-| `hooks/useController.ts` | `primitives/controller.ts`(`createRenderEffect` / `createEffect` で `update`) |
-| `hooks/useVirtualizerCore.ts` | `primitives/columnVirtualizer.ts` |
-| `GridShell.tsx`(5,246 行) | `SpreadsheetGrid.tsx`(約 3,040 行) |
-| `view/GridHeaderRow.tsx` / `view/GridBodyLayer.tsx` | 同じ名前(`view/`) |
-| `view/DefaultGridTopBar.tsx` / `DefaultGridBottomBar.tsx` / `RowSelectionCheckbox.tsx` / `GridDetailLayer.tsx` / `DetailToggleButton.tsx` / `GridChip.tsx` / `GridTotalRow.tsx` / `GridPinnedRows.tsx` / `GridSelectionAggregates.tsx` / `GridScrollHint.tsx` / `GridFindBar.tsx` / `GridBodyGroupRow.tsx` | 同じ名前(`view/`) |
-| `features/rowDrag.tsx` のハンドルのセル(`renderHandleCell`) | `view/RowDragHandle.tsx` |
-| `view/FillHandleLayer.tsx`(ハンドル / 点線 / ボタン / メニュー / ツールチップ) | 同じ名前(`view/`。ペインの層の `FillHandleLayer` とポップアップの `FillHandlePortals` の 2 つに) |
-| `view/CellContextMenuPopover.tsx` / `hooks/useCellContextMenuController.ts` / `features/contextMenu.tsx` の params を作る関数 | `view/CellContextMenuPopover.tsx` / `primitives/contextMenu.ts` / `features/contextMenu.ts` |
-| `view/ColumnFilterPopover.tsx` / `view/FilterDateField.tsx` / `features/filtering.tsx` の `useFilterPopover`(+ `hooks/useFilterPopoverController.ts`)/ 同じく `useFilterPopoverContent` | `view/ColumnFilterPopover.tsx` / `view/FilterDateField.tsx` / `primitives/filterPopover.ts` / `view/ColumnFilterPopoverHost.tsx` |
-| `view/ToolPanel.tsx` / `FilterManagementPanel.tsx` / `ColumnChooserPanel.tsx` / `SortManagementPanel.tsx` / `GridFilterChipBar.tsx` | 同じ名前(`view/`。後ろの 2 つのパネルの ⠿ の形は `view/DragHandleGlyph.tsx` に分けた) |
-| `features/toolPanel.ts` の `useToolPanel`(+ `hooks/useToolPanelController.ts`)/ `features/filtering.tsx` の `useFilterManagement` | `primitives/toolPanel.ts` / `primitives/filterManagement.ts` |
-| `CopyRangeOverlay.tsx` / `ColumnHoverOverlay.tsx` | `view/CopyRangeOverlay.tsx`(2 つをまとめた) |
-| `features/*`(機能の部品)/ `createSpreadsheetGrid.tsx` | 同じ名前(入れた機能だけ) |
-| `editors/*`(CellEditorLayer / 6 種のエディタ / CheckboxCell / CellEditorErrorBubble) | 同じ名前(`editors/`) |
-| `hooks/usePortalTokens.ts` / `editors/useTopAlignedInput.ts` / `hooks/useSelectionAggregates.ts` / `hooks/useColumnAutosizeRunner.ts` / `hooks/useColumnHeaderDragController.ts` / `hooks/useRowDragController.ts` / `features/fillHandle.tsx` + `hooks/useFillHandleController.ts` | `primitives/portalTokens.ts` / `primitives/topAlignedInput.ts` / `primitives/selectionAggregates.ts` / `primitives/columnAutosize.ts` / `primitives/columnReorder.ts` / `primitives/rowDrag.ts` / `primitives/fillHandle.ts` |
-| (ポップアップの置き場所の props) | `context/portal.ts`(表の root と描く場所) |
-| `hooks/useGridLocaleText.ts`(Context) | `context/localeText.ts` |
-| (React の `useSyncExternalStore`) | `primitives/externalStore.ts`(OS の配色 / 視差効果を減らす設定) |
+```ts
+import '@ishibashi0112/spreadsheet-grid-solid/style.css'
+```
 
-## 試作で分かったこと
+The package follows the Solid convention for libraries: the `solid` export condition points at JSX source (`dist/source/`), which your bundler compiles with your own Solid settings (DOM or SSR, dev or prod). With Vite, use `@solidjs/vite-plugin` 3 (Vite 8 or later). SSR (for example SolidStart) needs this form. Tools without the `solid` condition get the DOM build (`dist/index.js`, ESM only). In Node (for example tests with Vitest and jsdom), resolve with the `solid` or `browser` condition, which `@solidjs/vite-plugin` sets: with Node's default conditions `@solidjs/web` resolves to its server build and the DOM build fails with "Client-only API called on the server side".
 
-1. **最初の update は描き終わった後に**: Solid の `createRenderEffect` の最初の実行は JSX の要素を作る前で、ref がまだ入っていない
-   (React のレイアウト effect はコミット後)。core のコントローラは最初の `update` で DOM を掴む(scrollSync の attach など)ので、
-   `connectController` で最初の `update` を `onSettled` まで遅らせた。これを忘れると縦スクロールが追従しない。
-2. **同じタスクの中の続けたイベントで、コントローラが古い状態を読む**: Solid 2.0 は書き込みをマイクロタスクでまとめて反映する。
-   キー操作などのコントローラは `update(args)` で受けた `uiState`(signal の値)を読むので、JS から続けて dispatch したイベント
-   (テストの `fireEvent` など)では 2 回目以降が古い位置から動く(`ArrowDown` 3 回で 1 行。`src/timing.test.tsx`)。実際の
-   キー入力はイベントごとにマイクロタスクが回るので起きない(Playwright で確認)。命令的 API は store を直接読むので起きない。
-   → 段階 0-1 で core のコントローラがイベントの時点の store を読む形(`getUiState`。core `controllers/liveUiState`)にして直した
-   (React 版も同じ形)。
-3. **Solid の開発ビルドの診断が役に立つ**: 部品の本体での読み取り(STRICT_READ_UNTRACKED)、ref の中の onCleanup
-   (CLEANUP_IN_FORBIDDEN_SCOPE)を開発ビルドが止めてくれた(直した)。残っているのは列の幅が変わったときの
-   EFFECT_RELAY_TEAR(列の仮想化の測り直しで見出しを 2 回描く。React 版にも同じ 2 回目の描画がある)と、`autoHeight` で行を
-   測ったときの EFFECT_RELAY_TEAR / EFFECT_WRITES_OWN_SOURCE(測った高さで縦のレイアウトを計算し直す。React 版もレイアウト effect
-   で測って描き直す。どちらも描く前に済むので画面には出ない。Solid の診断の文言どおり「測る代わり」)、合計行 / 固定行を出し入れ
-   したときの EFFECT_RELAY_TEAR(見える高さを clientHeight から下端の行を引いて測り直す。同じく測る代わり)。
-4. **core へ寄せたもの(段階 0-2〜0-4)**: React 版の層にフレームワークに依らないファイルはほぼ残っていなかったが、`GridShell.tsx`
-   の useCallback / useMemo の中に Solid でも同じことを書く処理があったので core へ移した: セルの操作(編集を始めてよいかの判断・
-   チェックボックス・選択したセルの削除・全選択・`renderCell` の `setValue` = `engine/cellCommands`)、オーバーレイの矩形と
-   `aria-activedescendant` の判断(`logic/cellPlacement`)、エディタのキーの割り当て(`logic/editorKeys`)、密度の既定の高さ
-   (`logic/density`)。残り: セルの既定の表示(valueFormatter。数行)、固定ペインの style、core の `resolveGridHeightLayout` が
-   React 向けの style(camelCase・数値)を返すので変換が要る(`primitives/style.ts`)。
-5. **テスト**: core の `installJsdomLayoutStubs` は Solid の jsdom テストでもそのまま使えた。`@solidjs/testing-library` はまだ
-   1.0.0-rc.2。イベントの後に DOM を見るときは `flush()` を挟む。
-6. **pnpm**: Solid 2.0 の各パッケージは公開されたばかりで pnpm 11 の `minimumReleaseAge` に止められるので、
-   `pnpm-workspace.yaml` の `minimumReleaseAgeExclude` に入れてある(しばらくしたら外せる)。
+`style.layer.css` and the design-system themes (`themes/astryx.css` / `themes/mantine.css` / `themes/heroui.css` / `themes/shadcn.css`) are the same files as in the React version ([installation](https://datasheet-grid.vercel.app/docs/installation), [design systems](https://datasheet-grid.vercel.app/docs/guides/design-systems)).
 
-## 大きさ(2026-11-17)
+## Quick start
 
-`size:check` と同じ条件(esbuild / minify / フレームワークは外部化 / gzip level 9 / core は公開 dist)。
+```tsx
+import { createSignal } from 'solid-js'
+import { SpreadsheetGrid, type GridColumn } from '@ishibashi0112/spreadsheet-grid-solid'
+import '@ishibashi0112/spreadsheet-grid-solid/style.css'
 
-| 構成 | gzip |
-| --- | --- |
-| 試作(シェルだけ。core と virtual-core を除く) | 9.28 KB |
-| 試作(core と virtual-core 込み) | 57.11 KB |
-| React `/lite` 機能なし(シェルだけ) | 33.25 KB |
-| React `/lite` 機能なし(core 込み) | 85.66 KB |
-| React 全部入り(シェルだけ) | 58.89 KB |
-| Solid の実行時(試作が使う範囲。外部化しているぶん) | 15.66 KB |
-| React + ReactDOM の実行時(同上) | 67.36 KB |
+type Row = { id: number; name: string }
+const columns: GridColumn<Row>[] = [{ key: 'name', title: 'Name', width: 200, editable: true }]
 
-試作は React の `/lite` より機能が少ないので、シェルどうしの比は参考までです。
+export function App() {
+  const [rows, setRows] = createSignal<Row[]>([{ id: 1, name: 'alpha' }])
+  return (
+    <div style={{ height: '600px' }}>
+      <SpreadsheetGrid
+        rows={rows()}
+        columns={columns}
+        onRowsChange={(next) => setRows(next)}
+        rowKeyGetter={(row) => row.id}
+        height="100%"
+      />
+    </div>
+  )
+}
+```
+
+A runnable example (an editable inventory table with 10,000 rows) is in [`examples/solid`](https://github.com/ishibashi0112/datasheet-grid/tree/main/examples/solid).
+
+**English UI:** the grid's own texts default to Japanese. Pass `localeText={localeTextEn}` (`import { localeTextEn } from '@ishibashi0112/spreadsheet-grid-solid/locales/en'`).
+
+## Picking features
+
+`SpreadsheetGrid` includes every feature (about 162KB gzip of initial JS; the column filter popover and the tool panel, about 16KB, load later). `createSpreadsheetGrid` builds a grid with only the features you pass, and the rest is left out of your bundle (about 90KB with no features, about 117KB with the `standardFeatures` preset). Unlike the React version, the parts come from the main entry (there is no `/lite`).
+
+```tsx
+import { createSpreadsheetGrid, standardFeatures, serverSideFeature } from '@ishibashi0112/spreadsheet-grid-solid'
+
+// Create it once at module level, not inside a component.
+const Grid = createSpreadsheetGrid({ features: { ...standardFeatures, serverSide: serverSideFeature } })
+```
+
+The feature names and what they enable are listed in the React version's `API_REFERENCE.md` (「機能を選んで組み込む」); the part names are the same.
+
+## Differences from the React version
+
+- **`ref` works like Solid's DOM refs.** `let grid!: SpreadsheetGridHandle<Row>` with `ref={grid}`, or `ref={(handle) => (grid = handle)}`, gives you the handle with the same methods (there are no React ref objects).
+- **Render functions run only when needed.** `renderCell` runs again when its row, value or column changes, `renderHeader` when its column changes, and the bar renderers when the function changes; not on every update as in React. Positions and states in the context (`rowIndex`, `isActive`, the bar context and so on) are reactive: read them inside JSX and they stay current. Reading them in the function body makes the content re-created whenever they change.
+- **Not available:** the natural-language filter (`/ai`, `GridAskBar`).
+- Everything else (props, column options, handle methods, callbacks, CSS classes and tokens) is the same as in [`API_REFERENCE.md`](https://github.com/ishibashi0112/datasheet-grid/blob/main/packages/react/API_REFERENCE.md) of the React version.
+
+## Rules that are easy to get wrong
+
+- **Import the CSS.** Without `style.css` the grid is unstyled and its scroll area does not work.
+- **State is controlled.** Edits come back through `onRowsChange` as a new array; pass that array back to `rows` as-is (re-creating it, e.g. with `map`, clears the undo history).
+- **Row keys.** Return a stable key from `rowKeyGetter` (the default is the row index).
+- **Height.** Use the `height` prop. A value containing `%` sizes the whole grid including its bars and needs a parent with a definite height; a number sizes the scroll area only. Without `height`, the scroll area is capped at `480px`.
+- **Positions are view positions.** `viewRowIndex` / `colIndex` are positions after sorting and filtering. Look them up with `getViewRowIndex(rowKey)` / `getColIndex(columnKey)`.
+
+## Versioning
+
+This package has its own version (0.x), separate from the React version and the core, and depends on the core of exactly one version. Before 1.0, minor releases may include breaking changes; they are listed in the [changelog](https://github.com/ishibashi0112/datasheet-grid/blob/main/CHANGELOG.md). TypeScript 5.8 or later is supported (`moduleResolution` `bundler` or `nodenext`, `jsx: "preserve"`, `jsxImportSource: "@solidjs/web"`). A library built on this package that exports inferred types should list this package and the core (the version this package depends on) in `peerDependencies`.
+
+## License
+
+MIT
+
+---
+
+## 日本語
+
+Solid 2.0 向けの仮想化スプレッドシート / データグリッドです(約 100 万行・列固定・Excel ライクな編集 / 選択 / クリップボード・フィルター / ソート・クライアントサイド / サーバーサイド行モデル)。React 版の [`@ishibashi0112/spreadsheet-grid`](https://www.npmjs.com/package/@ishibashi0112/spreadsheet-grid) と同じ props・列の定義・命令的なハンドル・CSS・見た目で、同じフレームワークに依らないコアの上に作っています。
+
+**[ドキュメントとライブデモ](https://datasheet-grid.vercel.app)**(React 版向けに書いていますが、props は同じです)· [GitHub](https://github.com/ishibashi0112/datasheet-grid) · [変更履歴](https://github.com/ishibashi0112/datasheet-grid/blob/main/CHANGELOG.md)
+
+`npm install @ishibashi0112/spreadsheet-grid-solid` で入れます(peer は `solid-js` / `@solidjs/web` の `^2.0.0`)。CSS は `import '@ishibashi0112/spreadsheet-grid-solid/style.css'` を 1 回読み込みます。`style.layer.css` とデザインシステムのテーマ(`themes/*.css`)は React 版と同じファイルです。
+
+パッケージは Solid のライブラリの慣例どおり、`solid` 条件で JSX のままのソース(`dist/source/`)を渡し、利用側のバンドラが自分の Solid の設定(DOM / SSR・開発 / 本番)でコンパイルします。Vite では `@solidjs/vite-plugin` 3(Vite 8 以上)を使ってください。SSR(SolidStart など)はこの形が要ります。`solid` 条件の無いツールは DOM 向けにコンパイル済みの `dist/index.js`(ESM だけ)を読みます。Node の中(Vitest と jsdom のテストなど)では `solid` か `browser` の条件で解決してください(`@solidjs/vite-plugin` が付けます)。Node の既定の条件では `@solidjs/web` がサーバー向けのビルドになり、DOM 向けのビルドは「Client-only API called on the server side」で止まります。
+
+使い方は上の Quick start のとおりです(`rows={rows()}` のように signal を呼んで渡し、編集は `onRowsChange` で受け取って signal へ戻す)。ブラウザで動かせるサンプル(編集できる在庫表 10,000 行)は [`examples/solid`](https://github.com/ishibashi0112/datasheet-grid/tree/main/examples/solid) にあります。英語の文言は `@ishibashi0112/spreadsheet-grid-solid/locales/en` の `localeTextEn` を `localeText` に渡します。
+
+対応ブラウザは Chrome / Edge 111 以降、Firefox 121 以降、Safari 16.4 以降です。
+
+### 機能を選んで組み込む
+
+`SpreadsheetGrid` は全機能入りです(初期読み込みの JS が約 162KB gzip。列フィルターのポップオーバーとツールパネルの約 16KB は後から読みます)。`createSpreadsheetGrid` では渡した機能だけを入れたグリッドを作れ、渡さなかった機能はバンドルに入りません(機能なしで約 90KB、プリセット `standardFeatures` で約 117KB)。React 版と違い、機能の部品も同じ入口から import します(`/lite` はありません)。機能の名前と中身は React 版の `API_REFERENCE.md` の「機能を選んで組み込む」のとおりです(部品の名前も同じ)。グリッドはコンポーネントの中ではなく、モジュールの先頭で 1 回だけ作ってください。
+
+### React 版との違い
+
+- **`ref` は Solid の DOM の ref と同じです。** `let grid!: SpreadsheetGridHandle<Row>` と `ref={grid}`、または `ref={(handle) => (grid = handle)}` で、同じメソッドを持つハンドルを受け取れます(React の ref オブジェクトはありません)。
+- **描く関数は必要なときだけ呼びます。** `renderCell` は行・値・列が変わったとき、`renderHeader` は列が変わったとき、バーの関数は関数が変わったときだけ呼び直します(React 版のように更新のたびには呼びません)。文脈の位置と状態(`rowIndex` / `isActive` / バーの文脈など)は読んだときに引くので、JSX の中で読めば追従します。関数の本体で読むと、それが変わるたびに中身を作り直します。
+- **ありません:** ことばで絞り込み(`/ai` の `GridAskBar`)。
+- そのほか(props・列の定義・ハンドルのメソッド・通知・CSS のクラスとトークン)は React 版の [`API_REFERENCE.md`](https://github.com/ishibashi0112/datasheet-grid/blob/main/packages/react/API_REFERENCE.md) と同じです。
+
+### 間違えやすいルール
+
+- **CSS を読み込む。** `style.css` が無いとスタイルが当たらず、スクロール領域も機能しません。
+- **状態は controlled。** 編集結果は `onRowsChange` が新しい配列で返します。受け取った配列をそのまま `rows` へ戻してください(`map` 等で作り直すと undo 履歴が消えます)。
+- **行キー。** `rowKeyGetter` で安定したキーを返してください(既定は行 index)。
+- **高さ。** `height` prop で指定します。`%` を含む値はバーを含むグリッド全体の高さで、親要素に確定高さが必要です。数値はスクロール領域だけの高さです。`height` 未指定時のスクロール領域は `480px` が上限です。
+- **位置は表示の位置。** `viewRowIndex` / `colIndex` は並べ替え・絞り込みの後の表示の位置です。`getViewRowIndex(rowKey)` / `getColIndex(columnKey)` で引いてください。
+
+### バージョンの方針
+
+このパッケージは React 版・コアとは別の版(0.x)で、コアには同じ 1 つの版で依存します。1.0 より前は minor でも壊す変更が入ることがあり、[変更履歴](https://github.com/ishibashi0112/datasheet-grid/blob/main/CHANGELOG.md)に書きます。TypeScript は 5.8 以上(`moduleResolution` は `bundler` / `nodenext`、`jsx: "preserve"`・`jsxImportSource: "@solidjs/web"`)です。このパッケージの上に作ったライブラリが推論した型を export するときは、このパッケージと core(このパッケージが依存する版)を `peerDependencies` に入れてください。
+
+## License
+
+MIT

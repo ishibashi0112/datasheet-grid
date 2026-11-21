@@ -47,7 +47,9 @@ export function createSpreadsheetGrid(options: CreateSpreadsheetGridOptions) {
   }
   const hasOverrides = Object.keys(overrides).length > 0;
   const shellFeatures = withMethodWarningFeatures(features);
-  return function SpreadsheetGrid<T extends object>(props: SpreadsheetGridProps<T>): JSX.Element {
+  // L は labelRow のラベル行の型です(React 版と同じ。シェルは L を区別しない)。
+  return function SpreadsheetGrid<T extends object, L extends T = T>(labelTypedProps: SpreadsheetGridProps<T, L>): JSX.Element {
+    const props = labelTypedProps as SpreadsheetGridProps<T>;
     // 機能が無いときの置き換えの前の props で見る(使われたのに効かない prop を知らせる)。
     createUnregisteredFeatureWarnings(props, features);
     // merge は props の getter を保ったまま上書きします(スプレッドで写すと props の追従が切れる)。

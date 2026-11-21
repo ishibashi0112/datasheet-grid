@@ -9,6 +9,9 @@
 //   組み合わせ: TypeScript は対応の下限・リポジトリの版・最新、React の型は 19(npm)と 18(pnpm)、
 //   解決方式は bundler と nodenext。TypeScript の対応範囲を変えたら MIN_TYPESCRIPT とドキュメント(README /
 //   docs/versioning)をそろえる。
+//   追加(Solid 版 段階 3-3): Solid 版(packages/solid)の d.ts も同じく見ます(type-tests/solid。solid-js 2.0 の型で
+//   src = 正しい書き方と間違い、library = d.ts を出すライブラリの形と入口の値の再公開、bundler / nodenext × TypeScript の 3 つの版
+//   と、pnpm で core を直接入れない形)。Solid 版は ESM だけなので CommonJS の検査はしません。
 //   使い方: build:lib の後に node scripts/check-types.mjs(CI でも実行。ネットワークが要る)
 import { exec as execCallback, execSync } from 'node:child_process';
 import { cpSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
@@ -24,8 +27,10 @@ const ts = require('typescript');
 
 const REACT_PACKAGE = '@ishibashi0112/spreadsheet-grid';
 const CORE_PACKAGE = '@ishibashi0112/spreadsheet-grid-core';
+const SOLID_PACKAGE = '@ishibashi0112/spreadsheet-grid-solid';
 // 公開する入口(package.json の exports のうち JS のもの)。
 const ENTRIES = ['', '/lite', '/ai', '/locales/en', '/testing'];
+const SOLID_ENTRIES = ['', '/locales/en', '/testing'];
 // 対応する TypeScript の下限と、確かめる最新の版(上げるときはここを書き換える)。
 const MIN_TYPESCRIPT = '5.8.3';
 const LATEST_TYPESCRIPT = '7.0.2';
@@ -85,14 +90,24 @@ const runTsc = async (name, cwd, tscPath, config, { emitDir } = {}) => {
 //   変更(レビュー): 関数の宣言は d.ts で `typeof e0.X` と書かれて中身が展開されないので、呼び出した結果も再公開する。
 //   公開している型(型の別名 / interface)は、型引数を any にしてプロパティを 1 段たどった値も再公開する
 //   (/ai の GridAskOptions の columns が内部の束縛で書かれていたのを、これで見つけた)。
-const writeExportsFile = (projectDir, file) => {
+//   変更(Solid 版 段階 3-3): 入口とパッケージと JSX の設定を受けて、Solid 版でも同じものを作ります。
+const REACT_EXPORTS = { packageName: REACT_PACKAGE, entries: ENTRIES, jsx: { jsx: ts.JsxEmit.ReactJSX }, minValues: 40, minProperties: 1000 };
+// Solid 版は入口が 1 つ(全部入りと機能の部品が同じ入口。React 版は index と /lite の両方が同じ型を出す)なので、下限を小さくします。
+const SOLID_EXPORTS = {
+  packageName: SOLID_PACKAGE,
+  entries: SOLID_ENTRIES,
+  jsx: { jsx: ts.JsxEmit.Preserve, jsxImportSource: '@solidjs/web' },
+  minValues: 25,
+  minProperties: 800,
+};
+const writeExportsFile = (projectDir, file, { packageName, entries, jsx, minValues, minProperties } = REACT_EXPORTS) => {
   const stub = join(projectDir, 'library', '__entries.ts');
-  writeFileSync(stub, ENTRIES.map((entry, i) => `import * as e${i} from '${REACT_PACKAGE}${entry}';\nexport { e${i} };`).join('\n'));
+  writeFileSync(stub, entries.map((entry, i) => `import * as e${i} from '${packageName}${entry}';\nexport { e${i} };`).join('\n'));
   const program = ts.createProgram([stub], {
     lib: ['lib.es2022.d.ts', 'lib.dom.d.ts', 'lib.dom.iterable.d.ts'],
     module: ts.ModuleKind.ESNext,
     moduleResolution: ts.ModuleResolutionKind.Bundler,
-    jsx: ts.JsxEmit.ReactJSX,
+    ...jsx,
     noEmit: true,
   });
   const checker = program.getTypeChecker();
@@ -152,7 +167,7 @@ const writeExportsFile = (projectDir, file) => {
   });
   rmSync(stub);
   // 何も見ていないのに通る、を防ぐ下限(入口の公開物が大きく減ったら見直す)。
-  if (counts.values < 40 || counts.properties < 1000) {
+  if (counts.values < minValues || counts.properties < minProperties) {
     throw new Error(`再公開した数が少なすぎます(値 ${counts.values} / プロパティ ${counts.properties})`);
   }
   writeFileSync(join(projectDir, 'library', file), lines.join('\n'));
@@ -179,9 +194,15 @@ try {
   };
   const coreTarball = pack('packages/core');
   const reactTarball = pack('packages/react');
+  const solidTarball = pack('packages/solid');
 
+  // 変更(Solid 版 段階 3-3): type-tests/solid は Solid 版の検査だけで使うので写しません。
+  const solidTestsDir = join(root, 'type-tests', 'solid');
   const copyTests = (dir) => {
-    cpSync(join(root, 'type-tests'), dir, { recursive: true, filter: (source) => !/[\\/](node_modules|out)$/.test(source) });
+    cpSync(join(root, 'type-tests'), dir, {
+      recursive: true,
+      filter: (source) => !/[\\/](node_modules|out)$/.test(source) && source !== solidTestsDir,
+    });
   };
 
   // ── npm + React 19 の型(core も直接の依存に入れる = withCore.tsx の前提)──
@@ -235,15 +256,73 @@ try {
   );
   writeFileSync(join(pnpmDir, 'pnpm-workspace.yaml'), `overrides:\n  '${CORE_PACKAGE}': 'file:${coreTarball}'\n`);
 
+  // ── Solid 版: npm + solid-js 2.0(core も直接の依存に入れる)と、pnpm(Solid 版だけに依存)──
+  //   type-tests/solid だけを写します(React の型を入れないので、React 版の type-tests は検査できない)。
+  const solidVersions = JSON.parse(readFileSync(join(root, 'packages/solid/package.json'), 'utf8')).devDependencies;
+  // devDependencies が範囲(`^2.0.0` など)で書かれていてもそのまま使う(固定の版なら `^` を付ける)。
+  const asRange = (version) => (/^[\^~<>=]/.test(version) ? version : `^${version}`);
+  const solidDeps = { 'solid-js': asRange(solidVersions['solid-js']), '@solidjs/web': asRange(solidVersions['@solidjs/web']) };
+  const copySolidTests = (dir) => {
+    cpSync(join(root, 'type-tests', 'solid'), dir, { recursive: true, filter: (source) => !/[\\/](node_modules|out)$/.test(source) });
+  };
+  const solidNpmDir = join(work, 'solid-npm');
+  mkdirSync(solidNpmDir);
+  copySolidTests(solidNpmDir);
+  writeFileSync(
+    join(solidNpmDir, 'package.json'),
+    JSON.stringify(
+      {
+        name: 'ssg-type-tests-solid-npm',
+        private: true,
+        type: 'module',
+        dependencies: { ...solidDeps, [SOLID_PACKAGE]: `file:${solidTarball}`, [CORE_PACKAGE]: `file:${coreTarball}` },
+        devDependencies: {
+          typescript: REPO_TYPESCRIPT,
+          'ts-min': `npm:typescript@${MIN_TYPESCRIPT}`,
+          'ts-latest': `npm:typescript@${LATEST_TYPESCRIPT}`,
+        },
+        overrides: { [CORE_PACKAGE]: `$${CORE_PACKAGE}` },
+      },
+      null,
+      2,
+    ),
+  );
+  const solidPnpmDir = join(work, 'solid-pnpm');
+  mkdirSync(solidPnpmDir);
+  copySolidTests(solidPnpmDir);
+  writeFileSync(
+    join(solidPnpmDir, 'package.json'),
+    JSON.stringify(
+      {
+        name: 'ssg-type-tests-solid-pnpm',
+        private: true,
+        type: 'module',
+        dependencies: { ...solidDeps, [SOLID_PACKAGE]: `file:${solidTarball}` },
+        devDependencies: { typescript: REPO_TYPESCRIPT },
+      },
+      null,
+      2,
+    ),
+  );
+  writeFileSync(join(solidPnpmDir, 'pnpm-workspace.yaml'), `overrides:\n  '${CORE_PACKAGE}': 'file:${coreTarball}'\n`);
+
   await Promise.all([
     exec('npm install --no-audit --no-fund --loglevel=error', { cwd: npmDir, maxBuffer: 64 * 1024 * 1024 }),
     exec('pnpm install --reporter=silent', { cwd: pnpmDir, maxBuffer: 64 * 1024 * 1024 }),
+    exec('npm install --no-audit --no-fund --loglevel=error', { cwd: solidNpmDir, maxBuffer: 64 * 1024 * 1024 }),
+    exec('pnpm install --reporter=silent', { cwd: solidPnpmDir, maxBuffer: 64 * 1024 * 1024 }),
   ]);
   const generated = writeExportsFile(npmDir, 'generatedExports.ts');
   cpSync(join(npmDir, 'library', 'generatedExports.ts'), join(pnpmDir, 'library', 'generatedExports.ts'));
   console.log(
     `check-types: 入口 ${ENTRIES.length} つの値 ${generated.values} 個(関数の呼び出し ${generated.calls} 個)と、` +
       `型 ${generated.types} 個のプロパティ ${generated.properties} 個を再公開して確かめます`,
+  );
+  const solidGenerated = writeExportsFile(solidNpmDir, 'generatedExports.ts', SOLID_EXPORTS);
+  cpSync(join(solidNpmDir, 'library', 'generatedExports.ts'), join(solidPnpmDir, 'library', 'generatedExports.ts'));
+  console.log(
+    `check-types: Solid 版の入口 ${SOLID_ENTRIES.length} つの値 ${solidGenerated.values} 個(関数の呼び出し ${solidGenerated.calls} 個)と、` +
+      `型 ${solidGenerated.types} 個のプロパティ ${solidGenerated.properties} 個を再公開して確かめます`,
   );
 
   const tsc = (dir, pkg) => join(dir, 'node_modules', pkg, 'bin', 'tsc');
@@ -278,6 +357,41 @@ try {
       tsc(pnpmDir, 'typescript'),
       { compilerOptions: { ...bundler, ...emit('out/portable') }, files: ['library/portable.tsx'] },
       { emitDir: join(pnpmDir, 'out', 'portable') },
+    ),
+  );
+  // Solid 版(JSX は Solid の形。solid-js 2.0 の型)。
+  const solidJsx = { jsx: 'preserve', jsxImportSource: '@solidjs/web' };
+  const solidBundler = { ...bundler, ...solidJsx };
+  const solidNodenext = { ...nodenext, ...solidJsx };
+  for (const [label, pkg] of [
+    [`TypeScript ${MIN_TYPESCRIPT}`, 'ts-min'],
+    [`TypeScript ${REPO_TYPESCRIPT}`, 'typescript'],
+    [`TypeScript ${LATEST_TYPESCRIPT}`, 'ts-latest'],
+  ]) {
+    const slug = pkg;
+    checks.push(() =>
+      runTsc(`Solid 版 / npm / bundler / ${label}: 型の検査`, solidNpmDir, tsc(solidNpmDir, pkg), { compilerOptions: solidBundler, include: ['src'] }),
+    );
+    checks.push(() =>
+      runTsc(
+        `Solid 版 / npm / bundler / ${label}: ライブラリの d.ts`,
+        solidNpmDir,
+        tsc(solidNpmDir, pkg),
+        { compilerOptions: { ...solidBundler, ...emit(`out/${slug}`) }, include: ['library'] },
+        { emitDir: join(solidNpmDir, 'out', slug) },
+      ),
+    );
+    checks.push(() =>
+      runTsc(`Solid 版 / npm / nodenext / ${label}`, solidNpmDir, tsc(solidNpmDir, pkg), { compilerOptions: solidNodenext, include: ['src'] }),
+    );
+  }
+  checks.push(() =>
+    runTsc(
+      'Solid 版 / pnpm / bundler: core を直接入れないライブラリの d.ts',
+      solidPnpmDir,
+      tsc(solidPnpmDir, 'typescript'),
+      { compilerOptions: { ...solidBundler, ...emit('out/portable') }, files: ['library/portable.tsx'] },
+      { emitDir: join(solidPnpmDir, 'out', 'portable') },
     ),
   );
   for (const check of checks) {

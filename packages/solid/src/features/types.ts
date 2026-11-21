@@ -43,10 +43,7 @@ import type { ColumnFilterPopoverHost } from '../view/ColumnFilterPopoverHost';
 import type { createFilterManagement } from '../primitives/filterManagement';
 import type { GridFilterChipBar } from '../view/GridFilterChipBar';
 import type { createToolPanel } from '../primitives/toolPanel';
-import type { ToolPanel } from '../view/ToolPanel';
-import type { FilterManagementPanel } from '../view/FilterManagementPanel';
-import type { ColumnChooserPanel } from '../view/ColumnChooserPanel';
-import type { SortManagementPanel } from '../view/SortManagementPanel';
+import type { FilterPopoverViews, LazyModuleSignalOptions, ToolPanelViews } from '../view/lazyPopups';
 import type { createColumnMenu } from '../primitives/columnMenu';
 import type { ColumnMenuPopover } from '../view/ColumnMenuPopover';
 import type { GridBodyGroupRow } from '../view/GridBodyGroupRow';
@@ -137,18 +134,18 @@ export type SolidGridFeatures = {
           createFilterOrder: typeof createFilterOrder;
           createFilterPopover: typeof createFilterPopover;
           FilterPopoverHost: typeof ColumnFilterPopoverHost;
+          // ポップオーバーの部品(別のチャンク)の読み込み。読み込み前は null(段階 3-3)。
+          createFilterPopoverViews: (options: LazyModuleSignalOptions) => () => FilterPopoverViews | null;
           createFilterManagement: typeof createFilterManagement;
           FilterChipBar: typeof GridFilterChipBar;
         })
     | undefined;
-  // ツールパネル(フィルター / 列 / 並び替えの 3 タブ): コントローラ(core)の接続 + 枠と 3 つのタブの中身の部品。
+  // ツールパネル(フィルター / 列 / 並び替えの 3 タブ): コントローラ(core)の接続 + 枠と 3 つのタブの中身の部品(別のチャンク)の
+  //   読み込み。読み込み前は null(段階 3-3)。
   toolPanel?:
     | {
         createToolPanel: typeof createToolPanel;
-        ToolPanel: typeof ToolPanel;
-        FilterManagementPanel: typeof FilterManagementPanel;
-        ColumnChooserPanel: typeof ColumnChooserPanel;
-        SortManagementPanel: typeof SortManagementPanel;
+        createToolPanelViews: (options: LazyModuleSignalOptions) => () => ToolPanelViews | null;
       }
     | undefined;
   // 列メニュー: コントローラ(core)の接続 + ポップアップの部品。

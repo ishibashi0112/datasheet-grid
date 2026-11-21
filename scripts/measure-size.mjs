@@ -58,6 +58,30 @@ const CONFIGS = [
     source: 'dist',
     code: "export { GridAskBar } from './packages/react/dist/ai.js';",
   },
+  // 追加(Solid 版 段階 3-3): Solid 版(packages/solid。公開 dist の「import」条件 = コンパイル済みの JS)。入口は 1 つで、
+  //   全部入り・機能なし・standardFeatures を同じ入口から束ねる(使わない機能の部品が消えることも、ここで見る)。
+  //   solid-js / @solidjs/web は react と同じく外部化します。
+  {
+    name: 'solid-full',
+    remeasureUnusedLazy: true,
+    label: 'Solid 版 全部入り(SpreadsheetGrid。公開 dist)',
+    source: 'dist',
+    code: "export { SpreadsheetGrid } from './packages/solid/dist/index.js';",
+  },
+  {
+    name: 'solid-lite',
+    remeasureUnusedLazy: true,
+    label: 'Solid 版 機能なし(createSpreadsheetGrid のみ。公開 dist)',
+    source: 'dist',
+    code: "import { createSpreadsheetGrid } from './packages/solid/dist/index.js'; export const Grid = createSpreadsheetGrid({ features: {} });",
+  },
+  {
+    name: 'solid-standard',
+    remeasureUnusedLazy: true,
+    label: 'Solid 版 + standardFeatures(公開 dist)',
+    source: 'dist',
+    code: "import { createSpreadsheetGrid, standardFeatures } from './packages/solid/dist/index.js'; export const Grid = createSpreadsheetGrid({ features: standardFeatures });",
+  },
 ];
 
 const kb = (bytes) => bytes / 1024;
@@ -79,11 +103,15 @@ const coreDistPlugin = {
 // dist がソースより古いかを調べます(ビルドし忘れの計測を防ぐ)。パッケージごと(core / react)に、ソースの
 //   うちビルドに入るファイル(テスト・テスト用の補助・.md を除く)の最新の更新時刻と dist の入口を比べます。
 const isBuildSource = (name) => /\.(ts|tsx|css)$/.test(name) && !/\.test\.tsx?$/.test(name);
+// 変更(Solid 版 段階 3-3 のレビュー): ビルドに入らないテストの部品のディレクトリ(Solid 版の src/parity = tsconfig.lib.json の
+//   exclude と同じ)は見ない(直しただけで dist が古いと警告していた)。
+const TEST_ONLY_DIRS = new Set([`${ROOT}packages/solid/src/parity`]);
 const newestMtime = (dir) => {
   let newest = 0;
   for (const entry of readdirSync(dir, { withFileTypes: true })) {
     const path = `${dir}/${entry.name}`;
     if (entry.isDirectory()) {
+      if (TEST_ONLY_DIRS.has(path)) continue;
       newest = Math.max(newest, newestMtime(path));
     } else if (isBuildSource(entry.name)) {
       newest = Math.max(newest, statSync(path).mtimeMs);
@@ -94,7 +122,7 @@ const newestMtime = (dir) => {
 // 古いパッケージの名前を返します(dist が無ければ終了)。
 const findStaleDists = () => {
   const stale = [];
-  for (const pkg of ['core', 'react']) {
+  for (const pkg of ['core', 'react', 'solid']) {
     let distMtime;
     try {
       // React 版は全部入り(index)と /lite の 2 つのビルドなので、古い方で比べる。
@@ -185,7 +213,47 @@ const checkLiteDistShape = () => {
   return problems;
 };
 
-// 追加(semver / 1.0 の準備): React 版の dist(js / cjs / d.ts)が core を参照する形を確かめ、崩れていれば理由を返します。
+// 追加(Solid 版 段階 3-3 のレビュー): Solid 版の 2 つの入口(DOM 向けの dist/index.js と、solid 条件の
+//   dist/source/index.jsx)が、列フィルターのポップオーバーとツールパネルを import() で後から読む形かを確かめます。
+//   入口から静的 import でたどれるファイルにそのチャンクがあると、初期 JS に入ってしまう(この計測は esbuild で束ね直すので、
+//   入口の形が崩れても数字に出ないことがある)。
+const SOLID_DIST = `${ROOT}packages/solid/dist/`;
+const SOLID_LAZY_CHUNKS = ['ColumnFilterPopover', 'toolPanelViews'];
+// 複数行の import / export の文も拾う(esbuild の出力は 1 つの import を複数行に書く)。
+const STATIC_RELATIVE_IMPORT = /(?:^|\n)\s*(?:import|export)\s[^;]*?from\s*"(\.[^"]+)"|(?:^|\n)\s*import\s*"(\.[^"]+)"/g;
+const DYNAMIC_RELATIVE_IMPORT = /import\(\s*"(\.[^"]+)"\s*\)/g;
+const checkSolidDistShape = () => {
+  const problems = [];
+  for (const entry of ['index.js', 'source/index.jsx']) {
+    const entryPath = `${SOLID_DIST}${entry}`;
+    const lazyTargets = [...readFileSync(entryPath, 'utf8').matchAll(DYNAMIC_RELATIVE_IMPORT)].map((match) =>
+      resolvePath(dirname(entryPath), match[1]),
+    );
+    for (const name of SOLID_LAZY_CHUNKS) {
+      if (!lazyTargets.some((target) => target.split('/').pop().startsWith(`${name}-`))) {
+        problems.push(`Solid 版の dist/${entry} が ${name} のチャンクを import() で読んでいません`);
+      }
+    }
+    const reachable = new Set();
+    const walk = (file) => {
+      if (reachable.has(file)) return;
+      reachable.add(file);
+      for (const match of readFileSync(file, 'utf8').matchAll(STATIC_RELATIVE_IMPORT)) {
+        walk(resolvePath(dirname(file), match[1] ?? match[2]));
+      }
+    };
+    walk(entryPath);
+    for (const target of lazyTargets) {
+      if (reachable.has(target)) {
+        problems.push(`Solid 版の dist/${entry} から後から読むチャンク(${target.slice(SOLID_DIST.length)})へ静的 import でたどれます`);
+      }
+    }
+  }
+  return problems;
+};
+
+// 追加(semver / 1.0 の準備): React 版の dist(js / cjs / d.ts)が core を参照する形を確かめ、崩れていれば理由を返します
+//   (Solid 版の dist(js / jsx / d.ts)も同じ。Solid 版 段階 3-3)。
 //   使ってよいのは入口(`…-core`)/ `…-core/testing` / `…-core/internal/<dir>/<module>` だけで、旧サブパス
 //   (`…-core/<dir>/<module>`。0.60.0 で非推奨、0.61.0 で exports から消した)が残ると、React 版が壊れます。
 //   src の import は eslint の no-restricted-imports で止めていますが、d.ts の `import("…")` は tsc が書くもので、
@@ -198,21 +266,23 @@ const checkCoreImportPaths = () => {
       const full = `${dir}${name}`;
       if (statSync(full).isDirectory()) {
         walk(`${full}/`);
-      } else if (/\.(?:js|cjs|d\.ts)$/.test(name)) {
+      } else if (/\.(?:js|jsx|cjs|d\.ts)$/.test(name)) {
         for (const match of readFileSync(full, 'utf8').matchAll(CORE_SPECIFIER)) {
           const subpath = match[2];
           if (subpath !== '' && subpath !== '/testing' && !subpath.startsWith('/internal/')) {
-            problems.add(`dist/${full.slice(LITE_DIST.length)} が core を ${match[0]} で参照しています`);
+            problems.add(`${full.slice(ROOT.length)} が core を ${match[0]} で参照しています`);
           }
         }
       }
     }
   };
   walk(LITE_DIST);
+  // 追加(Solid 版 段階 3-3): Solid 版の dist も同じ形で参照します。
+  walk(SOLID_DIST);
   return [...problems];
 };
 
-async function measure(config) {
+async function measure(config, { splitting = true } = {}) {
   const fromDist = config.source === 'dist';
   const result = await build({
     // metafile の出力パスは作業ディレクトリ基準の相対パスになるため、リポジトリ直下に固定します(下の absolute)。
@@ -224,12 +294,12 @@ async function measure(config) {
     bundle: true,
     minify: true,
     format: 'esm',
-    splitting: true,
+    splitting,
     write: false,
     metafile: true,
     outdir: `${ROOT}.size-out`,
     jsx: 'automatic',
-    external: ['react', 'react-dom', 'react/*', 'react-dom/*'],
+    external: ['react', 'react-dom', 'react/*', 'react-dom/*', 'solid-js', 'solid-js/*', '@solidjs/web', '@solidjs/web/*'],
     define: { 'process.env.NODE_ENV': '"production"', 'import.meta.env.DEV': 'false' },
     loader: { '.css': 'empty' },
     logLevel: 'error',
@@ -273,6 +343,17 @@ async function measure(config) {
   walkLazy(entryKey);
   const initialBuf = concat([...initial]);
   const lazyBuf = concat([...reachable].filter((key) => key.endsWith('.js') && !initial.has(key)));
+  // 追加(Solid 版 段階 3-3): 初期 JS から動的 import でたどれるチャンクが無い(遅延分が 0 の)構成で、使われない動的 import の
+  //   チャンクが出ているときは、splitting なしで束ね直した値を初期とします(構成の remeasureUnusedLazy。今は Solid 版だけ)。
+  //   esbuild はチャンクをファイルの単位で分けるため、読み込まれない遅延部品と共有するファイル(core の文言の表など)を、入口が
+  //   使わない部分ごと共有チャンクへ入れ、入口がそれを静的 import する(初期に読まれない分が入る)。Solid 版は入口が 1 つの
+  //   ファイルなので、機能なしの構成でも後から読む部品への import() が見えて、約 4KB 多く数えていた(Vite で束ねると起きない)。
+  //   splitting なしなら、使われない import() の先は束ねられない。React 版の lite も同じ理由で約 1.2KB 多く数えているが、
+  //   これまでの記録と比べられるように測り方を変えていない。
+  const hasUnusedLazyChunk = Object.keys(outputs).some((key) => key.endsWith('.js') && !reachable.has(key));
+  if (config.remeasureUnusedLazy && splitting && lazyBuf.length === 0 && hasUnusedLazyChunk) {
+    return measure(config, { splitting: false });
+  }
   return {
     initialMinKB: kb(initialBuf.length),
     initialGzipKB: kb(gzipBytes(initialBuf)),
@@ -306,7 +387,7 @@ for (const config of CONFIGS) {
 }
 
 const fmt = (value) => (value === undefined ? '-' : `${value.toFixed(2)} KB`);
-console.log('バンドルサイズ(esbuild / minify / react 外部化 / gzip level 9)');
+console.log('バンドルサイズ(esbuild / minify / react・solid-js 外部化 / gzip level 9)');
 // 日本語は表示幅が揃わないので、説明(label)は最後の列に置きます。
 console.log(['config'.padEnd(12), 'init gzip'.padStart(12), 'limit'.padStart(12), 'init min'.padStart(12), 'lazy gzip'.padStart(12), '  説明'].join(''));
 for (const { config, size, limit } of rows) {
@@ -346,13 +427,21 @@ if (args.has('--check')) {
     console.error('/lite の dist の形は vite.lite.config.ts の先頭のコメントを参照してください。');
     process.exit(1);
   }
+  const solidShapeProblems = checkSolidDistShape();
+  if (solidShapeProblems.length > 0) {
+    for (const problem of solidShapeProblems) {
+      console.error(`size: ${problem}`);
+    }
+    console.error('Solid 版の後から読む部品は packages/solid/src/view/lazyPopups.ts と scripts/build-source.mjs(splitting)を参照してください。');
+    process.exit(1);
+  }
   const coreImportProblems = checkCoreImportPaths();
   if (coreImportProblems.length > 0) {
     for (const problem of coreImportProblems) {
       console.error(`size: ${problem}`);
     }
     console.error(
-      'React 版の dist は core を入口 / `/testing` / `/internal/*` でだけ参照します。core の exports のキーは `./internal/*` を `./*` より前に置きます(packages/core/package.json)。',
+      'React 版と Solid 版の dist は core を入口 / `/testing` / `/internal/*` でだけ参照します。core の exports のキーは `./internal/*` を `./*` より前に置きます(packages/core/package.json)。',
     );
     process.exit(1);
   }

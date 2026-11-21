@@ -4,6 +4,9 @@
 //   公開版の代わりに pnpm pack した core / react の tarball を入れて `npm install` → `npm run build`(tsc + vite build)します。
 //   あわせて、サンプルが依存する版の範囲が今の版(packages/react の version)と同じ ^X.Y.Z かを確かめます
 //   (版上げのときは bump-version.mjs が書き換えます)。pack した React 版が core に同じ版(X.Y.Z)で依存しているかも確かめます。
+//   追加(Solid 版 段階 3-3): Solid 版に依存するサンプル(examples/solid)は、Solid 版の tarball を入れ、版の範囲は Solid 版の
+//   版(packages/solid の version。React 版・core とは別の版)と同じ ^X.Y.Z かを、pack した Solid 版が core に同じ版で
+//   依存しているかを確かめます(Solid 版の版上げは bump-version.mjs の対象外)。
 //   使い方: build:lib の後に node scripts/check-examples.mjs [サンプル名 ...](CI でも実行。ネットワークが要る)
 import { exec as execCallback, execSync } from 'node:child_process';
 import { cpSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
@@ -16,8 +19,10 @@ const root = resolve(import.meta.dirname, '..');
 const examplesDir = join(root, 'examples');
 const REACT_PACKAGE = '@ishibashi0112/spreadsheet-grid';
 const CORE_PACKAGE = '@ishibashi0112/spreadsheet-grid-core';
+const SOLID_PACKAGE = '@ishibashi0112/spreadsheet-grid-solid';
 
 const version = JSON.parse(readFileSync(join(root, 'packages/react/package.json'), 'utf8')).version;
+const solidVersion = JSON.parse(readFileSync(join(root, 'packages/solid/package.json'), 'utf8')).version;
 const requested = process.argv.slice(2);
 const names = readdirSync(examplesDir, { withFileTypes: true })
   .filter((entry) => entry.isDirectory())
@@ -29,12 +34,16 @@ if (names.length === 0) {
 }
 
 // 版の範囲の確認(StackBlitz では公開版が入るので、今の版とずれていると古い版で動くことになる)
-const mismatched = names.filter((name) => {
-  const pkg = JSON.parse(readFileSync(join(examplesDir, name, 'package.json'), 'utf8'));
-  return pkg.dependencies?.[REACT_PACKAGE] !== `^${version}`;
+//   React 版のサンプルは React 版の版、Solid 版のサンプルは Solid 版の版と比べます。
+const readExample = (name) => JSON.parse(readFileSync(join(examplesDir, name, 'package.json'), 'utf8'));
+const usesSolid = (name) => readExample(name).dependencies?.[SOLID_PACKAGE] !== undefined;
+const mismatched = names.flatMap((name) => {
+  const dependencies = readExample(name).dependencies ?? {};
+  const [packageName, expected] = usesSolid(name) ? [SOLID_PACKAGE, `^${solidVersion}`] : [REACT_PACKAGE, `^${version}`];
+  return dependencies[packageName] === expected ? [] : [`${name} の ${packageName} が ${expected} ではありません`];
 });
 if (mismatched.length > 0) {
-  console.error(`check-examples: ${mismatched.join(', ')} の ${REACT_PACKAGE} が ^${version} ではありません`);
+  console.error(`check-examples: ${mismatched.join(' / ')}`);
   process.exit(1);
 }
 
@@ -55,6 +64,17 @@ try {
     );
     process.exitCode = 1;
   }
+  // Solid 版も core の内部の部品を使うので、core には同じ版で依存します(Solid 版のサンプルを確かめるときだけ pack する)。
+  const solidTarball = names.some(usesSolid) ? pack('packages/solid') : undefined;
+  if (solidTarball) {
+    const packedSolid = JSON.parse(execSync(`tar -xzOf "${solidTarball}" package/package.json`).toString());
+    if (packedSolid.dependencies?.[CORE_PACKAGE] !== version) {
+      console.error(
+        `check-examples: pack した ${SOLID_PACKAGE} の ${CORE_PACKAGE} への依存が ${packedSolid.dependencies?.[CORE_PACKAGE]} です(同じ版 ${version} に固定します。packages/solid/package.json は workspace:*)`,
+      );
+      process.exitCode = 1;
+    }
+  }
 
   const results = await Promise.all(
     names.map(async (name) => {
@@ -65,9 +85,10 @@ try {
       });
       const pkgPath = join(dir, 'package.json');
       const pkg = JSON.parse(readFileSync(pkgPath, 'utf8'));
-      pkg.dependencies[REACT_PACKAGE] = `file:${reactTarball}`;
+      if (usesSolid(name)) pkg.dependencies[SOLID_PACKAGE] = `file:${solidTarball}`;
+      else pkg.dependencies[REACT_PACKAGE] = `file:${reactTarball}`;
       pkg.dependencies[CORE_PACKAGE] = `file:${coreTarball}`;
-      // react が依存する core(同じ版 X.Y.Z。まだ公開前の版のことがある)も tarball にそろえる
+      // React 版 / Solid 版が依存する core(同じ版 X.Y.Z。まだ公開前の版のことがある)も tarball にそろえる
       pkg.overrides = { [CORE_PACKAGE]: `$${CORE_PACKAGE}` };
       writeFileSync(pkgPath, JSON.stringify(pkg, null, 2));
       try {

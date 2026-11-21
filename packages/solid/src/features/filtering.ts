@@ -4,7 +4,8 @@
 //   primitives/filterPopover + 候補の収集とコマンドと描画 view/ColumnFilterPopoverHost)、適用中のフィルターの一覧と列へ移って
 //   開く処理(primitives/filterManagement。ツールパネルのフィルターのタブとチップのバーが使う)、フィルターのチップのバー
 //   (showFilterChipBar。view/GridFilterChipBar)を足してシェルへ渡します(React 版の
-//   features/filtering.tsx と同じ。React 版はポップオーバーの部品を別のチャンクで遅れて読み込むが、Solid 版は今はそのまま入れる)。
+//   features/filtering.tsx と同じ。変更(段階 3-3): ポップオーバーの部品 view/ColumnFilterPopover は別のチャンクで、
+//   view/lazyPopups.ts が後から読み込む。候補の収集とコマンドの FilterPopoverHost は初めから入る)。
 //   機能セットに無い構成では行を絞り込まず(恒等の並びのまま)、createSpreadsheetGrid が enableColumnFilter / enableGlobalFilter を
 //   false にします(上部バーの検索欄を出さない。React 版と同じ)。
 import { createColumnFilterStage } from '@ishibashi0112/spreadsheet-grid-core/internal/engine/columnFilterStage';
@@ -16,7 +17,11 @@ import { createFilterPopover } from '../primitives/filterPopover';
 import { createFilterManagement } from '../primitives/filterManagement';
 import { ColumnFilterPopoverHost } from '../view/ColumnFilterPopoverHost';
 import { GridFilterChipBar } from '../view/GridFilterChipBar';
+import { createLazyModuleSignal, filterPopoverModule, type LazyModuleSignalOptions } from '../view/lazyPopups';
 import type { GridFeature, GridFeatureParts } from './types';
+
+const createFilterPopoverViews = (options: LazyModuleSignalOptions) =>
+  createLazyModuleSignal(filterPopoverModule, options, 'filterPopoverViews');
 
 export const filteringFeature = {
   createColumnFilterStage,
@@ -25,6 +30,7 @@ export const filteringFeature = {
   createFilterOrder,
   createFilterPopover,
   FilterPopoverHost: ColumnFilterPopoverHost,
+  createFilterPopoverViews,
   createFilterManagement,
   FilterChipBar: GridFilterChipBar,
   localeText: DEFAULT_FILTERING_LOCALE_TEXT,

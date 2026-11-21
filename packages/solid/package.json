@@ -1,21 +1,131 @@
 {
   "name": "@ishibashi0112/spreadsheet-grid-solid",
-  "version": "0.0.0-spike",
+  "version": "0.1.0",
   "private": true,
-  "description": "Solid 2.0 版の試作(公開しない)。core(@ishibashi0112/spreadsheet-grid-core)の上に Solid のシェルを載せて、実現性と作業量を測るためのもの。",
+  "description": "Solid 2.0 向けの仮想化データグリッド。React 版(@ishibashi0112/spreadsheet-grid)と同じ props・同じ見た目で、SSRM(書き戻し付き)/ 行グルーピング + 集計 / Master/Detail / 範囲選択 + クリップボードを MIT で。IME に強い編集、100 万行の仮想化。コアは @ishibashi0112/spreadsheet-grid-core。",
+  "keywords": [
+    "solid",
+    "solidjs",
+    "solid-js",
+    "grid",
+    "datagrid",
+    "table",
+    "spreadsheet",
+    "virtualized",
+    "virtual-scroll",
+    "typescript",
+    "ssrm",
+    "data-grid",
+    "solid-grid",
+    "editable-table",
+    "excel",
+    "server-side-row-model",
+    "row-grouping",
+    "master-detail",
+    "ime",
+    "japanese"
+  ],
   "license": "MIT",
+  "author": "Yuki Sakakibara",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/ishibashi0112/datasheet-grid.git",
+    "directory": "packages/solid"
+  },
+  "homepage": "https://datasheet-grid.vercel.app",
+  "bugs": {
+    "url": "https://github.com/ishibashi0112/datasheet-grid/issues"
+  },
   "type": "module",
   "sideEffects": [
-    "*.css"
+    "**/*.css"
+  ],
+  "files": [
+    "dist"
   ],
   "exports": {
     ".": "./src/index.ts",
+    "./locales/en": "./src/locales/en.ts",
+    "./testing": "./src/testing/index.ts",
+    "./style.css": {
+      "types": "./dist/style.css.d.ts",
+      "default": "./dist/style.css"
+    },
+    "./style.layer.css": {
+      "types": "./dist/style.layer.css.d.ts",
+      "default": "./dist/style.layer.css"
+    },
+    "./themes/astryx.css": {
+      "types": "./dist/themes/astryx.css.d.ts",
+      "default": "./dist/themes/astryx.css"
+    },
+    "./themes/heroui.css": {
+      "types": "./dist/themes/heroui.css.d.ts",
+      "default": "./dist/themes/heroui.css"
+    },
+    "./themes/mantine.css": {
+      "types": "./dist/themes/mantine.css.d.ts",
+      "default": "./dist/themes/mantine.css"
+    },
+    "./themes/shadcn.css": {
+      "types": "./dist/themes/shadcn.css.d.ts",
+      "default": "./dist/themes/shadcn.css"
+    },
     "./package.json": "./package.json"
+  },
+  "publishConfig": {
+    "access": "public",
+    "module": "./dist/index.js",
+    "types": "./dist/index.d.ts",
+    "exports": {
+      ".": {
+        "types": "./dist/index.d.ts",
+        "solid": "./dist/source/index.jsx",
+        "import": "./dist/index.js"
+      },
+      "./locales/en": {
+        "types": "./dist/locales/en.d.ts",
+        "import": "./dist/locales/en.js"
+      },
+      "./testing": {
+        "types": "./dist/testing/index.d.ts",
+        "import": "./dist/testing.js"
+      },
+      "./style.css": {
+        "types": "./dist/style.css.d.ts",
+        "default": "./dist/style.css"
+      },
+      "./style.layer.css": {
+        "types": "./dist/style.layer.css.d.ts",
+        "default": "./dist/style.layer.css"
+      },
+      "./themes/astryx.css": {
+        "types": "./dist/themes/astryx.css.d.ts",
+        "default": "./dist/themes/astryx.css"
+      },
+      "./themes/heroui.css": {
+        "types": "./dist/themes/heroui.css.d.ts",
+        "default": "./dist/themes/heroui.css"
+      },
+      "./themes/mantine.css": {
+        "types": "./dist/themes/mantine.css.d.ts",
+        "default": "./dist/themes/mantine.css"
+      },
+      "./themes/shadcn.css": {
+        "types": "./dist/themes/shadcn.css.d.ts",
+        "default": "./dist/themes/shadcn.css"
+      },
+      "./package.json": "./package.json"
+    }
+  },
+  "engines": {
+    "node": ">=18"
   },
   "scripts": {
     "dev": "vp dev --config vite.config.ts",
     "build:demo": "vp build --config vite.config.ts",
-    "spike:build": "vp build --config vite.lib.config.ts",
+    "build:lib": "vp build --config vite.lib.config.ts && node scripts/build-source.mjs && tsc -p tsconfig.lib.json && node ../../scripts/fix-dts-extensions.mjs dist && node scripts/emit-css.mjs",
+    "prepublishOnly": "pnpm run build:lib",
     "test": "vitest run --config vitest.config.ts",
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
@@ -29,12 +139,14 @@
   },
   "devDependencies": {
     "@babel/core": "^7.28.0",
+    "@ishibashi0112/spreadsheet-grid": "workspace:*",
     "@solidjs/babel-plugin": "2.0.0",
     "@solidjs/testing-library": "1.0.0-rc.2",
     "@solidjs/vite-plugin": "3.0.0",
     "@solidjs/web": "2.0.0",
     "@types/react": "^19.3.0",
     "@types/react-dom": "^19.3.0",
+    "esbuild": "0.28.1",
     "react": "^19.3.0",
     "react-dom": "^19.3.0",
     "solid-js": "2.0.0"

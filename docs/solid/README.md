@@ -2,7 +2,7 @@
 
 2026-11-17 に Solid 2.0 の正式版(solid-js / @solidjs/web 2.0.0)が出たのを受けて、core の上に Solid のシェルを載せた
 `@ishibashi0112/spreadsheet-grid-solid` を作る。2026-11-17 にユーザーが「Solid 版を作る」を選んだ(試作の報告と見積もりは
-Claude Doc「Solid 2.0 版の試作の報告」)。試作の中身と分かったことは `packages/solid/README.md`。
+Claude Doc「Solid 2.0 版の試作の報告」)。試作の中身と分かったことは `docs/solid/prototype.md`(段階 3-3 で `packages/solid/README.md` から移した。そちらは npm の README)。
 
 この表は進み具合の記録も兼ねる。コミットごとに「状況」を更新して push する(週の使用量の上限などで途中で止まっても、
 別のセッションがこの表とコミットから再開できるように)。
@@ -387,7 +387,91 @@ React 版の機能なしの構成と並べて、同じ props・同じ操作で D
 | 3-1 | 開発時の警告(React 版と同じ条件・文言・回数)と、Solid 版の型チェックとテストを CI へ | 済み(警告と、React 版と比べるテスト 8 本・CI の手順。別視点のレビュー = 中 1・低 1 を直した。Solid 版の全体 145 / 145) |
 | 3-2 | 実ブラウザのハーネス(`audit/harness` の確認)を Solid 版でも Chromium / Firefox / WebKit で回し、違いを直す | 済み(ハーネスを Solid 版でも回せるようにした。違い 5 つと別視点のレビューの指摘を直した(core に省略できる引数を 1 つ足した)。Solid 版は遅延読み込みの 25 項目を除いて Chromium 927 / 927・Firefox 875 / 876・WebKit 872 / 875、React 版は Chromium 952 / 952・Firefox 876 / 876・WebKit 872 / 875。WebKit の 3 件は両方とも既知の BR-3・BR-4、Firefox の 1 件は下の「速さ」の時間の確かめ)。PR を見てもらう |
 | 3-2b | 速さの違い(3-2 で測った、100 万行で遠くへスクロールしたときに Solid 版が約 1.5〜2 倍かかる)を直す。2026-11-21 にユーザーが「3-3 の前に別の段階で直す」を選んだ | 済み(本番ビルドの Chromium で、近いスクロールは React 版 20ms・直す前の Solid 版 27ms・今 22ms、遠くへ飛ぶスクロールは React 版 54ms・直す前 79ms・今 75ms。Firefox の遠くへは React 版 55ms・直す前 118ms・今 114ms。遠くへの残りの差は、2026-11-21 にユーザーが「今の直しで区切って 3-3 へ」を選び、記録だけにした。ハーネスは Solid 版 Chromium 927 / 927・Firefox 875 / 876(3-2 と同じ t-aggregates の時間の 1 件)・WebKit 872 / 875(既知の BR-3・BR-4))。PR を見てもらう |
-| 3-3 | パッケージの形(dist と型)・`size:check` / `types:check` に Solid 版・StackBlitz のサンプル・README とドキュメントサイトの「Solid で使う」 | まだ |
+| 3-3 | パッケージの形(dist と型)・`size:check` / `types:check` に Solid 版・StackBlitz のサンプル・README とドキュメントサイトの「Solid で使う」・ポップアップの遅延読み込み(測ってから決める) | 途中(3-3a 済み: 公開の型と関数を React 版にそろえ、dist・「solid」条件・CSS・`size:check` / `types:check`。3-3c 済み: ポップアップの遅延読み込み(2026-11-21 にユーザーが「React 版と同じく後から読む」を選んだ)。3-3d 済み: サンプル `examples/solid` と npm の README(サイトの「Solid で使う」とリンクは 0.1.0 の公開と一緒に出す = 2026-11-21 ユーザー判断)。別視点のレビュー 2 系統の指摘を直した。ハーネスは Solid 版で Chromium 952 / 952(遅延読み込みの 25 項目を含む)・Firefox 876 / 876・WebKit 872 / 875(既知の BR-3・BR-4。React 版の 3-2 の結果と同じ数)。次はゲート → PR) |
+
+### 3-3 で分かったこと
+
+- **公開の形**(3-3a): 入口は `.`(全部入りの `SpreadsheetGrid` と、`createSpreadsheetGrid` + 機能の部品 + `standardFeatures` を同じ入口から)・
+  `/locales/en`・`/testing`・CSS(`style.css` / `style.layer.css` / `themes/*.css`)。React 版の `/ai` は無い。
+  - 「.」は Solid のライブラリの慣例どおり 2 つ: `solid` 条件 = JSX のままの `dist/source/index.jsx`(esbuild で 1 つに束ね、型だけ消す。
+    利用側の Vite + `@solidjs/vite-plugin` が自分の設定でコンパイルする。SSR はこれでないと動かない)、`import` 条件 = DOM 向けに
+    コンパイルした `dist/index.js`(Solid に対応していないバンドラ向け)。ESM だけ(solid-js 2.0 も ESM だけ)。
+  - CSS は React 版の dist から写す(同じ DOM と class なので同じもの)。ルートの `build:lib` が core → React 版 → Solid 版の順に
+    なるよう、Solid 版の devDependencies に React 版(workspace:*)を入れた。
+  - 公開の値と型は React 版の index・`/lite`・common.ts と同じ名前(`src/publicApi.test.ts` が検査。React 版だけのものは
+    `/ai`。`preloadGridPopups` は 3-3c で足した)。`SpreadsheetGridProps<T, L>` は React 版と同じく core の props そのまま(段階 2 までに全部の
+    props を受けるようになったので `Pick` をやめた)+ 関数の `ref`。
+  - `pnpm -r publish`(publish:all)が出さないよう、0.1.0 を出すまで `private: true` のまま。core への依存は `workspace:*`
+    (pack で同じ版に固定される)。
+- **利用側の新しいアプリで確かめた**(pack した core と Solid 版の tarball、Vite 8 + `@solidjs/vite-plugin` 3 + solid-js 2.0.0):
+  開発サーバーは `solid` 条件の `dist/source/index.jsx` を読む、本番ビルド・`tsc`(strict + exactOptionalPropertyTypes +
+  skipLibCheck: false)が通る、全部入りと `standardFeatures` の 2 つのグリッドが描け、編集・並べ替え・英語の文言が効く、
+  SSR(`renderToString`)がエラーなく描く(Chromium。ハイドレーションはまだ見ていない)。`@solidjs/vite-plugin` 3 は Vite 8 以上が要る
+  (React 版のサンプルは StackBlitz の不具合で Vite 7 に留めているので、Solid 版のサンプルは StackBlitz で起動するかを確かめる)。
+- **`types:check` で見つけた不具合**: 全部入りの `SpreadsheetGrid` の型を推論のままにしていたら、tsc が d.ts に `import(".")`
+  (入口)と書き、nodenext の利用側で解決できず props が any になっていた。型を書いて直した(`src/fullGrid.ts`)。
+- **大きさ**(esbuild、solid-js は外部化): 全部入り 175.63KB / 機能なし 89.42KB / standardFeatures 130.47KB(React 版は 149.85 /
+  87.24 / 110.55KB。React 版はポップアップの部品 12.95KB を後から読む)。機能なしは React 版とほぼ同じで、使わない機能の部品は
+  束ねたときに消えている。
+- **ポップアップの遅延読み込み**(3-3c。2026-11-21 にユーザーが「React 版と同じく後から読む」を選んだ): 列フィルターの
+  ポップオーバー(`view/ColumnFilterPopover.tsx`)とツールパネルの枠と 3 つのタブ(`view/toolPanelViews.ts`)を別のチャンクにし、
+  `view/lazyPopups.ts` の `createLazyModuleSignal`(core の `createLazyModule` を外部ストアの signal で読む)で読む。条件は React 版と
+  同じ: 開いたら読み込む / 描いた後の暇なとき(core の `scheduleIdleTask`)に先読み(列フィルターは列メニューかツールパネルがあり、
+  filterType のある列があるとき。ツールパネルはタブが 1 つでもあるとき)/ 失敗したら console.error に出して閉じる / `preloadGridPopups()`。
+  機能の部品は `filtering.createFilterPopoverViews` と `toolPanel.createToolPanelViews`(部品そのものの代わりに読み込みを渡す)。
+  - 大きさ(esbuild): 全部入り 175.63 → 161.89KB(後から 15.58KB)/ standardFeatures 130.47 → 117.20KB / 機能なし 89.42 → 90.17KB。
+    Vite 8 で束ねると全部入り 187.76 → 174.72KB / standard 139.71 → 126.87KB / 機能なし 96.53 → 96.60KB(Vite の方が全体に約 12KB
+    大きい)。機能なしの +0.75KB(esbuild)は Rolldown が共有のモジュールを別のチャンクへ分けたことによる増え方。
+  - esbuild は使われない `import()` の先もチャンクに出し、その先と共有するファイルを丸ごと共有チャンクへ入れるため、機能なしを
+    約 4KB 多く数えた(94.08KB)。遅延分が 0 の Solid の構成は splitting なしで束ね直して測る(`measure-size.mjs` の
+    `remeasureUnusedLazy`)。React 版の lite も同じ理由で約 1.2KB 多く数えているが、記録と比べられるように測り方を変えていない。
+  - 「solid」条件の `dist/source/` も esbuild の splitting で分ける(`dist/source/chunks/*.jsx`。分けないと esbuild が入口へ入れる)。
+    利用側のアプリで、開発(「solid」条件)と本番の両方で、2 つの部品が描いた後に別のリクエストで読まれ、開くと出て入力欄へ
+    フォーカスが入ることを確かめた。SSR(`renderToString`)もエラーなし。
+  - テストの落とし穴: `vi.resetModules()` で取り直すと `@solidjs/web` も取り直されるので、`@solidjs/testing-library` も一緒に取り直す
+    (前のままの `render` で描くと、Solid 2.0 のイベントの委譲(描いた入れ物ごとの登録)が取り直した部品と別のものになり、ポータルの
+    中のメニューの項目を押しても何も起きない)。`<Show>` の子の関数の本体で読み込んだ部品の signal を読むと開発時の
+    `STRICT_READ_UNTRACKED` になるので `untrack` で読む(読み込んだ部品は変わらない)。
+- **サンプルと README**(3-3d): `examples/solid` は React 版の `examples/basic` と同じ在庫表(10,000 行。Vite 8 + `@solidjs/vite-plugin` 3)。
+  `examples:check` が Solid 版の tarball で型チェック + ビルドし(版は Solid 版の版と比べる)、手元では開発サーバーで編集・行の追加・
+  CSV・列フィルター・Ctrl+F が動くのを Chromium で確かめた。`packages/solid/README.md` は npm の README(英語 + 日本語。React 版との
+  違い = `ref` は Solid の DOM の ref と同じ・描く関数は必要なときだけ・`/ai` は無い)にし、試作からの中身の記録は `docs/solid/prototype.md` へ移した。
+  StackBlitz のリンク・サイトの「Solid で使う」・ルートの README の案内は、0.1.0 の公開と一緒に別の小さな PR で出す
+  (2026-11-21 ユーザー判断。サイトは main へのマージで公開されるため)。
+  - ハーネスの `t-lazy` も Solid 版で回す(`SUPPORTS.lazyPopups` を消した)。3-3a で `SupportedPropKeys` を消したときに、Solid 版の
+    ハーネスのページがその型から props の名前を読んでいて開けなくなっていた(3-3a の後にハーネスを回していなかった)。core の
+    `SpreadsheetGridProps` の項目の名前を読むように直した。
+- **別視点のレビュー 2 系統**(3-3 の全体。高は無し。直したもの):
+  - 先読みの予約が、列の定義を差し替えるたびにやり直されていた(Solid 2.0 の `createEffect(compute, effect)` は compute が同じ値を
+    返しても effect と後片付けを走らせ直す)。compute を `createMemo` で包んだ(devWarnings.ts と同じ形)。列を 80ms ごとに 8 回
+    差し替えても先読みすることをテストに足した(直す前は落ちる)。
+  - `ref` が関数だけだった: Solid の DOM の ref と同じく、`let grid!: …` + `ref={grid}`(コンパイラが代入の関数に書き換える)と
+    関数の配列も受けるようにした(型は solid-js の `Ref<T>`。React の ref オブジェクトは型エラーのまま)。
+  - `size:check` に Solid 版の dist の形の検査を足した: 2 つの入口(`dist/index.js` と `dist/source/index.jsx`)が列フィルターと
+    ツールパネルを `import()` で読み、入口から静的 import でたどれるファイルにそのチャンクが無いこと(この計測は束ね直すので、
+    入口の形が崩れても数字に出ないことがある)。dist が古いかの判定から `src/parity`(ビルドに入らない)を外した。
+  - `emit-css.mjs`: React 版の CSS のソースが React 版の dist より新しければ止める(古い CSS を写して公開しない)、exports に書いた
+    CSS が React 版の dist に無いときも止める、開発時の `exports` にも CSS を書いた(ワークスペースの中で `…-solid/style.css` を
+    読めるように。publishConfig と同じ dist を指すかを検査)。
+  - `types:check` は Solid 版の devDependencies が範囲(`^2.0.0` など)で書かれていてもそのまま使う。
+  - `popups.parity.test.tsx` の検索欄のテストは React 版と Solid 版で入力の待ちが 6 回ずつあり、既定の 5 秒に近く、重いときに落ちた
+    (直す前のコードでも 4.5 秒)。ほかの比べるテストと同じく時間の上限を 20 秒にした。
+  - README に、Node の中(Vitest + jsdom など)では `solid` か `browser` の条件で解決すること(既定の条件では `@solidjs/web` が
+    サーバー向けになり「Client-only API called on the server side」で止まる。利用側のアプリで確かめた)と、上に作るライブラリの
+    `peerDependencies` を書いた。
+- **ハーネス**(3-3 の全体の後。Solid 版): Chromium 952 / 952・Firefox 876 / 876・WebKit 872 / 875(既知の BR-3・BR-4)。3-2 で
+  時間の確かめに 1 件落ちていた Firefox の `t-aggregates` も通った。回している途中にソースを直すと、ハーネスの開発サーバーが
+  ページを読み直して、その間のファイルが落ちる(WebKit で 4 ファイル。直し終えてから回し直して通った)。
+- **0.1.0 を出すときの作業**(段階 3 の最後。React 版と core の 1.2.1 の後):
+  - 版上げ: `bump-version.mjs` は core と React 版だけを上げる(`examples/solid` の依存も書き換えない)。Solid 版は
+    `packages/solid/package.json` の `version` を手で 0.1.0 にし、`private: true` を外す。そのときに決めること: タグの名前
+    (`v*` は core と React 版の版なので別の名前にする。`release.yml` は `v*` で動く)、CHANGELOG の書き方(Solid 版の節を分けるか)、
+    これからの Solid 版の版上げをスクリプトにするか。
+  - 公開: `private` を外すと `publish:all`(`pnpm -r publish`)に Solid 版も入る(公開済みの版は pnpm が飛ばす)。core の版を
+    上げた後に Solid 版を出すと、Solid 版が依存する core の版もその版になる(`workspace:*` を pack で固定)。
+  - サイトの「Solid で使う」と README / StackBlitz のリンクの小さな PR を、公開の直前にマージする(2026-11-21 ユーザー判断)。
+  - 公開の後に、`examples/solid` が StackBlitz で起動するかをユーザーに確かめてもらう(Vite 8。React 版のサンプルは StackBlitz の
+    不具合で Vite 7 に留めている)。
 
 ### 3-2b で分かったこと
 

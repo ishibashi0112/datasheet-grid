@@ -143,7 +143,7 @@ describe('行の絞り込み(filtering)', () => {
         ctx.snapshot('フィルターを外した');
       },
     });
-  });
+  }, 20_000); // 検索欄の入力の待ちが React 版と Solid 版で 6 回ずつあり、既定の 5 秒に近い(段階 3-3)
 
   it.each([
     ['あり', ['filtering']],

@@ -15,14 +15,15 @@ import {
 } from '@ishibashi0112/spreadsheet-grid-solid';
 import '@ishibashi0112/spreadsheet-grid/style.css';
 import { baseColumns as sharedBaseColumns, lang, log, makeDataSource, makeRows, n, params, scenario, type Row } from '../shared';
-// Solid 版のグリッドが受ける props の名前(packages/solid の model/gridTypes.ts の SupportedPropKeys を読む)。
-import gridTypesSource from '../../../packages/solid/src/model/gridTypes.ts?raw';
+// Solid 版のグリッドが受ける props の名前。変更(段階 3-3): Solid 版は core の SpreadsheetGridProps をすべて受けるようになった
+//   (packages/solid の model/gridTypes.ts の SupportedPropKeys は無くなった)ので、core の型の 1 段目の項目の名前を読む。
+import gridTypesSource from '../../../packages/core/src/model/gridTypes.core.ts?raw';
 
 type Props = SpreadsheetGridProps<Row>;
 const PROP_KEYS = [
-  ...(/type SupportedPropKeys =([^;]*);/.exec(gridTypesSource)?.[1] ?? '').matchAll(/'([^']+)'/g),
+  ...(/export type SpreadsheetGridProps<[^\n]*= \{\n([\s\S]*?)\n\};/.exec(gridTypesSource)?.[1] ?? '').matchAll(/^ {2}(\w+)\??:/gm),
 ].map((match) => match[1]!);
-if (PROP_KEYS.length < 50) throw new Error('[harness] SupportedPropKeys を読めませんでした');
+if (PROP_KEYS.length < 100) throw new Error('[harness] core の SpreadsheetGridProps の項目を読めませんでした');
 const UNSET = Symbol('unset');
 type ContextMenuParams = Parameters<NonNullable<Props['getContextMenuItems']>>[0];
 
