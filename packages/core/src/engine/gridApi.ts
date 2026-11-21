@@ -126,6 +126,11 @@ export type GridApiArgs<T> = {
   // 追加(監査 M-05): 行高を実測するモード(auto-height 列 / 展開行)か。scrollToBottom() 直後の計測で総高が
   //   伸びたとき、末尾へ再補正するかの判定に使います(固定行高では総高が計測で変わらないため補正しない)。
   measuredRowHeights?: boolean;
+  // 追加(Solid 版 段階 3-2): true のとき、update では末尾へ合わせ直さず(M-05)、settleBottomPin() で合わせ直します。
+  //   Solid 版は args を DOM の束縛と同じ回(render effect)に渡すため、本体のスペーサーの高さがまだ前の値のときがあり、
+  //   その場で合わせ直すとブラウザが前の高さで止めてしまいます。DOM を書き終えた後に settleBottomPin() を呼びます。
+  //   省略 = false(React 版。update の中で合わせ直す = 今までどおり)。
+  deferBottomPin?: boolean | undefined;
   // scope='raw'(フィルター / ソート無視の全ソース行)の直接参照と、serverSide での 'raw' → 'view' フォールバック判定。
   rows: T[];
   isServerSide: boolean;
@@ -196,6 +201,9 @@ export type GridApi<T> = {
   verticalTargetFor: (viewRowIndex: number, align: ScrollAlign) => number | null;
   horizontalTargetFor: (colIndex: number, align: ScrollAlign) => number | null;
   scrollToCellInternal: (viewRowIndex: number, colIndex: number, align: ScrollAlign) => void;
+  // 追加(Solid 版 段階 3-2): deferBottomPin のときの末尾への合わせ直し(M-05)。最後の update から総高が変わっていて、
+  //   末尾固定中なら末尾へ合わせ直します。変わっていなければ何もしません。
+  settleBottomPin: () => void;
 };
 
 
@@ -220,6 +228,8 @@ export const createGridApi = <T,>(features: Pick<GridCoreFeatures, 'export' | 'g
   //   覚えておき、update で総高が変わったら末尾へ合わせ直します。ユーザーが上へスクロールしたら(scrollTop が
   //   固定時より小さくなったら)即座にやめます。
   let bottomPin: { pinnedTop: number; until: number } | null = null;
+  // 追加(Solid 版 段階 3-2): 合わせ直していない総高の変化があるか(update で立て、settleBottomPin で下ろす)。
+  let bottomPinHeightChanged = false;
 
   // 命令的 API 由来のスクロール適用。スクロール可能範囲へクランプし、クランプ後の位置が現在と実際に変わるときだけ
   //   markApiScroll を呼びます。
@@ -945,30 +955,46 @@ export const createGridApi = <T,>(features: Pick<GridCoreFeatures, 'export' | 'g
     },
   };
 
+  // 追加(監査 M-05): 末尾固定中に総高が変わったら末尾へ合わせ直します。
+  //   変更(Solid 版 段階 3-2): update から切り出し(deferBottomPin のときは利用側が DOM を書き終えた後に呼ぶ)。
+  const settleBottomPin = () => {
+    if (!bottomPinHeightChanged) {
+      return;
+    }
+    bottomPinHeightChanged = false;
+    const next = args;
+    if (bottomPin === null || next === null) {
+      return;
+    }
+    const el = next.scrollContainerRef.current;
+    if (!el || !next.measuredRowHeights || Date.now() > bottomPin.until || el.scrollTop < bottomPin.pinnedTop - 1) {
+      bottomPin = null;
+      return;
+    }
+    applyApiScroll(el, {
+      top: Math.max(next.headerHeight + next.physicalBodyHeight + (next.footerHeight ?? 0) - el.clientHeight, 0),
+      left: el.scrollLeft,
+    });
+    bottomPin = { ...bottomPin, pinnedTop: el.scrollTop };
+  };
+
   return {
     update: (next) => {
       const previousHeight = args?.physicalBodyHeight;
       args = next;
       pendingColumns = null;
-      // 追加(監査 M-05): 末尾固定中に総高が変わったら末尾へ合わせ直します。
-      if (bottomPin === null || previousHeight === next.physicalBodyHeight) {
-        return;
+      if (previousHeight !== next.physicalBodyHeight) {
+        bottomPinHeightChanged = true;
       }
-      const el = next.scrollContainerRef.current;
-      if (!el || !next.measuredRowHeights || Date.now() > bottomPin.until || el.scrollTop < bottomPin.pinnedTop - 1) {
-        bottomPin = null;
-        return;
+      if (!next.deferBottomPin) {
+        settleBottomPin();
       }
-      applyApiScroll(el, {
-        top: Math.max(next.headerHeight + next.physicalBodyHeight + (next.footerHeight ?? 0) - el.clientHeight, 0),
-        left: el.scrollLeft,
-      });
-      bottomPin = { ...bottomPin, pinnedTop: el.scrollTop };
     },
     handle,
     applyScroll,
     verticalTargetFor,
     horizontalTargetFor,
     scrollToCellInternal,
+    settleBottomPin,
   };
 };
