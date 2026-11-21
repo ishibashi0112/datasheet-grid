@@ -139,6 +139,7 @@ import { createColumnVirtualizer } from './primitives/columnVirtualizer';
 import type { SolidGridFeatures } from './features/types';
 import { px, toSolidStyle } from './primitives/style';
 import { createLiveObject } from './primitives/liveObject';
+import { readEventKey } from './primitives/eventKey';
 import { GridHeaderRow } from './view/GridHeaderRow';
 import {
   GridBodyLayer,
@@ -173,7 +174,8 @@ const noop = () => {};
 type MutableRef<V> = { current: V };
 
 type EditorIdentity = { row: number; col: number; rowKey: GridRowKey | undefined; columnKey: string | undefined };
-type EditorSession = { id: number; identity: EditorIdentity };
+// identity が null = 編集を始めたときに行がまだ無かった(最初に取れた位置とキーを、セッションを変えずに覚える)。
+type EditorSession = { id: number; identity: EditorIdentity | null };
 
 // 利用側のバーへ渡す文脈のキー(SpreadsheetGridSlotContext のすべて。足りないと型で分かる)。
 const SLOT_CONTEXT_KEYS = Object.keys({
@@ -1158,6 +1160,9 @@ export function GridShell<T extends object>(props: SpreadsheetGridProps<T>, feat
   // ── アクティブセルを動かしたときに見える範囲へスクロール(core の viewportSyncController) ──
   const viewportSync = createViewportSyncController<T>();
   const scaleAnchor = createScrollScaleAnchor();
+  // 縮めたスクロールの率が変わったときに見ている行を保つ(core の createScrollScaleAnchor)。update の中でスクロールの上限を
+  //   測ってスクロールを書くので、React 版のレイアウト effect と同じく DOM を書き終えた後の effect で渡す(段階 3-2)。
+  //   React 版は描くたびに測り直すので、縦のレイアウトと見出し / 下端の固定行の高さが変わるたびに呼ぶ。
   connectController(
     {
       update: (verticalScaleFactor: number) => {
@@ -1167,8 +1172,12 @@ export function GridShell<T extends object>(props: SpreadsheetGridProps<T>, feat
         });
       },
     },
-    () => vertical().verticalScaleFactor,
-    'render',
+    () => {
+      headerHeight();
+      footerHeight();
+      return vertical().verticalScaleFactor;
+    },
+    'effect',
     'verticalScaleAnchor',
   );
   connectController(
@@ -1935,7 +1944,7 @@ export function GridShell<T extends object>(props: SpreadsheetGridProps<T>, feat
   };
   const handleRootKeyDown = (event: KeyboardEvent) => {
     keyboard.handleKeyDown({
-      key: event.key,
+      key: readEventKey(event),
       ctrlKey: event.ctrlKey,
       metaKey: event.metaKey,
       shiftKey: event.shiftKey,
@@ -2503,18 +2512,20 @@ export function GridShell<T extends object>(props: SpreadsheetGridProps<T>, feat
     //   (rowKeyGetter に undefined を渡すと利用側の関数が例外を投げ、Solid の反応が止まる)、今のセッションのまま待つ
     //   (React 版の CellEditorLayer も、行の無い間は editorSession が null で前の位置とキーを保つ。監査 RD-3)。
     const model = rowModel();
-    const rowMissing = model.getRow(cell.row) === undefined;
-    if (rowMissing && previous) {
-      return previous;
+    if (model.getRow(cell.row) === undefined) {
+      return previous ?? { id: 1, identity: null };
     }
     const identity: EditorIdentity = {
       row: cell.row,
       col: cell.col,
-      rowKey: rowMissing ? undefined : model.getRowKey(cell.row),
+      rowKey: model.getRowKey(cell.row),
       columnKey: orderedColumns()[cell.col]?.key,
     };
     if (!previous) {
       return { id: 1, identity };
+    }
+    if (previous.identity === null) {
+      return { id: previous.id, identity };
     }
     const moved = identity.row !== previous.identity.row || identity.col !== previous.identity.col;
     if (!moved) {

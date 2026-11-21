@@ -18,6 +18,7 @@ import { createExternalStoreSignal } from '../primitives/externalStore';
 import { createPortalTokens } from '../primitives/portalTokens';
 import { px } from '../primitives/style';
 import type { FillHandleState } from '../primitives/fillHandle';
+import { readEventKey } from '../primitives/eventKey';
 
 type FillTexts = typeof DEFAULT_FILL_HANDLE_LOCALE_TEXT;
 
@@ -203,7 +204,7 @@ function FillOptionsMenu(props: FillOptionsMenuProps) {
       const index = items.findIndex((item) => item === document.activeElement);
       const next = items[(index + (event.key === 'ArrowDown' ? 1 : items.length - 1)) % items.length];
       next?.focus({ preventScroll: true });
-    } else if (event.key === 'Tab') {
+    } else if (readEventKey(event) === 'Tab') {
       event.preventDefault();
       props.fill.controller.closeMenu();
     }

@@ -45,6 +45,7 @@ import { createTopAlignedInput } from '../primitives/topAlignedInput';
 import { px } from '../primitives/style';
 import { CellEditorError } from './CellEditorErrorBubble';
 import type { EditorCommit } from './TextCellEditor';
+import { toEditorKeyEvent } from '../primitives/eventKey';
 
 type SelectCellEditorProps = {
   ariaLabel?: string | undefined;
@@ -170,7 +171,7 @@ export function SelectCellEditor(props: SelectCellEditorProps) {
       }
       return;
     }
-    handleSelectEditorKeyDown(event, {
+    handleSelectEditorKeyDown(toEditorKeyEvent(event), {
       optionCount: props.options.length,
       enterMove: props.enterMove,
       onMove: (next) => {

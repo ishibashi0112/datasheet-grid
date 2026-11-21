@@ -13,6 +13,7 @@ import {
 import { createTopAlignedInput } from '../primitives/topAlignedInput';
 import { CellEditorError } from './CellEditorErrorBubble';
 import type { EditorCommit } from './TextCellEditor';
+import { toEditorKeyEvent } from '../primitives/eventKey';
 
 type NumberCellEditorProps = {
   ariaLabel?: string | undefined;
@@ -69,7 +70,7 @@ export function NumberCellEditor(props: NumberCellEditorProps) {
         // 再入力でエラーの表示を外します。
         onInput={() => setError(null)}
         onKeyDown={(event) =>
-          handleEditorKeyDown(event, {
+          handleEditorKeyDown(toEditorKeyEvent(event), {
             value: resolveNumberEditorCommitValue(event.currentTarget.value, textMode),
             onCommit: props.onCommit,
             onCancel: props.onCancel,

@@ -487,6 +487,39 @@ describe('React 版と同じエディタ', () => {
     });
   });
 
+  // WebKitGTK は Shift+Tab の keydown を key='Unidentified'(keyCode 9)で送る。React の合成イベントは keyCode から 'Tab' に
+  //   直すので、Solid 版も同じに読む(段階 3-2。実ブラウザのハーネスの WebKit で見つかった)。
+  it('WebKitGTK の Shift+Tab(key が Unidentified・keyCode 9)もシェルとエディタで Tab として扱う', async () => {
+    const webkitShiftTab = { keyCode: 9, shiftKey: true };
+    await expectParity({
+      props: props(),
+      watch: ['onRowsChange', 'onActiveCellChange'],
+      steps: async (ctx) => {
+        await click(ctx, 1, 'fruit');
+        await pressInShell(ctx, 'Unidentified', webkitShiftTab);
+        ctx.snapshot('シェルの Shift+Tab');
+        await pressInShell(ctx, 'Unidentified', { keyCode: 9 });
+        ctx.snapshot('シェルの Tab');
+        await doubleClick(ctx, 2, 'name');
+        await typeInto(ctx, '左へ確定');
+        await pressInEditor(ctx, 'Unidentified', webkitShiftTab);
+        ctx.snapshot('text の Shift+Tab で確定');
+        await doubleClick(ctx, 3, 'qty');
+        await typeInto(ctx, '15');
+        await pressInEditor(ctx, 'Unidentified', webkitShiftTab);
+        ctx.snapshot('number の Shift+Tab で確定');
+        await doubleClick(ctx, 4, 'fruit');
+        await pressInEditor(ctx, 'ArrowDown');
+        await pressInEditor(ctx, 'Unidentified', webkitShiftTab);
+        ctx.snapshot('select の Shift+Tab で確定');
+        await doubleClick(ctx, 5, 'due');
+        await typeInto(ctx, '2026-12-01');
+        await pressInEditor(ctx, 'Unidentified', webkitShiftTab);
+        ctx.snapshot('date の Shift+Tab で確定');
+      },
+    });
+  });
+
   it('editorEnterMove: right / none', async () => {
     await expectParity({
       props: props({ editorEnterMove: 'right' }),

@@ -557,6 +557,10 @@ describe('列フィルターのポップオーバー(filtering + columnMenu)', (
         ctx.snapshot('最後のボタンの Tab で先頭へ');
         await keyOn(ctx, focused(), { key: 'Tab', shiftKey: true });
         ctx.snapshot('先頭の Shift+Tab で最後へ');
+        // WebKitGTK の Shift+Tab(key='Unidentified'・keyCode 9)も同じ(段階 3-2)。
+        await keyOn(ctx, focused(), { key: 'Tab' });
+        await keyOn(ctx, focused(), { key: 'Unidentified', keyCode: 9, shiftKey: true });
+        ctx.log('WebKitGTK の Shift+Tab の後のフォーカス', `${focused().tagName.toLowerCase()} ${focused().textContent?.slice(0, 16) ?? ''}`);
         await keyOn(ctx, focused(), { key: 'Escape' });
         ctx.snapshot('ボタンの Escape で閉じた');
 
@@ -1175,6 +1179,10 @@ describe('ツールパネル(toolPanel)とフィルターのチップのバー',
           await keyOn(ctx, null, { key: 'Tab', shiftKey: true });
           ctx.snapshot('先頭の Shift+Tab で最後へ');
           logFocus(ctx, 'Shift+Tab');
+          // WebKitGTK の Shift+Tab(key='Unidentified'・keyCode 9)も同じ(段階 3-2)。
+          await keyOn(ctx, null, { key: 'Tab' });
+          await keyOn(ctx, null, { key: 'Unidentified', keyCode: 9, shiftKey: true });
+          logFocus(ctx, 'WebKitGTK の Shift+Tab');
           // 外(グリッドのセル)を押すと閉じる。
           await ctx.act(() => {
             fireEvent.pointerDown(ctx.cell(1, 'name'), pointer);
