@@ -147,6 +147,25 @@ describe('行の高さの自動調整(autoHeight)', () => {
       },
     });
   });
+
+  // 追加(速さの段階 3-2b): Solid 版は auto-height を使わない間はセルの auto-height の memo を作らない(primitives/memoWhen)。
+  //   後から autoHeight を入れても外しても、React 版と同じに描くかを見ます。
+  it('autoHeight を後から入れる・外す', async () => {
+    await expectParity({
+      features: ['autoHeight'],
+      props: () => ({ rows: longRows(12), columns: autoColumns, rowKeyGetter: (row: Row) => row.id, height: 360 }),
+      steps: async (ctx) => {
+        await ctx.act(() => {}, 120);
+        ctx.snapshot('固定の高さ');
+        await ctx.setProps({ autoHeight: true });
+        await ctx.act(() => {}, 120);
+        ctx.snapshot('autoHeight を入れた');
+        await ctx.setProps({ autoHeight: false });
+        await ctx.act(() => {}, 120);
+        ctx.snapshot('autoHeight を外した');
+      },
+    });
+  });
 });
 
 
@@ -243,6 +262,100 @@ describe('条件付き書式(conditionalFormat)', () => {
     });
   });
 });
+// 追加(速さの段階): Solid 版は、書式 / メモ / 条件付き書式 / 入力の検査の値を、それを使う列のセルだけ memo にします
+//   (primitives/memoWhen)。セルを作った後に同じ列のキーのまま足したり外したりしても、React 版と同じに描くかを見ます。
+describe('列の書式・メモ・条件付き書式・検査を後から足す / 外す', () => {
+  type Item = { id: number; name: string; qty: number; score: number };
+  const items = (count: number): Item[] =>
+    Array.from({ length: count }, (_, i) => ({ id: i + 1, name: `品目 ${i + 1}`, qty: (i * 37) % 100, score: (i * 7) % 50 }));
+  const plainColumns = [
+    { key: 'id', title: 'ID', width: 60, pinned: 'left', editable: false },
+    { key: 'name', title: '品名', width: 120 },
+    { key: 'qty', title: '数量', width: 90, align: 'right', editor: { type: 'number' } },
+    { key: 'score', title: '点数', width: 90, align: 'right', editor: { type: 'number' } },
+  ];
+  const decoratedColumns = [
+    { key: 'id', title: 'ID', width: 60, pinned: 'left', editable: false, cellClassName: 'my-id-cell' },
+    {
+      key: 'name',
+      title: '品名',
+      width: 120,
+      cellClassName: (ctx: { rowIndex: number; isActive: boolean }) =>
+        ctx.isActive ? { className: 'my-active', style: { color: 'rgb(1, 2, 3)' } } : ctx.rowIndex % 2 === 0 ? 'my-even' : undefined,
+      cellNote: (ctx: { row: Item }) => (ctx.row.id === 2 ? '確認済み' : undefined),
+    },
+    {
+      key: 'qty',
+      title: '数量',
+      width: 90,
+      align: 'right',
+      editor: { type: 'number' },
+      conditionalFormat: { dataBar: {} },
+      validate: (ctx: { value: unknown }) => ((ctx.value as number) >= 50 ? '50 未満にしてください' : true),
+    },
+    {
+      key: 'score',
+      title: '点数',
+      width: 90,
+      align: 'right',
+      editor: { type: 'number' },
+      conditionalFormat: { colorScale: { type: 'diverging', mid: 25 } },
+    },
+  ];
+
+  it('同じ列のキーのまま足す・状態に追従する・外す', async () => {
+    await expectParity({
+      features: ['conditionalFormat'],
+      props: () => ({ rows: items(8), columns: plainColumns, rowKeyGetter: (row: Item) => row.id, height: 360 }),
+      steps: async (ctx) => {
+        ctx.snapshot('素の列');
+        await ctx.setProps({ columns: decoratedColumns, showValidationMarks: true });
+        ctx.snapshot('書式・メモ・条件付き書式・検査を足した');
+        await ctx.act(() => {
+          fireEvent.pointerDown(ctx.cell(1, 'name'), pointer);
+          fireEvent.pointerUp(window, pointer);
+        });
+        ctx.snapshot('品名のセルをアクティブに(関数の書式が追従)');
+        await ctx.setProps({ rows: (ctx.rows() as Item[]).map((row) => (row.id === 1 ? { ...row, qty: 80, score: 49 } : row)) });
+        ctx.snapshot('値を変える(検査の印・帯・色)');
+        await ctx.setProps({ showValidationMarks: false });
+        ctx.snapshot('検査の印を消す');
+        await ctx.setProps({ columns: plainColumns });
+        ctx.snapshot('素の列に戻す');
+      },
+    });
+  });
+
+  it('最初から足した列で外す・足し直す(データバーの色も)', async () => {
+    const coloredColumns = decoratedColumns.map((column) =>
+      column.key === 'qty'
+        ? { ...column, conditionalFormat: { dataBar: { color: 'rgb(10, 20, 30)', negativeColor: 'rgb(200, 0, 0)' } } }
+        : column,
+    );
+    await expectParity({
+      features: ['conditionalFormat'],
+      props: () => ({
+        rows: items(8).map((row) => (row.id === 3 ? { ...row, qty: -20 } : row)),
+        columns: coloredColumns,
+        showValidationMarks: true,
+        rowKeyGetter: (row: Item) => row.id,
+        height: 360,
+      }),
+      steps: async (ctx) => {
+        ctx.snapshot('最初から足した列');
+        await ctx.setProps({ showValidationMarks: false });
+        ctx.snapshot('検査の印を消す');
+        await ctx.setProps({ showValidationMarks: true });
+        ctx.snapshot('検査の印を戻す');
+        await ctx.setProps({ columns: plainColumns });
+        ctx.snapshot('素の列にする');
+        await ctx.setProps({ columns: coloredColumns });
+        ctx.snapshot('足し直す');
+      },
+    });
+  });
+});
+
 describe('合計行(totalRow)と固定行(pinnedRows)', () => {
   type Line = { id: number | string; name: string; qty: number; price: number; done: boolean; score: number };
   const lines = (count: number): Line[] =>

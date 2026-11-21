@@ -296,6 +296,12 @@ export function GridShell<T extends object>(props: SpreadsheetGridProps<T>, feat
   const store = engine.store;
   const dispatch = store.dispatch;
   const { state: ui, view } = createGridStoreSignals(store);
+  // view スライスの大きさとスクロールの位置は値ごとの memo で読みます(view() はホバーやスクロールのたびに新しいオブジェクトに
+  //   なるので、そのまま読むとペインの幅の計算や縦のレイアウトがホバーのたびに走り直し、見えているすべてのセルの effect まで
+  //   走っていた。React 版の useMemo の依存と同じ)。
+  const viewportWidth = createMemo(() => view().viewportWidth);
+  const viewportHeight = createMemo(() => view().viewportHeight);
+  const viewScrollTop = createMemo(() => view().scrollTop);
   const viewSetters = createGridViewSetters(store);
   const { setHoveredColumnIndex, setIsCornerHovered, setEditorInitialValue } = viewSetters;
 
@@ -343,7 +349,7 @@ export function GridShell<T extends object>(props: SpreadsheetGridProps<T>, feat
     engine.resolvePaneLayout({
       orderedColumns: orderedColumns(),
       columnWidths: ui().columnWidths,
-      viewportWidth: view().viewportWidth,
+      viewportWidth: viewportWidth(),
       rowHeaderWidth: rowHeaderWidth(),
     }),
   );
@@ -581,8 +587,8 @@ export function GridShell<T extends object>(props: SpreadsheetGridProps<T>, feat
       estimateRowHeight: props.estimateRowHeight ?? rowHeight(),
       rowHeight: rowHeight(),
       headerHeight: headerHeight(),
-      viewportHeight: view().viewportHeight,
-      scrollTop: view().scrollTop,
+      viewportHeight: viewportHeight(),
+      scrollTop: viewScrollTop(),
       rowModel: rowModel(),
       measuredHeights: engine.autoHeightMeasurer.measuredHeights,
       autoHeightVersion: autoHeightSnapshot().version,
@@ -626,7 +632,7 @@ export function GridShell<T extends object>(props: SpreadsheetGridProps<T>, feat
     const resolution = labelRowFeature.resolveStickyLabel(
       indexes,
       vertical().rowMetrics,
-      physicalToLogicalScrollTop(view().scrollTop, vertical().verticalScaleFactor),
+      physicalToLogicalScrollTop(viewScrollTop(), vertical().verticalScaleFactor),
     );
     if (!resolution) {
       return null;
@@ -1289,7 +1295,7 @@ export function GridShell<T extends object>(props: SpreadsheetGridProps<T>, feat
   const detailCardWidth = () =>
     Math.max(
       Math.min(
-        view().viewportWidth - detailCardStickyLeft() - paneResolution().rightPaneTotalWidth,
+        viewportWidth() - detailCardStickyLeft() - paneResolution().rightPaneTotalWidth,
         paneLayout().center.totalWidth,
       ),
       0,
@@ -1525,13 +1531,13 @@ export function GridShell<T extends object>(props: SpreadsheetGridProps<T>, feat
     viewRowCount,
     paneLayout,
     vertical,
-    viewportHeight: () => view().viewportHeight,
-    scrollTop: () => view().scrollTop,
+    viewportHeight,
+    scrollTop: viewScrollTop,
     headerHeight,
   });
 
   const resolvePageRow = (fromRow: number, direction: 1 | -1): number => {
-    const pageHeight = Math.max(view().viewportHeight - headerHeight(), rowHeight());
+    const pageHeight = Math.max(viewportHeight() - headerHeight(), rowHeight());
     return resolvePageTargetRow(vertical().rowMetrics, fromRow, direction, pageHeight);
   };
 
@@ -3257,8 +3263,8 @@ export function GridShell<T extends object>(props: SpreadsheetGridProps<T>, feat
                   slot={slots().scrollHint}
                   options={options()}
                   scrollContainerRef={scrollContainerRef}
-                  scrollTop={view().scrollTop}
-                  viewportHeight={view().viewportHeight}
+                  scrollTop={viewScrollTop()}
+                  viewportHeight={viewportHeight()}
                   headerHeight={headerHeight()}
                   physicalBodyHeight={vertical().physicalBodyHeight}
                   verticalScaleFactor={vertical().verticalScaleFactor}
