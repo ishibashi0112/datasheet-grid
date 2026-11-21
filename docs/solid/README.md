@@ -385,8 +385,67 @@ React 版の機能なしの構成と並べて、同じ props・同じ操作で D
 | # | 内容 | 状況 |
 | --- | --- | --- |
 | 3-1 | 開発時の警告(React 版と同じ条件・文言・回数)と、Solid 版の型チェックとテストを CI へ | 済み(警告と、React 版と比べるテスト 8 本・CI の手順。別視点のレビュー = 中 1・低 1 を直した。Solid 版の全体 145 / 145) |
-| 3-2 | 実ブラウザのハーネス(`audit/harness` の確認)を Solid 版でも Chromium / Firefox / WebKit で回し、違いを直す | まだ |
+| 3-2 | 実ブラウザのハーネス(`audit/harness` の確認)を Solid 版でも Chromium / Firefox / WebKit で回し、違いを直す | 作業中(ハーネスを Solid 版でも回せるようにした。違い 4 つと別視点のレビューの指摘を直した(core に省略できる引数を 1 つ足した)。Chromium は React 版 952 / 952・Solid 版 927 / 927 = 遅延読み込みの 25 項目を除いた全部。Firefox / WebKit はこれから) |
 | 3-3 | パッケージの形(dist と型)・`size:check` / `types:check` に Solid 版・StackBlitz のサンプル・README とドキュメントサイトの「Solid で使う」 | まだ |
+
+### 3-2 で分かったこと
+
+- **ハーネスの作り**: React 版のページ(`audit/harness/main.tsx`)から、計測(`window.__events` / `__errors` ほか)・行のデータ・
+  列・SSRM の擬似サーバー・URL のシナリオの読み取りを `audit/harness/shared.ts` へ移し、Solid 版のページ `audit/harness/solid/main.tsx`
+  (port 5179)が同じものを使う(フレームワークの部品 = custom エディタの中身と展開行の中身だけをそれぞれのページで書く)。
+  `__setProps` は Solid 版では prop ごとの signal で上書きする(props のオブジェクトを丸ごと差し替えると、prop を読むところが
+  すべて動き直す)。テスト(`t-*.mjs`)は同じものを `SSG_AUDIT_FRAMEWORK=solid` で回す。React 版にしか無いポップアップの遅延
+  読み込み(`t-lazy` の 25 項目)は飛ばす。React 版のページは中身を変えずに移しただけで、React 版のハーネスは Chromium で 949 / 949 の
+  まま。React 版のコードは変えていない。core は命令的 API に省略できる引数と関数を 1 つずつ足しただけ(下の 2 つ目。React 版は
+  渡さないので今までと同じ動き)。
+- **見つかった違いと直したもの**(Solid 版だけ):
+  - 編集中に、編集している行が `rows` から消えると Solid 版が止まっていた(エディタの識別の memo が、消えた行のキーを読もうとして
+    利用側の `rowKeyGetter` に `undefined` を渡し、例外で Solid の反応が止まる。React 版はエディタを閉じてキー操作を続けられる。
+    監査の RD-3 の確認)。行が無い間はキーを読まず、エディタのセッションもそのまま(React 版の CellEditorLayer と同じ)。React 版と
+    比べるテストを足した(直す前の Solid 版で落ちることを確かめた)。
+  - auto-height で `scrollToBottom()` の後、末尾の 568px 手前で止まっていた。core の命令的 API は本体の高さが変わると末尾へ合わせ
+    直す(M-05)が、Solid 版は命令的 API へ args を DOM の束縛と同じ回(render effect)に渡すので、スペーサーの高さがまだ前の値の
+    うちに合わせ直していた(ブラウザがスクロールを前の高さで丸め、合わせ直しが止まる)。core の命令的 API に `deferBottomPin`
+    (update では合わせ直さない)と `settleBottomPin()`(合わせ直す)を足し、Solid 版は本体の高さが変わったときの effect(DOM を
+    書き終えた後)で `settleBottomPin()` を呼ぶ。React 版は `deferBottomPin` を渡さないので、今までどおり update(レイアウト effect)
+    の中で合わせ直す(core の単体テストで今までのテストと、足した方の両方を見る)。args そのものは render の時機のまま(最初は
+    args ごと effect へ移したが、別視点のレビューで、effect の時機の通知 = `onSortChange` などの中でハンドルを読むと並べ替えの前の
+    並びを返すことが分かった。通知の中でハンドルを読む、React 版と比べるテストを足した)。
+  - 末尾までスクロールしているときに合計行(または下の固定行)が出たり高くなったりすると、Solid 版だけ末尾から外れていた(最後の
+    行が合計行の裏に隠れる)。core の scrollSyncController は update の中で増えた後の `scrollHeight` を読んで末尾に留めるが、
+    Solid 版は render の時機(DOM を書く前)に渡していた。React 版のレイアウト effect と同じく、DOM を書き終えた後の effect で
+    渡すようにした(`t-total` に確かめを足した。React 版も通る)。別視点のレビューの指摘(上の命令的 API)と同じ原因で、ほかの
+    コントローラも update の中で DOM を測るか / スクロールを書くかを見直した(縮めたスクロールの率が変わったときの位置の保持は
+    React 版と同じに動くことを 100 万行で確かめた。ほかは update の中で DOM を測らない)。
+  - 列の幅が変わると、列見出しとセルを同じ変化で 2 回描いていた(React 版は描いた後の effect で列の仮想化を測り直し、もう 1 回描く。
+    Solid では別の流れになる)。列の仮想化の範囲を計算する memo の中で測り直すようにした(core の viewportSyncController には何も
+    しない `measure` を渡す)。
+- **Solid の Vite プラグインの開発用の計測**: `@solidjs/vite-plugin` は `vite dev` で既定で Chrome の Performance パネルのトラックを
+  入れ、その計測(`solid-js/attribution`)が描き直しの理由を記録する。これが入っていると、(1) 描き直しが重くなる(100 万行で遠くへ
+  スクロールした次のフレームまで約 0.5 秒。切ると React 版と同じ約 0.1 秒)、(2) Solid が console に知らせを出す(下)。ハーネスは
+  React 版と同じ条件で比べるため既定で切り(`audit/harness/solid/vite.config.ts`)、`SSG_AUDIT_SOLID_TRACKS=1`(port 5180)で入れた
+  ときに出る知らせが既知のものだけかを `audit/harness/t-solid-diagnostics.mjs` で見る。本番のビルドと、プラグインの
+  `performanceTracks: false` では出ない。
+- **開発ビルドで Solid が出す知らせ**(利用者の `vite dev` の既定で出る。どれも 1 つのページで 1 回ずつ):
+
+  | 知らせ | effect の名前 | 出るとき | なぜ出るか |
+  | --- | --- | --- | --- |
+  | `EFFECT_WRITES_OWN_SOURCE` / `EFFECT_RELAY_TEAR` | `autoHeightMeasurer` | `autoHeight` の列があるとき | 描いた行の高さを DOM で測って行の高さの表へ書き、その高さで並べ直して新しく描いた行をまた測る |
+  | `EFFECT_WRITES_OWN_SOURCE` / `EFFECT_RELAY_TEAR` | `activeRowFollow` | `activeCellFollows: 'row'` で並びが変わったとき | アクティブセルを押した行の新しい位置へ付け直す |
+  | `EFFECT_WRITES_OWN_SOURCE` / `EFFECT_RELAY_TEAR` | `edit` | 編集中に並びが変わったとき | エディタとアクティブセルを編集している行の新しい位置へ付け直す |
+  | `EFFECT_RELAY_TEAR` | `clampSelectionToRowCount` | 行や列が減って選択が範囲の外になったとき(3 回目から) | 選択を範囲の中へ詰める |
+  | `EFFECT_RELAY_TEAR` | `reconcileColumnWidths` | 列の定義が変わって列幅の状態を合わせたとき(3 回目から) | 消えた列 / 幅を指定し直した列の手で変えた幅を捨てる |
+  | `EFFECT_RELAY_TEAR` | `scrollSync` | 合計行 / 下の固定行が出たり高さが変わったりしたとき(3 回目から) | 見える高さを DOM で測り直して view スライスへ書く |
+  | `EFFECT_RELAY_TEAR` | `fillHandle` | フィルハンドルで埋めた後に選択や行が変わったとき(3 回目から) | 埋めたあとのボタンを消す(コントローラの store へ書く) |
+  | `EFFECT_RELAY_TEAR` | `serverSideRowModel` | serverSide で並べ替え / 絞り込みが変わったとき(3 回目から) | 読み込んだブロックを捨てて読み直す(行モデルの store へ書く) |
+
+  どれも「変化の後に状態を合わせ直す」処理で、React 版も同じ描き直しをしている(レイアウト effect / effect の中の dispatch。
+  React は知らせない)。手間は DOM を 2 回書くぶん。Solid が勧める直し方(合わせ直した値を memo で
+  求める)は、core のコントローラと reducer の作り(前の値を覚えて比べる・DOM を測る)を変えることになり、React 版のコードも変わる
+  ので、今は直さずに文書に書く(3-3 で Solid 版の README とドキュメントサイトにも書く)。知らせの中の名前で処理が分かるように、
+  Solid 版の effect(コントローラをつなぐ effect = `connectController` の 4 つ目の引数を含む)と、core の外部 store を写した signal
+  (`createExternalStoreSignal` の 2 つ目の引数)にすべて名前を付けた(名前の無い `effect` と出るのは Solid の DOM の束縛だけ)。
+  表は Solid のトラックを入れて全部のハーネスを回したときに出た知らせのすべて。
 
 ### 3-1 で分かったこと
 

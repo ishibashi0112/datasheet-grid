@@ -432,6 +432,23 @@ describe('React 版と同じエディタ', () => {
     });
   });
 
+  it('編集中に編集している行が消えてもエディタを閉じてキー操作を続けられる(RD-3)', async () => {
+    await expectParity({
+      props: props(),
+      watch: ['onRowsChange', 'onActiveCellChange'],
+      steps: async (ctx) => {
+        await doubleClick(ctx, 5, 'name');
+        await typeInto(ctx, '打ちかけ');
+        const rows = ctx.rows() as Row[];
+        await ctx.setProps({ rows: rows.slice(0, 2) });
+        ctx.snapshot('編集している行が消えた');
+        await click(ctx, 0, 'name');
+        await pressInShell(ctx, 'ArrowRight');
+        ctx.snapshot('矢印で動く');
+      },
+    });
+  });
+
   it('編集中に列の editor を 1 行 → 複数行へ差し替えても打ちかけを引き継ぐ・列を固定してペインが変わると開き直す', async () => {
     const multilineName = baseColumns.map((column) =>
       column.key === 'name' ? { ...column, editor: { type: 'text', multiline: true } } : column,

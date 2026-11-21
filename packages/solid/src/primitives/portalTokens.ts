@@ -21,6 +21,7 @@ export function createPortalTokens(
   createEffect(
     () => [portal(), modifierClassName()] as const,
     ([element]) => (element ? watchPortalTokens(source, element) : undefined),
+    { name: 'portalTokens' },
   );
   if (options?.origin === false) {
     return;
@@ -32,5 +33,6 @@ export function createPortalTokens(
         syncPopupOrigin(element);
       }
     },
+    { name: 'portalLayout' },
   );
 }

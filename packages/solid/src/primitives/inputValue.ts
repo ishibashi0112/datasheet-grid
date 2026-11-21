@@ -15,6 +15,7 @@ export function createInputValue<E extends HTMLInputElement | HTMLSelectElement>
         target.value = next;
       }
     },
+    { name: 'inputValue' },
   );
   return (target) => {
     setElement(() => target);
@@ -42,6 +43,7 @@ export function createIndeterminate(value: () => boolean): (element: HTMLInputEl
         target.indeterminate = next;
       }
     },
+    { name: 'inputIndeterminate' },
   );
   return (target) => {
     setElement(() => target);

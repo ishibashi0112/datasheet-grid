@@ -92,6 +92,7 @@ export function ToolPanel(props: ToolPanelProps) {
       element.addEventListener('animationend', handleEnd);
       return () => element.removeEventListener('animationend', handleEnd);
     },
+    { name: 'toolPanelFlash' },
   );
 
   const activeIndex = createMemo(() =>

@@ -408,4 +408,25 @@ const fmtNumber = (page, v) =>
   await close();
 }
 
+
+// 追加(Solid 版 段階 3-2): 末尾までスクロールしているときに合計行が出た / 高くなったら、末尾に留まる(最後の行を合計行の裏に
+//   隠さない。core の scrollSyncController。Solid 版は DOM を書く前に合わせて末尾から外れていた)。
+{
+  const { page, pageErrors, close } = await open('basic');
+  await page.evaluate(() => window.__grid.scrollToBottom());
+  await waitIdle(page, 200);
+  const g0 = await geo(page);
+  await page.evaluate(() => window.__setProps({ totalRow: true }));
+  await waitIdle(page, 250);
+  const g1 = await geo(page);
+  await page.evaluate(() => window.__setProps({ totalRow: { height: 80 } }));
+  await waitIdle(page, 250);
+  const g2 = await geo(page);
+  const atBottom = await page.evaluate(() => window.__grid.isAtBottom());
+  check('total(stay): 末尾で合計行を出しても末尾のまま', near(g0.scrollTop, g0.maxScroll) && near(g1.scrollTop, g1.maxScroll) && g1.maxScroll > g0.maxScroll, { g0, g1 });
+  check('total(stay): 末尾で合計行を高くしても末尾のまま', near(g2.scrollTop, g2.maxScroll) && g2.maxScroll > g1.maxScroll && atBottom, { g2, atBottom });
+  check('total(stay): エラーなし', unexpectedPageErrors(pageErrors).length === 0, pageErrors);
+  await close();
+}
+
 summary();

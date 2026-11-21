@@ -108,7 +108,7 @@ export function createFilterPopover<T>(inputs: FilterPopoverInputs<T>): FilterPo
   const resolveAnchorColumnKey = (columnKey: string): string =>
     untrack(groupColumns).some((column) => column.key === columnKey) ? GROUP_AUTO_COLUMN_KEY : columnKey;
 
-  const snapshot = createExternalStoreSignal(controller);
+  const snapshot = createExternalStoreSignal(controller, 'filterPopoverStore');
   const state = createMemo(() => snapshot().state);
   const layout = createMemo(() => snapshot().layout);
   const [panel, setPanel] = createSignal<HTMLDivElement | null>(null);
@@ -129,6 +129,7 @@ export function createFilterPopover<T>(inputs: FilterPopoverInputs<T>): FilterPo
       };
     },
     'effect',
+    'filterPopover',
   );
   // 開いている列は、列のキーと種別と列の定義が変わったときだけ作り直します。state には下書きも入っていて、種別を推定した
   //   列('auto')では core が毎回 { ...column, filterType } を作るので、state をそのまま読むと打つたびに新しい列になり、

@@ -79,7 +79,7 @@ export function TextCellEditor(props: TextCellEditorProps) {
       element.setSelectionRange(caret, caret);
     }
   };
-  createRenderEffect(() => [textarea(), cellHeight(), alignTop(), draft()] as const, fit);
+  createRenderEffect(() => [textarea(), cellHeight(), alignTop(), draft()] as const, fit, { name: 'textEditorFit' });
 
   // 描き終わった後(= 編集のセッションの始まり)にフォーカスし、末尾へキャレットを置きます。
   onSettled(() => {

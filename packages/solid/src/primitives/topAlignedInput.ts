@@ -19,6 +19,6 @@ export function createTopAlignedInput(
     }
   };
   const read = () => [input(), alignTop(), cellHeight()] as const;
-  createRenderEffect(read, apply);
+  createRenderEffect(read, apply, { name: 'topAlignedInput' });
   onSettled(() => apply(untrack(read)));
 }

@@ -131,6 +131,7 @@ export function SelectCellEditor(props: SelectCellEditorProps) {
         measure();
       }
     },
+    { name: 'selectEditorOptionsRefocus' },
   );
   // 描く場所は開いている間だけ決めます(ダイアログを後から開いたときも、開いた時点の場所になる)。
   const mount = () => (placement() !== null ? portal.container() : null);
@@ -142,6 +143,7 @@ export function SelectCellEditor(props: SelectCellEditorProps) {
       const option = element?.children[index] as HTMLElement | undefined;
       option?.scrollIntoView?.({ block: 'nearest' });
     },
+    { name: 'selectEditorScrollHighlight' },
   );
 
   // rejected はエラーの吹き出しを出して選び直しを続けます。
@@ -305,6 +307,7 @@ export function SelectCellEditor(props: SelectCellEditorProps) {
         element.value = text;
       }
     },
+    { name: 'selectEditorInputText' },
   );
   // 名前の先頭を見せます(細い列で入力欄が末尾までスクロールしていた)。変換中は触りません。入力欄の値を書く描画の後に
   //   動くよう、JSX を作った後に作ります(同じ更新の中では作った順に動く)。
@@ -317,6 +320,7 @@ export function SelectCellEditor(props: SelectCellEditorProps) {
       element.setSelectionRange(0, 0);
       element.scrollLeft = 0;
     },
+    { name: 'selectEditorInputScroll' },
   );
   return view;
 }

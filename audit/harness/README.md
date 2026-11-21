@@ -20,7 +20,7 @@ HARNESS_BASE=http://127.0.0.1:5178/ node audit/harness/perf-big.mjs  # 本番ビ
 ```
 
 - Chromium は `SSG_AUDIT_CHROME`(実行ファイルパス)で指定できる。未指定なら Claude Code クラウド環境の既知パス、無ければ playwright-core の既定解決(`npx playwright install chromium` 済みが前提)。
-- シナリオは `main.tsx` の `?s=<scenario>` で切り替わる: `basic` / `big` / `autoheight` / `grouping` / `detail` / `label` / `rowdrag` / `ssrm` / `empty` / `height` / `two`。`&strict=1` で StrictMode、`&n=<rows>` で行数、SSRM は `&noinit=1` で `initialRowCount` 未指定、autoheight は `&detail=1` で展開行を併用。
+- シナリオは `main.tsx`(Solid 版は `solid/main.tsx`。下の「Solid 版で回す」)の `?s=<scenario>` で切り替わる: `basic` / `big` / `autoheight` / `grouping` / `detail` / `label` / `rowdrag` / `ssrm` / `empty` / `height` / `two`。`&strict=1` で StrictMode、`&n=<rows>` で行数、SSRM は `&noinit=1` で `initialRowCount` 未指定、autoheight は `&detail=1` で展開行を併用。
 - `window.__grid`(ハンドル)/ `window.__rows()` / `window.__setRows` / `window.__setProps` / `window.__setColumns` / `window.__events`(コールバック記録)/ `window.__errors`(console.error / warn)/ `window.__listeners`(window / document リスナー数)/ `window.__ssrm`(SSRM モック制御)を公開しているので、ブラウザの DevTools から手で叩いて追試できる。
 - `t-aggregates.mjs` は選択範囲の集計(下部バー)の値・表示・100 万行の時間分割・SSRM の部分集計。
 - `t-total.mjs` は合計行(`totalRow`)の値・下端固定・最終行が合計行に隠れないこと(スクロール / 矢印キー / `scrollToRow` / `scrollToBottom`)・横スクロールと固定列の揃い・列ドラッグ(live)・行が少ないとき・ダークテーマ・100 万行・auto-height / グルーピング / ラベル行 / SSRM との併用。
@@ -71,6 +71,34 @@ SSG_AUDIT_BROWSER=webkit pnpm run audit:test
 - Playwright は window の error のうち例外でないもの(`ResizeObserver loop completed with undelivered notifications` など)を `pageerror` にも console にも出さないので、`pw.mjs` が `addInitScript` で `console.error('[window.error] …')` へ流す(WebDriver と同じ範囲を `pageErrors` で拾うため。2026-10-28 追加)。
   - `webkitgtk` の右クリックはポインタだけ実際に動かし、`pointerdown` / `mousedown` / `contextmenu` / `pointerup` / `mouseup` をページ内で合成する。WebKitGTK 2.52 の WebDriver で右ボタンを押して離すと離したことが伝わらず(`mouseup` の `button` が 0 になり `buttons` に右ボタンが残る)、以降の左クリックが `pointerdown` にならない(素のページでも起きる自動操作側の不具合)。
   - 要素だけのスクリーンショット(`locator.screenshot`)と `clip` は画面全体の保存になる(記録用で判定には使っていない)。
+
+## Solid 版で回す(2026-11-20 追加)
+
+Solid 版(`packages/solid`)にも同じテストを回す。Solid 版のハーネスのページは `solid/`(`solid/main.tsx`。port 5179)で、React 版の
+`main.tsx` と同じシナリオ・同じ `window.__*` を Solid 版のグリッドで公開する。計測・データ・列・SSRM のモックは `shared.ts` を共有
+する(フレームワークの部品 = custom エディタの中身と展開行の中身だけをそれぞれのページで書く)。
+
+```bash
+pnpm run audit:dev:solid                       # Solid 版のハーネスの dev サーバー(port 5179)
+SSG_AUDIT_FRAMEWORK=solid pnpm run audit:test  # 全部(ブラウザの切り替え SSG_AUDIT_BROWSER はそのまま使える)
+SSG_AUDIT_FRAMEWORK=solid node audit/harness/t-basic.mjs
+```
+
+- 最初の行は `BROWSER <名前> <版> / FRAMEWORK solid`。
+- React 版との違い: `&strict=1`(StrictMode)は普通に描くだけ、`__activity(false)`(`<Activity>` で隠す)は `display: none` で
+  隠すだけ、`__renderCount` は部品の関数が動いた回数(Solid は最初の 1 回)。`t-lazy` は Solid 版にポップアップの部品の遅延読み込みが
+  無いので全体を SKIP にする(`pw.mjs` の `SUPPORTS.lazyPopups`)。
+- Solid 版の dev サーバーは依存の事前バンドルを `node_modules/.vite-audit-harness-solid` に置く(React 版と同じ `node_modules/.vite` を
+  使うと、片方が作り直したときにもう片方が `504 Outdated Optimize Dep` で開けなくなる)。
+- Solid の Vite プラグインは `vite dev` で既定で Performance パネルのトラックを入れ、その計測(`solid-js/attribution`)で描き直しが
+  重くなり(100 万行で遠くへスクロールした次のフレームまで約 0.5 秒。切ると React 版と同じ約 0.1 秒)、console に Solid の知らせ
+  (`[EFFECT_RELAY_TEAR]` など)が出る。React 版と同じ条件で比べるため、ハーネスの既定では切る(`solid/vite.config.ts`)。
+  プラグインの既定どおり入れるとき(利用者の開発時と同じ)は `SSG_AUDIT_SOLID_TRACKS=1 pnpm run audit:dev:solid`(port 5180。
+  別の cacheDir なので既定のサーバーと並べて動かせる)で、そこで出る知らせが既知のもの(`docs/solid/README.md`「開発ビルドで Solid が
+  出す知らせ」)だけかを `SSG_AUDIT_FRAMEWORK=solid SSG_AUDIT_SOLID_TRACKS=1 node audit/harness/t-solid-diagnostics.mjs` で見る
+  (ふつうの `audit:test` には入れていない。トラックなしでは SKIP)。
+- dev サーバーを動かしたまま `git stash` / `git checkout` でソースを入れ替えると、古いモジュールを配り続けることがある(React 版の
+  ハーネスでも同じ。2026-11-20 に Solid 版で 1 回分の確認がこれで無駄になった)。入れ替えたらサーバーを立て直し、`curl -s http://127.0.0.1:5179/@fs/<絶対パス> | grep <新しいコード>` で確かめる。
 
 ## 出力の読み方
 

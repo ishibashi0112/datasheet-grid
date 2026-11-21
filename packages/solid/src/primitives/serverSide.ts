@@ -39,6 +39,7 @@ export function createServerSide<T>(args: () => ServerSideRowModelArgs<T>) {
     },
     args,
     'render',
+    'serverSideRowModel',
   );
   const requestRange = (startIndex: number, endIndex: number) => {
     if (!updated) {
@@ -47,7 +48,7 @@ export function createServerSide<T>(args: () => ServerSideRowModelArgs<T>) {
     }
     controller.requestRange(startIndex, endIndex);
   };
-  const snapshot = createExternalStoreSignal(controller);
+  const snapshot = createExternalStoreSignal(controller, 'serverSideRowModelStore');
   return {
     rowModel: createMemo(() => snapshot().rowModel),
     rowCount: () => snapshot().rowCount,

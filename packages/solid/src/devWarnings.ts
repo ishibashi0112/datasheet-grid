@@ -28,7 +28,7 @@ const noop = () => {};
 //   比べない(compute が読む memo が新しいオブジェクトを返すたびに、値が同じでも effect が走る)ので、compute を memo
 //   (=== で比べる)に通してからつなぐ。
 const createChangeEffect = <V>(compute: () => V, effect: (value: V) => void): void => {
-  createEffect(createMemo(compute), effect);
+  createEffect(createMemo(compute), effect, { name: 'devWarning' });
 };
 
 type FeaturePropCheck = {

@@ -193,7 +193,7 @@ function FillOptionsMenu(props: FillOptionsMenuProps) {
   });
   createEffect(panel, (element) => {
     element?.querySelector<HTMLButtonElement>('[aria-checked="true"]')?.focus({ preventScroll: true });
-  });
+  }, { name: 'fillMenuFocus' });
   const handleKeyDown = (event: KeyboardEvent) => {
     if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
       event.preventDefault();
@@ -276,7 +276,7 @@ function FillTooltip(props: FillTooltipProps) {
   const pointer = createExternalStoreSignal({
     subscribe: props.fill.controller.subscribePointer,
     getSnapshot: props.fill.controller.getPointerSnapshot,
-  });
+  }, 'fillPointerStore');
   const visible = createMemo(() => pointer() !== null);
   // 描く場所は出たときに決めます(ポインタが動くたびには探し直さない)。
   const container = createMemo(() => (visible() ? portal.container() : null));

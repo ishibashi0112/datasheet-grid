@@ -35,12 +35,13 @@ export function createColumnReorder<T>(args: () => ColumnReorderArgs<T>): Column
     leftIndicatorRef,
     centerIndicatorRef,
     rightIndicatorRef,
-  }));
+  }), 'render', 'columnReorder');
   createEffect(
     () => args().paneLayout,
     () => {
       controller.applyReorderSettle();
     },
+    { name: 'columnReorderPaneLayout' },
   );
   return {
     onColumnDragHandlePointerDown: controller.onColumnDragHandlePointerDown,

@@ -8,7 +8,16 @@ import { fileURLToPath } from 'node:url';
 export const OUT = fileURLToPath(new URL('./.out/', import.meta.url));
 mkdirSync(OUT, { recursive: true });
 
-export const BASE = process.env.HARNESS_BASE ?? 'http://127.0.0.1:5177/';
+// 追加(Solid 版 段階 3-2): SSG_AUDIT_FRAMEWORK=solid で Solid 版のハーネス(solid/。`pnpm run audit:dev:solid` = port 5179)を
+//   叩く。同じテストを回し、Solid 版に無いもの(SUPPORTS.lazyPopups)だけ飛ばす。
+export const FRAMEWORK = process.env.SSG_AUDIT_FRAMEWORK ?? 'react';
+if (FRAMEWORK !== 'react' && FRAMEWORK !== 'solid') throw new Error(`SSG_AUDIT_FRAMEWORK=${FRAMEWORK} は未対応です`);
+//   SSG_AUDIT_SOLID_TRACKS=1 は Solid の開発用の計測(Performance パネルのトラック)を入れたサーバー(port 5180)を叩く
+//   (t-solid-diagnostics.mjs 用。README の「Solid 版で回す」)。
+export const SOLID_TRACKS = FRAMEWORK === 'solid' && process.env.SSG_AUDIT_SOLID_TRACKS === '1';
+export const BASE =
+  process.env.HARNESS_BASE ??
+  (FRAMEWORK === 'solid' ? (SOLID_TRACKS ? 'http://127.0.0.1:5180/' : 'http://127.0.0.1:5179/') : 'http://127.0.0.1:5177/');
 // Chromium の実行ファイル: SSG_AUDIT_CHROME → Claude Code クラウド環境の既知パス → playwright-core の既定解決。
 //   クラウド環境の Chromium は版の付いたディレクトリが入れ替わるため、版なしのシンボリックリンクを先に見る
 //   (2026-10-24 に chromium-1194 が chromium-1243 へ替わり、版付きのパスだけでは起動できなくなった)。
@@ -37,6 +46,8 @@ export const SUPPORTS = {
   emulateMedia: viaPlaywright && !viaBidi,
   // テストから OS のクリップボードへ書いて、実際の Ctrl+V で貼らせられるか(権限を渡せるのは Chromium だけ)。
   clipboardSeed: BROWSER === 'chromium',
+  // ポップアップの部品の遅延読み込み(React 版だけ。Solid 版はまだ本体に入れている。3-3 で大きさを測ってから決める)。
+  lazyPopups: FRAMEWORK === 'react',
 };
 let announced = false;
 
@@ -75,7 +86,7 @@ export async function open(scenario, { query = '', viewport = { width: 1400, hei
   }
   if (!announced) {
     announced = true;
-    console.log(`BROWSER ${version}`);
+    console.log(`BROWSER ${version}${FRAMEWORK === 'react' ? '' : ` / FRAMEWORK ${FRAMEWORK}`}`);
   }
   const pageErrors = [];
   page.on('pageerror', (e) => pageErrors.push('[pageerror] ' + e.message));

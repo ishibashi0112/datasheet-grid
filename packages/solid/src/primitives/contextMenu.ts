@@ -28,8 +28,8 @@ export type CellContextMenu<T> = {
 
 export function createCellContextMenu<T>(inputs: CellContextMenuInputs): CellContextMenu<T> {
   const controller = createContextMenuController<T>();
-  connectController(controller, () => ({ gridRootRef: inputs.gridRootRef }));
-  const snapshot = createExternalStoreSignal(controller);
+  connectController(controller, () => ({ gridRootRef: inputs.gridRootRef }), 'render', 'contextMenu');
+  const snapshot = createExternalStoreSignal(controller, 'contextMenuStore');
   return {
     snapshot,
     isOpen: createMemo(() => snapshot().state !== null),

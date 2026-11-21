@@ -59,8 +59,8 @@ export function createToolPanel(inputs: ToolPanelInputs): ToolPanel {
     ...(inputs.alliedRef ? { alliedRef: inputs.alliedRef } : {}),
     suppressEscape: inputs.suppressEscape(),
     onSuppressedEscape: inputs.onSuppressedEscape,
-  }));
-  const snapshot = createExternalStoreSignal(controller);
+  }), 'render', 'toolPanel');
+  const snapshot = createExternalStoreSignal(controller, 'toolPanelStore');
   const availableTabs = createMemo(
     () =>
       resolveAvailableToolPanelTabs({

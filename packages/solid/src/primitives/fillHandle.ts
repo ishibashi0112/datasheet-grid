@@ -138,8 +138,8 @@ export function createFillHandle<T>(inputs: FillHandleInputs<T>): FillHandleStat
       amendRowsChange: inputs.amendRowsChange,
       applyServerSideCellEdits: inputs.applyServerSideCellEdits(),
     };
-  });
-  const snapshot = createExternalStoreSignal(controller);
+  }, 'render', 'fillHandle');
+  const snapshot = createExternalStoreSignal(controller, 'fillHandleStore');
   // 縦のレイアウトは項目ごとに受けます(縦のレイアウトの答えは表の状態が変わるたびに新しいオブジェクトになるので、まるごと読むと
   //   セルを押しただけでボタンの位置を計算し直し、続いてコントローラがボタンを消したときにもう 1 回計算していた = Solid の
   //   開発時の EFFECT_RELAY_TEAR。中の値は core が同じ参照のまま返す)。

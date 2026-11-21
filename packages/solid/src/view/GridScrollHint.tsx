@@ -139,7 +139,7 @@ export function GridScrollHint<T>(props: GridScrollHintProps<T>) {
         lingerTimer = null;
       }
     };
-  });
+  }, { name: 'scrollHintListeners' });
 
   // ガターの上のホイールを中身のスクロールへ回す(ガターは箱の兄弟なので、そのままでは何も起きない)。preventDefault が
   //   要るので passive でないリスナーで付ける。
@@ -158,6 +158,7 @@ export function GridScrollHint<T>(props: GridScrollHintProps<T>) {
       target.addEventListener('wheel', handleWheel, { passive: false });
       return () => target.removeEventListener('wheel', handleWheel);
     },
+    { name: 'scrollHintGutterWheel' },
   );
 
   // ルーラーの目盛り(スクロールでは変わらない。行数と見える高さが変わったときだけ求め直す)。

@@ -16,10 +16,13 @@ export type ControllerLike<Args> = {
   dispose?: () => void;
 };
 
+//   name は effect の名前(Solid の開発用の計測 = vite dev の既定で入る attribution が console へ知らせを出すときに、
+//   どの処理かが分かるように。docs/solid/README.md「開発ビルドで Solid が出す知らせ」)。
 export function connectController<Args>(
   controller: ControllerLike<Args>,
   args: () => Args,
   timing: 'render' | 'effect' = 'render',
+  name?: string,
 ): void {
   let mounted = false;
   let latest: { value: Args } | null = null;
@@ -29,10 +32,11 @@ export function connectController<Args>(
       controller.update(next);
     }
   };
+  const options = name === undefined ? undefined : { name };
   if (timing === 'render') {
-    createRenderEffect(args, apply);
+    createRenderEffect(args, apply, options);
   } else {
-    createEffect(args, apply);
+    createEffect(args, apply, options);
   }
   onSettled(() => {
     mounted = true;
