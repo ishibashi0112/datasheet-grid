@@ -16,7 +16,7 @@ export type ColumnAutosize<T> = {
 
 export function createColumnAutosize<T>(args: () => ColumnAutosizeRunnerArgs<T>): ColumnAutosize<T> {
   const runner = createColumnAutosizeRunner<T>();
-  connectController(runner, args);
-  const isAutosizing = createExternalStoreSignal(runner);
+  connectController(runner, args, 'render', 'columnAutosize');
+  const isAutosizing = createExternalStoreSignal(runner, 'columnAutosizeStore');
   return { isAutosizing, runAutosize: runner.runAutosize };
 }

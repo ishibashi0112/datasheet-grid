@@ -40,7 +40,12 @@ export function createSelectionAggregates<T>(args: () => SelectionAggregatesArgs
   const key = createMemo(() => ({ rowModel: rowModel(), target: target() }));
   const syncResult = createMemo(() => resolveSyncSelectionAggregates(key()));
   const runner = createSelectionAggregatesRunner<T>();
-  connectController(runner, () => ({ ...key(), needsAsync: syncResult() === undefined }));
-  const snapshot = createExternalStoreSignal(runner);
+  connectController(
+    runner,
+    () => ({ ...key(), needsAsync: syncResult() === undefined }),
+    'render',
+    'selectionAggregates',
+  );
+  const snapshot = createExternalStoreSignal(runner, 'selectionAggregatesStore');
   return createMemo(() => selectSelectionAggregatesResult(syncResult(), snapshot(), key()));
 }

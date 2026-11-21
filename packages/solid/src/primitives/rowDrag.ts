@@ -142,11 +142,12 @@ export function createRowDrag<T>(inputs: RowDragInputs<T>): RowDrag {
       canDropAt: canDropAt(),
     }),
     'effect',
+    'rowDrag',
   );
   // 行の並びが変わったら(確定の後)滑り込み。直前のドロップで用意したときだけ動き、それ以外(編集 / フィルター等)はすぐ戻る。
   createEffect(inputs.rowModel, () => {
     controller.applyReorderSettle();
-  });
+  }, { name: 'rowDragSettle' });
 
   return {
     onRowDragHandlePointerDown: controller.onRowDragHandlePointerDown,

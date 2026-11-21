@@ -108,6 +108,7 @@ export function ColumnMenuPopover(props: ColumnMenuPopoverProps) {
         panelElement.scrollTop = 0;
       }
     },
+    { name: 'columnMenuScrollReset' },
   );
   // 表で決まったトークン(--ssg-*)をメニューへ写し、位置が変わるたびに描く場所のずれを打ち消します。
   createPortalTokens(panel, () => props.themeClassName, layout);
@@ -147,7 +148,7 @@ export function ColumnMenuPopover(props: ColumnMenuPopoverProps) {
     }
     focusPinSubmenuOnOpen = false;
     focusFirstPinItem();
-  });
+  }, { name: 'columnMenuPinSubmenu' });
   const closeSubmenuOnHover = () => {
     if (!submenuInline()) {
       setOpenSubmenuKey(null);

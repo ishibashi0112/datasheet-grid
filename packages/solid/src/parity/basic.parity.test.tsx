@@ -274,6 +274,66 @@ describe('React 版と同じ DOM と通知', () => {
     });
   });
 
+  // 段階 3-2: 通知の中でハンドルを読んだときに今の値を返す(Solid 版はハンドルへ args を render の時機で渡す。effect の時機だと
+  //   effect の時機の通知より後になり、並べ替えの前の行の並びを返すことがあった)。1 回の操作で 2 つの通知が呼ばれるときの
+  //   順番は React 版と違うことがある(docs/solid/README.md「残した違い(通知の順番)」)ので、読むのは片方の通知の中だけ。
+  it('通知の中でハンドルを読むと今の並びと選択を返す', async () => {
+    let current: Parameters<Parameters<typeof expectParity>[0]['steps']>[0] | null = null;
+    let readIn: 'onSortChange' | 'onActiveCellChange' | null = null;
+    const read = (label: 'onSortChange' | 'onActiveCellChange') => {
+      if (!current || readIn !== label) {
+        return;
+      }
+      const handle = current.handle() as unknown as {
+        getViewRowIndex: (key: number) => number;
+        getRowNumber: (key: number) => number | null;
+        getActiveCell: () => unknown;
+        getState: () => { sort: unknown };
+      };
+      current.log(`${label} の中`, {
+        viewIndexOf1: handle.getViewRowIndex(1),
+        rowNumberOf3: handle.getRowNumber(3),
+        activeCell: handle.getActiveCell(),
+        sort: handle.getState().sort,
+      });
+    };
+    await expectParity({
+      props: () => ({
+        rows: makeRows(20),
+        columns,
+        rowKeyGetter: (row: Row) => row.id,
+        height: 300,
+        onSortChange: () => read('onSortChange'),
+        onActiveCellChange: () => read('onActiveCellChange'),
+      }),
+      steps: async (ctx) => {
+        current = ctx;
+        const call = (name: string, ...args: unknown[]) =>
+          (ctx.handle()[name] as unknown as (...a: unknown[]) => unknown)(...args);
+        readIn = 'onActiveCellChange';
+        await ctx.act(() => {
+          call('setActiveCell', { row: 2, col: 1 });
+        });
+        readIn = 'onSortChange';
+        await ctx.act(() => {
+          call('applyState', { sort: [{ columnKey: 'qty', direction: 'desc' }] });
+        });
+        await ctx.act(() => {
+          const header = ctx.header('qty');
+          fireEvent.pointerDown(header, { button: 0, pointerId: 1, isPrimary: true, shiftKey: true });
+          fireEvent.pointerUp(window, { button: 0, pointerId: 1, isPrimary: true, shiftKey: true });
+        });
+        readIn = 'onActiveCellChange';
+        await ctx.act(() => {
+          call('setActiveCell', { row: 5, col: 2 });
+        });
+        ctx.snapshot('並べ替えの後');
+        current = null;
+        readIn = null;
+      },
+    });
+  });
+
   it('縦のスクロールと onScroll', async () => {
     await expectParity({
       props: () => ({ rows: makeRows(500), columns, rowKeyGetter: (row: Row) => row.id, height: 300 }),

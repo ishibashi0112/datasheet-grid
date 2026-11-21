@@ -121,8 +121,8 @@ export function ColumnFilterPopoverHost<T>(props: ColumnFilterPopoverHostProps<T
       globalText: props.globalFilterText,
       fetch: props.getFilterOptions ?? null,
     };
-  });
-  const asyncSnapshot = createExternalStoreSignal(asyncSource);
+  }, 'render', 'filterOptionsSource');
+  const asyncSnapshot = createExternalStoreSignal(asyncSource, 'filterOptionsStore');
 
   const collectColumn = createMemo(() => (usesAsyncOptions() ? null : openedColumn()));
   const numeric = createMemo(() => openedType() === 'numberSet');
@@ -140,8 +140,8 @@ export function ColumnFilterPopoverHost<T>(props: ColumnFilterPopoverHostProps<T
     getRawValueAt: getOpenedColumnRawValueAt(),
     numeric: numeric(),
     sourceKey: sourceKey(),
-  }));
-  const collectorSnapshot = createExternalStoreSignal(collector);
+  }), 'render', 'filterValueCollector');
+  const collectorSnapshot = createExternalStoreSignal(collector, 'filterValueStore');
   const optionsResult = createMemo(() => {
     if (usesAsyncOptions()) {
       return selectAsyncOptionsResult(asyncSnapshot(), openedColumn()?.key ?? null);
@@ -176,7 +176,7 @@ export function ColumnFilterPopoverHost<T>(props: ColumnFilterPopoverHostProps<T
     updateTextDraft: filterPopover.updateTextDraft,
     updateDateDraft: filterPopover.updateDateDraft,
     filterTexts: props.localeTexts,
-  }));
+  }), 'render', 'filterPopoverCommands');
 
   const texts = () => props.localeTexts as FilteringTexts;
   // 今の値の行(set は件数を一覧の下に出すので参考。number は既定の書き方を文言の表で作り直す)。

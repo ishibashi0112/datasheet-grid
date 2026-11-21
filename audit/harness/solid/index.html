@@ -1,0 +1,21 @@
+<!doctype html>
+<html lang="ja">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>ssg audit harness (Solid)</title>
+    <link rel="icon" href="data:,">
+    <style>
+      html, body { margin: 0; padding: 0; font-family: system-ui, sans-serif; }
+      #root { padding: 8px; }
+      .parent-fixed { height: 400px; border: 2px dashed #c33; }
+    </style>
+  </head>
+  <body>
+    <div id="root"></div>
+    <!-- グリッドの後ろのフォーカスできる要素(実際のアプリと同じく、最終列の Tab でグリッドの外へ出た先)。無いと Firefox は
+         ブラウザの UI へ、WebKit は文書の先頭(上部バーのボタン)へフォーカスを移し、以降のテストの前提が崩れる。 -->
+    <button id="after-grid" type="button" style="font-size: 10px">after grid</button>
+    <script type="module" src="/main.tsx"></script>
+  </body>
+</html>

@@ -76,8 +76,8 @@ export function createFilterOrder<T>(inputs: FilterOrderInputs<T>): FilterOrder 
   const enabled = () => inputs.globalFilterEnabled() && !inputs.manualFiltering();
   const syncResult = createMemo(() => resolveSyncGlobalFilteredOrder(key(), text(), enabled()));
   const runner = createGlobalFilteredOrderRunner<T>();
-  connectController(runner, () => ({ ...key(), needsAsync: syncResult() === null }));
-  const snapshot = createExternalStoreSignal(runner);
+  connectController(runner, () => ({ ...key(), needsAsync: syncResult() === null }), 'render', 'globalFilter');
+  const snapshot = createExternalStoreSignal(runner, 'globalFilterStore');
   const result = createMemo(() => selectGlobalFilteredOrderResult<T>(syncResult(), snapshot(), key()));
 
   // 相対日付プリセット(監査 L-15)。手動フィルター(manualFiltering)では行を絞り込まないので見張りません。
@@ -87,8 +87,8 @@ export function createFilterOrder<T>(inputs: FilterOrderInputs<T>): FilterOrder 
       ? inputs.columnFilterEnabled() && columnFiltersUseRelativeDate(columnFilters())
       : !inputs.manualFiltering() && columnFiltersUseRelativeDate(columnFilters()),
   );
-  connectController(inputs.dateRollover, () => ({ active: relativeDateFilterActive() }));
-  const relativeDateSnapshot = createExternalStoreSignal(inputs.dateRollover);
+  connectController(inputs.dateRollover, () => ({ active: relativeDateFilterActive() }), 'render', 'dateRollover');
+  const relativeDateSnapshot = createExternalStoreSignal(inputs.dateRollover, 'dateRolloverStore');
   const relativeDateKey = createMemo(() =>
     relativeDateFilterActive()
       ? resolveRelativeDateFilterKey(inputs.effectiveColumns(), columnFilters(), relativeDateSnapshot())

@@ -40,8 +40,8 @@ export function createColumnMenu<T>(inputs: ColumnMenuInputs<T>): ColumnMenu<T> 
     visibleColumns: inputs.visibleColumns(),
     enableColumnMenu: inputs.enableColumnMenu(),
     gridRootRef: inputs.gridRootRef,
-  }));
-  const snapshot = createExternalStoreSignal(controller);
+  }), 'render', 'columnMenu');
+  const snapshot = createExternalStoreSignal(controller, 'columnMenuStore');
   const openedColumnKey = createMemo(() => snapshot().columnKey);
   const openedColumn = createMemo(() => {
     const key = openedColumnKey();

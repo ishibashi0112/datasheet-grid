@@ -18,6 +18,7 @@ import { createExternalStoreSignal } from '../primitives/externalStore';
 import { createPortalTokens } from '../primitives/portalTokens';
 import { px } from '../primitives/style';
 import type { FillHandleState } from '../primitives/fillHandle';
+import { readEventKey } from '../primitives/eventKey';
 
 type FillTexts = typeof DEFAULT_FILL_HANDLE_LOCALE_TEXT;
 
@@ -193,7 +194,7 @@ function FillOptionsMenu(props: FillOptionsMenuProps) {
   });
   createEffect(panel, (element) => {
     element?.querySelector<HTMLButtonElement>('[aria-checked="true"]')?.focus({ preventScroll: true });
-  });
+  }, { name: 'fillMenuFocus' });
   const handleKeyDown = (event: KeyboardEvent) => {
     if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
       event.preventDefault();
@@ -203,7 +204,7 @@ function FillOptionsMenu(props: FillOptionsMenuProps) {
       const index = items.findIndex((item) => item === document.activeElement);
       const next = items[(index + (event.key === 'ArrowDown' ? 1 : items.length - 1)) % items.length];
       next?.focus({ preventScroll: true });
-    } else if (event.key === 'Tab') {
+    } else if (readEventKey(event) === 'Tab') {
       event.preventDefault();
       props.fill.controller.closeMenu();
     }
@@ -276,7 +277,7 @@ function FillTooltip(props: FillTooltipProps) {
   const pointer = createExternalStoreSignal({
     subscribe: props.fill.controller.subscribePointer,
     getSnapshot: props.fill.controller.getPointerSnapshot,
-  });
+  }, 'fillPointerStore');
   const visible = createMemo(() => pointer() !== null);
   // 描く場所は出たときに決めます(ポインタが動くたびには探し直さない)。
   const container = createMemo(() => (visible() ? portal.container() : null));

@@ -81,6 +81,7 @@ import { createColumnVirtualizer } from '../primitives/columnVirtualizer';
 import { controlledToggle, createIndeterminate, createInputValue } from '../primitives/inputValue';
 import { px } from '../primitives/style';
 import { FilterDateField } from './FilterDateField';
+import { readEventKey } from '../primitives/eventKey';
 
 // 日付の入力欄の差し替え(columnKey は呼ぶ側が足す)。
 export type ColumnFilterDateInputRenderer = (ctx: Omit<FilterDateInputContext, 'columnKey'>) => JSX.Element;
@@ -1237,7 +1238,7 @@ export function ColumnFilterPopover(props: ColumnFilterPopoverProps) {
   };
   // Tab はパネルの中で回します(最後の次は先頭、先頭の前は最後)。中の入力欄やボタンはキーの伝播を止めるので capture 相で見ます。
   const handleKeyDownCapture = (event: KeyboardEvent) => {
-    if (event.key !== 'Tab' || event.altKey || event.ctrlKey || event.metaKey || isImeComposingKeyEvent(event)) {
+    if (readEventKey(event) !== 'Tab' || event.altKey || event.ctrlKey || event.metaKey || isImeComposingKeyEvent(event)) {
       return;
     }
     const current = event.currentTarget as HTMLElement;

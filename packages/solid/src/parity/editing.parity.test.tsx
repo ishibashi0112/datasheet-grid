@@ -432,6 +432,23 @@ describe('React 版と同じエディタ', () => {
     });
   });
 
+  it('編集中に編集している行が消えてもエディタを閉じてキー操作を続けられる(RD-3)', async () => {
+    await expectParity({
+      props: props(),
+      watch: ['onRowsChange', 'onActiveCellChange'],
+      steps: async (ctx) => {
+        await doubleClick(ctx, 5, 'name');
+        await typeInto(ctx, '打ちかけ');
+        const rows = ctx.rows() as Row[];
+        await ctx.setProps({ rows: rows.slice(0, 2) });
+        ctx.snapshot('編集している行が消えた');
+        await click(ctx, 0, 'name');
+        await pressInShell(ctx, 'ArrowRight');
+        ctx.snapshot('矢印で動く');
+      },
+    });
+  });
+
   it('編集中に列の editor を 1 行 → 複数行へ差し替えても打ちかけを引き継ぐ・列を固定してペインが変わると開き直す', async () => {
     const multilineName = baseColumns.map((column) =>
       column.key === 'name' ? { ...column, editor: { type: 'text', multiline: true } } : column,
@@ -466,6 +483,39 @@ describe('React 版と同じエディタ', () => {
         await pressInShell(ctx, 'a');
         await pressInEditor(ctx, 'Enter');
         ctx.snapshot('空の吹き出し');
+      },
+    });
+  });
+
+  // WebKitGTK は Shift+Tab の keydown を key='Unidentified'(keyCode 9)で送る。React の合成イベントは keyCode から 'Tab' に
+  //   直すので、Solid 版も同じに読む(段階 3-2。実ブラウザのハーネスの WebKit で見つかった)。
+  it('WebKitGTK の Shift+Tab(key が Unidentified・keyCode 9)もシェルとエディタで Tab として扱う', async () => {
+    const webkitShiftTab = { keyCode: 9, shiftKey: true };
+    await expectParity({
+      props: props(),
+      watch: ['onRowsChange', 'onActiveCellChange'],
+      steps: async (ctx) => {
+        await click(ctx, 1, 'fruit');
+        await pressInShell(ctx, 'Unidentified', webkitShiftTab);
+        ctx.snapshot('シェルの Shift+Tab');
+        await pressInShell(ctx, 'Unidentified', { keyCode: 9 });
+        ctx.snapshot('シェルの Tab');
+        await doubleClick(ctx, 2, 'name');
+        await typeInto(ctx, '左へ確定');
+        await pressInEditor(ctx, 'Unidentified', webkitShiftTab);
+        ctx.snapshot('text の Shift+Tab で確定');
+        await doubleClick(ctx, 3, 'qty');
+        await typeInto(ctx, '15');
+        await pressInEditor(ctx, 'Unidentified', webkitShiftTab);
+        ctx.snapshot('number の Shift+Tab で確定');
+        await doubleClick(ctx, 4, 'fruit');
+        await pressInEditor(ctx, 'ArrowDown');
+        await pressInEditor(ctx, 'Unidentified', webkitShiftTab);
+        ctx.snapshot('select の Shift+Tab で確定');
+        await doubleClick(ctx, 5, 'due');
+        await typeInto(ctx, '2026-12-01');
+        await pressInEditor(ctx, 'Unidentified', webkitShiftTab);
+        ctx.snapshot('date の Shift+Tab で確定');
       },
     });
   });

@@ -9,8 +9,10 @@ export type ExternalStoreLike<V> = {
 };
 
 // 値は関数でないもの(createSignal は関数を渡すと計算の signal として扱うため。core の外部 store は真偽値)。
-export function createExternalStoreSignal<V>(store: ExternalStoreLike<V>): () => V {
-  const [value, setValue] = createSignal<V>(store.getSnapshot() as never);
+//   name は signal の名前(Solid の開発用の計測が console へ知らせを出すときに、どの store かが分かるように。
+//   docs/solid/README.md「開発ビルドで Solid が出す知らせ」)。
+export function createExternalStoreSignal<V>(store: ExternalStoreLike<V>, name?: string): () => V {
+  const [value, setValue] = createSignal<V>(store.getSnapshot() as never, name === undefined ? undefined : { name });
   onSettled(() => {
     setValue(() => store.getSnapshot());
     return store.subscribe(() => setValue(() => store.getSnapshot()));

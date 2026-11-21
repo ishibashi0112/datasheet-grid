@@ -210,6 +210,90 @@ describe('createGridApi', () => {
     expect(scrollTop).toBe(900);
   });
 
+  // 追加(Solid 版 段階 3-2): deferBottomPin のときは update で合わせ直さず、settleBottomPin()(DOM を書き終えた後)で合わせ直す。
+  it('scrollToBottom: deferBottomPin では update で末尾へ合わせ直さず、settleBottomPin で最新の総高へ合わせ直す', () => {
+    let scrollHeight = 1000;
+    let scrollTop = 0;
+    const el = document.createElement('div');
+    Object.defineProperty(el, 'scrollTop', { get: () => scrollTop, set: (v: number) => (scrollTop = v) });
+    Object.defineProperty(el, 'scrollLeft', { get: () => 0, set: () => {} });
+    Object.defineProperty(el, 'clientHeight', { value: 100 });
+    Object.defineProperty(el, 'clientWidth', { value: 300 });
+    Object.defineProperty(el, 'scrollHeight', { get: () => scrollHeight });
+    Object.defineProperty(el, 'scrollWidth', { value: 300 });
+    el.scrollTo = ((options: ScrollToOptions) => {
+      if (typeof options.top === 'number') scrollTop = Math.min(options.top, scrollHeight - 100);
+    }) as typeof el.scrollTo;
+    const base = makeArgs({
+      scrollContainerRef: { current: el },
+      headerHeight: 0,
+      physicalBodyHeight: 1000,
+      measuredRowHeights: true,
+      deferBottomPin: true,
+    });
+    const api = createGridApi<Row>(withExport);
+    api.update(base.args);
+    api.handle.scrollToBottom();
+    expect(scrollTop).toBe(900);
+    // 総高が伸びた args を受けても update では動かさない(DOM が先に伸びていても、合わせ直すのは settleBottomPin)
+    scrollHeight = 1300;
+    api.update({ ...base.args, physicalBodyHeight: 1200 });
+    expect(scrollTop).toBe(900);
+    // 同じ回にもう一度伸びる(最新の総高で合わせ直す)
+    api.update({ ...base.args, physicalBodyHeight: 1300 });
+    expect(scrollTop).toBe(900);
+    expect(base.args.markApiScroll).toHaveBeenCalledTimes(1);
+    // DOM を書き終えた後
+    api.settleBottomPin();
+    expect(scrollTop).toBe(1200);
+    // 総高が変わっていなければ、ほかの args(合計行の高さ)が変わっても合わせ直さない
+    scrollHeight = 1350;
+    api.update({ ...base.args, physicalBodyHeight: 1300, footerHeight: 50 });
+    api.settleBottomPin();
+    expect(scrollTop).toBe(1200);
+    // 上へスクロールした後の伸長では合わせ直さない
+    scrollTop = 500;
+    api.update({ ...base.args, physicalBodyHeight: 1400 });
+    scrollHeight = 1400;
+    api.settleBottomPin();
+    expect(scrollTop).toBe(500);
+  });
+
+  // 追加(Solid 版 段階 3-2): 固定する前の update の総高の変化(最初の update など)は、固定した後の settle に持ち越さない。
+  it('scrollToBottom: deferBottomPin で、固定する前の総高の変化は settleBottomPin に持ち越さない', () => {
+    let scrollHeight = 1000;
+    let scrollTop = 0;
+    const el = document.createElement('div');
+    Object.defineProperty(el, 'scrollTop', { get: () => scrollTop, set: (v: number) => (scrollTop = v) });
+    Object.defineProperty(el, 'scrollLeft', { get: () => 0, set: () => {} });
+    Object.defineProperty(el, 'clientHeight', { value: 100 });
+    Object.defineProperty(el, 'clientWidth', { value: 300 });
+    Object.defineProperty(el, 'scrollHeight', { get: () => scrollHeight });
+    Object.defineProperty(el, 'scrollWidth', { value: 300 });
+    el.scrollTo = ((options: ScrollToOptions) => {
+      if (typeof options.top === 'number') scrollTop = Math.min(options.top, scrollHeight - 100);
+    }) as typeof el.scrollTo;
+    const base = makeArgs({
+      scrollContainerRef: { current: el },
+      headerHeight: 0,
+      physicalBodyHeight: 1000,
+      measuredRowHeights: true,
+      deferBottomPin: true,
+    });
+    const api = createGridApi<Row>(withExport);
+    // 最初の update(前の総高が無い)の後、settle せずに固定する
+    api.update(base.args);
+    api.handle.scrollToBottom();
+    expect(scrollTop).toBe(900);
+    expect(base.args.markApiScroll).toHaveBeenCalledTimes(1);
+    // 総高は変わらない。settle は何もしない(合計行の高さが増えた args でも末尾へ動かさない)
+    scrollHeight = 1050;
+    api.update({ ...base.args, footerHeight: 50 });
+    api.settleBottomPin();
+    expect(scrollTop).toBe(900);
+    expect(base.args.markApiScroll).toHaveBeenCalledTimes(1);
+  });
+
   it('selectCell / setActiveCell / selectRange は範囲外 index をクランプする', () => {
     const api = createGridApi<Row>(withExport);
     const { args, actions } = makeArgs();

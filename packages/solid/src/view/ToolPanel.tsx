@@ -21,6 +21,7 @@ import { useGridPortal } from '../context/portal';
 import { usePopupLocaleText } from '../context/localeText';
 import { createPortalTokens } from '../primitives/portalTokens';
 import { px } from '../primitives/style';
+import { readEventKey } from '../primitives/eventKey';
 
 // タブ 1 つぶんの表示(badge は件数。undefined / 0 は出さない)。
 export type ToolPanelTabDescriptor = {
@@ -92,6 +93,7 @@ export function ToolPanel(props: ToolPanelProps) {
       element.addEventListener('animationend', handleEnd);
       return () => element.removeEventListener('animationend', handleEnd);
     },
+    { name: 'toolPanelFlash' },
   );
 
   const activeIndex = createMemo(() =>
@@ -114,7 +116,7 @@ export function ToolPanel(props: ToolPanelProps) {
 
   // Tab はパネルの中で回します(中の部品がキーの伝播を止めるので capture 相で見る)。
   const handleKeyDownCapture = (event: KeyboardEvent) => {
-    if (event.key !== 'Tab' || event.altKey || event.ctrlKey || event.metaKey || isImeComposingKeyEvent(event)) {
+    if (readEventKey(event) !== 'Tab' || event.altKey || event.ctrlKey || event.metaKey || isImeComposingKeyEvent(event)) {
       return;
     }
     const next = resolveFocusWrapTarget(

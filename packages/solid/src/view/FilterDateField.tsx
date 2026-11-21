@@ -119,7 +119,7 @@ export function FilterDateField(props: FilterDateFieldProps) {
     return () => {
       document.removeEventListener('pointerdown', handleDocumentPointerDown, true);
     };
-  });
+  }, { name: 'dateFieldOutsidePress' });
 
   // ── 入力欄のキー ──
   const handleInputKeyDown = (event: KeyboardEvent) => {

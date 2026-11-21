@@ -76,6 +76,7 @@ export function DefaultGridTopBar(props: DefaultGridTopBarProps) {
         element.value = text;
       }
     },
+    { name: 'globalFilterInput' },
   );
   const hasFilterText = () => props.globalFilterText.trim().length > 0;
   // 左アイコンは 1 回だけ読みます(利用側が JSX で渡した要素は、prop を読むたびに作り直される)。

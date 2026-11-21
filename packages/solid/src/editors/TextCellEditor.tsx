@@ -28,6 +28,7 @@ import {
 } from '@ishibashi0112/spreadsheet-grid-core/internal/utils/multilineEditor';
 import { createTopAlignedInput } from '../primitives/topAlignedInput';
 import { CellEditorError } from './CellEditorErrorBubble';
+import { toEditorKeyEvent } from '../primitives/eventKey';
 
 export type EditorCommit = (value: unknown, direction?: EditorCommitDirection) => EditorCommitResult | void;
 
@@ -79,7 +80,7 @@ export function TextCellEditor(props: TextCellEditorProps) {
       element.setSelectionRange(caret, caret);
     }
   };
-  createRenderEffect(() => [textarea(), cellHeight(), alignTop(), draft()] as const, fit);
+  createRenderEffect(() => [textarea(), cellHeight(), alignTop(), draft()] as const, fit, { name: 'textEditorFit' });
 
   // 描き終わった後(= 編集のセッションの始まり)にフォーカスし、末尾へキャレットを置きます。
   onSettled(() => {
@@ -134,7 +135,7 @@ export function TextCellEditor(props: TextCellEditorProps) {
           value={startValue}
           onInput={(event) => handleInput(event.currentTarget.value)}
           onKeyDown={(event) =>
-            handleEditorKeyDown(event, {
+            handleEditorKeyDown(toEditorKeyEvent(event), {
               value: event.currentTarget.value,
               onCommit: props.onCommit,
               onCancel: props.onCancel,
@@ -162,7 +163,7 @@ export function TextCellEditor(props: TextCellEditorProps) {
           rows={1}
           onInput={(event) => handleInput(event.currentTarget.value)}
           onKeyDown={(event) =>
-            handleEditorKeyDown(event, {
+            handleEditorKeyDown(toEditorKeyEvent(event), {
               value: event.currentTarget.value,
               onCommit: props.onCommit,
               onCancel: props.onCancel,

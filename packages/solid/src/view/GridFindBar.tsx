@@ -38,6 +38,7 @@ export function GridFindBar(props: GridFindBarProps) {
         element.value = query;
       }
     },
+    { name: 'findBarInput' },
   );
 
   const count = () => props.snapshot.matches.length;
