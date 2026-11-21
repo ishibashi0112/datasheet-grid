@@ -9,12 +9,6 @@ if (!SUPPORTS.network) {
   summary();
   process.exit(0);
 }
-// Solid 版はポップアップの部品を遅延読み込みしない(段階 3-3 で決める)。
-if (!SUPPORTS.lazyPopups) {
-  skip('lazy: 遅延読み込みの確認すべて', 'この版はポップアップの部品を遅延読み込みしない');
-  summary();
-  process.exit(0);
-}
 
 const LAZY_RE = /\/(ColumnFilterPopover|toolPanelViews)\.tsx?(\?|$)|\/(ColumnFilterPopover|toolPanelViews)-[\w-]+\.js$/;
 const isFilterModule = (url) => /ColumnFilterPopover/.test(url);

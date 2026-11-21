@@ -63,18 +63,21 @@ const CONFIGS = [
   //   solid-js / @solidjs/web は react と同じく外部化します。
   {
     name: 'solid-full',
+    remeasureUnusedLazy: true,
     label: 'Solid 版 全部入り(SpreadsheetGrid。公開 dist)',
     source: 'dist',
     code: "export { SpreadsheetGrid } from './packages/solid/dist/index.js';",
   },
   {
     name: 'solid-lite',
+    remeasureUnusedLazy: true,
     label: 'Solid 版 機能なし(createSpreadsheetGrid のみ。公開 dist)',
     source: 'dist',
     code: "import { createSpreadsheetGrid } from './packages/solid/dist/index.js'; export const Grid = createSpreadsheetGrid({ features: {} });",
   },
   {
     name: 'solid-standard',
+    remeasureUnusedLazy: true,
     label: 'Solid 版 + standardFeatures(公開 dist)',
     source: 'dist',
     code: "import { createSpreadsheetGrid, standardFeatures } from './packages/solid/dist/index.js'; export const Grid = createSpreadsheetGrid({ features: standardFeatures });",
@@ -237,7 +240,7 @@ const checkCoreImportPaths = () => {
   return [...problems];
 };
 
-async function measure(config) {
+async function measure(config, { splitting = true } = {}) {
   const fromDist = config.source === 'dist';
   const result = await build({
     // metafile の出力パスは作業ディレクトリ基準の相対パスになるため、リポジトリ直下に固定します(下の absolute)。
@@ -249,7 +252,7 @@ async function measure(config) {
     bundle: true,
     minify: true,
     format: 'esm',
-    splitting: true,
+    splitting,
     write: false,
     metafile: true,
     outdir: `${ROOT}.size-out`,
@@ -298,6 +301,17 @@ async function measure(config) {
   walkLazy(entryKey);
   const initialBuf = concat([...initial]);
   const lazyBuf = concat([...reachable].filter((key) => key.endsWith('.js') && !initial.has(key)));
+  // 追加(Solid 版 段階 3-3): 初期 JS から動的 import でたどれるチャンクが無い(遅延分が 0 の)構成で、使われない動的 import の
+  //   チャンクが出ているときは、splitting なしで束ね直した値を初期とします(構成の remeasureUnusedLazy。今は Solid 版だけ)。
+  //   esbuild はチャンクをファイルの単位で分けるため、読み込まれない遅延部品と共有するファイル(core の文言の表など)を、入口が
+  //   使わない部分ごと共有チャンクへ入れ、入口がそれを静的 import する(初期に読まれない分が入る)。Solid 版は入口が 1 つの
+  //   ファイルなので、機能なしの構成でも後から読む部品への import() が見えて、約 4KB 多く数えていた(Vite で束ねると起きない)。
+  //   splitting なしなら、使われない import() の先は束ねられない。React 版の lite も同じ理由で約 1.2KB 多く数えているが、
+  //   これまでの記録と比べられるように測り方を変えていない。
+  const hasUnusedLazyChunk = Object.keys(outputs).some((key) => key.endsWith('.js') && !reachable.has(key));
+  if (config.remeasureUnusedLazy && splitting && lazyBuf.length === 0 && hasUnusedLazyChunk) {
+    return measure(config, { splitting: false });
+  }
   return {
     initialMinKB: kb(initialBuf.length),
     initialGzipKB: kb(gzipBytes(initialBuf)),

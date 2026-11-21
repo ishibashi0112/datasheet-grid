@@ -6,7 +6,7 @@
 //   - 派生値(dateSet の日付のキーへのまとめ直し・選ばれている値)とコマンド(チェック・すべて選択・検索の確定・条件の編集・
 //     適用・クリア)は core の engine/filterPopoverCommands。
 //   シェルにいつも置き(閉じている間は何も描かない)、集めた候補の控えを開き直したときに使います(React 版と同じ)。
-import { Show, createMemo } from 'solid-js';
+import { Show, createMemo, untrack } from 'solid-js';
 import {
   createFilterPopoverCommands,
   createFilterPopoverDerivedResolver,
@@ -43,7 +43,8 @@ import type { GridResolvedSlot } from '../model/gridTypes';
 import { connectController } from '../primitives/controller';
 import { createExternalStoreSignal } from '../primitives/externalStore';
 import type { FilterPopover } from '../primitives/filterPopover';
-import { ColumnFilterPopover, type ColumnFilterDateInputRenderer } from './ColumnFilterPopover';
+import type { ColumnFilterDateInputRenderer } from './ColumnFilterPopover';
+import type { FilterPopoverViews } from './lazyPopups';
 import type { FilterDateInputContext } from '@ishibashi0112/spreadsheet-grid-core';
 import type { JSX } from '@solidjs/web';
 
@@ -51,6 +52,8 @@ type FilteringTexts = FeatureLocaleText<typeof DEFAULT_FILTERING_LOCALE_TEXT>;
 
 export type ColumnFilterPopoverHostProps<T> = {
   filterPopover: FilterPopover<T>;
+  // 追加(段階 3-3): ポップオーバーの部品(別のチャンク)。読み込み前は null で、そのあいだは何も描かない(React 版と同じ)。
+  views: () => FilterPopoverViews | null;
   // 候補を集める行(ラベル行を除いたデータの行)。
   rows: T[];
   columnFilters: Record<string, ColumnFilterValue>;
@@ -237,47 +240,55 @@ export function ColumnFilterPopoverHost<T>(props: ColumnFilterPopoverHostProps<T
       {(column) => (
         <Show when={filterPopover.layout()}>
           {(layout) => (
-            <ColumnFilterPopover
-              popoverSlot={props.popoverSlot}
-              themeClassName={props.themeClassName}
-              title={column().title || column().key}
-              filterType={openedType() ?? 'text'}
-              // serverSide は候補を表から集められないので、候補が空のときの文言を変えます(getFilterOptions の列は除く)。
-              isServerSide={props.isServerSide && !usesAsyncOptions()}
-              draftValue={filterPopover.state()?.draftValue ?? ''}
-              numberConditionDraft={filterPopover.state()?.numberDraft ?? null}
-              onNumberConditionDraftChange={commands.handleNumberConditionDraftChange}
-              textConditionDraft={filterPopover.state()?.textDraft ?? null}
-              onTextConditionDraftChange={commands.handleTextConditionDraftChange}
-              dateConditionDraft={filterPopover.state()?.dateDraft ?? null}
-              onDateConditionDraftChange={commands.handleDateConditionDraftChange}
-              datePresets={datePresets()}
-              renderDateInput={renderDateInput()}
-              onComboConditionClear={commands.handleComboConditionClear}
-              onComboSelectionClear={commands.handleComboSelectionClear}
-              comboSummaryText={comboSummaryText()}
-              currentValueText={currentValueText()}
-              layout={layout()}
-              selectOptions={derived().openedPopoverSelectOptions}
-              setSelection={derived().openedSetSelection}
-              optionsStatus={optionsResult().status}
-              optionsProgress={optionsResult().progress}
-              optionsTruncated={optionsResult().truncated}
-              optionsErrorMessage={optionsResult().errorMessage}
-              onOptionsRetry={usesAsyncOptions() ? asyncSource.retry : undefined}
-              setPanel={filterPopover.setPanel}
-              panelRef={filterPopover.panelRef}
-              textInputRef={filterPopover.textInputRef}
-              selectRef={filterPopover.selectRef}
-              onRequestClose={filterPopover.close}
-              onDraftChange={filterPopover.updateDraft}
-              onApply={commands.applyFilterPopoverValue}
-              onClear={commands.clearFilterPopoverValue}
-              onSetValueToggle={commands.handleSetFilterValueToggle}
-              onSetSelectAllChange={commands.handleSetFilterSelectAllChange}
-              onSetClear={commands.clearSetFilterPopoverValue}
-              onSetReplaceSelection={commands.handleSetFilterReplaceSelection}
-            />
+            <Show when={props.views()}>
+              {(views) => {
+                // 読み込んだ部品は変わらない(1 回読めば同じもの)ので、追わずに読む。
+                const ColumnFilterPopover = untrack(views).ColumnFilterPopover;
+                return (
+                  <ColumnFilterPopover
+                    popoverSlot={props.popoverSlot}
+                    themeClassName={props.themeClassName}
+                    title={column().title || column().key}
+                    filterType={openedType() ?? 'text'}
+                    // serverSide は候補を表から集められないので、候補が空のときの文言を変えます(getFilterOptions の列は除く)。
+                    isServerSide={props.isServerSide && !usesAsyncOptions()}
+                    draftValue={filterPopover.state()?.draftValue ?? ''}
+                    numberConditionDraft={filterPopover.state()?.numberDraft ?? null}
+                    onNumberConditionDraftChange={commands.handleNumberConditionDraftChange}
+                    textConditionDraft={filterPopover.state()?.textDraft ?? null}
+                    onTextConditionDraftChange={commands.handleTextConditionDraftChange}
+                    dateConditionDraft={filterPopover.state()?.dateDraft ?? null}
+                    onDateConditionDraftChange={commands.handleDateConditionDraftChange}
+                    datePresets={datePresets()}
+                    renderDateInput={renderDateInput()}
+                    onComboConditionClear={commands.handleComboConditionClear}
+                    onComboSelectionClear={commands.handleComboSelectionClear}
+                    comboSummaryText={comboSummaryText()}
+                    currentValueText={currentValueText()}
+                    layout={layout()}
+                    selectOptions={derived().openedPopoverSelectOptions}
+                    setSelection={derived().openedSetSelection}
+                    optionsStatus={optionsResult().status}
+                    optionsProgress={optionsResult().progress}
+                    optionsTruncated={optionsResult().truncated}
+                    optionsErrorMessage={optionsResult().errorMessage}
+                    onOptionsRetry={usesAsyncOptions() ? asyncSource.retry : undefined}
+                    setPanel={filterPopover.setPanel}
+                    panelRef={filterPopover.panelRef}
+                    textInputRef={filterPopover.textInputRef}
+                    selectRef={filterPopover.selectRef}
+                    onRequestClose={filterPopover.close}
+                    onDraftChange={filterPopover.updateDraft}
+                    onApply={commands.applyFilterPopoverValue}
+                    onClear={commands.clearFilterPopoverValue}
+                    onSetValueToggle={commands.handleSetFilterValueToggle}
+                    onSetSelectAllChange={commands.handleSetFilterSelectAllChange}
+                    onSetClear={commands.clearSetFilterPopoverValue}
+                    onSetReplaceSelection={commands.handleSetFilterReplaceSelection}
+                  />
+                );
+              }}
+            </Show>
           )}
         </Show>
       )}

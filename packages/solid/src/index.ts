@@ -39,6 +39,9 @@ export { numberFormatter } from '@ishibashi0112/spreadsheet-grid-core/internal/l
 export { numberParser } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/valueParsers';
 // 保存した状態(getState() の値)の列の並び / 表示 / 固定を列定義へ当てます(initialState と一緒に使う)。
 export { restoreColumnsFromState } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/gridState';
+// 列フィルターのポップオーバー / ツールパネルの部品(別のチャンク)を先に読み込みます(ふつうは要らない。テストで開いた直後に
+//   中身を確かめるとき / 画面を移る前の先読み。React 版と同じ)。
+export { preloadGridPopups } from './view/lazyPopups';
 
 // 公開型です。
 export type {

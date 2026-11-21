@@ -1,6 +1,6 @@
 // 追加(段階 3-3 公開の形): Solid 版の入口が React 版と同じ名前の関数・部品・型を出しているかを確かめます(利用側が React 版の
 //   ドキュメントのまま import を書けるように)。
-//   - 値: React 版の index(全部入り)と /lite が出す値のうち、React 版だけのもの(REACT_ONLY_VALUES)を除いたものが、
+//   - 値: React 版の index(全部入り)と /lite が出す値(React 版だけのもの REACT_ONLY_VALUES を除く)が、
 //     Solid 版の入口にすべてあること・Solid 版の入口に余分なものが無いこと。
 //   - 型: React 版の common.ts の `export type { … }` の名前(ReactGridTypes は SolidGridTypes)と、Solid 版の index.ts の名前が同じこと。
 //   - 入口: /locales/en と /testing が React 版と同じものを出すこと。
@@ -13,8 +13,8 @@ import * as solidTesting from './testing/index';
 
 // React 版のソースは型検査で辿らないよう、パスを変数にして読みます(parity/harness.tsx と同じ)。
 const REACT_SRC = `${resolve(import.meta.dirname, '../../react/src')}/`;
-// React 版だけのもの: ポップアップの先読み(Solid 版は遅延読み込みをしていない)。
-const REACT_ONLY_VALUES = new Set(['preloadGridPopups']);
+// React 版だけのもの(今は無い。/ai は入口ごと React 版だけ)。
+const REACT_ONLY_VALUES = new Set<string>();
 
 // 行のコメントを先に消します(コメントの中の `{ className, style }` で切れないように)。
 const typeNames = (source: string): string[] =>

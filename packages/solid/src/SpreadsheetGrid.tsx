@@ -1646,6 +1646,29 @@ export function GridShell<T extends object>(props: SpreadsheetGridProps<T>, feat
   });
   // ツールパネルを開く関数(列メニューの項目とハンドルの openFilterManager)。開発時は、足りない機能で開けないときに警告する。
   const openToolPanel = withOpenToolPanelWarnings(toolPanel?.open, features);
+  // 追加(段階 3-3): 列フィルターのポップオーバーとツールパネルの部品(別のチャンク)の読み込み(view/lazyPopups.ts)。読み込み前は
+  //   null(部品を描かない)。使える機能なら描いた後の暇なときに先読みし、先読みの前に開かれたらその場で読み込みます。読み込みに
+  //   失敗したら閉じます。条件は React 版と同じ: 列フィルターのポップオーバーを開く入口は列メニューとツールパネルだけなので、
+  //   どちらも無い構成と、filterType のある列が無いときは先読みしない。
+  const filterPopoverViews =
+    filterPopover && filteringFeature
+      ? filteringFeature.createFilterPopoverViews({
+          needed: filterPopover.isOpen,
+          prefetch: () =>
+            columnFilterEnabled() &&
+            (columnMenu !== undefined || toolPanel !== undefined) &&
+            visibleColumns().some((column) => Boolean(column.filterType)),
+          onLoadError: filterPopover.close,
+        })
+      : undefined;
+  const toolPanelViews =
+    toolPanel && toolPanelFeature
+      ? toolPanelFeature.createToolPanelViews({
+          needed: () => toolPanel.activeTab() !== null,
+          prefetch: () => toolPanel.availableTabs().length > 0,
+          onLoadError: toolPanel.close,
+        })
+      : undefined;
   // 既定の上部バーの絞り込みのチップでフィルターのタブを開け閉めします(別のタブを出しているときはフィルターのタブへ切り替える)。
   const toggleFilterManager = () => {
     if (!toolPanel) {
@@ -3393,9 +3416,10 @@ export function GridShell<T extends object>(props: SpreadsheetGridProps<T>, feat
           </Show>
         ) : null}
         {/* 列フィルターのポップオーバー(グリッドの外のポップアップ。閉じている間は何も描かない)。 */}
-        {filterPopover && FilterPopoverHost ? (
+        {filterPopover && FilterPopoverHost && filterPopoverViews ? (
           <FilterPopoverHost
             filterPopover={filterPopover}
+            views={filterPopoverViews}
             rows={filterCandidateRows()}
             columnFilters={columnFilters()}
             globalFilterText={globalFilterText()}
@@ -3410,64 +3434,72 @@ export function GridShell<T extends object>(props: SpreadsheetGridProps<T>, feat
         ) : null}
         {/* ツールパネル(グリッドの外のポップアップ。開いている間だけ描く)。タブを切り替えると中身を作り直す(タブの中の検索の
             文字などは戻る。React 版と同じ)。 */}
-        {toolPanel && toolPanelFeature ? (
+        {toolPanel && toolPanelViews ? (
           <Show when={toolPanel.activeTab()}>
             {(tab) => (
               <Show when={toolPanel.layout()}>
                 {(layout) => (
-                  <toolPanelFeature.ToolPanel
-                    popoverSlot={slots().popover}
-                    themeClassName={portalClassName()}
-                    activeTab={tab()}
-                    flashTick={toolPanel.flashTick()}
-                    tabs={toolPanelTabs()}
-                    layout={layout()}
-                    panelRef={toolPanel.panelRef}
-                    onSelectTab={toolPanel.open}
-                    onRequestClose={toolPanel.close}
-                    onPanelMove={toolPanel.move}
-                  >
-                    <Switch>
-                      <Match when={tab() === 'filter'}>
-                        <toolPanelFeature.FilterManagementPanel
-                          entries={filterManagement?.entries() ?? []}
-                          addableColumns={filterManagement?.addableColumns() ?? []}
-                          showGlobalFilterRow={showGlobalFilterRow()}
-                          globalFilterText={globalFilterText()}
-                          canFilter={columnFilterEnabled()}
-                          onEditFilter={filterManagement?.jumpToColumnFilter ?? noop}
-                          onAddFilter={filterManagement?.jumpToColumnFilter ?? noop}
-                          onClearFilter={columnCommands.handleFilterManagerClearFilter}
-                          onClearAllFilters={columnCommands.handleFilterManagerClearAll}
-                          onClearGlobalFilter={columnCommands.handleFilterManagerClearGlobal}
-                        />
-                      </Match>
-                      <Match when={tab() === 'columns'}>
-                        <toolPanelFeature.ColumnChooserPanel
-                          items={columnChooserItems()}
-                          canToggle={props.onColumnsChange !== undefined}
-                          onToggleColumnVisibility={columnCommands.handleColumnChooserToggleVisibility}
-                          onShowAllColumns={columnCommands.handleColumnChooserShowAll}
-                          onHideAllColumns={columnCommands.handleColumnChooserHideAll}
-                          onResetColumns={columnCommands.handleColumnChooserReset}
-                          onReorderColumns={columnCommands.handleColumnChooserReorder}
-                        />
-                      </Match>
-                      <Match when={tab() === 'sort'}>
-                        <toolPanelFeature.SortManagementPanel
-                          entries={ui().sort}
-                          columns={sortManagerColumns()}
-                          canSort={enableSorting()}
-                          onAddLevel={columnCommands.handleSortManagerAddLevel}
-                          onChangeDirection={columnCommands.handleSortManagerChangeDirection}
-                          onChangeColumn={columnCommands.handleSortManagerChangeColumn}
-                          onRemoveLevel={columnCommands.handleSortManagerRemoveLevel}
-                          onClearAll={columnCommands.handleSortManagerClearAll}
-                          onMove={columnCommands.handleSortManagerMove}
-                        />
-                      </Match>
-                    </Switch>
-                  </toolPanelFeature.ToolPanel>
+                  <Show when={toolPanelViews()}>
+                    {(views) => {
+                      // 読み込んだ部品は変わらない(1 回読めば同じもの)ので、追わずに読む。
+                      const { ToolPanel, FilterManagementPanel, ColumnChooserPanel, SortManagementPanel } = untrack(views);
+                      return (
+                        <ToolPanel
+                          popoverSlot={slots().popover}
+                          themeClassName={portalClassName()}
+                          activeTab={tab()}
+                          flashTick={toolPanel.flashTick()}
+                          tabs={toolPanelTabs()}
+                          layout={layout()}
+                          panelRef={toolPanel.panelRef}
+                          onSelectTab={toolPanel.open}
+                          onRequestClose={toolPanel.close}
+                          onPanelMove={toolPanel.move}
+                        >
+                          <Switch>
+                            <Match when={tab() === 'filter'}>
+                              <FilterManagementPanel
+                                entries={filterManagement?.entries() ?? []}
+                                addableColumns={filterManagement?.addableColumns() ?? []}
+                                showGlobalFilterRow={showGlobalFilterRow()}
+                                globalFilterText={globalFilterText()}
+                                canFilter={columnFilterEnabled()}
+                                onEditFilter={filterManagement?.jumpToColumnFilter ?? noop}
+                                onAddFilter={filterManagement?.jumpToColumnFilter ?? noop}
+                                onClearFilter={columnCommands.handleFilterManagerClearFilter}
+                                onClearAllFilters={columnCommands.handleFilterManagerClearAll}
+                                onClearGlobalFilter={columnCommands.handleFilterManagerClearGlobal}
+                              />
+                            </Match>
+                            <Match when={tab() === 'columns'}>
+                              <ColumnChooserPanel
+                                items={columnChooserItems()}
+                                canToggle={props.onColumnsChange !== undefined}
+                                onToggleColumnVisibility={columnCommands.handleColumnChooserToggleVisibility}
+                                onShowAllColumns={columnCommands.handleColumnChooserShowAll}
+                                onHideAllColumns={columnCommands.handleColumnChooserHideAll}
+                                onResetColumns={columnCommands.handleColumnChooserReset}
+                                onReorderColumns={columnCommands.handleColumnChooserReorder}
+                              />
+                            </Match>
+                            <Match when={tab() === 'sort'}>
+                              <SortManagementPanel
+                                entries={ui().sort}
+                                columns={sortManagerColumns()}
+                                canSort={enableSorting()}
+                                onAddLevel={columnCommands.handleSortManagerAddLevel}
+                                onChangeDirection={columnCommands.handleSortManagerChangeDirection}
+                                onChangeColumn={columnCommands.handleSortManagerChangeColumn}
+                                onRemoveLevel={columnCommands.handleSortManagerRemoveLevel}
+                                onClearAll={columnCommands.handleSortManagerClearAll}
+                                onMove={columnCommands.handleSortManagerMove}
+                              />
+                            </Match>
+                          </Switch>
+                        </ToolPanel>
+                      );
+                    }}
+                  </Show>
                 )}
               </Show>
             )}

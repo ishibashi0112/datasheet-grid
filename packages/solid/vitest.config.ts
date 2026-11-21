@@ -9,5 +9,7 @@ export default defineConfig({
   test: {
     environment: 'jsdom',
     include: ['src/**/*.test.{ts,tsx}'],
+    // 後から読み込むポップアップの部品を先に読み込む(vitest.setup.ts。段階 3-3)。
+    setupFiles: ['./vitest.setup.ts'],
   },
 });

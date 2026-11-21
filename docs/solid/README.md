@@ -387,7 +387,7 @@ React 版の機能なしの構成と並べて、同じ props・同じ操作で D
 | 3-1 | 開発時の警告(React 版と同じ条件・文言・回数)と、Solid 版の型チェックとテストを CI へ | 済み(警告と、React 版と比べるテスト 8 本・CI の手順。別視点のレビュー = 中 1・低 1 を直した。Solid 版の全体 145 / 145) |
 | 3-2 | 実ブラウザのハーネス(`audit/harness` の確認)を Solid 版でも Chromium / Firefox / WebKit で回し、違いを直す | 済み(ハーネスを Solid 版でも回せるようにした。違い 5 つと別視点のレビューの指摘を直した(core に省略できる引数を 1 つ足した)。Solid 版は遅延読み込みの 25 項目を除いて Chromium 927 / 927・Firefox 875 / 876・WebKit 872 / 875、React 版は Chromium 952 / 952・Firefox 876 / 876・WebKit 872 / 875。WebKit の 3 件は両方とも既知の BR-3・BR-4、Firefox の 1 件は下の「速さ」の時間の確かめ)。PR を見てもらう |
 | 3-2b | 速さの違い(3-2 で測った、100 万行で遠くへスクロールしたときに Solid 版が約 1.5〜2 倍かかる)を直す。2026-11-21 にユーザーが「3-3 の前に別の段階で直す」を選んだ | 済み(本番ビルドの Chromium で、近いスクロールは React 版 20ms・直す前の Solid 版 27ms・今 22ms、遠くへ飛ぶスクロールは React 版 54ms・直す前 79ms・今 75ms。Firefox の遠くへは React 版 55ms・直す前 118ms・今 114ms。遠くへの残りの差は、2026-11-21 にユーザーが「今の直しで区切って 3-3 へ」を選び、記録だけにした。ハーネスは Solid 版 Chromium 927 / 927・Firefox 875 / 876(3-2 と同じ t-aggregates の時間の 1 件)・WebKit 872 / 875(既知の BR-3・BR-4))。PR を見てもらう |
-| 3-3 | パッケージの形(dist と型)・`size:check` / `types:check` に Solid 版・StackBlitz のサンプル・README とドキュメントサイトの「Solid で使う」・ポップアップの遅延読み込み(測ってから決める) | 途中(3-3a 済み: 公開の型と関数を React 版にそろえ、dist・「solid」条件・CSS・`size:check` / `types:check`。次は遅延読み込み → サンプル → ドキュメント) |
+| 3-3 | パッケージの形(dist と型)・`size:check` / `types:check` に Solid 版・StackBlitz のサンプル・README とドキュメントサイトの「Solid で使う」・ポップアップの遅延読み込み(測ってから決める) | 途中(3-3a 済み: 公開の型と関数を React 版にそろえ、dist・「solid」条件・CSS・`size:check` / `types:check`。3-3c 済み: ポップアップの遅延読み込み(2026-11-21 にユーザーが「React 版と同じく後から読む」を選んだ)。次はサンプル → ドキュメント) |
 
 ### 3-3 で分かったこと
 
@@ -399,7 +399,7 @@ React 版の機能なしの構成と並べて、同じ props・同じ操作で D
   - CSS は React 版の dist から写す(同じ DOM と class なので同じもの)。ルートの `build:lib` が core → React 版 → Solid 版の順に
     なるよう、Solid 版の devDependencies に React 版(workspace:*)を入れた。
   - 公開の値と型は React 版の index・`/lite`・common.ts と同じ名前(`src/publicApi.test.ts` が検査。React 版だけのものは
-    `preloadGridPopups` と `/ai`)。`SpreadsheetGridProps<T, L>` は React 版と同じく core の props そのまま(段階 2 までに全部の
+    `/ai`。`preloadGridPopups` は 3-3c で足した)。`SpreadsheetGridProps<T, L>` は React 版と同じく core の props そのまま(段階 2 までに全部の
     props を受けるようになったので `Pick` をやめた)+ 関数の `ref`。
   - `pnpm -r publish`(publish:all)が出さないよう、0.1.0 を出すまで `private: true` のまま。core への依存は `workspace:*`
     (pack で同じ版に固定される)。
@@ -413,6 +413,28 @@ React 版の機能なしの構成と並べて、同じ props・同じ操作で D
 - **大きさ**(esbuild、solid-js は外部化): 全部入り 175.63KB / 機能なし 89.42KB / standardFeatures 130.47KB(React 版は 149.85 /
   87.24 / 110.55KB。React 版はポップアップの部品 12.95KB を後から読む)。機能なしは React 版とほぼ同じで、使わない機能の部品は
   束ねたときに消えている。
+- **ポップアップの遅延読み込み**(3-3c。2026-11-21 にユーザーが「React 版と同じく後から読む」を選んだ): 列フィルターの
+  ポップオーバー(`view/ColumnFilterPopover.tsx`)とツールパネルの枠と 3 つのタブ(`view/toolPanelViews.ts`)を別のチャンクにし、
+  `view/lazyPopups.ts` の `createLazyModuleSignal`(core の `createLazyModule` を外部ストアの signal で読む)で読む。条件は React 版と
+  同じ: 開いたら読み込む / 描いた後の暇なとき(core の `scheduleIdleTask`)に先読み(列フィルターは列メニューかツールパネルがあり、
+  filterType のある列があるとき。ツールパネルはタブが 1 つでもあるとき)/ 失敗したら console.error に出して閉じる / `preloadGridPopups()`。
+  機能の部品は `filtering.createFilterPopoverViews` と `toolPanel.createToolPanelViews`(部品そのものの代わりに読み込みを渡す)。
+  - 大きさ(esbuild): 全部入り 175.63 → 161.89KB(後から 15.58KB)/ standardFeatures 130.47 → 117.20KB / 機能なし 89.42 → 90.17KB。
+    Vite 8 で束ねると全部入り 187.76 → 174.72KB / standard 139.71 → 126.87KB / 機能なし 96.53 → 96.60KB(Vite の方が全体に約 12KB
+    大きい)。機能なしの +0.75KB(esbuild)は Rolldown が共有のモジュールを別のチャンクへ分けたことによる増え方。
+  - esbuild は使われない `import()` の先もチャンクに出し、その先と共有するファイルを丸ごと共有チャンクへ入れるため、機能なしを
+    約 4KB 多く数えた(94.08KB)。遅延分が 0 の Solid の構成は splitting なしで束ね直して測る(`measure-size.mjs` の
+    `remeasureUnusedLazy`)。React 版の lite も同じ理由で約 1.2KB 多く数えているが、記録と比べられるように測り方を変えていない。
+  - 「solid」条件の `dist/source/` も esbuild の splitting で分ける(`dist/source/chunks/*.jsx`。分けないと esbuild が入口へ入れる)。
+    利用側のアプリで、開発(「solid」条件)と本番の両方で、2 つの部品が描いた後に別のリクエストで読まれ、開くと出て入力欄へ
+    フォーカスが入ることを確かめた。SSR(`renderToString`)もエラーなし。
+  - テストの落とし穴: `vi.resetModules()` で取り直すと `@solidjs/web` も取り直されるので、`@solidjs/testing-library` も一緒に取り直す
+    (前のままの `render` で描くと、Solid 2.0 のイベントの委譲(描いた入れ物ごとの登録)が取り直した部品と別のものになり、ポータルの
+    中のメニューの項目を押しても何も起きない)。`<Show>` の子の関数の本体で読み込んだ部品の signal を読むと開発時の
+    `STRICT_READ_UNTRACKED` になるので `untrack` で読む(読み込んだ部品は変わらない)。
+  - ハーネスの `t-lazy` も Solid 版で回す(`SUPPORTS.lazyPopups` を消した)。3-3a で `SupportedPropKeys` を消したときに、Solid 版の
+    ハーネスのページがその型から props の名前を読んでいて開けなくなっていた(3-3a の後にハーネスを回していなかった)。core の
+    `SpreadsheetGridProps` の項目の名前を読むように直した。
 
 ### 3-2b で分かったこと
 

@@ -9,7 +9,7 @@ export const OUT = fileURLToPath(new URL('./.out/', import.meta.url));
 mkdirSync(OUT, { recursive: true });
 
 // 追加(Solid 版 段階 3-2): SSG_AUDIT_FRAMEWORK=solid で Solid 版のハーネス(solid/。`pnpm run audit:dev:solid` = port 5179)を
-//   叩く。同じテストを回し、Solid 版に無いもの(SUPPORTS.lazyPopups)だけ飛ばす。
+//   叩く。同じテストを回す(段階 3-3 から、Solid 版もポップアップの部品を後から読むので t-lazy も回す)。
 export const FRAMEWORK = process.env.SSG_AUDIT_FRAMEWORK ?? 'react';
 if (FRAMEWORK !== 'react' && FRAMEWORK !== 'solid') throw new Error(`SSG_AUDIT_FRAMEWORK=${FRAMEWORK} は未対応です`);
 //   SSG_AUDIT_SOLID_TRACKS=1 は Solid の開発用の計測(Performance パネルのトラック)を入れたサーバー(port 5180)を叩く
@@ -46,8 +46,6 @@ export const SUPPORTS = {
   emulateMedia: viaPlaywright && !viaBidi,
   // テストから OS のクリップボードへ書いて、実際の Ctrl+V で貼らせられるか(権限を渡せるのは Chromium だけ)。
   clipboardSeed: BROWSER === 'chromium',
-  // ポップアップの部品の遅延読み込み(React 版だけ。Solid 版はまだ本体に入れている。3-3 で大きさを測ってから決める)。
-  lazyPopups: FRAMEWORK === 'react',
 };
 let announced = false;
 
