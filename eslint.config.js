@@ -95,8 +95,9 @@ export default defineConfig([
   },
   // 追加(Solid 版の試作 2026-11-17): packages/solid は Solid 2.0 のコード(非公開の試作)。React の hooks / Fast Refresh の
   //   規則は当てはまらない(ref は関数、部品の本体は 1 回だけ走る)ので外します。core の部品の import の規則は React 版と同じ。
+  //   追加(段階 3-3): Solid 版のサンプル(examples/solid)と Solid 版の型テスト(type-tests/solid)も Solid のコードなので同じ。
   {
-    files: ['packages/solid/**/*.{ts,tsx}'],
+    files: ['packages/solid/**/*.{ts,tsx}', 'examples/solid/**/*.{ts,tsx}', 'type-tests/solid/**/*.{ts,tsx}'],
     rules: {
       ...Object.fromEntries(Object.keys(reactHooks.rules).map((name) => [`react-hooks/${name}`, 'off'])),
       'react-refresh/only-export-components': 'off',

@@ -2,7 +2,7 @@
 
 2026-11-17 に Solid 2.0 の正式版(solid-js / @solidjs/web 2.0.0)が出たのを受けて、core の上に Solid のシェルを載せた
 `@ishibashi0112/spreadsheet-grid-solid` を作る。2026-11-17 にユーザーが「Solid 版を作る」を選んだ(試作の報告と見積もりは
-Claude Doc「Solid 2.0 版の試作の報告」)。試作の中身と分かったことは `packages/solid/README.md`。
+Claude Doc「Solid 2.0 版の試作の報告」)。試作の中身と分かったことは `docs/solid/prototype.md`(段階 3-3 で `packages/solid/README.md` から移した。そちらは npm の README)。
 
 この表は進み具合の記録も兼ねる。コミットごとに「状況」を更新して push する(週の使用量の上限などで途中で止まっても、
 別のセッションがこの表とコミットから再開できるように)。
@@ -387,7 +387,7 @@ React 版の機能なしの構成と並べて、同じ props・同じ操作で D
 | 3-1 | 開発時の警告(React 版と同じ条件・文言・回数)と、Solid 版の型チェックとテストを CI へ | 済み(警告と、React 版と比べるテスト 8 本・CI の手順。別視点のレビュー = 中 1・低 1 を直した。Solid 版の全体 145 / 145) |
 | 3-2 | 実ブラウザのハーネス(`audit/harness` の確認)を Solid 版でも Chromium / Firefox / WebKit で回し、違いを直す | 済み(ハーネスを Solid 版でも回せるようにした。違い 5 つと別視点のレビューの指摘を直した(core に省略できる引数を 1 つ足した)。Solid 版は遅延読み込みの 25 項目を除いて Chromium 927 / 927・Firefox 875 / 876・WebKit 872 / 875、React 版は Chromium 952 / 952・Firefox 876 / 876・WebKit 872 / 875。WebKit の 3 件は両方とも既知の BR-3・BR-4、Firefox の 1 件は下の「速さ」の時間の確かめ)。PR を見てもらう |
 | 3-2b | 速さの違い(3-2 で測った、100 万行で遠くへスクロールしたときに Solid 版が約 1.5〜2 倍かかる)を直す。2026-11-21 にユーザーが「3-3 の前に別の段階で直す」を選んだ | 済み(本番ビルドの Chromium で、近いスクロールは React 版 20ms・直す前の Solid 版 27ms・今 22ms、遠くへ飛ぶスクロールは React 版 54ms・直す前 79ms・今 75ms。Firefox の遠くへは React 版 55ms・直す前 118ms・今 114ms。遠くへの残りの差は、2026-11-21 にユーザーが「今の直しで区切って 3-3 へ」を選び、記録だけにした。ハーネスは Solid 版 Chromium 927 / 927・Firefox 875 / 876(3-2 と同じ t-aggregates の時間の 1 件)・WebKit 872 / 875(既知の BR-3・BR-4))。PR を見てもらう |
-| 3-3 | パッケージの形(dist と型)・`size:check` / `types:check` に Solid 版・StackBlitz のサンプル・README とドキュメントサイトの「Solid で使う」・ポップアップの遅延読み込み(測ってから決める) | 途中(3-3a 済み: 公開の型と関数を React 版にそろえ、dist・「solid」条件・CSS・`size:check` / `types:check`。3-3c 済み: ポップアップの遅延読み込み(2026-11-21 にユーザーが「React 版と同じく後から読む」を選んだ)。次はサンプル → ドキュメント) |
+| 3-3 | パッケージの形(dist と型)・`size:check` / `types:check` に Solid 版・StackBlitz のサンプル・README とドキュメントサイトの「Solid で使う」・ポップアップの遅延読み込み(測ってから決める) | 途中(3-3a 済み: 公開の型と関数を React 版にそろえ、dist・「solid」条件・CSS・`size:check` / `types:check`。3-3c 済み: ポップアップの遅延読み込み(2026-11-21 にユーザーが「React 版と同じく後から読む」を選んだ)。3-3d 済み: サンプル `examples/solid` と npm の README(サイトの「Solid で使う」とリンクは 0.1.0 の公開と一緒に出す = 2026-11-21 ユーザー判断)。次は別視点のレビュー → ハーネス → ゲート → PR) |
 
 ### 3-3 で分かったこと
 
@@ -432,6 +432,12 @@ React 版の機能なしの構成と並べて、同じ props・同じ操作で D
     (前のままの `render` で描くと、Solid 2.0 のイベントの委譲(描いた入れ物ごとの登録)が取り直した部品と別のものになり、ポータルの
     中のメニューの項目を押しても何も起きない)。`<Show>` の子の関数の本体で読み込んだ部品の signal を読むと開発時の
     `STRICT_READ_UNTRACKED` になるので `untrack` で読む(読み込んだ部品は変わらない)。
+- **サンプルと README**(3-3d): `examples/solid` は React 版の `examples/basic` と同じ在庫表(10,000 行。Vite 8 + `@solidjs/vite-plugin` 3)。
+  `examples:check` が Solid 版の tarball で型チェック + ビルドし(版は Solid 版の版と比べる)、手元では開発サーバーで編集・行の追加・
+  CSV・列フィルター・Ctrl+F が動くのを Chromium で確かめた。`packages/solid/README.md` は npm の README(英語 + 日本語。React 版との
+  違い = `ref` は関数・描く関数は必要なときだけ・`/ai` は無い)にし、試作からの中身の記録は `docs/solid/prototype.md` へ移した。
+  StackBlitz のリンク・サイトの「Solid で使う」・ルートの README の案内は、0.1.0 の公開と一緒に別の小さな PR で出す
+  (2026-11-21 ユーザー判断。サイトは main へのマージで公開されるため)。
   - ハーネスの `t-lazy` も Solid 版で回す(`SUPPORTS.lazyPopups` を消した)。3-3a で `SupportedPropKeys` を消したときに、Solid 版の
     ハーネスのページがその型から props の名前を読んでいて開けなくなっていた(3-3a の後にハーネスを回していなかった)。core の
     `SpreadsheetGridProps` の項目の名前を読むように直した。
