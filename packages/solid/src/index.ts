@@ -1,8 +1,14 @@
-// Solid 版の入口(試作。npm には出しません)。
+// Solid 版の入口です(React 版の index(全部入り)と /lite を 1 つにまとめたもの)。公開する関数と型は React 版と同じ名前で、
+//   描画の型だけが Solid の JSX.Element / JSX.CSSProperties です(model/gridTypes.ts の SolidGridTypes)。
+//   - 全部入りの SpreadsheetGrid と、機能を選んで組み込む createSpreadsheetGrid + 機能の部品を同じ入口から出します。
+//     使わないものは束ねたときに消えます(機能の部品とプリセットはモジュール直下の呼び出しに /* @__PURE__ */ を付けている。
+//     React 版は全部入りと /lite でチャンクを共有させないために入口を分けたが、Solid 版は 1 つのビルドなので分けない)。
+//   - `/ai`(GridAskBar)は React 版だけです。
 export { SpreadsheetGrid } from './fullGrid';
 export { createSpreadsheetGrid } from './createSpreadsheetGrid';
 export type { CreateSpreadsheetGridOptions } from './createSpreadsheetGrid';
 export type { GridFeature, GridFeatureName, GridFeatures } from './features/types';
+// 機能の部品(名前は「機能セットのキー + Feature」。開発時の警告が足すべき部品をこの名前で知らせる)。
 export { exportFeature } from './features/export';
 export { autoHeightFeature } from './features/autoHeight';
 export { conditionalFormatFeature } from './features/conditionalFormat';
@@ -24,4 +30,231 @@ export { toolPanelFeature } from './features/toolPanel';
 export { groupingFeature } from './features/grouping';
 export { labelRowFeature } from './features/labelRow';
 export { serverSideFeature } from './features/serverSide';
-export type { GridColumn, CellRenderContext, SpreadsheetGridHandle, SpreadsheetGridProps, SolidGridTypes } from './model/gridTypes';
+// よく使う機能の組み合わせ(React 版の /lite の standardFeatures と同じ 5 機能)。
+export { standardFeatures } from './features/standard';
+
+// 値フォーマッタ(UI 表示のみ)の組み込みファクタ。利用側も CellValueFormatter で自作可(React 版と同じ)。
+export { numberFormatter } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/valueFormatters';
+// 組み込みの数値のパーサ(列の parseClipboardValue に渡す)。
+export { numberParser } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/valueParsers';
+// 保存した状態(getState() の値)の列の並び / 表示 / 固定を列定義へ当てます(initialState と一緒に使う)。
+export { restoreColumnsFromState } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/gridState';
+
+// 公開型です。
+export type {
+  // コンポーネント props。
+  SpreadsheetGridProps,
+  // 列定義と固定方向。
+  GridColumn,
+  GridColumnPinned,
+  // 追加(editor 基盤): セルエディタ種別(GridColumn.editor)と確定方向。
+  GridColumnEditor,
+  EditorCommitDirection,
+  // 追加(enter-move ②): Enter 確定後の移動先(props.editorEnterMove)。
+  EditorEnterMove,
+  // 追加(editor: custom): custom エディタの render コンテキスト。
+  CellEditorContext,
+  // 追加(editor: select): select エディタの候補型(GridSelectFilterOption と同一形)。
+  GridSelectEditorOption,
+  // 追加(validation): セル編集バリデーションの公開型族(GridColumn.validate / validationMode、
+  //   handle.getInvalidCells、エディタ commit の結果)。
+  GridValidationMode,
+  CellValidationContext,
+  CellValidationResult,
+  GridInvalidCell,
+  EditorCommitResult,
+  // 行キー。
+  GridRowKey,
+  // 追加(grouping ①): 行グルーピング(GridColumn.rowGroup / aggFunc)の公開型族です。
+  GridAggFuncName,
+  GridAggFuncParams,
+  GridAggFunc,
+  GridGroupRow,
+  // select / set フィルターの候補。
+  GridSelectFilterOption,
+  // 追加(async-options): getFilterOptions の引数 / 戻り値。
+  GetFilterOptionsParams,
+  GetFilterOptionsResult,
+  // 追加(filter-ext E): 列定義の filterType に渡せる値('auto' 込み)と、
+  //   解決後の実効 UI 種別('auto' なし)です。
+  ColumnFilterTypeOption,
+  ColumnFilterUiType,
+  // セル / ヘッダーのカスタム描画コンテキスト(renderCell / renderHeader 引数)。
+  CellRenderContext,
+  HeaderRenderContext,
+  // 追加(proposals ①): 条件付きセル className(cellClassName 関数版)の引数型です。
+  //   CellRenderContext から setValue を除いた読み取り専用版。
+  CellStyleContext,
+  // 追加(audit RD-4): canEditCell の第 5 引数(元 rows の index / rowKey)。
+  CanEditCellContext,
+  GridConditionalFormat,
+  // 追加(proposals ⑤): 条件付き行 className(getRowClassName)の第 3 引数コンテキストです。
+  RowStyleContext,
+  // 追加(detail ②): 展開行(Master/Detail)の設定型と、renderCell / render へ渡すコンテキストです。
+  DetailRowOptions,
+  // 追加(slot-props): パーツ別スロット表と、各スロットが受ける値の形(string | { className, style })。
+  GridClassNames,
+  GridSlotProps,
+  // 追加(非依存化 ①): フレームワーク束ね型(core の F)と、その Solid 版。利用側でジェネリックな
+  //   ヘルパーを書くとき、core の型(gridTypes.core)に渡す束ね型として使えます。
+  GridFrameworkTypes,
+  SolidGridTypes,
+  DetailRowRenderContext,
+  CellDetailContext,
+  // 追加(label-row ①): ラベル行(見出し / 区切り行)の公開型族です(labelRow prop / render ctx / 記述子 / sortMode)。
+  LabelRowOptions,
+  LabelRowRenderContext,
+  GridLabelRow,
+  LabelRowSortMode,
+  // 追加(合計行 3A): 合計行(totalRow prop / renderCell の ctx / セルの種別)の公開型です。
+  TotalRowOptions,
+  TotalRowCellContext,
+  TotalRowCellKind,
+  // 追加(フィルハンドル 1A): フィルハンドル(fillHandle prop / getFillValue の params / 向き / 埋め方)の公開型です。
+  FillHandleOptions,
+  GridFillValueParams,
+  GridFillDirection,
+  GridFillKind,
+  // 追加(row-drag ③): 行ドラッグ並び替え(enableRowDrag / isRowDraggable / onRowMove)の公開型です。
+  RowDragContext,
+  RowMoveParams,
+  // 追加(1.2.0 / E-07): 行ドラッグで落とせるかを決める関数(canDropRow)の引数。
+  RowDropParams,
+  // 追加(G-1): セル操作の通知(onCellClick / onCellDoubleClick / onActiveCellChange)の引数型です。
+  GridCellRef,
+  GridCellEventParams,
+  GridCellDoubleClickParams,
+  // セル表示値の整形(UI 表示のみ)の契約。
+  CellValueFormatter,
+  CellValueFormatterParams,
+  // top / bottom バーのスロットコンテキストと、そこに載る派生 summary。
+  SpreadsheetGridSlotContext,
+  SpreadsheetGridDerivedSummary,
+  SpreadsheetGridSelectionStats,
+  // 追加(段階 2 DU-18): 文言(localeText prop)の型。
+  GridLocaleText,
+  // 追加(英語対応): 値を埋める文言の型(文字列か、値を受け取って文字列を返す関数)。
+  GridLocaleTextTemplate,
+  // 追加(段階 2 DU-32): 背の高い行での縦の揃え(verticalAlign prop / GridColumn.verticalAlign)。
+  GridVerticalAlign,
+  // 追加(段階 2 DU-14): 複数行の text エディタの Enter の動き(editor.enterKey)。
+  GridTextEditorEnterKey,
+  // 追加(F-async): グローバルフィルタの適用状態(slotContext.globalFilterStatus の型)。
+  GlobalFilterStatus,
+  // 追加(選択範囲の集計): slotContext.selectionAggregates の型。
+  GridSelectionAggregates,
+  // スロットコンテキストが公開する選択 / ソート / 列フィルター値の型族です。
+  CellCoord,
+  CellRange,
+  GridSelection,
+  GridSortState,
+  GridSortEntry,
+  GridSortDirection,
+  ColumnFilterValue,
+  // フィルター状態(globalText + 列フィルター記述子)。getState/applyState の GridState から参照されます。
+  GridFilterState,
+  SetColumnFilterValue,
+  NumberColumnFilterValue,
+  // 追加(filter-ext B): 「条件 AND 選択」複合フィルター(filterType: 'numberSet')の記述子です。
+  NumberSetColumnFilterValue,
+  ParsedNumberFilter,
+  // 追加(filter-ext C): テキスト版の複合フィルター(filterType: 'textSet')の記述子です。
+  TextSetColumnFilterValue,
+  ParsedTextFilter,
+  // 追加(filter-ext D): 日付版の複合フィルター(filterType: 'dateSet')の記述子です。
+  DateSetColumnFilterValue,
+  ParsedDateFilter,
+  DateFilterPreset,
+  // 追加(preset-opt): dateSet プリセットの列オプション(GridColumn.dateFilterPresets)の型族です
+  //   (ビルトイン ID の再利用 / カスタム { id, label, resolve } / false でチップ非表示)。
+  DateFilterPresetOption,
+  CustomDateFilterPreset,
+  DateFilterPresetRange,
+  // 追加(date-input): 日付入力スロット(props.renderFilterDateInput)の描画コンテキストです。
+  FilterDateInputContext,
+  TextColumnFilterValue,
+  DateColumnFilterValue,
+  SelectColumnFilterValue,
+  CustomColumnFilterValue,
+  // serverSide(SSRM)用の公開型族です。dataSource 指定時に serverSide モードへ切替わります。
+  ServerSideDataSource,
+  ServerSideQuery,
+  ServerSideGetRowsParams,
+  ServerSideGetRowsResult,
+  ServerSideLoadErrorParams,
+  // 追加(SSRM 書き戻し): dataSource.updateRows(セル編集の書き戻し)の型族と失敗通知
+  //   (onServerSideWriteError)のパラメータです。
+  ServerSideCellChange,
+  ServerSideRowUpdate,
+  ServerSideUpdateRowsParams,
+  ServerSideUpdateRowsResult,
+  ServerSideWriteErrorParams,
+  // 行モデル境界型(clientSide / serverSide 共通の行取得 seam)です。
+  RowModel,
+  // 追加(imperative API #1): ref ハンドル(SpreadsheetGridProps.ref)と関連型です。
+  SpreadsheetGridHandle,
+  // 追加(行選択): 行選択の公開記述子とモードです。
+  RowSelectionModel,
+  RowSelectionMode,
+  ScrollAlign,
+  // 追加(proposals ⑧): スクロール位置 API(getScrollPosition / setScrollPosition / onScroll)の
+  //   公開型です。
+  GridScrollPosition,
+  GridScrollEventParams,
+  CsvExportScope,
+  CsvExportOptions,
+  // 追加(imperative API: getExportData): エクスポート用の整形済みデータ型族(導線)。
+  GridExportOptions,
+  GridExportCell,
+  GridExportData,
+  // 追加(state #1): 列状態のシリアライズ型(getState / applyState の入出力)。
+  GridState,
+  // 追加(dogfood DU-06): applyState の入力(渡したスライスだけを変える)。
+  GridStatePatch,
+  // 追加(state v2): 列メタ(可視 / 順序 / ピン)のシリアライズ単位(GridState.columns 要素)。
+  GridColumnState,
+  // 追加(THEME-2): 密度プリセットの型。
+  GridDensity,
+  // 追加(TH-DK-2): カラーテーマ('light' | 'dark' | 'auto')。
+  GridTheme,
+  // 追加(audit RD-12): onUndoRedoStateChange の引数型。
+  UndoRedoState,
+  // 追加(motion-0): モーションの有効化('auto' | 'on' | 'off')。
+  GridMotion,
+  // 追加(1.1.0 / AP-07): ポップアップを描く場所(popupContainer)。
+  GridPopupContainer,
+  // 追加(1.1.0 / AP-08): グローバルフィルターが照らし合わせる文字(globalFilterMatch)。
+  GridGlobalFilterMatch,
+  // 追加(1.1.0 / AP-09): 貼り付けで書かなかったセルの通知(onPasteSkipped)。
+  GridPasteSkippedCell,
+  GridPasteSkippedParams,
+  // 追加(1.1.0 / AP-14): 命令的 API の applyRows のオプション(undoable: false = 履歴を消さず積みもしない)。
+  GridApplyRowsOptions,
+  // 追加(1.1.0 / 固定行): 固定行の位置(ctx.pinned)。
+  GridPinnedRowPosition,
+  // 追加(F-2): セル内検索のオプションと通知引数。
+  FindOptions,
+  FindChangeParams,
+  // 追加(F-3): 条件付き書式ヘルパーの型(GridConditionalFormat<T> は Solid 束縛の model/gridTypes から)。
+  GridDataBarFormat,
+  GridColorScaleFormat,
+  GridChipTone,
+  GridChipSpec,
+  GridChipMap,
+  // 追加: データ投入時の列幅自動フィットの発火モード('onMount' | 'onDataChange' | false)。
+  AutoSizeColumnsMode,
+  // 追加(バッチ②/コンテキストメニュー): セル/行の汎用コンテキストメニュー(完全カスタム)の公開型群。
+  GridContextMenuTarget,
+  GridContextMenuParams,
+  GridContextMenuItem,
+  GridContextMenuActionItem,
+  GridContextMenuLabelItem,
+  GridContextMenuSeparatorItem,
+  GridContextMenuCustomItem,
+  // 追加(scrollHint): スクロール位置インジケーター(props.scrollHint)の公開型群。
+  ScrollHintOptions,
+  ScrollHintTrigger,
+  ScrollHintRenderArgs,
+} from './model/gridTypes';
+export type { NumberFormatterOptions } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/valueFormatters';
+export type { NumberParserOptions } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/valueParsers';

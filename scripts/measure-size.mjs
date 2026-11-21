@@ -58,6 +58,27 @@ const CONFIGS = [
     source: 'dist',
     code: "export { GridAskBar } from './packages/react/dist/ai.js';",
   },
+  // 追加(Solid 版 段階 3-3): Solid 版(packages/solid。公開 dist の「import」条件 = コンパイル済みの JS)。入口は 1 つで、
+  //   全部入り・機能なし・standardFeatures を同じ入口から束ねる(使わない機能の部品が消えることも、ここで見る)。
+  //   solid-js / @solidjs/web は react と同じく外部化します。
+  {
+    name: 'solid-full',
+    label: 'Solid 版 全部入り(SpreadsheetGrid。公開 dist)',
+    source: 'dist',
+    code: "export { SpreadsheetGrid } from './packages/solid/dist/index.js';",
+  },
+  {
+    name: 'solid-lite',
+    label: 'Solid 版 機能なし(createSpreadsheetGrid のみ。公開 dist)',
+    source: 'dist',
+    code: "import { createSpreadsheetGrid } from './packages/solid/dist/index.js'; export const Grid = createSpreadsheetGrid({ features: {} });",
+  },
+  {
+    name: 'solid-standard',
+    label: 'Solid 版 + standardFeatures(公開 dist)',
+    source: 'dist',
+    code: "import { createSpreadsheetGrid, standardFeatures } from './packages/solid/dist/index.js'; export const Grid = createSpreadsheetGrid({ features: standardFeatures });",
+  },
 ];
 
 const kb = (bytes) => bytes / 1024;
@@ -94,7 +115,7 @@ const newestMtime = (dir) => {
 // 古いパッケージの名前を返します(dist が無ければ終了)。
 const findStaleDists = () => {
   const stale = [];
-  for (const pkg of ['core', 'react']) {
+  for (const pkg of ['core', 'react', 'solid']) {
     let distMtime;
     try {
       // React 版は全部入り(index)と /lite の 2 つのビルドなので、古い方で比べる。
@@ -185,11 +206,13 @@ const checkLiteDistShape = () => {
   return problems;
 };
 
-// 追加(semver / 1.0 の準備): React 版の dist(js / cjs / d.ts)が core を参照する形を確かめ、崩れていれば理由を返します。
+// 追加(semver / 1.0 の準備): React 版の dist(js / cjs / d.ts)が core を参照する形を確かめ、崩れていれば理由を返します
+//   (Solid 版の dist(js / jsx / d.ts)も同じ。Solid 版 段階 3-3)。
 //   使ってよいのは入口(`…-core`)/ `…-core/testing` / `…-core/internal/<dir>/<module>` だけで、旧サブパス
 //   (`…-core/<dir>/<module>`。0.60.0 で非推奨、0.61.0 で exports から消した)が残ると、React 版が壊れます。
 //   src の import は eslint の no-restricted-imports で止めていますが、d.ts の `import("…")` は tsc が書くもので、
 //   どちらのパスを書くかは core の exports のキーで決まるため(`./*` があった 0.60.0 まではキーの順 = `./internal/*` が前)、ここで dist を見ます。
+const SOLID_DIST = `${ROOT}packages/solid/dist/`;
 const CORE_SPECIFIER = /(["'])@ishibashi0112\/spreadsheet-grid-core((?:\/[^"']*)?)\1/g;
 const checkCoreImportPaths = () => {
   const problems = new Set();
@@ -198,17 +221,19 @@ const checkCoreImportPaths = () => {
       const full = `${dir}${name}`;
       if (statSync(full).isDirectory()) {
         walk(`${full}/`);
-      } else if (/\.(?:js|cjs|d\.ts)$/.test(name)) {
+      } else if (/\.(?:js|jsx|cjs|d\.ts)$/.test(name)) {
         for (const match of readFileSync(full, 'utf8').matchAll(CORE_SPECIFIER)) {
           const subpath = match[2];
           if (subpath !== '' && subpath !== '/testing' && !subpath.startsWith('/internal/')) {
-            problems.add(`dist/${full.slice(LITE_DIST.length)} が core を ${match[0]} で参照しています`);
+            problems.add(`${full.slice(ROOT.length)} が core を ${match[0]} で参照しています`);
           }
         }
       }
     }
   };
   walk(LITE_DIST);
+  // 追加(Solid 版 段階 3-3): Solid 版の dist も同じ形で参照します。
+  walk(SOLID_DIST);
   return [...problems];
 };
 
@@ -229,7 +254,7 @@ async function measure(config) {
     metafile: true,
     outdir: `${ROOT}.size-out`,
     jsx: 'automatic',
-    external: ['react', 'react-dom', 'react/*', 'react-dom/*'],
+    external: ['react', 'react-dom', 'react/*', 'react-dom/*', 'solid-js', 'solid-js/*', '@solidjs/web', '@solidjs/web/*'],
     define: { 'process.env.NODE_ENV': '"production"', 'import.meta.env.DEV': 'false' },
     loader: { '.css': 'empty' },
     logLevel: 'error',
@@ -306,7 +331,7 @@ for (const config of CONFIGS) {
 }
 
 const fmt = (value) => (value === undefined ? '-' : `${value.toFixed(2)} KB`);
-console.log('バンドルサイズ(esbuild / minify / react 外部化 / gzip level 9)');
+console.log('バンドルサイズ(esbuild / minify / react・solid-js 外部化 / gzip level 9)');
 // 日本語は表示幅が揃わないので、説明(label)は最後の列に置きます。
 console.log(['config'.padEnd(12), 'init gzip'.padStart(12), 'limit'.padStart(12), 'init min'.padStart(12), 'lazy gzip'.padStart(12), '  説明'].join(''));
 for (const { config, size, limit } of rows) {
@@ -352,7 +377,7 @@ if (args.has('--check')) {
       console.error(`size: ${problem}`);
     }
     console.error(
-      'React 版の dist は core を入口 / `/testing` / `/internal/*` でだけ参照します。core の exports のキーは `./internal/*` を `./*` より前に置きます(packages/core/package.json)。',
+      'React 版と Solid 版の dist は core を入口 / `/testing` / `/internal/*` でだけ参照します。core の exports のキーは `./internal/*` を `./*` より前に置きます(packages/core/package.json)。',
     );
     process.exit(1);
   }

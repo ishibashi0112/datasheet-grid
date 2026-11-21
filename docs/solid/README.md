@@ -387,7 +387,32 @@ React 版の機能なしの構成と並べて、同じ props・同じ操作で D
 | 3-1 | 開発時の警告(React 版と同じ条件・文言・回数)と、Solid 版の型チェックとテストを CI へ | 済み(警告と、React 版と比べるテスト 8 本・CI の手順。別視点のレビュー = 中 1・低 1 を直した。Solid 版の全体 145 / 145) |
 | 3-2 | 実ブラウザのハーネス(`audit/harness` の確認)を Solid 版でも Chromium / Firefox / WebKit で回し、違いを直す | 済み(ハーネスを Solid 版でも回せるようにした。違い 5 つと別視点のレビューの指摘を直した(core に省略できる引数を 1 つ足した)。Solid 版は遅延読み込みの 25 項目を除いて Chromium 927 / 927・Firefox 875 / 876・WebKit 872 / 875、React 版は Chromium 952 / 952・Firefox 876 / 876・WebKit 872 / 875。WebKit の 3 件は両方とも既知の BR-3・BR-4、Firefox の 1 件は下の「速さ」の時間の確かめ)。PR を見てもらう |
 | 3-2b | 速さの違い(3-2 で測った、100 万行で遠くへスクロールしたときに Solid 版が約 1.5〜2 倍かかる)を直す。2026-11-21 にユーザーが「3-3 の前に別の段階で直す」を選んだ | 済み(本番ビルドの Chromium で、近いスクロールは React 版 20ms・直す前の Solid 版 27ms・今 22ms、遠くへ飛ぶスクロールは React 版 54ms・直す前 79ms・今 75ms。Firefox の遠くへは React 版 55ms・直す前 118ms・今 114ms。遠くへの残りの差は、2026-11-21 にユーザーが「今の直しで区切って 3-3 へ」を選び、記録だけにした。ハーネスは Solid 版 Chromium 927 / 927・Firefox 875 / 876(3-2 と同じ t-aggregates の時間の 1 件)・WebKit 872 / 875(既知の BR-3・BR-4))。PR を見てもらう |
-| 3-3 | パッケージの形(dist と型)・`size:check` / `types:check` に Solid 版・StackBlitz のサンプル・README とドキュメントサイトの「Solid で使う」 | まだ |
+| 3-3 | パッケージの形(dist と型)・`size:check` / `types:check` に Solid 版・StackBlitz のサンプル・README とドキュメントサイトの「Solid で使う」・ポップアップの遅延読み込み(測ってから決める) | 途中(3-3a 済み: 公開の型と関数を React 版にそろえ、dist・「solid」条件・CSS・`size:check` / `types:check`。次は遅延読み込み → サンプル → ドキュメント) |
+
+### 3-3 で分かったこと
+
+- **公開の形**(3-3a): 入口は `.`(全部入りの `SpreadsheetGrid` と、`createSpreadsheetGrid` + 機能の部品 + `standardFeatures` を同じ入口から)・
+  `/locales/en`・`/testing`・CSS(`style.css` / `style.layer.css` / `themes/*.css`)。React 版の `/ai` は無い。
+  - 「.」は Solid のライブラリの慣例どおり 2 つ: `solid` 条件 = JSX のままの `dist/source/index.jsx`(esbuild で 1 つに束ね、型だけ消す。
+    利用側の Vite + `@solidjs/vite-plugin` が自分の設定でコンパイルする。SSR はこれでないと動かない)、`import` 条件 = DOM 向けに
+    コンパイルした `dist/index.js`(Solid に対応していないバンドラ向け)。ESM だけ(solid-js 2.0 も ESM だけ)。
+  - CSS は React 版の dist から写す(同じ DOM と class なので同じもの)。ルートの `build:lib` が core → React 版 → Solid 版の順に
+    なるよう、Solid 版の devDependencies に React 版(workspace:*)を入れた。
+  - 公開の値と型は React 版の index・`/lite`・common.ts と同じ名前(`src/publicApi.test.ts` が検査。React 版だけのものは
+    `preloadGridPopups` と `/ai`)。`SpreadsheetGridProps<T, L>` は React 版と同じく core の props そのまま(段階 2 までに全部の
+    props を受けるようになったので `Pick` をやめた)+ 関数の `ref`。
+  - `pnpm -r publish`(publish:all)が出さないよう、0.1.0 を出すまで `private: true` のまま。core への依存は `workspace:*`
+    (pack で同じ版に固定される)。
+- **利用側の新しいアプリで確かめた**(pack した core と Solid 版の tarball、Vite 8 + `@solidjs/vite-plugin` 3 + solid-js 2.0.0):
+  開発サーバーは `solid` 条件の `dist/source/index.jsx` を読む、本番ビルド・`tsc`(strict + exactOptionalPropertyTypes +
+  skipLibCheck: false)が通る、全部入りと `standardFeatures` の 2 つのグリッドが描け、編集・並べ替え・英語の文言が効く、
+  SSR(`renderToString`)がエラーなく描く(Chromium。ハイドレーションはまだ見ていない)。`@solidjs/vite-plugin` 3 は Vite 8 以上が要る
+  (React 版のサンプルは StackBlitz の不具合で Vite 7 に留めているので、Solid 版のサンプルは StackBlitz で起動するかを確かめる)。
+- **`types:check` で見つけた不具合**: 全部入りの `SpreadsheetGrid` の型を推論のままにしていたら、tsc が d.ts に `import(".")`
+  (入口)と書き、nodenext の利用側で解決できず props が any になっていた。型を書いて直した(`src/fullGrid.ts`)。
+- **大きさ**(esbuild、solid-js は外部化): 全部入り 175.63KB / 機能なし 89.42KB / standardFeatures 130.47KB(React 版は 149.85 /
+  87.24 / 110.55KB。React 版はポップアップの部品 12.95KB を後から読む)。機能なしは React 版とほぼ同じで、使わない機能の部品は
+  束ねたときに消えている。
 
 ### 3-2b で分かったこと
 
