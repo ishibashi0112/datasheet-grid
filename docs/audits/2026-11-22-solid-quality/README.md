@@ -15,6 +15,7 @@
   React 版と core の 1.2.2 と Solid 版の 0.1.1 を 1 回で出す(Solid 版は core の版に固定するので)。
 - 段 2 のドキュメント: Solid 版の npm に API_REFERENCE.md と Skill を同梱し、主なガイド 8 本に Solid のタブを足す。
 - 段 3(0.2.0)の中身(store で持つ行、遠くへのスクロールの速さ、Solid 版の `/ai`)は段 1 で測ってから決める。
+- 2026-11-22(段 1 の後): 段 1 の直しは今すぐ Solid 版 0.1.1 で出す(ユーザーの選択。挙動の変化 2 つは React 版 1.2.1 の RV5-1 と同じく直すための変化として patch に)。ほかはおすすめどおり: R5-3 / S1-21 は 0.2.0 で直す(今は文書の回避)、S4-23 は開発時の警告のまま、段 2 の範囲は「段 1 のまとめ」の全部(S9-03 は文書だけ)。
 
 ## 段 1(測り直し)の進み具合
 
@@ -28,7 +29,7 @@
 | 1-4 | Solid の版の組み合わせ(2.0.0 と最新の 2.0.x)を CI で回す | 済み。CI に `solid-latest` のジョブを足した(`scripts/solid-latest.mjs` が solid-js / `@solidjs/web` / `@solidjs/babel-plugin` を公開から 2 日たった 2.x の最新へ、間接の `@solidjs/signals` / `@solidjs/compiler` も上げて、typecheck / test / test:ssr)。手元で最新(solid-js / web / signals 2.0.3、compiler / babel-plugin 2.0.2)に上げて、Solid 版のテスト 24 ファイル・288 件・SSR 6 ファイル・typecheck がすべて緑。下限の 2.0.0 は今までどおり ci のジョブ |
 | 1-5 | Solid らしい使い方の確かめ(非同期の行・`<Loading>`・`<Errored>`・遷移・HMR・複数のグリッド・`<Show>` の切り替えと編集中のアンマウント(AP-12)・SSR と hydration(`initialState`・`ssrCurrentTime`)) | 済み(HMR は 1-6 の実アプリで見る)。SSR と hydration は新しいゲート `pnpm --filter ./packages/solid run test:ssr`(`packages/solid/ssr/`。CI にも足した。下の「SSR とハイドレーションのゲート」)。ほかは `packages/solid/src/idioms.test.tsx`(9 件。下の「Solid らしい使い方」)。新しい所見は無し |
 | 1-6 | 実アプリでの確かめ直し(2026-11-22 の 6 本を今の版で作り直し + 新しい 6 本 = 12 本) | 済み。12 本(所見は `findings-S*.md`、下の「実アプリの所見(1-6)」、アプリのソースは `audit/dogfood/2026-11-22-solid-quality/`)。Solid 版だけの高 3(S4-21 / S7-01 / S8-01)・中 3(S5-21 / S2-22 / S4-23)・低(S3-22 / S7-02 / S9-01)と文書を直した。S7-01 / S8-01 は直した版の tarball を入れたアプリの台本でも確かめた(`S7/e2e/min-fill-action.cjs` / `stuck.cjs`、`S8/e2e/min-tz.cjs` / `tz-stale.cjs` / `tz-edit.cjs`)。React 版も同じものは段 2 |
-| 1-7 | 記録をまとめ、段 2 の中身をユーザーに相談する | 記録は済み(下の「段 1 のまとめ」)。相談中 |
+| 1-7 | 記録をまとめ、段 2 の中身をユーザーに相談する | 済み(下の「段 1 のまとめ」)。2026-11-22 にユーザーが「今すぐ 0.1.1 で出す」を選び、PR #78 → Solid 版 0.1.1 を公開(ほかの事項はおすすめどおり)。次は段 2 |
 
 ## 段 1 のまとめ(1-7)
 
