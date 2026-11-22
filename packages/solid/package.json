@@ -1,6 +1,6 @@
 {
   "name": "@ishibashi0112/spreadsheet-grid-solid",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Solid 2.0 向けの仮想化データグリッド。React 版(@ishibashi0112/spreadsheet-grid)と同じ props・同じ見た目で、SSRM(書き戻し付き)/ 行グルーピング + 集計 / Master/Detail / 範囲選択 + クリップボードを MIT で。IME に強い編集、100 万行の仮想化。コアは @ishibashi0112/spreadsheet-grid-core。",
   "keywords": [
     "solid",
