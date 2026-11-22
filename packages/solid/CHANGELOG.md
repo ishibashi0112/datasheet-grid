@@ -6,7 +6,9 @@
 
 使い方は [Solid で使う](https://datasheet-grid.vercel.app/docs/solid) と、React 版の [API リファレンス](https://github.com/ishibashi0112/datasheet-grid/blob/main/packages/react/API_REFERENCE.md)(props とメソッドは同じ)を参照してください。
 
-## 未リリース
+## 0.1.2 — 2026-11-23
+
+core 1.3.0 に依存します。Solid 版の品質を React 版にそろえる作業の段 2(React 版も同じだった所見と前からの残り)で、React 版と core の 1.3.0 と同じ直しです。
 
 ### 追加
 
