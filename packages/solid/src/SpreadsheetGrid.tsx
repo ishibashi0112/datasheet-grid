@@ -2506,20 +2506,22 @@ function GridShellBody<T extends object>(
       selectionAggregates: selectionAggregates(),
     };
   });
-  // 利用側のバー(renderTopBar / renderBottomBar)へ渡す文脈。値は読んだときに引く形にして、バーの関数は 1 回だけ呼ぶ
-  //   (状態が変わるたびに呼び直すとバーの要素が作り直され、バーの入力欄のフォーカスと打ちかけの文字が消える。React は
-  //   要素を使い回す)。値は JSX の中や関数の中で読めば追従する(Solid の props と同じ)。
+  // 利用側のバー(renderTopBar / renderBottomBar)へ渡す文脈。値は読んだときに引く形にして、状態が変わるたびにはバーの関数を
+  //   呼び直さない(呼び直すとバーの要素が作り直され、バーの入力欄のフォーカスと打ちかけの文字が消える。React は要素を
+  //   使い回す)。JSX の中で読んだ値はその場で追従し、関数の本体で読んだ値(引数の分割代入も)はそれが変わったときに関数を
+  //   呼び直す(renderCell と同じ。1 回だけ追跡せずに呼ぶと、React 版の書き方の分割代入の値が古いままだった = R1-1)。
+  //   値はキーごとに memo で受けるので、変わらない値(setGlobalFilterText など)を本体で読んでも呼び直さない。
   const liveSlotContext = createLiveObject(SLOT_CONTEXT_KEYS, slotContext);
   //   関数は memo で受ける(親が props を広げ直しても、同じ関数ならバーを作り直さない)。
   const renderTopBarFn = createMemo(() => props.renderTopBar);
   const renderBottomBarFn = createMemo(() => props.renderBottomBar);
   const customTopBar = createMemo(() => {
     const render = renderTopBarFn();
-    return render ? untrack(() => render(liveSlotContext)) : undefined;
+    return render ? render(liveSlotContext) : undefined;
   });
   const customBottomBar = createMemo(() => {
     const render = renderBottomBarFn();
-    return render ? untrack(() => render(liveSlotContext)) : undefined;
+    return render ? render(liveSlotContext) : undefined;
   });
   const showTopBarSummary = () => props.showTopBarSummary ?? true;
   // 既定の上部バーの検索欄は showTopBarFilter かつグローバルフィルターが有効なとき(無効な機能の入力欄は出さない)。要約も
@@ -2613,6 +2615,11 @@ function GridShellBody<T extends object>(
   const editorSessionId = createMemo(() => editorSession()?.id ?? null);
   // 編集中のセルの情報(行 / 位置 / 値)。エディタが select の行で決まる候補・開いたときのハイライト・custom の ctx に使う
   //   (編集中だけ非 null。React 版の GridShell の editorSession と同じ)。
+  // 編集中の列(エディタの種類と揃えは行に依らず列から引く。React 版の editingColumn と同じ)。
+  const editingColumn = createMemo(() => {
+    const cell = ui().editingCell;
+    return cell === null ? undefined : (orderedColumns()[cell.col] as unknown as GridColumn<T> | undefined);
+  });
   const editingSessionInfo = createMemo((): CellEditorSession<T> | null => {
     const cell = ui().editingCell;
     if (cell === null) {
@@ -3042,12 +3049,13 @@ function GridShellBody<T extends object>(
             leadingWidth={leadingWidth()}
             baseOffset={vertical().overlayBaseOffset}
             initialValue={() => view().editorInitialValue ?? store.getViewState().editorInitialValue ?? ''}
+            editor={editingColumn()?.editor}
             session={editingSessionInfo()}
             themeClassName={portalClassName()}
             slots={slots()}
             onCommit={(value: unknown, direction?: EditorCommitDirection) => edit.commitEdit(value, direction)}
             onCancel={edit.cancelEdit}
-            align={editingSessionInfo()?.column.align}
+            align={editingColumn()?.align}
             enterMove={props.editorEnterMove}
             domId={cellEditorDomId}
             // 編集中のセルが上にそろえて描かれているか(GridBodyLayer の alignTop と同じ条件。複数行のエディタの 1 行目を

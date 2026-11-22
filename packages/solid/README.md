@@ -120,7 +120,7 @@ Solid 2.0 向けの仮想化スプレッドシート / データグリッドで�
 ### React 版との違い
 
 - **`ref` は Solid の DOM の ref と同じです。** `let grid!: SpreadsheetGridHandle<Row>` と `ref={grid}`、または `ref={(handle) => (grid = handle)}` で、同じメソッドを持つハンドルを受け取れます(React の ref オブジェクトはありません)。ハンドルは利用側の部品の最初の `createEffect` と `onSettled` より前に入るので、そこで呼べます(保存した状態を戻す、末尾へスクロールする など)。
-- **描く関数は必要なときだけ呼びます。** `renderCell` は行・値・列が変わったとき、`renderHeader` は列が変わったとき、バーの関数は関数が変わったときだけ呼び直します(React 版のように更新のたびには呼びません)。文脈の位置と状態(`rowIndex` / `isActive` / バーの文脈など)は読んだときに引くので、JSX の中で読めば追従します。関数の本体で読むと、それが変わるたびに中身を作り直します。
+- **描く関数は必要なときだけ呼びます。** `renderCell` は行・値・列が変わったとき、`renderHeader` は列が変わったとき、バーの関数は関数が変わったときに呼び直します(React 版のように更新のたびには呼びません)。文脈の位置と状態(`rowIndex` / `isActive` / バーの文脈など)は読んだときに引くので、JSX の中で読めばその場で追従します。関数の本体で読むと(引数の分割代入も)、それが変わるたびに中身を作り直します(バーの入力欄なら、フォーカスと打ちかけの文字が消えます。変わる値は JSX の中で読んでください)。
 - **ありません:** ことばで絞り込み(`/ai` の `GridAskBar`)。
 - そのほか(props・列の定義・ハンドルのメソッド・通知・CSS のクラスとトークン)は React 版の [`API_REFERENCE.md`](https://github.com/ishibashi0112/datasheet-grid/blob/main/packages/react/API_REFERENCE.md) と同じです。
 

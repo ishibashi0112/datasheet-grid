@@ -457,6 +457,76 @@ describe('React 版と同じ DOM と通知', () => {
     });
   });
 
+  // R1-1: バーの関数の本体で文脈を読んでも(React 版の書き方の引数の分割代入)、値は今の値に追従する(0.1.0 は 1 回だけ
+  //   追跡せずに呼んでいたので古いままだった)。変わらない値(setGlobalFilterText)だけを本体で読み、変わる値を JSX の中で
+  //   読むときは、バーを作り直さない(入力欄のフォーカスと打ちかけが残る)。
+  it('自作のバーの関数の本体で文脈を読む(引数の分割代入)・変わらない値だけを本体で読む(R1-1)', async () => {
+    type BarCtx = { derivedSummary: { activeCellLabel: string; rowSummaryText: string }; setGlobalFilterText: (v: string) => void };
+    const { createElement } = await import('react');
+    const reactDestructured = ({ derivedSummary }: BarCtx) =>
+      createElement('span', { className: 'my-bottom' }, `${derivedSummary.activeCellLabel} / ${derivedSummary.rowSummaryText}`);
+    const solidDestructured = ({ derivedSummary }: BarCtx) => (
+      <span class="my-bottom">{`${derivedSummary.activeCellLabel} / ${derivedSummary.rowSummaryText}`}</span>
+    );
+    const reactSetterOnly = (ctx: BarCtx) => {
+      const { setGlobalFilterText } = ctx;
+      return createElement(
+        'div',
+        { className: 'my-top' },
+        createElement('input', {
+          className: 'bar-input',
+          onInput: (event: { currentTarget: HTMLInputElement }) => setGlobalFilterText(event.currentTarget.value),
+        }),
+        createElement('span', null, ctx.derivedSummary.rowSummaryText),
+      );
+    };
+    const solidSetterOnly = (ctx: BarCtx) => {
+      const { setGlobalFilterText } = ctx;
+      return (
+        <div class="my-top">
+          <input class="bar-input" onInput={(event) => setGlobalFilterText(event.currentTarget.value)} />
+          <span>{ctx.derivedSummary.rowSummaryText}</span>
+        </div>
+      );
+    };
+    await expectParity({
+      features: ['filtering'],
+      props: (framework) => ({
+        rows: makeRows(20),
+        columns,
+        rowKeyGetter: (row: Row) => row.id,
+        height: 300,
+        renderTopBar: framework === 'react' ? reactSetterOnly : solidSetterOnly,
+        renderBottomBar: framework === 'react' ? reactDestructured : solidDestructured,
+      }),
+      steps: async (ctx) => {
+        const input = () => ctx.container.querySelector<HTMLInputElement>('.my-top .bar-input');
+        ctx.track('上のバーの入力欄', input);
+        ctx.snapshot('最初');
+        await ctx.act(() => {
+          const target = ctx.cell(3, 'name');
+          fireEvent.pointerDown(target, { button: 0, pointerId: 1, isPrimary: true });
+          fireEvent.pointerUp(target, { button: 0, pointerId: 1, isPrimary: true });
+        });
+        ctx.log('下のバー(セルを押した)', ctx.container.querySelector('.my-bottom')?.textContent ?? null);
+        ctx.snapshot('セルを押す');
+        await ctx.act(() => {
+          const element = input();
+          element?.focus();
+          if (element) {
+            element.value = '品目 1';
+            element.dispatchEvent(new Event('input', { bubbles: true }));
+          }
+        }, 400);
+        ctx.log('下のバー(絞り込んだ)', ctx.container.querySelector('.my-bottom')?.textContent ?? null);
+        ctx.log('入力欄にフォーカスが残る', document.activeElement === input());
+        ctx.snapshot('上のバーで絞り込む');
+        await ctx.setProps({ rows: makeRows(25) });
+        ctx.snapshot('行を増やす');
+      },
+    });
+  });
+
   it('右の固定列と、横に仮想化される多くの列', async () => {
     const wide = [
       { key: 'id', title: 'ID', width: 60, pinned: 'left' },

@@ -6,6 +6,14 @@
 
 使い方は [Solid で使う](https://datasheet-grid.vercel.app/docs/solid) と、React 版の [API リファレンス](https://github.com/ishibashi0112/datasheet-grid/blob/main/packages/react/API_REFERENCE.md)(props とメソッドは同じ)を参照してください。
 
+## 未リリース
+
+### 修正
+
+- 自作の上部 / 下部バー(`renderTopBar` / `renderBottomBar`)の関数の本体で文脈を読んだ値(React 版の書き方の引数の分割代入 `({ derivedSummary }) => …` も)が、最初の値のまま変わらなかった。今は読んだ値が変わったときに関数を呼び直します(`renderCell` と同じ)。変わらない値(`setGlobalFilterText` など)だけを本体で読み、変わる値を JSX の中で読むときは、これまでどおりバーを作り直しません(入力欄のフォーカスと打ちかけの文字が残る)。
+- 行のグループ化をした表で、編集中に上へ行が足されて編集中の位置が一瞬グループ行を指すと、エディタが作り直され、number / date のエディタは打ちかけの文字を失い、複数行の text のエディタはフォーカスを失っていた。エディタの種類を React 版と同じく行ではなく列から決めます(custom のエディタは React 版と同じく作り直します)。
+- 列メニューの「列の固定」の小メニューを開いたまま別の列のメニューへ切り替え、元の列へ戻ると、小メニューが開いたまま出ていた。別の列へ切り替えたら閉じます(React 版と同じ)。
+
 ## 0.1.0 — 2026-11-22
 
 最初の公開です。core 1.2.1 に依存します。

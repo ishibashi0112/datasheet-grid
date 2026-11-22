@@ -100,10 +100,12 @@ export function ColumnMenuPopover(props: ColumnMenuPopoverProps) {
     const current = openSubmenu();
     return current !== null && current.columnKey === props.columnKey && current.key === PIN_SUBMENU_KEY;
   });
-  // 開いたまま別の列へ切り替えたら、パネルのスクロールを先頭へ戻す。
+  // 開いたまま別の列へ切り替えたら、小メニューを閉じ、パネルのスクロールを先頭へ戻す(React 版と同じ。小メニューを閉じないと、
+  //   その列へ戻ったときに開いたまま出ていた = R3-1)。
   createEffect(
     () => props.columnKey,
     () => {
+      setOpenSubmenu(null);
       if (panelElement) {
         panelElement.scrollTop = 0;
       }
