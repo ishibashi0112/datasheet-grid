@@ -10,6 +10,7 @@ import { createElement, act as reactAct, useState, type ComponentType } from 're
 import { createRoot } from 'react-dom/client';
 import { createSignal, flush } from 'solid-js';
 import { render } from '@solidjs/web';
+import { resetUnregisteredFeatureWarnings } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/featureWarnings';
 import * as SolidLite from '../index';
 import { normalizeDom } from './normalizeDom';
 
@@ -65,7 +66,7 @@ export type ParityHandle = Record<string, (...args: never[]) => unknown>;
 export type ParityContext = {
   framework: Framework;
   container: HTMLElement;
-  // 操作(イベントや命令的 API)を行い、書き込みを反映して数フレーム待つ。
+  // 操作(イベントや命令的 API)を行い、書き込みを反映して数フレーム待つ(waitMs が 0 なら待たない)。
   act: (fn: () => void | Promise<void>, waitMs?: number) => Promise<void>;
   // 今の DOM を控える(label は差分の見出し)。
   snapshot: (label: string) => void;
@@ -96,6 +97,18 @@ export type ParityScenario = {
   features?: readonly string[];
   // rows を制御する(onRowsChange で受けた行へ差し替える)。既定 true。
   controlledRows?: boolean;
+  // 'byName': 通知を名前ごとの順番だけで比べる(1 回の操作で別々の通知が呼ばれるときの順番は React 版と違うことがある =
+  //   docs/solid/README.md「残した違い(通知の順番)」。それぞれの通知の中身・回数・同じ名前の中の順番は比べる)。
+  callOrder?: 'all' | 'byName';
+  // グリッドを包む要素に付ける、それぞれのフレームワークのイベントのハンドラ(React は onKeyDown など、Solid も同じ名前)。
+  //   呼ばれたら `wrapper.<名前> [種類, キー]` を通知と同じ列へ控える(グリッドが伝播を止めたかを React 版と比べる。
+  //   React Aria のモーダルのように、外側の部品がフレームワークのイベントで Escape を聞くときの形)。
+  wrapperEvents?: readonly string[];
+  // 機能セットに無い機能の prop / メソッドを使ったときの開発時の警告を許す機能のキー(既定は許さず、出たらテストを落とす。
+  //   features の入れ忘れで prop が黙って無視され、両方とも同じく「何もしない」ので比べても差が出ないのを防ぐ)。機能なしの
+  //   構成をわざと比べる場面だけ、その場面で確かめる機能のキー(警告の `キー: キーFeature` のキー)を並べる。true は
+  //   警告そのものを比べる場面(どの機能でも許す)。
+  allowMissingFeatures?: true | readonly string[];
   steps: (ctx: ParityContext) => Promise<void>;
 };
 
@@ -185,7 +198,40 @@ const collectPortals = (container: HTMLElement): Element[] =>
     (element) => element !== container && element.matches('[class*="ssg-"], [data-grid-drag-ghost]'),
   );
 
+const MISSING_FEATURE_WARNING = '機能セットに入っていない';
+// 警告が名指しする機能のキー(「features に `filtering: filteringFeature` を入れてください」)。
+const MISSING_FEATURE_KEY = /`(\w+): \w+Feature`/;
+// 列定義を場面のあいだで使い回すので、絞り込みの機能が無い場面の filterType は見逃す(並べ替え / 表示には効かない)。
+const IGNORED_MISSING_FEATURE = 'prop `columns[].filterType`';
+
 async function runOne(framework: Framework, scenario: ParityScenario): Promise<ParityResult> {
+  // 機能の入れ忘れの警告を見張る(core の「1 回だけ」の記録はモジュールに 1 つなので、それぞれを描く前に消す)。
+  resetUnregisteredFeatureWarnings();
+  const missingFeatures: string[] = [];
+  const allowed = scenario.allowMissingFeatures;
+  const originalWarn = console.warn;
+  console.warn = (...args: unknown[]) => {
+    const message = String(args[0]);
+    if (message.includes(MISSING_FEATURE_WARNING) && !message.includes(IGNORED_MISSING_FEATURE)) {
+      const key = MISSING_FEATURE_KEY.exec(message)?.[1];
+      if (allowed !== true && !(key !== undefined && allowed?.includes(key))) {
+        missingFeatures.push(message.split('\n')[0] ?? message);
+      }
+    }
+    originalWarn.apply(console, args);
+  };
+  try {
+    const result = await runOneWatched(framework, scenario);
+    if (missingFeatures.length > 0) {
+      throw new Error(`[${framework}] 機能セットに無い機能を使いました(features に足すか allowMissingFeatures):\n${missingFeatures.join('\n')}`);
+    }
+    return result;
+  } finally {
+    console.warn = originalWarn;
+  }
+}
+
+async function runOneWatched(framework: Framework, scenario: ParityScenario): Promise<ParityResult> {
   const container = document.createElement('div');
   document.body.append(container);
   const snapshots: ParityResult['snapshots'] = [];
@@ -209,6 +255,15 @@ async function runOne(framework: Framework, scenario: ParityScenario): Promise<P
     }
     return next;
   };
+
+  const wrapperHandlers = Object.fromEntries(
+    (scenario.wrapperEvents ?? []).map((name) => [
+      name,
+      (event: Event) => {
+        record(`wrapper.${name}`, [event.type, (event as KeyboardEvent).key ?? null]);
+      },
+    ]),
+  );
 
   let setReactProps: ((patch: Record<string, unknown>) => void) | null = null;
   let setReactRows: ((rows: readonly unknown[]) => void) | null = null;
@@ -237,7 +292,7 @@ async function runOne(framework: Framework, scenario: ParityScenario): Promise<P
       const [rows, setRows] = useState(currentRows);
       setReactProps = (patch) => setProps((previous) => ({ ...previous, ...wrapCallbacks(patch) }));
       setReactRows = setRows;
-      return createElement(ReactGrid, {
+      const grid = createElement(ReactGrid, {
         ...props,
         ...(controlledRows ? { rows, onRowsChange: onRowsChangeOf(props, setRows) } : null),
         ref: (value: ParityHandle | null) => {
@@ -246,6 +301,7 @@ async function runOne(framework: Framework, scenario: ParityScenario): Promise<P
           }
         },
       });
+      return scenario.wrapperEvents ? createElement('div', { 'data-parity-wrapper': '', ...wrapperHandlers }, grid) : grid;
     }
     await reactAct(async () => {
       root.render(createElement(Host));
@@ -260,7 +316,7 @@ async function runOne(framework: Framework, scenario: ParityScenario): Promise<P
       setSolidProps = (patch) => setProps((previous) => ({ ...previous, ...wrapCallbacks(patch) }));
       setSolidRows = (next) => setRows(() => next);
       const Grid = loadSolidGrid(scenario.features ?? []);
-      return (
+      const grid = () => (
         <Grid
           {...props()}
           {...(controlledRows ? { rows: rows(), onRowsChange: onRowsChangeOf(props(), (next) => setRows(() => next)) } : {})}
@@ -268,6 +324,13 @@ async function runOne(framework: Framework, scenario: ParityScenario): Promise<P
             handle = value;
           }}
         />
+      );
+      return scenario.wrapperEvents ? (
+        <div data-parity-wrapper="" {...wrapperHandlers}>
+          {grid()}
+        </div>
+      ) : (
+        grid()
       );
     }, container);
     flush();
@@ -312,7 +375,10 @@ async function runOne(framework: Framework, scenario: ParityScenario): Promise<P
         await fn();
         flush();
       }
-      await settle(waitMs);
+      // 0 はフレームを待たない(React は act を抜けたところ、Solid は flush の後 = 次のフレームの前の状態を見る)。
+      if (waitMs > 0) {
+        await settle(waitMs);
+      }
     },
     snapshot: (label) => {
       const roots = [container, ...collectPortals(container)];
@@ -406,6 +472,18 @@ export async function expectParity(scenario: ParityScenario): Promise<void> {
     expect(`${solid.snapshots[index]?.label}\n${solid.snapshots[index]?.dom}`).toBe(
       `${react.snapshots[index]?.label}\n${react.snapshots[index]?.dom}`,
     );
+  }
+  if (scenario.callOrder === 'byName') {
+    const byName = (calls: readonly string[]) => {
+      const groups: Record<string, string[]> = {};
+      for (const entry of calls) {
+        const name = entry.slice(0, entry.indexOf(' '));
+        (groups[name] ??= []).push(entry);
+      }
+      return groups;
+    };
+    expect(byName(solid.calls)).toEqual(byName(react.calls));
+    return;
   }
   expect(solid.calls).toEqual(react.calls);
 }

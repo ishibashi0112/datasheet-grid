@@ -69,6 +69,7 @@ describe('行の絞り込み(filtering)', () => {
   ])('上部バーの検索欄と applyState の列フィルター(機能%s)', async (_label, features) => {
     await expectParity({
       features,
+      allowMissingFeatures: ['filtering'],
       watch: ['onFiltersChange', 'onStateChange'],
       props: () => ({ rows: makeRows(24), columns, rowKeyGetter: (row: Row) => row.id, height: 360 }),
       steps: async (ctx) => {
@@ -151,6 +152,7 @@ describe('行の絞り込み(filtering)', () => {
   ])('相対日付プリセットと text / dateSet の列フィルター(機能%s)', async (_label, features) => {
     await expectParity({
       features,
+      allowMissingFeatures: ['filtering'],
       watch: ['onFiltersChange'],
       props: () => ({ rows: makeRows(24), columns, rowKeyGetter: (row: Row) => row.id, height: 360 }),
       steps: async (ctx) => {
@@ -220,6 +222,7 @@ describe('行の絞り込み(filtering)', () => {
   ])('manualFiltering / manualSorting(機能%s)', async (_label, features) => {
     await expectParity({
       features,
+      allowMissingFeatures: ['filtering'],
       watch: ['onFiltersChange', 'onSortChange'],
       props: () => ({
         rows: makeRows(10),
@@ -925,6 +928,7 @@ describe('ツールパネル(toolPanel)とフィルターのチップのバー',
     async (_label, features) => {
       await expectParity({
         features,
+        allowMissingFeatures: ['filtering', 'columnMenu', 'toolPanel'],
         watch: ['onFiltersChange'],
         props: () => ({
           rows: makeRows(16),
@@ -1046,6 +1050,7 @@ describe('ツールパネル(toolPanel)とフィルターのチップのバー',
       let latest: readonly ColumnLike[] | null = null;
       await expectParity({
         features,
+        allowMissingFeatures: ['filtering', 'columnMenu', 'toolPanel'],
         watch: ['onSortChange'],
         props: () => ({
           rows: makeRows(16),

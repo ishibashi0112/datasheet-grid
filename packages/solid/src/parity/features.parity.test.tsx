@@ -49,6 +49,7 @@ describe('エクスポート(export)', () => {
     {
       await expectParity({
         features,
+        allowMissingFeatures: ['export'],
         props: () => ({ rows: makeRows(8), columns, rowKeyGetter: (row: Row) => row.id, height: 360 }),
         steps: async (ctx) => {
           ctx.log('csv(既定)', call(ctx, 'exportCsv'));
@@ -111,6 +112,7 @@ describe('行の高さの自動調整(autoHeight)', () => {
   ])('autoHeight の列で行が伸び、背の高い行は上にそろえる・値を変えると測り直す・エディタも上にそろえる(機能%s)', async (_label, features) => {
     await expectParity({
       features,
+      allowMissingFeatures: ['autoHeight'],
       props: () => ({
         rows: longRows(12),
         columns: autoColumns,
@@ -227,6 +229,7 @@ describe('条件付き書式(conditionalFormat)', () => {
   ])('データバー・カラースケール・チップ・値の変更と並べ替えで集計が変わる・関数のチップが状態に追従する(機能%s)', async (_label, features) => {
     await expectParity({
       features,
+      allowMissingFeatures: ['conditionalFormat'],
       props: () => ({ rows: items(10), columns: cfColumns, rowKeyGetter: (row: Item) => row.id, height: 360 }),
       watch: ['onRowsChange'],
       steps: async (ctx) => {
@@ -404,6 +407,7 @@ describe('合計行(totalRow)と固定行(pinnedRows)', () => {
   ])('合計行・上下の固定行の描画・値の変更で合計が変わる・固定行は選べない・エクスポート(機能%s)', async (_label, features) => {
     await expectParity({
       features,
+      allowMissingFeatures: ['totalRow', 'pinnedRows', 'conditionalFormat'],
       props: () => ({
         rows: lines(9),
         columns: lineColumns,
@@ -500,6 +504,7 @@ describe('選択範囲の集計(selectionAggregates)', () => {
   ])('数値 / 文字だけ / 空だけ / 1 セルの範囲・値の変更・件数なしの置き場所・止める(機能%s)', async (_label, features) => {
     await expectParity({
       features,
+      allowMissingFeatures: ['selectionAggregates'],
       props: () => ({ rows: makeRows(12), columns, rowKeyGetter: (row: Row) => row.id, height: 360 }),
       steps: async (ctx) => {
         await selectRange(ctx, [1, 'qty'], [3, 'price']);
@@ -584,6 +589,7 @@ describe('スクロール位置インジケーター(scrollHint)', () => {
   ])('バブル・ルーラー・ジャンプの線・カスタムスクロールバー・止まると消える・minRows(機能%s)', async (_label, features) => {
     await expectParity({
       features,
+      allowMissingFeatures: ['scrollHint'],
       props: () => ({ rows: makeRows(300), columns, rowKeyGetter: (row: Row) => row.id, height: 360, scrollHint: true }),
       steps: async (ctx) => {
         ctx.snapshot('最初(スクロールしていない)');
@@ -643,6 +649,7 @@ describe('スクロール位置インジケーター(scrollHint)', () => {
     const { createElement } = await import('react');
     await expectParity({
       features,
+      allowMissingFeatures: ['scrollHint'],
       props: (framework) => ({
         rows: makeRows(300),
         columns,
@@ -706,6 +713,7 @@ describe('動きの追加(motionExtras)', () => {
   ])('コピー範囲の点線・クロスヘア・変わったセルのフラッシュとトゥイーン(機能%s)', async (_label, features) => {
     await expectParity({
       features,
+      allowMissingFeatures: ['motionExtras'],
       props: () => ({
         rows: makeRows(10),
         columns,

@@ -241,6 +241,8 @@ describe('React 版と同じ DOM と通知', () => {
     await expectParity({
       props: () => ({ rows: makeRows(200), columns, rowKeyGetter: (row: Row) => row.id, height: 300 }),
       watch: ['onActiveCellChange', 'onStateChange', 'onSortChange'],
+      // 並べ替えで行が替わったときの onActiveCellChange と onSortChange / onStateChange の順番は残した違い。
+      callOrder: 'byName',
       steps: async (ctx) => {
         const call = (name: string, ...args: unknown[]) =>
           (ctx.handle()[name] as unknown as (...a: unknown[]) => unknown)(...args);
@@ -253,7 +255,7 @@ describe('React 版と同じ DOM と通知', () => {
         });
         ctx.snapshot('scrollToRow');
         await ctx.act(() => {
-          call('applyState', { sort: [{ key: 'qty', direction: 'desc' }] });
+          call('applyState', { sort: [{ columnKey: 'qty', direction: 'desc' }] });
         });
         ctx.snapshot('applyState');
         await ctx.act(() => {
@@ -416,6 +418,8 @@ describe('React 版と同じ DOM と通知', () => {
       );
     const bars = { react: { top: await reactBar('top'), bottom: await reactBar('bottom') } };
     await expectParity({
+      // 入力欄の文字は setGlobalFilterText で上部バーの検索と同じく行を絞る。
+      features: ['filtering'],
       props: (framework) => ({
         rows: makeRows(20),
         columns,
@@ -433,7 +437,8 @@ describe('React 版と同じ DOM と通知', () => {
           const element = input();
           element?.focus();
           if (element) {
-            element.value = 'ab';
+            // 品目 1 / 10〜19 の 11 行に絞る。
+            element.value = '品目 1';
             element.dispatchEvent(new Event('input', { bubbles: true }));
           }
         });

@@ -192,6 +192,7 @@ describe('サーバーサイドの行モデル(serverSide)', () => {
     let server: FakeServer = createFakeServer();
     await expectParity({
       features,
+      allowMissingFeatures: ['serverSide'],
       watch: ['onActiveCellChange'],
       props: () => {
         server = createFakeServer();

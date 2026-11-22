@@ -64,6 +64,7 @@ describe('開発時の警告', () => {
   it('機能が無いときの prop・メソッド・フィルターの状態(1 つにつき 1 回)', async () => {
     await expectParity({
       features: [],
+      allowMissingFeatures: true,
       props: () => {
         resetWarnings();
         return {
@@ -138,6 +139,7 @@ describe('開発時の警告', () => {
   ])('openFilterManager と足りない機能: %s', async (_label, features) => {
     await expectParity({
       features,
+      allowMissingFeatures: true,
       props: () => {
         resetWarnings();
         return {

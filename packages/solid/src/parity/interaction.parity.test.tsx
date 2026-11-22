@@ -44,6 +44,7 @@ describe('セル内検索(find)', () => {
   ])('Ctrl+F・入力・次 / 前・命令的 API・閉じる(機能%s)', async (_label, features) => {
     await expectParity({
       features,
+      allowMissingFeatures: ['find'],
       watch: ['onFindChange'],
       props: () => ({ rows: makeRows(12), columns, rowKeyGetter: (row: Row) => row.id, height: 360, find: true }),
       steps: async (ctx) => {
@@ -154,6 +155,7 @@ describe('セル内検索(find)', () => {
   ])('状態チップの文字・データバーの showValue: false・renderCell(機能%s)', async (_label, features) => {
     await expectParity({
       features,
+      allowMissingFeatures: ['conditionalFormat'],
       watch: ['onFindChange'],
       props: () => ({
         rows: makeRows(8),
@@ -233,6 +235,7 @@ describe('IME オンのままの直接入力(imeDirectInput)', () => {
   ])('入力受けへのフォーカス・変換の確定で編集・数値の列・編集できない列・無効にする(機能%s)', async (_label, features) => {
     await expectParity({
       features,
+      allowMissingFeatures: ['imeDirectInput'],
       watch: ['onRowsChange'],
       props: () => ({ rows: makeRows(8), columns, rowKeyGetter: (row: Row) => row.id, height: 360, imeDirectInput: true }),
       steps: async (ctx) => {
@@ -328,6 +331,7 @@ describe('列幅の自動調整(columnAutosize)', () => {
   ])('autoSizeColumns・境界のダブルクリック・データの差し替え(機能%s)', async (_label, features) => {
     await expectParity({
       features,
+      allowMissingFeatures: ['columnAutosize', 'totalRow', 'conditionalFormat', 'pinnedRows'],
       watch: ['onStateChange'],
       props: () => ({
         rows: makeRows(6),
@@ -413,6 +417,7 @@ describe('列の並べ替え(columnReorder)', () => {
     let latest: readonly ColumnLike[] | null = null;
     await expectParity({
       features,
+      allowMissingFeatures: ['columnReorder'],
       watch: ['onStateChange'],
       props: () => ({
         rows: makeRows(8),
@@ -520,6 +525,7 @@ describe('行のドラッグ(rowDrag)', () => {
   ])('ハンドルで引いて落とす・Escape・isRowDraggable・canDropRow・ソート中・moveRow・元に戻す(機能%s)', async (_label, features, rowDragMotion, motion) => {
     await expectParity({
       features,
+      allowMissingFeatures: ['rowDrag'],
       watch: ['onRowMove', 'onActiveCellChange'],
       props: () => ({
         rows: makeRows(8),
@@ -722,6 +728,7 @@ describe('フィルハンドル(fillHandle)', () => {
   ])('引いて埋める・ボタンで選び直す・Ctrl・Escape・ダブルクリック・元に戻す・出さない条件(機能%s)', async (_label, features, option) => {
     await expectParity({
       features,
+      allowMissingFeatures: ['fillHandle'],
       watch: ['onActiveCellChange'],
       props: () => ({
         rows: fillRows(),
@@ -869,6 +876,7 @@ describe('右クリックメニュー(contextMenu)', () => {
   ])('セル / 行番号の右クリック・キー操作・閉じ方・項目なし(機能%s)', async (_label, features) => {
     await expectParity({
       features,
+      allowMissingFeatures: ['contextMenu'],
       watch: ['onContextMenuOpen', 'getContextMenuItems'],
       props: () => ({
         rows: makeRows(12),

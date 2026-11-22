@@ -74,6 +74,7 @@ describe('行のグループ化(grouping)', () => {
   ])('グループ行の表示・開閉(ボタン / ダブルクリック / Enter・Space)・集計・ホバー・命令的 API(機能%s)', async (_label, features) => {
     await expectParity({
       features,
+      allowMissingFeatures: ['grouping'],
       watch: ['onStateChange'],
       props: () => ({ rows: makeRows(16), columns: groupedColumns, rowKeyGetter: (row: Row) => row.id, height: 360 }),
       steps: async (ctx) => {
@@ -290,11 +291,12 @@ describe('ラベル行(labelRow)', () => {
   };
 
   it.each([
-    ['あり', ['labelRow']],
-    ['なし(ラベル行もデータ行のまま)', []],
+    ['あり', ['labelRow', 'export']],
+    ['なし(ラベル行もデータ行のまま)', ['export']],
   ])('帯と中身・行番号・下部バー・キー操作・ホバー・セクションの中の並び替え・エクスポート・検査(機能%s)', async (_label, features) => {
     await expectParity({
       features,
+      allowMissingFeatures: ['labelRow'],
       // 1 回の操作で別々の通知(並べ替えでの onStateChange と onActiveCellChange)が呼ばれるときの順番は React 版と違うことがある
       //   (docs/solid/README.md の「残した違い」)ので、状態は getState で見る。
       watch: ['onActiveCellChange'],
@@ -324,7 +326,7 @@ describe('ラベル行(labelRow)', () => {
           ctx.hover(ctx.cell(5, 'qty'));
         });
         ctx.snapshot('セルにホバー');
-        if (features.length > 0) {
+        if (features.includes('labelRow')) {
           await ctx.act(() => {
             ctx.hover(labelRowOf(ctx, 4));
           });
@@ -373,7 +375,7 @@ describe('ラベル行(labelRow)', () => {
       </b>
     );
     await expectParity({
-      features: ['labelRow', 'filtering', 'columnMenu'],
+      features: ['labelRow', 'filtering', 'columnMenu', 'export'],
       watch: ['onFiltersChange', 'onSortChange'],
       props: (framework) => ({
         rows: makeRows(),
@@ -390,7 +392,8 @@ describe('ラベル行(labelRow)', () => {
           className: (row: Row) => (row.id === 's2' ? 'is-second' : 'is-label'),
           sortMode: 'follow',
           keepEmptySections: true,
-          exportText: (row: Row, column: { key: string }) => (column.key === 'name' ? `【${row.name}】` : ''),
+          // 列ごとのセルの配列(足りない列は空、余りは捨てる)。
+          exportText: (row: Row) => [row.id, `【${row.name}】`],
         },
       }),
       steps: async (ctx) => {
