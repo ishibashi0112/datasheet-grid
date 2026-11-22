@@ -461,3 +461,75 @@ describe('まだ Solid 版で使っていなかった props', () => {
     }
   });
 });
+
+describe('列幅の状態と非表示の列(RD-5 / M-03 / L-02)', () => {
+  const widthColumns = [
+    { key: 'id', title: 'ID', width: 60 },
+    { key: 'name', title: '名前', width: 120 },
+    { key: 'qty', title: '数量', width: 80 },
+  ];
+
+  it('列幅の状態は columns の参照の変化で消えず、width の指定し直しと列の削除でだけ捨てる・applyState(getState()) は同じ', async () => {
+    await expectParity({
+      watch: ['onStateChange'],
+      props: () => ({ rows: ROWS, columns: widthColumns, rowKeyGetter: (row: Row) => row.id, height: 300 }),
+      steps: async (ctx) => {
+        const widths = (label: string) => ctx.log(label, (call(ctx, 'getState') as { columnWidths: unknown }).columnWidths);
+        widths('最初');
+        await ctx.act(() => {
+          call(ctx, 'applyState', { columnWidths: { name: 300 } });
+        });
+        widths('applyState で名前を 300');
+        await ctx.setProps({ columns: widthColumns.map((column) => ({ ...column })) });
+        widths('同じ中身の columns を作り直す');
+        const widened = widthColumns.map((column) => (column.key === 'id' ? { ...column, width: 90 } : { ...column }));
+        await ctx.setProps({ columns: widened });
+        widths('ほかの列の width を変える');
+        const renamed = widened.map((column) => (column.key === 'name' ? { ...column, width: 220 } : column));
+        await ctx.setProps({ columns: renamed });
+        widths('名前の width を指定し直す');
+        ctx.snapshot('指定し直した後');
+        await ctx.act(() => {
+          call(ctx, 'applyState', { columnWidths: { qty: 150 } });
+        });
+        await ctx.setProps({ columns: renamed.filter((column) => column.key !== 'qty') });
+        widths('数量の列を消す');
+        const before = call(ctx, 'getState');
+        await ctx.act(() => {
+          call(ctx, 'applyState', before);
+        });
+        ctx.log('applyState(getState()) の後も同じ', JSON.stringify(call(ctx, 'getState')) === JSON.stringify(before));
+      },
+    });
+  });
+
+  it('非表示の列(visible: false)の列フィルター / 並べ替えも行に効く', async () => {
+    await expectParity({
+      features: ['filtering', 'export'],
+      watch: ['onStateChange'],
+      props: () => ({
+        rows: ROWS,
+        columns: widthColumns.map((column) => (column.key === 'name' ? { ...column, visible: false } : column)),
+        rowKeyGetter: (row: Row) => row.id,
+        height: 300,
+      }),
+      steps: async (ctx) => {
+        const ids = (label: string) =>
+          ctx.log(label, (call(ctx, 'getExportData', { scope: 'view' }) as { rows: { value: unknown }[][] }).rows.map((row) => row[0]?.value));
+        ids('最初');
+        await ctx.act(() => {
+          call(ctx, 'applyState', {
+            filters: { globalText: '', columnFilters: { name: { kind: 'text', value: 'a' } } },
+            sort: [{ columnKey: 'name', direction: 'desc' }],
+          });
+        });
+        ids('名前に a・名前の降順');
+        ctx.snapshot('名前に a・名前の降順');
+        await ctx.act(() => {
+          call(ctx, 'applyState', { filters: { globalText: '', columnFilters: { name: { kind: 'text', value: 'be' } } }, sort: [] });
+        });
+        ids('名前に be');
+      },
+    });
+  });
+});

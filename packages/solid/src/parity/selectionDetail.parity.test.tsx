@@ -394,6 +394,57 @@ describe('展開行(Master/Detail)', () => {
     });
   });
 
+  // C-N6 / C-N7: ハンドルで閉じたときも、カードの中のフォーカスをその行のセルへ戻し、次のフレームでそのセルを見える範囲へ。
+  it.each([
+    ['setDetailRowExpanded(key, false)', 'one'],
+    ['collapseAllDetailRows()', 'all'],
+  ] as const)('ハンドルで閉じてもフォーカスをその行のセルへ戻し、見える範囲へ(C-N6 / C-N7・%s)', async (_label, how) => {
+    await expectParity({
+      props: (framework) => ({
+        rows: makeRows(60),
+        columns,
+        rowKeyGetter: (row: Row) => row.id,
+        height: 360,
+        detailRow: { render: detailRender(framework), height: 80 },
+      }),
+      watch: ['onExpandedDetailRowKeysChange', 'onActiveCellChange'],
+      steps: async (ctx) => {
+        await ctx.act(() => {
+          (ctx.handle().setDetailRowExpanded as (key: number, expanded: boolean) => void)(3, true);
+          (ctx.handle().setActiveCell as (cell: { row: number; col: number }) => void)({ row: 2, col: 2 });
+        });
+        // カードを読み進めて、行 2 が見える範囲の上(見出しの裏)へ出た状態(jsdom の scrollTop は書いても 0 のままなので
+        //   読む値を固定し、scrollTo を控える)。
+        const scroller = ctx.container.querySelector<HTMLElement>('.ssg-scroll-container');
+        if (!scroller) {
+          throw new Error(`[${ctx.framework}] スクロールの要素がありません`);
+        }
+        const tops: number[] = [];
+        Object.defineProperty(scroller, 'scrollTop', { configurable: true, get: () => 200, set: () => {} });
+        scroller.scrollTo = ((options: ScrollToOptions) => {
+          tops.push(options.top ?? 200);
+        }) as HTMLElement['scrollTo'];
+        await ctx.act(() => {
+          card(ctx, 2).querySelector<HTMLElement>('.detail-input')?.focus();
+        });
+        await ctx.act(() => {
+          if (how === 'one') {
+            (ctx.handle().setDetailRowExpanded as (key: number, expanded: boolean) => void)(3, false);
+          } else {
+            (ctx.handle().collapseAllDetailRows as () => void)();
+          }
+        }, 0);
+        ctx.log('閉じた直後', {
+          active: (ctx.handle().getActiveCell as () => unknown)(),
+          focusOnShell: document.activeElement === ctx.shell(),
+        });
+        await ctx.act(() => {});
+        ctx.log('次のフレームで上へスクロールした', tops.some((top) => top < 200));
+        ctx.snapshot('閉じた後');
+      },
+    });
+  });
+
   it('showToggleColumn: false と renderCell の ctx.detail', async () => {
     await expectParity({
       props: (framework) => ({

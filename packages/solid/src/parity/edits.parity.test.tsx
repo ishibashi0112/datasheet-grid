@@ -393,6 +393,126 @@ describe('ハンドルの命令(handleFocusEdit)', () => {
       },
     });
   });
+
+  it('行キー / 列キーから位置を引く(DU-03 / N-2 / N-4): 並べ替え・絞り込み・ラベル行・足した列・表示していない列', async () => {
+    const labeledRows = [
+      { id: 1, name: '', qty: 0, done: false, label: '第1節' },
+      ...rows,
+      { id: 2, name: '', qty: 0, done: false, label: '第2節' },
+      { id: 40, name: 'delta', qty: 4, done: false },
+    ];
+    await expectParity({
+      features: ['labelRow', 'filtering', 'rowDrag'],
+      props: () => ({
+        rows: labeledRows,
+        columns: [...columns, { key: 'memo', title: 'メモ', width: 80, visible: false }],
+        rowKeyGetter: (row: Row) => row.id,
+        labelRow: { isLabelRow: (row: Row) => row.label !== undefined, getLabel: (row: Row) => row.label ?? '' },
+        enableRowDrag: true,
+        height: 300,
+      }),
+      steps: async (ctx) => {
+        const read = (label: string) =>
+          ctx.log(label, {
+            viewRowIndex: [1, 2, 10, 20, 30, 40, 999].map((key) => call(ctx, 'getViewRowIndex', key)),
+            rowNumber: [1, 2, 10, 20, 30, 40, 999].map((key) => call(ctx, 'getRowNumber', key)),
+            colIndex: ['name', 'qty', 'done', 'memo', 'nope'].map((key) => call(ctx, 'getColIndex', key)),
+          });
+        read('最初');
+        await ctx.act(() => {
+          call(ctx, 'applyState', { sort: [{ columnKey: 'qty', direction: 'asc' }] });
+        });
+        read('数量の昇順');
+        await ctx.act(() => {
+          call(ctx, 'applyState', { filters: { columnFilters: { name: { kind: 'text', value: 'be' } } } });
+        });
+        read('名前に be');
+        // 引いた位置はそのまま selectCell に渡せる。
+        await ctx.act(() => {
+          call(ctx, 'selectCell', call(ctx, 'getViewRowIndex', 20), call(ctx, 'getColIndex', 'qty'));
+        });
+        ctx.log('引いた位置で selectCell', call(ctx, 'getActiveCell'));
+        ctx.snapshot('最後');
+      },
+    });
+  });
+
+  it('イベントの外(タイマーの中)から startEditing しても、エディタはそのセルの今の値で開く(N-1)', async () => {
+    await expectParity({
+      watch: ['onRowsChange'],
+      props: () => ({ rows, columns, rowKeyGetter: (row: Row) => row.id, height: 300 }),
+      steps: async (ctx) => {
+        const later = (fn: () => void) =>
+          ctx.act(async () => {
+            await new Promise<void>((resolve) => {
+              setTimeout(() => {
+                fn();
+                resolve();
+              }, 0);
+            });
+          });
+        await later(() => {
+          call(ctx, 'startEditing', 1, 0);
+        });
+        logEditor(ctx, 'タイマーの中で 1 行目');
+        await keyOn(ctx, editorInput(ctx), { key: 'Escape' });
+        await later(() => {
+          call(ctx, 'startEditing', 2, 1);
+        });
+        logEditor(ctx, 'タイマーの中で 2 行目の数量');
+        // 何も打たずに Enter で確定しても、前に開いたセルの値を書かない。
+        await keyOn(ctx, editorInput(ctx), { key: 'Enter' });
+        ctx.snapshot('Enter で確定');
+      },
+    });
+  });
+
+  it('右クリックメニューの onSelect で startEditing() を呼ぶと、メニューを閉じた後もエディタは開いたまま(AP-10)', async () => {
+    const holder: { ctx: ParityContext | null } = { ctx: null };
+    await expectParity({
+      features: ['contextMenu'],
+      props: () => ({
+        rows,
+        columns,
+        rowKeyGetter: (row: Row) => row.id,
+        height: 300,
+        enableContextMenu: true,
+        getContextMenuItems: () => [
+          {
+            kind: 'action',
+            key: 'edit',
+            label: 'このセルを編集',
+            onSelect: () => {
+              if (holder.ctx) {
+                call(holder.ctx, 'startEditing');
+              }
+            },
+          },
+        ],
+      }),
+      steps: async (ctx) => {
+        holder.ctx = ctx;
+        const cell = ctx.cell(1, 'name');
+        await ctx.act(() => {
+          fireEvent.pointerDown(cell, pointer);
+          fireEvent.pointerUp(window, pointer);
+          fireEvent.contextMenu(cell, { clientX: 10, clientY: 10 });
+        });
+        ctx.snapshot('右クリックメニュー');
+        await ctx.act(() => {
+          const item = Array.from(document.querySelectorAll<HTMLElement>('.ssg-menu-item')).find((element) =>
+            element.textContent?.includes('このセルを編集'),
+          );
+          if (!item) {
+            throw new Error(`[${ctx.framework}] 項目がありません`);
+          }
+          fireEvent.click(item);
+        }, 120);
+        logEditor(ctx, 'メニューを閉じた後');
+        ctx.snapshot('メニューを閉じた後');
+      },
+    });
+  });
 });
 
 describe('スクロール位置の API(scrollApi)', () => {
@@ -602,5 +722,55 @@ describe('手動の絞り込み / 並べ替え(manualMode)と点線(copyRange)',
         },
       });
     });
+  });
+});
+
+// FC-01: 固定列でのキーボード移動も縦に追従する(固定列は横へ動かさない)。
+describe('固定列でのキーボード移動の縦の追従(FC-01)', () => {
+  it.each([
+    ['固定なし', undefined],
+    ['左に固定', 'left'],
+    ['右に固定', 'right'],
+  ] as const)('%s', async (_label, pinned) => {
+    const manyRows = Array.from({ length: 200 }, (_, i) => ({ id: i, memo: `n${i}`, qty: i }));
+    const original = Element.prototype.scrollTo;
+    const calls: { top?: number | undefined; left?: number | undefined }[] = [];
+    Element.prototype.scrollTo = function (this: Element, ...args: unknown[]) {
+      const options = args[0] as ScrollToOptions | undefined;
+      calls.push({ top: options?.top, left: options?.left });
+    } as Element['scrollTo'];
+    try {
+      await expectParity({
+        watch: ['onActiveCellChange'],
+        props: () => ({
+          rows: manyRows,
+          columns: [
+            { key: 'memo', title: '名前', width: 160, pinned },
+            { key: 'qty', title: '数量', width: 100 },
+          ],
+          rowKeyGetter: (row: Row) => row.id,
+          height: 300,
+        }),
+        steps: async (ctx) => {
+          calls.length = 0;
+          const col = pinned === 'right' ? 1 : 0;
+          await ctx.act(() => {
+            call(ctx, 'setActiveCell', { row: 0, col });
+          });
+          for (let i = 0; i < 30; i += 1) {
+            await ctx.act(() => {
+              fireEvent.keyDown(ctx.shell(), { key: 'ArrowDown' });
+            }, 0);
+          }
+          await ctx.act(() => {});
+          ctx.log('アクティブセル', call(ctx, 'getActiveCell'));
+          ctx.log('縦に追従した', calls.length > 5 && (calls[calls.length - 1]?.top ?? 0) > 0);
+          ctx.log('横へは動かさない', pinned ? calls.every((entry) => entry.left === undefined || entry.left === 0) : null);
+          ctx.snapshot('30 回 ↓');
+        },
+      });
+    } finally {
+      Element.prototype.scrollTo = original;
+    }
   });
 });
