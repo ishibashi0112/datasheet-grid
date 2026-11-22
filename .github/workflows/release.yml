@@ -4,13 +4,15 @@ name: Release notes
 #   npm への publish はこれまでどおり手元で行います(このワークフローは publish しません)。
 #   過去の版をまとめて作るときは、Actions の画面から手動実行し、tags に「all」(CHANGELOG.md の全版のうちタグがあるもの)か
 #   「v0.53.0 v0.54.0」のような空白区切りの一覧を渡します。すでにある Release は本文だけ書き直します。
+#   追加(Solid 版 0.1.0): Solid 版のタグ solid-vX.Y.Z も同じく、packages/solid/CHANGELOG.md のその版の節で Release を作ります
+#   (手動実行の tags にも書けます。all には入りません)。「Latest」の印は React 版と core の最新版のままです。
 on:
   push:
-    tags: ['v*.*.*']
+    tags: ['v*.*.*', 'solid-v*.*.*']
   workflow_dispatch:
     inputs:
       tags:
-        description: '作る版(all か、空白区切りの vX.Y.Z)'
+        description: '作る版(all か、空白区切りの vX.Y.Z / solid-vX.Y.Z)'
         required: true
 
 permissions:

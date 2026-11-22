@@ -1,6 +1,6 @@
 # 変更履歴
 
-`@ishibashi0112/spreadsheet-grid`(React 版)と `@ishibashi0112/spreadsheet-grid-core`(フレームワーク非依存のコア。0.39.0 から公開)の変更履歴です。両パッケージの版は常に揃えています。
+`@ishibashi0112/spreadsheet-grid`(React 版)と `@ishibashi0112/spreadsheet-grid-core`(フレームワーク非依存のコア。0.39.0 から公開)の変更履歴です。両パッケージの版は常に揃えています。Solid 版(`@ishibashi0112/spreadsheet-grid-solid`。版は別)の変更履歴は [packages/solid/CHANGELOG.md](./packages/solid/CHANGELOG.md) にあります。
 
 - **挙動の変化**: 公開 API は変わらないものの、見た目や動きが変わる変更です。上げる前に確かめてください。1.0 からは major でだけ出します(書いたとおりに動くよう直すものは「修正」に書きます)。
 - **core の破壊的変更**: core の入口を直接使っている場合だけ影響します。React 版だけを使っている場合は関係ありません。1.0 からは major でだけ出します(core の内部の部品 `internal/` の変更は書きません)。

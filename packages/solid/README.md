@@ -2,7 +2,7 @@
 
 A virtualized spreadsheet / data grid for Solid 2.0 (~1M rows, pinned columns, Excel-like editing / selection / clipboard, filters & sorting, client-side and server-side row models). It is the Solid version of [`@ishibashi0112/spreadsheet-grid`](https://www.npmjs.com/package/@ishibashi0112/spreadsheet-grid) (React): the same props, column options, imperative handle, CSS and look, built on the same framework-independent core. 日本語は下にあります。
 
-**[Docs & live demo](https://datasheet-grid.vercel.app)** (written for the React version; the props are the same) · [GitHub](https://github.com/ishibashi0112/datasheet-grid) · [Changelog](https://github.com/ishibashi0112/datasheet-grid/blob/main/CHANGELOG.md)
+**[Docs & live demo](https://datasheet-grid.vercel.app)** (written for the React version; the props are the same. Solid notes, in Japanese: [Solid で使う](https://datasheet-grid.vercel.app/docs/solid)) · [Try on StackBlitz](https://stackblitz.com/fork/github/ishibashi0112/datasheet-grid/tree/main/examples/solid?file=src/App.tsx&terminal=dev) · [GitHub](https://github.com/ishibashi0112/datasheet-grid) · [Changelog](https://github.com/ishibashi0112/datasheet-grid/blob/main/packages/solid/CHANGELOG.md)
 
 ## Install
 
@@ -91,7 +91,7 @@ The feature names and what they enable are listed in the React version's `API_RE
 
 ## Versioning
 
-This package has its own version (0.x), separate from the React version and the core, and depends on the core of exactly one version. Before 1.0, minor releases may include breaking changes; they are listed in the [changelog](https://github.com/ishibashi0112/datasheet-grid/blob/main/CHANGELOG.md). TypeScript 5.8 or later is supported (`moduleResolution` `bundler` or `nodenext`, `jsx: "preserve"`, `jsxImportSource: "@solidjs/web"`). A library built on this package that exports inferred types should list this package and the core (the version this package depends on) in `peerDependencies`.
+This package has its own version (0.x), separate from the React version and the core, and depends on the core of exactly one version. Before 1.0, minor releases may include breaking changes; they are listed in the [changelog](https://github.com/ishibashi0112/datasheet-grid/blob/main/packages/solid/CHANGELOG.md). TypeScript 5.8 or later is supported (`moduleResolution` `bundler` or `nodenext`, `jsx: "preserve"`, `jsxImportSource: "@solidjs/web"`). A library built on this package that exports inferred types should list this package and the core (the version this package depends on) in `peerDependencies`.
 
 ## License
 
@@ -103,7 +103,7 @@ MIT
 
 Solid 2.0 向けの仮想化スプレッドシート / データグリッドです(約 100 万行・列固定・Excel ライクな編集 / 選択 / クリップボード・フィルター / ソート・クライアントサイド / サーバーサイド行モデル)。React 版の [`@ishibashi0112/spreadsheet-grid`](https://www.npmjs.com/package/@ishibashi0112/spreadsheet-grid) と同じ props・列の定義・命令的なハンドル・CSS・見た目で、同じフレームワークに依らないコアの上に作っています。
 
-**[ドキュメントとライブデモ](https://datasheet-grid.vercel.app)**(React 版向けに書いていますが、props は同じです)· [GitHub](https://github.com/ishibashi0112/datasheet-grid) · [変更履歴](https://github.com/ishibashi0112/datasheet-grid/blob/main/CHANGELOG.md)
+**[ドキュメントとライブデモ](https://datasheet-grid.vercel.app)**(React 版向けに書いていますが、props は同じです。Solid 版だけのことは [Solid で使う](https://datasheet-grid.vercel.app/docs/solid))· [StackBlitz で試す](https://stackblitz.com/fork/github/ishibashi0112/datasheet-grid/tree/main/examples/solid?file=src/App.tsx&terminal=dev) · [GitHub](https://github.com/ishibashi0112/datasheet-grid) · [変更履歴](https://github.com/ishibashi0112/datasheet-grid/blob/main/packages/solid/CHANGELOG.md)
 
 `npm install @ishibashi0112/spreadsheet-grid-solid` で入れます(peer は `solid-js` / `@solidjs/web` の `^2.0.0`)。CSS は `import '@ishibashi0112/spreadsheet-grid-solid/style.css'` を 1 回読み込みます。`style.layer.css` とデザインシステムのテーマ(`themes/*.css`)は React 版と同じファイルです。
 
@@ -145,7 +145,7 @@ Solid 2.0 向けの仮想化スプレッドシート / データグリッドで�
 
 ### バージョンの方針
 
-このパッケージは React 版・コアとは別の版(0.x)で、コアには同じ 1 つの版で依存します。1.0 より前は minor でも壊す変更が入ることがあり、[変更履歴](https://github.com/ishibashi0112/datasheet-grid/blob/main/CHANGELOG.md)に書きます。TypeScript は 5.8 以上(`moduleResolution` は `bundler` / `nodenext`、`jsx: "preserve"`・`jsxImportSource: "@solidjs/web"`)です。このパッケージの上に作ったライブラリが推論した型を export するときは、このパッケージと core(このパッケージが依存する版)を `peerDependencies` に入れてください。
+このパッケージは React 版・コアとは別の版(0.x)で、コアには同じ 1 つの版で依存します。1.0 より前は minor でも壊す変更が入ることがあり、[変更履歴](https://github.com/ishibashi0112/datasheet-grid/blob/main/packages/solid/CHANGELOG.md)に書きます。TypeScript は 5.8 以上(`moduleResolution` は `bundler` / `nodenext`、`jsx: "preserve"`・`jsxImportSource: "@solidjs/web"`)です。このパッケージの上に作ったライブラリが推論した型を export するときは、このパッケージと core(このパッケージが依存する版)を `peerDependencies` に入れてください。
 
 ## License
 

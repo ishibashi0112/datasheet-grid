@@ -400,6 +400,7 @@ S6-01。`primitives/clickTarget.ts`)/ テーマの CSS のコメントのパッ�
 | 3-2 | 実ブラウザのハーネス(`audit/harness` の確認)を Solid 版でも Chromium / Firefox / WebKit で回し、違いを直す | 済み(ハーネスを Solid 版でも回せるようにした。違い 5 つと別視点のレビューの指摘を直した(core に省略できる引数を 1 つ足した)。Solid 版は遅延読み込みの 25 項目を除いて Chromium 927 / 927・Firefox 875 / 876・WebKit 872 / 875、React 版は Chromium 952 / 952・Firefox 876 / 876・WebKit 872 / 875。WebKit の 3 件は両方とも既知の BR-3・BR-4、Firefox の 1 件は下の「速さ」の時間の確かめ)。PR を見てもらう |
 | 3-2b | 速さの違い(3-2 で測った、100 万行で遠くへスクロールしたときに Solid 版が約 1.5〜2 倍かかる)を直す。2026-11-21 にユーザーが「3-3 の前に別の段階で直す」を選んだ | 済み(本番ビルドの Chromium で、近いスクロールは React 版 20ms・直す前の Solid 版 27ms・今 22ms、遠くへ飛ぶスクロールは React 版 54ms・直す前 79ms・今 75ms。Firefox の遠くへは React 版 55ms・直す前 118ms・今 114ms。遠くへの残りの差は、2026-11-21 にユーザーが「今の直しで区切って 3-3 へ」を選び、記録だけにした。ハーネスは Solid 版 Chromium 927 / 927・Firefox 875 / 876(3-2 と同じ t-aggregates の時間の 1 件)・WebKit 872 / 875(既知の BR-3・BR-4))。PR を見てもらう |
 | 3-3 | パッケージの形(dist と型)・`size:check` / `types:check` に Solid 版・StackBlitz のサンプル・README とドキュメントサイトの「Solid で使う」・ポップアップの遅延読み込み(測ってから決める) | 済み(3-3a 済み: 公開の型と関数を React 版にそろえ、dist・「solid」条件・CSS・`size:check` / `types:check`。3-3c 済み: ポップアップの遅延読み込み(2026-11-21 にユーザーが「React 版と同じく後から読む」を選んだ)。3-3d 済み: サンプル `examples/solid` と npm の README(サイトの「Solid で使う」とリンクは 0.1.0 の公開と一緒に出す = 2026-11-21 ユーザー判断)。別視点のレビュー 2 系統の指摘を直した。ハーネスは Solid 版で Chromium 952 / 952(遅延読み込みの 25 項目を含む)・Firefox 876 / 876・WebKit 872 / 875(既知の BR-3・BR-4。React 版の 3-2 の結果と同じ数)。ルートのゲートは全部緑。PR #73 で main へ(2026-11-21)) |
+| 0.1.0 | 公開前の PR(サイトの「Solid で使う」のページ・README と StackBlitz のリンク・Solid 版の変更履歴 `packages/solid/CHANGELOG.md` とタグ `solid-vX.Y.Z`・`private` を外す)→ ユーザーが公開 → npm と GitHub Release と新しいアプリで確かめる → StackBlitz での起動をユーザーに確かめてもらう | 公開前の PR(2026-11-22) |
 
 ### 3-3 で分かったこと
 
@@ -479,6 +480,12 @@ S6-01。`primitives/clickTarget.ts`)/ テーマの CSS のコメントのパッ�
     `packages/solid/package.json` の `version` を手で 0.1.0 にし、`private: true` を外す。そのときに決めること: タグの名前
     (`v*` は core と React 版の版なので別の名前にする。`release.yml` は `v*` で動く)、CHANGELOG の書き方(Solid 版の節を分けるか)、
     これからの Solid 版の版上げをスクリプトにするか。
+  - 決めたこと(2026-11-22。ユーザーの「それでは公開しましょうか」を受けた公開前の PR で、おすすめのとおり): タグは `solid-vX.Y.Z`
+    (0.1.0 は `solid-v0.1.0`)。変更履歴は Solid 版だけの `packages/solid/CHANGELOG.md`(見出しは React 版と同じ「## X.Y.Z — 日付」、
+    各版に依存する core の版を書く。ルートの CHANGELOG.md は React 版と core だけで、`bump-version.mjs` の「## 未リリース」の
+    書き換えに Solid 版の変更が混ざらないように)。`release.yml` は `solid-v*.*.*` のタグでも動き、`scripts/changelog-section.mjs` が
+    `solid-vX.Y.Z` のときは Solid 版の変更履歴から節を取る(Release の「Latest」の印は React 版と core の最新版のまま)。版上げは
+    手で行う(Solid 版の版上げはまだ少ないので、スクリプトは版上げが続くようになってから)。`private: true` は公開前の PR で外した。
   - 公開: `private` を外すと `publish:all`(`pnpm -r publish`)に Solid 版も入る(公開済みの版は pnpm が飛ばす)。core の版を
     上げた後に Solid 版を出すと、Solid 版が依存する core の版もその版になる(`workspace:*` を pack で固定)。
   - サイトの「Solid で使う」と README / StackBlitz のリンクの小さな PR を、公開の直前にマージする(2026-11-21 ユーザー判断)。

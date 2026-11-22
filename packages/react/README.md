@@ -2,7 +2,7 @@
 
 A virtualized spreadsheet / data grid for React 18.3 / 19 (~1M rows, pinned columns, Excel-like editing / selection / clipboard, filters & sorting, client-side and server-side row models). 日本語は下にあります。
 
-**[Docs & live demo](https://datasheet-grid.vercel.app)** · [Playground](https://datasheet-grid.vercel.app/playground) · [Try on StackBlitz](https://stackblitz.com/fork/github/ishibashi0112/datasheet-grid/tree/main/examples/basic?file=src/App.tsx&terminal=dev) · [GitHub](https://github.com/ishibashi0112/datasheet-grid) · [Changelog](https://github.com/ishibashi0112/datasheet-grid/blob/main/CHANGELOG.md)
+**[Docs & live demo](https://datasheet-grid.vercel.app)** · [Playground](https://datasheet-grid.vercel.app/playground) · [Try on StackBlitz](https://stackblitz.com/fork/github/ishibashi0112/datasheet-grid/tree/main/examples/basic?file=src/App.tsx&terminal=dev) · [GitHub](https://github.com/ishibashi0112/datasheet-grid) · [Changelog](https://github.com/ishibashi0112/datasheet-grid/blob/main/CHANGELOG.md) · [Solid version](https://datasheet-grid.vercel.app/docs/solid)
 
 ## Install
 
@@ -119,7 +119,7 @@ MIT
 
 React 18.3 / 19 向けの仮想化スプレッドシート / データグリッドです(約 100 万行・列固定・Excel ライクな編集 / 選択 / クリップボード・フィルター / ソート・クライアントサイド / サーバーサイド行モデル)。
 
-**[ドキュメントとライブデモ](https://datasheet-grid.vercel.app)** · [プレイグラウンド](https://datasheet-grid.vercel.app/playground) · [StackBlitz で試す](https://stackblitz.com/fork/github/ishibashi0112/datasheet-grid/tree/main/examples/basic?file=src/App.tsx&terminal=dev) · [GitHub](https://github.com/ishibashi0112/datasheet-grid) · [変更履歴](https://github.com/ishibashi0112/datasheet-grid/blob/main/CHANGELOG.md)
+**[ドキュメントとライブデモ](https://datasheet-grid.vercel.app)** · [プレイグラウンド](https://datasheet-grid.vercel.app/playground) · [StackBlitz で試す](https://stackblitz.com/fork/github/ishibashi0112/datasheet-grid/tree/main/examples/basic?file=src/App.tsx&terminal=dev) · [GitHub](https://github.com/ishibashi0112/datasheet-grid) · [変更履歴](https://github.com/ishibashi0112/datasheet-grid/blob/main/CHANGELOG.md) · [Solid 版](https://datasheet-grid.vercel.app/docs/solid)
 
 CSS は `import '@ishibashi0112/spreadsheet-grid/style.css'` を 1 回読み込みます。Tailwind CSS v4 でも `style.css` でそのまま動きます。カスケードレイヤー版の `style.layer.css`(全体が `@layer ssg-base`)は、グリッドを自分のレイヤー順に入れたいときだけ使い、そのときは CSS で Tailwind より前に `@layer theme, base, ssg-base, components, utilities;` とレイヤー順を宣言してください(宣言しないと `ssg-base` が一番弱いレイヤーになり、Tailwind の Preflight に罫線・ボタン・ポップオーバーが崩されます。[詳しく](https://datasheet-grid.vercel.app/docs/installation))。宣言は `style.layer.css` より先に読まれる必要があるので、`style.layer.css` は宣言した CSS の中で `@import` するか、JS ならその CSS の後に `import` します。StyleX の `useLayers` を使うときも同じです。
 
