@@ -1,0 +1,8 @@
+{
+  "compilerOptions": {
+    "target": "es2022", "lib": ["ES2023", "DOM"], "module": "esnext", "moduleResolution": "bundler",
+    "jsx": "preserve", "jsxImportSource": "@solidjs/web", "strict": true, "exactOptionalPropertyTypes": true,
+    "declaration": true, "emitDeclarationOnly": true, "rootDir": "src", "outDir": "out-bundler", "skipLibCheck": true, "types": []
+  },
+  "include": ["src"]
+}

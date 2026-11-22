@@ -39,10 +39,12 @@ jobs:
 
       # 追加(Solid 版 段階 3-1): Solid 版(packages/solid。まだ公開していない)の型チェックとテスト。ルートの tsc / vitest の
       #   対象外なので別に回す。React 版と並べて同じ props・同じ操作で DOM と通知を比べるテスト(src/parity)を含む。
+      #   test:ssr はサーバーで描いた HTML のハイドレーションの確かめ(packages/solid/ssr。段階 4 の測り直し)。
       - name: Solid (typecheck + test)
         run: |
           pnpm --filter ./packages/solid run typecheck
           pnpm --filter ./packages/solid test
+          pnpm --filter ./packages/solid run test:ssr
 
       - name: Build library
         run: pnpm run build:lib
@@ -66,3 +68,34 @@ jobs:
 
       - name: Lint
         run: pnpm lint
+
+  # 追加(Solid 版の測り直し 段階 4 1-4): Solid 版を Solid の最新の 2.x でも回す。上の ci のジョブはロックファイルの版
+  #   (Solid 2.0.0 = Solid 版が対応する下限)で回すので、こちらは solid-js / @solidjs/web / @solidjs/signals と、利用側の
+  #   JSX を変換するコンパイラ(@solidjs/compiler / @solidjs/babel-plugin)を 2.x の最新へ上げてから同じ確かめをする
+  #   (scripts/solid-latest.mjs。公開から 2 日たった版)。
+  solid-latest:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11.12.0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Solid を最新の 2.x へ上げる
+        run: node scripts/solid-latest.mjs
+
+      - name: Solid (typecheck + test + test:ssr)
+        run: |
+          pnpm --filter ./packages/solid run typecheck
+          pnpm --filter ./packages/solid test
+          pnpm --filter ./packages/solid run test:ssr

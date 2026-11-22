@@ -11,9 +11,10 @@
 //   - 部品の本体では props を直接読まない(Solid 2.0 は本体での読み取りを警告する)。props は関数や memo の中で読む。
 //   - React の onXxxCapture / onBlur / onFocus(子孫からも上がってくる)は、Solid では capture のリスナーを自分で付ける /
 //     onFocusOut / onFocusIn にします。
-import { For, Match, Show, Switch, createEffect, createMemo, createUniqueId, onCleanup, untrack } from 'solid-js';
+import { For, Match, Show, Switch, createEffect, createMemo, createSignal, createUniqueId, isHydrating, latest, onCleanup, untrack } from 'solid-js';
 import type { Ref } from 'solid-js';
 import type { JSX } from '@solidjs/web';
+import { isServer } from '@solidjs/web';
 import type {
   CellCoord,
   CellDetailContext,
@@ -132,6 +133,7 @@ import type {
   SpreadsheetGridSlotContext,
 } from './model/gridTypes';
 import { GridLocaleTextContext, mergeFeatureLocaleDefaults } from './context/localeText';
+import { createUserCallbacks, runHandleCall } from './primitives/userCallback';
 import { createGridStoreSignals } from './primitives/gridStoreSignals';
 import { createExternalStoreSignal } from './primitives/externalStore';
 import { createGridViewSetters } from './primitives/viewSetters';
@@ -159,7 +161,7 @@ import { CellEditorLayer, type CellEditorSession } from './editors/CellEditorLay
 import { GridPortalContext } from './context/portal';
 import { DefaultGridTopBar } from './view/DefaultGridTopBar';
 import { DefaultGridBottomBar } from './view/DefaultGridBottomBar';
-import { createShellDevWarnings, warnMoveRowOnServerSide, withOpenToolPanelWarnings } from './devWarnings';
+import { createShellDevWarnings, warnHandleCallBeforeMount, warnMoveRowOnServerSide, withOpenToolPanelWarnings } from './devWarnings';
 
 const EMPTY_ROWS: never[] = [];
 const NEVER_EDITABLE = () => false;
@@ -184,15 +186,16 @@ const applyHandleRef = <H,>(ref: Ref<H> | undefined, handle: H): void => {
 
 // 追加(0.1.0 の前の実アプリ点検 S5-01): ハンドルのメソッドを、呼ぶ前に before を走らせる形で包みます(1 回だけ作る。
 //   同じメソッドはいつも同じ関数)。
-const exposeHandle = <H extends object,>(handle: H, before: () => void): H => {
+const exposeHandle = <H extends object,>(handle: H, before: (method: string) => void): H => {
   const exposed: Record<string, unknown> = {};
   for (const [key, value] of Object.entries(handle)) {
     exposed[key] =
       typeof value === 'function'
-        ? (...args: unknown[]) => {
-            before();
-            return (value as (...a: unknown[]) => unknown)(...args);
-          }
+        ? (...args: unknown[]) =>
+            runHandleCall(() => {
+              before(key);
+              return (value as (...a: unknown[]) => unknown)(...args);
+            })
         : value;
   }
   return exposed as H;
@@ -239,7 +242,51 @@ function GridShellBody<T extends object>(
   //   dataSource を外すので clientSide)。dataSource があるときは rows を空として扱う(ドキュメントどおり「無視」。React 版と同じ)。
   const serverSideFeature = features.serverSide;
   const isServerSide = createMemo(() => props.dataSource != null);
-  const rows = createMemo(() => (props.dataSource != null ? EMPTY_ROWS : (props.rows ?? EMPTY_ROWS)) as T[]);
+  // 利用側の通知は、グリッドの書き込みとは別のフレームで呼ぶ(primitives/userCallback。段階 4 の測り直し S4-21)。
+  const { wrap: inOwnTick, call: callInOwnTick } = createUserCallbacks();
+  // 変更(段階 4 の測り直し S4-21 / S5-21): rows は effect で写した値を読みます。Solid 2.0 では、利用者が通知の中で rows を
+  //   書いて action を始めると(ふつうの signal + action で保存する形)、その rows は action が終わるまで保留され、行を非同期の
+  //   createMemo で持つと、取り直しの間は保留中になります。グリッドの計算が props.rows を直接読むと、それを読む計算が全部
+  //   待たされ、グリッドが止まっていました(画面は古いまま、保存中の 2 回目の編集が前の行へ入った・取り直しの間はスクロールも
+  //   アクティブセルも動かなかった)。React 版では setRows はすぐ描かれ、取り直しの間(use + transition)も前の行のまま
+  //   操作できます。それに合わせ、effect が latest()(保留中でも今の値)で読んで写し、グリッドはその写しを読みます。effect の
+  //   中の書き込みは利用者の取引に入らないので、グリッドは止まりません。写す前(最初の値が届くまで)は props.rows をそのまま
+  //   読みます(<Loading> の中で最初の行を待つ形と、サーバーで描くときはこれまでどおり)。
+  // 変更(段階 4 の測り直し S8-01 / S2-22): サーバーで描くときと、クライアントのハイドレーションの間は、行を空として描き、
+  //   描き終わった後(onGridMounted)に行へ切り替えます。Solid のハイドレーションはサーバーの要素をそのまま使い、クライアントで
+  //   違う値になった文字・属性・行を直さないので、サーバーとブラウザでタイムゾーンや今日が違うと(日付の条件・Date の値の
+  //   書式)、固定列に別の行の文字が残り、そのセルの編集が別の行に入り、件数もサーバーのまま残っていました。React 版は
+  //   食い違いをクライアントで描き直して直します。行に依らない骨組み(見出し・上下のバーの条件の表示)だけをサーバーで描き、
+  //   行・件数・合計は、切り替えた後のふつうの描画で出します(どちらの側でも同じ結果になる)。サーバーで描かない描き方では
+  //   最初から true です。最初に登録するので、コントローラの最初の update より前に切り替えの書き込みが入ります。
+  const [hydrated, setHydrated] = createSignal(!isServer && !isHydrating(), { name: 'hydrated' });
+  if (!untrack(hydrated)) {
+    onGridMounted(() => {
+      setHydrated(true);
+    });
+  }
+  const [relayedRows, setRelayedRows] = createSignal<{ value: T[] | undefined } | null>(null);
+  createEffect(
+    () => latest(() => props.rows) as T[] | undefined,
+    {
+      effect: (value) => {
+        setRelayedRows({ value });
+      },
+      // 行の読み込みの失敗(非同期の memo の取り直しの失敗など)は、利用側の <Errored> へそのまま渡します(段階 4 の測り直し
+      //   S7-02。行を JSX で読んだときと同じ。受けないと、effect ごとに同じエラーが console へ出ていた)。
+      error: (error) => {
+        throw error;
+      },
+    },
+    { name: 'relayRows' },
+  );
+  const rows = createMemo(() => {
+    if (props.dataSource != null || !hydrated()) {
+      return EMPTY_ROWS as T[];
+    }
+    const relayed = relayedRows();
+    return ((relayed ? relayed.value : props.rows) ?? EMPTY_ROWS) as T[];
+  });
   const columns = createMemo(() => props.columns as unknown as UnboundGridColumn<T>[]);
   const density = () => props.density ?? 'standard';
   const rowHeight = () => props.rowHeight ?? GRID_DENSITY_DIMENSIONS[density()].rowHeight;
@@ -551,8 +598,8 @@ function GridShellBody<T extends object>(
     query: serverSideQuerySnapshot().query,
     queryKey: serverSideQuerySnapshot().queryKey,
     refreshToken: props.serverSideRefreshToken,
-    onLoadError: props.onServerSideLoadError,
-    onWriteError: props.onServerSideWriteError,
+    onLoadError: inOwnTick(props.onServerSideLoadError),
+    onWriteError: inOwnTick(props.onServerSideWriteError),
     // 書き戻しのセル単位の保存状態(pending → ok | failed)を saveStatusController へ。
     onWriteStateChange: engine.saveStatus.handle,
   }));
@@ -653,7 +700,11 @@ function GridShellBody<T extends object>(
     detailActive: () => vertical().detailActive,
     globalFilterText,
     columnFilterCount: () => Object.keys(columnFilters()).length,
-    rows: () => props.rows,
+    // 写した rows を読みます(取り直しの失敗を、写しの effect だけが <Errored> へ渡すように。S7-02)。写す前は props.rows。
+    rows: () => {
+      const relayed = relayedRows();
+      return relayed ? relayed.value : props.rows;
+    },
   });
   // ラベル行の縦スクロールの固定(labelRow.sticky)。scrollTop(論理)から今のセクションのラベル行と押し上げる量を求めて、各ペインの
   //   固定の層へ渡します。固定の帯がヘッダーの直下で行を隠す高さ(stickyTopInset)は、アクティブセルの追従と scrollToRow /
@@ -913,7 +964,7 @@ function GridShellBody<T extends object>(
   connectController(engine.scrollSync, () => ({
     scrollContainerRef,
     setViewState: store.setViewState,
-    onScroll: props.onScroll,
+    onScroll: inOwnTick(props.onScroll),
     // 見える高さは下端に固定する行(合計行 / 下の固定行)に隠れるぶんを除く。
     footerHeight: footerHeight(),
   }), 'effect', 'scrollSync');
@@ -1194,7 +1245,7 @@ function GridShellBody<T extends object>(
   connectController(engine.hoverRowNotifier, () => ({
     enableRowHover: enableRowHover(),
     isHoverControlled: props.hoveredRowIndex !== undefined,
-    onHoveredRowChange: props.onHoveredRowChange,
+    onHoveredRowChange: inOwnTick(props.onHoveredRowChange),
     setHoveredRowIndex: viewSetters.setHoveredRowIndex,
   }), 'render', 'hoverRowNotifier');
   const applyHoveredRowChange = engine.hoverRowNotifier.applyHoveredRowChange;
@@ -1282,7 +1333,7 @@ function GridShellBody<T extends object>(
     rowModel: rowModel(),
     rowSelectionState: ui().rowSelection,
     rowSelectionMode: rowSelectionMode(),
-    onRowSelectionChange: props.onRowSelectionChange,
+    onRowSelectionChange: inOwnTick(props.onRowSelectionChange),
     controlledRowSelectionModel: controlledRowSelectionModel(),
     leafRowCount: leafRowCount(),
     filteredDataRows: filteredDataRows(),
@@ -1293,7 +1344,7 @@ function GridShellBody<T extends object>(
   //   展開中の行のキーの変更の通知(初回 = マウント時の空集合は通知しない)と、rows から消えた行のキーを外す処理(DF-25)。
   connectController(
     engine.detailKeysNotifier,
-    () => ({ expandedKeys: ui().expandedDetailRowKeys, onChange: props.onExpandedDetailRowKeysChange }),
+    () => ({ expandedKeys: ui().expandedDetailRowKeys, onChange: inOwnTick(props.onExpandedDetailRowKeysChange) }),
     'effect',
     'detailKeysNotifier',
   );
@@ -1400,8 +1451,8 @@ function GridShellBody<T extends object>(
   connectController(engine.cellEventNotifier, () => ({
     rowModel: rowModel(),
     orderedColumns: orderedColumns(),
-    onCellClick: props.onCellClick,
-    onCellDoubleClick: props.onCellDoubleClick,
+    onCellClick: inOwnTick(props.onCellClick),
+    onCellDoubleClick: inOwnTick(props.onCellDoubleClick),
   }), 'render', 'cellEventNotifier');
   connectController(engine.activeRowFollow, () => ({
     enabled: activeRowFollowEnabled(),
@@ -1422,7 +1473,7 @@ function GridShellBody<T extends object>(
       editingCell: ui().editingCell,
       rowModel: rowModel(),
       orderedColumns: orderedColumns(),
-      onActiveCellChange: props.onActiveCellChange,
+      onActiveCellChange: inOwnTick(props.onActiveCellChange),
       followsRow: activeRowFollowEnabled(),
       isRowFollowPending: engine.activeRowFollow.isFollowPending,
     }),
@@ -1477,12 +1528,12 @@ function GridShellBody<T extends object>(
     rows: rows(),
     selection: ui().selection,
     activeCell: ui().activeCell,
-    onRowsChange: props.onRowsChange,
+    onRowsChange: inOwnTick(props.onRowsChange),
     dispatch,
     // サーバーサイドは rows を持たず戻す先が無いので無効(React 版と同じ)。
     enabled: (props.enableUndoRedo ?? true) && !readOnly() && !isServerSide(),
     limit: props.undoHistoryLimit ?? 100,
-    onUndoRedoStateChange: props.onUndoRedoStateChange,
+    onUndoRedoStateChange: inOwnTick(props.onUndoRedoStateChange),
     onAfterRestore: (activeCell: CellCoord | null) => {
       if (activeCell) {
         requestAnimationFrame(() => engine.gridApi.scrollToCellInternal(activeCell.row, activeCell.col, 'auto'));
@@ -1528,11 +1579,11 @@ function GridShellBody<T extends object>(
     },
     createRow: props.createRow,
     createOverflowColumn: props.createOverflowColumn,
-    onPasteSkipped: props.onPasteSkipped,
+    onPasteSkipped: inOwnTick(props.onPasteSkipped),
     localeTexts: localeTexts(),
     pasteFillsSelection: props.pasteFillsSelection,
     onRowsChange: handleRowsChange(),
-    onColumnsChange: props.onColumnsChange,
+    onColumnsChange: inOwnTick(props.onColumnsChange),
     applyServerSideCellEdits: applyServerSideCellEdits(),
     isRowExportable: props.isRowExportable,
     dispatch,
@@ -1602,7 +1653,7 @@ function GridShellBody<T extends object>(
     onNavigate: (rowIndex: number, colIndex: number) => {
       engine.gridApi.handle.selectCell(rowIndex, colIndex, { scrollIntoView: true });
     },
-    onChange: props.onFindChange,
+    onChange: inOwnTick(props.onFindChange),
   }), 'render', 'find');
   const openFindFromShortcut = () => engine.find.open();
   const closeFindAndRefocus = () => {
@@ -1767,7 +1818,9 @@ function GridShellBody<T extends object>(
     if (!items || items.length === 0) {
       return false;
     }
-    props.onContextMenuOpen?.(params);
+    if (props.onContextMenuOpen) {
+      callInOwnTick(props.onContextMenuOpen, params);
+    }
     contextMenu.open(params, items, { focus: 'firstItem' });
     return true;
   };
@@ -1838,7 +1891,9 @@ function GridShellBody<T extends object>(
     }
     // ここで初めて標準のメニューを止め、グリッドのメニューを開きます。
     event.preventDefault();
-    props.onContextMenuOpen?.(params);
+    if (props.onContextMenuOpen) {
+      callInOwnTick(props.onContextMenuOpen, params);
+    }
     contextMenu.open(params, items);
   };
   // 開いているメニュー(項目と位置と読み上げの名前)。閉じている間 / 位置が決まる前は null。
@@ -2031,7 +2086,7 @@ function GridShellBody<T extends object>(
     visibleColumns: visibleColumns(),
     orderedColumns: orderedColumns(),
     columnWidths: paneResolution().effectiveColumnWidths,
-    onColumnsChange: props.onColumnsChange,
+    onColumnsChange: inOwnTick(props.onColumnsChange),
     dispatch,
     enableSorting: enableSorting(),
     sort: ui().sort,
@@ -2164,12 +2219,14 @@ function GridShellBody<T extends object>(
     const movedRow = currentRows[fromIndex] as T;
     const nextRows = next as T[];
     onRowsChange(nextRows);
-    props.onRowMove?.({
-      rowKey: resolvedRowKeyGetter()(movedRow, fromIndex),
-      fromIndex,
-      toIndex,
-      rows: nextRows,
-    });
+    if (props.onRowMove) {
+      callInOwnTick(props.onRowMove, {
+        rowKey: resolvedRowKeyGetter()(movedRow, fromIndex),
+        fromIndex,
+        toIndex,
+        rows: nextRows,
+      });
+    }
     return true;
   };
   const moveRowByKey = (rowKey: GridRowKey, toIndex: number) => {
@@ -2327,7 +2384,7 @@ function GridShellBody<T extends object>(
     paneLayout: paneLayout(),
     orderedColumns: orderedColumns(),
     columns: columns(),
-    onColumnsChange: props.onColumnsChange,
+    onColumnsChange: inOwnTick(props.onColumnsChange),
     includeGroupingInState: props.includeGroupingInState ?? false,
     uiState: ui(),
     getUiState: store.getState,
@@ -2390,9 +2447,19 @@ function GridShellBody<T extends object>(
   //   メソッドは、描き終わっていればグリッドの最初の処理(primitives/mountGate.ts)を先に済ませてから呼びます(React 版で
   //   利用者の useEffect から呼んだときと同じ状態にする)。部品の本体の中(ref の関数の中など)で呼んだときは、まだ描いて
   //   いないので先に済ませず、そのまま呼びます(コントローラの update の前なので、多くのメソッドは何もしない)。
-  applyHandleRef(props.ref, exposeHandle(engine.gridApi.handle, () => {
-    if (!mountGate.done && gridRootRef.current?.isConnected === true) {
+  //   変更(段階 4 の測り直し S3-22): ref は untrack で読みます(props を作り直すオブジェクトの spread で渡すと、props が merge に
+  //   なり、部品の本体で読むと開発時に Solid が STRICT_READ_UNTRACKED を出していた。ref は最初の 1 回だけ渡すもの)。
+  //   変更(段階 4 の測り直し S4-23): 描く前(<Loading> の中で行を待っている間など。根の要素がまだ文書の中に無い)に状態を変える
+  //   メソッドが呼ばれたら、何もしないことを開発時に 1 回知らせます(devWarnings の warnHandleCallBeforeMount)。
+  const handleCallBeforeMountWarned = { current: false };
+  applyHandleRef(untrack(() => props.ref), exposeHandle(engine.gridApi.handle, (method) => {
+    if (mountGate.done) {
+      return;
+    }
+    if (gridRootRef.current?.isConnected === true) {
       flushMountGate(mountGate);
+    } else {
+      warnHandleCallBeforeMount(handleCallBeforeMountWarned, method);
     }
   }));
 
@@ -2407,9 +2474,9 @@ function GridShellBody<T extends object>(
       columns: columns(),
       collapsedGroupKeys: ui().collapsedGroupKeys,
       includeGroupingInState: props.includeGroupingInState ?? false,
-      onStateChange: props.onStateChange,
-      onFiltersChange: props.onFiltersChange,
-      onSortChange: props.onSortChange,
+      onStateChange: inOwnTick(props.onStateChange),
+      onFiltersChange: inOwnTick(props.onFiltersChange),
+      onSortChange: inOwnTick(props.onSortChange),
     }),
     'effect',
     'stateChangeNotifier',
@@ -2461,21 +2528,22 @@ function GridShellBody<T extends object>(
   }));
   // フィルターの機能が無い構成ではフィルターが行に効かないので、状態にあっても「絞り込み: …」に数えない(React 版の
   //   filtersApplied)。
-  const derivedSummary = createMemo(
-    (): SpreadsheetGridDerivedSummary =>
-      buildGridDerivedSummary(
-        filteringAvailable
-          ? slotContextBase()
-          : { ...slotContextBase(), globalFilterText: '', columnFilterValues: NO_COLUMN_FILTERS },
-        // 件数はグループ行 / ラベル行を除くデータ行の数(slotContext.filteredRows と同じ)。分母(総データ行数)はラベル行を除く
-        //   (ラベル行が無ければ rows の数)。サーバーサイドは rows が空なので、サーバーが返した今の条件での件数(React 版と同じ)。
-        leafRowCount(),
-        isServerSide() ? viewRowCount() : labelLayout()?.dataRowCount,
-        columnNamer(),
-        rowNumberer(),
-        localeTexts(),
-      ),
-  );
+  const derivedSummary = createMemo((): SpreadsheetGridDerivedSummary => {
+    const summary = buildGridDerivedSummary(
+      filteringAvailable
+        ? slotContextBase()
+        : { ...slotContextBase(), globalFilterText: '', columnFilterValues: NO_COLUMN_FILTERS },
+      // 件数はグループ行 / ラベル行を除くデータ行の数(slotContext.filteredRows と同じ)。分母(総データ行数)はラベル行を除く
+      //   (ラベル行が無ければ rows の数)。サーバーサイドは rows が空なので、サーバーが返した今の条件での件数(React 版と同じ)。
+      leafRowCount(),
+      isServerSide() ? viewRowCount() : labelLayout()?.dataRowCount,
+      columnNamer(),
+      rowNumberer(),
+      localeTexts(),
+    );
+    // サーバーで描くときとハイドレーションの間は行を空にしているので、件数(「行 0 / 0」)は出さない(上の hydrated)。
+    return hydrated() ? summary : { ...summary, rowSummaryText: '' };
+  });
   const setGlobalFilterText = (value: string) => dispatch(gridActions.setGlobalFilter(value));
   // 選択範囲の集計(機能 features/selectionAggregates。無い構成では常に null)。出す先が無いときは計算しない(大きな選択の
   //   走査を省く)。出す先 = 下部バー(既定 / renderBottomBar)か、自前の上部バー(renderTopBar)。既定の上部バーは集計を
@@ -2506,20 +2574,22 @@ function GridShellBody<T extends object>(
       selectionAggregates: selectionAggregates(),
     };
   });
-  // 利用側のバー(renderTopBar / renderBottomBar)へ渡す文脈。値は読んだときに引く形にして、バーの関数は 1 回だけ呼ぶ
-  //   (状態が変わるたびに呼び直すとバーの要素が作り直され、バーの入力欄のフォーカスと打ちかけの文字が消える。React は
-  //   要素を使い回す)。値は JSX の中や関数の中で読めば追従する(Solid の props と同じ)。
+  // 利用側のバー(renderTopBar / renderBottomBar)へ渡す文脈。値は読んだときに引く形にして、状態が変わるたびにはバーの関数を
+  //   呼び直さない(呼び直すとバーの要素が作り直され、バーの入力欄のフォーカスと打ちかけの文字が消える。React は要素を
+  //   使い回す)。JSX の中で読んだ値はその場で追従し、関数の本体で読んだ値(引数の分割代入も)はそれが変わったときに関数を
+  //   呼び直す(renderCell と同じ。1 回だけ追跡せずに呼ぶと、React 版の書き方の分割代入の値が古いままだった = R1-1)。
+  //   値はキーごとに memo で受けるので、変わらない値(setGlobalFilterText など)を本体で読んでも呼び直さない。
   const liveSlotContext = createLiveObject(SLOT_CONTEXT_KEYS, slotContext);
   //   関数は memo で受ける(親が props を広げ直しても、同じ関数ならバーを作り直さない)。
   const renderTopBarFn = createMemo(() => props.renderTopBar);
   const renderBottomBarFn = createMemo(() => props.renderBottomBar);
   const customTopBar = createMemo(() => {
     const render = renderTopBarFn();
-    return render ? untrack(() => render(liveSlotContext)) : undefined;
+    return render ? render(liveSlotContext) : undefined;
   });
   const customBottomBar = createMemo(() => {
     const render = renderBottomBarFn();
-    return render ? untrack(() => render(liveSlotContext)) : undefined;
+    return render ? render(liveSlotContext) : undefined;
   });
   const showTopBarSummary = () => props.showTopBarSummary ?? true;
   // 既定の上部バーの検索欄は showTopBarFilter かつグローバルフィルターが有効なとき(無効な機能の入力欄は出さない)。要約も
@@ -2613,6 +2683,11 @@ function GridShellBody<T extends object>(
   const editorSessionId = createMemo(() => editorSession()?.id ?? null);
   // 編集中のセルの情報(行 / 位置 / 値)。エディタが select の行で決まる候補・開いたときのハイライト・custom の ctx に使う
   //   (編集中だけ非 null。React 版の GridShell の editorSession と同じ)。
+  // 編集中の列(エディタの種類と揃えは行に依らず列から引く。React 版の editingColumn と同じ)。
+  const editingColumn = createMemo(() => {
+    const cell = ui().editingCell;
+    return cell === null ? undefined : (orderedColumns()[cell.col] as unknown as GridColumn<T> | undefined);
+  });
   const editingSessionInfo = createMemo((): CellEditorSession<T> | null => {
     const cell = ui().editingCell;
     if (cell === null) {
@@ -2683,12 +2758,27 @@ function GridShellBody<T extends object>(
       </Show>
     );
   };
-  const renderCellContent = (row: T, column: GridColumn<T>, cell: GridCellContentContext): JSX.Element => {
+  const renderCellContent = (currentRow: () => T, column: GridColumn<T>, cell: GridCellContentContext): JSX.Element => {
     // 行ドラッグのハンドル列(合成列)の中身(機能 rowDrag)。
     if (column.key === ROW_DRAG_HANDLE_COLUMN_KEY) {
-      return renderRowDragHandleCell(row, cell);
+      return renderRowDragHandleCell(currentRow(), cell);
     }
     const unbound = column as unknown as UnboundGridColumn<T>;
+    // checkbox 列の既定のセルは、行が変わっても作り直さず印だけを追従させます(値は描いた後に読む)。押すたびに作り直すと
+    //   ダブルクリックの 2 回目の的が外れた要素になり、onCellDoubleClick が届かなかった(React 版は同じ要素を使い回す)。
+    if (!column.renderCell && column.editor?.type === 'checkbox') {
+      const editor = column.editor;
+      return (
+        <CheckboxCell
+          slot={slots().checkbox}
+          label={column.title || column.key}
+          checked={isCheckboxChecked(getCellValue(currentRow(), unbound), editor)}
+          readOnly={cell.readOnly}
+          onToggle={() => cells.toggleCheckbox({ row: cell.rowIndex, col: cell.colIndex })}
+        />
+      );
+    }
+    const row = currentRow();
     const value = getCellValue(row, unbound);
     if (column.renderCell) {
       // ctx.detail(任意のセルからの展開行の開閉の口)。detailRow の指定がある間だけ渡し、値は読んだときに引きます。
@@ -2740,18 +2830,6 @@ function GridShellBody<T extends object>(
         },
         setValue: (nextValue: unknown) => writeRenderedCellValue(cell.rowKey, unbound, nextValue),
       });
-    }
-    if (column.editor?.type === 'checkbox') {
-      const editor = column.editor;
-      return (
-        <CheckboxCell
-          slot={slots().checkbox}
-          label={column.title || column.key}
-          checked={isCheckboxChecked(value, editor)}
-          readOnly={cell.readOnly}
-          onToggle={() => cells.toggleCheckbox({ row: cell.rowIndex, col: cell.colIndex })}
-        />
-      );
     }
     const text = column.valueFormatter ? column.valueFormatter({ value, row, column }) : String(value ?? '');
     // セル内検索のヒットを <mark> にします(既定のセルだけ。カレントは --current)。ヒットとカレントは cell から読んだときに引く
@@ -3042,12 +3120,13 @@ function GridShellBody<T extends object>(
             leadingWidth={leadingWidth()}
             baseOffset={vertical().overlayBaseOffset}
             initialValue={() => view().editorInitialValue ?? store.getViewState().editorInitialValue ?? ''}
+            editor={editingColumn()?.editor}
             session={editingSessionInfo()}
             themeClassName={portalClassName()}
             slots={slots()}
             onCommit={(value: unknown, direction?: EditorCommitDirection) => edit.commitEdit(value, direction)}
             onCancel={edit.cancelEdit}
-            align={editingSessionInfo()?.column.align}
+            align={editingColumn()?.align}
             enterMove={props.editorEnterMove}
             domId={cellEditorDomId}
             // 編集中のセルが上にそろえて描かれているか(GridBodyLayer の alignTop と同じ条件。複数行のエディタの 1 行目を
@@ -3307,7 +3386,7 @@ function GridShellBody<T extends object>(
                 {renderColumnDropIndicator('right')}
               </div>
             </div>
-            <Show when={viewRowCount() === 0}>
+            <Show when={viewRowCount() === 0 && hydrated()}>
               <div class={['ssg-empty-state', slots().emptyState?.className]} style={slots().emptyState?.style}>
                 {emptyStateText()}
               </div>

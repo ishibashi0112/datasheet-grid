@@ -1,0 +1,38 @@
+const { open, shot } = require('./lib.cjs')
+;(async () => {
+  const { browser, context, page, logs } = await open({ clipboard: true })
+  await page.goto('http://localhost:5511/?popup=shadow&noframe=1')
+  await page.waitForTimeout(2000)
+  const scope = page.locator('stock-widget')
+  const status = () => page.evaluate(() => {
+    const root = document.querySelector('stock-widget').shadowRoot
+    const bar = root.querySelector('.ssg-bar--bottom')?.textContent ?? ''
+    const deep = (d) => d.activeElement?.shadowRoot ? deep(d.activeElement.shadowRoot) : d.activeElement
+    const a = deep(document)
+    return 'active=' + bar.match(/セル (\S+?)範囲/)?.[1] + ' focus=' + a?.tagName + '.' + String(a?.className).split(' ')[0] + ' scrollY=' + scrollY + ' editor=' + !!root.querySelector('.ssg-cell-editor input, .ssg-cell-editor textarea')
+  })
+  const cell = (r, c) => scope.locator(`[data-pane="center"][role="row"][data-row-index="${r}"] [role="gridcell"]`).nth(c)
+  const click = async (r, c) => { const b = await cell(r, c).boundingBox(); console.log('  click at', Math.round(b.x), Math.round(b.y)); await page.mouse.click(b.x + 15, b.y + 10); await page.waitForTimeout(150) }
+  await click(0, 2); console.log('(0,2)', await status())
+  await click(8, 2); console.log('(8,2)', await status())
+  await page.keyboard.press('Delete'); await page.waitForTimeout(200)
+  console.log('Delete', await status())
+  await click(0, 0); console.log('(0,0)', await status())
+  await click(9, 0); console.log('(9,0)', await status())
+  await page.keyboard.press('Control+f'); await page.waitForTimeout(300)
+  console.log('Ctrl+F', await status())
+  await page.keyboard.type('タオル'); await page.waitForTimeout(500)
+  console.log('type', await status())
+  await page.keyboard.press('Escape'); await page.waitForTimeout(200)
+  console.log('Esc', await status())
+  await click(9, 0); console.log('(9,0)', await status())
+  const cdp = await context.newCDPSession(page)
+  for (const s of ['て', 'てす', 'てすと', 'テスト']) await cdp.send('Input.imeSetComposition', { text: s, selectionStart: s.length, selectionEnd: s.length })
+  await cdp.send('Input.insertText', { text: 'テスト' }); await page.waitForTimeout(200)
+  console.log('IME', await status())
+  await page.keyboard.press('Enter'); await page.waitForTimeout(300)
+  console.log('Enter → (9,0)=', (await cell(9, 0).textContent()).trim(), await status())
+  await shot(page, 'shadow-click')
+  console.log(logs.filter((l) => !/HUGE_FAN_OUT|subscribers|in <|at http/.test(l)).join('\n'))
+  await browser.close()
+})()

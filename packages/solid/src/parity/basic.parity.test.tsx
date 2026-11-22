@@ -241,6 +241,8 @@ describe('React 版と同じ DOM と通知', () => {
     await expectParity({
       props: () => ({ rows: makeRows(200), columns, rowKeyGetter: (row: Row) => row.id, height: 300 }),
       watch: ['onActiveCellChange', 'onStateChange', 'onSortChange'],
+      // 並べ替えで行が替わったときの onActiveCellChange と onSortChange / onStateChange の順番は残した違い。
+      callOrder: 'byName',
       steps: async (ctx) => {
         const call = (name: string, ...args: unknown[]) =>
           (ctx.handle()[name] as unknown as (...a: unknown[]) => unknown)(...args);
@@ -253,7 +255,7 @@ describe('React 版と同じ DOM と通知', () => {
         });
         ctx.snapshot('scrollToRow');
         await ctx.act(() => {
-          call('applyState', { sort: [{ key: 'qty', direction: 'desc' }] });
+          call('applyState', { sort: [{ columnKey: 'qty', direction: 'desc' }] });
         });
         ctx.snapshot('applyState');
         await ctx.act(() => {
@@ -416,6 +418,8 @@ describe('React 版と同じ DOM と通知', () => {
       );
     const bars = { react: { top: await reactBar('top'), bottom: await reactBar('bottom') } };
     await expectParity({
+      // 入力欄の文字は setGlobalFilterText で上部バーの検索と同じく行を絞る。
+      features: ['filtering'],
       props: (framework) => ({
         rows: makeRows(20),
         columns,
@@ -433,7 +437,8 @@ describe('React 版と同じ DOM と通知', () => {
           const element = input();
           element?.focus();
           if (element) {
-            element.value = 'ab';
+            // 品目 1 / 10〜19 の 11 行に絞る。
+            element.value = '品目 1';
             element.dispatchEvent(new Event('input', { bubbles: true }));
           }
         });
@@ -448,6 +453,76 @@ describe('React 版と同じ DOM と通知', () => {
         ctx.snapshot('文言とテーマを差し替え');
         await ctx.setProps({ rows: makeRows(25), showBottomBar: false });
         ctx.snapshot('行を増やし、下のバーを消す');
+      },
+    });
+  });
+
+  // R1-1: バーの関数の本体で文脈を読んでも(React 版の書き方の引数の分割代入)、値は今の値に追従する(0.1.0 は 1 回だけ
+  //   追跡せずに呼んでいたので古いままだった)。変わらない値(setGlobalFilterText)だけを本体で読み、変わる値を JSX の中で
+  //   読むときは、バーを作り直さない(入力欄のフォーカスと打ちかけが残る)。
+  it('自作のバーの関数の本体で文脈を読む(引数の分割代入)・変わらない値だけを本体で読む(R1-1)', async () => {
+    type BarCtx = { derivedSummary: { activeCellLabel: string; rowSummaryText: string }; setGlobalFilterText: (v: string) => void };
+    const { createElement } = await import('react');
+    const reactDestructured = ({ derivedSummary }: BarCtx) =>
+      createElement('span', { className: 'my-bottom' }, `${derivedSummary.activeCellLabel} / ${derivedSummary.rowSummaryText}`);
+    const solidDestructured = ({ derivedSummary }: BarCtx) => (
+      <span class="my-bottom">{`${derivedSummary.activeCellLabel} / ${derivedSummary.rowSummaryText}`}</span>
+    );
+    const reactSetterOnly = (ctx: BarCtx) => {
+      const { setGlobalFilterText } = ctx;
+      return createElement(
+        'div',
+        { className: 'my-top' },
+        createElement('input', {
+          className: 'bar-input',
+          onInput: (event: { currentTarget: HTMLInputElement }) => setGlobalFilterText(event.currentTarget.value),
+        }),
+        createElement('span', null, ctx.derivedSummary.rowSummaryText),
+      );
+    };
+    const solidSetterOnly = (ctx: BarCtx) => {
+      const { setGlobalFilterText } = ctx;
+      return (
+        <div class="my-top">
+          <input class="bar-input" onInput={(event) => setGlobalFilterText(event.currentTarget.value)} />
+          <span>{ctx.derivedSummary.rowSummaryText}</span>
+        </div>
+      );
+    };
+    await expectParity({
+      features: ['filtering'],
+      props: (framework) => ({
+        rows: makeRows(20),
+        columns,
+        rowKeyGetter: (row: Row) => row.id,
+        height: 300,
+        renderTopBar: framework === 'react' ? reactSetterOnly : solidSetterOnly,
+        renderBottomBar: framework === 'react' ? reactDestructured : solidDestructured,
+      }),
+      steps: async (ctx) => {
+        const input = () => ctx.container.querySelector<HTMLInputElement>('.my-top .bar-input');
+        ctx.track('上のバーの入力欄', input);
+        ctx.snapshot('最初');
+        await ctx.act(() => {
+          const target = ctx.cell(3, 'name');
+          fireEvent.pointerDown(target, { button: 0, pointerId: 1, isPrimary: true });
+          fireEvent.pointerUp(target, { button: 0, pointerId: 1, isPrimary: true });
+        });
+        ctx.log('下のバー(セルを押した)', ctx.container.querySelector('.my-bottom')?.textContent ?? null);
+        ctx.snapshot('セルを押す');
+        await ctx.act(() => {
+          const element = input();
+          element?.focus();
+          if (element) {
+            element.value = '品目 1';
+            element.dispatchEvent(new Event('input', { bubbles: true }));
+          }
+        }, 400);
+        ctx.log('下のバー(絞り込んだ)', ctx.container.querySelector('.my-bottom')?.textContent ?? null);
+        ctx.log('入力欄にフォーカスが残る', document.activeElement === input());
+        ctx.snapshot('上のバーで絞り込む');
+        await ctx.setProps({ rows: makeRows(25) });
+        ctx.snapshot('行を増やす');
       },
     });
   });

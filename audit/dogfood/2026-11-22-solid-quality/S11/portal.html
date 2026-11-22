@@ -1,0 +1,13 @@
+<!doctype html>
+<html lang="ja">
+  <head>
+    <meta charset="UTF-8" />
+    <title>親のページから iframe の中へ描く</title>
+    <style>body { margin: 0; font-family: Georgia, serif; } iframe { width: 100%; height: 460px; border: 2px solid #553; }</style>
+  </head>
+  <body>
+    <p>親のページの Solid が、同じオリジンの空の iframe の中へ表を描く(CSS を分けるため)</p>
+    <iframe id="pf" title="在庫(親から描く)"></iframe>
+    <script type="module" src="/src/portal.tsx"></script>
+  </body>
+</html>

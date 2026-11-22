@@ -50,6 +50,9 @@ type CellEditorLayerProps<T> = {
   baseOffset: number;
   // 編集を始めたときの初期値(セッションの始まりに 1 回だけ読む)。
   initialValue: () => string;
+  // 編集中の列のエディタ(列から引く。React 版と同じく行に依らない。編集中の位置が一瞬グループ行を指して session が null に
+  //   なっても、エディタの種類を変えない = 打ちかけを残す)。
+  editor: GridColumn<T>['editor'];
   session: CellEditorSession<T> | null;
   themeClassName?: string | undefined;
   slots: GridResolvedSlots;
@@ -67,7 +70,7 @@ type EditorKind = 'text' | 'number' | 'select' | 'date' | 'custom';
 
 export function CellEditorLayer<T>(props: CellEditorLayerProps<T>) {
   const texts = useGridLocaleText();
-  const editor = () => props.session?.column.editor;
+  const editor = () => props.editor;
   const kind = createMemo((): EditorKind => {
     const type = editor()?.type;
     return type === 'number' || type === 'select' || type === 'date' || type === 'custom' ? type : 'text';
@@ -90,6 +93,51 @@ export function CellEditorLayer<T>(props: CellEditorLayerProps<T>) {
     const row = props.session?.row;
     return row !== undefined ? current.options(row) : [];
   });
+
+  const renderCustomEditor = (
+    render: Extract<GridColumn<T>['editor'], { type: 'custom' }>['render'],
+    sessionId: number,
+    initialValue: string,
+  ): JSX.Element => {
+    // custom エディタ。ctx の行・位置・値は読んだときに引きます(JSX の中で読めば追従する。編集中に上へ行が足されたときなど)。
+    //   セッションが終わった後(別のセルの編集が始まった後など)は、そのセッションの最後の値のまま(サーバーで検査してから
+    //   commit する作りで、await の後に読んだ ctx.row が別のセルの行を指していた。React 版は描いた時点の値を渡す)。
+    const session = createMemo((previous: CellEditorSession<T> | null | undefined) =>
+      previous === undefined || props.sessionId === sessionId ? props.session : previous,
+    );
+    const context = {
+      get row() {
+        return session()?.row as T;
+      },
+      get rowIndex() {
+        return session()?.rowIndex ?? -1;
+      },
+      get sourceRowIndex() {
+        return session()?.sourceRowIndex ?? -1;
+      },
+      get rowKey() {
+        return session()?.rowKey ?? -1;
+      },
+      get colIndex() {
+        return session()?.colIndex ?? -1;
+      },
+      get column() {
+        return session()?.column as GridColumn<T>;
+      },
+      get value() {
+        return session()?.value;
+      },
+      initialText: initialValue,
+      get align() {
+        return props.align;
+      },
+      // void の戻り(モックなど)は noop にそろえて、利用側の分岐を単純にします。
+      commit: (value: unknown, direction?: EditorCommitDirection) =>
+        props.onCommit(value, direction) ?? { status: 'noop' as const },
+      cancel: () => props.onCancel(),
+    } satisfies CellEditorContext<T, SolidGridTypes>;
+    return <CustomCellEditor render={render} context={context} />;
+  };
 
   const renderEditor = (type: EditorKind, sessionId: number): JSX.Element => {
     const common = {
@@ -155,47 +203,12 @@ export function CellEditorLayer<T>(props: CellEditorLayerProps<T>) {
       }
       case 'custom': {
         const current = untrack(editor);
-        if (current?.type !== 'custom' || untrack(() => props.session) === null) {
+        if (current?.type !== 'custom') {
           return null;
         }
-        // ctx の行・位置・値は読んだときに引きます(JSX の中で読めば追従する。編集中に上へ行が足されたときなど)。セッションが
-        //   終わった後(別のセルの編集が始まった後など)は、そのセッションの最後の値のまま(サーバーで検査してから commit する作りで、
-        //   await の後に読んだ ctx.row が別のセルの行を指していた。React 版は描いた時点の値を渡す)。
-        const session = createMemo((previous: CellEditorSession<T> | null | undefined) =>
-          previous === undefined || props.sessionId === sessionId ? props.session : previous,
-        );
-        const context = {
-          get row() {
-            return session()?.row as T;
-          },
-          get rowIndex() {
-            return session()?.rowIndex ?? -1;
-          },
-          get sourceRowIndex() {
-            return session()?.sourceRowIndex ?? -1;
-          },
-          get rowKey() {
-            return session()?.rowKey ?? -1;
-          },
-          get colIndex() {
-            return session()?.colIndex ?? -1;
-          },
-          get column() {
-            return session()?.column as GridColumn<T>;
-          },
-          get value() {
-            return session()?.value;
-          },
-          initialText: initialValue,
-          get align() {
-            return props.align;
-          },
-          // void の戻り(モックなど)は noop にそろえて、利用側の分岐を単純にします。
-          commit: (value: unknown, direction?: EditorCommitDirection) =>
-            props.onCommit(value, direction) ?? { status: 'noop' as const },
-          cancel: () => props.onCancel(),
-        } satisfies CellEditorContext<T, SolidGridTypes>;
-        return <CustomCellEditor render={current.render} context={context} />;
+        // 編集中の位置に行が無い間(上に行が足されて一瞬グループ行を指すときなど)は描かず、行が戻ったら作り直します(React 版と
+        //   同じ。custom エディタは中身を利用側が持つので、行の無い ctx を渡さない)。
+        return <Show when={props.session !== null}>{renderCustomEditor(current.render, sessionId, initialValue)}</Show>;
       }
       default: {
         const textEditor = () => {

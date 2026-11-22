@@ -1,0 +1,72 @@
+const { open, cell, clickCell, rows, shot, ime } = require('./lib.cjs')
+;(async () => {
+  const url = process.argv[2] || 'http://localhost:5509/'
+  const { browser, page, logs, cdp } = await open(url)
+  const out = []
+  const editorState = () => page.evaluate(() => { const e = document.querySelector('.ssg-cell-editor input'); const a = document.querySelector('.ssg-cell-editor [role=alert], [role=alert]'); return { open: !!e, type: e?.type, value: e?.value, alert: a?.textContent ?? null } })
+  const typeDate = async (r, text, label) => {
+    await clickCell(page, r, 'date')
+    await page.keyboard.type(text.slice(0, 1))
+    await page.waitForTimeout(80)
+    await page.keyboard.insertText(text.slice(1))
+    await page.keyboard.press('Enter')
+    await page.waitForTimeout(200)
+    const st = await editorState()
+    out.push([label, text, (await rows(page))[r].date, st])
+    if (st.open) { await page.keyboard.press('Escape'); await page.waitForTimeout(100) }
+  }
+  await typeDate(0, '2026/11/1', 'slash')
+  await typeDate(1, '２０２６／１１／３', 'fullwidth')
+  await typeDate(2, '2026年11月5日', 'kanji')
+  await typeDate(3, '11/2', 'no year')
+  await typeDate(4, '2026/12/25', 'future')
+  out.push(['future cell', await cell(page, 4, 'date')])
+  // F2 でネイティブの date 入力を開く
+  await clickCell(page, 5, 'date')
+  await page.keyboard.press('F2')
+  await page.waitForTimeout(150)
+  out.push(['F2 date', await editorState()])
+  await page.keyboard.press('Escape')
+  // IME オンのまま日付の列で打つ: 捨てる(ドキュメントどおり)。IME で「２０２６／１１／６」を確定
+  await clickCell(page, 5, 'date')
+  await ime(cdp, page, '２０２６／１１／６', '２０２６／１１／６')
+  out.push(['date ime fullwidth', await editorState(), (await rows(page))[5].date])
+  // 金額 3 万円以上で領収書なし → 印
+  await clickCell(page, 0, 'amount')
+  await page.keyboard.type('35000')
+  await page.keyboard.press('Enter')
+  await page.waitForTimeout(200)
+  out.push(['35000 no receipt', await cell(page, 0, 'amount')])
+  // 領収書にチェック(Space)→ 印が消える
+  await clickCell(page, 0, 'receipt')
+  await page.waitForTimeout(100)
+  out.push(['receipt after click', (await rows(page))[0].receipt])
+  out.push(['amount cell after receipt', (await cell(page, 0, 'amount')).invalid])
+  // 小数 → 整数の検査
+  await clickCell(page, 2, 'amount')
+  await page.keyboard.type('12.5')
+  await page.keyboard.press('Enter')
+  await page.waitForTimeout(200)
+  out.push(['12.5', (await rows(page))[2].amount, (await cell(page, 2, 'amount')).desc])
+  // 摘要を空に(5000 円以上の行)→ 印
+  await clickCell(page, 3, 'memo')
+  await page.keyboard.press('Delete')
+  await page.waitForTimeout(200)
+  out.push(['memo cleared', JSON.stringify((await rows(page))[3].memo), (await cell(page, 3, 'memo')).desc])
+  await page.mouse.move(0, 0)
+  const m = await cell(page, 3, 'memo')
+  await page.mouse.move(m.x, m.y)
+  await page.waitForTimeout(700)
+  out.push(['tooltip', await page.evaluate(() => document.querySelector('.ssg-tooltip')?.textContent)])
+  await shot(page, 'validation')
+  // 科目を消す(金額がある行)→ 印
+  await clickCell(page, 4, 'account')
+  await page.keyboard.press('Delete')
+  await page.waitForTimeout(200)
+  out.push(['account cleared', (await rows(page))[4].account, (await cell(page, 4, 'account')).desc])
+  out.push(['invalid cells', await page.evaluate(() => window.__grid.getInvalidCells().map((c) => `${window.__grid.getRowNumber(c.rowKey)}:${c.columnKey}:${c.message}`))])
+  for (const o of out) console.log(JSON.stringify(o))
+  console.log('--- logs')
+  console.log(logs.filter((l) => !l.includes('[vite]') && !l.includes('what it means') && !l.includes('agent repair') && !l.includes('deeper evidence') && !l.startsWith('  ')).join('\n'))
+  await browser.close()
+})()

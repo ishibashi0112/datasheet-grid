@@ -69,7 +69,7 @@ describe('Solid 版の試作', () => {
     expect(container.querySelector('.ssg-scroll-container')?.getAttribute('aria-rowcount')).toBe('201');
   });
 
-  it('クリックでアクティブセル、矢印キーで動き、onActiveCellChange が呼ばれる', () => {
+  it('クリックでアクティブセル、矢印キーで動き、onActiveCellChange が呼ばれる', async () => {
     const { container, shell, onActiveCellChange } = setup();
     const target = cellOf(container, 1, 'name');
     if (!target) throw new Error('セルがありません');
@@ -79,7 +79,8 @@ describe('Solid 版の試作', () => {
     expect(container.querySelector('.ssg-active-cell-overlay')).not.toBeNull();
     fireEvent.keyDown(shell, { key: 'ArrowDown' });
     flush();
-    // onActiveCellChange は passive(createEffect)なので flush の後。
+    // onActiveCellChange は描いた後の通知なので、flush の後のマイクロタスク(段階 4 の測り直し S4-21)。
+    await Promise.resolve();
     const last = onActiveCellChange.mock.calls.at(-1)?.[0];
     expect(last?.columnKey).toBe('name');
     expect(last?.rowKey).toBe(3);
@@ -199,7 +200,7 @@ describe('Solid 版の試作', () => {
     view.unmount();
   });
 
-  it('通知の中で signal を読んでも Solid の STRICT_READ_UNTRACKED を出さない(0.1.0 の前の実アプリ点検 S2-01)', () => {
+  it('通知の中で signal を読んでも Solid の STRICT_READ_UNTRACKED を出さない(0.1.0 の前の実アプリ点検 S2-01)', async () => {
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
     const [count] = createSignal(1);
     const seen: number[] = [];
@@ -222,6 +223,7 @@ describe('Solid 版の試作', () => {
     grid?.applyState({ sort: [{ columnKey: 'qty', direction: 'desc' }] });
     grid?.selectCell(2, 1);
     flush();
+    await Promise.resolve();
     expect(seen.length).toBeGreaterThanOrEqual(3);
     expect(warn.mock.calls.filter((call) => String(call[0]).includes('STRICT_READ_UNTRACKED'))).toHaveLength(0);
     view.unmount();

@@ -3,6 +3,7 @@
 import { afterAll, beforeAll, describe, it } from 'vitest';
 import { createEvent, fireEvent } from '@solidjs/testing-library';
 import { installJsdomLayoutStubs } from '@ishibashi0112/spreadsheet-grid-core/testing';
+import { createElement } from 'react';
 import { expectParity, type ParityContext } from './harness';
 
 type Row = { id: number; name: string; qty: number; price: number; note: string; status: string };
@@ -44,6 +45,7 @@ describe('セル内検索(find)', () => {
   ])('Ctrl+F・入力・次 / 前・命令的 API・閉じる(機能%s)', async (_label, features) => {
     await expectParity({
       features,
+      allowMissingFeatures: ['find'],
       watch: ['onFindChange'],
       props: () => ({ rows: makeRows(12), columns, rowKeyGetter: (row: Row) => row.id, height: 360, find: true }),
       steps: async (ctx) => {
@@ -154,6 +156,7 @@ describe('セル内検索(find)', () => {
   ])('状態チップの文字・データバーの showValue: false・renderCell(機能%s)', async (_label, features) => {
     await expectParity({
       features,
+      allowMissingFeatures: ['conditionalFormat'],
       watch: ['onFindChange'],
       props: () => ({
         rows: makeRows(8),
@@ -233,6 +236,7 @@ describe('IME オンのままの直接入力(imeDirectInput)', () => {
   ])('入力受けへのフォーカス・変換の確定で編集・数値の列・編集できない列・無効にする(機能%s)', async (_label, features) => {
     await expectParity({
       features,
+      allowMissingFeatures: ['imeDirectInput'],
       watch: ['onRowsChange'],
       props: () => ({ rows: makeRows(8), columns, rowKeyGetter: (row: Row) => row.id, height: 360, imeDirectInput: true }),
       steps: async (ctx) => {
@@ -287,6 +291,75 @@ describe('IME オンのままの直接入力(imeDirectInput)', () => {
       },
     });
   }, 20_000);
+
+  // F-06: custom エディタの列は imeDirectInput: true を付けたときだけ、確定した文字を initialText にして開く(付けない列は捨てる)。
+  it('custom エディタの imeDirectInput(F-06)', async () => {
+    type Ctx = { initialText: string; commit: (value: unknown, move?: string) => void };
+    const reactEditor = (ctx: Ctx) =>
+      createElement('input', {
+        className: 'test-custom-editor',
+        defaultValue: ctx.initialText,
+        onKeyDown: (event: KeyboardEvent) => {
+          if (event.key === 'Enter') {
+            ctx.commit((event.target as HTMLInputElement).value, 'down');
+          }
+        },
+      });
+    const solidEditor = (ctx: Ctx) => (
+      <input
+        class="test-custom-editor"
+        value={ctx.initialText}
+        onKeyDown={(event) => {
+          if (event.key === 'Enter') {
+            ctx.commit(event.currentTarget.value, 'down');
+          }
+        }}
+      />
+    );
+    await expectParity({
+      features: ['imeDirectInput'],
+      watch: ['onRowsChange'],
+      props: (framework) => {
+        const render = framework === 'react' ? reactEditor : solidEditor;
+        return {
+          rows: [
+            { id: 1, city: '大阪', note: 'メモ' },
+            { id: 2, city: '京都', note: '' },
+          ],
+          columns: [
+            { key: 'city', title: '都市', width: 120, editor: { type: 'custom', render, imeDirectInput: true } },
+            { key: 'note', title: 'メモ', width: 120, editor: { type: 'custom', render } },
+          ],
+          rowKeyGetter: (row: { id: number }) => row.id,
+          height: 300,
+          imeDirectInput: true,
+        };
+      },
+      steps: async (ctx) => {
+        await ctx.act(() => {
+          fireEvent.pointerDown(ctx.cell(0, 'city'), pointer);
+          fireEvent.pointerUp(window, pointer);
+        });
+        await compose(ctx, '東京');
+        ctx.log('付けた列のエディタ', ctx.container.querySelector<HTMLInputElement>('.test-custom-editor')?.value ?? null);
+        ctx.snapshot('付けた列で「東京」を確定');
+        await ctx.act(() => {
+          const editor = ctx.container.querySelector<HTMLInputElement>('.test-custom-editor');
+          if (editor) {
+            fireEvent.keyDown(editor, { key: 'Enter' });
+          }
+        }, 120);
+        ctx.snapshot('Enter で書いた');
+        await ctx.act(() => {
+          fireEvent.pointerDown(ctx.cell(0, 'note'), pointer);
+          fireEvent.pointerUp(window, pointer);
+        });
+        await compose(ctx, '大阪');
+        ctx.log('付けていない列のエディタ', ctx.container.querySelector<HTMLInputElement>('.test-custom-editor')?.value ?? null);
+        ctx.snapshot('付けていない列で「大阪」(捨てる)');
+      },
+    });
+  }, 20_000);
 });
 
 
@@ -328,6 +401,7 @@ describe('列幅の自動調整(columnAutosize)', () => {
   ])('autoSizeColumns・境界のダブルクリック・データの差し替え(機能%s)', async (_label, features) => {
     await expectParity({
       features,
+      allowMissingFeatures: ['columnAutosize', 'totalRow', 'conditionalFormat', 'pinnedRows'],
       watch: ['onStateChange'],
       props: () => ({
         rows: makeRows(6),
@@ -413,6 +487,7 @@ describe('列の並べ替え(columnReorder)', () => {
     let latest: readonly ColumnLike[] | null = null;
     await expectParity({
       features,
+      allowMissingFeatures: ['columnReorder'],
       watch: ['onStateChange'],
       props: () => ({
         rows: makeRows(8),
@@ -520,6 +595,7 @@ describe('行のドラッグ(rowDrag)', () => {
   ])('ハンドルで引いて落とす・Escape・isRowDraggable・canDropRow・ソート中・moveRow・元に戻す(機能%s)', async (_label, features, rowDragMotion, motion) => {
     await expectParity({
       features,
+      allowMissingFeatures: ['rowDrag'],
       watch: ['onRowMove', 'onActiveCellChange'],
       props: () => ({
         rows: makeRows(8),
@@ -656,6 +732,105 @@ describe('行のドラッグ(rowDrag)', () => {
       },
     });
   }, 20_000);
+
+  // FC-02: rowKeyGetter が無い(行キー = 位置)ときも、確定後の画面の並びと滑り込みがデータの並びと合う。
+  // FC-31: 利用側が並びを反映しなかったとき(onRowsChange で rows を変えない)は滑らず、後の無関係な変化でも古い位置から滑らない。
+  it.each([
+    ['ghost・行キーなし', 'ghost', false, true],
+    ['live・行キーなし', 'live', false, true],
+    ['ghost・反映しない', 'ghost', true, false],
+    ['live・反映しない', 'live', true, false],
+    ['live・行キーなし・反映しない', 'live', false, false],
+  ] as const)('行キーが無い / 利用側が並びを反映しない(FC-02 / FC-31・%s)', async (_label, rowDragMotion, withKey, applies) => {
+    const initial = makeRows(5);
+    await expectParity({
+      features: ['rowDrag'],
+      controlledRows: applies,
+      watch: ['onRowMove', 'onRowsChange'],
+      props: () => ({
+        rows: initial,
+        columns,
+        rowKeyGetter: withKey ? (row: Row) => row.id : undefined,
+        height: 400,
+        enableRowDrag: true,
+        rowDragMotion,
+        motion: 'on',
+        ...(applies ? null : { onRowsChange: () => {} }),
+      }),
+      steps: async (ctx) => {
+        await ctx.act(() => {
+          fireEvent.pointerDown(handleOf(ctx, 0), { ...pointer, clientX: 30, clientY: rowY(0) });
+          fireEvent.pointerMove(window, { ...pointer, clientX: 30, clientY: rowY(1) });
+          fireEvent.pointerMove(window, { ...pointer, clientX: 30, clientY: rowY(2) + 10 });
+        });
+        ctx.snapshot('引いている');
+        await ctx.act(() => {
+          fireEvent.pointerUp(window, { ...pointer, clientX: 30, clientY: rowY(2) + 10 });
+        }, 0);
+        ctx.snapshot('離した直後');
+        await ctx.act(() => {}, 450);
+        ctx.snapshot('滑り終えた後');
+        if (!applies) {
+          // 後で利用側が別の並びに変えても、予約した滑り込みを使わない。
+          await ctx.setProps({ rows: [initial[2], initial[0], initial[1], initial[3], initial[4]] });
+          ctx.snapshot('後で並びが変わった直後');
+        }
+      },
+    });
+  }, 20_000);
+
+  // AP-15: 外の入力欄にフォーカスがあってもハンドルを押すとグリッドへ移る(直後の Ctrl+Z で行の移動を戻せる)。
+  // E-06: ゴーストは値を文字で出さない列(renderCell / チェックボックス)を飛ばして、次の列の値を出す。
+  it('外の入力欄から掴むとグリッドへフォーカス・Ctrl+Z で戻す・ゴーストの文字(AP-15 / E-06)', async () => {
+    await expectParity({
+      features: ['rowDrag'],
+      watch: ['onRowMove'],
+      props: (framework) => ({
+        rows: makeRows(5),
+        columns: [
+          {
+            key: 'id',
+            title: '画像',
+            width: 80,
+            renderCell: ({ value }: { value: unknown }) =>
+              framework === 'react' ? createElement('img', { alt: '', src: `/thumbs/${String(value)}.svg` }) : <img alt="" src={`/thumbs/${String(value)}.svg`} />,
+          },
+          { key: 'status', title: '在庫', width: 80, editor: { type: 'checkbox', checkedValue: '在庫あり', uncheckedValue: '品切れ' } },
+          ...columns.slice(1, 4),
+        ],
+        rowKeyGetter: (row: Row) => row.id,
+        height: 400,
+        enableRowDrag: true,
+      }),
+      steps: async (ctx) => {
+        const outside = document.createElement('input');
+        document.body.append(outside);
+        try {
+          await ctx.act(() => outside.focus());
+          await ctx.act(() => {
+            fireEvent.pointerDown(handleOf(ctx, 1), { ...pointer, clientX: 30, clientY: rowY(1) });
+          });
+          ctx.log('掴んだ後のフォーカス', document.activeElement === ctx.shell() ? 'シェル' : document.activeElement?.tagName);
+          ctx.log('ゴーストの文字', document.querySelector('[data-grid-drag-ghost]')?.textContent ?? null);
+          ctx.snapshot('掴んだ');
+          await ctx.act(() => {
+            fireEvent.pointerMove(window, { ...pointer, clientX: 30, clientY: rowY(3) + 10 });
+          });
+          await ctx.act(() => {
+            fireEvent.pointerUp(window, { ...pointer, clientX: 30, clientY: rowY(3) + 10 });
+          }, 450);
+          ctx.log('行の並び(落とす)', names(ctx));
+          await ctx.act(() => {
+            fireEvent.keyDown(document.activeElement ?? document.body, { key: 'z', ctrlKey: true });
+          }, 120);
+          ctx.log('行の並び(Ctrl+Z)', names(ctx));
+          ctx.snapshot('Ctrl+Z');
+        } finally {
+          outside.remove();
+        }
+      },
+    });
+  }, 20_000);
 });
 
 describe('フィルハンドル(fillHandle)', () => {
@@ -722,6 +897,7 @@ describe('フィルハンドル(fillHandle)', () => {
   ])('引いて埋める・ボタンで選び直す・Ctrl・Escape・ダブルクリック・元に戻す・出さない条件(機能%s)', async (_label, features, option) => {
     await expectParity({
       features,
+      allowMissingFeatures: ['fillHandle'],
       watch: ['onActiveCellChange'],
       props: () => ({
         rows: fillRows(),
@@ -869,6 +1045,7 @@ describe('右クリックメニュー(contextMenu)', () => {
   ])('セル / 行番号の右クリック・キー操作・閉じ方・項目なし(機能%s)', async (_label, features) => {
     await expectParity({
       features,
+      allowMissingFeatures: ['contextMenu'],
       watch: ['onContextMenuOpen', 'getContextMenuItems'],
       props: () => ({
         rows: makeRows(12),

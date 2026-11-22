@@ -1,0 +1,15 @@
+const { chromium } = require('playwright')
+;(async () => {
+  const browser = await chromium.launch()
+  const page = await browser.newPage()
+  await page.goto('http://localhost:5507/')
+  await page.evaluate(() => localStorage.setItem('s7-settings', JSON.stringify({ loadMode: 'memo', saveMode: 'onFlush', fill: false })))
+  await page.goto('http://localhost:5507/projects/web?minDelay=600&maxDelay=600&loadFail=0&saveFail=0')
+  await page.waitForSelector('[role=grid][aria-label="タスク"] [data-row-key="web-1"]')
+  const msgs = []
+  page.on('console', async (m) => { if (m.type() === 'error') { const args = await Promise.all(m.args().map((a) => a.evaluate((v) => (v instanceof Error ? 'ERR ' + v.stack : typeof v === 'string' ? v : JSON.stringify(v))).catch(() => '?'))); msgs.push(args.join(' | ').slice(0, 900) + '\n  @ ' + JSON.stringify(m.location())) } })
+  await page.evaluate(() => (window.__api.failNextLoad = 1))
+  await page.click('a[data-project=app]'); await new Promise((r) => setTimeout(r, 1500))
+  console.log(msgs.length); console.log(msgs.slice(0, 3).join('\n----\n'))
+  await browser.close()
+})()

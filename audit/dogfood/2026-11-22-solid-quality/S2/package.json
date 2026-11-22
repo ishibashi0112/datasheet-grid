@@ -1,0 +1,23 @@
+{
+  "name": "s2-ssr-admin",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "node server.js",
+    "build": "vite build --outDir dist/client && vite build --ssr src/entry-server.tsx --outDir dist/server",
+    "start": "NODE_ENV=production node server.js"
+  },
+  "dependencies": {
+    "@ishibashi0112/spreadsheet-grid-solid": "file:../pack/ishibashi0112-spreadsheet-grid-solid-0.1.0.tgz",
+    "@solidjs/router": "^2.0.1",
+    "@solidjs/web": "^2.0.3",
+    "solid-js": "^2.0.3"
+  },
+  "devDependencies": {
+    "@solidjs/vite-plugin": "^3.0.1",
+    "@types/node": "^26.6.6",
+    "typescript": "^6.0.3",
+    "vite": "^8.3.8"
+  }
+}

@@ -1,0 +1,23 @@
+{
+  "name": "s12-plan-react",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite --port 5512 --strictPort",
+    "build": "vite build",
+    "preview": "vite preview --port 5512 --strictPort"
+  },
+  "dependencies": {
+    "@ishibashi0112/spreadsheet-grid": "1.2.1",
+    "react": "^19.2.0",
+    "react-dom": "^19.2.0"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-react": "^5.0.0",
+    "typescript": "~6.0.3",
+    "vite": "^7.1.0",
+    "@types/react": "^19.2.0",
+    "@types/react-dom": "^19.2.0"
+  }
+}

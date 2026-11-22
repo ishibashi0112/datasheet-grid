@@ -1,0 +1,15 @@
+// 編集中に(クリックなしで)ルートが変わってグリッドが外れたとき、打ちかけの値はどうなるか
+const { open, clickCell, setSettings, sleep } = require('./lib.cjs')
+const [to = '/members', loadingOn = '0'] = process.argv.slice(2)
+;(async () => {
+  const { browser, page, logs } = await open()
+  await setSettings(page, { loadMode: 'deferred', saveMode: 'onFlush', fill: false, loadingOn: loadingOn === '1' })
+  await page.goto('http://localhost:5507/projects/web?minDelay=500&maxDelay=500&loadFail=0&saveFail=0')
+  await page.waitForSelector('[role=grid][aria-label="タスク"] [data-row-key="web-1"]')
+  await clickCell(page, 'タスク', 'web-3', 'title', { double: true }); await page.keyboard.press('End'); await page.keyboard.type('abc'); await sleep(100)
+  await page.evaluate((to) => { history.pushState(null, '', to + location.search); dispatchEvent(new PopStateEvent('popstate')) }, to)
+  await sleep(1500)
+  console.log(to, JSON.stringify(await page.evaluate(() => ({ path: location.pathname, events: window.__events, api: window.__api.log.slice(2), web3: window.__db.tasks.get('web')[2].title, grids: [...document.querySelectorAll('[role=grid]')].map((g) => g.getAttribute('aria-label')).join(',') }))))
+  console.log(logs.filter((l) => !l.includes('[vite]')).map((l) => l.split('\n')[0]).join('\n'))
+  await browser.close()
+})()

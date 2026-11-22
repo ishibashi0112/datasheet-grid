@@ -11,6 +11,7 @@ import type { GridContextMenuItem, GridResolvedSlots } from '../model/gridTypes'
 import { useGridPortal } from '../context/portal';
 import { createPortalTokens } from '../primitives/portalTokens';
 import { px } from '../primitives/style';
+import { callInOwnFrame } from '../primitives/userCallback';
 
 type CellContextMenuPopoverProps = {
   items: readonly GridContextMenuItem[];
@@ -124,7 +125,8 @@ function ActionItem(props: ActionItemProps) {
       role="menuitem"
       disabled={props.item.disabled}
       onClick={() => {
-        props.item.onSelect();
+        // 利用者の onSelect は自分のフレームで呼ぶ(その中で action を始めても、メニューはすぐ閉じる。段階 4 の測り直し S4-21)。
+        callInOwnFrame(props.item.onSelect);
         props.onRequestClose();
       }}
       class={[

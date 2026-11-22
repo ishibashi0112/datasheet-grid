@@ -1,0 +1,20 @@
+:root { font-family: system-ui, 'Hiragino Sans', 'Noto Sans JP', sans-serif; }
+html, body, #root { height: 100%; margin: 0; }
+body { background: #fff; color: #111; }
+.app { box-sizing: border-box; display: flex; flex-direction: column; gap: 8px; height: 100%; padding: 8px 12px; }
+.toolbar { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.toolbar h1 { font-size: 18px; margin: 0 8px 0 0; }
+.toolbar button { min-height: 36px; }
+.grid-area { flex: 1; min-height: 0; }
+.card { display: flex; flex-wrap: wrap; gap: 8px 16px; padding: 10px; align-items: flex-end; }
+.card label { display: flex; flex-direction: column; font-size: 12px; gap: 2px; }
+.card input, .card textarea { font: inherit; font-size: 14px; }
+.card-buttons { display: flex; gap: 6px; }
+.moves { font-size: 12px; color: #555; }
+.tmpl-dialog { padding: 12px; }
+:focus-visible { outline: 2px solid #2563eb; outline-offset: 2px; }
+
+.two { box-sizing: border-box; display: flex; flex-direction: column; gap: 6px; height: 100%; padding: 8px 12px; }
+.two .pane { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+.two h2 { font-size: 14px; margin: 0 0 4px; }
+.two .grid-box { flex: 1; min-height: 0; }

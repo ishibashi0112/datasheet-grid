@@ -352,3 +352,25 @@ export const warnMoveRowOnServerSide = (): void => {
     );
   }
 };
+
+// 追加(段階 4 の測り直し S4-23): 描く前のグリッド(<Loading> の中で最初の行を待っている間など)のハンドルで、状態を変える
+//   メソッドが呼ばれたとき。描く前はグリッドの最初の処理(コントローラの update)の前なので、そのメソッドは何もしない(列を
+//   まだ知らないので applyState の並び替えは捨てられる、applyRows は空の行から作る)。React 版では Suspense の中で待っている
+//   間は ref が null なので気づける。読むだけのメソッド(get / is / can / export で始まるもの)では出さない。グリッド 1 つに
+//   つき 1 回。
+const READ_ONLY_HANDLE_METHOD = /^(get|is|can|export)/;
+export const warnHandleCallBeforeMount = (warned: { current: boolean }, method: string): void => {
+  if (process.env.NODE_ENV !== 'production') {
+    if (warned.current || READ_ONLY_HANDLE_METHOD.test(method)) {
+      return;
+    }
+    warned.current = true;
+    console.warn(
+      `[SpreadsheetGrid] グリッドを描く前(<Loading> の中で行を待っている間など)に ${method}() が呼ばれたため、何もしません。` +
+        '最初の状態は initialState で渡すか、行を読む effect(createEffect(() => rows(), …))から呼んでください。\n' +
+        `[SpreadsheetGrid] ${method}() was called before the grid was drawn (for example while <Loading> waits for the rows), ` +
+        'so it does nothing. Pass the first state with initialState, or call it from an effect that reads the rows ' +
+        '(createEffect(() => rows(), …)).',
+    );
+  }
+};

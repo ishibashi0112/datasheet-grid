@@ -1,0 +1,16 @@
+const { open, click, text } = require('./lib.cjs')
+;(async () => {
+  const url = process.argv[2]
+  const { browser, page, logs } = await open(url)
+  const st = (l) => page.evaluate((l) => `${l}: changes=${window.changes} canUndo=${window.grid.canUndo()}`, l)
+  await click(page, 3, 2) // item 2(locked)
+  await page.evaluate(() => navigator.clipboard.writeText('X'))
+  await page.keyboard.press('Control+v')
+  await page.waitForTimeout(200)
+  console.log(await st('paste into locked cell'), await text(page, 3, 2))
+  await page.keyboard.press('Delete')
+  await page.waitForTimeout(200)
+  console.log(await st('Delete on locked cell'), await text(page, 3, 2))
+  console.log(logs.filter((l) => !l.includes('vite')).join('\n'))
+  await browser.close()
+})()

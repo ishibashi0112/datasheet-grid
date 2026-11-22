@@ -536,3 +536,85 @@ describe('React 版と同じエディタ', () => {
     });
   });
 });
+// R2-1(0.1.0 の全体レビュー): グループ化した表で編集中に上へ行が足され、編集している位置が一瞬グループ行を指しても、エディタの
+//   種類を変えない(0.1.0 はエディタの種類を行から決めていたので、text に倒れて作り直し、number / date は打ちかけを失い、
+//   複数行の入力欄はフォーカスを失った。React 版は列から決める)。custom エディタは React 版と同じく作り直す。
+describe('グループ化した表で、編集中の位置にグループ行が来る(R2-1)', () => {
+  type GroupRow = { id: number; cat: string; qty?: number; due?: string; memo?: string };
+  const base: GroupRow[] = [
+    { id: 1, cat: 'A', qty: 1, due: '2026-01-01', memo: 'x' },
+    { id: 2, cat: 'A', qty: 2, due: '2026-01-02', memo: 'y' },
+    { id: 3, cat: 'B', qty: 3, due: '2026-01-03', memo: 'z' },
+  ];
+  const added: GroupRow = { id: 4, cat: 'A', qty: 4, due: '2026-01-04', memo: 'w' };
+  const groupColumns = (memoEditor: Record<string, unknown>) => [
+    { key: 'id', title: 'ID', width: 60, editable: false },
+    { key: 'cat', title: '分類', width: 100, rowGroup: true },
+    { key: 'qty', title: '数量', width: 80, editor: { type: 'number' } },
+    { key: 'due', title: '期日', width: 120, editor: { type: 'date' } },
+    { key: 'memo', title: 'メモ', width: 160, editor: memoEditor },
+  ];
+
+  it.each([
+    ['number', 'qty', '42', { type: 'text' }],
+    ['date', 'due', '2026-05-05', { type: 'text' }],
+    ['複数行の text', 'memo', '1 行目', { type: 'text', multiline: true }],
+  ] as const)('%s のエディタは打ちかけとフォーカスを残す', async (_label, key, typed, memoEditor) => {
+    await expectParity({
+      features: ['grouping'],
+      watch: ['onRowsChange'],
+      props: () => ({ rows: base, columns: groupColumns(memoEditor), rowKeyGetter: (row: GroupRow) => row.id, height: 300, animateRows: false }),
+      steps: async (ctx) => {
+        // [G(A), 1, 2, G(B), 3] の 3 を編集する。
+        await doubleClick(ctx, 4, key);
+        ctx.track('エディタ', () => ctx.container.querySelector('.ssg-cell-editor-input'));
+        await typeInto(ctx, typed);
+        ctx.snapshot('打った');
+        // A に 1 行足す → [G(A), 1, 2, 4, G(B), 3]。編集していた位置(4)はグループ行 B になる。
+        await ctx.setProps({ rows: [...base, added] });
+        ctx.log('エディタの値', editorInput(ctx).value);
+        ctx.log('エディタにフォーカス', document.activeElement === editorInput(ctx));
+        ctx.snapshot('上に行が足された');
+        await pressInEditor(ctx, key === 'memo' ? 'Escape' : 'Enter');
+        ctx.snapshot('閉じた');
+      },
+    });
+  });
+
+  it('custom のエディタは React 版と同じく作り直す(フォーカスもそろう)', async () => {
+    await expectParity({
+      features: ['grouping'],
+      props: (framework) => ({
+        rows: base,
+        columns: groupColumns({
+          type: 'custom',
+          render: () => {
+            if (framework === 'react') {
+              return createElement('input', { className: 'my-custom', defaultValue: '' });
+            }
+            const input = document.createElement('input');
+            input.className = 'my-custom';
+            return input;
+          },
+        }),
+        rowKeyGetter: (row: GroupRow) => row.id,
+        height: 300,
+        animateRows: false,
+      }),
+      steps: async (ctx) => {
+        await doubleClick(ctx, 4, 'memo');
+        ctx.track('custom', () => ctx.container.querySelector('.my-custom'));
+        await ctx.act(() => {
+          const input = ctx.container.querySelector<HTMLInputElement>('.my-custom');
+          if (input) {
+            input.value = '打ちかけ';
+          }
+        });
+        ctx.snapshot('開いた');
+        await ctx.setProps({ rows: [...base, added] });
+        ctx.log('custom の値', ctx.container.querySelector<HTMLInputElement>('.my-custom')?.value ?? null);
+        ctx.snapshot('上に行が足された');
+      },
+    });
+  });
+});

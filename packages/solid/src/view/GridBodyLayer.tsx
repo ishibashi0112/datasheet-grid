@@ -128,7 +128,8 @@ type GridBodyLayerProps<T> = {
   slots: GridResolvedSlots;
   activeCellDomId: string;
   cellEditorDomId: string;
-  renderCellContent: (row: T, column: GridColumn<T>, cell: GridCellContentContext) => JSX.Element;
+  // 行は読んだときに引く(読まない中身 = checkbox 列の既定のセルは、行の値が変わっても作り直さない)。
+  renderCellContent: (row: () => T, column: GridColumn<T>, cell: GridCellContentContext) => JSX.Element;
   onRowHeaderPointerDown: (rowIndex: number, event: PointerEvent) => void;
   onRowHeaderPointerEnter: (rowIndex: number, event: PointerEvent) => void;
   onRowHeaderPointerLeave: (rowIndex: number) => void;
@@ -602,10 +603,10 @@ export function GridBodyLayer<T>(props: GridBodyLayerProps<T>) {
                             </Show>
                             <Show
                               when={isAutoHeightCell()}
-                              fallback={props.renderCellContent(currentRow(), column(), cellState)}
+                              fallback={props.renderCellContent(currentRow, column(), cellState)}
                             >
                               <div class="ssg-autoheight-content" data-autoheight-content="">
-                                {props.renderCellContent(currentRow(), column(), cellState)}
+                                {props.renderCellContent(currentRow, column(), cellState)}
                               </div>
                             </Show>
                           </div>

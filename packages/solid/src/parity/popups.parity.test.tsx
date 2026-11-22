@@ -3,6 +3,7 @@
 import { beforeAll, describe, it } from 'vitest';
 import { fireEvent } from '@solidjs/testing-library';
 import { installJsdomLayoutStubs } from '@ishibashi0112/spreadsheet-grid-core/testing';
+import { numberFormatter } from '@ishibashi0112/spreadsheet-grid-core';
 import { expectParity, type ParityContext } from './harness';
 
 type Row = { id: number; name: string; qty: number; city: string; day: string; code: number };
@@ -69,6 +70,7 @@ describe('行の絞り込み(filtering)', () => {
   ])('上部バーの検索欄と applyState の列フィルター(機能%s)', async (_label, features) => {
     await expectParity({
       features,
+      allowMissingFeatures: ['filtering'],
       watch: ['onFiltersChange', 'onStateChange'],
       props: () => ({ rows: makeRows(24), columns, rowKeyGetter: (row: Row) => row.id, height: 360 }),
       steps: async (ctx) => {
@@ -151,6 +153,7 @@ describe('行の絞り込み(filtering)', () => {
   ])('相対日付プリセットと text / dateSet の列フィルター(機能%s)', async (_label, features) => {
     await expectParity({
       features,
+      allowMissingFeatures: ['filtering'],
       watch: ['onFiltersChange'],
       props: () => ({ rows: makeRows(24), columns, rowKeyGetter: (row: Row) => row.id, height: 360 }),
       steps: async (ctx) => {
@@ -220,6 +223,7 @@ describe('行の絞り込み(filtering)', () => {
   ])('manualFiltering / manualSorting(機能%s)', async (_label, features) => {
     await expectParity({
       features,
+      allowMissingFeatures: ['filtering'],
       watch: ['onFiltersChange', 'onSortChange'],
       props: () => ({
         rows: makeRows(10),
@@ -833,6 +837,98 @@ describe('列フィルターのポップオーバー(filtering + columnMenu)', (
       },
     });
   }, 30_000);
+
+  // L-06: Date の値の dateSet の列は、候補が年月日の木に日付で集まり(時刻は見ない)、選んだ日の行に絞り込める。
+  it('Date の値の dateSet の列(L-06)', async () => {
+    const dated = [
+      { id: 1, d: new Date(2026, 6, 1) },
+      { id: 2, d: new Date(2026, 6, 2) },
+      { id: 3, d: new Date(2026, 6, 1, 15, 30) },
+    ];
+    await expectParity({
+      features: ['filtering', 'columnMenu', 'export'],
+      watch: ['onFiltersChange'],
+      props: () => ({
+        rows: dated,
+        columns: [
+          { key: 'id', title: 'ID', width: 80 },
+          { key: 'd', title: '日付', width: 160, filterType: 'dateSet' },
+        ],
+        rowKeyGetter: (row: { id: number }) => row.id,
+        height: 300,
+        animateRows: false,
+      }),
+      steps: async (ctx) => {
+        await openFilter(ctx, 'd');
+        ctx.snapshot('開いた');
+        // 年 → 月を開く。
+        for (let depth = 0; depth < 2; depth += 1) {
+          const toggles = allInPopover('.ssg-filter-tree-toggle:not(.ssg-filter-tree-toggle--placeholder)');
+          await press(ctx, toggles[depth], `木の開閉 ${depth}`);
+        }
+        ctx.snapshot('年と月を開いた');
+        ctx.log('候補', allInPopover('.ssg-filter-option').map((element) => element.textContent));
+        // 7/1 の日だけ(時刻のある行も入る)。
+        await press(ctx, inPopover('.ssg-filter-btn-primary'), '閉じる');
+        await ctx.act(() => {
+          call(ctx, 'applyState', {
+            filters: { globalText: '', columnFilters: { d: { kind: 'dateSet', condition: null, set: { values: ['2026-07-01'] } } } },
+          });
+        });
+        ctx.snapshot('7/1 だけ');
+        ctx.log('残った行', (call(ctx, 'getExportData', { scope: 'view' }) as { rows: { value: unknown }[][] }).rows.map((row) => row[0]?.value));
+      },
+    });
+  });
+
+  // DU-07: チップのバーとフィルターの管理は、select の値をラベルで、数値の条件を列の valueFormatter で出す。
+  it('チップのバーの要約は select のラベルと書式を当てた数値(DU-07)', async () => {
+    await expectParity({
+      features: ['filtering', 'columnMenu', 'toolPanel'],
+      props: () => ({
+        rows: [
+          { id: 1, kind: 'mansion', rent: 80000 },
+          { id: 2, kind: 'house', rent: 120000 },
+        ],
+        columns: [
+          {
+            key: 'kind',
+            title: '種別',
+            width: 100,
+            filterType: 'select',
+            filterOptions: [
+              { value: 'mansion', label: 'マンション' },
+              { value: 'house', label: '一戸建て' },
+            ],
+          },
+          { key: 'rent', title: '家賃', width: 100, filterType: 'number', valueFormatter: numberFormatter() },
+        ],
+        rowKeyGetter: (row: { id: number }) => row.id,
+        height: 300,
+        showFilterChipBar: true,
+        animateRows: false,
+      }),
+      steps: async (ctx) => {
+        await ctx.act(() => {
+          call(ctx, 'applyState', {
+            filters: {
+              globalText: '',
+              columnFilters: {
+                kind: { kind: 'select', value: 'mansion' },
+                rent: { kind: 'number', raw: '<= 100000', parsed: { mode: 'comparison', operator: '<=', value: 100000 } },
+              },
+            },
+          });
+        });
+        ctx.log('チップのバー', ctx.container.querySelector('.ssg-filter-chip-bar')?.textContent ?? null);
+        ctx.snapshot('チップのバー');
+        await ctx.act(() => {
+          call(ctx, 'openFilterManager');
+        });
+        ctx.snapshot('フィルターの管理');
+      },
+    });
+  });
 });
 
 describe('ツールパネル(toolPanel)とフィルターのチップのバー', () => {
@@ -925,6 +1021,7 @@ describe('ツールパネル(toolPanel)とフィルターのチップのバー',
     async (_label, features) => {
       await expectParity({
         features,
+        allowMissingFeatures: ['filtering', 'columnMenu', 'toolPanel'],
         watch: ['onFiltersChange'],
         props: () => ({
           rows: makeRows(16),
@@ -1046,6 +1143,7 @@ describe('ツールパネル(toolPanel)とフィルターのチップのバー',
       let latest: readonly ColumnLike[] | null = null;
       await expectParity({
         features,
+        allowMissingFeatures: ['filtering', 'columnMenu', 'toolPanel'],
         watch: ['onSortChange'],
         props: () => ({
           rows: makeRows(16),
