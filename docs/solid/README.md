@@ -15,6 +15,7 @@ Claude Doc「Solid 2.0 版の試作の報告」)。試作の中身と分かっ�
 | 1 | Solid 版の本体(React の `/lite` の機能なし = `createSpreadsheetGrid({ features: {} })` と同じ範囲: 見出しとセル・列幅・ソート・ツールチップ・エディタ 6 種・入力の検査・行の選択・展開行・ARIA) | 3 | — |
 | 2 | 21 の機能(`/lite` の部品と同じ名前で。ラベル行・SSRM・行のグループもここ = React 版でも機能のため) | 3〜4 | — |
 | 3 | 開発時の警告と CI・ハーネス(3 ブラウザ)・`types:check`・`size:check`・ドキュメント・サンプル(下の「段階 3 の中身」) | 3 | `@ishibashi0112/spreadsheet-grid-solid` 0.1.0(React 版と core の 1.2.1 の後) |
+| 4 | 品質を React 版にそろえる: React 版と同じ物差しで測り直し(段 1)、直して出し(段 2)、残件の大きなものを 0.2.0 へ(段 3)。進み具合と所見は `docs/audits/2026-11-22-solid-quality/README.md` | 段ごと | 段 2 で React 版と core の 1.2.2 + Solid 版の 0.1.1 |
 
 ## 段階 1 の中身
 
