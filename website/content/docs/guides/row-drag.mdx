@@ -17,7 +17,7 @@ description: enableRowDrag でハンドルを掴んで行を上下へ移動す�
 
 ## 使い方
 
-```tsx
+```tsx tab="React"
 const [rows, setRows] = useState(initialRows);
 
 <SpreadsheetGrid
@@ -32,6 +32,22 @@ const [rows, setRows] = useState(initialRows);
   }}
 />
 ```
+```tsx tab="Solid"
+const [rows, setRows] = createSignal(initialRows);
+
+<SpreadsheetGrid
+  rows={rows()}
+  onRowsChange={(next) => setRows(next)}
+  columns={columns}
+  rowKeyGetter={(row) => row.id}
+  enableRowDrag
+  isRowDraggable={(row) => !row.locked}            // 行ごとの可否(省略時は全行)
+  onRowMove={({ rowKey, fromIndex, toIndex, rows }) => {
+    saveOrder(rows);                                // 確定後の通知(onRowsChange の直後)
+  }}
+/>
+```
+
 
 `onRowMove` に渡る `params` は `{ rowKey, fromIndex, toIndex, rows }` です。`fromIndex` / `toIndex` は元 `rows` 配列の index、`rows` は `onRowsChange` に渡したものと同じ新配列参照です。
 
@@ -39,7 +55,7 @@ const [rows, setRows] = useState(initialRows);
 
 ラベル行(カテゴリ)のまとまりの中だけで動かしたいときなどは、`canDropRow` で落とせない位置に `false` を返します(1.2.0 から)。
 
-```tsx
+```tsx tab="React"
 // ラベル行のまとまりの中だけで動かす
 const sectionOf = useMemo(() => {
   const map = new Map<string, string>();
@@ -59,6 +75,27 @@ const sectionOf = useMemo(() => {
   ...
 />
 ```
+```tsx tab="Solid"
+// ラベル行のまとまりの中だけで動かす
+const sectionOf = createMemo(() => {
+  const map = new Map<string, string>();
+  let section = '';
+  for (const row of rows()) {
+    if (isLabel(row)) section = row.id;
+    else map.set(row.id, section);
+  }
+  return map;
+});
+
+<SpreadsheetGrid
+  enableRowDrag
+  canDropRow={({ row, rowAbove }) =>
+    rowAbove !== undefined && (isLabel(rowAbove) ? rowAbove.id : sectionOf().get(rowAbove.id)) === sectionOf().get(row.id)
+  }
+  ...
+/>
+```
+
 
 - `params` は `{ row, rowKey, fromIndex, toIndex, rowAbove, rowBelow, rows }` です。`fromIndex` / `toIndex` は `onRowMove` と同じ、`rowAbove` / `rowBelow` は落とした後に掴んだ行のすぐ上 / すぐ下に来る行(先頭 / 末尾なら `undefined`)、`rows` は動かす前の配列です。
 - `false` の位置ではガイド線を出さず(ゴーストは枠の外と同じ薄い見た目)、離しても動かしません。`rowDragMotion="live"` では落とせる最後の位置に留まり、そこで離せばそこへ動きます。

@@ -30,3 +30,5 @@ repomix-output.xml
 audit/harness/.out
 # サンプル(examples/*)は lockfile を置かない(StackBlitz / 手元の npm install で作られるもの)
 examples/*/package-lock.json
+# Solid 版の npm に同梱する API_REFERENCE.md(React 版から build:lib で作る。packages/solid/scripts/emit-docs.mjs)
+packages/solid/API_REFERENCE.md

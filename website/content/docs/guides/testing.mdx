@@ -42,6 +42,60 @@ afterAll(restore);
 | `globalThis.ResizeObserver` | `observe()` 時に**即時コールバック**するスタブ |
 | `Element.prototype.scrollTo` | 未定義のときのみ no-op を補う |
 
+## 最初のテスト
+
+セルをダブルクリックして直し、表に出ることを確かめる例です。Solid 版は Vitest の設定に `@solidjs/vite-plugin` を入れ、DOM を見る前に `flush()` を呼びます([Solid で使う](/docs/solid#solid-で気をつけること))。
+
+```tsx tab="React"
+// @vitest-environment jsdom
+import { beforeAll, expect, it } from 'vitest';
+import { render, screen } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
+import { installJsdomLayoutStubs } from '@ishibashi0112/spreadsheet-grid/testing';
+import { Inventory } from './Inventory';
+
+beforeAll(() => {
+  installJsdomLayoutStubs();
+});
+
+it('品名を直せる', async () => {
+  const user = userEvent.setup();
+  render(<Inventory />);
+  const cell = screen.getByText('ボールペン').closest<HTMLElement>('[role="gridcell"]')!;
+  await user.dblClick(cell);
+  const input = screen.getByRole('textbox', { name: '品名 を編集' });
+  await user.clear(input);
+  await user.type(input, 'ノート{Enter}');
+  expect(screen.getByText('ノート')).toBeTruthy();
+});
+```
+
+```tsx tab="Solid"
+// @vitest-environment jsdom
+import { beforeAll, expect, it } from 'vitest';
+import { flush } from 'solid-js';
+import { render, screen } from '@solidjs/testing-library';
+import userEvent from '@testing-library/user-event';
+import { installJsdomLayoutStubs } from '@ishibashi0112/spreadsheet-grid-solid/testing';
+import { Inventory } from './Inventory';
+
+beforeAll(() => {
+  installJsdomLayoutStubs();
+});
+
+it('品名を直せる', async () => {
+  const user = userEvent.setup();
+  render(() => <Inventory />);
+  const cell = screen.getByText('ボールペン').closest<HTMLElement>('[role="gridcell"]')!;
+  await user.dblClick(cell);
+  const input = screen.getByRole('textbox', { name: '品名 を編集' });
+  await user.clear(input);
+  await user.type(input, 'ノート{Enter}');
+  flush(); // 書き込みを DOM へ反映してから見る
+  expect(screen.getByText('ノート')).toBeTruthy();
+});
+```
+
 ## 描かれる範囲
 
 スタブは「見えている大きさ」を決めるだけで、仮想化はそのまま効きます。既定の 1200×600 なら、描かれるのは高さ 600px に入る行と幅 1200px に入る列(それぞれ先読みの分を足した数)です。既定の行の高さ(36px)と幅 120px の列なら、約 38 行・約 18 列です。グリッドの `height` を変えても、描かれる量はスタブの大きさで決まります。
@@ -82,6 +136,7 @@ fireEvent.scroll(scroller);
 | 範囲選択 | jsdom には座標が無いので、ポインタのドラッグでは正しい範囲になりません。`Shift+矢印` / `Shift+クリック`、またはハンドルの `selectRange` を使います。 |
 | 確定・取り消しの後 | 確定(`Enter` / `Tab`)の後のアクティブセルの移動と、次の編集を受け付けるようになるのは、その後のマイクロタスクです。fireEvent で同期に続けて書くときは、間に `await act(async () => {})` を挟みます(結果を確かめるだけなら `waitFor` でも構いません)。 |
 | エディタの入力欄を取る | 編集中は、エディタの枠(`role="group"`)と入力欄の両方が「(列名) を編集」の名前を持ちます。`getByLabelText('品名 を編集')` は 2 つに当たって落ちるので、`getByRole('textbox', { name: '品名 を編集' })`(number は `spinbutton`、select は `combobox`)で取ります。 |
+| number の列を数字から打ち始める | jsdom / happy-dom + user-event では `user.keyboard('42')` が「24」になります(1 文字目で開いた `<input type="number">` のカーソルの位置を jsdom が持たず、2 文字目が先頭に入るため。実ブラウザでは「42」)。1 文字目で開いてから入力欄へ `await user.type(input, '2')` で続けるか、`Enter` / `F2` で開いて `await user.clear(input)` と `await user.type(input, '42')` で入れます(入力欄は `getByRole('spinbutton', { name: '数量 を編集' })`)。 |
 | date エディタ | `Enter` / `F2` / ダブルクリックで開いた入力欄はネイティブの `<input type="date">` なので、`fireEvent.change(input, { target: { value: '2026-11-09' } })` で値を入れます(jsdom の一般的な制約)。 |
 | ハンドルでセルを選んだ後のキー操作 | `selectCell` / `setActiveCell` はフォーカスを移しません。続けてキーを送るときは、ハンドルの `focus()` を呼ぶか、セルを押します。 |
 | ポップオーバーを開いた後のフォーカス | 列フィルターのポップオーバーの入力欄へフォーカスが移るのは、開いてから 2 フレーム後(位置が決まってから)です。`await waitFor(() => expect(input).toHaveFocus())` で待ちます。`Escape` などで閉じたときは、すぐにグリッドへ戻ります(1.0.2。パネルの中のボタンからはその場で、入力欄からはパネルが外れた直後 = `fireEvent` の後の `await act(async () => {})` か user-event の後。blur で確定する入力欄を `Escape` で確定しないため)。 |

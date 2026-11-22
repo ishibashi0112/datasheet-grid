@@ -37,6 +37,21 @@ const DISABLED_FEATURE_PROPS: { [K in GridFeatureName]?: Partial<SpreadsheetGrid
   serverSide: { dataSource: undefined },
 };
 
+// 追加(1.3.0 の段 2-10 / R4-6): 公開の関数の JSDoc(d.ts に残り、エディタのホバーで出る)。
+/**
+ * 使う機能だけを差し込んだグリッドのコンポーネントを作ります(React 版の `/lite` の `createSpreadsheetGrid` と同じ形。
+ * Solid 版では機能の部品も本体の入口 `@ishibashi0112/spreadsheet-grid-solid` から import します)。
+ * 差し込まなかった機能のコードはバンドルに入りません。props・ref ハンドル・型は `SpreadsheetGrid` と共通で、
+ * 差し込んでいない機能の prop やメソッドは何もしません(開発時だけ、prop と、prop を持たない機能のメソッド
+ * (`exportCsv` / `openFilterManager` など)を console.warn で知らせます)。
+ * モジュールの先頭で 1 回だけ呼んでください(コンポーネントの中で呼ばない)。機能の組み合わせは作ったときに固定されます。
+ *
+ * @example
+ * import { createSpreadsheetGrid, standardFeatures, serverSideFeature } from '@ishibashi0112/spreadsheet-grid-solid';
+ * import '@ishibashi0112/spreadsheet-grid-solid/style.css';
+ *
+ * const Grid = createSpreadsheetGrid({ features: { ...standardFeatures, serverSide: serverSideFeature } });
+ */
 export function createSpreadsheetGrid(options: CreateSpreadsheetGridOptions) {
   const features = options.features as unknown as SolidGridFeatures;
   const overrides: Partial<SpreadsheetGridProps<object>> = {};

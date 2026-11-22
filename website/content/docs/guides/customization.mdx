@@ -146,7 +146,8 @@ const columns = [
 }
 ```
 
-- フォーカス管理とキーバインドは利用側の責務です(`ctx` には `row` / `initialText`(印字キー開始時の 1 文字)なども入ります)。
+- フォーカス管理とキーバインドは利用側の責務です(`ctx` には `row` / `initialText` なども入ります。`initialText` は文字のキーで打ち始めたときはそのキー、ダブルクリック / `Enter` / `F2` で開いたときはセルの値の文字 `String(value ?? '')` です)。
+- エディタの中で自分でポップアップ(候補の一覧など)を出すときは、`document.body` ではなく、グリッドを囲むダイアログの中へ出してください(`anchor.closest('dialog') ?? document.body`)。モーダルの `<dialog>` の中では、body の直下の要素は後ろに隠れて押せません([ダイアログの中で使う](/docs/guides/dialogs))。
 
 ## コンテキストメニュー(右クリック)
 

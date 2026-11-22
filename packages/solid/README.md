@@ -61,14 +61,14 @@ import { createSpreadsheetGrid, standardFeatures, serverSideFeature } from '@ish
 const Grid = createSpreadsheetGrid({ features: { ...standardFeatures, serverSide: serverSideFeature } })
 ```
 
-The feature names and what they enable are listed in the React version's `API_REFERENCE.md` (「機能を選んで組み込む」); the part names are the same.
+The feature names and what they enable are listed in the bundled `API_REFERENCE.md` (「機能を選んで組み込む」); the part names are the same as in the React version.
 
 ## Differences from the React version
 
 - **`ref` works like Solid's DOM refs.** `let grid!: SpreadsheetGridHandle<Row>` with `ref={grid}`, or `ref={(handle) => (grid = handle)}`, gives you the handle with the same methods (there are no React ref objects). The handle is set before your component's first `createEffect` and `onSettled` run, so you can call it there (for example to restore a saved state or scroll to the bottom). Inside `<Loading>`, the grid is not drawn until the first rows arrive, and methods that change its state do nothing before that (the grid warns once in development): pass the first state as `initialState`, or call the handle from an effect that reads the rows (`createEffect(() => rows().length, …)`).
 - **Render functions run only when needed.** `renderCell` runs again when its row, value or column changes, `renderHeader` when its column changes, and the bar renderers when the function changes; not on every update as in React. Positions and states in the context (`rowIndex`, `isActive`, the bar context and so on) are reactive: read them inside JSX and they stay current. Reading them in the function body makes the content re-created whenever they change (`derivedSummary` is one value, so reading any of its fields re-creates the bar whenever any summary text changes, such as the active cell's address). Because `renderCell` runs again when its row changes, an input inside a cell that calls `ctx.setValue` on every keystroke loses focus after the first character: keep the text in a signal inside the component and call `setValue` when it is committed (blur / Enter), or use a custom editor. The same goes for signals from outside the grid read in the `renderCell` body: each change re-creates the content of every visible cell, so read them inside JSX (or through a memo per row key).
 - **Not available:** the natural-language filter (`/ai`, `GridAskBar`).
-- Everything else (props, column options, handle methods, callbacks, CSS classes and tokens) is the same as in [`API_REFERENCE.md`](https://github.com/ishibashi0112/datasheet-grid/blob/main/packages/react/API_REFERENCE.md) of the React version.
+- Everything else (props, column options, handle methods, callbacks, CSS classes and tokens) is the same as in the React version. The package ships `API_REFERENCE.md` (0.1.2+; the same document as the React version's, with a note at the top on reading it for Solid; also [on GitHub](https://github.com/ishibashi0112/datasheet-grid/blob/main/packages/react/API_REFERENCE.md)).
 
 ## Solid-specific notes
 
@@ -85,6 +85,13 @@ The feature names and what they enable are listed in the React version's `API_RE
 - **Sharing props between grids.** Spread a stable object, or write the props out. Spreading an object that is re-created on every change (`{...gridProps()}`) works, but in development Solid reports `HUGE_FAN_OUT`.
 - **Shadow DOM (Web Components).** Put `style.css` inside the shadow root (a `<style>` or `adoptedStyleSheets`), wrap the grid in an element instead of rendering it directly into the shadow root (popups are drawn inside that element), use an open shadow root, and call the `dispose` that `render()` returns from `disconnectedCallback`. Details: the section 「Shadow DOM の中のグリッド」 of the API reference.
 - **Development diagnostics.** In `vite dev`, Solid may print `EFFECT_RELAY_TEAR` / `EFFECT_WRITES_OWN_SOURCE` naming effects such as `autoHeightMeasurer`, `activeRowFollow`, `edit`, `serverSideRowModel`, `fillHandle` or `clampSelectionToRowCount` (the names are examples). They come from the grid re-aligning its state after a change (the React version re-renders the same way), are harmless, and do not appear in production builds.
+
+## Using with AI coding assistants
+
+This library is new, so AI coding assistants rarely know its API and tend to guess from other grids or from React code. Point them at the docs:
+
+- **Skill.** The package ships an [Agent Skill](https://agentskills.io) at `skills/spreadsheet-grid-solid/SKILL.md` (0.1.2+): a short guide with the Solid rules below and where to look in `API_REFERENCE.md`. Tools that read `SKILL.md` (Claude Code, Cursor, Codex, GitHub Copilot and others) use it once it is in their skills folder. Install it from GitHub with `npx skills add https://github.com/ishibashi0112/datasheet-grid/tree/main/packages/solid/skills/spreadsheet-grid-solid`, or copy the folder from `node_modules` (for Claude Code, into `.claude/skills/`).
+- **One line for `AGENTS.md` / `CLAUDE.md`:** "Before writing grid code, read `node_modules/@ishibashi0112/spreadsheet-grid-solid/API_REFERENCE.md` and use only the props and methods it lists."
 
 ## Rules that are easy to get wrong
 
@@ -120,14 +127,14 @@ Solid 2.0 向けの仮想化スプレッドシート / データグリッドで�
 
 ### 機能を選んで組み込む
 
-`SpreadsheetGrid` は全機能入りです(初期読み込みの JS が約 162KB gzip。列フィルターのポップオーバーとツールパネルの約 16KB は後から読みます)。`createSpreadsheetGrid` では渡した機能だけを入れたグリッドを作れ、渡さなかった機能はバンドルに入りません(機能なしで約 90KB、プリセット `standardFeatures` で約 117KB)。React 版と違い、機能の部品も同じ入口から import します(`/lite` はありません)。機能の名前と中身は React 版の `API_REFERENCE.md` の「機能を選んで組み込む」のとおりです(部品の名前も同じ)。グリッドはコンポーネントの中ではなく、モジュールの先頭で 1 回だけ作ってください。
+`SpreadsheetGrid` は全機能入りです(初期読み込みの JS が約 162KB gzip。列フィルターのポップオーバーとツールパネルの約 16KB は後から読みます)。`createSpreadsheetGrid` では渡した機能だけを入れたグリッドを作れ、渡さなかった機能はバンドルに入りません(機能なしで約 90KB、プリセット `standardFeatures` で約 117KB)。React 版と違い、機能の部品も同じ入口から import します(`/lite` はありません)。機能の名前と中身は同梱の `API_REFERENCE.md` の「機能を選んで組み込む」のとおりです(部品の名前も React 版と同じ)。グリッドはコンポーネントの中ではなく、モジュールの先頭で 1 回だけ作ってください。
 
 ### React 版との違い
 
 - **`ref` は Solid の DOM の ref と同じです。** `let grid!: SpreadsheetGridHandle<Row>` と `ref={grid}`、または `ref={(handle) => (grid = handle)}` で、同じメソッドを持つハンドルを受け取れます(React の ref オブジェクトはありません)。ハンドルは利用側の部品の最初の `createEffect` と `onSettled` より前に入るので、そこで呼べます(保存した状態を戻す、末尾へスクロールする など)。`<Loading>` の中では最初の行が届くまでグリッドを描かず、それまでに呼んだ状態を変えるメソッドは何もしません(開発時に 1 回知らせます)。最初の状態は `initialState` で渡すか、行を読む effect(`createEffect(() => rows().length, …)`)から呼んでください。グリッドを外した後(`<Show>` で隠したときなど)も変数に残ったハンドルは、状態を変えるメソッドは何もせず(開発時に 1 回知らせます)、読むメソッドは外したときの値を返します(`onCleanup` で `grid.getState()` を保存できます)。
 - **描く関数は必要なときだけ呼びます。** `renderCell` は行・値・列が変わったとき、`renderHeader` は列が変わったとき、バーの関数は関数が変わったときに呼び直します(React 版のように更新のたびには呼びません)。文脈の位置と状態(`rowIndex` / `isActive` / バーの文脈など)は読んだときに引くので、JSX の中で読めばその場で追従します。関数の本体で読むと(引数の分割代入も)、それが変わるたびに中身を作り直します(バーの入力欄なら、フォーカスと打ちかけの文字が消えます。変わる値は JSX の中で読んでください。`derivedSummary` は 1 つの値なので、その中のどれを読んでも、アクティブセルの番地など要約の文字のどれかが変わるたびに作り直します)。`renderCell` は行が変わると呼び直すので、セルの中の入力欄で打つたびに `ctx.setValue` すると、1 文字目で中身が作り直されてフォーカスが外れます。打つ間は部品の中の signal に持ち、確定したとき(blur / Enter)に `setValue` するか、custom のエディタを使ってください。グリッドの外の signal を `renderCell` の本体で読んだときも同じで、変わるたびに見えているすべてのセルの中身を作り直します。JSX の中で読むか、行のキーごとの memo を通してください。
 - **ありません:** ことばで絞り込み(`/ai` の `GridAskBar`)。
-- そのほか(props・列の定義・ハンドルのメソッド・通知・CSS のクラスとトークン)は React 版の [`API_REFERENCE.md`](https://github.com/ishibashi0112/datasheet-grid/blob/main/packages/react/API_REFERENCE.md) と同じです。
+- そのほか(props・列の定義・ハンドルのメソッド・通知・CSS のクラスとトークン)は React 版と同じです。パッケージに `API_REFERENCE.md` を同梱しています(0.1.2 から。React 版と同じ文書で、先頭に Solid 版での読み替えがあります。[GitHub](https://github.com/ishibashi0112/datasheet-grid/blob/main/packages/react/API_REFERENCE.md) でも読めます)。
 
 ### Solid で気をつけること
 
@@ -144,6 +151,13 @@ Solid 2.0 向けの仮想化スプレッドシート / データグリッドで�
 - **複数のグリッドで props を共有する。** 変わらないオブジェクトを spread するか、props を書き並べてください。変化のたびに作り直すオブジェクトを spread しても(`{...gridProps()}`)動きますが、開発時に Solid が `HUGE_FAN_OUT` を出します。
 - **Shadow DOM(Web Components)。** `style.css` は Shadow root の中に入れ(`<style>` か `adoptedStyleSheets`)、グリッドは Shadow root の直下に描かずに要素で包み(ポップアップはその要素の中に出ます)、open の Shadow root を使い、`disconnectedCallback` で `render()` が返す `dispose` を呼んでください。詳しくは API リファレンスの「Shadow DOM の中のグリッド」。
 - **開発時の Solid の知らせ。** `vite dev` では、Solid が `autoHeightMeasurer` / `activeRowFollow` / `edit` / `serverSideRowModel` / `fillHandle` / `clampSelectionToRowCount` などの effect の名前(名前は例です)で `EFFECT_RELAY_TEAR` / `EFFECT_WRITES_OWN_SOURCE` を出すことがあります。変化の後にグリッドが状態を合わせ直す処理(React 版も同じ描き直しをしている)で、害は無く、本番のビルドでは出ません。
+
+### AI コーディングツールで使う
+
+このライブラリは新しく、AI コーディングツールはまだ API をほとんど知りません。ほかのグリッドや React のコードから推測しがちなので、資料を渡してください。
+
+- **Skill。** パッケージに [Agent Skill](https://agentskills.io) を同梱しています(`skills/spreadsheet-grid-solid/SKILL.md`。0.1.2 から)。下の Solid の決まりと、`API_REFERENCE.md` のどこを読めばよいかをまとめた短い手順書です。`SKILL.md` を読むツール(Claude Code / Cursor / Codex / GitHub Copilot など)の Skill のフォルダへ置くと使われます。GitHub から `npx skills add https://github.com/ishibashi0112/datasheet-grid/tree/main/packages/solid/skills/spreadsheet-grid-solid` で入れるか、`node_modules` からフォルダを写してください(Claude Code なら `.claude/skills/` へ)。
+- **`AGENTS.md` / `CLAUDE.md` に一文。** 「グリッドのコードを書く前に `node_modules/@ishibashi0112/spreadsheet-grid-solid/API_REFERENCE.md` を読み、そこにある props とメソッドだけを使う。」
 
 ### 間違えやすいルール
 

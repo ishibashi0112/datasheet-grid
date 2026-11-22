@@ -11,6 +11,7 @@
 ### 追加
 
 - 列の `exportable`。`false` で、その列を CSV / TSV の書き出し(`exportCsv` / `downloadCsv`。scope `'selection'` も)と `getExportData` から外します。操作のボタンの列や、画面には出すが書き出したくない社内だけの ID の列に使います。範囲を選んだコピー(`Ctrl/Cmd+C`)には今までどおり出します(選んだとおりに写す)。これまでは行を外す `isRowExportable` しかなく、列は外せませんでした(ガイド「エクスポート」の「列の除外」)。
+- npm のパッケージに API リファレンス(`API_REFERENCE.md`。React 版と同じ文書で、先頭に Solid 版での読み替え)と、AI コーディングツール向けの [Agent Skill](https://agentskills.io)(`skills/spreadsheet-grid-solid/SKILL.md`)を同梱しました。これまで README は GitHub の React 版の API リファレンスへリンクしていました。`createSpreadsheetGrid` に説明(JSDoc)を付けました(エディタのホバーで出ます)。
 
 ### 変更
 

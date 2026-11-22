@@ -113,4 +113,4 @@ const Grid = createSpreadsheetGrid({ features: { ...standardFeatures, serverSide
 
 Solid 版は React 版・コアとは別の版(0.x)で、コアには同じ 1 つの版で依存します。1.0 より前は minor でも壊す変更が入ることがあり、[Solid 版の変更履歴](https://github.com/ishibashi0112/datasheet-grid/blob/main/packages/solid/CHANGELOG.md)に書きます。TypeScript は 5.8 以上(`moduleResolution` は `bundler` / `nodenext`、`jsx: "preserve"`・`jsxImportSource: "@solidjs/web"`)です。Solid 版の上に作ったライブラリが推論した型を export するときは、Solid 版と core(Solid 版が依存する版)を `peerDependencies` に入れてください。
 
-README は npm の [`@ishibashi0112/spreadsheet-grid-solid`](https://www.npmjs.com/package/@ishibashi0112/spreadsheet-grid-solid) にあります(英語と日本語)。
+README は npm の [`@ishibashi0112/spreadsheet-grid-solid`](https://www.npmjs.com/package/@ishibashi0112/spreadsheet-grid-solid) にあります(英語と日本語)。パッケージには API リファレンス(`API_REFERENCE.md`。React 版と同じ文書で、先頭に Solid 版での読み替え)と、AI コーディングツール向けの Skill(`skills/spreadsheet-grid-solid/SKILL.md`)も同梱しています(0.1.2 から。[AI コーディングツールで使う](/docs/ai-assistants))。

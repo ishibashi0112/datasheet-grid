@@ -83,7 +83,7 @@ number と date のエディタは、数値 / 日付として読めない文字(
 
 `getInvalidCells()` は、検査のある列 × 全行を呼んだときだけ調べ、通らないセルの一覧 `{ rowKey, sourceRowIndex, columnKey, message }[]` を返します。印を出していないとき(`showValidationMarks={false}`)も、見えていない列・絞り込みで隠れた行も調べます。
 
-```tsx
+```tsx tab="React"
 const [showErrors, setShowErrors] = useState(false);
 
 const submit = () => {
@@ -109,6 +109,33 @@ const submit = () => {
 
 <SpreadsheetGrid ref={gridRef} rows={rows} onRowsChange={setRows} columns={columns} showValidationMarks={showErrors} />
 ```
+```tsx tab="Solid"
+const [showErrors, setShowErrors] = createSignal(false);
+let grid!: SpreadsheetGridHandle<Row>;
+
+const submit = () => {
+  const invalid = grid.getInvalidCells();
+  if (invalid.length > 0) {
+    setShowErrors(true);                                   // ここで初めて印を出す
+    // 最初のセルへ移る。位置は表示の位置なので、行キーと列キーから引き直す(絞り込みで隠れた行は飛ばす)
+    const first = invalid.find((cell) => grid.getViewRowIndex(cell.rowKey) >= 0);
+    if (first) {
+      const row = grid.getViewRowIndex(first.rowKey);
+      const col = grid.getColIndex(first.columnKey);
+      if (col >= 0) {
+        grid.selectCell(row, col, { scrollIntoView: true });
+        grid.focus();                                      // selectCell はフォーカスを移さない
+      }
+    }
+    return;
+  }
+  setShowErrors(false);
+  save(rows());
+};
+
+<SpreadsheetGrid ref={grid} rows={rows()} onRowsChange={(next) => setRows(next)} columns={columns} showValidationMarks={showErrors()} />
+```
+
 
 - メッセージに行番号を出すときは、画面の行番号の列と同じ番号を返す `getRowNumber(rowKey)` を使います(ラベル行があると表示の位置 + 1 とは違うため)。
 - `getInvalidCells()` は clientSide(`rows`)だけです。serverSide(`dataSource`)は全行を持たないので空の配列を返し、開発時に警告します。サーバーの検査で弾くときは `updateRows` を reject します(値は元に戻り、保存失敗のバーが出ます)。

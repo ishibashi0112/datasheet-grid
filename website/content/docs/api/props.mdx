@@ -493,7 +493,7 @@ import { localeTextEn } from '@ishibashi0112/spreadsheet-grid/locales/en';
 
 - 数えるのは選択範囲のうち表示中のデータ行 × データ列のセル。フィルターで隠れた行・グループ行・ラベル行・合成列(行ドラッグ / 展開トグル / 自動グループ列)は対象外。
 - 合計 / 平均は数値と数値の文字列だけ(グループ集計の `aggFunc` と同じ判定。空白だけの文字列・boolean・`Date` は数えない)。データの個数は空でない(`null` / `undefined` / 空文字でない)セルの数。数値が 1 つも無いときはデータの個数だけ、空のセルだけのときは何も出さない。
-- JAN・郵便番号・社員番号のように数字の文字列でも数ではない列は、列の `selectionAggregate: false` で合計 / 平均(と `slotContext` の最小 / 最大)から外す(データの個数には数える。1.2.0 から)。
+- JAN・郵便番号・社員番号のように数字の文字列でも数ではない列は、列の `selectionAggregate: false` で合計 / 平均(と `slotContext` の最小 / 最大)から外す(データの個数には数える。1.2.0 から)。select エディタの列も同じで、値(コード)が数字の文字列(`'10'` / `'8'`)だと、セルには表示名(「課税 10%」)が出ていても合計 / 平均に数える(値で数えるため)。数えたくない列には `selectionAggregate: false` を付ける。
 - 値は `getValue` があればその値(表示用の `valueFormatter` は通さない)。表示は小数 4 桁まで・桁区切りあり。
 - 走査するセルが 50,000 を超える選択(全選択など)は主スレッドを塞がないよう時間分割で計算し、その間は「集計中… N%」。編集で値が変わると計算し直す(そのあいだは前の結果を出したまま。行が頻繁に入れ替わっても、計算が終わるたびに新しい値になる)。
 - 既定ボトムバーでは右グループ(Active / Selection …)の隣の空きに置き、バーの高さや他の項目の位置は変えない(入りきらないときは端から切れ、ポインタを重ねると全文)。
@@ -1137,6 +1137,7 @@ WAI-ARIA の grid パターンに沿って、表・行・セルに役割と状�
 - 描く場所の祖先に `transform` / `translate` などがあると(shadcn/ui の DialogContent は `translate` で真ん中に置く)、`position: fixed` の基準がその要素になる。グリッドはそのずれを測り、ポップアップの `translate` で打ち消す(開いたときと位置を決め直すたび。ツールチップとドラッグのゴーストは出すたび)。拡大縮小(`scale`)は打ち消さない。
 - その要素が `overflow` で中を切り、しかも `transform` などで `position: fixed` の基準になると、ポップアップもダイアログの枠で切れる。`'auto'` は外側の `position: fixed` の祖先があればそこへ出す(上の表。Mantine の Modal はこれで切れない)。無いとき(中身自身が `position: fixed` で `overflow-y: auto` の Radix の DialogContent など)は切れるので、切らない場所を要素か関数で渡す(ダイアログがその外のポインタやフォーカスを止めないなら `'body'` でもよい)。`overflow` だけ(`transform` が無い)なら fixed のポップアップは切れない。ポップアップの root は `pointer-events: auto`(`pointer-events: none` の要素の中へ描いても押せる)。
 - 表で決めた CSS トークン(`--ssg-*`)は、これまでどおり開いたときにポップアップへ写す(「CSS トークン」節)。`Escape` の扱いは「キーボード操作」節の「ダイアログの中のグリッド」。
+- custom エディタ(`editor.type: 'custom'`)や `renderCell` の中で利用側が自分で出すポップアップ(候補の一覧など)は `popupContainer` の対象外。`document.body` へポータルすると、モーダルの `<dialog>` の中では後ろに隠れて押せない。グリッドと同じく、囲むダイアログの中へ出す(`createPortal(list, anchor.closest('dialog') ?? document.body)`。`anchor` はエディタの入力欄など。Radix などのモーダルなら、そのライブラリの Portal の `container` に同じ要素を渡す)。
 
 ### Shadow DOM の中のグリッド
 
