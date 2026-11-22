@@ -1,0 +1,53 @@
+// 並びと絞り込みを URL と同期(戻る / 進む)
+const { open, clickCell, getCell, activeInfo, setSettings, shot, sleep } = require('./lib.cjs')
+const [loadMode = 'deferred'] = process.argv.slice(2)
+;(async () => {
+  const { browser, page, logs } = await open()
+  await setSettings(page, { loadMode, saveMode: 'onFlush', fill: false })
+  await page.goto('http://localhost:5507/projects/web?minDelay=300&maxDelay=300&loadFail=0&saveFail=0')
+  await page.waitForSelector('[role=grid][aria-label="タスク"] [data-row-key="web-1"]')
+  // 擬似 API の設定はクエリから消える(初回だけ読む)ので、ここで消してから始める
+  await page.evaluate(() => history.replaceState(null, '', '/projects/web'))
+  const view = async (label) => {
+    const v = await page.evaluate(() => {
+      const g = document.querySelector('[role=grid][aria-label="タスク"]')
+      const keys = [...g.querySelectorAll('[role=row][data-pane=left][data-row-key]')].slice(0, 4).map((r) => r.getAttribute('data-row-key'))
+      const chips = [...g.closest('.ssg-root').querySelectorAll('.ssg-bar--top .ssg-chip, .ssg-bar--top [class*=summary] span')].map((c) => c.textContent).join(' ')
+      return { url: decodeURIComponent(location.search), keys: keys.join(','), top: g.closest('.ssg-root').querySelector('.ssg-bar--top')?.textContent.replace(/\s+/g, ' ').slice(0, 80), filterInput: g.closest('.ssg-root').querySelector('.ssg-bar--top input')?.value }
+    })
+    console.log(label.padEnd(12), JSON.stringify(v))
+  }
+  const menu = async (colKey, itemText) => {
+    const hdr = await page.$(`[role=grid][aria-label="タスク"] [role=columnheader][data-ssg-col-key="${colKey}"]`)
+    const hb = await hdr.boundingBox()
+    await page.mouse.move(hb.x + hb.width / 2, hb.y + hb.height / 2)
+    await (await hdr.$('button')).click()
+    await sleep(200)
+    await page.click(`[role=menu] >> text=${itemText}`)
+    await sleep(400)
+  }
+  await view('初め')
+  await menu('due', '昇順で並び替え'); await view('期限↑')
+  const input = await page.$('[role=grid][aria-label="タスク"] >> xpath=ancestor::*[contains(@class,"ssg-root")]//input')
+  await input.click(); await page.keyboard.type('API'); await sleep(800); await view('検索 API')
+  await menu('due', '降順で並び替え'); await view('期限↓')
+  await page.goBack(); await sleep(600); await view('戻る 1')
+  await page.goBack(); await sleep(600); await view('戻る 2')
+  await page.goBack(); await sleep(600); await view('戻る 3')
+  await page.goForward(); await sleep(600); await view('進む 1')
+  await page.goForward(); await sleep(600); await view('進む 2')
+  await page.goForward(); await sleep(600); await view('進む 3')
+  // タブを切り替えて戻る(グリッドは作り直される)→ URL から戻るか
+  await page.click('[role=tab]:has-text("マイルストーン")'); await sleep(1200)
+  console.log('MS タブ', await page.evaluate(() => [...document.querySelectorAll('[role=grid]')].map((g) => g.getAttribute('aria-label')).join(',')), decodeURIComponent(await page.evaluate(() => location.search)))
+  await page.click('[role=tab]:has-text("タスク")'); await page.waitForSelector('[role=grid][aria-label="タスク"] [data-row-key]'); await sleep(500); await view('タスクに戻る')
+  // 読み直し(URL から initialState)
+  await page.reload(); await page.waitForSelector('[role=grid][aria-label="タスク"] [data-row-key]', { timeout: 15000 }); await sleep(500); await view('読み直し')
+  // 別のプロジェクトへ(クエリは残す)
+  await page.click('a[data-project=app]'); await sleep(2500); await view('別の PJ')
+  await page.goBack(); await sleep(2500); await view('PJ を戻る')
+  console.log('events', await page.evaluate(() => window.__events.join('\n')))
+  await shot(page, `url-${loadMode}`)
+  console.log('--- console'); console.log(logs.filter((l) => !l.includes('[vite]')).map((l) => l.split('\n')[0]).join('\n'))
+  await browser.close()
+})()

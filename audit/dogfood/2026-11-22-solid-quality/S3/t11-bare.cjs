@@ -1,0 +1,12 @@
+const { open, sleep, cell } = require('./lib.cjs')
+;(async () => {
+  const { browser, page, logs } = await open('http://127.0.0.1:5503/?grid=bare')
+  await page.waitForSelector('.ssg-body-cell', { timeout: 15000 }); await sleep(1000)
+  await page.click('[data-testid=csv]'); await sleep(300)
+  await page.keyboard.press('Control+f')
+  await cell(page, 'P00003', 'price').click({ button: 'right', delay: 50 }); await sleep(300)
+  console.log('panels', await page.locator('.ssg-menu-panel').count())
+  await page.screenshot({ path: __dirname + '/shots/t11-bare.png' })
+  console.log(logs.filter((l) => !l.includes('[vite]') && !l.includes('HUGE_FAN')).join('\n'))
+  await browser.close()
+})()

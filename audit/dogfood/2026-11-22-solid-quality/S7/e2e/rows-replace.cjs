@@ -1,0 +1,25 @@
+// 編集中に rows を丸ごと差し替える
+const { chromium } = require('playwright')
+const [base = 'http://localhost:5507', mode = 'edit'] = process.argv.slice(2)
+;(async () => {
+  const browser = await chromium.launch()
+  const page = await browser.newPage({ viewport: { width: 700, height: 500 }, deviceScaleFactor: 1 })
+  const logs = []
+  page.on('pageerror', (e) => logs.push('[pageerror] ' + e.message))
+  page.on('console', (m) => { if (!m.text().includes('[vite]')) logs.push(`[${m.type()}] ` + m.text().split('\n')[0]) })
+  await page.goto(`${base}/rows-replace.html`)
+  await page.waitForSelector('[data-row-key="web-3"] [data-ssg-col-key="name"]')
+  const st = () => page.evaluate(() => ({ focus: document.activeElement?.tagName + '.' + document.activeElement?.className, editor: document.querySelector('.ssg-cell-editor input')?.value ?? null, first: document.querySelector('[data-row-key]')?.getAttribute('data-row-key'), bar: document.querySelector('.ssg-bar--bottom')?.textContent, changes: window.__changes }))
+  const b = await (await page.$('[data-row-key="web-3"] [data-ssg-col-key="name"]')).boundingBox()
+  if (mode === 'edit') { await page.mouse.dblclick(b.x + 20, b.y + 10); await page.keyboard.press('End'); await page.keyboard.type('XYZ') }
+  else await page.mouse.click(b.x + 20, b.y + 10)
+  console.log('前', JSON.stringify(await st()))
+  await page.evaluate(() => window.__swap())
+  await new Promise((r) => setTimeout(r, 500))
+  console.log('差し替え後', JSON.stringify(await st()))
+  await page.keyboard.press('ArrowDown'); await page.keyboard.type('Q'); await page.keyboard.press('Enter')
+  await new Promise((r) => setTimeout(r, 300))
+  console.log('↓ Q Enter', JSON.stringify(await st()))
+  console.log(logs.join('\n'))
+  await browser.close()
+})()

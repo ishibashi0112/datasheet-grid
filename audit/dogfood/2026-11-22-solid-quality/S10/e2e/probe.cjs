@@ -1,0 +1,11 @@
+const { open, clickCell, shot, sleep } = require('./lib.cjs')
+;(async () => {
+  const { browser, page, logs } = await open()
+  await page.goto('http://localhost:5510/' + (process.argv[2] ?? ''))
+  await page.waitForSelector('[role=grid][aria-label="Orders"] [data-row-key="O00001"]')
+  await clickCell(page, 'Orders', 'O00002', 'customer')
+  await sleep(500)
+  await shot(page, 'probe')
+  console.log(logs.filter((l) => !l.includes('[vite]')).map((l) => l.split('\n')[0]).join('\n'))
+  await browser.close()
+})()

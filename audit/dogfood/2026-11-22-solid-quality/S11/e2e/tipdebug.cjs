@@ -1,0 +1,13 @@
+const { open } = require('./lib.cjs')
+;(async () => {
+  const { browser, page, logs } = await open({ viewport: { width: 900, height: 700 } })
+  await page.goto(process.env.URL ?? 'http://localhost:5511/min/index.html'); await page.waitForTimeout(2000)
+  const cell = page.locator('#plain [role="row"][data-row-index="2"] [role="gridcell"]').last()
+  console.log('attrs', await cell.evaluate((c) => [...c.attributes].map((a) => a.name).join(' ') + ' | inner: ' + [...c.querySelectorAll('*')].map((e) => e.tagName + '[' + [...e.attributes].map((a) => a.name).join(',') + ']').join(' ')))
+  console.log('overflow', await cell.evaluate((c) => { const t = c.closest('[data-ssg-tooltip], [data-ssg-tooltip-overflow]') ?? c.querySelector('[data-ssg-tooltip-overflow]'); return t ? `${t.tagName} sw=${t.scrollWidth} cw=${t.clientWidth}` : 'なし' }))
+  await page.mouse.move(5, 5); await page.waitForTimeout(300)
+  await cell.hover({ position: { x: 40, y: 14 } }); await page.waitForTimeout(1200)
+  console.log('tooltips', await page.evaluate(() => document.querySelectorAll('.ssg-tooltip').length), await page.evaluate(() => document.elementFromPoint(...(() => { const r = document.querySelector('#plain [role="row"][data-row-index="2"] [role="gridcell"]:last-child').getBoundingClientRect(); return [r.x + 40, r.y + 14] })())?.outerHTML.slice(0, 200)))
+  console.log(logs.filter((l) => !/HUGE_FAN_OUT|subscribers|in <|at http|vite/.test(l)).join('\n'))
+  await browser.close()
+})()

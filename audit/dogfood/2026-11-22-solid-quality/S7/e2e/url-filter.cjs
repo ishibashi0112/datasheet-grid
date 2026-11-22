@@ -1,0 +1,36 @@
+// 列フィルターを URL と同期(ポップオーバーを開いたまま戻る / 進む)
+const { open, setSettings, shot, sleep } = require('./lib.cjs')
+const [loadMode = 'deferred'] = process.argv.slice(2)
+;(async () => {
+  const { browser, page, logs } = await open()
+  await setSettings(page, { loadMode, saveMode: 'onFlush', fill: false })
+  await page.goto('http://localhost:5507/projects/web?minDelay=300&maxDelay=300&loadFail=0&saveFail=0')
+  await page.waitForSelector('[role=grid][aria-label="タスク"] [data-row-key="web-1"]')
+  const view = async (label) => {
+    const v = await page.evaluate(() => {
+      const g = document.querySelector('[role=grid][aria-label="タスク"]')
+      const pop = document.querySelector('.ssg-filter-popover')
+      const checks = pop ? [...pop.querySelectorAll('label')].map((l) => (l.querySelector('input')?.checked ? '☑' : '☐') + l.textContent.trim()).join(' ') : null
+      return { f: new URLSearchParams(location.search).get('f'), top: g.closest('.ssg-root').querySelector('.ssg-bar--top')?.textContent.replace(/\s+/g, ' ').slice(0, 60), pop: checks }
+    })
+    console.log(label.padEnd(14), JSON.stringify(v))
+  }
+  const hdr = await page.$('[role=grid][aria-label="タスク"] [role=columnheader][data-ssg-col-key="status"]')
+  const hb = await hdr.boundingBox()
+  await page.mouse.move(hb.x + hb.width / 2, hb.y + hb.height / 2)
+  await (await hdr.$('button')).click(); await sleep(200)
+  await page.click('[role=menu] >> text=フィルター…'); await sleep(600)
+  await view('開いた')
+  await page.click('.ssg-filter-popover label:has-text("完了")'); await sleep(600)
+  await view('完了を外す')
+  await page.click('.ssg-filter-popover label:has-text("未着手")'); await sleep(600)
+  await view('未着手も外す')
+  await page.goBack(); await sleep(600); await view('開いたまま戻る')
+  await shot(page, 'url-filter-back')
+  await page.goBack(); await sleep(600); await view('もう一度戻る')
+  await page.goForward(); await sleep(600); await view('進む')
+  await page.keyboard.press('Escape'); await sleep(300); await view('Esc')
+  await page.goForward(); await sleep(600); await view('閉じて進む')
+  console.log('--- console'); console.log(logs.filter((l) => !l.includes('[vite]')).map((l) => l.split('\n')[0]).join('\n'))
+  await browser.close()
+})()

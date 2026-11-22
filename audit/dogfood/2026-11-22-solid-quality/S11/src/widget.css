@@ -1,0 +1,4 @@
+/* ウィジェット自身の見た目(Shadow root の中) */
+:host { display: block; font-family: system-ui, -apple-system, 'Hiragino Sans', 'Noto Sans JP', sans-serif; }
+.stock-widget { height: 100%; }
+.mount { height: 100%; }

@@ -1,0 +1,26 @@
+// グループ化した表で、IME の変換中(未確定)に上へ行が足されたとき(複数行の text / number)
+const { open, sleep } = require('./lib.cjs')
+const label = process.argv[2] ?? 'x'
+;(async () => {
+  for (const col of ['memo', 'name']) {
+    const { browser, context, page, logs } = await open('http://127.0.0.1:5503/group.html?x')
+    await page.waitForSelector('.ssg-body-cell', { timeout: 15000 }); await sleep(600)
+    const cdp = await context.newCDPSession(page)
+    await page.locator(`.ssg-body-row[data-pane="center"][data-row-key="B1"] [data-ssg-col-key="${col}"]`).click(); await sleep(150)
+    await page.keyboard.press('F2'); await sleep(200)
+    await page.keyboard.press('Control+a'); await page.keyboard.press('Delete')
+    await cdp.send('Input.insertText', { text: '新しい' }); await sleep(100)
+    await cdp.send('Input.imeSetComposition', { text: 'せつめい', selectionStart: 4, selectionEnd: 4 }); await sleep(200)
+    const st = () => page.evaluate(() => ({ editors: document.querySelectorAll('.ssg-cell-editor').length, focus: document.activeElement?.tagName, value: document.activeElement?.value }))
+    const before = await st()
+    await page.evaluate(() => window.__insertTop()); await sleep(400)
+    const after = await st()
+    await cdp.send('Input.imeSetComposition', { text: '説明', selectionStart: 2, selectionEnd: 2 }); await sleep(100)
+    await cdp.send('Input.insertText', { text: '説明' }); await sleep(200)
+    const committed = await st()
+    await page.keyboard.press('Enter'); await sleep(300)
+    const saved = await page.evaluate((c) => window.__rows().find((r) => r.id === 'B1')[c], col)
+    console.log(`[${label}] ${col}: composing=${JSON.stringify(before)} after insert=${JSON.stringify(after)} after commit=${JSON.stringify(committed)} saved=${JSON.stringify(saved)}`)
+    await browser.close()
+  }
+})()

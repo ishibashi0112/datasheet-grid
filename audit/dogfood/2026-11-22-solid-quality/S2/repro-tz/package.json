@@ -1,0 +1,1 @@
+{ "name": "repro-tz", "private": true, "type": "module", "dependencies": { "@ishibashi0112/spreadsheet-grid-solid": "*", "@solidjs/web": "*", "solid-js": "*" } }

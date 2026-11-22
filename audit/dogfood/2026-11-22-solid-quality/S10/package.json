@@ -1,0 +1,21 @@
+{
+  "name": "s10-orders",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite --port 5510 --strictPort",
+    "build": "tsc --noEmit && vite build",
+    "preview": "vite preview --port 5510 --strictPort"
+  },
+  "dependencies": {
+    "@ishibashi0112/spreadsheet-grid-solid": "file:../pack/ishibashi0112-spreadsheet-grid-solid-0.1.0.tgz",
+    "@solidjs/web": "^2.0.3",
+    "solid-js": "^2.0.3"
+  },
+  "devDependencies": {
+    "@solidjs/vite-plugin": "^3.0.1",
+    "typescript": "~6.0.3",
+    "vite": "^8.3.8"
+  }
+}

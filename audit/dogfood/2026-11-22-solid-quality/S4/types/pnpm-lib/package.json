@@ -1,0 +1,13 @@
+{
+  "name": "my-inventory-lib-pnpm",
+  "type": "module",
+  "private": true,
+  "dependencies": {
+    "@ishibashi0112/spreadsheet-grid-solid": "file:/tmp/claude-0/-home-user/3e0b10c7-25c1-5991-99b0-b5ddd5fe5ce3/scratchpad/dogfood-q/pack/ishibashi0112-spreadsheet-grid-solid-0.1.0.tgz",
+    "@solidjs/web": "^2.0.3",
+    "solid-js": "^2.0.3"
+  },
+  "devDependencies": {
+    "typescript": "7.0.2"
+  }
+}

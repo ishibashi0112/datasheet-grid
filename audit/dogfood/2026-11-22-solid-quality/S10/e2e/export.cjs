@@ -1,0 +1,25 @@
+const { open, clickCell, sleep } = require('./lib.cjs')
+const fs = require('fs')
+const [qs = ''] = process.argv.slice(2)
+;(async () => {
+  const { browser, page, logs } = await open({ context: { acceptDownloads: true } })
+  await page.goto('http://localhost:5510/' + qs)
+  await page.waitForSelector('[role=grid][aria-label="Orders"] [data-row-key="O00001"]')
+  // 明細を選ばずに Export lines
+  const none = await Promise.race([page.waitForEvent('download', { timeout: 2000 }).then((d) => d.suggestedFilename()), (async () => { await page.click('text=Export lines'); await sleep(2100); return 'no download' })()])
+  console.log('lines w/o order:', none)
+  await clickCell(page, 'Orders', 'O00001', 'customer')
+  await page.waitForSelector('[role=grid][aria-label="Lines"] [data-row-key="O00001-1"]')
+  await clickCell(page, 'Lines', 'O00001-1', 'qty'); await page.keyboard.type('100'); await page.keyboard.press('Enter'); await sleep(300)
+  for (const [btn, n] of [['Export orders', 3], ['Export lines', 30]]) {
+    const [d] = await Promise.all([page.waitForEvent('download'), page.click(`text=${btn}`)])
+    const p = await d.path()
+    const txt = fs.readFileSync(p, 'utf8')
+    const lines = txt.split(/\r?\n/)
+    console.log(btn, d.suggestedFilename(), 'rows', lines.length, 'bom', txt.charCodeAt(0) === 0xfeff)
+    console.log(lines.slice(0, n === 3 ? 3 : 4).join('\n'))
+    console.log('last', JSON.stringify(lines.slice(-2)))
+  }
+  console.log(logs.filter((l) => !l.includes('[vite]') && !l.includes('RELAY_TEAR')).map((l) => l.split('\n')[0]).join('\n'))
+  await browser.close()
+})()

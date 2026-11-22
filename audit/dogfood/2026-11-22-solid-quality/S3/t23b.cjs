@@ -1,0 +1,12 @@
+const { open, sleep } = require('./lib.cjs')
+;(async () => {
+  const { browser, page } = await open(process.argv[2])
+  await page.waitForSelector('.ssg-body-cell', { timeout: 15000 }); await sleep(800)
+  const hdr = page.locator('.ssg-header-cell', { hasText: process.argv[3] ?? '価格' }).first()
+  await hdr.hover(); await hdr.locator('.ssg-icon-btn').last().click(); await sleep(300)
+  await page.locator('.ssg-menu-panel .ssg-menu-item', { hasText: '列の固定' }).first().click(); await sleep(300)
+  console.log(await page.evaluate(() => [...document.querySelectorAll('.ssg-menu-panel')].at(-1).outerHTML.replace(/class="[^"]*"/g, '').slice(0, 1500)))
+  console.log(await page.evaluate(() => [...document.querySelectorAll('[id^=cl-]')].map((e) => e.id + ': ' + e.textContent).join('\n')))
+  await page.screenshot({ path: __dirname + '/shots/t23b.png' })
+  await browser.close()
+})()

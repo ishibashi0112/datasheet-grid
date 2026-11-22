@@ -1,0 +1,16 @@
+const { open, clickCell } = require('./lib.cjs')
+;(async () => {
+  const url = process.argv[2] || 'http://localhost:5509/'
+  const { browser, page } = await open(url)
+  await clickCell(page, 1, 'amount')
+  await page.keyboard.press('Escape')
+  await page.waitForTimeout(150)
+  await page.evaluate(() => navigator.clipboard.writeText('BEFORE'))
+  const s = await page.evaluate(() => ({ sel: window.__grid.getSelection(), active: window.__grid.getActiveCell() }))
+  await page.keyboard.press('Control+c')
+  await page.waitForTimeout(200)
+  const clip = await page.evaluate(() => navigator.clipboard.readText())
+  const overlay = await page.evaluate(() => document.querySelectorAll('.ssg-copy-range-overlay').length)
+  console.log(JSON.stringify({ s, clip, overlay }))
+  await browser.close()
+})()

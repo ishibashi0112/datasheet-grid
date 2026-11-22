@@ -1,0 +1,26 @@
+const { open, sleep, cell } = require('./lib.cjs')
+;(async () => {
+  const { browser, page, logs } = await open('http://127.0.0.1:5503/')
+  await page.waitForSelector('.ssg-body-cell', { timeout: 15000 })
+  await sleep(500)
+  // A: メインのページでボタンにフォーカスがある状態から右クリック
+  await page.focus('[data-testid=dark]')
+  await cell(page, 'P00003', 'price').click({ button: 'right' }); await sleep(400)
+  console.log('A main, button focused: panels', await page.locator('.ssg-menu-panel').count())
+  await page.keyboard.press('Escape'); await sleep(200)
+  // A2: body にフォーカス
+  await page.evaluate(() => document.activeElement.blur())
+  await cell(page, 'P00005', 'price').click({ button: 'right' }); await sleep(400)
+  console.log('A2 main, body focused: panels', await page.locator('.ssg-menu-panel').count())
+  await page.keyboard.press('Escape'); await sleep(200)
+  // B: ダイアログで、フォーカスを外してから
+  await page.click('[data-testid=open-dialog]')
+  await page.waitForSelector('[data-testid=dialog-grid] .ssg-body-cell', { timeout: 10000 })
+  await sleep(1000)
+  console.log('focus in dialog:', await page.evaluate(() => document.activeElement.tagName + ' ' + document.activeElement.textContent.trim().slice(0, 10)))
+  await page.evaluate(() => document.activeElement.blur())
+  const dlg = page.locator('[data-testid=dialog]')
+  await dlg.locator(`.ssg-body-row[data-pane="center"][data-row-key="P00003"] [data-ssg-col-key="price"]`).click({ button: 'right' }); await sleep(400)
+  console.log('B dialog, blurred: panels', await page.locator('.ssg-menu-panel').count())
+  await browser.close()
+})()

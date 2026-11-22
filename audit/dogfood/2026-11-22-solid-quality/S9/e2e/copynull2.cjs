@@ -1,0 +1,26 @@
+const { open, clickCell, shot } = require('./lib.cjs')
+;(async () => {
+  const url = process.argv[2] || 'http://localhost:5509/'
+  const tag = process.argv[3] || 'solid'
+  const { browser, page } = await open(url)
+  await clickCell(page, 1, 'amount')
+  await page.mouse.move(5, 5)
+  await page.waitForTimeout(200)
+  await page.screenshot({ path: `../shots/copynull-before-${tag}.png`, clip: { x: 56, y: 186, width: 700, height: 200 } })
+  await page.keyboard.press('Escape')
+  await page.waitForTimeout(300)
+  await page.screenshot({ path: `../shots/copynull-after-${tag}.png`, clip: { x: 56, y: 186, width: 700, height: 200 } })
+  // Escape の後に Ctrl+C / Delete / 文字キー / 矢印
+  await page.evaluate(() => navigator.clipboard.writeText('BEFORE'))
+  await page.keyboard.press('Control+c')
+  await page.waitForTimeout(150)
+  const clip = await page.evaluate(() => navigator.clipboard.readText())
+  await page.keyboard.press('Delete')
+  await page.waitForTimeout(150)
+  const amt = await page.evaluate(() => window.__rows()[1].amount)
+  await page.keyboard.press('Shift+ArrowDown')
+  await page.waitForTimeout(150)
+  const sel = await page.evaluate(() => window.__grid.getSelection())
+  console.log(JSON.stringify({ clip, amountAfterDelete: amt, selAfterShiftDown: sel }))
+  await browser.close()
+})()

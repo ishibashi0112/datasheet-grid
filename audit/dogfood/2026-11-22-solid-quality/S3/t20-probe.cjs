@@ -1,0 +1,10 @@
+const { open, sleep } = require('./lib.cjs')
+;(async () => {
+  const { browser, page, logs } = await open('http://127.0.0.1:5503/?grid=group')
+  await page.waitForSelector('.ssg-body-cell', { timeout: 15000 }); await sleep(1000)
+  await page.screenshot({ path: __dirname + '/shots/t20-group.png' })
+  const rows = await page.evaluate(() => [...document.querySelectorAll('.ssg-body-row[data-pane=center]')].sort((a, b) => +a.dataset.rowIndex - +b.dataset.rowIndex).slice(0, 14).map((r) => `${r.dataset.rowIndex} key=${r.dataset.rowKey} attrs=${[...r.attributes].map((a) => a.name).filter((n) => n.startsWith('data-ssg') || n === 'aria-level').join(',')} cls=${r.className} text=${r.innerText.replace(/\s+/g, ' ').slice(0, 60)}`))
+  console.log(rows.join('\n'))
+  console.log(logs.filter((l) => !l.includes('[vite]')).map((l) => l.split('\n')[0]).join('\n'))
+  await browser.close()
+})()

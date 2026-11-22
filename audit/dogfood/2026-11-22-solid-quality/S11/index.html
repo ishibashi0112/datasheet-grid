@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="ja">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>社内ポータル(埋め込みウィジェット)</title>
+    <style>
+      /* 埋め込み先のページの CSS(ウィジェットとは別のチームが書いた、強めの全体指定) */
+      html { font-size: 20px; }
+      body { margin: 0; font-family: Georgia, 'Times New Roman', serif; line-height: 2; color: #331; background: #fffbe8; }
+      * { box-sizing: content-box; }
+      button { font-size: 1.1rem; padding: 10px 18px; border: 3px solid #a50; background: #fde; border-radius: 0; }
+      input, select, textarea { font-size: 1.1rem; border: 3px solid #c00; padding: 8px; }
+      div { letter-spacing: 0.05em; }
+      [role='menu'], [role='dialog'], [role='listbox'] { outline: 4px dashed magenta; }
+      header { padding: 16px 24px; background: #553; color: #fff; }
+      main { padding: 16px 24px; display: grid; gap: 24px; }
+      section h2 { margin: 0 0 8px; font-size: 1.3rem; }
+      iframe { width: 100%; height: 460px; border: 2px solid #553; background: #fff; }
+    </style>
+  </head>
+  <body>
+    <header>社内ポータル — 在庫の確認</header>
+    <main>
+      <section>
+        <h2>カスタム要素(Shadow DOM)</h2>
+        <stock-widget id="w1" style="display:block;height:460px"></stock-widget>
+      </section>
+      <section>
+        <h2>iframe(別のページ)</h2>
+        <iframe id="f1" src="/frame.html" title="在庫(iframe)"></iframe>
+      </section>
+    </main>
+    <script type="module" src="/src/host.ts"></script>
+  </body>
+</html>

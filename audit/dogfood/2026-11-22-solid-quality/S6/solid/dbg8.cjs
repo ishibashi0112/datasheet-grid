@@ -1,0 +1,12 @@
+const fs = require('fs'); const { launch } = require('./lib.cjs')
+const axeSrc = fs.readFileSync(require.resolve('axe-core/axe.min.js'), 'utf8')
+;(async () => {
+  const { browser, page } = await launch({})
+  await page.goto('http://localhost:5506/solid/'); await page.waitForTimeout(1200)
+  await page.addScriptTag({ content: axeSrc })
+  await page.locator('.ssg-body-row[data-row-index="0"] button[aria-expanded]').first().click(); await page.waitForTimeout(400)
+  const r = await page.evaluate(async () => { const res = await window.axe.run(document, { runOnly: ['color-contrast', 'aria-hidden-focus'] }); return res.violations.map((v) => v.nodes.slice(0, 1).map((n) => v.id + ': ' + n.failureSummary + ' :: ' + n.html.slice(0, 200))) })
+  console.log(JSON.stringify(r, null, 1))
+  console.log(await page.evaluate(() => [...document.querySelectorAll('.ssg-tab-exit')].map((e) => e.outerHTML)))
+  await browser.close()
+})()

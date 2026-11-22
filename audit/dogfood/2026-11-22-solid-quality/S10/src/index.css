@@ -1,0 +1,12 @@
+* { box-sizing: border-box; }
+html, body { margin: 0; height: 100%; font-family: system-ui, sans-serif; font-size: 14px; color: #1f2933; background: #fff; }
+#root { height: 100%; }
+.app { display: flex; flex-direction: column; height: 100%; padding: 8px 12px; gap: 8px; }
+.toolbar { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
+.toolbar h1 { font-size: 16px; margin: 0 8px 0 0; }
+.mode { color: #64748b; font-size: 12px; }
+.top { flex: 1 1 50%; min-height: 0; }
+.bottom { flex: 1 1 50%; min-height: 0; display: flex; flex-direction: column; gap: 4px; }
+.bottom h2 { font-size: 14px; margin: 0; font-weight: 600; }
+.grid-box { flex: 1; min-height: 0; }
+.empty { color: #64748b; padding: 16px; border: 1px dashed #cbd5e1; border-radius: 6px; margin: 0; }

@@ -1,0 +1,1 @@
+{"name":"s5-live-react","private":true,"type":"module","dependencies":{"@ishibashi0112/spreadsheet-grid":"^1.2.1","react":"^19.3.1","react-dom":"^19.3.1"},"devDependencies":{"@types/react":"^19.3.0","@types/react-dom":"^19.3.0","@vitejs/plugin-react":"^6.3.0","typescript":"~6.0.3","vite":"^8.3.8"}}
