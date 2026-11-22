@@ -173,6 +173,13 @@ export default function HomePage() {
             </a>
             <InstallCommand />
           </div>
+          {/* 追加(Solid 版 0.1.0): Solid 2.0 向けの Solid 版への入口 */}
+          <p className="mt-3 text-xs text-fd-muted-foreground">
+            Solid 2.0 でも使えます —{' '}
+            <Link href="/docs/solid" className="font-medium text-fd-foreground underline underline-offset-2">
+              Solid で使う
+            </Link>
+          </p>
         </div>
         <HeroGridDemo />
       </div>

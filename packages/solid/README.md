@@ -2,7 +2,7 @@
 
 A virtualized spreadsheet / data grid for Solid 2.0 (~1M rows, pinned columns, Excel-like editing / selection / clipboard, filters & sorting, client-side and server-side row models). It is the Solid version of [`@ishibashi0112/spreadsheet-grid`](https://www.npmjs.com/package/@ishibashi0112/spreadsheet-grid) (React): the same props, column options, imperative handle, CSS and look, built on the same framework-independent core. 日本語は下にあります。
 
-**[Docs & live demo](https://datasheet-grid.vercel.app)** (written for the React version; the props are the same) · [GitHub](https://github.com/ishibashi0112/datasheet-grid) · [Changelog](https://github.com/ishibashi0112/datasheet-grid/blob/main/CHANGELOG.md)
+**[Docs & live demo](https://datasheet-grid.vercel.app)** (written for the React version; the props are the same. Solid notes, in Japanese: [Solid で使う](https://datasheet-grid.vercel.app/docs/solid)) · [Try on StackBlitz](https://stackblitz.com/fork/github/ishibashi0112/datasheet-grid/tree/main/examples/solid?file=src/App.tsx&terminal=dev) · [GitHub](https://github.com/ishibashi0112/datasheet-grid) · [Changelog](https://github.com/ishibashi0112/datasheet-grid/blob/main/packages/solid/CHANGELOG.md)
 
 ## Install
 
@@ -72,7 +72,7 @@ The feature names and what they enable are listed in the React version's `API_RE
 
 ## Solid-specific notes
 
-- **Keep `rows` in a signal, not a store.** `onRowsChange` returns a new array (the same contract as the React version): put it back with `setRows(next)`. With `createStore`, the rows that come back are a store proxy instead of the array the grid returned, so the undo / redo history is cleared, and Solid prints many development diagnostics. The grid warns once in development when `rows` is a store.
+- **Keep `rows` in a signal.** `onRowsChange` returns a new array on every edit (the same contract as the React version). The rows are replaced as a whole, so, following Solid's own split (a signal for values replaced as a whole, a store for nested data updated piece by piece), keep them in a signal and put the array back with `setRows(next)`. In this version, with `createStore` the rows that come back are a store proxy instead of the array the grid returned, so the undo / redo history is cleared, and Solid prints many development diagnostics (the grid warns once in development when `rows` is a store).
 - **Writes apply in a microtask.** After `setRows(...)`, the grid sees the new rows on the next flush. To use a row you just added right away (`getViewRowIndex(key)` then `startEditing(...)`), call `flush()` from `solid-js` first (the React docs use `flushSync` for the same thing). In tests, call `flush()` after changing a signal or firing an event, before looking at the DOM.
 - **Tests (Vitest + jsdom).** Add `@solidjs/vite-plugin` to the Vitest config. Without the plugin, put `browser` in `resolve.conditions`, `ssr.resolve.conditions` and `ssr.resolve.externalConditions` (all three). Use the Solid 2 version of `@solidjs/testing-library` (1.0 release candidates) and `installJsdomLayoutStubs` from `@ishibashi0112/spreadsheet-grid-solid/testing` (jsdom has no layout).
 - **SSR.** SolidStart supports only Solid 1 at the time of writing. With Solid 2, use Vite's SSR with `@solidjs/vite-plugin` (`ssr: true`), `renderToString` or `renderToStream` with `generateHydrationScript` on the server, and `hydrate` on the client (`@solidjs/router` 2 also needs `createRequestEvent` / `provideRequestEvent` from `@solidjs/web/storage`). The server renders only the grid's frame (headers, pinned columns, placeholders); rows are drawn after hydration, as in the React version.
@@ -91,7 +91,7 @@ The feature names and what they enable are listed in the React version's `API_RE
 
 ## Versioning
 
-This package has its own version (0.x), separate from the React version and the core, and depends on the core of exactly one version. Before 1.0, minor releases may include breaking changes; they are listed in the [changelog](https://github.com/ishibashi0112/datasheet-grid/blob/main/CHANGELOG.md). TypeScript 5.8 or later is supported (`moduleResolution` `bundler` or `nodenext`, `jsx: "preserve"`, `jsxImportSource: "@solidjs/web"`). A library built on this package that exports inferred types should list this package and the core (the version this package depends on) in `peerDependencies`.
+This package has its own version (0.x), separate from the React version and the core, and depends on the core of exactly one version. Before 1.0, minor releases may include breaking changes; they are listed in the [changelog](https://github.com/ishibashi0112/datasheet-grid/blob/main/packages/solid/CHANGELOG.md). TypeScript 5.8 or later is supported (`moduleResolution` `bundler` or `nodenext`, `jsx: "preserve"`, `jsxImportSource: "@solidjs/web"`). A library built on this package that exports inferred types should list this package and the core (the version this package depends on) in `peerDependencies`.
 
 ## License
 
@@ -103,7 +103,7 @@ MIT
 
 Solid 2.0 向けの仮想化スプレッドシート / データグリッドです(約 100 万行・列固定・Excel ライクな編集 / 選択 / クリップボード・フィルター / ソート・クライアントサイド / サーバーサイド行モデル)。React 版の [`@ishibashi0112/spreadsheet-grid`](https://www.npmjs.com/package/@ishibashi0112/spreadsheet-grid) と同じ props・列の定義・命令的なハンドル・CSS・見た目で、同じフレームワークに依らないコアの上に作っています。
 
-**[ドキュメントとライブデモ](https://datasheet-grid.vercel.app)**(React 版向けに書いていますが、props は同じです)· [GitHub](https://github.com/ishibashi0112/datasheet-grid) · [変更履歴](https://github.com/ishibashi0112/datasheet-grid/blob/main/CHANGELOG.md)
+**[ドキュメントとライブデモ](https://datasheet-grid.vercel.app)**(React 版向けに書いていますが、props は同じです。Solid 版だけのことは [Solid で使う](https://datasheet-grid.vercel.app/docs/solid))· [StackBlitz で試す](https://stackblitz.com/fork/github/ishibashi0112/datasheet-grid/tree/main/examples/solid?file=src/App.tsx&terminal=dev) · [GitHub](https://github.com/ishibashi0112/datasheet-grid) · [変更履歴](https://github.com/ishibashi0112/datasheet-grid/blob/main/packages/solid/CHANGELOG.md)
 
 `npm install @ishibashi0112/spreadsheet-grid-solid` で入れます(peer は `solid-js` / `@solidjs/web` の `^2.0.0`)。CSS は `import '@ishibashi0112/spreadsheet-grid-solid/style.css'` を 1 回読み込みます。`style.layer.css` とデザインシステムのテーマ(`themes/*.css`)は React 版と同じファイルです。
 
@@ -126,7 +126,7 @@ Solid 2.0 向けの仮想化スプレッドシート / データグリッドで�
 
 ### Solid で気をつけること
 
-- **`rows` は store ではなく signal で持つ。** `onRowsChange` は新しい配列を返します(React 版と同じ約束)。`setRows(next)` で戻してください。`createStore` に入れると、戻ってくる rows がグリッドの返した配列ではなく store のプロキシになるので、元に戻す / やり直しの履歴が消え、開発時に Solid の知らせが多く出ます。`rows` が store のときは開発時に 1 回警告します。
+- **`rows` は signal で持つ。** `onRowsChange` は編集のたびに新しい配列を返します(React 版と同じ約束)。行は配列ごと差し替わるので、Solid の使い分け(丸ごと差し替える値は signal、中を少しずつ書き換える入れ子のデータは store)どおり signal で持ち、`setRows(next)` で戻してください。今の版では `createStore` に入れると、戻ってくる rows がグリッドの返した配列ではなく store のプロキシになるので、元に戻す / やり直しの履歴が消え、開発時に Solid の知らせが多く出ます(`rows` が store のときは開発時に 1 回警告します)。
 - **書き込みはマイクロタスクで反映されます。** `setRows(...)` の後、グリッドが新しい行を見るのは次の反映のときです。足したばかりの行をすぐ使う(`getViewRowIndex(key)` → `startEditing(...)`)ときは、先に `solid-js` の `flush()` を呼んでください(React 版のドキュメントの `flushSync` と同じ)。テストでも、signal を変えた・イベントを送った後に DOM を見る前に `flush()` を呼びます。
 - **テスト(Vitest + jsdom)。** Vitest の設定に `@solidjs/vite-plugin` を入れてください。プラグイン無しなら `browser` を `resolve.conditions` / `ssr.resolve.conditions` / `ssr.resolve.externalConditions` の 3 か所すべてに書きます。`@solidjs/testing-library` は Solid 2 向けの版(1.0 の候補版)を使い、jsdom にはレイアウトが無いので `@ishibashi0112/spreadsheet-grid-solid/testing` の `installJsdomLayoutStubs` を呼びます。
 - **SSR。** 今の SolidStart は Solid 1 だけに対応しています。Solid 2 では Vite の SSR と `@solidjs/vite-plugin`(`ssr: true`)で、サーバーは `renderToString` か `renderToStream` と `generateHydrationScript`、クライアントは `hydrate` を使います(`@solidjs/router` 2 は `@solidjs/web/storage` の `createRequestEvent` / `provideRequestEvent` も要ります)。サーバーで描くのはグリッドの骨組み(見出し・固定列・読み込み中の印)だけで、行はハイドレーションの後に描きます(React 版と同じ)。
@@ -145,7 +145,7 @@ Solid 2.0 向けの仮想化スプレッドシート / データグリッドで�
 
 ### バージョンの方針
 
-このパッケージは React 版・コアとは別の版(0.x)で、コアには同じ 1 つの版で依存します。1.0 より前は minor でも壊す変更が入ることがあり、[変更履歴](https://github.com/ishibashi0112/datasheet-grid/blob/main/CHANGELOG.md)に書きます。TypeScript は 5.8 以上(`moduleResolution` は `bundler` / `nodenext`、`jsx: "preserve"`・`jsxImportSource: "@solidjs/web"`)です。このパッケージの上に作ったライブラリが推論した型を export するときは、このパッケージと core(このパッケージが依存する版)を `peerDependencies` に入れてください。
+このパッケージは React 版・コアとは別の版(0.x)で、コアには同じ 1 つの版で依存します。1.0 より前は minor でも壊す変更が入ることがあり、[変更履歴](https://github.com/ishibashi0112/datasheet-grid/blob/main/packages/solid/CHANGELOG.md)に書きます。TypeScript は 5.8 以上(`moduleResolution` は `bundler` / `nodenext`、`jsx: "preserve"`・`jsxImportSource: "@solidjs/web"`)です。このパッケージの上に作ったライブラリが推論した型を export するときは、このパッケージと core(このパッケージが依存する版)を `peerDependencies` に入れてください。
 
 ## License
 

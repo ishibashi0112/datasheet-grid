@@ -1,0 +1,112 @@
+---
+title: Solid で使う
+description: Solid 2.0 向けの @ishibashi0112/spreadsheet-grid-solid
+---
+
+**`@ishibashi0112/spreadsheet-grid-solid`** は Solid 2.0 向けのグリッドです。React 版と同じ props・列の定義・命令的なハンドル・CSS・見た目で、同じフレームワークに依らないコア(`@ishibashi0112/spreadsheet-grid-core`)の上に作っています。このサイトのガイドと API リファレンスは React 版向けに書いていますが、props とメソッドは同じなので、そのまま読み替えて使えます。このページには Solid 版だけのことをまとめます。
+
+版は React 版・コアとは別(0.x)です([版と変更履歴](#版と変更履歴))。
+
+## インストール
+
+```sh tab="npm"
+npm install @ishibashi0112/spreadsheet-grid-solid
+```
+
+```sh tab="pnpm"
+pnpm add @ishibashi0112/spreadsheet-grid-solid
+```
+
+```sh tab="yarn"
+yarn add @ishibashi0112/spreadsheet-grid-solid
+```
+
+**solid-js** と **@solidjs/web** の `^2.0.0` が peer dependencies です。コア(`@ishibashi0112/spreadsheet-grid-core`)と `@tanstack/virtual-core` は自動で入ります。対応ブラウザは React 版と同じく Chrome / Edge 111 以降、Firefox 121 以降、Safari 16.4 以降です。
+
+CSS はアプリのエントリなどで 1 回だけ読み込みます。
+
+```ts
+import '@ishibashi0112/spreadsheet-grid-solid/style.css'
+```
+
+`style.layer.css` とデザインシステムのテーマ(`themes/astryx.css` / `themes/mantine.css` / `themes/heroui.css` / `themes/shadcn.css`)は React 版と同じファイルです([インストール](/docs/installation)・[デザインシステムに合わせる](/docs/guides/design-systems))。
+
+### バンドラの設定
+
+パッケージは Solid のライブラリの慣例どおり、`solid` 条件で JSX のままのソースを渡し、利用側のバンドラが自分の Solid の設定(DOM / SSR・開発 / 本番)でコンパイルします。Vite では `@solidjs/vite-plugin` 3(Vite 8 以上)を使ってください。`solid` 条件の無いツールは DOM 向けにコンパイル済みのビルド(ESM だけ)を読みます。
+
+Node の中(Vitest と jsdom のテストなど)では `solid` か `browser` の条件で解決してください(`@solidjs/vite-plugin` が付けます)。Node の既定の条件では `@solidjs/web` がサーバー向けのビルドになり、「Client-only API called on the server side」で止まります。
+
+## 最小の例
+
+`rows={rows()}` のように signal を呼んで渡し、編集は `onRowsChange` で受け取って signal へ戻します。
+
+```tsx
+import { createSignal } from 'solid-js'
+import { SpreadsheetGrid, type GridColumn } from '@ishibashi0112/spreadsheet-grid-solid'
+import '@ishibashi0112/spreadsheet-grid-solid/style.css'
+
+type Row = { id: number; name: string; qty: number }
+
+const columns: GridColumn<Row>[] = [
+  { key: 'name', title: 'Name', width: 200, editable: true, filterType: 'text' },
+  { key: 'qty',  title: 'Qty',  width: 120, editable: true, filterType: 'number' },
+]
+
+export function Example() {
+  const [rows, setRows] = createSignal<Row[]>([
+    { id: 1, name: 'Apple',  qty: 3 },
+    { id: 2, name: 'Banana', qty: 5 },
+  ])
+
+  return (
+    <SpreadsheetGrid
+      rows={rows()}
+      columns={columns}
+      onRowsChange={(next) => setRows(next)}
+      rowKeyGetter={(row) => row.id}
+    />
+  )
+}
+```
+
+英語の文言は `@ishibashi0112/spreadsheet-grid-solid/locales/en` の `localeTextEn` を `localeText` に渡します([英語と文言](/docs/guides/localization))。
+
+## ブラウザで試す(StackBlitz)
+
+[編集できる在庫表(Solid 版)](https://stackblitz.com/fork/github/ishibashi0112/datasheet-grid/tree/main/examples/solid?file=src/App.tsx&terminal=dev)を StackBlitz で開けます。React 版の[在庫表のサンプル](/docs/quick-start#ブラウザで試すstackblitz)と同じ表(10,000 行)を Solid 版で書いたもので、Vite 8 + Solid 2 + TypeScript の単体のプロジェクトです(ソースは GitHub の [`examples/solid`](https://github.com/ishibashi0112/datasheet-grid/tree/main/examples/solid))。
+
+## 機能を選んで組み込む
+
+`SpreadsheetGrid` は全機能入りです(初期読み込みの JS が約 162KB gzip。列フィルターのポップオーバーとツールパネルの約 16KB は後から読みます)。`createSpreadsheetGrid` では渡した機能だけを入れたグリッドを作れ、渡さなかった機能はバンドルに入りません(機能なしで約 90KB、プリセット `standardFeatures` で約 117KB)。React 版と違い、機能の部品も同じ入口から import します(`/lite` はありません)。機能の名前と中身は[バンドルを小さくする](/docs/guides/lite)のとおりです(部品の名前も同じ)。
+
+```tsx
+import { createSpreadsheetGrid, standardFeatures, serverSideFeature } from '@ishibashi0112/spreadsheet-grid-solid'
+
+// コンポーネントの中ではなく、モジュールの先頭で 1 回だけ作る
+const Grid = createSpreadsheetGrid({ features: { ...standardFeatures, serverSide: serverSideFeature } })
+```
+
+## React 版との違い
+
+- **`ref` は Solid の DOM の ref と同じです。** `let grid!: SpreadsheetGridHandle<Row>` と `ref={grid}`、または `ref={(handle) => (grid = handle)}` で、同じメソッドを持つハンドルを受け取れます(React の ref オブジェクトはありません)。ハンドルは利用側の部品の最初の `createEffect` と `onSettled` より前に入るので、そこで呼べます(保存した状態を戻す、末尾へスクロールする など)。
+- **描く関数は必要なときだけ呼びます。** `renderCell` は行・値・列が変わったとき、`renderHeader` は列が変わったとき、バーの関数は関数が変わったときだけ呼び直します(React 版のように更新のたびには呼びません)。文脈の位置と状態(`rowIndex` / `isActive` / バーの文脈など)は読んだときに引くので、JSX の中で読めば追従します。関数の本体で読むと、それが変わるたびに中身を作り直します。
+- **ありません:** ことばで絞り込み(`/ai` の `GridAskBar`)。
+- そのほか(props・列の定義・ハンドルのメソッド・通知・CSS のクラスとトークン)は [API リファレンス](/docs/api/props)と同じです。
+
+## Solid で気をつけること
+
+- **`rows` は signal で持つ。** `onRowsChange` は編集のたびに新しい配列を返します(React 版と同じ約束)。行は配列ごと差し替わるので、Solid の使い分け(丸ごと差し替える値は signal、中を少しずつ書き換える入れ子のデータは store)どおり signal で持ち、`setRows(next)` で戻してください。今の版では `createStore` に入れると、戻ってくる rows がグリッドの返した配列ではなく store のプロキシになるので、元に戻す / やり直しの履歴が消え、開発時に Solid の知らせが多く出ます(`rows` が store のときは開発時に 1 回警告します)。
+- **書き込みはマイクロタスクで反映されます。** `setRows(...)` の後、グリッドが新しい行を見るのは次の反映のときです。足したばかりの行をすぐ使う(`getViewRowIndex(key)` → `startEditing(...)`)ときは、先に `solid-js` の `flush()` を呼んでください(React 版のドキュメントの `flushSync` と同じ)。
+- **テスト(Vitest + jsdom)。** Vitest の設定に `@solidjs/vite-plugin` を入れてください。プラグイン無しなら `browser` を `resolve.conditions` / `ssr.resolve.conditions` / `ssr.resolve.externalConditions` の 3 か所すべてに書きます。`@solidjs/testing-library` は Solid 2 向けの版(1.0 の候補版)を使い、jsdom にはレイアウトが無いので `@ishibashi0112/spreadsheet-grid-solid/testing` の `installJsdomLayoutStubs` を呼びます。signal を変えた・イベントを送った後は、DOM を見る前に `flush()` を呼びます([テスト](/docs/guides/testing)の React 版の `act()` の代わり)。
+- **SSR。** 今の SolidStart は Solid 1 だけに対応しています。Solid 2 では Vite の SSR と `@solidjs/vite-plugin`(`ssr: true`)で、サーバーは `renderToString` か `renderToStream` と `generateHydrationScript`、クライアントは `hydrate` を使います(`@solidjs/router` 2 は `@solidjs/web/storage` の `createRequestEvent` / `provideRequestEvent` も要ります)。サーバーで描くのはグリッドの骨組み(見出し・固定列・読み込み中の印)だけで、行はハイドレーションの後に描きます(React 版と同じ)。
+- **状態を URL に残す。** 保存した状態は最初の描画で `initialState` に渡し、`onStateChange` で保存し、後からの変化(戻る / 進む)は `grid.applyState(...)` で入れます([状態の保存と復元](/docs/guides/state))。グリッドの通知の中で signal を読んでかまいません(イベントのハンドラと同じく追跡の外で呼びます)。
+- **展開行。** `detailRow.render` は行を開いたときに 1 回呼び、行が変わっても呼び直しません(`ctx.row` が今の行)。編集や元に戻すに追従するには JSX の中で `ctx.row` を読んでください。`createSignal(() => ctx.row.x)` で持った入力欄の値は行が変わるたびに戻るので、保存前の入力はふつうの signal で持ちます。
+- **複数のグリッドで props を共有する。** 変わらないオブジェクトを spread するか、props を書き並べてください。変化のたびに作り直すオブジェクトを spread しても動きますが、開発時に Solid が `HUGE_FAN_OUT` を出します。
+- **開発時の Solid の知らせ。** `vite dev` では、Solid が `autoHeightMeasurer` / `activeRowFollow` / `edit` / `serverSideRowModel` / `fillHandle` などの effect の名前で `EFFECT_RELAY_TEAR` / `EFFECT_WRITES_OWN_SOURCE` を出すことがあります。変化の後にグリッドが状態を合わせ直す処理(React 版も同じ描き直しをしている)で、害は無く、本番のビルドでは出ません。
+
+## 版と変更履歴
+
+Solid 版は React 版・コアとは別の版(0.x)で、コアには同じ 1 つの版で依存します。1.0 より前は minor でも壊す変更が入ることがあり、[Solid 版の変更履歴](https://github.com/ishibashi0112/datasheet-grid/blob/main/packages/solid/CHANGELOG.md)に書きます。TypeScript は 5.8 以上(`moduleResolution` は `bundler` / `nodenext`、`jsx: "preserve"`・`jsxImportSource: "@solidjs/web"`)です。Solid 版の上に作ったライブラリが推論した型を export するときは、Solid 版と core(Solid 版が依存する版)を `peerDependencies` に入れてください。
+
+README は npm の [`@ishibashi0112/spreadsheet-grid-solid`](https://www.npmjs.com/package/@ishibashi0112/spreadsheet-grid-solid) にあります(英語と日本語)。

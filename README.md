@@ -70,6 +70,8 @@ npm install @ishibashi0112/spreadsheet-grid
 
 Requires **react** and **react-dom** `^18.3.0 || ^19.0.0` as peer dependencies (install them in your app if you have not already). `@tanstack/virtual-core` (the framework-agnostic core of TanStack Virtual) and `@ishibashi0112/spreadsheet-grid-core` (the framework-agnostic core of this grid, split out in v0.39.0) are regular dependencies and are installed automatically; you never import them directly. The React adapter is this package.
 
+**Using Solid?** [`@ishibashi0112/spreadsheet-grid-solid`](./packages/solid) is the Solid 2.0 version, with the same props, column options, handle, CSS and look ([docs](https://datasheet-grid.vercel.app/docs/solid)).
+
 Supported browsers: **Chrome / Edge 111+, Firefox 121+, Safari 16.4+**. The floor comes from CSS (`color-mix()`, `:has()`); in older browsers the grid still loads, but some colors (conditional-format chips, save and error marks) and keyboard focus styles may be missing.
 
 ## Styles
@@ -161,6 +163,7 @@ These examples open in StackBlitz, so you can run and edit them without installi
 - [Editable inventory grid](https://stackblitz.com/fork/github/ishibashi0112/datasheet-grid/tree/main/examples/basic?file=src/App.tsx&terminal=dev) — 10,000 rows with editors, validation, filters, conditional formatting, a total row, the fill handle, find and CSV export.
 - [Server-side row model](https://stackblitz.com/fork/github/ishibashi0112/datasheet-grid/tree/main/examples/server-side?file=src/App.tsx&terminal=dev) — 100,000 rows fetched as you scroll; sorting and filtering run on the (simulated) server, and edits are saved with a rollback on failure.
 - [Inside Astryx](https://stackblitz.com/fork/github/ishibashi0112/datasheet-grid/tree/main/examples/astryx?file=src/App.tsx&terminal=dev) — the grid themed by `themes/astryx.css`, with Astryx components in cells.
+- [Solid version](https://stackblitz.com/fork/github/ishibashi0112/datasheet-grid/tree/main/examples/solid?file=src/App.tsx&terminal=dev) — the editable inventory grid written with the Solid version (Solid 2, Vite 8).
 
 ### English UI
 
@@ -497,6 +500,8 @@ npm install @ishibashi0112/spreadsheet-grid
 
 peer 依存として **react** / **react-dom** `^18.3.0 || ^19.0.0` が必要です（未導入なら利用側で入れてください）。`@tanstack/virtual-core`（TanStack Virtual のフレームワーク非依存コア）と `@ishibashi0112/spreadsheet-grid-core`（本グリッドのフレームワーク非依存コア。v0.39.0 で分離）は通常依存として自動的に入ります。アプリ側で直接 import する必要はありません。本パッケージが React 向けアダプタです。
 
+**Solid で使うとき**は、Solid 2.0 向けの [`@ishibashi0112/spreadsheet-grid-solid`](./packages/solid) を使います。props・列の定義・ハンドル・CSS・見た目は同じです([Solid で使う](https://datasheet-grid.vercel.app/docs/solid))。
+
 対応ブラウザは **Chrome / Edge 111 以降、Firefox 121 以降、Safari 16.4 以降** です。下限は CSS(`color-mix()` / `:has()`)で決まります。これより古いブラウザでも読み込めますが、一部の色(条件付き書式のチップ、保存やエラーの印)とキーボード操作のフォーカスの表示が出ないことがあります。
 
 ### スタイル
@@ -588,6 +593,7 @@ export function Example() {
 - [編集できる在庫表](https://stackblitz.com/fork/github/ishibashi0112/datasheet-grid/tree/main/examples/basic?file=src/App.tsx&terminal=dev) — 10,000 行。エディタ / バリデーション / フィルター / 条件付き書式 / 合計行 / フィルハンドル / セル内検索 / CSV
 - [サーバーサイド行モデル](https://stackblitz.com/fork/github/ishibashi0112/datasheet-grid/tree/main/examples/server-side?file=src/App.tsx&terminal=dev) — 100,000 件をスクロールに合わせて取得。ソート・フィルターは(擬似的な)サーバー側で処理し、編集は保存(失敗すると元に戻る)
 - [Astryx の中のグリッド](https://stackblitz.com/fork/github/ishibashi0112/datasheet-grid/tree/main/examples/astryx?file=src/App.tsx&terminal=dev) — `themes/astryx.css` で配色を揃え、セルに Astryx の部品を描く
+- [Solid 版](https://stackblitz.com/fork/github/ishibashi0112/datasheet-grid/tree/main/examples/solid?file=src/App.tsx&terminal=dev) — 同じ在庫表を Solid 版で書いたもの(Solid 2・Vite 8)
 
 #### 英語の UI
 
