@@ -26,7 +26,7 @@
 | 1-3a | Solid 版だけの所見の修正(R1-1 / R2-1 / R3-1)と、食い違った SSR の所見(R4-1 / R4-2)の確かめ | 済み。R1-1 / R2-1 / R3-1 は 221f400(比較テストを足し、直す前は落ちることを確かめた。R3 のレビューで書いた比較テスト 24 件も入れた = Solid 版のテストは 23 ファイル・279 件)。R4-1 / R4-2 は 1-5 の SSR のゲートで再現し、R4-1 を直した(R4-2 は段 2)。R4-3 の文書も直した |
 | 1-2 | React 版と Solid 版のハーネスのページへ同じでたらめな操作を流して比べる(スクリプトはリポジトリに残す) | まだ |
 | 1-4 | Solid の版の組み合わせ(2.0.0 と最新の 2.0.x)を CI で回す | まだ |
-| 1-5 | Solid らしい使い方の確かめ(非同期の行・`<Loading>`・`<Errored>`・遷移・HMR・複数のグリッド・`<Show>` の切り替えと編集中のアンマウント(AP-12)・SSR と hydration(`initialState`・`ssrCurrentTime`)) | SSR と hydration は済み(新しいゲート `pnpm --filter ./packages/solid run test:ssr` = `packages/solid/ssr/`。CI にも足した。下の「SSR とハイドレーションのゲート」)。ほかは まだ |
+| 1-5 | Solid らしい使い方の確かめ(非同期の行・`<Loading>`・`<Errored>`・遷移・HMR・複数のグリッド・`<Show>` の切り替えと編集中のアンマウント(AP-12)・SSR と hydration(`initialState`・`ssrCurrentTime`)) | 済み(HMR は 1-6 の実アプリで見る)。SSR と hydration は新しいゲート `pnpm --filter ./packages/solid run test:ssr`(`packages/solid/ssr/`。CI にも足した。下の「SSR とハイドレーションのゲート」)。ほかは `packages/solid/src/idioms.test.tsx`(9 件。下の「Solid らしい使い方」)。新しい所見は無し |
 | 1-6 | 実アプリでの確かめ直し(2026-11-22 の 6 本を今の版で作り直し + 新しい 6 本 = 12 本) | まだ |
 | 1-7 | 記録をまとめ、段 2 の中身をユーザーに相談する | まだ |
 
@@ -77,3 +77,16 @@
    `PARITY_DUMP=<ディレクトリ>` で React 版と Solid 版の DOM と通知を `.react.txt` / `.solid.txt` に書き出す(差を見るとき)。
 3. 比較テストで機能なしの構成をわざと比べるときは、確かめる機能のキーを `allowMissingFeatures` に並べる(並べないと、機能の
    入れ忘れの見張りがテストを落とす)。
+
+## Solid らしい使い方(1-5)
+
+`packages/solid/src/idioms.test.tsx`。どれも警告もエラーも出さないことを含めて確かめる。直す前の不具合は見つからなかった。
+
+- 非同期の行: `createMemo(async …)` の行を `<Loading>` の中で渡すと、読み込むまでは fallback、届いたら行。取り直しの間は
+  前の行のまま(`isPending` が真。グリッドを作り直さない)で、届いたら新しい行になり、操作も続く。`<Errored>` の中で読み込みに
+  失敗すると fallback、やり直すと行。
+- 遷移: `action` と `createOptimistic` で保存する書き方。確定した値はすぐに出て、保存が済めばそのまま、失敗すれば元の値へ戻る。
+- `<Show>` での出し入れ(5 回): window と document のリスナーを残さない、`ref` は新しいグリッドのハンドルになる。
+- 編集中のアンマウント(React 版の AP-12 / RA-1 と同じ): 外すのと同じ更新で親が rows を変えても古い rows で上書きしない、
+  外す前に blur すれば確定する。
+- 1 ページに 2 つのグリッド: キー操作・列メニュー・テーマは押したグリッドだけに効く。
