@@ -1,7 +1,7 @@
 // d.ts を出すライブラリの形(React 版だけに依存。core を直接の依存に入れなくても d.ts を出せること)。
 //   推論のまま export して、tsc が型に名前を付けられること(TS2883 / TS2742 にならない)と、出した d.ts が
 //   core の内部のパスや dist のパスを指さないことを check-types.mjs が確かめます。
-import { SpreadsheetGrid } from '@ishibashi0112/spreadsheet-grid';
+import { SpreadsheetGrid, numberFormatter, numberParser, restoreColumnsFromState } from '@ishibashi0112/spreadsheet-grid';
 import type { GridColumn, SpreadsheetGridHandle, SpreadsheetGridProps } from '@ishibashi0112/spreadsheet-grid';
 import {
   createSpreadsheetGrid,
@@ -42,3 +42,12 @@ export const Grid = SpreadsheetGrid;
 export const english = localeTextEn;
 export const defaults = { rowKeyGetter: (row: Row) => row.id, enableColumnFilter: true } satisfies Partial<SpreadsheetGridProps<Row>>;
 export const columnKeys = (columns: GridColumn<Row>[]) => columns.map((column) => column.key);
+
+// 組み込みの関数の結果を推論のまま export する(1.3.0 / S4-04。1.2 までは pnpm で TS2883 / TS2742 になった)
+export const amountFormatter = numberFormatter();
+export const rowAmountFormatter = numberFormatter<Row>({ maximumFractionDigits: 2 });
+export const amountParser = numberParser({ strip: ['円'] });
+export const formatterColumns = [
+  { key: 'amount', title: '金額', width: 100, valueFormatter: numberFormatter() },
+] satisfies GridColumn<Row>[];
+export const restoredColumns = (columns: GridColumn<Row>[], state: unknown) => restoreColumnsFromState(columns, state);

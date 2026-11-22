@@ -45,7 +45,7 @@ const SELECT_PAGE_STEP = 8;
 type SelectCellEditorProps = {
   // 追加(1.0.1 / 2026-11-09 実アプリの総点検 AP-34): 入力欄の読み上げの名前(「(列名) を編集」。枠の group と同じ)。
   ariaLabel?: string;
-  options: GridSelectEditorOption[];
+  options: readonly GridSelectEditorOption[];
   // 編集開始時のセル生値です(初期ハイライトの解決に使用)。
   value: unknown;
   onCommit: (

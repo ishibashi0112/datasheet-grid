@@ -49,7 +49,7 @@ import { toEditorKeyEvent } from '../primitives/eventKey';
 
 type SelectCellEditorProps = {
   ariaLabel?: string | undefined;
-  options: GridSelectEditorOption[];
+  options: readonly GridSelectEditorOption[];
   // 編集を始めたときのセルの値(開いたときのハイライトと、候補に無い値の表示に使う)。
   value: unknown;
   onCommit: EditorCommit;

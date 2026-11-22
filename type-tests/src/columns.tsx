@@ -8,6 +8,7 @@ import type {
   GridColumnPinned,
   GridPinnedRowPosition,
   LabelRowOptions,
+  SpreadsheetGridProps,
 } from '@ishibashi0112/spreadsheet-grid';
 import { assertType, expectAssignable, type Equal } from './expect.js';
 
@@ -40,6 +41,18 @@ export const missingWidth: GridColumn<Sale> = { key: 'name', title: '名前' };
 export const wrongEditor: GridColumn<Sale> = { key: 'name', width: 100, editor: { type: 'txt' } };
 // @ts-expect-error number エディタに options は無い
 export const wrongEditorOption: GridColumn<Sale> = { key: 'amount', width: 100, editor: { type: 'number', options: [] } };
+// select の options と getFilterOptions の結果に readonly の配列(`as const`)も渡せる(1.3.0 / S4-05)
+const STATUS_OPTIONS = [
+  { value: 'open', label: '受付' },
+  { value: 'done', label: '完了' },
+] as const;
+export const readonlySelect: GridColumn<Sale> = { key: 'name', width: 100, editor: { type: 'select', options: STATUS_OPTIONS } };
+export const readonlySelectByRow: GridColumn<Sale> = {
+  key: 'name',
+  width: 100,
+  editor: { type: 'select', options: () => STATUS_OPTIONS },
+};
+export const readonlyFilterOptions: SpreadsheetGridProps<Sale>['getFilterOptions'] = async () => ({ options: STATUS_OPTIONS });
 
 // numberFormatter: 型引数なしで作ったものは、行の型の違う列で使い回せる
 const shared = numberFormatter({ maximumFractionDigits: 0 });

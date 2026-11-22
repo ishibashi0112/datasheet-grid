@@ -43,6 +43,8 @@
 - select エディタの候補を開いたまま並びが変わると(`applyState` でソートを外す・行を差し替える など)、エディタは行に付いて動くのに、候補の一覧が元の位置に残ってエディタに重なっていました。エディタに付いていくようにしました。
 - 展開行のカードを開いている間、表の直後の空の要素(`Tab` でカードから表の外へ出るための目印)が `aria-hidden` のまま `Tab` の順番に入っていて、axe の `aria-hidden-focus` に当たっていました。`Tab` の順番に入れている間は `aria-hidden` を付けません。
 - 行ドラッグのハンドルと展開トグルの列(グリッドが足す列)の見出しが空で、読み上げで名前の無い見出しになっていました(axe の `empty-table-header`)。見た目は空のまま、見えない文字で「移動」「詳細」と名前を置きます(下部バーの番地と同じ文言 `rowDragColumnName` / `detailColumnName`)。
+- React 版だけに依存するライブラリ(pnpm で core を直接の依存に入れない形)で、`numberFormatter()` の結果を推論のまま export する(`export const yen = numberFormatter()` や、`valueFormatter: numberFormatter()` を含む列の配列)と、d.ts を出すときに TS2883 / TS2742 になっていました(core の型の名前が要るため)。返す関数の型を名前の無い構造の型 `(params: { readonly value: unknown; readonly [key: string]: unknown }) => string` にしました(どの列の `valueFormatter` にも今までどおり渡せます)。
+- select エディタの `options` と `getFilterOptions` の結果の `options` に、readonly の配列(`as const` で書いた候補など)を渡せませんでした(`filterOptions` には渡せました)。渡せるようにしました。
 
 ## 1.2.1 — 2026-11-22
 

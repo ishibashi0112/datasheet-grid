@@ -52,6 +52,13 @@ export const columns: GridColumn<Sale>[] = [
 export const missingWidth: GridColumn<Sale> = { key: 'name' };
 // @ts-expect-error エディタの種類の打ち間違い
 export const wrongEditor: GridColumn<Sale> = { key: 'name', width: 100, editor: { type: 'txt' } };
+// select の options と getFilterOptions の結果に readonly の配列(`as const`)も渡せる(1.3.0 / S4-05)
+const STATUS_OPTIONS = [
+  { value: 'open', label: '受付' },
+  { value: 'done', label: '完了' },
+] as const;
+export const readonlySelect: GridColumn<Sale> = { key: 'name', width: 100, editor: { type: 'select', options: STATUS_OPTIONS } };
+export const readonlyFilterOptions: SpreadsheetGridProps<Sale>['getFilterOptions'] = async () => ({ options: STATUS_OPTIONS });
 // Solid の style は JSX.CSSProperties(CSS の名前のまま)
 export const style: SpreadsheetGridProps<Sale>['style'] = { 'max-width': '100%' };
 // @ts-expect-error React の camelCase の style は書けない

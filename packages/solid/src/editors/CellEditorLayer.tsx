@@ -84,7 +84,7 @@ export function CellEditorLayer<T>(props: CellEditorLayerProps<T>) {
   };
   const cellHeight = () => props.rect?.height ?? 0;
   // select の行で決まる候補は編集中の行で引きます(行が変わったときだけ引き直す)。
-  const selectOptions = createMemo((): GridSelectEditorOption[] => {
+  const selectOptions = createMemo((): readonly GridSelectEditorOption[] => {
     const current = editor();
     if (current?.type !== 'select') {
       return [];

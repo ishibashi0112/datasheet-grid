@@ -236,7 +236,8 @@ export type GetFilterOptionsParams<T, F extends GridFrameworkTypes = GridFramewo
 
 export type GetFilterOptionsResult = {
   // value は記述子の values にそのまま載る文字列。dateSet 列は 'YYYY-MM-DD'、空白(NULL)は '' を渡す。
-  options: GridSelectFilterOption[];
+  // 変更(1.3.0 / S4-05): readonly の配列も返せます。
+  options: readonly GridSelectFilterOption[];
   // 件数上限で打ち切ったら true(popover に「先頭のみ」の注記が出る。反転 = NOT IN で候補外の値も扱える)。
   truncated?: boolean | undefined;
 };
@@ -999,10 +1000,11 @@ export type GridColumnEditor<T, F extends GridFrameworkTypes = GridFrameworkType
       // select エディタ(候補ドロップダウン)。候補は静的配列 or 行依存の動的関数で指定します
       //   (動的関数はレンダー中に呼ばれるため純粋であること)。確定値は option.value(string)を
       //   列パーサへ流します(候補は「許可される値」なので rows からの自動収集はしません)。
+      // 変更(1.3.0 / S4-05): readonly の配列(`as const` など)も渡せます(filterOptions とそろえる)。
       type: 'select';
       options:
-        | GridSelectEditorOption[]
-        | ((row: T) => GridSelectEditorOption[]);
+        | readonly GridSelectEditorOption[]
+        | ((row: T) => readonly GridSelectEditorOption[]);
       // 追加(1.1.0 / 2026-11-09 実アプリの総点検 AP-08): クリップボードとのやり取りの文字です。'value'(既定)は値のまま、
       //   'label' はコピー / CSV / getExportData の text を候補の label にし、貼り付けた文字が label なら value へ読み替えます
       //   (value はそのまま通す。どちらでもない文字は生のまま)。列の formatClipboardValue / parseClipboardValue があれば
