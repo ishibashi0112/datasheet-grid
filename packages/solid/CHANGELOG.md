@@ -8,6 +8,10 @@
 
 ## 未リリース
 
+### 追加
+
+- 列の `exportable`。`false` で、その列を CSV / TSV の書き出し(`exportCsv` / `downloadCsv`。scope `'selection'` も)と `getExportData` から外します。操作のボタンの列や、画面には出すが書き出したくない社内だけの ID の列に使います。範囲を選んだコピー(`Ctrl/Cmd+C`)には今までどおり出します(選んだとおりに写す)。これまでは行を外す `isRowExportable` しかなく、列は外せませんでした(ガイド「エクスポート」の「列の除外」)。
+
 ### 変更
 
 - 展開行のトグル(▸ / ▾)の読み上げの名前に、どの行かを入れました(「行 7 の詳細を開く」「行 7 の詳細を閉じる」、英語 `Show details for row 7`)。番号は行見出しと同じ(ラベル行は数えない)で、行のチェックボックスの「行 7 を選択」と同じ書き方です。これまではどの行も「詳細を開く」で、スクリーンリーダーの一覧でどの行のボタンか分かりませんでした。文言 `showDetails` / `hideDetails` は `{row}` を使え、型は `GridLocaleTextTemplate<{ row: number }>`(文字列か関数)になりました。テストで名前で探しているときは `getByRole('button', { name: /詳細を開く/ })` などに直すか、`localeText={{ showDetails: '詳細を開く', hideDetails: '詳細を閉じる' }}` で前の名前に戻せます。

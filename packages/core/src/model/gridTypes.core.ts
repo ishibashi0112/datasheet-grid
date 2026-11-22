@@ -1399,6 +1399,16 @@ export type GridColumn<T, F extends GridFrameworkTypes = GridFrameworkTypes> = {
    * @defaultValue `true`
    */
   selectionAggregate?: boolean | undefined;
+  // 追加(1.3.0 / Solid 版の品質の段 2 の要望): false で CSV / TSV の書き出しと getExportData から外します(範囲のコピーには出す)。
+  /**
+   * `false` で、この列を CSV / TSV の書き出し(`exportCsv` / `downloadCsv`。scope `'selection'` も)
+   * と `getExportData` から外す(1.3.0 から)。操作のボタンの列や社内だけの ID の列に使う。
+   * 範囲を選んだコピー(`Ctrl/Cmd+C`)には今までどおり出す(選んだとおりに写す)。行を外すのは props の
+   * `isRowExportable`。
+   *
+   * @defaultValue `true`
+   */
+  exportable?: boolean | undefined;
   /**
    * 値アクセサ。`setValue` の無い列へ書き込むと値は `row[key]` へ入り、表示(`getValue`)
    * は変わらない。計算列は `editable: false` にするか `setValue` を渡す(開発時は、
