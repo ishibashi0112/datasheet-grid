@@ -14,7 +14,8 @@ import {
 } from '@ishibashi0112/spreadsheet-grid';
 import { localeTextEn } from '@ishibashi0112/spreadsheet-grid/locales/en';
 import '@ishibashi0112/spreadsheet-grid/style.css';
-import { baseColumns as sharedBaseColumns, lang, log, makeDataSource, makeRows, n, params, scenario, strict, type Row } from './shared';
+import shadowCss from '@ishibashi0112/spreadsheet-grid/style.css?inline';
+import { baseColumns as sharedBaseColumns, lang, log, makeDataSource, makeRows, mountPoint, n, params, scenario, strict, type Row } from './shared';
 
 function baseColumns(): GridColumn<Row>[] {
   return sharedBaseColumns({
@@ -327,5 +328,5 @@ function App() {
   );
 }
 
-const root = createRoot(document.getElementById('root')!);
+const root = createRoot(mountPoint(shadowCss));
 root.render(strict ? <StrictMode><App /></StrictMode> : <App />);

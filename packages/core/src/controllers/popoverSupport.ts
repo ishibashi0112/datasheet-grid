@@ -12,14 +12,17 @@
 import { isFocusInsideDetailCard } from '../logic/detailRow';
 import { IME_INPUT_ATTRIBUTE } from '../logic/domGuards';
 import { GRID_POPUP_SELECTOR } from './escapeClaimController';
+import { getActiveElement, getEventTarget } from '../utils/shadowDom';
 
 export type ReadonlyElementRef<E extends HTMLElement = HTMLElement> = {
   readonly current: E | null;
 };
 
+// 変更(1.3.0 / S11-03 / S11-04): フォーカスのある要素は Shadow root の中も見ます(core utils/shadowDom)。
 export const blurForPopover = (gridRoot: HTMLElement | null): void => {
-  if (document.activeElement instanceof HTMLElement) {
-    document.activeElement.blur();
+  const active = getActiveElement(gridRoot);
+  if (active instanceof HTMLElement) {
+    active.blur();
   }
   gridRoot?.blur();
 };
@@ -37,7 +40,7 @@ const TEXT_ENTRY_SELECTOR = 'input, textarea, select, [contenteditable]:not([con
 
 export const restoreGridFocus = (gridRootRef: ReadonlyElementRef): void => {
   const current = gridRootRef.current;
-  const focused = current?.ownerDocument.activeElement ?? null;
+  const focused = current === null ? null : getActiveElement(current);
   if (
     current !== null &&
     focused !== null &&
@@ -47,7 +50,7 @@ export const restoreGridFocus = (gridRootRef: ReadonlyElementRef): void => {
     if (focused.matches(TEXT_ENTRY_SELECTOR)) {
       queueMicrotask(() => {
         const root = gridRootRef.current;
-        const active = root?.ownerDocument.activeElement ?? null;
+        const active = root === null ? null : getActiveElement(root);
         if (root !== null && (active === null || active === root.ownerDocument.body)) {
           root.focus({ preventScroll: true });
         }
@@ -61,7 +64,7 @@ export const restoreGridFocus = (gridRootRef: ReadonlyElementRef): void => {
     if (root === null || isFocusInsideDetailCard()) {
       return;
     }
-    const active = root.ownerDocument.activeElement;
+    const active = getActiveElement(root);
     if (active !== null && active !== root && root.contains(active) && active.closest('.ssg-cell-editor') !== null) {
       return;
     }
@@ -88,7 +91,7 @@ export const handleMenuKeyNavigation = (
   event: KeyboardEvent,
   itemSelector = '[role="menuitem"]',
 ): boolean => {
-  const active = document.activeElement;
+  const active = getActiveElement(panel);
   // 変更(1.1.0 / AP-33 の回帰): パネルそのもの(マウスで開いたときのフォーカスの置き場)は「項目にフォーカスが無い」と同じに扱い、
   //   ↓ で先頭・↑ で末尾の項目へ移ります(パネルを中の要素と数えて何もしなかった)。
   const focusInside = active instanceof HTMLElement && active !== panel && panel.contains(active);
@@ -133,7 +136,7 @@ export const focusPanelIfIdle = (panel: HTMLElement | null, gridRoot?: HTMLEleme
   if (panel === null || !panel.isConnected) {
     return;
   }
-  const active = panel.ownerDocument.activeElement;
+  const active = getActiveElement(panel);
   const onGrid =
     active !== null &&
     gridRoot != null &&
@@ -171,8 +174,9 @@ export const createPopoverWindowBindings = (
   let attached = false;
   const handleResize = () => handlers.onResize?.();
   const handleScroll = (event: Event) => handlers.onScroll?.(event);
+  // 変更(1.3.0 / S11-05): window で受けるので、Shadow root の中で押したときの target は host です。押した要素は composedPath の先頭。
   const handlePointerDown = (event: PointerEvent) => {
-    const target = event.target as Node | null;
+    const target = getEventTarget(event) as Node | null;
     if (!target) {
       return;
     }

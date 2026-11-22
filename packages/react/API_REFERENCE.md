@@ -29,7 +29,7 @@
 | `density` | `'compact' \| 'standard' \| 'comfortable'` | `'standard'` | 密度プリセット。rowHeight / headerHeight の既定値と寸法トークン(セル横 padding / バー padding / アイコンボタン寸法 / セル文字の相対拡縮)を一括切替。`'standard'` は従来と同値。個別調整はトークン(`--ssg-cell-pad-x` 等)の上書きで可能。popover / menu 等のポータルは対象外。 |
 | `theme` | `'light' \| 'dark' \| 'auto' \| 'class'` | `'light'` | カラーテーマ。`'dark'` でダークプリセット(`.ssg-theme-dark` のトークン一括上書き。Mantine dark 系パレット)をグリッド本体・全ポータル(popover / menu / panel)・ドラッグゴースト・ツールチップへ適用。`'auto'` は `prefers-color-scheme` へ追従。`'class'` は祖先の `class="dark"` か `data-theme="dark"` を CSS で見てダークにする(Tailwind / next-themes / shadcn/ui / HeroUI のようなクラスによるダーク向け。サーバーの描画から正しい色になる。ポップアップ類は表の外(既定は `document.body` の直下。`popupContainer`)に出るので、`dark` のクラス / 属性は `<html>` か `<body>` に付ける)。Mantine のようにほかの方法でダークを決めるものは、利用側の解決値を `'light' \| 'dark'` で渡す。個別の色調整はトークン(`--ssg-*`)の上書きで可能。 |
 | `motion` | `'auto' \| 'on' \| 'off'` | `'auto'` | モーション(アニメーション / トランジション)の有効化。`'auto'` は OS / ブラウザの「視差効果を減らす」(`prefers-reduced-motion: reduce`)が有効なら `'off'`、それ以外は `'on'` として扱う。`'off'` では root と全ポータル(popover / menu / panel)・ドラッグゴースト・ツールチップへ `.ssg-motion-off` が付き、継続時間トークン(`--ssg-motion-fast` / `--ssg-motion-base` / `--ssg-motion-slow`)が 0 になって動きが止まる(表示結果は同じ)。`'on'` は OS 設定に関わらず動かす。速さの調整はトークンの上書き。詳細は「モーション」節。 |
-| `popupContainer` | `'auto' \| 'body' \| HTMLElement \| ((gridElement: HTMLElement) => HTMLElement \| null \| undefined)` | `'auto'` | ポップアップ(列メニュー / 列フィルター / 右クリックメニュー / select の候補 / ツールパネル / フィルハンドルのメニュー / ツールチップ / ドラッグのゴースト)を描く場所(1.1.0 から)。`'auto'` はグリッドを囲むダイアログ(`<dialog>` / `popover` / `aria-modal="true"` / `role="dialog"` / `role="alertdialog"`)の中、無ければ `document.body`。`'body'` はいつも `document.body`(1.0 までと同じ)。要素ならその中、関数はグリッドの要素を受け取って描く場所を返す(`null` / `undefined` なら `document.body`。ポップアップを開いている間の描画ごとに呼ぶ。閉じている間は呼ばない)。詳細は「ダイアログの中のグリッド」節。 |
+| `popupContainer` | `'auto' \| 'body' \| HTMLElement \| ((gridElement: HTMLElement) => HTMLElement \| null \| undefined)` | `'auto'` | ポップアップ(列メニュー / 列フィルター / 右クリックメニュー / select の候補 / ツールパネル / フィルハンドルのメニュー / ツールチップ / ドラッグのゴースト)を描く場所(1.1.0 から)。`'auto'` はグリッドを囲むダイアログ(`<dialog>` / `popover` / `aria-modal="true"` / `role="dialog"` / `role="alertdialog"`)の中、無ければ、Shadow root の中のグリッドはその Shadow root の直下でグリッドを包む要素の中(1.3.0 から)、それ以外は `document.body`。`'body'` はいつも `document.body`(1.0 までと同じ)。要素ならその中、関数はグリッドの要素を受け取って描く場所を返す(`null` / `undefined` なら `document.body`。ポップアップを開いている間の描画ごとに呼ぶ。閉じている間は呼ばない)。詳細は「ダイアログの中のグリッド」節。 |
 | `animateRows` | `boolean` | `true` | 行の並び替えアニメ。ソート / フィルター / グループ開閉 / `rows` の差し替えで、描画中の行が新しい位置へ滑り(`--ssg-motion-base`)、スクロールなしで現れた行は上から順にフェードインする。スクロール中の仮想化による出入りは対象外。auto-height 行と serverSide(SSRM)では自動で無効。`motion` の実効値が `'off'` なら動かない。詳細は「モーション」節。 |
 | `showCopyRange` | `boolean` | `true` | `Ctrl/Cmd+C` のあと、コピー元の範囲に Excel と同じ「動く点線」を残す(`.ssg-copy-range-overlay`。`motion` が `'off'` なら静的な点線)。`Esc` と編集開始で消え、ソート / フィルター / グループ開閉 / 行数 / 列の変化で描画しなくなる(貼り付けでは残る)。`false` で点線を出さない(コピー自体は従来どおり)。 |
 | `hoverHighlight` | `'row' \| 'cross'` | `'row'` | ホバーの強調範囲。`'row'` はポインタの行だけ(従来)。`'cross'` はその行に加えて、ポインタの列(列ヘッダー + 同じ列の他セルに薄い帯 `.ssg-col-hover-overlay`)と行番号も染めるクロスヘア表示。色はトークン `--ssg-col-hover-bg`(帯)/ `--ssg-select-bg`(ヘッダー・行番号)。横に長い表で「この値はどの列か」を視線移動なしで答えるため。 |
@@ -904,7 +904,7 @@ WAI-ARIA の grid パターンに沿って、表・行・セルに役割と状�
 
 | 値 | 描く場所 |
 | --- | --- |
-| `'auto'`(既定) | グリッドを囲むいちばん近いダイアログ(`<dialog>` / `popover` 属性の要素 / `aria-modal="true"` / `role="dialog"` / `role="alertdialog"`)の中。無ければ `document.body` の直下。そのダイアログが `overflow` で切り、しかも `transform` などで `position: fixed` の基準になるとき(Mantine の Modal の中身)は、その外側でいちばん近い `position: fixed` の祖先(Mantine の `.mantine-Modal-inner`)の中(`<dialog>` / `popover` は外へ出さない)。 |
+| `'auto'`(既定) | グリッドを囲むいちばん近いダイアログ(`<dialog>` / `popover` 属性の要素 / `aria-modal="true"` / `role="dialog"` / `role="alertdialog"`)の中。無ければ、グリッドが Shadow root の中にあるときはその Shadow root の直下でグリッドを包む要素の中(1.3.0 から。「Shadow DOM の中のグリッド」節)、それ以外は `document.body` の直下。そのダイアログが `overflow` で切り、しかも `transform` などで `position: fixed` の基準になるとき(Mantine の Modal の中身)は、その外側でいちばん近い `position: fixed` の祖先(Mantine の `.mantine-Modal-inner`)の中(`<dialog>` / `popover` は外へ出さない)。 |
 | `'body'` | いつも `document.body` の直下(1.0 までと同じ)。 |
 | 要素 | その要素の中。 |
 | 関数 | グリッドの要素(`.ssg-shell`)を受け取って描く場所を返す(`null` / `undefined` なら `document.body`)。ポップアップを開いている間の描画ごとに呼ぶ(閉じている間は呼ばない)。 |
@@ -914,6 +914,39 @@ WAI-ARIA の grid パターンに沿って、表・行・セルに役割と状�
 - 描く場所の祖先に `transform` / `translate` などがあると(shadcn/ui の DialogContent は `translate` で真ん中に置く)、`position: fixed` の基準がその要素になる。グリッドはそのずれを測り、ポップアップの `translate` で打ち消す(開いたときと位置を決め直すたび。ツールチップとドラッグのゴーストは出すたび)。拡大縮小(`scale`)は打ち消さない。
 - その要素が `overflow` で中を切り、しかも `transform` などで `position: fixed` の基準になると、ポップアップもダイアログの枠で切れる。`'auto'` は外側の `position: fixed` の祖先があればそこへ出す(上の表。Mantine の Modal はこれで切れない)。無いとき(中身自身が `position: fixed` で `overflow-y: auto` の Radix の DialogContent など)は切れるので、切らない場所を要素か関数で渡す(ダイアログがその外のポインタやフォーカスを止めないなら `'body'` でもよい)。`overflow` だけ(`transform` が無い)なら fixed のポップアップは切れない。ポップアップの root は `pointer-events: auto`(`pointer-events: none` の要素の中へ描いても押せる)。
 - 表で決めた CSS トークン(`--ssg-*`)は、これまでどおり開いたときにポップアップへ写す(「CSS トークン」節)。`Escape` の扱いは「キーボード操作」節の「ダイアログの中のグリッド」。
+
+### Shadow DOM の中のグリッド
+
+Web Components などの Shadow root(`attachShadow({ mode: 'open' })`)の中にグリッドを置ける(1.3.0 から。1.2.x までは、ツールチップ・`imeDirectInput` の変換の確定・列メニューと右クリックメニューの ↑↓・ツールパネルを開いたときのフォーカスが効かず、ポップアップは `document.body` の直下に出て見た目が付かなかった)。
+
+```tsx
+import { createRoot, type Root } from 'react-dom/client';
+import { SpreadsheetGrid } from '@ishibashi0112/spreadsheet-grid';
+import css from '@ishibashi0112/spreadsheet-grid/style.css?inline'; // Vite。CSS の文字列を読めればどの方法でもよい
+
+class InventoryGrid extends HTMLElement {
+  #root: Root | null = null;
+  connectedCallback() {
+    const shadow = this.attachShadow({ mode: 'open' });
+    const style = document.createElement('style');
+    style.textContent = css;
+    const container = document.createElement('div'); // グリッドを要素で包む(ポップアップはこの中に出る)
+    shadow.append(style, container);
+    this.#root = createRoot(container);
+    this.#root.render(<SpreadsheetGrid rows={rows} columns={columns} />);
+  }
+  disconnectedCallback() {
+    this.#root?.unmount(); // Solid 版は render() が返す dispose を呼ぶ
+  }
+}
+```
+
+- **CSS**: Shadow root の外の CSS は中に届かないので、`style.css`(テーマを使うなら `themes/*.css` も)を Shadow root の中に入れる(`<style>` か `adoptedStyleSheets`)。
+- **ポップアップ**: 既定の `'auto'` は、Shadow root の直下でグリッドを包む要素の中に描く(グリッドを囲むダイアログがあれば、そちらが先)。グリッドを Shadow root の直下に置くと(直下の要素が `.ssg-root`)`document.body` へ出るので、要素で包むか、`popupContainer` に Shadow root の中の要素を渡す。
+- **`theme="class"`**: Shadow root の外の `class="dark"` / `data-theme="dark"` は、中の CSS のセレクタからは見えない。Shadow root の中のグリッドを包む要素に付けるか、`'light' \| 'dark'` を渡す。
+- **open の Shadow root を使う**: closed(`mode: 'closed'`)では、window で受けるイベントから中の要素が見えないので、ポップアップの外側の押下で閉じる・`Escape` などが効かないことがある。
+- **文字の大きさ**: 受け継ぐ CSS(`font-size` / `line-height` / `font-family` / `color`)は Shadow root の境界を越える。セル・バー・ポップアップの文字はページの指定を受け継ぎ、列見出し・ラベル行・メニューの項目などは px で決めている(行の高さは `rowHeight` で決まるので、ページの文字が大きいとセルの中身が切れ、見出しとの大きさもそろわない)。ページの指定に引きずられたくないときは `.ssg-root { font-size: 13px; line-height: normal; }` のようにグリッドで決める(Shadow DOM でなくても同じ)。
+- **iframe**: iframe の中のページでグリッドを描くのはよい(高さは iframe の中で決める。`height="100%"` なら iframe の中の `html` / `body` に高さを付ける)。親のページから同じオリジンの iframe の `document` へ描く形(react-frame-component のような形)には対応しない(グリッドは描いたスクリプトの `window` で押下やキーを聞くため、列の幅のドラッグ・フィルハンドル・ツールチップ・メニューの ↑↓ と `Escape` が効かない)。
 
 ## GridColumn props (`GridColumn<T>`)
 

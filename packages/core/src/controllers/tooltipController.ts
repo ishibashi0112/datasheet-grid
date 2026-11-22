@@ -31,6 +31,7 @@ import { applySlotToElement, type AppliedSlot } from '../logic/slotDom';
 import type { GridResolvedSlot } from '../model/gridTypes.unbound';
 import { syncPortalTokens } from '../utils/portalTokens';
 import { appendToPopupContainer, getPopupContainerFor } from '../utils/popupContainer';
+import { findElementById, getActiveElement, getEventTarget, getShadowRoot } from '../utils/shadowDom';
 
 const TOOLTIP_ATTRIBUTE = 'data-ssg-tooltip';
 const TOOLTIP_OVERFLOW_ATTRIBUTE = 'data-ssg-tooltip-overflow';
@@ -207,7 +208,7 @@ function isClipped(element: Element): boolean {
 }
 
 function handlePointerOverOrFocusIn(event: Event) {
-  const node = event.target;
+  const node = getEventTarget(event);
   if (!(node instanceof Element)) {
     return;
   }
@@ -237,7 +238,7 @@ function handlePointerOverOrFocusIn(event: Event) {
 }
 
 function handlePointerOutOrFocusOut(event: Event) {
-  const node = event.target;
+  const node = getEventTarget(event);
   if (!(node instanceof Element)) {
     return;
   }
@@ -278,14 +279,15 @@ function handleGlobalHide() {
 // 変更(1.0.1 の確かめ直し L): タップで出したアクティブセルのツールチップは、同じセルをもう一度タップしても閉じません
 //   (閉じるとアクティブセルが変わらないので出し直されず、もう一度タップしても読めなかった)。マウスは従来どおり押したら閉じる。
 function handlePointerDown(event: Event) {
+  const node = getEventTarget(event);
   if (
     activatedTarget !== null &&
     currentTarget === activatedTarget &&
     typeof PointerEvent !== 'undefined' &&
     event instanceof PointerEvent &&
     event.pointerType !== 'mouse' &&
-    event.target instanceof Node &&
-    activatedTarget.contains(event.target)
+    node instanceof Node &&
+    activatedTarget.contains(node)
   ) {
     return;
   }
@@ -294,7 +296,7 @@ function handlePointerDown(event: Event) {
 
 // 追加(1.0.2 / RV-D2): アクティブセルを押し直したら(指 / ボタンを離したら)、閉じていたメッセージを出し直します。
 function handlePointerUp(event: Event) {
-  const node = event.target;
+  const node = getEventTarget(event);
   if (!(node instanceof Element)) {
     return;
   }
@@ -303,7 +305,7 @@ function handlePointerUp(event: Event) {
   if (focusRoot === null || cellId === undefined) {
     return;
   }
-  const cell = document.getElementById(cellId);
+  const cell = findElementById(focusRoot, cellId);
   if (cell === null || currentTarget === cell || !cell.contains(node)) {
     return;
   }
@@ -316,26 +318,67 @@ function handleKeyDown(event: KeyboardEvent) {
   }
 }
 
-function installListeners() {
-  window.addEventListener('pointerover', handlePointerOverOrFocusIn, true);
-  window.addEventListener('pointerout', handlePointerOutOrFocusOut, true);
-  window.addEventListener('focusin', handlePointerOverOrFocusIn, true);
-  window.addEventListener('focusout', handlePointerOutOrFocusOut, true);
-  window.addEventListener('pointerdown', handlePointerDown, true);
-  window.addEventListener('pointerup', handlePointerUp, true);
-  window.addEventListener('scroll', handleGlobalHide, true);
-  window.addEventListener('keydown', handleKeyDown, true);
+// 変更(1.3.0 / Solid 版の品質の段 2 S11-01): Shadow root の中のグリッドでも出します。Shadow root の中の要素どうしの間の
+//   pointerover / focusin は window へ届かない(target と relatedTarget が同じ host に付け替わるため)ので、グリッドのある
+//   Shadow root にも同じリスナーを付けます(acquireTooltipController の root)。window へも届くイベント(pointerdown / keydown /
+//   外から入った pointerover など)は、その Shadow root のリスナーに任せて window では扱いません(Shadow root で受けると target と
+//   relatedTarget が付け替わらない)。ほかの window のイベントの target は、念のため composedPath の先頭で見ます。
+
+type ListenerTarget = Pick<EventTarget, 'addEventListener' | 'removeEventListener'>;
+const LISTENERS: ReadonlyArray<readonly [string, (event: Event) => void]> = [
+  ['pointerover', handlePointerOverOrFocusIn],
+  ['pointerout', handlePointerOutOrFocusOut],
+  ['focusin', handlePointerOverOrFocusIn],
+  ['focusout', handlePointerOutOrFocusOut],
+  ['pointerdown', handlePointerDown],
+  ['pointerup', handlePointerUp],
+  ['scroll', handleGlobalHide],
+  ['keydown', handleKeyDown as (event: Event) => void],
+];
+
+// グリッドのある Shadow root ごとの参照の数です。
+const shadowRootRefs = /* @__PURE__ */ new Map<ShadowRoot, number>();
+
+const WINDOW_LISTENERS = /* @__PURE__ */ LISTENERS.map(([type, listener]) => {
+  const onWindow = (event: Event) => {
+    const node = getEventTarget(event);
+    const root = node instanceof Node ? node.getRootNode() : null;
+    if (root !== null && shadowRootRefs.has(root as ShadowRoot)) {
+      return;
+    }
+    listener(event);
+  };
+  return [type, onWindow] as const;
+});
+
+function installListeners(target: ListenerTarget, listeners = LISTENERS) {
+  for (const [type, listener] of listeners) {
+    target.addEventListener(type, listener, true);
+  }
 }
 
-function uninstallListeners() {
-  window.removeEventListener('pointerover', handlePointerOverOrFocusIn, true);
-  window.removeEventListener('pointerout', handlePointerOutOrFocusOut, true);
-  window.removeEventListener('focusin', handlePointerOverOrFocusIn, true);
-  window.removeEventListener('focusout', handlePointerOutOrFocusOut, true);
-  window.removeEventListener('pointerdown', handlePointerDown, true);
-  window.removeEventListener('pointerup', handlePointerUp, true);
-  window.removeEventListener('scroll', handleGlobalHide, true);
-  window.removeEventListener('keydown', handleKeyDown, true);
+function uninstallListeners(target: ListenerTarget, listeners = LISTENERS) {
+  for (const [type, listener] of listeners) {
+    target.removeEventListener(type, listener, true);
+  }
+}
+
+function retainShadowRoot(root: ShadowRoot) {
+  const count = shadowRootRefs.get(root) ?? 0;
+  if (count === 0) {
+    installListeners(root);
+  }
+  shadowRootRefs.set(root, count + 1);
+}
+
+function releaseShadowRoot(root: ShadowRoot) {
+  const count = shadowRootRefs.get(root) ?? 0;
+  if (count <= 1) {
+    shadowRootRefs.delete(root);
+    uninstallListeners(root);
+  } else {
+    shadowRootRefs.set(root, count - 1);
+  }
 }
 
 // 追加(1.0.1 / 2026-11-09 実アプリの総点検 AP-35): アクティブセルが検査 NG のセルなら、そのツールチップ(メッセージ)をすぐ出します。
@@ -357,11 +400,11 @@ export function scheduleActiveCellTooltip(cellId: string, focusRoot: Element | n
       if (focusRoot !== null && activeCellIds.get(focusRoot) !== cellId) {
         return;
       }
-      const cell = document.getElementById(cellId);
+      const cell = findElementById(focusRoot, cellId);
       const show =
         cell !== null &&
         focusRoot !== null &&
-        focusRoot.contains(document.activeElement) &&
+        focusRoot.contains(getActiveElement(focusRoot)) &&
         cell.classList.contains('ssg-body-cell--invalid') &&
         (cell.getAttribute(TOOLTIP_ATTRIBUTE) ?? '') !== '';
       if (!show) {
@@ -406,12 +449,18 @@ function hideActivatedTooltip(focusRoot?: Element | null): void {
   activatedFocusRoot = null;
 }
 
+// root はグリッドの要素です(Shadow root の中なら、その Shadow root にもリスナーを付ける)。
 export function acquireTooltipController(
   slot?: GridResolvedSlot,
+  root?: Element | null,
 ): TooltipController {
   refCount += 1;
   if (refCount === 1) {
-    installListeners();
+    installListeners(window, WINDOW_LISTENERS);
+  }
+  const shadowRoot = getShadowRoot(root);
+  if (shadowRoot !== null) {
+    retainShadowRoot(shadowRoot);
   }
   let disposed = false;
   const setSlot = (next: GridResolvedSlot | undefined) => {
@@ -426,9 +475,12 @@ export function acquireTooltipController(
       return;
     }
     disposed = true;
+    if (shadowRoot !== null) {
+      releaseShadowRoot(shadowRoot);
+    }
     refCount -= 1;
     if (refCount === 0) {
-      uninstallListeners();
+      uninstallListeners(window, WINDOW_LISTENERS);
       clearShowTimer();
       stopWatchingTarget();
       currentTarget = null;

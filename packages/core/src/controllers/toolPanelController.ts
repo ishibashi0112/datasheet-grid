@@ -15,6 +15,7 @@ import {
   type ReadonlyElementRef,
 } from './popoverSupport';
 import { GRID_POPUP_SELECTOR } from './escapeClaimController';
+import { getActiveElement } from '../utils/shadowDom';
 
 export type ToolPanelTab = 'filter' | 'columns' | 'sort';
 
@@ -189,13 +190,13 @@ export const createToolPanelController = (): ToolPanelController => {
       // 変更(1.1.0 の確かめ直しの見直し): 開いた部品へ戻すのは、フォーカスがパネルの中か body にある(閉じると行き場を失う)
       //   ときだけ。開いた部品にもうあれば(押し直し)そのまま、ほかの場所(命令的に開いたエディタなど)にあればこれまでどおり
       //   グリッドへ戻す判定に任せます。開いた部品がフォーカスを受けられなかった(disabled / 非表示)ときもグリッドへ。
-      const active = document.activeElement;
+      const active = getActiveElement(target);
       if (active === target) {
         return;
       }
       if (active === null || active === document.body || panelRef.current?.contains(active) === true) {
         target.focus({ preventScroll: true });
-        if (document.activeElement === target) {
+        if (getActiveElement(target) === target) {
           return;
         }
       }
@@ -246,7 +247,7 @@ export const createToolPanelController = (): ToolPanelController => {
     }
     const current = store.getSnapshot();
     if (current.requestedTab === null) {
-      const active = document.activeElement;
+      const active = getActiveElement(args.gridRootRef.current);
       opener =
         active instanceof HTMLElement && active !== document.body && active.closest(GRID_POPUP_SELECTOR) === null
           ? active
@@ -254,7 +255,7 @@ export const createToolPanelController = (): ToolPanelController => {
     }
     // 変更(1.1.0 の確かめ直し): 開いているパネルの中(タブの切り替え)ではフォーカスを外しません(外すと body へ落ち、
     //   Tab がパネルの中で回らなくなっていた)。
-    if (panelRef.current?.contains(document.activeElement) !== true) {
+    if (panelRef.current?.contains(getActiveElement(args.gridRootRef.current)) !== true) {
       blurForPopover(args.gridRootRef.current);
     }
     patch({

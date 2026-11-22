@@ -160,12 +160,19 @@ const __wdTextMatch = (text, m) => {
   if (m.re) return new RegExp(m.re.source, m.re.flags).test(t);
   return m.exact ? t === __wdNorm(m.text) : t.toLowerCase().includes(__wdNorm(m.text).toLowerCase());
 };
+// 追加(1.3.0 / t-shadow.mjs): Playwright の CSS のロケーターと同じく、Shadow root の中も探す。毎回すべての要素をたどると
+//   ほかのテストが遅くなるので、ハーネスの ?s=shadow の host(shared.ts の mountPoint)の中だけを見る。
+const __wdQueryAll = (root, selector) => {
+  const out = [...root.querySelectorAll(selector)];
+  for (const host of root.querySelectorAll('[data-testid="shadow-host"]')) if (host.shadowRoot) out.push(...host.shadowRoot.querySelectorAll(selector));
+  return out;
+};
 const __wdResolve = (chain) => {
   let els = null;
   for (const step of chain) {
     if (step.t === 'css') {
       const out = [];
-      for (const root of els ?? [document]) for (const e of root.querySelectorAll(step.s)) if (!out.includes(e)) out.push(e);
+      for (const root of els ?? [document]) for (const e of __wdQueryAll(root, step.s)) if (!out.includes(e)) out.push(e);
       els = out;
     } else if (step.t === 'text') {
       const out = [];

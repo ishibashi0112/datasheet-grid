@@ -13,6 +13,7 @@ import {
   logicalToPhysicalScrollTop,
   physicalToLogicalScrollTop,
 } from '../logic/verticalGeometry';
+import { getActiveElement } from '../utils/shadowDom';
 
 // active cell の矩形(ペイン列領域内ローカル座標。ActiveCellOverlayRect と同形)。
 export type ViewportCellRect = {
@@ -190,7 +191,7 @@ export const revealActiveCellInPage = (
   const doc = scrollElement.ownerDocument;
   const view = doc.defaultView;
   const shell = scrollElement.closest('.ssg-shell');
-  const active = doc.activeElement;
+  const active = getActiveElement(scrollElement);
   // 変更(1.0.2 / レビュー QA-7): フォーカスがグリッド(シェル)か IME の入力受けにあるときだけ動かします。シェルの中の検索バーで
   //   打つと、ヒットへ移るたびにページが動き、検索バーが画面の外へ出ていた。
   if (

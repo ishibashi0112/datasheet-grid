@@ -1213,7 +1213,7 @@ function GridShellBody<T extends object>(
   const cellEditorDomId = `${gridDomId}-cell-editor`;
   let tooltipController: TooltipController | null = null;
   onGridMounted(() => {
-    const controller = acquireTooltipController();
+    const controller = acquireTooltipController(undefined, gridRootRef.current);
     tooltipController = controller;
     controller.setSlot(untrack(slots).tooltip);
     return () => {

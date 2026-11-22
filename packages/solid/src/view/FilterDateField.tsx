@@ -17,6 +17,7 @@ import { isImeComposingKeyEvent } from '@ishibashi0112/spreadsheet-grid-core/int
 import { formatLocaleText } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/localeText';
 import { usePopupLocaleText } from '../context/localeText';
 import { createInputValue } from '../primitives/inputValue';
+import { getEventTarget } from '@ishibashi0112/spreadsheet-grid-core/internal/utils/shadowDom';
 
 // カレンダーの段(日 → 月 → 年)。
 type CalendarView = 'days' | 'months' | 'years';
@@ -109,7 +110,8 @@ export function FilterDateField(props: FilterDateFieldProps) {
       return undefined;
     }
     const handleDocumentPointerDown = (event: PointerEvent) => {
-      const target = event.target as Node | null;
+      // 変更(1.3.0 / S11-05): Shadow root の中で押したときの target は host なので、押した要素は composedPath の先頭で見ます。
+      const target = getEventTarget(event) as Node | null;
       if (target && rootElement?.contains(target)) {
         return;
       }

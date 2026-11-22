@@ -19,6 +19,7 @@ import { createPortalTokens } from '../primitives/portalTokens';
 import { px } from '../primitives/style';
 import type { FillHandleState } from '../primitives/fillHandle';
 import { readEventKey } from '../primitives/eventKey';
+import { getActiveElement } from '@ishibashi0112/spreadsheet-grid-core/internal/utils/shadowDom';
 
 type FillTexts = typeof DEFAULT_FILL_HANDLE_LOCALE_TEXT;
 
@@ -201,7 +202,7 @@ function FillOptionsMenu(props: FillOptionsMenuProps) {
       const items = Array.from(
         panel()?.querySelectorAll<HTMLButtonElement>('[role="menuitemradio"]:not(:disabled)') ?? [],
       );
-      const index = items.findIndex((item) => item === document.activeElement);
+      const index = items.findIndex((item) => item === getActiveElement(item));
       const next = items[(index + (event.key === 'ArrowDown' ? 1 : items.length - 1)) % items.length];
       next?.focus({ preventScroll: true });
     } else if (readEventKey(event) === 'Tab') {

@@ -9,7 +9,7 @@ export default defineConfig({
   resolve: {
     alias: [
       { find: /^@ishibashi0112\/spreadsheet-grid$/, replacement: `${REPO}/packages/react/src/index.ts` },
-      { find: /^@ishibashi0112\/spreadsheet-grid\/style\.css$/, replacement: `${REPO}/packages/react/src/styles.css` },
+      { find: /^@ishibashi0112\/spreadsheet-grid\/style\.css(\?inline)?$/, replacement: `${REPO}/packages/react/src/styles.css$1` },
       // 追加(英語対応): 英語の文言の入口(?lang=en)。
       { find: /^@ishibashi0112\/spreadsheet-grid\/locales\/en$/, replacement: `${REPO}/packages/react/src/locales/en.ts` },
     ],

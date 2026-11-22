@@ -2259,7 +2259,7 @@ export function useGridShell<T extends object>({
 
   // 追加(TT-1): カスタムツールチップの表示制御です(body 直下シングルトン + window 委譲。
   //   複数グリッド同居時はフック内の refCount で共有されます)。
-  useGridTooltip(slots.tooltip);
+  useGridTooltip(slots.tooltip, gridRootRef);
   // 追加(1.0.1 / 2026-11-09 実アプリの総点検 AP-35): キーボード / タップでアクティブセルになったセルが検査 NG なら、メッセージの
   //   ツールチップをすぐ出します(これまではマウスのホバーでしか出なかった)。編集中は出しません。
   const tooltipActiveRow = uiState.activeCell?.row;

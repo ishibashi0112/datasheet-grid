@@ -16,7 +16,7 @@ description: モーダルやポップオーバーの中にグリッドを置く�
 
 | 値 | 描く場所 |
 | --- | --- |
-| `'auto'`(既定) | グリッドを囲むいちばん近いダイアログ(`<dialog>` / `popover` 属性の要素 / `aria-modal="true"` / `role="dialog"` / `role="alertdialog"`)の中。無ければ `document.body` の直下。ダイアログが中を切る fixed の基準のとき(Mantine の Modal の中身)は、外側の `position: fixed` の祖先の中(下の「気をつけること」) |
+| `'auto'`(既定) | グリッドを囲むいちばん近いダイアログ(`<dialog>` / `popover` 属性の要素 / `aria-modal="true"` / `role="dialog"` / `role="alertdialog"`)の中。無ければ、Shadow root の中のグリッドはその Shadow root の直下でグリッドを包む要素の中(1.3.0 から。[Shadow DOM の中のグリッド](/docs/api/props#shadow-dom-の中のグリッド))、それ以外は `document.body` の直下。ダイアログが中を切る fixed の基準のとき(Mantine の Modal の中身)は、外側の `position: fixed` の祖先の中(下の「気をつけること」) |
 | `'body'` | いつも `document.body` の直下(1.0 までと同じ) |
 | 要素 | その要素の中 |
 | 関数 | グリッドの要素を受け取って描く場所を返す(`null` / `undefined` なら `document.body`)。ポップアップを開いている間の描画ごとに呼ぶ。閉じている間は呼ばない |

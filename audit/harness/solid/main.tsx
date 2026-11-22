@@ -14,7 +14,8 @@ import {
   type SpreadsheetGridProps,
 } from '@ishibashi0112/spreadsheet-grid-solid';
 import '@ishibashi0112/spreadsheet-grid/style.css';
-import { baseColumns as sharedBaseColumns, lang, log, makeDataSource, makeRows, n, params, scenario, type Row } from '../shared';
+import shadowCss from '@ishibashi0112/spreadsheet-grid/style.css?inline';
+import { baseColumns as sharedBaseColumns, lang, log, makeDataSource, makeRows, mountPoint, n, params, scenario, type Row } from '../shared';
 // Solid 版のグリッドが受ける props の名前。変更(段階 3-3): Solid 版は core の SpreadsheetGridProps をすべて受けるようになった
 //   (packages/solid の model/gridTypes.ts の SupportedPropKeys は無くなった)ので、core の型の 1 段目の項目の名前を読む。
 import gridTypesSource from '../../../packages/core/src/model/gridTypes.core.ts?raw';
@@ -363,4 +364,4 @@ if (params.get('attr') === '1') {
   const { attribution } = await import('solid-js/attribution');
   attribution.enable();
 }
-render(() => <App />, document.getElementById('root')!);
+render(() => <App />, mountPoint(shadowCss));

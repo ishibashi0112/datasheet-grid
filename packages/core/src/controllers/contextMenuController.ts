@@ -15,6 +15,7 @@ import {
   restoreGridFocus,
   type ReadonlyElementRef,
 } from './popoverSupport';
+import { getActiveElement } from '../utils/shadowDom';
 
 export type CellContextMenuLayout = {
   top: number;
@@ -151,7 +152,7 @@ export const createContextMenuController = <T,>(): ContextMenuController<T> => {
         return;
       }
       if (event.key === 'Tab') {
-        const active = document.activeElement;
+        const active = getActiveElement(panel);
         if (
           !(active instanceof HTMLElement && panel.contains(active)) ||
           active === panel ||
@@ -179,7 +180,7 @@ export const createContextMenuController = <T,>(): ContextMenuController<T> => {
       // 追加(1.2.0 の見直し QH-2): 描かれたパネルの実高で置き直します。
       updateLayout();
       const panel = panelRef.current;
-      if (panel === null || panel.contains(panel.ownerDocument.activeElement)) {
+      if (panel === null || panel.contains(getActiveElement(panel))) {
         return;
       }
       if (focusMode === 'firstItem') {

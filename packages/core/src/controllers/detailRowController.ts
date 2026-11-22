@@ -22,6 +22,7 @@ import {
 } from '../logic/detailRow';
 import { isImeComposingKeyEvent, isTabKeyEvent } from '../logic/domGuards';
 import { findDetailCard, focusDetailCardEdge, isTabEdgeOfCard } from './detailTabOrder';
+import { getActiveElement } from '../utils/shadowDom';
 
 type ElementRef = { readonly current: HTMLElement | null };
 
@@ -96,7 +97,7 @@ export const createDetailRowController = <T>(): DetailRowController<T> => {
     if (!args) return;
     const scroll = args.scrollContainerRef.current;
     const card = scroll ? findDetailCard(scroll, viewIndex) : null;
-    if (!card || !card.contains(card.ownerDocument.activeElement)) {
+    if (!card || !card.contains(getActiveElement(card))) {
       return;
     }
     const activeCol = args.getUiState().activeCell?.col;
@@ -263,11 +264,11 @@ export const createDetailRowController = <T>(): DetailRowController<T> => {
 // 追加(1.0.2 / G-13 を移設): カードが消えるとき(外す直前。DOM はまだある)に呼びます。中にフォーカスがあれば、消えた後で
 //   フォーカスがどこにも無い(body)ときだけ onFocusLost を呼びます(消える前にフォーカスを別の場所へ移した操作は邪魔しない)。
 export const notifyDetailCardFocusLost = (card: HTMLElement | null, onFocusLost: (() => void) | undefined): void => {
-  if (!onFocusLost || !card || !card.contains(card.ownerDocument.activeElement)) {
+  if (!onFocusLost || !card || !card.contains(getActiveElement(card))) {
     return;
   }
   queueMicrotask(() => {
-    const active = card.ownerDocument.activeElement;
+    const active = getActiveElement(card.ownerDocument);
     if (!card.isConnected && (active === null || active === card.ownerDocument.body)) {
       onFocusLost();
     }

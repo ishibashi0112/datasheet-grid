@@ -3789,10 +3789,12 @@ export type SpreadsheetGridProps<T, F extends GridFrameworkTypes = GridFramework
    * ポップアップ(列メニュー / 列フィルター / 右クリックメニュー / select の候補 / ツールパネル /
    * フィルハンドルのメニュー / ツールチップ / ドラッグのゴースト)を描く場所(1.1.0 から)。`'auto'`
    * はグリッドを囲むダイアログ(`<dialog>` / `popover` / `aria-modal="true"` / `role="dialog"` /
-   * `role="alertdialog"`)の中、無ければ `document.body`。`'body'` はいつも `document.body`(1.0
-   * までと同じ)。要素ならその中、関数はグリッドの要素を受け取って描く場所を返す(`null` /
-   * `undefined` なら `document.body`。ポップアップを開いている間の描画ごとに呼ぶ。
-   * 閉じている間は呼ばない)。詳細は「ダイアログの中のグリッド」節。
+   * `role="alertdialog"`)の中、無ければ、Shadow root の中のグリッドはその Shadow root
+   * の直下でグリッドを包む要素の中(1.3.0 から)、それ以外は `document.body`。`'body'` はいつも
+   * `document.body`(1.0 までと同じ)。要素ならその中、
+   * 関数はグリッドの要素を受け取って描く場所を返す(`null` / `undefined` なら `document.body`。
+   * ポップアップを開いている間の描画ごとに呼ぶ。閉じている間は呼ばない)。
+   * 詳細は「ダイアログの中のグリッド」節。
    *
    * @defaultValue `'auto'`
    */

@@ -18,6 +18,7 @@ import {
   restoreGridFocus,
   type ReadonlyElementRef,
 } from './popoverSupport';
+import { getActiveElement } from '../utils/shadowDom';
 
 export type ColumnMenuLayout = {
   top: number;
@@ -212,7 +213,7 @@ export const createColumnMenuController = <T,>(): ColumnMenuController<T> => {
       if (!panel || handleMenuKeyNavigation(panel, event, COLUMN_MENU_ITEM)) {
         return;
       }
-      const active = document.activeElement;
+      const active = getActiveElement(panel);
       if (
         event.key === 'Tab' &&
         active instanceof HTMLElement &&

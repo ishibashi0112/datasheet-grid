@@ -25,6 +25,7 @@ import { isInsideDetailCardOf } from '../logic/detailRow';
 import { alignInputTextToTop } from '../utils/topAlignedInput';
 import { resolveGridVisibleBand } from '../utils/gridVisibleBand';
 import { resolveElementScale } from '../logic/elementScale';
+import { getActiveElement, getEventTarget } from '../utils/shadowDom';
 
 // 変換中の入力受けを見えている所へ寄せるときの最小の高さ(px。1 行の文字が収まる程度)。
 const MIN_VISIBLE_COMPOSING_HEIGHT = 24;
@@ -101,7 +102,7 @@ export const createImeInputController = (): ImeInputController => {
   const root = () => args?.gridRootRef.current ?? null;
 
   const focusInput = () => {
-    if (input && input.ownerDocument.activeElement !== input) {
+    if (input && getActiveElement(input) !== input) {
       input.focus({ preventScroll: true });
     }
   };
@@ -206,7 +207,8 @@ export const createImeInputController = (): ImeInputController => {
         !args.enabled ||
         !target ||
         text === '' ||
-        target.ownerDocument.activeElement !== target ||
+        // 変更(1.3.0 / S11-02): Shadow root の中では document.activeElement が host なので、入力受けの Shadow root の中を見ます。
+        getActiveElement(target) !== target ||
         !args.canStartEdit(current.cell)
       ) {
         hideComposing();
@@ -240,11 +242,11 @@ export const createImeInputController = (): ImeInputController => {
   //   ルートへ戻します(既定動作は現在のフォーカス位置を起点に進むため、従来どおりルートからグリッド外へ出る)。
   //   React の委譲リスナー(アプリのルート要素)より後に走るよう、document の bubble で受けます。
   const handleDocumentKeyDown = (event: KeyboardEvent) => {
-    if (event.target !== input || event.key !== 'Tab' || event.defaultPrevented || isImeComposingKeyEvent(event)) {
+    if (getEventTarget(event) !== input || event.key !== 'Tab' || event.defaultPrevented || isImeComposingKeyEvent(event)) {
       return;
     }
     // 追加(段階 2 C-N2): グリッドがもうフォーカスを移していれば(展開行のカードがあるときの、表の直後の目印)、そこから進めます。
-    if (document.activeElement !== input) {
+    if (getActiveElement(input) !== input) {
       return;
     }
     const rootEl = root();
@@ -321,7 +323,7 @@ export const createImeInputController = (): ImeInputController => {
         handoff = false;
         hideComposing();
         // 無効化したときに入力受けがフォーカスを持っていればルートへ返します。
-        if (input && rootEl && input.ownerDocument.activeElement === input) {
+        if (input && rootEl && getActiveElement(input) === input) {
           rootEl.focus({ preventScroll: true });
         }
         return;
@@ -341,7 +343,7 @@ export const createImeInputController = (): ImeInputController => {
         }
       }
       // ルートがフォーカスを持ったまま(有効化した直後 / 編集の終了直後など)なら入力受けへ回します。
-      if (!next.editing && rootEl && rootEl.ownerDocument.activeElement === rootEl) {
+      if (!next.editing && rootEl && getActiveElement(rootEl) === rootEl) {
         focusInput();
       }
     },

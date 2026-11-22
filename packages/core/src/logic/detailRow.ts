@@ -12,6 +12,7 @@ import type { GridRowKey, RowModel } from '../model/gridTypes.unbound';
 import { GROUP_AUTO_COLUMN_KEY } from './grouping';
 import { ROW_DRAG_HANDLE_COLUMN_KEY } from './rowReorder';
 import type { DetailRowExtra, RowMetrics } from './verticalGeometry';
+import { getActiveElement } from '../utils/shadowDom';
 
 // 専用トグル列(T1)の合成列キーと幅です。consumer の columns には現れません。
 export const DETAIL_TOGGLE_COLUMN_KEY = '__ssg_detail_toggle__';
@@ -47,7 +48,7 @@ export const isInsideDetailCard = (
   element.closest('[data-ssg-detail]') !== null;
 
 export const isFocusInsideDetailCard = (): boolean =>
-  typeof document !== 'undefined' && isInsideDetailCard(document.activeElement);
+  typeof document !== 'undefined' && isInsideDetailCard(getActiveElement());
 
 // root(このグリッドの .ssg-root / スクロールコンテナ)配下の展開行カードの中にある要素か。
 //   DOM 走査(自動高さ実測 / 列キー検索)から「カード内に消費側がネストしたグリッド」の要素を

@@ -25,6 +25,7 @@ import { usePanelHeaderDrag } from '../hooks/usePanelHeaderDrag';
 import { usePopupContainer, usePortalTokens } from '../hooks/usePortalTokens';
 import type { GridResolvedSlot } from '../model/gridTypes';
 import { usePopupLocaleText } from '../hooks/usePopupLocaleText';
+import { getActiveElement } from '@ishibashi0112/spreadsheet-grid-core/internal/utils/shadowDom';
 
 // 追加(UP-1): SegmentedControl の 1 セグメント分の表示情報です。
 //   badge は件数バッジ(適用中フィルター数 / ソート基準数)。undefined / 0 は非表示です。
@@ -95,7 +96,7 @@ export function ToolPanel({
       return;
     }
     const panel = panelRef.current;
-    if (panel === null || panel.contains(panel.ownerDocument.activeElement)) {
+    if (panel === null || panel.contains(getActiveElement(panel))) {
       return;
     }
     const target = panel.querySelector<HTMLElement>('[role="tab"][aria-selected="true"]') ?? panel;

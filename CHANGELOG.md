@@ -11,6 +11,12 @@
 
 詳しい使い方は[ドキュメントサイト](https://datasheet-grid.vercel.app)と [API リファレンス](./packages/react/API_REFERENCE.md)を参照してください。
 
+## 未リリース
+
+### 修正
+
+- Shadow DOM(Web Components)の中のグリッドで、効かない操作がありました。ツールチップが出ない、`imeDirectInput` で変換を確定しても編集が始まらず打った文字が消える、列メニューと右クリックメニューの ↓ がいつも先頭へ・↑ がいつも末尾へ移る、ツールパネルを開いてもフォーカスが移らない(Escape で閉じるとフォーカスが外れる)、ポップアップが `document.body` の直下に出て見た目が付かない(Shadow root の中の CSS が届かない)、の 5 つです。Shadow root の中のイベントと、フォーカスのある要素を読めるように直し、`popupContainer` の既定(`'auto'`)は、グリッドを囲むダイアログが無ければ、Shadow root の直下でグリッドを包む要素の中に描くようにしました。使い方(CSS を Shadow root に入れる・グリッドを要素で包む・open の Shadow root を使う)と、ページの文字の大きさを受け継ぐこと、親のページから iframe の document へ描く形には対応しないことを、API リファレンスの「Shadow DOM の中のグリッド」に書きました。
+
 ## 1.2.1 — 2026-11-22
 
 ### 修正

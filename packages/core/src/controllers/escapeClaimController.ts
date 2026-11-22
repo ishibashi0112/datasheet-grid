@@ -9,6 +9,7 @@
 //   - グリッドが使わない Escape(セルを選んでいるだけ・上部バーの入力欄など)には何もしません(ダイアログが閉じる)。
 //   - 窓の capture に先に付いたリスナー(グリッドより後に開いたダイアログなど)より先には動けません。
 import type { GridSelection } from '../model/gridTypes.unbound';
+import { getEventTarget } from '../utils/shadowDom';
 
 type ReadonlyRef<T> = { readonly current: T };
 
@@ -78,7 +79,8 @@ export const createEscapeClaimController = (): EscapeClaimController => {
       return;
     }
     const root = args.gridRootRef.current;
-    const target = event.target;
+    // 変更(1.3.0 / S11-03): window で受けるので、Shadow root の中のキーの target は host です。押した要素は composedPath の先頭。
+    const target = getEventTarget(event);
     if (
       root === null ||
       !(target instanceof Element) ||

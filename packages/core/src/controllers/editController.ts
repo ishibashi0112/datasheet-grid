@@ -26,6 +26,7 @@ import { clamp } from '../logic/geometry';
 import { findViewRowIndexByKey, isFocusInsideDetailCard, resolveFirstDataColIndex } from '../logic/detailRow';
 import { getCellValue, isViewCellEditable } from '../utils/permissions';
 import type { ServerSideCellEditInput } from '../logic/serverSideEdits';
+import { getActiveElement } from '../utils/shadowDom';
 
 export type EditControllerArgs<T extends object> = {
   uiState: GridUiState;
@@ -97,7 +98,7 @@ const shouldRestoreFocusAfterEdit = (root: HTMLElement): boolean => {
     return false;
   }
   const doc = root.ownerDocument;
-  const active = doc.activeElement;
+  const active = getActiveElement(root);
   return (
     active === null ||
     active === doc.body ||
@@ -114,7 +115,7 @@ const isFocusInsideEditor = (root: HTMLElement | null): root is HTMLElement => {
   if (root === null) {
     return false;
   }
-  const active = root.ownerDocument.activeElement;
+  const active = getActiveElement(root);
   return (
     active !== null &&
     active !== root &&
