@@ -229,6 +229,9 @@ describe('R3 機能の組み合わせ', () => {
         fillHandle: true,
         find: true,
         showSaveStatus: false,
+        // 読み込んだ行のフェードインの印(jsdom では 1.5 秒の後に外れる)が、比べる時点しだいで片方だけに残るので止める
+        //   (2026-11-22、重いときに 1 回落ちた)。
+        motion: 'off',
       }),
       steps: async (ctx) => {
         updates.length = 0;

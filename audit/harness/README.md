@@ -100,6 +100,32 @@ SSG_AUDIT_FRAMEWORK=solid node audit/harness/t-basic.mjs
 - dev サーバーを動かしたまま `git stash` / `git checkout` でソースを入れ替えると、古いモジュールを配り続けることがある(React 版の
   ハーネスでも同じ。2026-11-20 に Solid 版で 1 回分の確認がこれで無駄になった)。入れ替えたらサーバーを立て直し、`curl -s http://127.0.0.1:5179/@fs/<絶対パス> | grep <新しいコード>` で確かめる。
 
+### React 版と Solid 版へ同じでたらめな操作を流して比べる(2026-11-22 追加)
+
+`t-diff.mjs`(Solid 版の測り直し 段階 4 の 1-2。`docs/audits/2026-11-22-solid-quality/`)。React 版(5177)と Solid 版(5179)の
+dev サーバーを両方立てておく。種ごとに同じ操作の列(セルの押下 / Shift・Ctrl 付きの押下 / ダブルクリック / キー 28 種 /
+打ち込みと確定 / 貼り付け / 見出しの押下 / スクロール / 行のチェック / グループと展開行の開閉 / blur / `Shift+F10`)を作り、
+1 手ごとに両方の描いたセル(番地・文字・`aria-selected`・クラス)・エディタ・ポップアップ・バーの文字・フォーカス・
+ハンドルの状態(`getState` / `getActiveCell` / `getSelection` / `getRowSelection` / `canUndo` / `canRedo`)・行のデータ・
+通知・console のエラーと警告を比べる。食い違ったら、その種の操作の列と差を `.out/t-diff.json` に書いて次の種へ進む。
+
+```bash
+pnpm run audit:dev & pnpm run audit:dev:solid &
+node audit/harness/t-diff.mjs                    # 既定: basic / grouping / label / detail / rowdrag × 種 8 個 × 120 手
+SSG_DIFF_SCENARIOS=basic SSG_DIFF_SEEDS=20 SSG_DIFF_STEPS=300 node audit/harness/t-diff.mjs
+SSG_DIFF_SCENARIOS=grouping SSG_DIFF_SEED=7 SSG_DIFF_SEEDS=1 SSG_DIFF_VERBOSE=1 node audit/harness/t-diff.mjs  # 1 つの種を 1 手ずつ
+```
+
+- 比べないもの: 時刻、`onScroll` / `onHoveredRowChange` の通知(フレームの区切りで回数が変わる)と行 / 列のホバーの印の
+  クラス(動かないポインタの下で表がスクロールすると、React 版は印が前の行に残る = 記録の R5-2。`SSG_DIFF_KEEP_HOVER=1` で
+  どちらも比べる)、動きのクラス(`motion="off"` で始める)、1 回の操作で別々の通知が呼ばれるときの通知の間の順番
+  (`docs/solid/README.md`「残した違い(通知の順番)」。名前ごとの順番・中身・回数は比べる)。
+- ハーネスのデータの違いを消すため、始める前に id の列を編集できなくし(行のキーを書き換えると React が同じキーの子の警告を
+  出す)、貼り付けで足す行のキーを決まった値にする(ハーネスの `createRow` は時刻と乱数でキーを作る)。ラベル行のシナリオでは
+  10 行ごとにラベル行を混ぜる。
+- 1 手の後は、スクロールの位置が 3 フレーム続けて変わらなくなるまで待ってから比べる(なめらかなスクロールの途中で比べると、
+  ポインタの下の行が違って見える)。
+
 ## 出力の読み方
 
 - `PASS` / `FAIL`: 期待どおり / 不具合または回帰。`FAIL` が 0 件であることが基準。

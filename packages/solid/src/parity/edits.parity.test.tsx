@@ -257,6 +257,49 @@ describe('編集の確定(editSession)', () => {
   });
 });
 
+// 2026-11-22 段階 4 1-2(React 版と Solid 版へ同じでたらめな操作を流して比べる)で見つけた差 R5-1: checkbox 列のセルを
+//   ダブルクリックすると、Solid 版は 1 回目のクリックの反転でセルの中身を作り直し、2 回目のクリックとダブルクリックが外れた
+//   要素に届いて onCellDoubleClick を呼ばなかった。ブラウザと同じく、2 回目はその時点でポインタの下にある要素へ送る。
+describe('checkbox 列のダブルクリック(R5-1)', () => {
+  const columns = [
+    { key: 'id', title: 'ID', width: 80, editable: false },
+    { key: 'done', title: '済', width: 60, editor: { type: 'checkbox' } },
+  ];
+
+  it('2 回の反転のあとに onCellDoubleClick が届き、印の要素は同じまま', async () => {
+    await expectParity({
+      watch: ['onRowsChange', 'onCellClick', 'onCellDoubleClick'],
+      props: () => ({
+        rows: [
+          { id: 1, done: false },
+          { id: 2, done: true },
+        ],
+        columns,
+        rowKeyGetter: (row: Row) => row.id,
+      }),
+      steps: async (ctx) => {
+        const box = () => ctx.cell(0, 'done').querySelector('.ssg-cell-checkbox');
+        const first = box();
+        await ctx.act(() => {
+          fireEvent.pointerDown(ctx.cell(0, 'done'), pointer);
+          fireEvent.pointerUp(window, pointer);
+          fireEvent.click(box() ?? ctx.cell(0, 'done'), { detail: 1 });
+        });
+        ctx.log('1 回目の後', { done: (ctx.rows()[0] as Row).done, same: box() === first });
+        const second = box() ?? ctx.cell(0, 'done');
+        await ctx.act(() => {
+          fireEvent.pointerDown(second, pointer);
+          fireEvent.pointerUp(window, pointer);
+          fireEvent.click(second, { detail: 2 });
+          fireEvent.dblClick(second, { detail: 2 });
+        });
+        ctx.log('2 回目の後', { done: (ctx.rows()[0] as Row).done, same: box() === first, checked: box()?.getAttribute('aria-checked') });
+        ctx.snapshot('ダブルクリックの後');
+      },
+    });
+  });
+});
+
 describe('ハンドルの命令(handleFocusEdit)', () => {
   const rows = [
     { id: 10, name: 'alpha', qty: 3, done: false },

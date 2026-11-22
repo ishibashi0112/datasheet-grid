@@ -2690,12 +2690,27 @@ function GridShellBody<T extends object>(
       </Show>
     );
   };
-  const renderCellContent = (row: T, column: GridColumn<T>, cell: GridCellContentContext): JSX.Element => {
+  const renderCellContent = (currentRow: () => T, column: GridColumn<T>, cell: GridCellContentContext): JSX.Element => {
     // 行ドラッグのハンドル列(合成列)の中身(機能 rowDrag)。
     if (column.key === ROW_DRAG_HANDLE_COLUMN_KEY) {
-      return renderRowDragHandleCell(row, cell);
+      return renderRowDragHandleCell(currentRow(), cell);
     }
     const unbound = column as unknown as UnboundGridColumn<T>;
+    // checkbox 列の既定のセルは、行が変わっても作り直さず印だけを追従させます(値は描いた後に読む)。押すたびに作り直すと
+    //   ダブルクリックの 2 回目の的が外れた要素になり、onCellDoubleClick が届かなかった(React 版は同じ要素を使い回す)。
+    if (!column.renderCell && column.editor?.type === 'checkbox') {
+      const editor = column.editor;
+      return (
+        <CheckboxCell
+          slot={slots().checkbox}
+          label={column.title || column.key}
+          checked={isCheckboxChecked(getCellValue(currentRow(), unbound), editor)}
+          readOnly={cell.readOnly}
+          onToggle={() => cells.toggleCheckbox({ row: cell.rowIndex, col: cell.colIndex })}
+        />
+      );
+    }
+    const row = currentRow();
     const value = getCellValue(row, unbound);
     if (column.renderCell) {
       // ctx.detail(任意のセルからの展開行の開閉の口)。detailRow の指定がある間だけ渡し、値は読んだときに引きます。
@@ -2747,18 +2762,6 @@ function GridShellBody<T extends object>(
         },
         setValue: (nextValue: unknown) => writeRenderedCellValue(cell.rowKey, unbound, nextValue),
       });
-    }
-    if (column.editor?.type === 'checkbox') {
-      const editor = column.editor;
-      return (
-        <CheckboxCell
-          slot={slots().checkbox}
-          label={column.title || column.key}
-          checked={isCheckboxChecked(value, editor)}
-          readOnly={cell.readOnly}
-          onToggle={() => cells.toggleCheckbox({ row: cell.rowIndex, col: cell.colIndex })}
-        />
-      );
     }
     const text = column.valueFormatter ? column.valueFormatter({ value, row, column }) : String(value ?? '');
     // セル内検索のヒットを <mark> にします(既定のセルだけ。カレントは --current)。ヒットとカレントは cell から読んだときに引く
