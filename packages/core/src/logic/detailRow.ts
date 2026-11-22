@@ -47,8 +47,10 @@ export const isInsideDetailCard = (
   typeof element.closest === 'function' &&
   element.closest('[data-ssg-detail]') !== null;
 
-export const isFocusInsideDetailCard = (): boolean =>
-  typeof document !== 'undefined' && isInsideDetailCard(getActiveElement());
+// 変更(1.3.0 の別視点のレビュー): context(グリッドの要素)を受け、フォーカスをグリッドの木へ付け替えて見ます(Shadow root の
+//   中のグリッドでも、カードの中に置いた Web Component の中のフォーカスでも)。
+export const isFocusInsideDetailCard = (context: Node | null): boolean =>
+  typeof document !== 'undefined' && isInsideDetailCard(getActiveElement(context));
 
 // root(このグリッドの .ssg-root / スクロールコンテナ)配下の展開行カードの中にある要素か。
 //   DOM 走査(自動高さ実測 / 列キー検索)から「カード内に消費側がネストしたグリッド」の要素を
@@ -322,7 +324,7 @@ export type DetailKeysPruner<T> = {
   update: (args: DetailKeysPrunerArgs<T>) => void;
 };
 
-const findKeysIn = <T>(
+export const findKeysIn = <T>(
   rows: readonly T[],
   keyOf: (row: T, sourceIndex: number) => GridRowKey,
   wanted: ReadonlySet<GridRowKey>,

@@ -283,4 +283,39 @@ describe('createColumnCommands', () => {
     commands.handleColumnMenuGroupBy('c');
     expect(store.getState().activeCell).toBeNull();
   });
+
+  // 追加(1.3.0 の別視点のレビュー): インラインの columns で描くたびに新しい配列が届いても、新しい並びが届くまで待つ。
+  it('並びの変わらない新しい配列が先に届いても、後から届く新しい並びに付いていく。待つ間に動かしたら付いていかない', () => {
+    const store = createGridStore(createInitialGridUiState());
+    const commands = createColumnCommands<Row>();
+    const onColumnsChange = vi.fn<(next: GridColumn<Row>[]) => void>();
+    const make = (cols: GridColumn<Row>[]): ColumnCommandsArgs<Row> => {
+      const ordered = [...cols.filter((column) => column.pinned === 'left'), ...cols.filter((column) => column.pinned !== 'left')];
+      return {
+        ...makeArgs().args,
+        columns: cols,
+        visibleColumns: cols,
+        orderedColumns: ordered,
+        onColumnsChange,
+        dispatch: store.dispatch,
+        getUiState: store.getState,
+      };
+    };
+    commands.update(make([...columns]));
+    store.dispatch(gridActions.activateCell({ row: 2, col: 2 }));
+    commands.handleColumnMenuPinnedChange('c', 'left');
+    // 親が並びを変える前に、同じ並びの新しい配列で描き直す。
+    commands.update(make([...columns]));
+    expect(store.getState().activeCell).toEqual({ row: 2, col: 2 });
+    commands.update(make(onColumnsChange.mock.calls[0][0]));
+    expect(store.getState().activeCell).toEqual({ row: 2, col: 0 });
+
+    // 待つ間に矢印キーで動かしたら、後から新しい並びが届いても動かさない。
+    commands.update(make([...columns]));
+    store.dispatch(gridActions.activateCell({ row: 2, col: 2 }));
+    commands.handleColumnMenuPinnedChange('c', 'left');
+    store.dispatch(gridActions.activateCell({ row: 2, col: 1 }));
+    commands.update(make(onColumnsChange.mock.calls[1][0]));
+    expect(store.getState().activeCell).toEqual({ row: 2, col: 1 });
+  });
 });

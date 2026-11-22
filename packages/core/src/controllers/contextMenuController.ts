@@ -12,6 +12,7 @@ import {
   handleMenuKeyNavigation,
   createPopoverWindowBindings,
   isInsideGridRoot,
+  isFocusInPopupOpenedFromMenu,
   restoreGridFocus,
   type ReadonlyElementRef,
 } from './popoverSupport';
@@ -124,7 +125,8 @@ export const createContextMenuController = <T,>(): ContextMenuController<T> => {
     anchorPoint = null;
     itemCount = 0;
     bindings.detach();
-    if (args !== null && restoreFocus) {
+    // 変更(1.3.0 の確かめ直し): 項目が開いたツールパネル / 列フィルターにあるフォーカスは動かしません。
+    if (args !== null && restoreFocus && !isFocusInPopupOpenedFromMenu(args.gridRootRef)) {
       restoreGridFocus(args.gridRootRef);
     }
   };

@@ -61,7 +61,7 @@ export const restoreGridFocus = (gridRootRef: ReadonlyElementRef): void => {
   }
   requestAnimationFrame(() => {
     const root = gridRootRef.current;
-    if (root === null || isFocusInsideDetailCard()) {
+    if (root === null || isFocusInsideDetailCard(root)) {
       return;
     }
     const active = getActiveElement(root);
@@ -75,6 +75,17 @@ export const restoreGridFocus = (gridRootRef: ReadonlyElementRef): void => {
     }
     root.focus();
   });
+};
+
+// 追加(1.3.0 の確かめ直し): メニューの項目が開いた別のポップアップ(ツールパネル / 列フィルター)にフォーカスが移っているかです。
+//   メニュー(右クリックメニュー / 列メニュー)を閉じるときは、そのフォーカスをグリッドへ戻しません。Solid 版は利用者の
+//   onSelect を自分のフレームで呼ぶ(0.1.1 の S4-21)ので、メニューを閉じる前にツールパネルが描かれてタブへフォーカスが
+//   移っていて、閉じたときの restoreGridFocus がそれを奪っていた(React 版は開いた後の effect で移すので、閉じた後になる)。
+const OPENED_FROM_MENU_SELECTOR = '.ssg-toolpanel, .ssg-filter-popover';
+export const isFocusInPopupOpenedFromMenu = (gridRootRef: ReadonlyElementRef): boolean => {
+  const root = gridRootRef.current;
+  const active = root === null ? null : getActiveElement(root);
+  return active !== null && typeof active.closest === 'function' && active.closest(OPENED_FROM_MENU_SELECTOR) !== null;
 };
 
 export const isInsideGridRoot = (gridRootRef: ReadonlyElementRef, target: Node): boolean =>
@@ -203,9 +214,11 @@ export const createPopoverWindowBindings = (
   let attached = false;
   const handleResize = () => handlers.onResize?.();
   const handleScroll = (event: Event) => handlers.onScroll?.(event);
-  // 変更(1.3.0 / S11-05): window で受けるので、Shadow root の中で押したときの target は host です。押した要素は composedPath の先頭。
+  // 変更(1.3.0 / S11-05): window で受けるので、Shadow root の中で押したときの target は host です。押した要素はグリッドの木へ
+  //   付け替えて見ます(グリッドの中の Web Component の中で押したらその host。グリッドの木を通らない = body に出したパネル
+  //   などは document の木の要素)。
   const handlePointerDown = (event: PointerEvent) => {
-    const target = getEventTarget(event) as Node | null;
+    const target = getEventTarget(event, handlers.getGridRoot?.() ?? null) as Node | null;
     if (!target) {
       return;
     }

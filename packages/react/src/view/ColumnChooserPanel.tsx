@@ -44,7 +44,7 @@ import type { PointerEvent } from 'react';
 import type { ColumnPane } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/geometry';
 import { usePopupLocaleText } from '../hooks/usePopupLocaleText';
 import { formatLocaleText } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/localeText';
-import { getActiveElement } from '@ishibashi0112/spreadsheet-grid-core/internal/utils/shadowDom';
+import { getDeepActiveElement } from '@ishibashi0112/spreadsheet-grid-core/internal/utils/shadowDom';
 
 // 追加(13-B2-1): パネルが必要とする最小の列情報です。
 // 変更(13-B3-1.5): 所属ペイン(pinned 由来。left / center / right)を追加します。
@@ -227,7 +227,7 @@ export function ColumnChooserPanel({
   // 変更(1.1.0 の確かめ直しの見直し): パネルの中にフォーカスがあるかは最初の描画の時点で見ます(effect で見ると、開発時の
   //   StrictMode の 2 回目の effect ではパネルが選ばれているタブへフォーカスを移し終えていて、開いたときも検索欄へ移っていた)。
   const [focusSearchOnMount] = useState(
-    () => typeof document !== 'undefined' && getActiveElement()?.closest('.ssg-toolpanel') != null,
+    () => typeof document !== 'undefined' && getDeepActiveElement()?.closest('.ssg-toolpanel') != null,
   );
   useEffect(() => {
     const input = searchInputRef.current;

@@ -5,6 +5,7 @@
 //   - RV5-3: エディタを開いたまま別のセルを押してすぐ打った文字が、そのセルのエディタに残る
 //   - ほか S12-05 / S8-05 / S8-02 / RV5-4 / S8-03 / S6-21 / 展開トグルの名前 / S6-02 / S6-03 / S6-04(各節の見出し)
 //   Solid 版は SSG_AUDIT_FRAMEWORK=solid HARNESS_BASE=http://127.0.0.1:5179/。
+import { readFileSync } from 'node:fs';
 import { open, check, skip, summary, waitIdle, unexpectedPageErrors, cell, cellText, header, SUPPORTS } from './pw.mjs';
 
 const { page, close, pageErrors } = await open('basic');
@@ -36,6 +37,8 @@ const editorValue = () =>
   check('IME の入力受け: PageDown の後も待機中の入力受けがアクティブセルに重なる', offsets.every((d) => d !== null && d <= 1), { offsets });
   await page.evaluate(() => window.__setProps({ imeDirectInput: false }));
   await page.keyboard.press('ControlOrMeta+Home');
+  // Firefox(geckodriver)では Ctrl+Home がグリッドに届かないことがあるので、ハンドルでも先頭へ戻す(次の S7-03 は 5 行目を押す)。
+  await page.evaluate(() => window.__grid.scrollToTop());
   await waitIdle(page, 300);
 }
 
@@ -166,7 +169,7 @@ if (SUPPORTS.clipboardSeed) {
   const start = page.locator('.ssg-filter-popover input[aria-label="開始日"]');
   if ((await start.count()) === 1) {
     await start.fill('２０２６／１１／２０');
-    await start.press('Enter');
+    await page.keyboard.press('Enter'); // 入力欄にフォーカスがある(fill の後)。WebDriver の locator には press が無い
     await waitIdle(page, 250);
     const invalid = await start.getAttribute('aria-invalid');
     const value = await start.inputValue();
@@ -185,6 +188,12 @@ await close();
 for (const key of ['qty', 'note']) {
   const { page: p2, close: close2, pageErrors: errors2 } = await open('basic', { query: `hb=${key}` });
   await waitIdle(p2, 300);
+  // ホバーの無い環境(headless の Firefox は hover: none / pointer: none)では操作群をいつも出す形(タッチと同じ)なので見ない。
+  if (!(await p2.evaluate(() => matchMedia('(hover: hover)').matches))) {
+    skip(`RV5-4(${key}): 細い列の見出しの中のボタン`, 'ホバーの無い環境(hover: none)');
+    await close2();
+    continue;
+  }
   const button = p2.locator('[data-testid="hdr-btn"]');
   const box = await button.boundingBox();
   // ボタンの右寄り(つまみと ⋮ の背景がかぶる所)を押す。
@@ -311,7 +320,15 @@ if (SUPPORTS.clock) {
   });
   check('S6-04: チップの文字の既定の色(good / warning / critical)', chipColors.join(' ') === '#14703a #a14a0b #b91c1c', { chipColors });
   if (process.env.AXE_PATH) {
-    await p5.addScriptTag({ path: process.env.AXE_PATH });
+    if (typeof p5.addScriptTag === 'function') {
+      await p5.addScriptTag({ path: process.env.AXE_PATH });
+    } else {
+      // WebDriver(Firefox / WebKit)のページには addScriptTag が無いので、中身をページで評価する。
+      const source = readFileSync(process.env.AXE_PATH, 'utf8');
+      await p5.evaluate((code) => {
+        (0, eval)(code);
+      }, source);
+    }
     const violations = await p5.evaluate(async () => {
       const result = await window.axe.run(document.querySelector('.ssg-root'), {
         runOnly: { type: 'rule', values: ['aria-hidden-focus', 'empty-table-header'] },

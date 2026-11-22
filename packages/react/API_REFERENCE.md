@@ -861,7 +861,7 @@ const gridRef = useRef<SpreadsheetGridHandle<Row>>(null);
 
 ダイアログの中のグリッド(ポップアップを描く場所は「ダイアログの中のグリッド(`popupContainer`)」節): グリッドが使う `Escape`(編集の取り消し・グリッドのメニューやポップオーバーを閉じる・範囲の選択を外す・コピー範囲の点線を消す・行 / 列 / フィルハンドルのドラッグをやめる(1.0.2))では、グリッドを入れたモーダル(Radix / Headless UI / Mantine / HeroUI の Modal / Dialog、素の `<dialog>`)は閉じない(グリッドは表示中、window の capture で `Escape` を聞いて `preventDefault()` し、Mantine の Modal が見る `data-mantine-stop-propagation` をその要素へ一時的に付け、グリッドのルートで伝播を止める)。グリッドが使わない `Escape`(1 セルを選んでいるだけ・上部バーの入力欄など)はそのままダイアログへ届く。グリッドより先に window の capture へ付いたリスナー(グリッドより後に開いたダイアログなど)では先に閉じうる。
 
-編集中に行が動いた・消えたとき(1.3.0 から): 編集していた行が並べ替え・上への行の追加などで動いたときは、エディタも付いていく(打ちかけはそのまま。custom エディタも作り直さない)。行が絞り込みから外れた(`rows` にはまだある)ときは、打ちかけを確定してその行へ書き(text / number / date。custom は入力欄の `onBlur` で `ctx.commit` を呼んでいればその値。select は取り消し)、フォーカスはグリッドに残る。書けない行(`canEditCell` が `false`。`canEditCell` の位置は外れる前の位置)と検査で reject する値は書かない。`rows` が別の行に替わって編集していた行が無くなったときと serverSide では取り消す。1.2.x までは知らせずに編集を終え(打ちかけは捨てる)、フォーカスが `body` に落ちてキー操作が効かなかった。
+編集中に行が動いた・消えたとき(1.3.0 から): 編集していた行が並べ替え・上への行の追加などで動いたときは、エディタも付いていく(打ちかけはそのまま。custom エディタも作り直さない)。行が絞り込みから外れた(`rows` にはまだある)ときは、打ちかけを確定してその行へ書き(text / number / date。custom は入力欄の `onBlur` で `ctx.commit` を呼んでいればその値。ただし絞り込みで表の行が減り、編集していた位置に行が残らないときは、`onBlur` より先にエディタが外れて書かれないことがある。select は取り消し)、フォーカスはグリッドに残る。書けない行(`canEditCell` が `false`。`canEditCell` の位置は外れる前の位置)と検査で reject する値は書かない。`rows` が別の行に替わって編集していた行が無くなったときと serverSide では取り消す。1.2.x までは知らせずに編集を終え(打ちかけは捨てる)、フォーカスが `body` に落ちてキー操作が効かなかった。
 
 確定後のアクティブセル: 方向なしの確定(フォーカスアウト / select の候補クリック / custom エディタの `commit(value)` / `editorEnterMove: 'none'` の `Enter`)の後は、編集していたセルが単一選択になる。ただし確定のきっかけがグリッド内の別のセルや行・列ヘッダーの押下だった場合は、押した操作(そのセルのアクティブ化 / ドラッグでの範囲選択 / 行・列の選択)を優先し、編集していたセルへ戻さない。`Enter` / `Tab` など方向付きの確定は従来どおり隣のセルへ移る。
 
@@ -945,7 +945,7 @@ class InventoryGrid extends HTMLElement {
 ```
 
 - **CSS**: Shadow root の外の CSS は中に届かないので、`style.css`(テーマを使うなら `themes/*.css` も)を Shadow root の中に入れる(`<style>` か `adoptedStyleSheets`)。
-- **ポップアップ**: 既定の `'auto'` は、Shadow root の直下でグリッドを包む要素の中に描く(グリッドを囲むダイアログがあれば、そちらが先)。グリッドを Shadow root の直下に置くと(直下の要素が `.ssg-root`)`document.body` へ出るので、要素で包むか、`popupContainer` に Shadow root の中の要素を渡す。
+- **ポップアップ**: 既定の `'auto'` は、Shadow root の直下でグリッドを包む要素の中に描く(グリッドを囲むダイアログがあれば、そちらが先)。グリッドを Shadow root の直下に置くと(直下の要素が `.ssg-root`)`document.body` へ出るので、要素で包むか、`popupContainer` に Shadow root の中の要素を渡す。包む要素に `overflow` と `transform` / `contain` などを一緒に付けると、ポップアップがその枠で切れる(ダイアログの中と同じ。そのときは `popupContainer` で切らない要素を渡す)。
 - **`theme="class"`**: Shadow root の外の `class="dark"` / `data-theme="dark"` は、中の CSS のセレクタからは見えない。Shadow root の中のグリッドを包む要素に付けるか、`'light' \| 'dark'` を渡す。
 - **open の Shadow root を使う**: closed(`mode: 'closed'`)では、window で受けるイベントから中の要素が見えないので、ポップアップの外側の押下で閉じる・`Escape` などが効かないことがある。
 - **文字の大きさ**: 受け継ぐ CSS(`font-size` / `line-height` / `font-family` / `color`)は Shadow root の境界を越える。セル・バー・ポップアップの文字はページの指定を受け継ぎ、列見出し・ラベル行・メニューの項目などは px で決めている(行の高さは `rowHeight` で決まるので、ページの文字が大きいとセルの中身が切れ、見出しとの大きさもそろわない)。ページの指定に引きずられたくないときは `.ssg-root { font-size: 13px; line-height: normal; }` のようにグリッドで決める(Shadow DOM でなくても同じ)。
@@ -1772,7 +1772,7 @@ const gridRef = useRef<SpreadsheetGridHandle<Row>>(null);
 
 `viewRowIndex` / `colIndex` は**ビュー座標**(フィルター/ソート適用後の表示 index。`colIndex` は固定列を含む視覚順 = 左→中央→右)。`viewRowIndex` はラベル行・グループ行も 1 行に数え、`colIndex` は行ドラッグのハンドル列・展開トグル列・自動グループ列(ライブラリが足す列)も数える。行キー / 列キーからは `getViewRowIndex(rowKey)` / `getColIndex(columnKey)` で引ける。アクティブセルは表示位置に付く(上の行を消すと、同じ位置に来た別の行を指す。Excel と同じ)。範囲外 index は内部でクランプ/無視する。表示行数が減った(rows 差し替え / フィルター / グループの折りたたみ等)ときも、はみ出したアクティブセル / 選択範囲は範囲内へ詰められる(アクティブセルは最終行へ寄せ、範囲ははみ出した部分を切り詰める。0 行になったらセル / 行の選択とアクティブセルは解除)。列が減ったとき(`columns` から外す / 非表示にする)も同じく最終列へ寄せて切り詰める(0 列になったらアクティブセルとセル / 列の選択は解除)。グリッドの中で列を変えたとき(見出しのドラッグ・列メニューの「列の固定」と「列を隠す」・ツールパネルの「列」タブ・列のリセット)は、アクティブセルはその列に付いていき(その列を隠したときは同じ位置のまま)、選択はアクティブセルの 1 セルになる(1.3.0 から。それまでは外れていた。列メニューのグループ化を変えたときは外れる)。貼り付けの後の選択も書き込んだ範囲まで。行が 0 件のときの `selectCell` / `selectRange` / `setActiveCell` は何もしない。このため `getActiveCell()` / `getSelection()` が存在しない行や列を返すことはない。
 
-**外したグリッドのハンドル**(1.3.0 から): グリッドを外した(アンマウントした)後も、変数に残したハンドルは呼べる。状態を変えるメソッド(`applyRows` / `undo` / `selectCell` / `applyState` / `scrollToRow` など)は何もせず(`startEditing` は `false` を返す)、開発ビルドでだけ console に 1 回警告する。読むメソッド(名前が `get` / `is` / `can` / `export` / `download` で始まるもの)は外したときの値を返す(外す直前に `getState()` を保存する書き方のため)。同じグリッドがまた描かれたら元どおりに動く。
+**外したグリッドのハンドル**(1.3.0 から): グリッドを外した(アンマウントした)後も、変数に残したハンドルは呼べる。状態を変えるメソッド(`applyRows` / `undo` / `selectCell` / `applyState` / `scrollToRow` など)は何もせず(`startEditing` は `false` を返す)、開発ビルドでだけ console に 1 回警告する。読むメソッド(名前が `get` / `is` / `can` / `export` / `download` で始まるもの)は外したときの値を返す(外す直前に `getState()` を保存する書き方のため)。ただしスクロールの位置は表の要素から読むので、`getScrollPosition()` は `null`、`isAtBottom()` は `false` を返す(位置を残したいときは外す前に読むか、`onScroll` で覚えておく)。同じグリッドがまた描かれたら元どおりに動く。
 
 ### スクロール
 

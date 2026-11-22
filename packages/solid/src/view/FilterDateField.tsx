@@ -112,8 +112,8 @@ export function FilterDateField(props: FilterDateFieldProps) {
       return undefined;
     }
     const handleDocumentPointerDown = (event: PointerEvent) => {
-      // 変更(1.3.0 / S11-05): Shadow root の中で押したときの target は host なので、押した要素は composedPath の先頭で見ます。
-      const target = getEventTarget(event) as Node | null;
+      // 変更(1.3.0 / S11-05): Shadow root の中で押したときの target は host なので、押した要素はこの欄の木へ付け替えて見ます。
+      const target = getEventTarget(event, rootElement ?? null) as Node | null;
       if (target && rootElement?.contains(target)) {
         return;
       }

@@ -207,8 +207,12 @@ function isClipped(element: Element): boolean {
   return false;
 }
 
+// 追加(1.3.0 の別視点のレビュー): リスナーを付けた所(window か、グリッドのある Shadow root)の木です。イベントの要素は
+//   その木へ付け替えて見ます(セルの中に置いた Web Component の中の要素ではなく、その host = セルの中)。
+const eventTree = (event: Event): Node | Window | null => event.currentTarget as Node | Window | null;
+
 function handlePointerOverOrFocusIn(event: Event) {
-  const node = getEventTarget(event);
+  const node = getEventTarget(event, eventTree(event));
   if (!(node instanceof Element)) {
     return;
   }
@@ -238,7 +242,7 @@ function handlePointerOverOrFocusIn(event: Event) {
 }
 
 function handlePointerOutOrFocusOut(event: Event) {
-  const node = getEventTarget(event);
+  const node = getEventTarget(event, eventTree(event));
   if (!(node instanceof Element)) {
     return;
   }
@@ -279,7 +283,7 @@ function handleGlobalHide() {
 // 変更(1.0.1 の確かめ直し L): タップで出したアクティブセルのツールチップは、同じセルをもう一度タップしても閉じません
 //   (閉じるとアクティブセルが変わらないので出し直されず、もう一度タップしても読めなかった)。マウスは従来どおり押したら閉じる。
 function handlePointerDown(event: Event) {
-  const node = getEventTarget(event);
+  const node = getEventTarget(event, eventTree(event));
   if (
     activatedTarget !== null &&
     currentTarget === activatedTarget &&
@@ -296,7 +300,7 @@ function handlePointerDown(event: Event) {
 
 // 追加(1.0.2 / RV-D2): アクティブセルを押し直したら(指 / ボタンを離したら)、閉じていたメッセージを出し直します。
 function handlePointerUp(event: Event) {
-  const node = getEventTarget(event);
+  const node = getEventTarget(event, eventTree(event));
   if (!(node instanceof Element)) {
     return;
   }
@@ -322,7 +326,7 @@ function handleKeyDown(event: KeyboardEvent) {
 //   pointerover / focusin は window へ届かない(target と relatedTarget が同じ host に付け替わるため)ので、グリッドのある
 //   Shadow root にも同じリスナーを付けます(acquireTooltipController の root)。window へも届くイベント(pointerdown / keydown /
 //   外から入った pointerover など)は、その Shadow root のリスナーに任せて window では扱いません(Shadow root で受けると target と
-//   relatedTarget が付け替わらない)。ほかの window のイベントの target は、念のため composedPath の先頭で見ます。
+//   relatedTarget が付け替わらない)。イベントの要素は、受けた所の木へ付け替えて見ます(eventTree)。
 
 type ListenerTarget = Pick<EventTarget, 'addEventListener' | 'removeEventListener'>;
 const LISTENERS: ReadonlyArray<readonly [string, (event: Event) => void]> = [
@@ -341,9 +345,10 @@ const shadowRootRefs = /* @__PURE__ */ new Map<ShadowRoot, number>();
 
 const WINDOW_LISTENERS = /* @__PURE__ */ LISTENERS.map(([type, listener]) => {
   const onWindow = (event: Event) => {
-    const node = getEventTarget(event);
-    const root = node instanceof Node ? node.getRootNode() : null;
-    if (root !== null && shadowRootRefs.has(root as ShadowRoot)) {
+    // 変更(1.3.0 の別視点のレビュー): グリッドのある Shadow root を通ってきたイベント(その Shadow root のリスナーが扱う)は
+    //   扱いません。composedPath には通った Shadow root が入ります(中の Web Component の Shadow root から来たときも)。
+    const path = typeof event.composedPath === 'function' ? event.composedPath() : [];
+    if (path.some((node) => shadowRootRefs.has(node as ShadowRoot))) {
       return;
     }
     listener(event);

@@ -147,4 +147,37 @@ describe('createRowSelectionCommands', () => {
     expect(all.onRowSelectionChange).toHaveBeenLastCalledWith({ type: 'exclude', rowKeys: [1, 3] });
   });
 
+  // 追加(1.3.0 の別視点のレビュー): 全選択で除いていた行を消して元に戻したら、除いたまま戻る(消す前と同じ)。
+  it('全選択(exclude)で除いた行を消して戻すと除いたまま、選ばれていた行は選ばれたまま戻る(S4-09)', () => {
+    type Item = { id: string };
+    const a = { id: 'a' };
+    const b = { id: 'b' };
+    const c = { id: 'c' };
+    const sourceOf = (list: Item[]) =>
+      ({ rows: list, rowKeyGetter: (row: Item) => row.id }) as unknown as RowSelectionCommandsArgs<Row>['sourceRows'];
+    const { commands, args, actions, onRowSelectionChange } = setup({
+      rowSelectionState: rowSelectionFromModel({ type: 'exclude', rowKeys: ['b'] }),
+      sourceRows: sourceOf([a, b, c]),
+    });
+    const step = (list: Item[]) => {
+      commands.update({ ...args, rowSelectionState: lastState(actions) ?? args.rowSelectionState, sourceRows: sourceOf(list) });
+    };
+    // b と c を消す: 除いたキー b は外れる(総数 − 除いた数 が合う)。
+    step([a]);
+    expect(onRowSelectionChange).toHaveBeenLastCalledWith({ type: 'exclude', rowKeys: [] });
+    // 元に戻す: b は除いたまま、c は選ばれたまま。
+    step([a, b, c]);
+    expect(onRowSelectionChange).toHaveBeenLastCalledWith({ type: 'exclude', rowKeys: ['b'] });
+    expect(onRowSelectionChange).toHaveBeenCalledTimes(2);
+
+    // 消した後に全選択をし直したら、戻した行も選ばれた状態になる。
+    step([a]);
+    commands.update({ ...args, rowSelectionState: lastState(actions)!, sourceRows: sourceOf([a]) });
+    commands.commitRowSelection(rowSelectionFromModel({ type: 'exclude', rowKeys: [] }));
+    const before = onRowSelectionChange.mock.calls.length;
+    step([a, b, c]);
+    expect(onRowSelectionChange).toHaveBeenCalledTimes(before);
+    expect(lastState(actions)).toEqual(rowSelectionFromModel({ type: 'exclude', rowKeys: [] }));
+  });
+
 });

@@ -27,7 +27,7 @@ import {
   selectSingleRow,
   toggleRowKey,
 } from '../logic/rowSelection';
-import { createDetailKeysPruner } from '../logic/detailRow';
+import { createDetailKeysPruner, findKeysIn } from '../logic/detailRow';
 
 export type RowSelectionCommandsArgs<T> = {
   rowModel: RowModel<T>;
@@ -109,12 +109,21 @@ export const createRowSelectionCommands = <T,>(): RowSelectionCommands<T> => {
     }
   };
   const commitRowSelection = (next: RowSelectionState) => {
+    // 全選択をし直したら、消した行の除いた印は捨てます(戻した行も選ばれた状態にする)。
+    if (next.mode === 'exclude' && next.keys.size === 0) {
+      excludedTombstones.clear();
+    }
     commitRowSelectionFrom(undefined, next);
   };
   // 追加(1.3.0 / S4-09): 消えた行のキーを外す処理は、展開行の DF-25 と同じもの(前の rows にあって今の rows に無いキーだけを
   //   外す。行を読み込む前に setRowSelection / selectedRowKeys で渡したキーは残す。rows が変わったときだけ見て、編集では前に
   //   見つけた位置で確かめる)。exclude(全選択)の除いたキーも同じく外します(総数 − 除いた数 が合うように)。
   const keysPruner = createDetailKeysPruner<T>();
+  // 追加(1.3.0 の別視点のレビュー): 全選択(exclude)で除いていた行を消したときに外したキーです。その行が戻ったら(元に戻す)
+  //   除いたまま戻します(外したままだと、除いていた行が選ばれた状態で戻っていた)。全選択で選ばれていた行は、除いたキーに
+  //   無いので選ばれたまま戻ります(どちらも消す前の状態)。exclude の間だけ持ちます。
+  const excludedTombstones = new Set<GridRowKey>();
+  let tombstoneRows: readonly unknown[] | null = null;
 
   // view index 範囲 → 行キー配列(SSRM 未ロードはスキップ)。
   const resolveRowKeysBetween = (rowModel: RowModel<T>, aIndex: number, bIndex: number): GridRowKey[] => {
@@ -207,15 +216,45 @@ export const createRowSelectionCommands = <T,>(): RowSelectionCommands<T> => {
         }
       }
       const source = next.sourceRows;
+      const rows = source?.rows ?? NO_ROWS;
+      const keyOf = source?.rowKeyGetter ?? indexKey;
       keysPruner.update({
         enabled: source !== undefined,
-        rows: source?.rows ?? NO_ROWS,
+        rows,
         expandedKeys: current.keys,
-        keyOf: source?.rowKeyGetter ?? indexKey,
+        keyOf,
         setExpandedKeys: (keys) => {
-          commitRowSelectionFrom(current, { mode: current.mode, keys: new Set(keys) });
+          const pruned: RowSelectionState = { mode: current.mode, keys: new Set(keys) };
+          if (current.mode === 'exclude') {
+            for (const key of current.keys) {
+              if (!pruned.keys.has(key)) {
+                excludedTombstones.add(key);
+              }
+            }
+            tombstoneRows = rows;
+          }
+          commitRowSelectionFrom(current, pruned);
+          current = pruned;
         },
       });
+      if (excludedTombstones.size > 0) {
+        if (source === undefined || current.mode !== 'exclude') {
+          excludedTombstones.clear();
+          tombstoneRows = null;
+        } else if (rows !== tombstoneRows) {
+          tombstoneRows = rows;
+          const found = new Map<GridRowKey, number>();
+          findKeysIn(rows, keyOf, excludedTombstones, found);
+          if (found.size > 0) {
+            const keys = new Set(current.keys);
+            for (const key of found.keys()) {
+              keys.add(key);
+              excludedTombstones.delete(key);
+            }
+            commitRowSelectionFrom(current, { mode: 'exclude', keys });
+          }
+        }
+      }
     },
     commitRowSelection,
     pendingRowSelection: () => pending,

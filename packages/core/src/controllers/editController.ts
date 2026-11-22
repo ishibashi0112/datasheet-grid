@@ -104,7 +104,7 @@ const isSelectionChangedSince = (
 //     確定したとき、クリック先の入力欄からフォーカスを奪い返さない(ポップオーバーの監査 C-3 と同じ方針)。
 //   - 展開行カード内(ルート内だが消費側の UI)→ 従来どおり奪わない。
 const shouldRestoreFocusAfterEdit = (root: HTMLElement): boolean => {
-  if (isFocusInsideDetailCard()) {
+  if (isFocusInsideDetailCard(root)) {
     return false;
   }
   const doc = root.ownerDocument;
@@ -139,7 +139,7 @@ const isFocusInsideEditor = (root: HTMLElement | null): root is HTMLElement => {
     root.contains(active) &&
     typeof active.closest === 'function' &&
     active.closest('.ssg-cell-editor') !== null &&
-    !isFocusInsideDetailCard()
+    !isFocusInsideDetailCard(root)
   );
 };
 

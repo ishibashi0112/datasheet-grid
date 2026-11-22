@@ -275,7 +275,7 @@ export const createImeInputController = (): ImeInputController => {
   //   ルートへ戻します(既定動作は現在のフォーカス位置を起点に進むため、従来どおりルートからグリッド外へ出る)。
   //   React の委譲リスナー(アプリのルート要素)より後に走るよう、document の bubble で受けます。
   const handleDocumentKeyDown = (event: KeyboardEvent) => {
-    if (getEventTarget(event) !== input || event.key !== 'Tab' || event.defaultPrevented || isImeComposingKeyEvent(event)) {
+    if (getEventTarget(event, input) !== input || event.key !== 'Tab' || event.defaultPrevented || isImeComposingKeyEvent(event)) {
       return;
     }
     // 追加(段階 2 C-N2): グリッドがもうフォーカスを移していれば(展開行のカードがあるときの、表の直後の目印)、そこから進めます。

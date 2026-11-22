@@ -14,6 +14,8 @@ const preface = `<!-- このファイルは React 版の API_REFERENCE.md を So
 >
 > - import は \`@ishibashi0112/spreadsheet-grid-solid\` から。\`/lite\` の \`createSpreadsheetGrid\` と機能の部品も本体の入口にあります(\`/lite\` はありません)。\`/locales/en\` と \`/testing\` は同じ名前です。ことばで絞り込み(\`/ai\`)はありません。
 > - 例の \`useState\` は \`createSignal\`(\`rows={rows}\` は \`rows={rows()}\`)、\`useMemo\` は \`createMemo\`、\`useRef\` + \`ref={gridRef}\` は \`let grid!: SpreadsheetGridHandle<Row>\` + \`ref={grid}\`(\`gridRef.current\` は \`grid\`)、\`flushSync\` / テストの \`act()\` は \`solid-js\` の \`flush()\` です。
+> - 型の \`ReactNode\` は \`JSX.Element\`、\`useEffect\` は \`createEffect\` / \`onSettled\`、\`Suspense\` は \`<Loading>\`、\`createPortal\` は \`<Portal>\`(\`@solidjs/web\`)です。
+> - 「X.Y.Z から」の版は React 版とコア(\`@ishibashi0112/spreadsheet-grid-core\`)の版です。Solid 版では、そのコアの版に依存する版から使えます(Solid 版の変更履歴を見てください)。
 > - Solid 版だけのこと(描く関数を呼び直す時機・書き込みの反映・テスト・SSR)は同梱の README.md の「Differences from the React version」「Solid-specific notes」(日本語は「React 版との違い」「Solid で気をつけること」)にあります。
 
 `;

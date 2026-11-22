@@ -530,13 +530,26 @@ export const createColumnCommands = <T,>(): ColumnCommands<T> => {
     update: (next) => {
       args = next;
       // 追加(1.3.0 / S12-01): 列を変えた後の新しい列が届いたら、アクティブセルをその列の位置へ(隠した列なら同じ位置)。
+      //   修正(1.3.0 の別視点のレビュー): 列をインラインで渡す利用側は描くたびに新しい配列が届くので、その列がまだ同じ位置に
+      //   ある間は期限まで待ちます(最初に届いた並びの変わらない配列で待つのをやめ、後から届く新しい並びに付いていかなかった)。
+      //   待つ間に利用者がアクティブセルを動かしたら、もう動かしません。
       if (pendingFollow !== null && next.columns !== pendingFollow.columns) {
         const follow = pendingFollow;
-        pendingFollow = null;
-        const index = next.orderedColumns.findIndex((column) => column.key === follow.key);
-        const col = index >= 0 ? index : Math.min(follow.col, next.orderedColumns.length - 1);
-        if (Date.now() <= follow.until && col >= 0 && col !== follow.col) {
-          selectSingleCell(next.dispatch, { row: follow.row, col });
+        const active = next.getUiState?.().activeCell ?? null;
+        // 隠して列が減ったときは、表の詰め(B-05)が先に右端へ寄せていることがある(それは動かしたことにしない)。
+        const clamped = Math.min(follow.col, next.orderedColumns.length - 1);
+        const moved = active === null || active.row !== follow.row || (active.col !== follow.col && active.col !== clamped);
+        if (Date.now() > follow.until || moved) {
+          pendingFollow = null;
+        } else if (next.orderedColumns[follow.col]?.key === follow.key) {
+          pendingFollow = { ...follow, columns: next.columns };
+        } else {
+          pendingFollow = null;
+          const index = next.orderedColumns.findIndex((column) => column.key === follow.key);
+          const col = index >= 0 ? index : Math.min(follow.col, next.orderedColumns.length - 1);
+          if (col >= 0 && col !== follow.col) {
+            selectSingleCell(next.dispatch, { row: follow.row, col });
+          }
         }
       }
       // 修正(audit B-06): 列が 1 本以上届いた最初の update で初期状態を取ります(columns を非同期に流し込む利用側で

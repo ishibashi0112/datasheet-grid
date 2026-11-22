@@ -10,7 +10,7 @@ import { resolveCellParser } from '../logic/editorValues';
 import { formatCellClipboardText } from '../logic/selectLabels';
 import { decideCellWrite, type ValidationLocaleText } from '../logic/validation';
 import { isSyntheticColumnKey } from '../logic/detailRow';
-import { getActiveElement } from './shadowDom';
+import { getDeepActiveElement } from './shadowDom';
 
 // 追加: TSV の行列データ型です。
 export type ClipboardMatrix = string[][];
@@ -452,7 +452,7 @@ export const buildClipboardCellEdits = <T extends object,>(
 export const copyTextViaExecCommand = (text: string): boolean => {
   const { body } = document;
   // 変更(1.3.0 / S11-02): Shadow root の中のフォーカス(document.activeElement は host)へ戻します。
-  const activeElement = getActiveElement();
+  const activeElement = getDeepActiveElement();
   if (!body) {
     return false;
   }

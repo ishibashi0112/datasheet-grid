@@ -10,7 +10,7 @@ Solid 2.0 向けの仮想化データグリッドです。React 版(`@ishibashi0
 
 ## 1. まず資料を開く
 
-- **正本**: `node_modules/@ishibashi0112/spreadsheet-grid-solid/API_REFERENCE.md`(インストールした版の公開 API すべて。日本語)。React 版と同じ文書で、先頭に Solid 版での読み替えがあります。約 2,600 行あるので全部は読まず、見出しを一覧してから要る節だけ読みます。
+- **正本**: `node_modules/@ishibashi0112/spreadsheet-grid-solid/API_REFERENCE.md`(インストールした版の公開 API すべて。日本語)。React 版と同じ文書で、先頭に Solid 版での読み替えがあります。約 2,900 行あるので全部は読まず、見出しを一覧してから要る節だけ読みます。
 
   ```sh
   grep -nE "^#{2,3} " node_modules/@ishibashi0112/spreadsheet-grid-solid/API_REFERENCE.md
@@ -52,7 +52,7 @@ export function Inventory() {
 
 ## 3. 間違えやすいこと
 
-- **CSS を読み込む。** `import '@ishibashi0112/spreadsheet-grid-solid/style.css'`。無いとスタイルが当たらず、スクロールもしません。
+- **CSS を読み込む。** `import '@ishibashi0112/spreadsheet-grid-solid/style.css'`。無いとスタイルが当たらず、スクロールもしません。Tailwind v4 で `classNames` などにユーティリティを渡して既定の見た目を変えるときは、`style.css` では効きません(未レイヤーのグリッドの CSS が勝つ)。`@ishibashi0112/spreadsheet-grid-solid/style.layer.css` にして、それより先に読ませる CSS で `@layer theme, base, ssg-base, components, utilities;` とレイヤー順を宣言します(宣言しないと Preflight に罫線やボタンが崩されます)。
 - **バンドラ。** Vite では `@solidjs/vite-plugin` 3(Vite 8 以上)を使います。パッケージは `solid` 条件で JSX のままのソースを渡します。
 - **`rows` は signal で持つ。** 編集結果は `onRowsChange` が新しい配列で返します。その配列をそのまま `setRows(next)` で戻し、`rows={rows()}` で渡します(`map` などで作り直すと undo の履歴が消えます)。`createStore` に入れると履歴が消え、開発時に警告が出ます。
 - **書き込みはマイクロタスクで反映される。** `setRows(...)` の直後にハンドルで足した行を使う(`getViewRowIndex(key)` → `startEditing(...)`)ときは、先に `solid-js` の `flush()` を呼びます。
@@ -62,8 +62,11 @@ export function Inventory() {
 - **列の `width` は型の上で必須。** 伸縮させる列は `flex` も足します。列は既定で編集できます。止めるときは列の `editable: false` か `readOnly`、セルごとなら `canEditCell`、全体ならグリッドの `readOnly`。
 - **`rows` か `dataSource`。** `rows` はクライアントサイド、`dataSource` を渡すとサーバーサイド行モデルです。両方は渡しません。
 - **高さは `height` prop。** `'100%'` は上下のバーを含む全体の高さで、親に確定した高さが要ります。数値はスクロール領域だけの高さです。指定しないと、スクロール領域は 480px が上限です。
-- **位置は表示の位置。** `selectCell` などの `viewRowIndex` / `colIndex` は並べ替え・絞り込みの後の表示の位置です。`getViewRowIndex(rowKey)` / `getColIndex(columnKey)` で引きます。
+- **位置は表示の位置。** `selectCell` などの `viewRowIndex` / `colIndex` は並べ替え・絞り込みの後の表示の位置で、`colIndex` はライブラリが足す列(行ドラッグのハンドル列など)も数えます。`getViewRowIndex(rowKey)` / `getColIndex(columnKey)` で引きます。
+- **改行を含む値の列は `editor: { type: 'text', multiline: true }`。** 既定の 1 行の入力欄はブラウザが改行を消すので、直して確定すると改行が無くなります。
+- **行のクラスは行と各セルの両方に付く。** `getRowClassName` の class と style は行・「#」セル・各セルに付きます。行を薄くするなら class を返して `.ssg-body-row.<class> { opacity: 0.5 }` と書きます(style で `opacity` を書くと 2 回掛かります)。
 - **テスト(Vitest + jsdom)。** Vitest にも `@solidjs/vite-plugin` を入れ、`/testing` の `installJsdomLayoutStubs()` を呼びます。signal を変えた・イベントを送った後は、DOM を見る前に `flush()` を呼びます(React 版の `act()` の代わり)。
+- **SSR。** SolidStart は Solid 1 だけなので、Vite の SSR と `@solidjs/vite-plugin`(`ssr: true`)で `renderToString` / `hydrate` を使います。サーバーはグリッドの骨組みだけを描き、行はハイドレーションの後に描きます。本番のサーバーは `NODE_ENV=production` で動かします(README の「SSR」)。
 - **UI の言語。** 既定は日本語です。英語は `@ishibashi0112/spreadsheet-grid-solid/locales/en` の `localeTextEn` を `localeText` に渡します。
 
 ## 4. 入口の選び方

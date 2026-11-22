@@ -15,6 +15,7 @@ import {
   focusPanelIfIdle,
   handleMenuKeyNavigation,
   isInsideGridRoot,
+  isFocusInPopupOpenedFromMenu,
   restoreGridFocus,
   type ReadonlyElementRef,
 } from './popoverSupport';
@@ -172,7 +173,8 @@ export const createColumnMenuController = <T,>(): ColumnMenuController<T> => {
     clearOpenState();
     anchorButton = null;
     anchorPoint = null;
-    if (args !== null && restoreFocus) {
+    // 変更(1.3.0 の確かめ直し): 項目が開いたツールパネル / 列フィルターにあるフォーカスは動かしません。
+    if (args !== null && restoreFocus && !isFocusInPopupOpenedFromMenu(args.gridRootRef)) {
       restoreGridFocus(args.gridRootRef);
     }
   };

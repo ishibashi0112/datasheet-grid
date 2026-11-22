@@ -32,7 +32,7 @@ const inlineCode = [...proseWithoutCodeBlocks.matchAll(/`([^`\n]+)`/g)].map((m) 
 const identifiers = [...new Set(inlineCode.filter((code) => /^[A-Za-z][A-Za-z0-9]*(<T>)?(\(\))?$/.test(code)))];
 
 // API_REFERENCE.md に出てこないが Skill に書いてよい名前(Solid / ツールの名前)。
-const NOT_IN_REFERENCE = new Set(['useState', 'useRef', 'createStore', 'createSignal', 'untrack', 'map', 'tsc', 'current']);
+const NOT_IN_REFERENCE = new Set(['useState', 'useRef', 'createStore', 'createSignal', 'untrack', 'map', 'tsc', 'current', 'renderToString', 'hydrate']);
 
 const appearsAsWord = (text: string, name: string): boolean =>
   new RegExp(`(?<![A-Za-z0-9_])${name}(?![A-Za-z0-9_])`).test(text);
@@ -83,6 +83,19 @@ describe('同梱の Skill(skills/spreadsheet-grid-solid/SKILL.md)', () => {
     expect(names.length).toBeGreaterThan(15);
     const missing = names.filter((name) => !referenceHeadings.some((heading) => heading.includes(name)));
     expect(missing).toEqual([]);
+  });
+
+  // 追加(1.3.0 の別視点のレビュー): Skill が名前を出す README の見出し / 項目が README にある(README の見出しの改名を検出する)。
+  it('Skill が名前を出す README の見出しと項目が README にある', () => {
+    const readme = readFileSync(resolve(PACKAGE_DIR, 'README.md'), 'utf8');
+    const named = [...body.matchAll(/README(?:\.md)?`? ?の((?:「[^」]+」)+)/g)].flatMap((m) => [...(m[1] ?? '').matchAll(/「([^」]+)」/g)].map((n) => n[1] ?? ''));
+    expect(named).toEqual(expect.arrayContaining(['Differences from the React version', 'Solid-specific notes', 'SSR']));
+    const headings = readme.split('\n').filter((line) => /^#{2,3} /.test(line)).map((line) => line.replace(/^#+ /, ''));
+    const items = [...readme.matchAll(/^- \*\*([^*]+?)[.。]\*\*/gm)].map((m) => m[1] ?? '');
+    expect(named.filter((name) => !headings.includes(name) && !items.includes(name))).toEqual([]);
+    for (const name of ['React 版との違い', 'Solid で気をつけること']) {
+      expect(headings).toContain(name);
+    }
   });
 
   it('パッケージのパスが exports か同梱ファイルにある', () => {

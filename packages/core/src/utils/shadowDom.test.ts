@@ -1,7 +1,7 @@
 // 追加(1.3.0 / Solid 版の品質の段 2 S11-01〜05): Shadow DOM の中のイベントの target とフォーカスのある要素。
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it } from 'vitest';
-import { findElementById, getActiveElement, getEventTarget, getShadowRoot } from './shadowDom';
+import { findElementById, getActiveElement, getDeepActiveElement, getEventTarget, getShadowRoot } from './shadowDom';
 
 const makeShadow = (mode: ShadowRootMode = 'open') => {
   const host = document.createElement('div');
@@ -19,14 +19,49 @@ describe('getEventTarget', () => {
   it('window で受けたイベントでも、Shadow root の中で起きた要素を返す(event.target は host)', () => {
     const { host, shadow } = makeShadow();
     const button = shadow.querySelector('#a')!;
-    let seen: { target: EventTarget | null; real: EventTarget | null } | null = null;
+    const app = shadow.querySelector('#app')!;
+    let seen: { target: EventTarget | null; real: EventTarget | null; inDocument: EventTarget | null } | null = null;
     const listener = (event: Event) => {
-      seen = { target: event.target, real: getEventTarget(event) };
+      seen = { target: event.target, real: getEventTarget(event, app), inDocument: getEventTarget(event) };
     };
     window.addEventListener('pointerdown', listener, true);
     button.dispatchEvent(new Event('pointerdown', { bubbles: true, composed: true }));
     window.removeEventListener('pointerdown', listener, true);
-    expect(seen).toEqual({ target: host, real: button });
+    expect(seen).toEqual({ target: host, real: button, inDocument: host });
+  });
+
+  // 追加(1.3.0 の別視点のレビュー): グリッドの中に置いた Web Component の中で起きたイベントは、その host(グリッドの中)。
+  it('context の木より奥(中に置いた Web Component の Shadow root)へは降りない', () => {
+    const { shadow } = makeShadow();
+    const app = shadow.querySelector('#app')!;
+    const widget = document.createElement('x-widget');
+    app.appendChild(widget);
+    const inner = widget.attachShadow({ mode: 'open' });
+    inner.innerHTML = '<input id="inner">';
+    const input = inner.querySelector('#inner')!;
+    let real: EventTarget | null = null;
+    const listener = (event: Event) => {
+      real = getEventTarget(event, app);
+    };
+    window.addEventListener('pointerdown', listener, true);
+    input.dispatchEvent(new Event('pointerdown', { bubbles: true, composed: true }));
+    window.removeEventListener('pointerdown', listener, true);
+    expect(real).toBe(widget);
+    expect(app.contains(widget)).toBe(true);
+  });
+
+  it('context の木を通らないイベントは document の木の要素', () => {
+    const { shadow } = makeShadow();
+    const outside = document.createElement('button');
+    document.body.appendChild(outside);
+    let real: EventTarget | null = null;
+    const listener = (event: Event) => {
+      real = getEventTarget(event, shadow.querySelector('#app'));
+    };
+    window.addEventListener('pointerdown', listener, true);
+    outside.dispatchEvent(new Event('pointerdown', { bubbles: true, composed: true }));
+    window.removeEventListener('pointerdown', listener, true);
+    expect(real).toBe(outside);
   });
 
   it('ふつうの DOM ではイベントの target', () => {
@@ -48,8 +83,25 @@ describe('getActiveElement', () => {
     const b = shadow.querySelector<HTMLElement>('#b')!;
     b.focus();
     expect(document.activeElement).toBe(host);
-    expect(getActiveElement()).toBe(b);
+    expect(getActiveElement()).toBe(host);
+    expect(getDeepActiveElement()).toBe(b);
     expect(getActiveElement(shadow.querySelector('#a'))).toBe(b);
+  });
+
+  // 追加(1.3.0 の別視点のレビュー): ふつうの DOM のグリッドの中に置いた Web Component の中のフォーカスは、その host
+  //   (1.2.1 の document.activeElement と同じ)。グリッドの中かは root.contains で分かる。
+  it('context の木より奥(中に置いた Web Component の Shadow root)へは降りない', () => {
+    const grid = document.createElement('div');
+    document.body.appendChild(grid);
+    const widget = document.createElement('x-field');
+    grid.appendChild(widget);
+    const inner = widget.attachShadow({ mode: 'open' });
+    inner.innerHTML = '<input id="inner">';
+    const input = inner.querySelector<HTMLInputElement>('#inner')!;
+    input.focus();
+    expect(getActiveElement(grid)).toBe(widget);
+    expect(grid.contains(getActiveElement(grid))).toBe(true);
+    expect(getDeepActiveElement()).toBe(input);
   });
 
   it('closed の Shadow root も、中の要素から見ればフォーカスが分かる', () => {
