@@ -228,8 +228,13 @@ export const createClipboardController = <T extends object>(): ClipboardControll
     const { rowModel, visibleColumns } = current;
     // 変更(Solid 版 段階 0-1): 状態はイベントの時点の store から読みます(getUiState が無いときは update で受けた値)。
     const uiState = readLiveUiState(current);
+    // 変更(1.3.0 / Solid 版の品質の段 2 S9-02): 範囲の選択が無いとき(1 セルを選んで Escape を押した後など。見た目は
+    //   1 セルを選んでいるときと同じ)は、アクティブセルの 1 セルをコピーします(これまでは何もコピーせず、Delete だけ効いた)。
+    const selection: GridSelection =
+      uiState.selection ??
+      (uiState.activeCell ? { type: 'cell', range: { start: uiState.activeCell, end: uiState.activeCell } } : null);
     const wholeGrid = computeIsWholeGridSelected(
-      uiState.selection,
+      selection,
       rowModel.getRowCount(),
       visibleColumns.length,
     );
@@ -239,15 +244,15 @@ export const createClipboardController = <T extends object>(): ClipboardControll
           rowModel.getRow,
           rowModel.getRowCount(),
           visibleColumns,
-          uiState.selection,
+          selection,
           rowIncludedFilter(current),
         );
     if (!text) {
       return;
     }
     const written = await writeTextToClipboard(text);
-    if (written && uiState.selection) {
-      current.onCopied?.(uiState.selection);
+    if (written && selection) {
+      current.onCopied?.(selection);
     }
   };
 

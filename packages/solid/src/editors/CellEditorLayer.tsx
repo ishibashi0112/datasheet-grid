@@ -58,6 +58,8 @@ type CellEditorLayerProps<T> = {
   slots: GridResolvedSlots;
   onCommit: (value: unknown, direction?: EditorCommitDirection) => EditorCommitResult | void;
   onCancel: () => void;
+  // 打ちかけを確定する関数を預ける先(core editController の registerDraftFlush。1.3.0 / S7-03 / S8-04)。
+  onRegisterFlush?: ((flush: (() => void) | null) => void) | undefined;
   align?: 'left' | 'center' | 'right' | undefined;
   enterMove?: EditorEnterMove | undefined;
   // 開いているときの枠の DOM id(編集中のセルが aria-owns で子に持つ)。
@@ -102,8 +104,10 @@ export function CellEditorLayer<T>(props: CellEditorLayerProps<T>) {
     // custom エディタ。ctx の行・位置・値は読んだときに引きます(JSX の中で読めば追従する。編集中に上へ行が足されたときなど)。
     //   セッションが終わった後(別のセルの編集が始まった後など)は、そのセッションの最後の値のまま(サーバーで検査してから
     //   commit する作りで、await の後に読んだ ctx.row が別のセルの行を指していた。React 版は描いた時点の値を渡す)。
+    //   変更(1.3.0 / S3-21): 編集中の位置に行が無い間(上に行が足されて一瞬グループ行を指すときなど)も、最後の値のまま描き続けます
+    //   (これまではその間だけ外して作り直し、利用側のエディタの打ちかけが消えて、開いたときの値に戻っていた。React 版も同じ)。
     const session = createMemo((previous: CellEditorSession<T> | null | undefined) =>
-      previous === undefined || props.sessionId === sessionId ? props.session : previous,
+      previous === undefined || props.sessionId === sessionId ? (props.session ?? previous ?? null) : previous,
     );
     const context = {
       get row() {
@@ -136,7 +140,12 @@ export function CellEditorLayer<T>(props: CellEditorLayerProps<T>) {
         props.onCommit(value, direction) ?? { status: 'noop' as const },
       cancel: () => props.onCancel(),
     } satisfies CellEditorContext<T, SolidGridTypes>;
-    return <CustomCellEditor render={render} context={context} />;
+    // 行が揃うまでは描きません(行の無い ctx を渡さない。揃った後は上の memo が最後の値を持つので外れない)。
+    return (
+      <Show when={session() !== null}>
+        <CustomCellEditor render={render} context={context} />
+      </Show>
+    );
   };
 
   const renderEditor = (type: EditorKind, sessionId: number): JSX.Element => {
@@ -158,8 +167,13 @@ export function CellEditorLayer<T>(props: CellEditorLayerProps<T>) {
       },
       onCommit: (value: unknown, direction?: EditorCommitDirection) => props.onCommit(value, direction),
       onCancel: () => props.onCancel(),
+      onRegisterFlush: (flush: (() => void) | null) => props.onRegisterFlush?.(flush),
     };
     const initialValue = untrack(props.initialValue);
+    // select / custom は打ちかけを預けません(前のエディタの関数を残さない。React 版と同じ)。
+    if (type === 'select' || type === 'custom') {
+      props.onRegisterFlush?.(null);
+    }
     switch (type) {
       case 'number': {
         const numberEditor = () => {
@@ -206,9 +220,7 @@ export function CellEditorLayer<T>(props: CellEditorLayerProps<T>) {
         if (current?.type !== 'custom') {
           return null;
         }
-        // 編集中の位置に行が無い間(上に行が足されて一瞬グループ行を指すときなど)は描かず、行が戻ったら作り直します(React 版と
-        //   同じ。custom エディタは中身を利用側が持つので、行の無い ctx を渡さない)。
-        return <Show when={props.session !== null}>{renderCustomEditor(current.render, sessionId, initialValue)}</Show>;
+        return renderCustomEditor(current.render, sessionId, initialValue);
       }
       default: {
         const textEditor = () => {

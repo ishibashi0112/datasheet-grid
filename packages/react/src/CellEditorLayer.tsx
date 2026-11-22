@@ -1,5 +1,6 @@
 import { useState, type CSSProperties, type ReactNode } from 'react';
 import type {
+  CellEditorContext,
   EditorCommitDirection,
   EditorCommitResult,
   EditorEnterMove,
@@ -86,6 +87,8 @@ type CellEditorLayerProps<T> = {
     direction?: EditorCommitDirection,
   ) => EditorCommitResult | void;
   onCancel: () => void;
+  // 追加(1.3.0 / S7-03 / S8-04): エディタの打ちかけを確定する関数を預かる先(core editController の registerDraftFlush)。
+  onRegisterFlush?: ((flush: (() => void) | null) => void) | undefined;
   // 追加(③): 編集 input の text-align。列 align に追従(右寄せ数値列を編集中も右寄せ維持)。
   align?: 'left' | 'center' | 'right';
   // 追加(enter-move ②): 組み込みエディタの Enter 確定後の移動先です(未指定 = 'down')。
@@ -114,6 +117,7 @@ export function CellEditorLayer<T>({
   slots,
   onCommit,
   onCancel,
+  onRegisterFlush,
   align,
   enterMove,
   domId,
@@ -203,6 +207,7 @@ export function CellEditorLayer<T>({
         step={editor.step}
         onCommit={onCommit}
         onCancel={onCancel}
+        onRegisterFlush={onRegisterFlush}
         align={align}
         cellHeight={rect.height}
         alignTop={alignTop}
@@ -221,18 +226,18 @@ export function CellEditorLayer<T>({
         initialText={editorSession ? resolveTypedStartText(initialValue, editorSession.value) : undefined}
         onCommit={onCommit}
         onCancel={onCancel}
+        onRegisterFlush={onRegisterFlush}
         align={align}
         cellHeight={rect.height}
         alignTop={alignTop}
       />
     );
   } else if (editor?.type === 'custom') {
-    // custom は編集セッション情報が揃っているときだけ描画します(通常、編集中は常に非 null)。
-    editorNode = editorSession ? (
-      <CustomCellEditor
-        key={sessionId}
-        render={editor.render}
-        context={{
+    // custom の ctx は編集セッション情報が揃っているときだけ作ります。変更(1.3.0 / S3-21): 揃っていない間(編集中の位置が一瞬
+    //   グループ行を指すときなど)もエディタは外さず、最後の ctx のまま描きます(CustomCellEditor。外すと利用側のエディタが作り
+    //   直され、打ちかけが消えていた)。
+    const customContext: CellEditorContext<T> | null = editorSession
+      ? {
           row: editorSession.row,
           rowIndex: editorSession.rowIndex,
           sourceRowIndex: editorSession.sourceRowIndex,
@@ -246,9 +251,16 @@ export function CellEditorLayer<T>({
           commit: (value, direction) =>
             onCommit(value, direction) ?? { status: 'noop' },
           cancel: onCancel,
-        }}
+        }
+      : null;
+    editorNode = (
+      <CustomCellEditor
+        key={sessionId}
+        render={editor.render}
+        onRegisterFlush={onRegisterFlush}
+        context={customContext}
       />
-    ) : null;
+    );
   } else if (editor?.type === 'select') {
     // 動的 options(行依存)は編集中の行で解決します(消費側関数はレンダー中に呼ばれるため純粋前提)。
     const options =
@@ -270,6 +282,7 @@ export function CellEditorLayer<T>({
         initialText={editorSession ? resolveTypedStartText(initialValue, editorSession.value) : undefined}
         onCommit={onCommit}
         onCancel={onCancel}
+        onRegisterFlush={onRegisterFlush}
         align={align}
         themeClassName={themeClassName}
         cellHeight={rect.height}
@@ -285,6 +298,7 @@ export function CellEditorLayer<T>({
         initialValue={initialValue}
         onCommit={onCommit}
         onCancel={onCancel}
+        onRegisterFlush={onRegisterFlush}
         align={align}
         // 追加(段階 2 DU-14): editor: { type: 'text', multiline: true } は複数行の入力欄で開きます。
         multiline={editor?.type === 'text' && editor.multiline === true}

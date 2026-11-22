@@ -23,6 +23,8 @@ type NumberCellEditorProps = {
   step?: number | undefined;
   onCommit: EditorCommit;
   onCancel: () => void;
+  // 打ちかけを確定する関数を預ける先(core editController の registerDraftFlush。1.3.0 / S7-03 / S8-04)。
+  onRegisterFlush?: ((flush: (() => void) | null) => void) | undefined;
   align?: 'left' | 'center' | 'right' | undefined;
   enterMove?: EditorEnterMove | undefined;
   cellHeight?: number | undefined;
@@ -42,6 +44,15 @@ export function NumberCellEditor(props: NumberCellEditorProps) {
   let disposed = false;
   onCleanup(() => {
     disposed = true;
+  });
+  // 今の打ちかけを確定する関数をグリッドへ預けます(text エディタと同じ)。
+  props.onRegisterFlush?.(() => {
+    untrack(() => {
+      const element = input();
+      if (element) {
+        props.onCommit(resolveNumberEditorCommitValue(element.value, textMode));
+      }
+    });
   });
 
   // 描き終わった後にフォーカスします(type="number" は setSelectionRange に対応しないので、text のときだけ打った文字の後ろへ)。

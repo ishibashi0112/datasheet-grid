@@ -23,6 +23,8 @@ type DateCellEditorProps = {
   initialText?: string | undefined;
   onCommit: EditorCommit;
   onCancel: () => void;
+  // 打ちかけを確定する関数を預ける先(core editController の registerDraftFlush。1.3.0 / S7-03 / S8-04)。
+  onRegisterFlush?: ((flush: (() => void) | null) => void) | undefined;
   align?: 'left' | 'center' | 'right' | undefined;
   enterMove?: EditorEnterMove | undefined;
   cellHeight?: number | undefined;
@@ -70,6 +72,15 @@ export function DateCellEditor(props: DateCellEditorProps) {
     const normalized = readTypedDateCommitValue(value);
     return normalized === null ? { status: 'rejected', message: texts().enterDate } : props.onCommit(normalized, direction);
   };
+  // 今の打ちかけを確定する関数をグリッドへ預けます(text エディタと同じ)。
+  props.onRegisterFlush?.(() => {
+    untrack(() => {
+      const element = input();
+      if (element) {
+        commitDraft(element.value);
+      }
+    });
+  });
 
   return (
     <>

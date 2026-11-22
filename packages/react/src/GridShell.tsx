@@ -2843,7 +2843,7 @@ export function useGridShell<T extends object>({
   );
 
   // ── edit controller ───────────────────────────────────
-  const { startEditWithValue, commitEdit, cancelEdit } = useGridEditController({
+  const { startEditWithValue, commitEdit, cancelEdit, registerDraftFlush } = useGridEditController({
     uiState,
     rows,
     // 変更(10-E): editingCell.col は論理 index 空間のため orderedColumns で indexing します。
@@ -2867,6 +2867,10 @@ export function useGridShell<T extends object>({
     localeTexts,
     // 追加(1.2.0 の確かめ直し K): 'row' では確定の後の移動の先を行キーで覚える。
     followsRow: activeRowFollowEnabled,
+    // 追加(1.3.0 / RV5-3): 確定の後処理の時点で次の編集が始まっているか。
+    getUiState: gridStore.getState,
+    // 追加(1.3.0 / S7-03 / S8-04): 編集していた行が表から消えたとき、まだ rows にあるかを行キーで探す。
+    rowKeyGetter: resolvedRowKeyGetter,
   });
   // 追加(Solid 版 段階 0-2): セルの操作のコマンド群(core engine/cellCommands)へ最新の状態を渡します。
   useControllerLifecycle(cellCommands, {
@@ -4584,6 +4588,7 @@ export function useGridShell<T extends object>({
                   themeClassName={portalClassName}
                   onCommit={commitEdit}
                   onCancel={cancelEdit}
+                  onRegisterFlush={registerDraftFlush}
                   align={editingColumn?.align}
                   enterMove={editorEnterMove}
                   domId={cellEditorDomId}
@@ -4810,6 +4815,7 @@ export function useGridShell<T extends object>({
                   themeClassName={portalClassName}
                   onCommit={commitEdit}
                   onCancel={cancelEdit}
+                  onRegisterFlush={registerDraftFlush}
                   align={editingColumn?.align}
                   enterMove={editorEnterMove}
                   domId={cellEditorDomId}
@@ -5038,6 +5044,7 @@ export function useGridShell<T extends object>({
                   themeClassName={portalClassName}
                   onCommit={commitEdit}
                   onCancel={cancelEdit}
+                  onRegisterFlush={registerDraftFlush}
                   align={editingColumn?.align}
                   enterMove={editorEnterMove}
                   domId={cellEditorDomId}

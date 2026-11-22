@@ -1958,6 +1958,8 @@ function GridShellBody<T extends object>(
     canEditCell: canEditCell(),
     localeTexts: localeTexts(),
     followsRow: activeRowFollowEnabled(),
+    getUiState: store.getState,
+    rowKeyGetter: resolvedRowKeyGetter(),
   }), 'render', 'edit');
   connectController(cells, () => ({
     rows: rows(),
@@ -3126,6 +3128,7 @@ function GridShellBody<T extends object>(
             slots={slots()}
             onCommit={(value: unknown, direction?: EditorCommitDirection) => edit.commitEdit(value, direction)}
             onCancel={edit.cancelEdit}
+            onRegisterFlush={edit.registerDraftFlush}
             align={editingColumn()?.align}
             enterMove={props.editorEnterMove}
             domId={cellEditorDomId}

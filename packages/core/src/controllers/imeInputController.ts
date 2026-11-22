@@ -98,6 +98,8 @@ export const createImeInputController = (): ImeInputController => {
   // 変換中にポインタが押された(その後の compositionend は確定操作ではなくクリックによるもの)。
   let pointerInterrupted = false;
   let positionedCell: CellCoord | null = null;
+  // 追加(1.3.0): 待機中に位置を合わせた後、次のフレームで合わせ直す予約(cancelAnimationFrame の番号)。
+  let settleFrame: { view: Window; id: number } | null = null;
 
   const root = () => args?.gridRootRef.current ?? null;
 
@@ -149,6 +151,37 @@ export const createImeInputController = (): ImeInputController => {
     //   セルの 1 行目にそろえます(開いたエディタと同じ。これまでは真ん中に出て、確定でエディタが開くと上へ動いていた)。
     alignInputTextToTop(input, composingView && cellEl.classList.contains('ssg-body-cell--valign-top'), height);
     return true;
+  };
+
+  // 追加(1.3.0 / Solid 版の品質の段 2): 待機中に位置を合わせたら、次のフレームでもう一度合わせます。PageDown のように先読みの
+  //   行(もう描かれている)へ移ってからスクロールするときは、合わせた後にスクロールが来て、入力受けがスクロールの前の位置に
+  //   残っていた(Chromium で 16px。IME の候補の窓がずれて出る。変換を始めると直る)。React 版はアクティブセルが変わった描画の
+  //   レイアウト effect で合わせ、スクロールはその後に来る。
+  const settleAfterScroll = () => {
+    const view = input?.ownerDocument.defaultView ?? null;
+    if (view === null || settleFrame !== null) {
+      return;
+    }
+    const id = view.requestAnimationFrame(() => {
+      settleFrame = null;
+      if (args === null || !args.enabled || composing !== null || handoff || args.activeCell === null) {
+        return;
+      }
+      if (!sameCell(positionedCell, args.activeCell)) {
+        return;
+      }
+      if (!positionAt(args.activeCell, false)) {
+        positionedCell = null;
+      }
+    });
+    settleFrame = { view, id };
+  };
+
+  const cancelSettle = () => {
+    if (settleFrame !== null) {
+      settleFrame.view.cancelAnimationFrame(settleFrame.id);
+      settleFrame = null;
+    }
   };
 
   const hideComposing = () => {
@@ -340,6 +373,7 @@ export const createImeInputController = (): ImeInputController => {
       if (next.activeCell !== null && !sameCell(positionedCell, next.activeCell)) {
         if (positionAt(next.activeCell, false)) {
           positionedCell = next.activeCell;
+          settleAfterScroll();
         }
       }
       // ルートがフォーカスを持ったまま(有効化した直後 / 編集の終了直後など)なら入力受けへ回します。
@@ -364,6 +398,7 @@ export const createImeInputController = (): ImeInputController => {
       positionedCell = null;
     },
     dispose: () => {
+      cancelSettle();
       syncInputListener(null);
       syncRootListener(null);
       syncDocumentListener(false);

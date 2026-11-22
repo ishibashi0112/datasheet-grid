@@ -24,6 +24,7 @@ import {
 import { Portal } from '@solidjs/web';
 import type { JSX } from '@solidjs/web';
 import { isEscapePreventedInside } from '@ishibashi0112/spreadsheet-grid-core/internal/controllers/escapeClaimController';
+import { keepFocusAfterPress } from '@ishibashi0112/spreadsheet-grid-core/internal/controllers/popoverSupport';
 import { resolveFocusWrapTarget } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/focusCycle';
 import type { ConditionDraftChangeOptions } from '@ishibashi0112/spreadsheet-grid-core/internal/engine/filterPopoverCommands';
 import type { ColumnSelectOptionsStatus } from '@ishibashi0112/spreadsheet-grid-core/internal/controllers/selectOptionsCollector';
@@ -142,17 +143,17 @@ const stopButtonKeyPropagation = (event: KeyboardEvent) => {
 };
 
 // pointerdown で押すボタン(フォーカスを奪わない)。Enter / Space でも押せます。
-const pressHandlers = (action: () => void) => ({
+const pressHandlers = (action: (element: HTMLElement) => void) => ({
   onPointerDown: (event: PointerEvent) => {
     event.preventDefault();
     event.stopPropagation();
-    action();
+    action(event.currentTarget as HTMLElement);
   },
   onKeyDown: (event: KeyboardEvent) => {
     stopButtonKeyPropagation(event);
     if (event.key === 'Enter' || event.key === ' ') {
       event.preventDefault();
-      action();
+      action(event.currentTarget as HTMLElement);
     }
   },
 });
@@ -629,7 +630,11 @@ function DateConditionEditor(props: DateConditionEditorProps) {
             {(option) => (
               <button
                 type="button"
-                {...pressHandlers(() => togglePreset(option().id))}
+                {...pressHandlers((element) => {
+                  togglePreset(option().id);
+                  // 追加(Solid 版 0.1.2 / S5-02): プリセットにすると日付の入力欄が消える(フォーカスがあれば body へ落ちる)ので、チップへ置く。
+                  keepFocusAfterPress(element);
+                })}
                 class={['ssg-filter-preset-chip', { 'ssg-filter-preset-chip--active': props.draft.preset === option().id }]}
               >
                 {option().label}

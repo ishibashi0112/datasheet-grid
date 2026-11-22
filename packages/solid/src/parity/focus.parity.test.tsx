@@ -593,3 +593,49 @@ describe('編集を確定した後のフォーカス(editFocus)', () => {
     });
   });
 });
+// 追加(React 版 1.3.0 / Solid 版 0.1.2、品質の段 2 S5-02): 日付のプリセットのチップを押すと日付の入力欄が消え、フォーカスが
+//   body へ落ちて Escape でポップオーバーが閉じなかった。チップへフォーカスを置く(core controllers/popoverSupport の
+//   keepFocusAfterPress)。
+describe('日付のプリセットを押した後のフォーカス(S5-02)', () => {
+  it('入力欄にフォーカスがあるままチップを押すとチップへ移り、Escape で閉じる', async () => {
+    await expectParity({
+      features: ['filtering', 'columnMenu'],
+      props: () => ({
+        rows: makeRows(5),
+        columns: [
+          { key: 'name', title: '名前', width: 160 },
+          { key: 'day', title: '日付', width: 140, filterType: 'dateSet' },
+        ],
+        rowKeyGetter: (row: Row) => row.id,
+        enableColumnFilter: true,
+      }),
+      steps: async (ctx) => {
+        await openFilter(ctx, 'day');
+        const input = document.querySelector<HTMLInputElement>('.ssg-filter-popover .ssg-dp-input');
+        await ctx.act(() => {
+          input?.focus();
+        });
+        if (document.activeElement !== input) {
+          throw new Error(`[${ctx.framework}] 日付の入力欄にフォーカスがありません`);
+        }
+        ctx.snapshot('日付の入力欄にフォーカス');
+        const chip = document.querySelector<HTMLButtonElement>('.ssg-filter-popover .ssg-filter-preset-chip');
+        await ctx.act(() => {
+          if (chip) {
+            fireEvent.pointerDown(chip, pointer);
+            fireEvent.pointerUp(chip, pointer);
+          }
+        });
+        if (document.activeElement !== chip) {
+          throw new Error(`[${ctx.framework}] チップへフォーカスが移っていません: ${document.activeElement?.tagName}`);
+        }
+        ctx.snapshot('チップを押した(入力欄は消え、フォーカスはチップ)');
+        await keyOn(ctx, focused(), { key: 'Escape' });
+        if (document.querySelector('.ssg-filter-popover') !== null) {
+          throw new Error(`[${ctx.framework}] Escape で閉じていません`);
+        }
+        ctx.snapshot('Escape で閉じた');
+      },
+    });
+  }, 30_000);
+});

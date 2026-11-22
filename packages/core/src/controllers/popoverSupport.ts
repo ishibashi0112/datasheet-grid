@@ -146,6 +146,26 @@ export const focusPanelIfIdle = (panel: HTMLElement | null, gridRoot?: HTMLEleme
   }
 };
 
+// 追加(1.3.0 / Solid 版の品質の段 2 S5-02): パネルの中の押しても focus を取らないボタン(pointerdown を preventDefault する
+//   日付のプリセットのチップなど)を押した結果、フォーカスのあった要素(日付の入力欄)が消えて body に落ちたときは、押した
+//   ボタンへフォーカスを置きます(body に落ちると、パネルの Escape や Tab が効かなかった)。描き直しの後(次のフレーム)に
+//   見ます。フォーカスがほかの要素へ移っていれば奪いません。
+export const keepFocusAfterPress = (trigger: HTMLElement): void => {
+  const view = trigger.ownerDocument.defaultView;
+  if (view === null) {
+    return;
+  }
+  view.requestAnimationFrame(() => {
+    if (!trigger.isConnected) {
+      return;
+    }
+    const active = getActiveElement(trigger);
+    if (active === null || active === trigger.ownerDocument.body || active === trigger.ownerDocument.documentElement) {
+      trigger.focus({ preventScroll: true });
+    }
+  });
+};
+
 export type PopoverWindowHandlers = {
   onResize?: () => void;
   // scroll は capture 相で受けます(内部スクロールも含めて拾う)。

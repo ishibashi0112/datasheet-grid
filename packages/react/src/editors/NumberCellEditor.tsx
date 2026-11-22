@@ -7,6 +7,7 @@
 // 変更(数値の打ち始め): 「-」「+」「.」のキーで始めた編集だけは type="text" で開きます(下の textMode)。
 // 変更(FC-17): 数値に直せない初期値(英字から打ち始めた等)も type="text" で開きます。
 import { useEffect, useRef, useState } from 'react';
+import { useIsomorphicLayoutEffect } from '../hooks/useController';
 import type {
   EditorCommitDirection,
   EditorCommitResult,
@@ -33,6 +34,8 @@ type NumberCellEditorProps = {
     direction?: EditorCommitDirection,
   ) => EditorCommitResult | void;
   onCancel: () => void;
+  // 追加(1.3.0 / S7-03 / S8-04): 打ちかけを確定する関数を預ける先(CellEditorLayer から。core editController の registerDraftFlush)。
+  onRegisterFlush?: ((flush: (() => void) | null) => void) | undefined;
   align?: 'left' | 'center' | 'right';
   // 追加(enter-move ②): Enter 確定後の移動先です(未指定 = 'down')。
   enterMove?: EditorEnterMove;
@@ -49,6 +52,7 @@ export function NumberCellEditor({
   step,
   onCommit,
   onCancel,
+  onRegisterFlush,
   align,
   enterMove,
   cellHeight = 0,
@@ -72,6 +76,12 @@ export function NumberCellEditor({
   //   ありません。セッションの途中で type は切り替えません(キャレットが飛ぶため)。
   const textMode = start.textMode;
   const commitValue = resolveNumberEditorCommitValue(draftValue, textMode);
+  // 追加(1.3.0 / S7-03 / S8-04): 今の打ちかけを確定する関数をグリッドへ預けます(描くたびに預け直す。text エディタと同じ)。
+  useIsomorphicLayoutEffect(() => {
+    onRegisterFlush?.(() => {
+      onCommit(commitValue);
+    });
+  });
 
   // マウント時(= 編集セッション開始時)に自動フォーカスします。
   //   ※ type="number" は setSelectionRange 非対応(例外を投げるブラウザあり)のため focus のみ。text のときは

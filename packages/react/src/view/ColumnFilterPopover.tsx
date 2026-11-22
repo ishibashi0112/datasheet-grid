@@ -1,5 +1,6 @@
 import { createPortal } from 'react-dom';
 import { isEscapePreventedInside } from '@ishibashi0112/spreadsheet-grid-core/internal/controllers/escapeClaimController';
+import { keepFocusAfterPress } from '@ishibashi0112/spreadsheet-grid-core/internal/controllers/popoverSupport';
 import { cx } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/cx';
 import { resolveFocusWrapTarget } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/focusCycle';
 // 追加(filter-ext E): 'auto' を解決した後の実効フィルター種別です。
@@ -809,6 +810,8 @@ function DateConditionEditor({
                   ...draft,
                   preset: draft.preset === option.id ? null : option.id,
                 });
+                // 追加(1.3.0 / S5-02): プリセットにすると日付の入力欄が消える(フォーカスがあれば body へ落ちる)ので、チップへ置く。
+                keepFocusAfterPress(event.currentTarget);
               }}
               onKeyDown={(event) => {
                 stopButtonKeyPropagation(event);

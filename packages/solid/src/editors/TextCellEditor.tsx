@@ -37,6 +37,8 @@ type TextCellEditorProps = {
   initialValue: string;
   onCommit: EditorCommit;
   onCancel: () => void;
+  // 打ちかけを確定する関数を預ける先(core editController の registerDraftFlush。1.3.0 / S7-03 / S8-04)。
+  onRegisterFlush?: ((flush: (() => void) | null) => void) | undefined;
   align?: 'left' | 'center' | 'right' | undefined;
   enterMove?: EditorEnterMove | undefined;
   // 複数行の入力欄で開くか / その Enter の動き(既定 'commit')/ セルの高さ(入力欄の高さの下限)。
@@ -96,6 +98,16 @@ export function TextCellEditor(props: TextCellEditorProps) {
   let disposed = false;
   onCleanup(() => {
     disposed = true;
+  });
+  // 今の打ちかけを確定する関数をグリッドへ預けます(1.3.0 / S7-03 / S8-04。React 版と同じ)。編集していた行が絞り込みから外れると、
+  //   エディタは blur を待たずに外れるため、グリッドがこれで打ちかけをその行へ確定します(外れた後も入力欄の value は残る)。
+  props.onRegisterFlush?.(() => {
+    untrack(() => {
+      const element = input() ?? textarea();
+      if (element) {
+        props.onCommit(element.value);
+      }
+    });
   });
   const commitOnBlur = (value: string) => {
     if (disposed) {

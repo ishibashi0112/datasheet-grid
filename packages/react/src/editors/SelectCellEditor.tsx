@@ -53,6 +53,8 @@ type SelectCellEditorProps = {
     direction?: EditorCommitDirection,
   ) => EditorCommitResult | void;
   onCancel: () => void;
+  // 追加(1.3.0 / S7-03 / S8-04): 打ちかけを確定する関数を預ける先。select は預けません(null。前のエディタの関数を残さない)。
+  onRegisterFlush?: ((flush: (() => void) | null) => void) | undefined;
   align?: 'left' | 'center' | 'right';
   // ポータル root へ直接付与するテーマ修飾子('ssg-theme-dark' | 'ssg-theme-class' | undefined)です。
   themeClassName?: string;
@@ -74,6 +76,7 @@ export function SelectCellEditor({
   value,
   onCommit,
   onCancel,
+  onRegisterFlush,
   align,
   themeClassName,
   popoverSlot,
@@ -86,6 +89,9 @@ export function SelectCellEditor({
   const texts = useGridLocaleText();
   const inputRef = useRef<HTMLInputElement | null>(null);
   useTopAlignedInput(inputRef, alignTop, cellHeight);
+  useIsomorphicLayoutEffect(() => {
+    onRegisterFlush?.(null);
+  }, [onRegisterFlush]);
   const listRef = useRef<HTMLDivElement | null>(null);
   // 追加(1.0.1 / AP-34): 候補の一覧と候補の id(aria-controls / aria-activedescendant)。
   const listId = useId();
