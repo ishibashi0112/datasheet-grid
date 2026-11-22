@@ -2792,6 +2792,8 @@ export function useGridShell<T extends object>({
 
   const { handleKeyDown } = useGridKeyboardInteractions({
     uiState,
+    // 追加(1.3.0 / S12-05): 端の固定列へ移ったときに中央の横のスクロールを端へ戻す。
+    scrollContainerRef,
     // 追加(Solid 版 段階 0-1): イベントの時点の状態は store から読みます(controllers/liveUiState)。
     getUiState: gridStore.getState,
     // 変更(DS-3-1): filteredRows 配列 → rowModel シームを渡します(keyboard consumer 移行)。
@@ -3174,6 +3176,8 @@ export function useGridShell<T extends object>({
     columnWidths: effectiveColumnWidths,
     onColumnsChange,
     dispatch,
+    // 追加(1.3.0 / S12-01): 列を変えた後、アクティブセルを列のキーに付いていかせる(今のアクティブセルを読む)。
+    getUiState: gridStore.getState,
     enableSorting,
     sort: uiState.sort,
     globalFilterText,

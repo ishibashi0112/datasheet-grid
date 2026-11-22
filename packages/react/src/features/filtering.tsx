@@ -430,6 +430,9 @@ const useFilterPopoverContent = <T,>({
   // 変更(lazy-popups): 部品(別チャンク)の読み込み前は描画しません(読み込み完了でシェルごと再描画)。
   const renderedFilterPopover = openedFilterColumn && views ? (
     <views.default
+      // 追加(1.3.0 / Solid 版の品質の段 2 R3-2): 列ごとに作り直します(開いたまま別の列へ移ったとき = ツールパネルの ✎ など、
+      //   set の候補の検索の文字が前の列のまま残っていた)。
+      key={openedFilterColumn.key}
       popoverSlot={popoverSlot}
       themeClassName={portalClassName}
       isOpen={Boolean(filterPopoverState)}

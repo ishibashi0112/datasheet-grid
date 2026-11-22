@@ -3,7 +3,9 @@
 import { describe, it, expect, vi } from 'vitest';
 import { createColumnCommands, type ColumnCommandsArgs } from './columnCommands';
 import type { GridColumn } from '../model/gridTypes.unbound';
-import type { GridUiAction } from '../model/gridActions';
+import { gridActions, type GridUiAction } from '../model/gridActions';
+import { createGridStore } from '../model/gridStore';
+import { createInitialGridUiState } from '../model/gridReducer';
 
 type Row = { a: number; b: number; c: number };
 
@@ -227,5 +229,58 @@ describe('createColumnCommands', () => {
       commands.handleColumnMenuAutosizeAllColumns();
       expect(args.closeColumnMenu).toHaveBeenCalledTimes(2);
     });
+  });
+
+  // 追加(1.3.0 / Solid 版の品質の段 2 S12-01): 列を変えた後、アクティブセルは列のキーに付いていく(隠した列なら同じ位置)。
+  it('固定・並べ替え・非表示の後、新しい列が届いたらアクティブセルをその列の位置へ移す(グループ化は今までどおり外す)', () => {
+    const store = createGridStore(createInitialGridUiState());
+    const commands = createColumnCommands<Row>();
+    const onColumnsChange = vi.fn<(next: GridColumn<Row>[]) => void>();
+    const make = (cols: GridColumn<Row>[]): ColumnCommandsArgs<Row> => {
+      const visible = cols.filter((column) => column.visible !== false);
+      const ordered = [
+        ...visible.filter((column) => column.pinned === 'left'),
+        ...visible.filter((column) => column.pinned !== 'left' && column.pinned !== 'right'),
+        ...visible.filter((column) => column.pinned === 'right'),
+      ];
+      return {
+        ...makeArgs().args,
+        columns: cols,
+        visibleColumns: visible,
+        orderedColumns: ordered,
+        onColumnsChange,
+        dispatch: store.dispatch,
+        getUiState: store.getState,
+      };
+    };
+    const four: GridColumn<Row>[] = [...columns, { key: 'd', title: 'D', width: 100 }];
+    commands.update(make(four));
+    store.dispatch(gridActions.activateCell({ row: 3, col: 2 }));
+    // c を左に固定 → c は 0 列目。
+    commands.handleColumnMenuPinnedChange('c', 'left');
+    expect(store.getState().activeCell).toEqual({ row: 3, col: 2 });
+    commands.update(make(onColumnsChange.mock.calls[0][0]));
+    expect(store.getState().activeCell).toEqual({ row: 3, col: 0 });
+    expect(store.getState().selection).toEqual({ type: 'cell', range: { start: { row: 3, col: 0 }, end: { row: 3, col: 0 } } });
+    // 並びは c / a / b / d。b へ移ってからアクティブでない列 a を隠すと、b(1 列目)に付いていく。
+    const pinned = onColumnsChange.mock.calls[0][0];
+    store.dispatch(gridActions.activateCell({ row: 3, col: 2 }));
+    commands.handleColumnChooserToggleVisibility('a', false);
+    commands.update(make(onColumnsChange.mock.calls[1][0]));
+    expect(store.getState().activeCell).toEqual({ row: 3, col: 1 });
+    // アクティブな列(b)を隠すと同じ位置のまま(1 列目 = d)。
+    const hidden = onColumnsChange.mock.calls[1][0];
+    commands.handleColumnChooserToggleVisibility('b', false);
+    commands.update(make(onColumnsChange.mock.calls[2][0]));
+    expect(store.getState().activeCell).toEqual({ row: 3, col: 1 });
+    expect(pinned).not.toBe(hidden);
+    // 新しい列が届かないまま(親が columns を変えない)の update では動かさない。
+    store.dispatch(gridActions.activateCell({ row: 1, col: 0 }));
+    commands.handleColumnChooserShowAll();
+    commands.update(make(onColumnsChange.mock.calls[2][0]));
+    expect(store.getState().activeCell).toEqual({ row: 1, col: 0 });
+    // グループ化はアクティブセルを外す(行が入れ替わる)。
+    commands.handleColumnMenuGroupBy('c');
+    expect(store.getState().activeCell).toBeNull();
   });
 });

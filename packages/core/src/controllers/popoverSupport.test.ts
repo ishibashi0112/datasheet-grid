@@ -114,6 +114,47 @@ describe('createPopoverWindowBindings', () => {
     withoutRoot.detach();
     expect(onGridHidden).not.toHaveBeenCalled();
   });
+
+  // 追加(1.3.0 / Solid 版の品質の段 2 S6-21): ページに開いておくグリッドのポップアップは、グリッドをまたいで 1 つ。
+  it('別のグリッドのポップアップが開いたら onOtherGridPopupOpen を呼ぶ(同じグリッドの中・閉じた後は呼ばない)', () => {
+    vi.stubGlobal('ResizeObserver', undefined);
+    const rootA = document.createElement('div');
+    const rootB = document.createElement('div');
+    const make = (root: HTMLElement, onOtherGridPopupOpen?: () => void) =>
+      createPopoverWindowBindings({
+        isInside: () => false,
+        onOutsidePointerDown: () => {},
+        getGridRoot: () => root,
+        ...(onOtherGridPopupOpen ? { onOtherGridPopupOpen } : null),
+      });
+    const closeMenuA = vi.fn();
+    const closeFilterA = vi.fn();
+    const menuA = make(rootA, () => {
+      closeMenuA();
+      menuA.detach();
+    });
+    const filterA = make(rootA, closeFilterA);
+    const panelA = make(rootA);
+    menuA.attach();
+    filterA.attach();
+    panelA.attach();
+    expect(closeMenuA).not.toHaveBeenCalled();
+    const menuB = make(rootB, () => {});
+    menuB.attach();
+    expect(closeMenuA).toHaveBeenCalledTimes(1);
+    expect(closeFilterA).toHaveBeenCalledTimes(1);
+    expect(panelA.isAttached()).toBe(true);
+    // 閉じた(detach した)ものは、次に別のグリッドで開いても呼ばない。
+    menuB.detach();
+    menuA.attach();
+    menuA.detach();
+    menuB.attach();
+    expect(closeMenuA).toHaveBeenCalledTimes(1);
+    menuB.detach();
+    filterA.detach();
+    panelA.detach();
+    vi.unstubAllGlobals();
+  });
 });
 
 describe('blurForPopover / restoreGridFocus', () => {

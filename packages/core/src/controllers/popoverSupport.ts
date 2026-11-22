@@ -180,7 +180,16 @@ export type PopoverWindowHandlers = {
   //   別の画面の上に残っていました。グリッドの要素を ResizeObserver で見張ります(開いている間だけ)。
   getGridRoot?: () => HTMLElement | null;
   onGridHidden?: () => void;
+  // 追加(1.3.0 / Solid 版の品質の段 2 S6-21): 別のグリッドのポップアップが開いたとき(渡したポップアップだけ。列メニュー・
+  //   右クリックメニュー・列フィルター)。メニューのボタンは押下を止める(stopPropagation)ので、別のグリッドのボタンを押しても
+  //   こちらの「外を押したら閉じる」に届かず、2 つのグリッドのメニューが同時に開いていた。グリッド(getGridRoot)をまたいで
+  //   1 つにします(同じグリッドの中の組み合わせは今までどおり、各コントローラが決める)。
+  onOtherGridPopupOpen?: () => void;
 };
+
+type OpenGridPopup = { owner: HTMLElement; close: () => void };
+// 開いているポップアップ(onOtherGridPopupOpen を渡したもの)。ページの中のグリッドで共有します。
+const openGridPopups: Set<OpenGridPopup> = /* @__PURE__ */ new Set();
 
 export type PopoverWindowBindings = {
   attach: () => void;
@@ -207,6 +216,22 @@ export const createPopoverWindowBindings = (
   };
   const handleKeyDown = (event: KeyboardEvent) => handlers.onKeyDown?.(event);
   let hiddenObserver: ResizeObserver | null = null;
+  let openEntry: OpenGridPopup | null = null;
+  const claimOpenPopup = () => {
+    const onOther = handlers.onOtherGridPopupOpen;
+    const owner = handlers.getGridRoot?.() ?? null;
+    if (!onOther || !owner) {
+      return;
+    }
+    for (const entry of Array.from(openGridPopups)) {
+      if (entry.owner !== owner) {
+        openGridPopups.delete(entry);
+        entry.close();
+      }
+    }
+    openEntry = { owner, close: onOther };
+    openGridPopups.add(openEntry);
+  };
   const watchGridHidden = () => {
     const root = handlers.getGridRoot?.() ?? null;
     const onGridHidden = handlers.onGridHidden;
@@ -238,12 +263,17 @@ export const createPopoverWindowBindings = (
       window.addEventListener('pointerdown', handlePointerDown);
       window.addEventListener('keydown', handleKeyDown, true);
       watchGridHidden();
+      claimOpenPopup();
     },
     detach: () => {
       if (!attached) {
         return;
       }
       attached = false;
+      if (openEntry !== null) {
+        openGridPopups.delete(openEntry);
+        openEntry = null;
+      }
       hiddenObserver?.disconnect();
       hiddenObserver = null;
       window.removeEventListener('resize', handleResize);

@@ -1916,6 +1916,8 @@ function GridShellBody<T extends object>(
   const keyboard = createKeyboardController<T>();
   connectController(keyboard, () => ({
     uiState: ui(),
+    // 端の固定列へ移ったときに中央の横のスクロールを端へ戻す(S12-05。React 版と同じ)。
+    scrollContainerRef,
     // イベントの時点の状態は store から読む(core controllers/liveUiState)。
     getUiState: store.getState,
     rowModel: rowModel(),
@@ -2092,6 +2094,8 @@ function GridShellBody<T extends object>(
     columnWidths: paneResolution().effectiveColumnWidths,
     onColumnsChange: inOwnTick(props.onColumnsChange),
     dispatch,
+    // 列を変えた後、アクティブセルを列のキーに付いていかせる(S12-01。React 版と同じ)。
+    getUiState: store.getState,
     enableSorting: enableSorting(),
     sort: ui().sort,
     globalFilterText: selectGlobalFilter(ui()),

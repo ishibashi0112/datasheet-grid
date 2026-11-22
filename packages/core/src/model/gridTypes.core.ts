@@ -1497,7 +1497,10 @@ export type GridColumn<T, F extends GridFrameworkTypes = GridFrameworkTypes> = {
    * カスタムヘッダー描画。中に置いたボタン / 入力欄 / リンク等(`button` / `input` / `select` /
    * `textarea` / `a[href]` / `label` / `contenteditable` / `role="button"` 等)
    * を押したときは列の範囲選択を始めない(既定動作も止めないため入力欄にフォーカスが入る)。
-   * それ以外の部分を押すと従来どおり列を選択する。
+   * それ以外の部分を押すと従来どおり列を選択する。細い列(120px 未満)では、
+   * ポインタが中のボタン等の上にある間はホバーで出る操作(並べ替えのつまみ / 列メニューの ⋮)を隠し、
+   * 上に重なった操作ではなく中のボタンが押されるようにする(1.3.0 から。
+   * 見出しの空いた所では今までどおり出る)。
    */
   renderHeader?: ((ctx: HeaderRenderContext<T, F>) => F['node']) | undefined;
   // 変更(12-A): 'set' を追加します。AG Grid の Set Filter 相当

@@ -102,6 +102,82 @@ if (SUPPORTS.clipboardSeed) {
   });
 }
 
+// ── S12-05: 横にスクロールした後の Ctrl+Home(先頭の列は左に固定)──
+{
+  await cell(page, 3, 'name').click();
+  await page.evaluate(() => {
+    const scroller = document.querySelector('.ssg-scroll-container');
+    if (scroller) scroller.scrollLeft = scroller.scrollWidth;
+  });
+  await waitIdle(page, 300);
+  await page.keyboard.press('ControlOrMeta+Home');
+  await waitIdle(page, 300);
+  const scrollLeft = await page.evaluate(() => document.querySelector('.ssg-scroll-container')?.scrollLeft ?? null);
+  const active = await page.evaluate(() => window.__grid.getActiveCell());
+  check('S12-05: 横にスクロールした後の Ctrl+Home で左端へ戻る', scrollLeft === 0 && active?.row === 0 && active?.col === 0, { scrollLeft, active });
+}
+
 check('想定外のエラーが無い', unexpectedPageErrors(pageErrors).length === 0, unexpectedPageErrors(pageErrors));
 await close();
+
+// ── RV5-4: 細い列(46px)の renderHeader の中のボタン(qty = 右寄せ / note = 左寄せ)──
+for (const key of ['qty', 'note']) {
+  const { page: p2, close: close2, pageErrors: errors2 } = await open('basic', { query: `hb=${key}` });
+  await waitIdle(p2, 300);
+  const button = p2.locator('[data-testid="hdr-btn"]');
+  const box = await button.boundingBox();
+  // ボタンの右寄り(つまみと ⋮ の背景がかぶる所)を押す。
+  await p2.mouse.move(box.x + box.width - 2, box.y + box.height / 2);
+  await waitIdle(p2, 200);
+  const hit = await p2.evaluate(([x, y]) => {
+    const element = document.elementFromPoint(x, y);
+    return element?.closest('[data-testid="hdr-btn"]') ? 'button' : (element?.className?.toString() ?? null);
+  }, [box.x + box.width - 2, box.y + box.height / 2]);
+  await p2.mouse.down();
+  await p2.mouse.up();
+  await waitIdle(p2, 200);
+  const clicked = await p2.evaluate(() => window.__events.filter((e) => e.type === 'hdr-btn').length);
+  const selection = await p2.evaluate(() => window.__grid.getSelection());
+  // 見出しの空いた所(ボタンの外)では今までどおり ⋮ が出て押せる。
+  const header = p2.locator(`.ssg-header-cell[data-ssg-col-key="${key}"]`);
+  const headerBox = await header.boundingBox();
+  await p2.mouse.move(headerBox.x + headerBox.width - 3, headerBox.y + 3);
+  await waitIdle(p2, 250);
+  const actionsShown = await p2.evaluate((columnKey) => {
+    const actions = document.querySelector(`.ssg-header-cell[data-ssg-col-key="${columnKey}"] .ssg-header-actions`);
+    return actions ? Number(getComputedStyle(actions).opacity) : null;
+  }, key);
+  check(`RV5-4(${key}): 細い列の見出しの中のボタンを押すと onClick が呼ばれ、列は選ばれない`, hit === 'button' && clicked === 1 && selection === null, {
+    hit,
+    clicked,
+    selection,
+  });
+  check(`RV5-4(${key}): 見出しの空いた所ではつまみと ⋮ が出る`, actionsShown === 1, { actionsShown });
+  check(`想定外のエラーが無い(細い列 ${key})`, unexpectedPageErrors(errors2).length === 0, unexpectedPageErrors(errors2));
+  await close2();
+}
+
+// ── S6-21: 2 つのグリッドの列メニュー ──
+{
+  const { page: p3, close: close3, pageErrors: errors3 } = await open('two');
+  await waitIdle(p3, 300);
+  const menuButtons = p3.locator('.ssg-header-cell[data-ssg-col-key="name"] .ssg-icon-btn');
+  const count = await menuButtons.count();
+  if (count >= 2) {
+    await p3.locator('.ssg-header-cell[data-ssg-col-key="name"]').nth(0).hover();
+    await menuButtons.nth(0).click();
+    await waitIdle(p3, 250);
+    const first = await p3.locator('[role="menu"]').count();
+    await p3.locator('.ssg-header-cell[data-ssg-col-key="name"]').nth(1).hover();
+    await menuButtons.nth(1).click();
+    await waitIdle(p3, 250);
+    const second = await p3.locator('[role="menu"]').count();
+    check('S6-21: 別のグリッドの列メニューを開くと、前のグリッドのメニューは閉じる', first === 1 && second === 1, { first, second });
+  } else {
+    check('S6-21: 2 つのグリッドの ⋮ が見つかる', false, { count });
+  }
+  check('想定外のエラーが無い(2 つの表)', unexpectedPageErrors(errors3).length === 0, unexpectedPageErrors(errors3));
+  await close3();
+}
+
 summary();

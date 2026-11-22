@@ -3800,6 +3800,18 @@
       margin-right: 0;
     }
   }
+  /* 追加(1.3.0 / RV5-4): 細い見出し(--inline-actions の無い見出し)では、ポインタが renderHeader の中のボタンや入力欄の上に
+     ある間(見出しのセルに data-ssg-header-control-hover。core logic/domGuards)、重ねて出す操作群を隠し、押した所が下の
+     ボタンへ届くようにします(これまでは操作群の背景がボタンを覆い、押すと列が選ばれていた)。見出しの空いた所では今までどおり
+     出ます。タッチ(hover: none)は常に出す今の形のままです。 */
+  @media (hover: hover) {
+    .ssg-header-cell:not(.ssg-header-cell--inline-actions)[data-ssg-header-control-hover] .ssg-header-actions {
+      pointer-events: none;
+    }
+    .ssg-header-cell:not(.ssg-header-cell--inline-actions)[data-ssg-header-control-hover] .ssg-header-actions:not(:has(:focus-visible)) {
+      opacity: 0;
+    }
+  }
   /* 追加: hover で出る操作アイコン(grip / ⋮)の通常色を濃く(slate-600)して視認性を上げます。
      メニュー表示中の ⋮ のアクセント色(--active)は :not(--active) で除外し、従来どおり優先します。 */
   .ssg-header-actions .ssg-header-grip,

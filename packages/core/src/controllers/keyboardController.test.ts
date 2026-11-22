@@ -307,4 +307,51 @@ describe('keyboardController', () => {
     await c.handleKeyDown(ev('Enter'));
     expect(args.handleCellDoubleClick).toHaveBeenCalledTimes(1);
   });
+
+  // 追加(1.3.0 / Solid 版の品質の段 2 S12-05): 端の固定列へ移るキーは、中央の横のスクロールもその端へ戻す(Excel と同じ)。
+  it('Ctrl+Home / Home / Ctrl+← で左の固定列へ移ると横のスクロールは左端、End で右の固定列へ移ると右端、PageDown は動かさない', async () => {
+    const pinnedColumns: GridColumn<Row>[] = [
+      { key: 'id', title: 'ID', width: 60, pinned: 'left' },
+      { key: 'name', title: '名前', width: 100 },
+      { key: 'memo', title: 'メモ', width: 100 },
+      { key: 'total', title: '計', width: 80, pinned: 'right' },
+    ];
+    const rowModel: RowModel<Row> = {
+      getRow: (i) => rows[i],
+      getRowCount: () => rows.length,
+      getSourceIndex: (i) => i,
+      getRowKey: (i) => rows[i]?.id ?? i,
+    };
+    const element = { scrollLeft: 500, scrollWidth: 2000, clientWidth: 600 } as unknown as HTMLElement;
+    const c = createKeyboardController<Row>();
+    const t = makeArgs(rowModel);
+    const store = createGridStore(createInitialGridUiState());
+    const press = async (key: string, mods: { ctrlKey?: boolean } = {}) => {
+      await c.handleKeyDown({ ...ev(key), ...mods });
+    };
+    c.update({
+      ...t.args,
+      visibleColumns: pinnedColumns,
+      uiState: store.getState(),
+      getUiState: store.getState,
+      dispatch: store.dispatch,
+      scrollContainerRef: { current: element },
+    });
+    store.dispatch(gridActions.activateCell({ row: 1, col: 2 }));
+    await press('Home', { ctrlKey: true });
+    expect(store.getState().activeCell).toEqual({ row: 0, col: 0 });
+    expect(element.scrollLeft).toBe(0);
+    element.scrollLeft = 500;
+    store.dispatch(gridActions.activateCell({ row: 1, col: 2 }));
+    await press('ArrowLeft', { ctrlKey: true });
+    expect(element.scrollLeft).toBe(0);
+    element.scrollLeft = 500;
+    await press('End');
+    expect(store.getState().activeCell).toEqual({ row: 1, col: 3 });
+    expect(element.scrollLeft).toBe(1400);
+    // 端の列へ移すキーでないとき(PageDown)と、移った先が固定でない列のときは動かさない。
+    element.scrollLeft = 500;
+    await press('PageDown');
+    expect(element.scrollLeft).toBe(500);
+  });
 });

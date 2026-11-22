@@ -244,48 +244,55 @@ export function ColumnFilterPopoverHost<T>(props: ColumnFilterPopoverHostProps<T
               {(views) => {
                 // 読み込んだ部品は変わらない(1 回読めば同じもの)ので、追わずに読む。
                 const ColumnFilterPopover = untrack(views).ColumnFilterPopover;
+                // 追加(Solid 版 0.1.2 / 品質の段 2 R3-2): 列ごとに作り直します(開いたまま別の列へ移ったとき = ツールパネルの ✎
+                //   など、set の候補の検索の文字が前の列のまま残っていた。React 版の key と同じ)。keyed の Show は、子の関数が
+                //   引数を取るときだけ値が変わるたびに作り直す(引数の無い関数はそのまま描く値として扱われる)。
                 return (
-                  <ColumnFilterPopover
-                    popoverSlot={props.popoverSlot}
-                    themeClassName={props.themeClassName}
-                    title={column().title || column().key}
-                    filterType={openedType() ?? 'text'}
-                    // serverSide は候補を表から集められないので、候補が空のときの文言を変えます(getFilterOptions の列は除く)。
-                    isServerSide={props.isServerSide && !usesAsyncOptions()}
-                    draftValue={filterPopover.state()?.draftValue ?? ''}
-                    numberConditionDraft={filterPopover.state()?.numberDraft ?? null}
-                    onNumberConditionDraftChange={commands.handleNumberConditionDraftChange}
-                    textConditionDraft={filterPopover.state()?.textDraft ?? null}
-                    onTextConditionDraftChange={commands.handleTextConditionDraftChange}
-                    dateConditionDraft={filterPopover.state()?.dateDraft ?? null}
-                    onDateConditionDraftChange={commands.handleDateConditionDraftChange}
-                    datePresets={datePresets()}
-                    renderDateInput={renderDateInput()}
-                    onComboConditionClear={commands.handleComboConditionClear}
-                    onComboSelectionClear={commands.handleComboSelectionClear}
-                    comboSummaryText={comboSummaryText()}
-                    currentValueText={currentValueText()}
-                    layout={layout()}
-                    selectOptions={derived().openedPopoverSelectOptions}
-                    setSelection={derived().openedSetSelection}
-                    optionsStatus={optionsResult().status}
-                    optionsProgress={optionsResult().progress}
-                    optionsTruncated={optionsResult().truncated}
-                    optionsErrorMessage={optionsResult().errorMessage}
-                    onOptionsRetry={usesAsyncOptions() ? asyncSource.retry : undefined}
-                    setPanel={filterPopover.setPanel}
-                    panelRef={filterPopover.panelRef}
-                    textInputRef={filterPopover.textInputRef}
-                    selectRef={filterPopover.selectRef}
-                    onRequestClose={filterPopover.close}
-                    onDraftChange={filterPopover.updateDraft}
-                    onApply={commands.applyFilterPopoverValue}
-                    onClear={commands.clearFilterPopoverValue}
-                    onSetValueToggle={commands.handleSetFilterValueToggle}
-                    onSetSelectAllChange={commands.handleSetFilterSelectAllChange}
-                    onSetClear={commands.clearSetFilterPopoverValue}
-                    onSetReplaceSelection={commands.handleSetFilterReplaceSelection}
-                  />
+                  <Show when={column().key} keyed>
+                    {(columnKey) => (
+                      <ColumnFilterPopover
+                        popoverSlot={props.popoverSlot}
+                        themeClassName={props.themeClassName}
+                        title={column().title || columnKey}
+                        filterType={openedType() ?? 'text'}
+                        // serverSide は候補を表から集められないので、候補が空のときの文言を変えます(getFilterOptions の列は除く)。
+                        isServerSide={props.isServerSide && !usesAsyncOptions()}
+                        draftValue={filterPopover.state()?.draftValue ?? ''}
+                        numberConditionDraft={filterPopover.state()?.numberDraft ?? null}
+                        onNumberConditionDraftChange={commands.handleNumberConditionDraftChange}
+                        textConditionDraft={filterPopover.state()?.textDraft ?? null}
+                        onTextConditionDraftChange={commands.handleTextConditionDraftChange}
+                        dateConditionDraft={filterPopover.state()?.dateDraft ?? null}
+                        onDateConditionDraftChange={commands.handleDateConditionDraftChange}
+                        datePresets={datePresets()}
+                        renderDateInput={renderDateInput()}
+                        onComboConditionClear={commands.handleComboConditionClear}
+                        onComboSelectionClear={commands.handleComboSelectionClear}
+                        comboSummaryText={comboSummaryText()}
+                        currentValueText={currentValueText()}
+                        layout={layout()}
+                        selectOptions={derived().openedPopoverSelectOptions}
+                        setSelection={derived().openedSetSelection}
+                        optionsStatus={optionsResult().status}
+                        optionsProgress={optionsResult().progress}
+                        optionsTruncated={optionsResult().truncated}
+                        optionsErrorMessage={optionsResult().errorMessage}
+                        onOptionsRetry={usesAsyncOptions() ? asyncSource.retry : undefined}
+                        setPanel={filterPopover.setPanel}
+                        panelRef={filterPopover.panelRef}
+                        textInputRef={filterPopover.textInputRef}
+                        selectRef={filterPopover.selectRef}
+                        onRequestClose={filterPopover.close}
+                        onDraftChange={filterPopover.updateDraft}
+                        onApply={commands.applyFilterPopoverValue}
+                        onClear={commands.clearFilterPopoverValue}
+                        onSetValueToggle={commands.handleSetFilterValueToggle}
+                        onSetSelectAllChange={commands.handleSetFilterSelectAllChange}
+                        onSetClear={commands.clearSetFilterPopoverValue}
+                        onSetReplaceSelection={commands.handleSetFilterReplaceSelection}
+                      />
+                    )}
+                  </Show>
                 );
               }}
             </Show>

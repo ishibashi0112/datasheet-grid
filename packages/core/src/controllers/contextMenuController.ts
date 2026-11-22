@@ -140,6 +140,8 @@ export const createContextMenuController = <T,>(): ContextMenuController<T> => {
     // 追加(段階 2 DF-23): グリッドが隠れたら閉じます(隠れたグリッドへフォーカスは戻さない)。
     getGridRoot: () => args?.gridRootRef.current ?? null,
     onGridHidden: () => closeWith(false),
+    // 追加(1.3.0 / S6-21): 別のグリッドのポップアップが開いたら閉じます(押した先にフォーカスを残す)。
+    onOtherGridPopupOpen: () => closeWith(false),
     onKeyDown: (event) => {
       if (event.key === 'Escape') {
         event.preventDefault();

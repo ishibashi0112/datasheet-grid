@@ -40,8 +40,28 @@ const win = window as unknown as Window & {
   __columns: () => GridColumn<Row>[];
 };
 
+// 追加(1.3.0 / RV5-4): `&hb=<列のキー>` でその列を狭く(46px)し、renderHeader の中にボタンを置く(React 版と同じ)。
+const withHeaderButton = (columns: GridColumn<Row>[]): GridColumn<Row>[] => {
+  const key = params.get('hb');
+  return key === null
+    ? columns
+    : columns.map((column) =>
+        column.key === key
+          ? {
+              ...column,
+              width: 46,
+              renderHeader: () => (
+                <button type="button" data-testid="hdr-btn" onClick={() => log('hdr-btn')}>
+                  B
+                </button>
+              ),
+            }
+          : column,
+      );
+};
+
 function baseColumns(): GridColumn<Row>[] {
-  return sharedBaseColumns({
+  return withHeaderButton(sharedBaseColumns({
     numberFormatter,
     // React 版は autoFocus。Solid は描き終わった後に入力欄へフォーカスする(autofocus は後から足した要素には効かない)。
     customEditor: (ctx) => {
@@ -61,7 +81,7 @@ function baseColumns(): GridColumn<Row>[] {
         />
       );
     },
-  }) as unknown as GridColumn<Row>[];
+  }) as unknown as GridColumn<Row>[]);
 }
 
 const contextItems = (p: ContextMenuParams) => {

@@ -67,6 +67,9 @@ export type KeyboardControllerArgs<T> = {
   // 追加(段階 2 C-N2): 最終列の Tab。その行の展開行のカードへフォーカスを移したら true(既定動作を止める)。false のときは
   //   既定動作で表の外へ出る(カードが開いていれば、既定動作の前にフォーカスを表の直後の目印へ移しておく)。展開行が無い構成は未指定。
   onTabPastLastColumn?: (viewRowIndex: number) => boolean;
+  // 追加(1.3.0 / Solid 版の品質の段 2 S12-05): スクロールする要素。Home / End / Ctrl+Home / Ctrl+End / Ctrl+← / Ctrl+→ で
+  //   固定した端の列へ移ったとき、中央の横のスクロールもその端へ戻します(Excel と同じ)。省略 = 戻さない。
+  scrollContainerRef?: { readonly current: HTMLElement | null } | undefined;
 };
 
 // 追加(dogfood DU-01): Home / Ctrl+Home / Ctrl+← で止まる先頭の列は、操作用の合成列(行ドラッグのハンドル列・展開トグル列)を
@@ -206,6 +209,8 @@ export const createKeyboardController = <T,>(): KeyboardController<T> => {
   const jumpActiveCell = (
     resolve: (current: CellCoord, rowModel: RowModel<T>, visibleColumns: GridColumn<T>[]) => CellCoord,
     extendSelection: boolean,
+    // 追加(1.3.0 / S12-05): 端の列へ移すキー(Home / End / Ctrl+← / Ctrl+→)のとき、その向き。
+    edge?: 'start' | 'end',
   ) => {
     if (args === null) {
       return;
@@ -219,14 +224,23 @@ export const createKeyboardController = <T,>(): KeyboardController<T> => {
       ? movingCell(extendSelection)
       : { row: firstRowIndex(rowModel), col: firstColIndex(visibleColumns) };
     const next = resolve(currentCell, rowModel, visibleColumns);
+    const col = clamp(next.col, 0, visibleColumns.length - 1);
     commitMove(
       currentCell,
       {
         row: nearestDataRow(rowModel, clamp(next.row, 0, rowModel.getRowCount() - 1)),
-        col: clamp(next.col, 0, visibleColumns.length - 1),
+        col,
       },
       extendSelection && uiState.activeCell !== null,
     );
+    // 変更(1.3.0 / Solid 版の品質の段 2 S12-05): 固定した列はいつも見えているので、セルを見せるスクロールは横へ動かしません。
+    //   右端までスクロールした後の Ctrl+Home で左の固定列へ移っても、中央は右端のままでした(Excel は左上へ戻る)。端の列へ
+    //   移すキーで、移った先が同じ側の固定列なら、中央の横のスクロールもその端へ戻します。
+    const element = edge === undefined ? null : (args.scrollContainerRef?.current ?? null);
+    const pinned = visibleColumns[col]?.pinned;
+    if (element !== null && (edge === 'start' ? pinned === 'left' : pinned === 'right')) {
+      element.scrollLeft = edge === 'start' ? 0 : Math.max(element.scrollWidth - element.clientWidth, 0);
+    }
   };
 
   const resolvePageTarget = (current: CellCoord, rowModel: RowModel<T>, direction: 1 | -1): number => {
@@ -375,6 +389,7 @@ export const createKeyboardController = <T,>(): KeyboardController<T> => {
       jumpActiveCell(
         (current, _model, columns) => ({ row: current.row, col: toLast ? columns.length - 1 : firstColIndex(columns) }),
         event.shiftKey,
+        toLast ? 'end' : 'start',
       );
       return;
     }
@@ -387,6 +402,7 @@ export const createKeyboardController = <T,>(): KeyboardController<T> => {
           col: toLast ? columns.length - 1 : firstColIndex(columns),
         }),
         event.shiftKey,
+        toLast ? 'end' : 'start',
       );
       return;
     }

@@ -40,7 +40,7 @@ const HEADER_INLINE_ACTIONS_MIN_WIDTH = 120;
 import { useGridLocaleText } from '../hooks/useGridLocaleText';
 import { formatLocaleText } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/localeText';
 // 追加(audit V-16): renderHeader の中の操作から始まった pointerdown か(core logic/domGuards。Solid 版と共用)。
-import { isFromRenderHeaderControl } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/domGuards';
+import { isFromRenderHeaderControl, syncRenderHeaderControlHover } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/domGuards';
 
 // 追加(10-C): このヘッダーがどのペインを描画しているかの種別です。
 export type GridPaneKind = 'left' | 'center' | 'right';
@@ -371,7 +371,16 @@ function GridHeaderRowInner<T>({
             onPointerEnter={(event) =>
               onColumnHeaderPointerEnter(colIndex, event)
             }
-            onPointerLeave={() => onColumnHeaderPointerLeave(colIndex)}
+            // 追加(1.3.0 / RV5-4): renderHeader の中のボタン等の上では、ホバーで出る操作群を隠す(core logic/domGuards)。
+            onPointerMove={
+              column.renderHeader
+                ? (event) => syncRenderHeaderControlHover(event.currentTarget, event)
+                : undefined
+            }
+            onPointerLeave={(event) => {
+              if (column.renderHeader) syncRenderHeaderControlHover(event.currentTarget, null);
+              onColumnHeaderPointerLeave(colIndex);
+            }}
             onContextMenu={(event) => {
               // 追加(grouping ③): 自動グループ列では列メニューを開きません(ブラウザ標準
               //   メニューも抑止して他列と挙動を揃えます)。
