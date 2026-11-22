@@ -1,0 +1,10 @@
+const { open, sleep } = require('./lib.cjs')
+;(async () => {
+  const { browser, page } = await open(`http://127.0.0.1:5505/?n=1000&tab=stocks&mode=off`)
+  await page.waitForSelector('.ssg-body-cell')
+  await sleep(800)
+  await page.locator('.ssg-body-row[data-pane=center]:not(.ssg-pinned-row) [data-ssg-col-key="memo"]').nth(3).click()
+  await sleep(500)
+  console.log(await page.evaluate(() => [...document.querySelectorAll('[class*=active], [data-ssg-active], [aria-current]')].map((e) => e.tagName + ' ' + e.className + ' ' + (e.getAttribute('style') ?? '').slice(0, 120)).join('\n')))
+  await browser.close()
+})()

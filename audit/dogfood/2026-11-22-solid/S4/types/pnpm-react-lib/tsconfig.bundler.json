@@ -1,0 +1,1 @@
+{ "compilerOptions": { "target": "es2022", "lib": ["ES2023", "DOM"], "module": "esnext", "moduleResolution": "bundler", "jsx": "react-jsx", "strict": true, "declaration": true, "emitDeclarationOnly": true, "rootDir": "src", "outDir": "out-bundler", "skipLibCheck": true, "types": [] }, "include": ["src"] }

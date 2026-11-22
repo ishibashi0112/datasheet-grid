@@ -1,0 +1,15 @@
+{
+  "name": "my-inventory-react-lib",
+  "type": "module",
+  "private": true,
+  "dependencies": {
+    "@ishibashi0112/spreadsheet-grid": "1.2.1",
+    "react": "^19.3.0",
+    "react-dom": "^19.3.0"
+  },
+  "devDependencies": {
+    "@ishibashi0112/spreadsheet-grid-core": "1.2.1",
+    "@types/react": "^19.3.0",
+    "typescript": "7.0.2"
+  }
+}

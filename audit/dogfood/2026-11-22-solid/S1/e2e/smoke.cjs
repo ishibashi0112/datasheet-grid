@@ -1,0 +1,15 @@
+const { open, shot } = require('./lib.cjs')
+;(async () => {
+  const { browser, page, logs } = await open('http://localhost:5501/')
+  await shot(page, 'smoke-light')
+  // aria-colindex の並びを確かめる
+  const hdr = await page.$$eval('[role="columnheader"]', (els) => els.map((e) => `${e.getAttribute('aria-colindex')}:${e.textContent.trim().slice(0, 10)}`))
+  console.log('headers', hdr.join(' | '))
+  const rowsInfo = await page.$$eval('[role="row"]', (els) => els.slice(0, 4).map((e) => `${e.getAttribute('aria-rowindex')} pane=${e.getAttribute('data-pane')} cls=${e.className}`))
+  console.log(rowsInfo.join('\n'))
+  await page.click('#btn-dark')
+  await page.waitForTimeout(300)
+  await shot(page, 'smoke-dark')
+  console.log('LOGS:\n' + logs.join('\n'))
+  await browser.close()
+})()

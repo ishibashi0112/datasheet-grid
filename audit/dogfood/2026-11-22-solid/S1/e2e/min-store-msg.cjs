@@ -1,0 +1,10 @@
+const { open, click } = require('./lib.cjs')
+;(async () => {
+  const { browser, page, logs } = await open(`http://localhost:5501/min-store.html?mode=snapshot`)
+  await click(page, 2, 2, { clickCount: 2 })
+  await page.keyboard.type('X')
+  await page.keyboard.press('Enter')
+  await page.waitForTimeout(200)
+  console.log(logs.filter((l) => l.includes('IMMUTABLE')).join('\n'))
+  await browser.close()
+})()

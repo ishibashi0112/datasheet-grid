@@ -1,0 +1,13 @@
+const { chromium } = require('playwright')
+;(async () => {
+  const browser = await chromium.launch()
+  const ctx = await browser.newContext({ javaScriptEnabled: false, viewport: { width: 1400, height: 800 }, deviceScaleFactor: 1 })
+  const page = await ctx.newPage()
+  await page.goto((process.env.BASE ?? 'http://localhost:5502') + '/users?sort=logins.desc')
+  await page.waitForTimeout(800)
+  await page.screenshot({ path: 'shot-ssr-nojs.png' })
+  await page.goto((process.env.BASE ?? 'http://localhost:5502') + '/users/3')
+  await page.waitForTimeout(500)
+  await page.screenshot({ path: 'shot-ssr-nojs-detail.png' })
+  await browser.close()
+})()

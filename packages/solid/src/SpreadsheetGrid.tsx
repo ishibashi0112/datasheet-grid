@@ -11,7 +11,7 @@
 //   - 部品の本体では props を直接読まない(Solid 2.0 は本体での読み取りを警告する)。props は関数や memo の中で読む。
 //   - React の onXxxCapture / onBlur / onFocus(子孫からも上がってくる)は、Solid では capture のリスナーを自分で付ける /
 //     onFocusOut / onFocusIn にします。
-import { For, Match, Show, Switch, createEffect, createMemo, createUniqueId, onCleanup, onSettled, untrack } from 'solid-js';
+import { For, Match, Show, Switch, createEffect, createMemo, createUniqueId, onCleanup, untrack } from 'solid-js';
 import type { Ref } from 'solid-js';
 import type { JSX } from '@solidjs/web';
 import type {
@@ -136,6 +136,7 @@ import { createGridStoreSignals } from './primitives/gridStoreSignals';
 import { createExternalStoreSignal } from './primitives/externalStore';
 import { createGridViewSetters } from './primitives/viewSetters';
 import { connectController } from './primitives/controller';
+import { closeMountGateOnSettled, createMountGate, flushMountGate, onGridMounted, runInMountGate, type MountGate } from './primitives/mountGate';
 import { createColumnVirtualizer } from './primitives/columnVirtualizer';
 import type { SolidGridFeatures } from './features/types';
 import { px, toSolidStyle } from './primitives/style';
@@ -181,6 +182,22 @@ const applyHandleRef = <H,>(ref: Ref<H> | undefined, handle: H): void => {
   }
 };
 
+// 追加(0.1.0 の前の実アプリ点検 S5-01): ハンドルのメソッドを、呼ぶ前に before を走らせる形で包みます(1 回だけ作る。
+//   同じメソッドはいつも同じ関数)。
+const exposeHandle = <H extends object,>(handle: H, before: () => void): H => {
+  const exposed: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(handle)) {
+    exposed[key] =
+      typeof value === 'function'
+        ? (...args: unknown[]) => {
+            before();
+            return (value as (...a: unknown[]) => unknown)(...args);
+          }
+        : value;
+  }
+  return exposed as H;
+};
+
 type MutableRef<V> = { current: V };
 
 type EditorIdentity = { row: number; col: number; rowKey: GridRowKey | undefined; columnKey: string | undefined };
@@ -207,6 +224,16 @@ const SLOT_CONTEXT_KEYS = Object.keys({
 
 // シェルの本体です。機能セット(features)は createSpreadsheetGrid が渡します(全部入りは下の SpreadsheetGrid)。
 export function GridShell<T extends object>(props: SpreadsheetGridProps<T>, features: SolidGridFeatures): JSX.Element {
+  // 追加(0.1.0 の前の実アプリ点検 S5-01): 本体の間だけ、描き終わった後の最初の処理の登録先をこのグリッドの待ち行列にします。
+  const mountGate = createMountGate();
+  return runInMountGate(mountGate, () => GridShellBody(props, features, mountGate));
+}
+
+function GridShellBody<T extends object>(
+  props: SpreadsheetGridProps<T>,
+  features: SolidGridFeatures,
+  mountGate: MountGate,
+): JSX.Element {
   // ── props(既定値つきの読み取り。本体では読まず、関数 / memo の中で読む。既定値は React 版の GridShell と同じ) ──
   // サーバーサイドの行モデル(機能 features/serverSide。dataSource を渡したとき。無い構成では createSpreadsheetGrid が
   //   dataSource を外すので clientSide)。dataSource があるときは rows を空として扱う(ドキュメントどおり「無視」。React 版と同じ)。
@@ -337,7 +364,7 @@ export function GridShell<T extends object>(props: SpreadsheetGridProps<T>, feat
     );
   // エディタのポップアップへ渡す文脈(トークンを写す元 = シェル、描く場所)。
   const portalContext = { source: () => gridRootRef.current, container: getPopupContainer };
-  onSettled(() => {
+  onGridMounted(() => {
     const shell = gridRootRef.current;
     return registerPopupContainer([shell, shell?.closest('.ssg-root')], getPopupContainer);
   });
@@ -626,6 +653,7 @@ export function GridShell<T extends object>(props: SpreadsheetGridProps<T>, feat
     detailActive: () => vertical().detailActive,
     globalFilterText,
     columnFilterCount: () => Object.keys(columnFilters()).length,
+    rows: () => props.rows,
   });
   // ラベル行の縦スクロールの固定(labelRow.sticky)。scrollTop(論理)から今のセクションのラベル行と押し上げる量を求めて、各ペインの
   //   固定の層へ渡します。固定の帯がヘッダーの直下で行を隠す高さ(stickyTopInset)は、アクティブセルの追従と scrollToRow /
@@ -1133,7 +1161,7 @@ export function GridShell<T extends object>(props: SpreadsheetGridProps<T>, feat
   const activeCellDomId = `${gridDomId}-active-cell`;
   const cellEditorDomId = `${gridDomId}-cell-editor`;
   let tooltipController: TooltipController | null = null;
-  onSettled(() => {
+  onGridMounted(() => {
     const controller = acquireTooltipController();
     tooltipController = controller;
     controller.setSlot(untrack(slots).tooltip);
@@ -2357,9 +2385,16 @@ export function GridShell<T extends object>(props: SpreadsheetGridProps<T>, feat
     },
     { name: 'gridApiBottomPin' },
   );
-  onSettled(() => {
-    applyHandleRef(props.ref, engine.gridApi.handle);
-  });
+  // 変更(0.1.0 の前の実アプリ点検 S5-01): ハンドルは部品を作った時点で ref へ渡します(DOM の ref と同じく、利用者の最初の
+  //   createEffect / onSettled より前に入る。これまでは onSettled で渡していたので、そこでは undefined だった)。ハンドルの
+  //   メソッドは、描き終わっていればグリッドの最初の処理(primitives/mountGate.ts)を先に済ませてから呼びます(React 版で
+  //   利用者の useEffect から呼んだときと同じ状態にする)。部品の本体の中(ref の関数の中など)で呼んだときは、まだ描いて
+  //   いないので先に済ませず、そのまま呼びます(コントローラの update の前なので、多くのメソッドは何もしない)。
+  applyHandleRef(props.ref, exposeHandle(engine.gridApi.handle, () => {
+    if (!mountGate.done && gridRootRef.current?.isConnected === true) {
+      flushMountGate(mountGate);
+    }
+  }));
 
   // ── 状態の通知(onStateChange / onFiltersChange / onSortChange) ──
   connectController(
@@ -2383,7 +2418,7 @@ export function GridShell<T extends object>(props: SpreadsheetGridProps<T>, feat
   // React 版の onPointerMoveCapture / onPointerDownCapture / onKeyDownCapture。Solid 2.0 は oncapture: を無くしたので、
   //   capture のリスナーは自分で付けます(ref の中では onCleanup を使えないので、描き終わった後に付けて、外すのは
   //   onSettled の戻り値で)。
-  onSettled(() => {
+  onGridMounted(() => {
     const element = gridRootRef.current;
     if (!element) {
       return;
@@ -3102,7 +3137,7 @@ export function GridShell<T extends object>(props: SpreadsheetGridProps<T>, feat
       ? (props.noRowsText ?? localeTexts().noRows)
       : (props.noMatchingRowsText ?? localeTexts().noMatchingRows);
 
-  return (
+  const shellView = (
     <GridLocaleTextContext value={localeTexts}>
       <GridPortalContext value={portalContext}>
       <div
@@ -3539,4 +3574,7 @@ export function GridShell<T extends object>(props: SpreadsheetGridProps<T>, feat
       </GridPortalContext>
     </GridLocaleTextContext>
   );
+  // ここまでに登録した描き終わった後の処理がすべて走ったら、待ち行列を閉じる(onSettled は登録した順に走る)。
+  closeMountGateOnSettled(mountGate);
+  return shellView;
 }
