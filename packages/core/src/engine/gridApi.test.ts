@@ -131,6 +131,49 @@ describe('createGridApi', () => {
     expect(handle.getVisibleRowRange()).toEqual({ startIndex: 0, endIndex: 3 });
   });
 
+  it('外したグリッドのハンドル(dispose の後)は状態を変えず、読むメソッドは外したときの値を返す(S4-22)', () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const api = createGridApi<Row>(withExport);
+    const applyRowsChange = vi.fn();
+    const startEditCell = vi.fn(() => true);
+    const { args, actions } = makeArgs({ applyRowsChange, startEditCell });
+    api.update(args);
+    api.dispose();
+    api.handle.applyRows((prev) => prev.slice(1));
+    api.handle.undo();
+    api.handle.selectCell(1, 1);
+    expect(api.handle.startEditing(0, 1)).toBe(false);
+    expect(applyRowsChange).not.toHaveBeenCalled();
+    expect(args.undoRows).not.toHaveBeenCalled();
+    expect(startEditCell).not.toHaveBeenCalled();
+    expect(actions).toEqual([]);
+    expect(warn).toHaveBeenCalledTimes(1);
+    expect(String(warn.mock.calls[0]?.[0])).toContain('applyRows()');
+    // 読むメソッドは外したときの値。
+    expect(api.handle.canUndo()).toBe(true);
+    expect(api.handle.exportCsv()).not.toBe('');
+    // つなぎ直したら(React の StrictMode の二重マウント)効く。
+    api.update(args);
+    api.handle.applyRows((prev) => prev.slice(1));
+    expect(applyRowsChange).toHaveBeenCalledTimes(1);
+    warn.mockRestore();
+  });
+
+  it('applyState({ columns }) は並び・表示・固定・幅が今と同じなら onColumnsChange を呼ばない(S10-01)', () => {
+    const api = createGridApi<Row>(withExport);
+    const onColumnsChange = vi.fn();
+    const { args } = makeArgs({ onColumnsChange });
+    api.update(args);
+    api.handle.applyState(api.handle.getState());
+    api.handle.applyState({ columns: api.handle.getState().columns });
+    expect(onColumnsChange).not.toHaveBeenCalled();
+    api.handle.applyState({ columns: [{ key: 'name' }, { key: 'id' }] });
+    expect(onColumnsChange).toHaveBeenCalledTimes(1);
+    expect(onColumnsChange.mock.calls[0]?.[0].map((column: GridColumn<Row>) => column.key)).toEqual(['name', 'id']);
+    api.handle.applyState({ columns: [{ key: 'id', visible: false }, { key: 'name' }] });
+    expect(onColumnsChange).toHaveBeenCalledTimes(2);
+  });
+
   it('選択 API は reducer への dispatch に翻訳され、scrollIntoView で位置が変わると markApiScroll が呼ばれる', () => {
     const api = createGridApi<Row>(withExport);
     const { args, actions, markApiScroll } = makeArgs();

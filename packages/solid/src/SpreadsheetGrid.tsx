@@ -1337,6 +1337,8 @@ function GridShellBody<T extends object>(
     controlledRowSelectionModel: controlledRowSelectionModel(),
     leafRowCount: leafRowCount(),
     filteredDataRows: filteredDataRows(),
+    // 追加(Solid 版 0.1.2 / S4-09): 選んだ行が rows から消えたら選択から外す(clientSide。React 版と同じ)。
+    sourceRows: isServerSide() ? undefined : { rows: rows(), rowKeyGetter: resolvedRowKeyGetter() },
     dispatch,
   }), 'render', 'rowSelectionCommands');
 

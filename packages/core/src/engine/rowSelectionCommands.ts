@@ -8,6 +8,7 @@
 //     変更(1.0.1 / 実アプリの総点検 AP-03): clientSide のフィルターで行が隠れている間は、見えている行だけを選ぶ /
 //     外す(全選択 = exclude のモデルのままだと、フィルターを外したときに見えなかった行まで選ばれていた)。
 //   - update: controlled の記述子が変わったとき reducer へ同期します(差分時のみ。旧 useEffect と同じ deps)。
+//     追加(1.3.0 / Solid 版の品質の段 2 S4-09): 選んだ行が rows から消えたら、そのキーを選択から外します(clientSide)。
 //   shift / ドラッグ範囲のアンカー(view index)は揮発 UI 状態としてコントローラ内に持ちます。
 import type { GridRowKey, RowModel, RowSelectionModel, RowSelectionState } from '../model/gridTypes.unbound';
 import { gridActions, type GridUiAction } from '../model/gridActions';
@@ -26,6 +27,7 @@ import {
   selectSingleRow,
   toggleRowKey,
 } from '../logic/rowSelection';
+import { createDetailKeysPruner } from '../logic/detailRow';
 
 export type RowSelectionCommandsArgs<T> = {
   rowModel: RowModel<T>;
@@ -40,8 +42,20 @@ export type RowSelectionCommandsArgs<T> = {
   // 追加(1.0.1 / AP-03): clientSide のフィルターで隠れている行があるときの、フィルター後のデータ行(order は元 rows の
   //   index)。null / 省略 = 隠れている行が無い(または serverSide)= 全選択は従来どおり exclude のモデル。
   filteredDataRows?: FilteredDataRows<T> | null;
+  // 追加(1.3.0 / Solid 版の品質の段 2 S4-09): 元の rows と行キー(clientSide のとき。serverSide は rows がすべての行では
+  //   ないので undefined)。選んだ行を消した後も選択のキーが残り、getSelectedRowKeys() / getSelectedRowCount() が
+  //   getSelectedRowData() と食い違っていた(見出しのチェックボックスも残ったキーを数えていた)。
+  sourceRows?: SourceRows<T> | undefined;
   dispatch: (action: GridUiAction) => void;
 };
+
+export type SourceRows<T> = {
+  rows: readonly T[];
+  rowKeyGetter: (row: T, index: number) => GridRowKey;
+};
+
+const NO_ROWS: readonly never[] = [];
+const indexKey = (_row: unknown, index: number): GridRowKey => index;
 
 export type FilteredDataRows<T> = {
   rows: readonly T[];
@@ -77,9 +91,10 @@ export const createRowSelectionCommands = <T,>(): RowSelectionCommands<T> => {
   //   pendingRowSelection で見せます(コールバックの中でハンドルの getSelectedRowCount / getSelectedRowKeys を読むと、
   //   1 つ前の値が返っていた。controlled は親が prop を変えるまで反映しないので、通知の間だけ新しい値を見せる)。
   let pending: RowSelectionState | null = null;
-  const commitRowSelection = (next: RowSelectionState) => {
+  // base: 比べる今の選択(省略 = 描いたときの選択。update の中で controlled の記述子を同期した直後は、同期した選択)。
+  const commitRowSelectionFrom = (base: RowSelectionState | undefined, next: RowSelectionState) => {
     const { rowSelectionState, onRowSelectionChange, controlledRowSelectionModel, dispatch } = requireArgs();
-    const changed = !rowSelectionStateEquals(rowSelectionState, next);
+    const changed = !rowSelectionStateEquals(base ?? rowSelectionState, next);
     if (controlledRowSelectionModel === undefined) {
       dispatch(gridActions.setRowSelectionState(next));
     }
@@ -93,6 +108,13 @@ export const createRowSelectionCommands = <T,>(): RowSelectionCommands<T> => {
       }
     }
   };
+  const commitRowSelection = (next: RowSelectionState) => {
+    commitRowSelectionFrom(undefined, next);
+  };
+  // 追加(1.3.0 / S4-09): 消えた行のキーを外す処理は、展開行の DF-25 と同じもの(前の rows にあって今の rows に無いキーだけを
+  //   外す。行を読み込む前に setRowSelection / selectedRowKeys で渡したキーは残す。rows が変わったときだけ見て、編集では前に
+  //   見つけた位置で確かめる)。exclude(全選択)の除いたキーも同じく外します(総数 − 除いた数 が合うように)。
+  const keysPruner = createDetailKeysPruner<T>();
 
   // view index 範囲 → 行キー配列(SSRM 未ロードはスキップ)。
   const resolveRowKeysBetween = (rowModel: RowModel<T>, aIndex: number, bIndex: number): GridRowKey[] => {
@@ -172,6 +194,7 @@ export const createRowSelectionCommands = <T,>(): RowSelectionCommands<T> => {
       args = next;
       // controlled: prop の記述子が変わったら reducer へ同期(差分時のみ。reducer 側も同値 no-op)。
       const model = next.controlledRowSelectionModel;
+      let current = next.rowSelectionState;
       if (!synced || !Object.is(model, lastSyncedModel)) {
         synced = true;
         lastSyncedModel = model;
@@ -179,9 +202,20 @@ export const createRowSelectionCommands = <T,>(): RowSelectionCommands<T> => {
           const resolved = rowSelectionFromModel(model);
           if (!rowSelectionStateEquals(next.rowSelectionState, resolved)) {
             next.dispatch(gridActions.setRowSelectionState(resolved));
+            current = resolved;
           }
         }
       }
+      const source = next.sourceRows;
+      keysPruner.update({
+        enabled: source !== undefined,
+        rows: source?.rows ?? NO_ROWS,
+        expandedKeys: current.keys,
+        keyOf: source?.rowKeyGetter ?? indexKey,
+        setExpandedKeys: (keys) => {
+          commitRowSelectionFrom(current, { mode: current.mode, keys: new Set(keys) });
+        },
+      });
     },
     commitRowSelection,
     pendingRowSelection: () => pending,

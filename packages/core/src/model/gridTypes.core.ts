@@ -3676,7 +3676,8 @@ export type SpreadsheetGridProps<T, F extends GridFrameworkTypes = GridFramework
    * `validationMode: 'reject'` の列で検査に通らない値)/ `value`(`'invalid'` のときパーサが読んだ値)
    * / `message`(`'invalid'` のときの検査のメッセージ)。`validationMode: 'mark'`(既定)
    * の列は書いて印を付けるので入らない。表の外(`createRow` / `createOverflowColumn`
-   * が無くて足せない行 / 列)・ラベル行・グループ行は数えない。詳細は「貼り付けで読めない値」節。
+   * が無くて足せない行 / 列)・ラベル行・グループ行と、編集できないセルへ貼った空の文字(1.3.0 から)
+   * は数えない。詳細は「貼り付けで読めない値」節。
    */
   onPasteSkipped?: ((params: GridPasteSkippedParams<T>) => void) | undefined;
   // 追加(1.2.0 / 2026-11-09 実アプリの総点検 A-08): 範囲を選んで貼ったとき、コピーが範囲を割り切れれば範囲いっぱいに

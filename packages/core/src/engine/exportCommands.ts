@@ -173,7 +173,9 @@ export const createExportCommands = <T,>(
       };
     }
     if (scope === 'selection') {
-      const sel = s.uiState.selection;
+      // 変更(1.3.0 / Solid 版の品質の段 2 S4-03): 選択は store の今の値で読みます(selectRange の直後の
+      //   exportCsv({ scope: 'selection' }) が、描き直す前の古い選択 = 空で出ていた。getSelection() と同じ)。
+      const sel = (s.getUiState?.() ?? s.uiState).selection;
       if (!sel) {
         return null;
       }

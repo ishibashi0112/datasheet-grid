@@ -22,6 +22,8 @@ const gridRef = useRef<SpreadsheetGridHandle<Row>>(null);
 
 `viewRowIndex` / `colIndex` は**ビュー座標**(フィルター/ソート適用後の表示 index。`colIndex` は固定列を含む視覚順 = 左→中央→右)。`viewRowIndex` はラベル行・グループ行も 1 行に数え、`colIndex` は行ドラッグのハンドル列・展開トグル列・自動グループ列(ライブラリが足す列)も数える。行キー / 列キーからは `getViewRowIndex(rowKey)` / `getColIndex(columnKey)` で引ける。アクティブセルは表示位置に付く(上の行を消すと、同じ位置に来た別の行を指す。Excel と同じ)。範囲外 index は内部でクランプ/無視する。表示行数が減った(rows 差し替え / フィルター / グループの折りたたみ等)ときも、はみ出したアクティブセル / 選択範囲は範囲内へ詰められる(アクティブセルは最終行へ寄せ、範囲ははみ出した部分を切り詰める。0 行になったらセル / 行の選択とアクティブセルは解除)。列が減ったとき(`columns` から外す / 非表示にする)も同じく最終列へ寄せて切り詰める(0 列になったらアクティブセルとセル / 列の選択は解除)。貼り付けの後の選択も書き込んだ範囲まで。行が 0 件のときの `selectCell` / `selectRange` / `setActiveCell` は何もしない。このため `getActiveCell()` / `getSelection()` が存在しない行や列を返すことはない。
 
+**外したグリッドのハンドル**(1.3.0 から): グリッドを外した(アンマウントした)後も、変数に残したハンドルは呼べる。状態を変えるメソッド(`applyRows` / `undo` / `selectCell` / `applyState` / `scrollToRow` など)は何もせず(`startEditing` は `false` を返す)、開発ビルドでだけ console に 1 回警告する。読むメソッド(名前が `get` / `is` / `can` / `export` / `download` で始まるもの)は外したときの値を返す(外す直前に `getState()` を保存する書き方のため)。同じグリッドがまた描かれたら元どおりに動く。
+
 ### スクロール
 
 | メソッド | 説明 |
@@ -92,6 +94,8 @@ const addRow = () => {
 **操作(有効時)**: 行ヘッダ(行NO)ガター全体が選択のヒット領域。multiple はクリックでトグル・shift+クリック/ガタードラッグで範囲、single は常に 1 行。ヘッダ左上コーナーは tri-state の全選択チェック(`enableSelectAllRows`。フィルターで行が隠れている間は見えている行だけを選ぶ / 外す)。参照性能維持のため判定は Set の O(1)、全選択は除外集合でキーを materialize しません(フィルター中の見出しのチェックボックスは見えている行のキーを並べる)。
 
 **controlled**: `rowSelection`(記述子)または `selectedRowKeys`(include 糖衣)を渡すと controlled。`onRowSelectionChange` で変化を受け、親が prop を更新して反映します。
+
+**行を消したとき**(1.3.0 から): 選んだ行(全選択で除いた行も)が `rows` から消えたら、そのキーを行選択から外して `onRowSelectionChange` で知らせます(controlled でも)。外すのは前の `rows` にあって今の `rows` に無いキーだけで、行を読み込む前に `selectedRowKeys` / `setRowSelection` で渡したキーは残します。消した行を元に戻しても(`undo`)選択は戻りません。serverSide(`dataSource`)では外しません(`rows` がすべての行ではないため)。
 
 ### 行グルーピング
 
@@ -172,6 +176,8 @@ const addRow = () => {
 | `'selection'` | 現在の選択範囲(セル/行/列)。選択なしは空 | — |
 
 表にない値(型を通さずに渡した、1.0.0 で消した `'all'` / `'visible'` など)は `'view'` として扱い、開発ビルドでだけ console に警告する。
+
+`'selection'` は呼んだ時点の選択で出す(`selectRange` の直後でもよい。1.3.0 から)。`applyState` などで並べ替え / 絞り込み / 列を変えた直後(同じ処理の中)のエクスポートは、表を描き直す前の並び・列で出る。新しい並びで出すときは、描き直した後(React は次の描画の後 = `useEffect` やイベントの次の処理、Solid は `flush()` の後)に呼ぶ。
 
 serverSide(SSRM)の注意: `'view'` は未ロード行をスキップ(= ロード済みビュー行のみ)。`'raw'` はソース行配列を持たないため `'view'` 相当へフォールバックし `console.warn` を出す。**全件エクスポートはサーバ側での実施を推奨**。
 
@@ -308,7 +314,7 @@ const buffer = await writeXlsx({
 
 マウントの時点で戻す状態が分かっているときは、`applyState` の代わりに prop の `initialState` に渡す(最初の描画・サーバーの描画・serverSide の最初の `getRows` から効く。`columns` は使わない)。列の並び / 表示 / 固定(`columns`)も戻すときは、`restoreColumnsFromState(columns, saved)` で保存した列メタを列定義へ当てた配列を作り、`columns` prop に渡す(下の例。`applyState` と同じ規則で、保存に無い列は末尾、今の列に無い保存の列は捨てる。幅は `initialState` の `columnWidths` で戻すので列定義へは焼き込まない。保存した `columns` が無い / 読めないときは渡した配列をそのまま返す。readonly の配列も渡せる)。今の列に無い列の幅 / フィルター / ソートは捨てるが、マウント時は `onStateChange` を呼ばないので保存した値には残り、開くたびに開発時の警告が出る。消すときは、マウントの後に `getState()` の値で保存し直す。
 
-`GridState`: `{ version, columnWidths, filters, sort, columns?, collapsedGroups? }`。`applyState` の引数の `GridStatePatch` は、その各フィールドを省略できる形(`filters` は `{ globalText?, columnFilters? }`)で、`getState()` の値はそのまま渡せる(全部のフィールドがあるので全部置き換わる)。`version` はマイグレーション用(現行 `2`)。`columns` は **列メタ(可視 / 順序 / ピン)のスナップショット**(`GridColumnState[]` = `{ key, visible?, pinned?, rowGroup? }`。`rowGroup` は `includeGroupingInState` のときだけ。配列順 = 列順)で、`getState()` は常に出力し、`applyState()` は **`onColumnsChange` が指定されているときだけ** `columns` prop へ反映する(列順 / ピン / 可視も復元される点に注意。v1 形式 = `columns` 無しの保存値は列メタを触らない後方互換)。復元した `columns` 配列は固定列ごと(左固定 → 中央 → 右固定)の順に並べ直される(画面上の列順は同じ。列のドラッグ並べ替えと同じ規則で、2 回目以降の `applyState` では順序は変わらない)。`flex` / 列定義そのものは含めない。`activeCell` / `selection` などの一時 UI も含めない。`columnWidths` は**手動リサイズ / autoSize / `applyState` で幅が決まった列だけ**を持つ(それ以外の列は `width` / `flex` で描画され、エントリを持たない)。`columns` を同じ内容の別参照で渡し直しても消えず、列が削除されたとき・その列の `flex` / `pinned` 指定が変わったとき・`width` がエントリと異なる値に指定し直されたとき・列のリセット時にだけ捨てられる。そのため `applyState(getState())` は冪等で、保存値に既定幅が焼き込まれることもない(後からコードで `width` を変えれば、手動リサイズしていない列には反映される)。`custom` フィルターの `value`(`unknown`)は深いコピーをしないため、シリアライズ可能性は consumer 責務。`applyState` は壊れた / 部分的な入力にも耐える(非数値の幅・`kind` 無し / 未知 `kind` / 配列であるべき `values` が欠けた列フィルター・不正な `direction` は捨てる。`columns` に同じ `key` が重なっていたら最初の 1 つだけ使う)。
+`GridState`: `{ version, columnWidths, filters, sort, columns?, collapsedGroups? }`。`applyState` の引数の `GridStatePatch` は、その各フィールドを省略できる形(`filters` は `{ globalText?, columnFilters? }`)で、`getState()` の値はそのまま渡せる(全部のフィールドがあるので全部置き換わる)。`version` はマイグレーション用(現行 `2`)。`columns` は **列メタ(可視 / 順序 / ピン)のスナップショット**(`GridColumnState[]` = `{ key, visible?, pinned?, rowGroup? }`。`rowGroup` は `includeGroupingInState` のときだけ。配列順 = 列順)で、`getState()` は常に出力し、`applyState()` は **`onColumnsChange` が指定されているときだけ** `columns` prop へ反映する(並び / 表示 / 固定 / グループ化が今と同じなら `onColumnsChange` は呼ばない(1.3.0 から)。列順 / ピン / 可視も復元される点に注意。v1 形式 = `columns` 無しの保存値は列メタを触らない後方互換)。復元した `columns` 配列は固定列ごと(左固定 → 中央 → 右固定)の順に並べ直される(画面上の列順は同じ。列のドラッグ並べ替えと同じ規則で、2 回目以降の `applyState` では順序は変わらない)。`flex` / 列定義そのものは含めない。`activeCell` / `selection` などの一時 UI も含めない。`columnWidths` は**手動リサイズ / autoSize / `applyState` で幅が決まった列だけ**を持つ(それ以外の列は `width` / `flex` で描画され、エントリを持たない)。`columns` を同じ内容の別参照で渡し直しても消えず、列が削除されたとき・その列の `flex` / `pinned` 指定が変わったとき・`width` がエントリと異なる値に指定し直されたとき・列のリセット時にだけ捨てられる。そのため `applyState(getState())` は冪等で、保存値に既定幅が焼き込まれることもない(後からコードで `width` を変えれば、手動リサイズしていない列には反映される)。`custom` フィルターの `value`(`unknown`)は深いコピーをしないため、シリアライズ可能性は consumer 責務。`applyState` は壊れた / 部分的な入力にも耐える(非数値の幅・`kind` 無し / 未知 `kind` / 配列であるべき `values` が欠けた列フィルター・不正な `direction` は捨てる。`columns` に同じ `key` が重なっていたら最初の 1 つだけ使う)。
 
 行のグループ化(列の `rowGroup`)とグループの開閉は、既定では `GridState` に入らない。prop の `includeGroupingInState` を付けると入る(1.2.0 から): `columns` の各列のうち `rowGroup` を書いた列に `rowGroup`(`true` / `false`)が、`collapsedGroups` に折りたたんだグループのキー(`GridGroupRow.groupKey`)の配列が入り、グループの開閉でも `onStateChange` が呼ばれる。戻すときは、`restoreColumnsFromState(columns, saved)` が保存にある列の `rowGroup` を列定義へ当て(グループ化の階層は列の順なので並びも戻る。グループ元の列どうしの順は、固定のペインごとの並べ直しでも変えない)、`initialState` / `applyState` が `collapsedGroups` を戻す(`collapsedGroups` は渡したときだけ変える。今の行に無いキーは画面には効かないが `collapsedGroups` には残る = 絞り込みを外すと閉じたまま戻る。グループが入れ替わり続ける表では、保存する前に `getGroupRows()` にあるキーだけへ絞る)。`applyState` で `columns` を戻すときも `rowGroup` が戻る(`onColumnsChange` があるとき)。グループのキーは列のキーと値から作る文字列で、行を取り直しても変わらない(中の形は決まっていないので、自分で組み立てずに `getGroupRows()` / 保存した値から使う)。
 

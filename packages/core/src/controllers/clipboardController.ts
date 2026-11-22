@@ -319,9 +319,12 @@ export const createClipboardController = <T extends object>(): ClipboardControll
         : (expandedMatrix ?? parsedMatrix);
     // 追加(1.1.0 / AP-09): 書かなかったセル(通知があるときだけ集める)。書き込みと選択を済ませてから 1 回だけ知らせます。
     const skipped: GridPasteSkippedCell<T>[] | null = onPasteSkipped ? [] : null;
+    // 変更(1.3.0 / Solid 版の品質の段 2 S9-04): 編集できないセルへ貼った空の文字は数えません(Excel の範囲の空のセルが
+    //   計算列などに重なると「書かなかった」に入り、利用者から見て書かれなかったデータより多い件数になっていた)。
     const notifySkipped = () => {
-      if (skipped !== null && skipped.length > 0) {
-        onPasteSkipped?.({ cells: skipped });
+      const cells = skipped?.filter((cell) => !(cell.reason === 'readOnly' && cell.text === ''));
+      if (cells !== undefined && cells.length > 0) {
+        onPasteSkipped?.({ cells });
       }
     };
 
@@ -436,20 +439,18 @@ export const createClipboardController = <T extends object>(): ClipboardControll
     }
 
     const requiredColumnCount = lastPasteColIndex + 1;
+    // 変更(1.3.0 / S1-03): 足した列(overflow 列)は、セルを書いたときだけ onColumnsChange で返します(下)。
+    const overflowColumns: GridColumn<T>[] = [];
     if (requiredColumnCount > workingColumns.length) {
       if (onColumnsChange && createOverflowColumn) {
         // 変更(audit L-01): overflow 列は書き込み用の workingColumns(視覚順 + 合成列)と、consumer へ
         //   返す列定義の両方へ足す。返すのは consumer の columns(論理順・非表示列込み)+ overflow 列で、
         //   旧実装のように視覚順の可視列 + 合成列を返して非表示列を消したり合成列を混入させない。
-        const overflowColumns: GridColumn<T>[] = [];
         while (workingColumns.length < requiredColumnCount) {
           const overflowColumn = createOverflowColumn(workingColumns.length);
           workingColumns.push(overflowColumn);
           overflowColumns.push(overflowColumn);
         }
-        onColumnsChange(
-          columns ? [...columns, ...overflowColumns] : workingColumns,
-        );
       }
     }
 
@@ -487,16 +488,32 @@ export const createClipboardController = <T extends object>(): ClipboardControll
 
     // 変更(1.0.2 / 2026-11-09 実アプリの総点検 C-02): 選択範囲は実際に書いた範囲まで。行を足せない(createRow が無い)・列を
     //   足せない(createOverflowColumn が無い)ときに、表の外へはみ出した範囲(無い行 / 列)を選んでいた。
+    // 変更(1.3.0 / S1-03): 1 つのセルも書かなかった(書けるセルが無い)ときは、行も列も足さず onRowsChange も呼びません
+    //   (履歴も積まない。Delete キーと同じ)。足さなかった行 / 列のセルは表の外なので、書かなかったセルにも数えません。
+    //   表の中の書かなかったセルの知らせ(onPasteSkipped)と選択の移動はいつもどおり。
+    const wrote = nextRows !== workingRows;
+    if (!wrote && skipped !== null) {
+      const inside = skipped.filter(
+        (cell) => cell.rowIndex < viewRowCountForPaste && cell.colIndex < visibleColumns.length,
+      );
+      skipped.length = 0;
+      skipped.push(...inside);
+    }
     const endRow = clamp(
       lastTargetViewIndex,
       0,
-      Math.max(workingRows.length > rows.length ? lastTargetViewIndex : viewRowCountForPaste - 1, 0),
+      Math.max(wrote && workingRows.length > rows.length ? lastTargetViewIndex : viewRowCountForPaste - 1, 0),
     );
     // 修正(audit C-12): 選択範囲の幅は serverSide 経路と同じく最も長い行の幅にします(先頭行が他の行より短い TSV
     //   (`a\nb\tc` 等)で、実際に貼り付けた範囲より狭くなっていた)。
-    const endCol = clamp(lastPasteColIndex, 0, Math.max(workingColumns.length - 1, 0));
+    const endCol = clamp(lastPasteColIndex, 0, Math.max((wrote ? workingColumns : visibleColumns).length - 1, 0));
 
-    onRowsChange(nextRows);
+    if (wrote) {
+      if (overflowColumns.length > 0) {
+        onColumnsChange?.(columns ? [...columns, ...overflowColumns] : workingColumns);
+      }
+      onRowsChange(nextRows);
+    }
     dispatch(gridActions.startSelection(anchor));
     dispatch(gridActions.updateSelection({ row: endRow, col: endCol }));
     dispatch(gridActions.endSelection());

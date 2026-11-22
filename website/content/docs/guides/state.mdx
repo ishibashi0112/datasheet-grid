@@ -73,7 +73,7 @@ gridRef.current?.applyState({ filters: { columnFilters: {} } });   // 列フィ�
 
 - **渡したものだけを変えます**。省いたもの(`undefined`)は今のままです。`filters` も `globalText` / `columnFilters` の片方だけ渡せます。
 - 1 回の描画で反映します(フィルターと並べ替えを一度に渡しても、途中の画面を挟みません)。直後の `getState()` は新しい値を返します。
-- `columns`(列の並び / 表示 / 固定)は、`onColumnsChange` があるときだけ反映します。
+- `columns`(列の並び / 表示 / 固定)は、`onColumnsChange` があるときだけ反映します。今と同じなら `onColumnsChange` は呼びません(1.3.0 から)。
 - `applyState` の後にも `onStateChange` は呼ばれます(同じ値を保存し直すことがありますが、害はありません)。
 
 ## 列を変えたとき・壊れた値

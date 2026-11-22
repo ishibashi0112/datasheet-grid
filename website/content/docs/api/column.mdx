@@ -227,6 +227,7 @@ const columns: GridColumn<Expense>[] = [
 
 - `numberParser` は `numberFormatter` と同じく型引数なしで使い回せます(`(raw: string) => unknown`)。
 - `onPasteSkipped` の `cells` は貼り付けた文字の順(行ごとに左から)です。`rowIndex` はビュー行(フィルター / ソート後の位置)、`rowKey` は `rowKeyGetter` の値です。serverSide(`dataSource`)では、読み込み済みの行のセルを知らせます(書いたセルは `updateRows` へ)。フィルハンドル・`Delete` で書かなかったセルは入りません。
+- 編集できないセルへ貼った空の文字(Excel の範囲の空のセル)は `cells` に入れません(1.3.0 から)。書けるセルが 1 つも無い貼り付けは `onRowsChange` を呼ばず、元に戻すにも積みません(表の末尾へ行 / 列も足さない。足さなかった行 / 列のセルは表の外なので `cells` にも入らない)。
 
 ### セルエディタ(editor)
 

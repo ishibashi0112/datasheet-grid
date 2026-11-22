@@ -2376,6 +2376,8 @@ export function useGridShell<T extends object>({
       controlledRowSelectionModel,
       leafRowCount,
       filteredDataRows,
+      // 追加(1.3.0 / S4-09): 選んだ行が rows から消えたら選択から外す(clientSide)。
+      sourceRows: isServerSide ? undefined : { rows, rowKeyGetter: resolvedRowKeyGetter },
       dispatch,
     },
   );
