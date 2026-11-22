@@ -96,7 +96,7 @@ const Grid = createSpreadsheetGrid({ features: { ...standardFeatures, serverSide
 
 ## Solid で気をつけること
 
-- **`rows` は store ではなく signal で持つ。** `onRowsChange` は新しい配列を返します(React 版と同じ約束)。`setRows(next)` で戻してください。`createStore` に入れると、戻ってくる rows がグリッドの返した配列ではなく store のプロキシになるので、元に戻す / やり直しの履歴が消え、開発時に Solid の知らせが多く出ます。`rows` が store のときは開発時に 1 回警告します。
+- **`rows` は signal で持つ。** `onRowsChange` は編集のたびに新しい配列を返します(React 版と同じ約束)。行は配列ごと差し替わるので、Solid の使い分け(丸ごと差し替える値は signal、中を少しずつ書き換える入れ子のデータは store)どおり signal で持ち、`setRows(next)` で戻してください。今の版では `createStore` に入れると、戻ってくる rows がグリッドの返した配列ではなく store のプロキシになるので、元に戻す / やり直しの履歴が消え、開発時に Solid の知らせが多く出ます(`rows` が store のときは開発時に 1 回警告します)。
 - **書き込みはマイクロタスクで反映されます。** `setRows(...)` の後、グリッドが新しい行を見るのは次の反映のときです。足したばかりの行をすぐ使う(`getViewRowIndex(key)` → `startEditing(...)`)ときは、先に `solid-js` の `flush()` を呼んでください(React 版のドキュメントの `flushSync` と同じ)。
 - **テスト(Vitest + jsdom)。** Vitest の設定に `@solidjs/vite-plugin` を入れてください。プラグイン無しなら `browser` を `resolve.conditions` / `ssr.resolve.conditions` / `ssr.resolve.externalConditions` の 3 か所すべてに書きます。`@solidjs/testing-library` は Solid 2 向けの版(1.0 の候補版)を使い、jsdom にはレイアウトが無いので `@ishibashi0112/spreadsheet-grid-solid/testing` の `installJsdomLayoutStubs` を呼びます。signal を変えた・イベントを送った後は、DOM を見る前に `flush()` を呼びます([テスト](/docs/guides/testing)の React 版の `act()` の代わり)。
 - **SSR。** 今の SolidStart は Solid 1 だけに対応しています。Solid 2 では Vite の SSR と `@solidjs/vite-plugin`(`ssr: true`)で、サーバーは `renderToString` か `renderToStream` と `generateHydrationScript`、クライアントは `hydrate` を使います(`@solidjs/router` 2 は `@solidjs/web/storage` の `createRequestEvent` / `provideRequestEvent` も要ります)。サーバーで描くのはグリッドの骨組み(見出し・固定列・読み込み中の印)だけで、行はハイドレーションの後に描きます(React 版と同じ)。
