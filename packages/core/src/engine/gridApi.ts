@@ -920,8 +920,9 @@ export const createGridApi = <T,>(features: Pick<GridCoreFeatures, 'export' | 'g
           console.warn(
             // 変更(1.0 前の最終チェック FC-33): /lite で serverSide の機能が無いと dataSource を渡しても clientSide になるので、
             //   その場合も分かる文にします。
-            '[SpreadsheetGrid] refreshServerSide は clientSide(rows)モードでは何もしません。dataSource を渡したときだけ有効です(/lite の createSpreadsheetGrid では features に serverSide: serverSideFeature も要ります)。\n' +
-              '[SpreadsheetGrid] refreshServerSide does nothing with clientSide rows. It works only when dataSource is passed (with /lite createSpreadsheetGrid, features also needs serverSide: serverSideFeature).',
+            // 変更(1.3.0 / R4-4): 入口の名前(React 版の /lite)は出しません(Solid 版は本体の入口に createSpreadsheetGrid がある)。
+            '[SpreadsheetGrid] refreshServerSide は clientSide(rows)モードでは何もしません。dataSource を渡したときだけ有効です(createSpreadsheetGrid では features に serverSide: serverSideFeature も要ります)。\n' +
+              '[SpreadsheetGrid] refreshServerSide does nothing with clientSide rows. It works only when dataSource is passed (with createSpreadsheetGrid, features also needs serverSide: serverSideFeature).',
           );
         }
         return;
@@ -939,8 +940,9 @@ export const createGridApi = <T,>(features: Pick<GridCoreFeatures, 'export' | 'g
           console.warn(
             // 変更(1.0 前の最終チェック FC-33): /lite で serverSide の機能が無いと dataSource を渡しても clientSide になるので、
             //   その場合も分かる文にします。
-            '[SpreadsheetGrid] retryServerSideLoads は clientSide(rows)モードでは何もしません。dataSource を渡したときだけ有効です(/lite の createSpreadsheetGrid では features に serverSide: serverSideFeature も要ります)。\n' +
-              '[SpreadsheetGrid] retryServerSideLoads does nothing with clientSide rows. It works only when dataSource is passed (with /lite createSpreadsheetGrid, features also needs serverSide: serverSideFeature).',
+            // 変更(1.3.0 / R4-4): 入口の名前(React 版の /lite)は出しません(Solid 版は本体の入口に createSpreadsheetGrid がある)。
+            '[SpreadsheetGrid] retryServerSideLoads は clientSide(rows)モードでは何もしません。dataSource を渡したときだけ有効です(createSpreadsheetGrid では features に serverSide: serverSideFeature も要ります)。\n' +
+              '[SpreadsheetGrid] retryServerSideLoads does nothing with clientSide rows. It works only when dataSource is passed (with createSpreadsheetGrid, features also needs serverSide: serverSideFeature).',
           );
         }
         return;

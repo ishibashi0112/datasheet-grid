@@ -35,7 +35,10 @@ import type { createFillHandle } from '../primitives/fillHandle';
 import type { FillHandleLayer, FillHandlePortals } from '../view/FillHandleLayer';
 import type { createCellContextMenu } from '../primitives/contextMenu';
 import type { CellContextMenuPopover } from '../view/CellContextMenuPopover';
-import type { BodyContextMenuInput, CellContextMenuInput } from './contextMenu';
+import type {
+  BodyContextMenuInput,
+  CellContextMenuInput,
+} from '@ishibashi0112/spreadsheet-grid-core/internal/logic/contextMenuTarget';
 import type { GridContextMenuParams } from '../model/gridTypes';
 import type { createFilterOrder } from '../primitives/filterOrder';
 import type { createFilterPopover } from '../primitives/filterPopover';

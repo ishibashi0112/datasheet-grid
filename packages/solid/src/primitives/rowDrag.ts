@@ -13,10 +13,12 @@ import {
   type RowDragArgs,
   type RowDragController,
 } from '@ishibashi0112/spreadsheet-grid-core/internal/controllers/rowDragController';
-import { isSyntheticColumnKey } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/detailRow';
-import { formatLocaleText } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/localeText';
-import { resolveMoveTargetIndex } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/rowReorder';
-import { getCellValue } from '@ishibashi0112/spreadsheet-grid-core/internal/utils/permissions';
+import {
+  createRowDropCheck,
+  getDragRowToken,
+  locateDragRowToken,
+  resolveRowDragLabel,
+} from '@ishibashi0112/spreadsheet-grid-core/internal/logic/rowDragTarget';
 import type { GridColumn as UnboundGridColumn } from '@ishibashi0112/spreadsheet-grid-core/internal/model/gridTypes.unbound';
 import type { GridRowKey, RowModel, SpreadsheetGridProps } from '@ishibashi0112/spreadsheet-grid-core';
 import { connectController } from './controller';
@@ -43,86 +45,27 @@ export type RowDrag = {
   setIndicator: (pane: 'left' | 'center' | 'right', element: HTMLDivElement) => void;
 };
 
-type DragRowToken = { row: unknown; rowKey: unknown; rowCount: number };
-
 export function createRowDrag<T>(inputs: RowDragInputs<T>): RowDrag {
   const controller = createRowDragController();
   const leftIndicatorRef: { current: HTMLDivElement | null } = { current: null };
   const centerIndicatorRef: { current: HTMLDivElement | null } = { current: null };
   const rightIndicatorRef: { current: HTMLDivElement | null } = { current: null };
 
-  // canDropRow を controller のスロット(行 i の上の境界が i)で聞ける形に(React 版の features/rowDrag と同じ)。
-  const canDropAt = createMemo(() => {
-    const canDropRow = inputs.canDropRow();
-    if (canDropRow === undefined) {
-      return undefined;
-    }
-    const rows = inputs.rows();
-    const resolveRowKey = inputs.resolveRowKey();
-    return (fromIndex: number, slot: number): boolean => {
-      const toIndex = resolveMoveTargetIndex(fromIndex, slot);
-      const row = rows[fromIndex];
-      if (toIndex === null || row === undefined) return false;
-      return canDropRow({
-        row,
-        rowKey: resolveRowKey(row, fromIndex),
-        fromIndex,
-        toIndex,
-        rowAbove: slot > 0 ? rows[slot - 1] : undefined,
-        rowBelow: slot < rows.length ? rows[slot] : undefined,
-        rows,
-      });
-    };
-  });
-  // ゴーストのラベル: 先頭の(合成列でない)文字を出す表示列の表示値。空なら「行 N」(React 版と同じ)。
-  const getRowDragLabel = (viewIndex: number): string => {
-    const fallback = formatLocaleText(untrack(inputs.dragRowLabel), { row: viewIndex + 1 });
-    const row = untrack(inputs.rowModel).getRow(viewIndex);
-    if (!row) {
-      return fallback;
-    }
-    const column = untrack(inputs.visibleColumns).find(
-      (candidate) =>
-        !isSyntheticColumnKey(candidate.key) &&
-        (candidate.renderCell === undefined || candidate.valueFormatter !== undefined) &&
-        candidate.editor?.type !== 'checkbox' &&
-        candidate.conditionalFormat?.dataBar?.showValue !== false,
-    );
-    if (!column) {
-      return fallback;
-    }
-    const value = getCellValue(row, column);
-    const text = column.valueFormatter ? column.valueFormatter({ value, row, column }) : String(value ?? '');
-    return text.trim().length > 0 ? text : fallback;
-  };
-  // 掴んだ行を控え、離すときに今の並びで探し直す(React 版と同じ。行の参照 → キー → 行数が同じなら掴んだときの位置)。
-  const getDragRow = (viewIndex: number): DragRowToken | null => {
-    const rowModel = untrack(inputs.rowModel);
-    const row = rowModel.getRow(viewIndex);
-    if (row === undefined) return null;
-    return { row, rowKey: rowModel.getRowKey(viewIndex), rowCount: rowModel.getRowCount() };
-  };
+  // 変更(1.3.0 / 段 2-9): 落とせるかの判定 / ゴーストのラベル / 掴んだ行の控えと探し直しは core の logic/rowDragTarget
+  //   (React 版と同じ処理)。ここは作り直す時機だけを持ちます。
+  // 落とせるかの判定は canDropRow / rows / 行のキーの関数が変わったときだけ作り直します。
+  const canDropAt = createMemo(() => createRowDropCheck(inputs.canDropRow(), inputs.rows(), inputs.resolveRowKey()));
+  // ゴーストのラベル / 掴んだ行の控えは、呼ばれた時点の行モデルで答えます。
+  const getRowDragLabel = (viewIndex: number): string =>
+    resolveRowDragLabel(untrack(inputs.rowModel), untrack(inputs.visibleColumns), viewIndex, untrack(inputs.dragRowLabel));
+  const getDragRow = (viewIndex: number) => getDragRowToken(untrack(inputs.rowModel), viewIndex);
   // 探し直しの関数は行の並び(と行のキーの有無)が変わるたびに作り直します。コントローラは引いている間にこの関数が変わると
   //   掴んだ行を探し直す(行が増えたら新しい位置へ、消えたらやめる。1.0 前の最終チェック FC-12)ので、React 版の
   //   useCallback([rowModel, hasRowKeys]) と同じ回数だけ変わるようにします。
   const locateDragRow = createMemo(() => {
     const rowModel = inputs.rowModel();
     const hasRowKeys = inputs.hasRowKeys();
-    return (token: unknown, hint: number): number | null => {
-      const { row, rowKey, rowCount } = token as DragRowToken;
-      if (rowModel.getRow(hint) === row) return hint;
-      const count = rowModel.getRowCount();
-      for (let index = 0; index < count; index += 1) {
-        if (rowModel.getRow(index) === row) return index;
-      }
-      if (hasRowKeys) {
-        for (let index = 0; index < count; index += 1) {
-          if (Object.is(rowModel.getRowKey(index), rowKey)) return index;
-        }
-        return null;
-      }
-      return count === rowCount && hint < rowCount ? hint : null;
-    };
+    return (token: unknown, hint: number): number | null => locateDragRowToken(rowModel, hasRowKeys, token, hint);
   });
 
   // update は描画の後(ふつうの effect)で呼びます。引いている間に行が変わったときの探し直しは、掴んだ行の印

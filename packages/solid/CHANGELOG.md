@@ -43,6 +43,7 @@
 - 行ドラッグのハンドルと展開トグルの列(グリッドが足す列)の見出しが空で、読み上げで名前の無い見出しになっていました(axe の `empty-table-header`)。見た目は空のまま、見えない文字で「移動」「詳細」と名前を置きます(下部バーの番地と同じ文言 `rowDragColumnName` / `detailColumnName`)。
 - Solid 版だけに依存するライブラリ(pnpm で core を直接の依存に入れない形)で、`numberFormatter()` の結果を推論のまま export する(`export const yen = numberFormatter()` や、`valueFormatter: numberFormatter()` を含む列の配列)と、d.ts を出すときに TS2883 / TS2742 になっていました(core の型の名前が要るため)。返す関数の型を名前の無い構造の型 `(params: { readonly value: unknown; readonly [key: string]: unknown }) => string` にしました(どの列の `valueFormatter` にも今までどおり渡せます)。
 - select エディタの `options` と `getFilterOptions` の結果の `options` に、readonly の配列(`as const` で書いた候補など)を渡せませんでした(`filterOptions` には渡せました)。渡せるようにしました。
+- `dataSource` を渡さずに(または機能セットに `serverSide` を入れずに)`refreshServerSide()` / `retryServerSideLoads()` を呼んだときの開発時の警告が、Solid 版に無い入口の名前(React 版の `/lite`)を出していました。入口の名前を出さない文にしました。
 
 ## 0.1.1 — 2026-11-22
 
