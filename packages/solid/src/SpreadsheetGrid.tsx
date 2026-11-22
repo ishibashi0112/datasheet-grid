@@ -11,9 +11,10 @@
 //   - 部品の本体では props を直接読まない(Solid 2.0 は本体での読み取りを警告する)。props は関数や memo の中で読む。
 //   - React の onXxxCapture / onBlur / onFocus(子孫からも上がってくる)は、Solid では capture のリスナーを自分で付ける /
 //     onFocusOut / onFocusIn にします。
-import { For, Match, Show, Switch, createEffect, createMemo, createSignal, createUniqueId, latest, onCleanup, untrack } from 'solid-js';
+import { For, Match, Show, Switch, createEffect, createMemo, createSignal, createUniqueId, isHydrating, latest, onCleanup, untrack } from 'solid-js';
 import type { Ref } from 'solid-js';
 import type { JSX } from '@solidjs/web';
+import { isServer } from '@solidjs/web';
 import type {
   CellCoord,
   CellDetailContext,
@@ -160,7 +161,7 @@ import { CellEditorLayer, type CellEditorSession } from './editors/CellEditorLay
 import { GridPortalContext } from './context/portal';
 import { DefaultGridTopBar } from './view/DefaultGridTopBar';
 import { DefaultGridBottomBar } from './view/DefaultGridBottomBar';
-import { createShellDevWarnings, warnMoveRowOnServerSide, withOpenToolPanelWarnings } from './devWarnings';
+import { createShellDevWarnings, warnHandleCallBeforeMount, warnMoveRowOnServerSide, withOpenToolPanelWarnings } from './devWarnings';
 
 const EMPTY_ROWS: never[] = [];
 const NEVER_EDITABLE = () => false;
@@ -185,14 +186,14 @@ const applyHandleRef = <H,>(ref: Ref<H> | undefined, handle: H): void => {
 
 // 追加(0.1.0 の前の実アプリ点検 S5-01): ハンドルのメソッドを、呼ぶ前に before を走らせる形で包みます(1 回だけ作る。
 //   同じメソッドはいつも同じ関数)。
-const exposeHandle = <H extends object,>(handle: H, before: () => void): H => {
+const exposeHandle = <H extends object,>(handle: H, before: (method: string) => void): H => {
   const exposed: Record<string, unknown> = {};
   for (const [key, value] of Object.entries(handle)) {
     exposed[key] =
       typeof value === 'function'
         ? (...args: unknown[]) =>
             runHandleCall(() => {
-              before();
+              before(key);
               return (value as (...a: unknown[]) => unknown)(...args);
             })
         : value;
@@ -251,16 +252,36 @@ function GridShellBody<T extends object>(
   //   操作できます。それに合わせ、effect が latest()(保留中でも今の値)で読んで写し、グリッドはその写しを読みます。effect の
   //   中の書き込みは利用者の取引に入らないので、グリッドは止まりません。写す前(最初の値が届くまで)は props.rows をそのまま
   //   読みます(<Loading> の中で最初の行を待つ形と、サーバーで描くときはこれまでどおり)。
+  // 変更(段階 4 の測り直し S8-01 / S2-22): サーバーで描くときと、クライアントのハイドレーションの間は、行を空として描き、
+  //   描き終わった後(onGridMounted)に行へ切り替えます。Solid のハイドレーションはサーバーの要素をそのまま使い、クライアントで
+  //   違う値になった文字・属性・行を直さないので、サーバーとブラウザでタイムゾーンや今日が違うと(日付の条件・Date の値の
+  //   書式)、固定列に別の行の文字が残り、そのセルの編集が別の行に入り、件数もサーバーのまま残っていました。React 版は
+  //   食い違いをクライアントで描き直して直します。行に依らない骨組み(見出し・上下のバーの条件の表示)だけをサーバーで描き、
+  //   行・件数・合計は、切り替えた後のふつうの描画で出します(どちらの側でも同じ結果になる)。サーバーで描かない描き方では
+  //   最初から true です。最初に登録するので、コントローラの最初の update より前に切り替えの書き込みが入ります。
+  const [hydrated, setHydrated] = createSignal(!isServer && !isHydrating(), { name: 'hydrated' });
+  if (!untrack(hydrated)) {
+    onGridMounted(() => {
+      setHydrated(true);
+    });
+  }
   const [relayedRows, setRelayedRows] = createSignal<{ value: T[] | undefined } | null>(null);
   createEffect(
     () => latest(() => props.rows) as T[] | undefined,
-    (value) => {
-      setRelayedRows({ value });
+    {
+      effect: (value) => {
+        setRelayedRows({ value });
+      },
+      // 行の読み込みの失敗(非同期の memo の取り直しの失敗など)は、利用側の <Errored> へそのまま渡します(段階 4 の測り直し
+      //   S7-02。行を JSX で読んだときと同じ。受けないと、effect ごとに同じエラーが console へ出ていた)。
+      error: (error) => {
+        throw error;
+      },
     },
     { name: 'relayRows' },
   );
   const rows = createMemo(() => {
-    if (props.dataSource != null) {
+    if (props.dataSource != null || !hydrated()) {
       return EMPTY_ROWS as T[];
     }
     const relayed = relayedRows();
@@ -679,7 +700,11 @@ function GridShellBody<T extends object>(
     detailActive: () => vertical().detailActive,
     globalFilterText,
     columnFilterCount: () => Object.keys(columnFilters()).length,
-    rows: () => props.rows,
+    // 写した rows を読みます(取り直しの失敗を、写しの effect だけが <Errored> へ渡すように。S7-02)。写す前は props.rows。
+    rows: () => {
+      const relayed = relayedRows();
+      return relayed ? relayed.value : props.rows;
+    },
   });
   // ラベル行の縦スクロールの固定(labelRow.sticky)。scrollTop(論理)から今のセクションのラベル行と押し上げる量を求めて、各ペインの
   //   固定の層へ渡します。固定の帯がヘッダーの直下で行を隠す高さ(stickyTopInset)は、アクティブセルの追従と scrollToRow /
@@ -2424,9 +2449,17 @@ function GridShellBody<T extends object>(
   //   いないので先に済ませず、そのまま呼びます(コントローラの update の前なので、多くのメソッドは何もしない)。
   //   変更(段階 4 の測り直し S3-22): ref は untrack で読みます(props を作り直すオブジェクトの spread で渡すと、props が merge に
   //   なり、部品の本体で読むと開発時に Solid が STRICT_READ_UNTRACKED を出していた。ref は最初の 1 回だけ渡すもの)。
-  applyHandleRef(untrack(() => props.ref), exposeHandle(engine.gridApi.handle, () => {
-    if (!mountGate.done && gridRootRef.current?.isConnected === true) {
+  //   変更(段階 4 の測り直し S4-23): 描く前(<Loading> の中で行を待っている間など。根の要素がまだ文書の中に無い)に状態を変える
+  //   メソッドが呼ばれたら、何もしないことを開発時に 1 回知らせます(devWarnings の warnHandleCallBeforeMount)。
+  const handleCallBeforeMountWarned = { current: false };
+  applyHandleRef(untrack(() => props.ref), exposeHandle(engine.gridApi.handle, (method) => {
+    if (mountGate.done) {
+      return;
+    }
+    if (gridRootRef.current?.isConnected === true) {
       flushMountGate(mountGate);
+    } else {
+      warnHandleCallBeforeMount(handleCallBeforeMountWarned, method);
     }
   }));
 
@@ -2495,21 +2528,22 @@ function GridShellBody<T extends object>(
   }));
   // フィルターの機能が無い構成ではフィルターが行に効かないので、状態にあっても「絞り込み: …」に数えない(React 版の
   //   filtersApplied)。
-  const derivedSummary = createMemo(
-    (): SpreadsheetGridDerivedSummary =>
-      buildGridDerivedSummary(
-        filteringAvailable
-          ? slotContextBase()
-          : { ...slotContextBase(), globalFilterText: '', columnFilterValues: NO_COLUMN_FILTERS },
-        // 件数はグループ行 / ラベル行を除くデータ行の数(slotContext.filteredRows と同じ)。分母(総データ行数)はラベル行を除く
-        //   (ラベル行が無ければ rows の数)。サーバーサイドは rows が空なので、サーバーが返した今の条件での件数(React 版と同じ)。
-        leafRowCount(),
-        isServerSide() ? viewRowCount() : labelLayout()?.dataRowCount,
-        columnNamer(),
-        rowNumberer(),
-        localeTexts(),
-      ),
-  );
+  const derivedSummary = createMemo((): SpreadsheetGridDerivedSummary => {
+    const summary = buildGridDerivedSummary(
+      filteringAvailable
+        ? slotContextBase()
+        : { ...slotContextBase(), globalFilterText: '', columnFilterValues: NO_COLUMN_FILTERS },
+      // 件数はグループ行 / ラベル行を除くデータ行の数(slotContext.filteredRows と同じ)。分母(総データ行数)はラベル行を除く
+      //   (ラベル行が無ければ rows の数)。サーバーサイドは rows が空なので、サーバーが返した今の条件での件数(React 版と同じ)。
+      leafRowCount(),
+      isServerSide() ? viewRowCount() : labelLayout()?.dataRowCount,
+      columnNamer(),
+      rowNumberer(),
+      localeTexts(),
+    );
+    // サーバーで描くときとハイドレーションの間は行を空にしているので、件数(「行 0 / 0」)は出さない(上の hydrated)。
+    return hydrated() ? summary : { ...summary, rowSummaryText: '' };
+  });
   const setGlobalFilterText = (value: string) => dispatch(gridActions.setGlobalFilter(value));
   // 選択範囲の集計(機能 features/selectionAggregates。無い構成では常に null)。出す先が無いときは計算しない(大きな選択の
   //   走査を省く)。出す先 = 下部バー(既定 / renderBottomBar)か、自前の上部バー(renderTopBar)。既定の上部バーは集計を
@@ -3352,7 +3386,7 @@ function GridShellBody<T extends object>(
                 {renderColumnDropIndicator('right')}
               </div>
             </div>
-            <Show when={viewRowCount() === 0}>
+            <Show when={viewRowCount() === 0 && hydrated()}>
               <div class={['ssg-empty-state', slots().emptyState?.className]} style={slots().emptyState?.style}>
                 {emptyStateText()}
               </div>

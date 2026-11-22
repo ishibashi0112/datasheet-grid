@@ -1,7 +1,7 @@
 // Solid らしい使い方の確かめ(段階 4 の測り直し 1-5)。React 版には無い書き方(非同期の行と <Loading> / <Errored>、
 //   取り直しの間の古い表示、<Show> での出し入れ、1 ページに複数のグリッド)で、グリッドが壊れず、警告も出さないこと。
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
-import { Errored, Loading, Show, action, createMemo, createOptimistic, createSignal, flush, isPending } from 'solid-js';
+import { Errored, Loading, Show, action, createEffect, createMemo, createOptimistic, createSignal, flush, isPending, onFlush } from 'solid-js';
 import { fireEvent, render } from '@solidjs/testing-library';
 import { installJsdomLayoutStubs } from '@ishibashi0112/spreadsheet-grid-core/testing';
 import { SpreadsheetGrid, type GridColumn, type SpreadsheetGridHandle } from './index';
@@ -172,6 +172,76 @@ describe('非同期の行', () => {
     // 失敗そのものは利用側の <Errored> が受けたので、グリッドからの警告やエラーは無い。
     expect(logs).toEqual([]);
   });
+
+  // 段階 4 の測り直し S7-02: 行を出した後の取り直しが失敗したときも、<Errored> が受け、同じエラーを console へ出さない
+  //   (以前は effect の数だけ 12〜13 回出ていた。行を写すようにした後は <Errored> へ届かず、表が前の行のまま残っていた)。
+  it('取り直しの失敗は <Errored> が受け、console へ出さない(S7-02)', async () => {
+    watchConsole();
+    const loads = [deferred<Row[]>(), deferred<Row[]>()];
+    let setPage: (page: number) => void = () => {};
+    const { container, unmount } = render(() => {
+      const [page, set] = createSignal(0);
+      setPage = set;
+      const rows = createMemo(async () => (loads[page()] as { promise: Promise<Row[]> }).promise);
+      return (
+        <Errored fallback={(error) => <p class="error">{String(error())}</p>}>
+          <Loading fallback={<p class="fallback">読み込み中</p>}>
+            <SpreadsheetGrid<Row> rows={rows()} columns={columns} rowKeyGetter={(row) => row.id} />
+          </Loading>
+        </Errored>
+      );
+    });
+    loads[0]?.resolve(makeRows(3));
+    await settle();
+    expect(cellOf(container, 0, 'name')?.textContent).toBe('品目 1');
+    setPage(1);
+    await settle();
+    loads[1]?.reject(new Error('取り直せませんでした'));
+    await settle();
+    expect(container.querySelector('.error')?.textContent).toContain('取り直せませんでした');
+    expect(container.querySelector('.ssg-root')).toBeNull();
+    unmount();
+    expect(logs).toEqual([]);
+  });
+
+  // 段階 4 の測り直し S4-23: <Loading> の中で最初の行を待っている間のグリッドへ、親の最初の effect からハンドルで状態を
+  //   入れても効かない(描く前はグリッドの最初の処理の前)。開発時に 1 回知らせ、行を読む effect から呼べば効く。
+  it('行を待っている間にハンドルで状態を変えると開発時に知らせ、行を読む effect から呼ぶと効く(S4-23)', async () => {
+    watchConsole();
+    const load = deferred<Row[]>();
+    let grid: SpreadsheetGridHandle<Row> | undefined;
+    const { container, unmount } = render(() => {
+      const rows = createMemo(async () => load.promise);
+      createEffect(
+        () => true,
+        () => {
+          grid?.applyState({ sort: [{ columnKey: 'qty', direction: 'desc' }] });
+          grid?.selectCell(0, 1);
+        },
+      );
+      createEffect(
+        () => rows().length,
+        (count) => {
+          if (count > 0) grid?.applyState({ sort: [{ columnKey: 'id', direction: 'desc' }] });
+        },
+      );
+      return (
+        <Loading fallback={<p class="fallback">読み込み中</p>}>
+          <SpreadsheetGrid<Row> ref={(handle) => (grid = handle)} rows={rows()} columns={columns} rowKeyGetter={(row) => row.id} />
+        </Loading>
+      );
+    });
+    await settle();
+    expect(logs).toHaveLength(1);
+    expect(logs[0]).toContain('applyState()');
+    expect(logs[0]).toContain('initialState');
+    load.resolve(makeRows(3));
+    await settle();
+    expect(grid?.getState().sort).toEqual([{ columnKey: 'id', direction: 'desc' }]);
+    expect(cellOf(container, 0, 'id')?.textContent).toBe('3');
+    unmount();
+    expect(logs).toHaveLength(1);
+  });
 });
 
 describe('action と createOptimistic で保存する(Solid 2.0 の遷移)', () => {
@@ -306,6 +376,75 @@ describe.each(['createOptimistic', 'signal'] as const)('保存の間もグリッ
     expect(cellOf(container, 0, 'name')?.textContent).toBe('一回目');
     expect(cellOf(container, 2, 'name')?.textContent).toBe('二回目');
     view.unmount();
+    expect(logs).toEqual([]);
+  });
+});
+
+// 段階 4 の測り直し S7-01: 通知の外(setTimeout / onFlush)で始めた保存の間に、フィルハンドルのある表で次のセルを打ち始めると、
+//   右下の四角の <Show> で「stale value」の例外が出て表(境界が無ければアプリ全体)が止まっていた(S4-21 と同じ原因。Solid 2.0.3
+//   で起きる)。打ち始め → Enter → 保存の間に次のセルを打ち始める、の順は実ブラウザの再現と同じ。
+describe.each(['setTimeout', 'onFlush'] as const)('保存の間もフィルハンドルのある表を編集できる(%s で始める。S7-01)', (start) => {
+  it('保存中に次のセルを打ち始めても例外が出ず、両方が保存される', async () => {
+    watchConsole();
+    const errors: unknown[] = [];
+    const onError = (event: ErrorEvent) => {
+      errors.push(event.error);
+    };
+    window.addEventListener('error', onError);
+    const saves: Array<ReturnType<typeof deferred<void>>> = [];
+    const view = render(() => {
+      const [serverRows, setServerRows] = createSignal(makeRows(5));
+      const [rows, setRows] = createOptimistic(() => serverRows());
+      const save = action(function* (next: Row[]) {
+        setRows(() => next);
+        const request = deferred<void>();
+        saves.push(request);
+        yield request.promise;
+        setServerRows(() => next);
+      });
+      return (
+        <SpreadsheetGrid<Row>
+          rows={rows()}
+          onRowsChange={(next) => {
+            const run = () => {
+              save(next).catch(() => {});
+            };
+            if (start === 'setTimeout') setTimeout(run);
+            else onFlush(run);
+          }}
+          columns={columns}
+          rowKeyGetter={(row) => row.id}
+          fillHandle
+        />
+      );
+    });
+    flush();
+    const { container } = view;
+    const shell = container.querySelector<HTMLElement>('.ssg-shell') as HTMLElement;
+    const typeAndEnter = (key: string) => {
+      fireEvent.keyDown(shell, { key });
+      flush();
+      const input = container.querySelector<HTMLInputElement>('.ssg-cell-editor input') as HTMLInputElement;
+      expect(input.value).toBe(key);
+      fireEvent.keyDown(input, { key: 'Enter' });
+      flush();
+    };
+    press(cellOf(container, 1, 'name') as HTMLElement);
+    typeAndEnter('A');
+    await settle();
+    expect(saves).toHaveLength(1);
+    expect(container.querySelector('.ssg-fill-handle')).not.toBeNull();
+    typeAndEnter('B');
+    await settle();
+    expect(container.querySelector('.ssg-cell-editor')).toBeNull();
+    expect(cellOf(container, 1, 'name')?.textContent).toBe('A');
+    expect(cellOf(container, 2, 'name')?.textContent).toBe('B');
+    for (const request of saves) request.resolve();
+    await settle(50);
+    expect(cellOf(container, 2, 'name')?.textContent).toBe('B');
+    window.removeEventListener('error', onError);
+    view.unmount();
+    expect(errors).toEqual([]);
     expect(logs).toEqual([]);
   });
 });
