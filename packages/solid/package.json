@@ -126,6 +126,7 @@
     "build:lib": "vp build --config vite.lib.config.ts && node scripts/build-source.mjs && tsc -p tsconfig.lib.json && node ../../scripts/fix-dts-extensions.mjs dist && node scripts/emit-css.mjs",
     "prepublishOnly": "pnpm run build:lib",
     "test": "vitest run --config vitest.config.ts",
+    "test:ssr": "vitest run --config ssr/vitest.config.ts",
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "peerDependencies": {
