@@ -1,0 +1,28 @@
+const { launch, BASE, chaos, serverLog, clearLog, cell } = require('./lib.cjs')
+;(async () => {
+  const { browser, page, logs } = await launch()
+  await chaos(page, { getFailRate: 0, patchFailRate: 0, getDelay: 50 })
+  await page.goto(BASE + '/users')
+  await page.locator('.ssg-body-row:not([data-skeleton-row])').first().waitFor()
+  const c = await page.locator('.ssg-body-row[data-row-index="2"] [data-ssg-col-key="email"]').boundingBox()
+  await page.mouse.click(c.x + 20, c.y + 10, { button: 'right' }); await page.waitForTimeout(400)
+  console.log(await page.evaluate(() => [...document.querySelectorAll('[role="menu"] *')].filter((e) => e.children.length === 0).map((e) => e.textContent).join(' | ')))
+  await page.screenshot({ path: 'shot-context.png' })
+  // CSV
+  const dl = page.waitForEvent('download')
+  await page.locator('[role="menu"] [role="menuitem"]', { hasText: 'Export loaded rows' }).click()
+  const d = await dl
+  const p = await d.path()
+  const csv = require('fs').readFileSync(p, 'utf8')
+  console.log('csv lines', csv.split('\n').length, JSON.stringify(csv.slice(0, 300)))
+  // Open details via menu → navigate
+  await page.mouse.click(c.x + 20, c.y + 10, { button: 'right' }); await page.waitForTimeout(300)
+  await page.locator('[role="menu"] [role="menuitem"]', { hasText: 'Open details' }).click()
+  await page.waitForTimeout(1200)
+  console.log('url', page.url(), await page.locator('[data-testid="detail"] h1').textContent().catch(() => 'no detail'))
+  await page.screenshot({ path: 'shot-detail.png' })
+  await page.goBack(); await page.waitForTimeout(1500)
+  console.log('back', page.url(), await page.locator('.ssg-body-row:not([data-skeleton-row])').count())
+  console.log(logs.join('\n'))
+  await browser.close()
+})()

@@ -1,0 +1,15 @@
+:root { font-family: system-ui, sans-serif; color-scheme: light; }
+html, body, #app { height: 100%; margin: 0; }
+body { background: #fff; color: #111; }
+.shell { display: flex; flex-direction: column; height: 100%; }
+.nav { display: flex; gap: 16px; padding: 8px 16px; border-bottom: 1px solid #ddd; align-items: center; }
+.nav a[aria-current="page"] { font-weight: 700; }
+main { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+.page { flex: 1; min-height: 0; display: flex; flex-direction: column; padding: 8px 16px; gap: 8px; }
+.toolbar { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.toolbar h1 { font-size: 18px; margin: 0 8px 0 0; }
+.grid-area { flex: 1; min-height: 0; }
+.cell-actions { display: inline-flex; gap: 6px; }
+.error { color: #b00; font-size: 12px; }
+.status { color: #060; font-size: 12px; }
+.settings label { display: block; margin: 8px 0; }

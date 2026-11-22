@@ -1,0 +1,5 @@
+{
+  "name": "my-inventory-lib",
+  "type": "module",
+  "peerDependencies": { "@ishibashi0112/spreadsheet-grid-solid": "0.1.0", "@ishibashi0112/spreadsheet-grid-core": "1.2.1", "solid-js": "^2.0.0", "@solidjs/web": "^2.0.0" }
+}

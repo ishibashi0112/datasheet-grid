@@ -1,0 +1,1 @@
+{"name":"s3-repro-solid","private":true,"type":"module","dependencies":{"@ishibashi0112/spreadsheet-grid-solid":"file:../../pack/ishibashi0112-spreadsheet-grid-solid-0.1.0.tgz","@solidjs/web":"^2.0.3","solid-js":"^2.0.3"},"devDependencies":{"@solidjs/vite-plugin":"^3.0.1","typescript":"~6.0.3","vite":"^8.3.8"}}

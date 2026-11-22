@@ -1,0 +1,9 @@
+/* ドキュメント(インストール > Tailwind CSS v4)どおり: レイヤー順を宣言してから style.layer.css */
+@layer theme, base, ssg-base, components, utilities;
+@import 'tailwindcss';
+@import '@ishibashi0112/spreadsheet-grid-solid/style.layer.css';
+
+/* <html class="dark"> でダーク(Tailwind v4 の class 方式) */
+@custom-variant dark (&:where(.dark, .dark *));
+
+html, body, #root { height: 100%; }

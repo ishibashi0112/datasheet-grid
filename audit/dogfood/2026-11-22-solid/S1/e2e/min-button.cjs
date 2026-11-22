@@ -1,0 +1,11 @@
+const { open, click } = require('./lib.cjs')
+;(async () => {
+  const { browser, page } = await open(process.argv[2])
+  await click(page, 4, 2)
+  await page.keyboard.down('Shift'); await click(page, 6, 2); await page.keyboard.up('Shift')
+  const before = await page.evaluate(() => JSON.stringify(window.grid.getSelection()))
+  await page.locator('[role="row"][aria-rowindex="2"] [data-testid="toggle"]').first().click()
+  await page.waitForTimeout(150)
+  console.log(process.argv[2], 'before', before, 'after', await page.evaluate(() => JSON.stringify({ sel: window.grid.getSelection(), active: window.grid.getActiveCell(), focus: document.activeElement.tagName + '.' + document.activeElement.className, canUndo: window.grid.canUndo() })))
+  await browser.close()
+})()
