@@ -39,6 +39,7 @@ import type {
 import { useGridLocaleText } from '../context/localeText';
 import { px } from '../primitives/style';
 import { createMemoWhen } from '../primitives/memoWhen';
+import { markClickTarget } from '../primitives/clickTarget';
 import { RowSelectionCheckbox } from './RowSelectionCheckbox';
 import type { GridPaneKind } from './GridHeaderRow';
 import type { GridLabelRowRenderContent } from './GridBodyLabelRow';
@@ -571,6 +572,7 @@ export function GridBodyLayer<T>(props: GridBodyLayerProps<T>) {
                             onPointerEnter={(event) => props.onCellPointerEnter(cell(), event)}
                             onClick={(event) => props.onCellClick(cell(), event)}
                             onDblClick={(event) => props.onCellDoubleClick(cell(), event)}
+                            ref={markClickTarget}
                             style={{
                               ...props.slots.bodyCell?.style,
                               ...(scaleBackground() !== null ? { 'background-color': scaleBackground() as string } : null),

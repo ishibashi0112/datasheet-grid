@@ -4,13 +4,14 @@
 //     購読の前に store が変わっていても、始めるときに 1 回写し直すので取りこぼしません。
 //   - Solid 2.0 の書き込みはマイクロタスクでまとめて反映されます。コントローラは store を直接読むので(getState)、
 //     signal の反映の遅れはコントローラの判断に影響しません。
-import { createSignal, onSettled } from 'solid-js';
+import { createSignal } from 'solid-js';
+import { onGridMounted } from './mountGate';
 import type { GridStore, GridUiState, GridViewState } from '@ishibashi0112/spreadsheet-grid-core';
 
 export function createGridStoreSignals(store: GridStore) {
   const [state, setState] = createSignal<GridUiState>(store.getState());
   const [view, setView] = createSignal<GridViewState>(store.getViewState());
-  onSettled(() => {
+  onGridMounted(() => {
     const sync = () => {
       setState(() => store.getState());
       setView(() => store.getViewState());

@@ -4,7 +4,7 @@
 //   ルートの build:lib(pnpm -r)が React 版の後に Solid 版を作るようにしています。
 //   公開は package.json の publishConfig.exports に 1 つずつ書きます(書き忘れたらビルドを止める。React 版の emit-layer-css と同じ)。
 // 実行: cwd はパッケージ直下(packages/solid)。
-import { copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync, statSync } from 'node:fs';
+import { copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
 
 const REACT_DIST = '../react/dist';
 if (!existsSync(`${REACT_DIST}/style.css`) || !existsSync(`${REACT_DIST}/style.layer.css`)) {
@@ -50,8 +50,13 @@ if (devMismatch.length > 0) {
   process.exit(1);
 }
 mkdirSync('dist/themes', { recursive: true });
+// 変更(0.1.0 の前の実アプリ点検 S3-05): テーマの CSS の先頭の使い方のコメントは React 版のパッケージ名で書いてあるので、
+//   Solid 版のパッケージ名へ書き換えて写します(中身のセレクタと値は同じ)。
+const REACT_PACKAGE_PATH = '@ishibashi0112/spreadsheet-grid/';
+const SOLID_PACKAGE_PATH = '@ishibashi0112/spreadsheet-grid-solid/';
 for (const name of files) {
-  copyFileSync(`${REACT_DIST}/${name}`, `dist/${name}`);
+  const css = readFileSync(`${REACT_DIST}/${name}`, 'utf8');
+  writeFileSync(`dist/${name}`, css.split(REACT_PACKAGE_PATH).join(SOLID_PACKAGE_PATH));
   copyFileSync(`${REACT_DIST}/${name}.d.ts`, `dist/${name}.d.ts`);
 }
 console.log(`emit-css: ${files.join(' / ')} を React 版の dist から写しました`);

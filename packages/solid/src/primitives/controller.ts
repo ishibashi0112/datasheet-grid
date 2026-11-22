@@ -9,7 +9,14 @@
 //   ref がまだ入っていません(React のレイアウト effect はコミット後なので ref が入っている)。core のコントローラは
 //   最初の update で DOM を掴む(scrollSync の attach など)ので、最初の update は onSettled(描き終わった後)まで遅らせ、
 //   それまでの args は覚えておくだけにします。
-import { createEffect, createRenderEffect, onSettled } from 'solid-js';
+//
+//   変更(0.1.0 の前の実アプリ点検 S5-01): 最初の update は onGridMounted(primitives/mountGate.ts)で走らせます。描き終わった後に
+//   走るのは onSettled と同じで、利用者がそれより前(利用者の最初の effect)にハンドルを呼んだときは、その時点で先に走ります。
+//   変更(同 S2-01): update は untrack の中で呼びます。update の中から利用者の通知(onSortChange など)が呼ばれ、その中で
+//   利用者が signal を読むと、開発時に Solid が STRICT_READ_UNTRACKED を出していました(利用者には直せない。イベントの
+//   ハンドラと同じく、通知は追跡の外で呼ぶ)。
+import { createEffect, createRenderEffect, untrack } from 'solid-js';
+import { onGridMounted } from './mountGate';
 
 export type ControllerLike<Args> = {
   update: (args: Args) => void;
@@ -29,7 +36,7 @@ export function connectController<Args>(
   const apply = (next: Args) => {
     latest = { value: next };
     if (mounted) {
-      controller.update(next);
+      untrack(() => controller.update(next));
     }
   };
   const options = name === undefined ? undefined : { name };
@@ -38,10 +45,11 @@ export function connectController<Args>(
   } else {
     createEffect(args, apply, options);
   }
-  onSettled(() => {
+  onGridMounted(() => {
     mounted = true;
     if (latest) {
-      controller.update(latest.value);
+      const value = latest.value;
+      untrack(() => controller.update(value));
     }
     return () => controller.dispose?.();
   });

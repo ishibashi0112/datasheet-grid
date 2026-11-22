@@ -25,47 +25,47 @@ Solid 版だけの所見は高 1・中 1・低 12。操作の結果・見た目�
 
 ## 所見と対応状況
 
-「対応」の欄は、0.1.0 の前に何を直すかのユーザーの判断の後に埋める(案: Solid 版だけの所見は `packages/solid` とドキュメントで直し、React 版も同じだった所見は React 版の次の版へ回す)。
+2026-11-22 にユーザーが「Solid 版だけの所見を直す」を選んだ: Solid 版だけの所見は 0.1.0 の前に `packages/solid` とドキュメントで直し、React 版も同じだった所見は React 版の次の版へ回す(React 版と core は変えない)。
 
 ### Solid 版だけ
 
 | ID | 重さ | 種類 | 内容 | 対応 |
 | --- | --- | --- | --- | --- |
-| S5-01 | 高 | 不具合 | README どおりに `let grid!` + `ref={grid}` で受けると、最初の `createEffect` と `onSettled` ではハンドルがまだ `undefined`。呼ぶと本番でも REACTIVITY_HALTED(アプリ全体の反応が止まる)。原因は `SpreadsheetGrid.tsx` がハンドルを `onSettled` で渡していること(子の onSettled は親の後) | 未対応 |
-| S1-01 | 中 | 不具合 / 文書 | 行を `createStore` で持つと(`rows={state.rows}`)元に戻すが効かない(store のプロキシは `onRowsChange` で渡した配列と別の参照なので、`historyController` が外からの差し替えと見て履歴を消す)。dev では HUGE_FAN_IN(6,006 の依存)、1 編集 16〜24 件の STRICT_READ_UNTRACKED、IMMUTABLE_UPDATE_IN_STORE | 未対応 |
-| S2-01 | 低 | 不具合(dev) | `onSortChange` / `onFiltersChange` / `onStateChange` / `onActiveCellChange` の中で signal を読むと STRICT_READ_UNTRACKED(通知が effect の中から呼ばれる) | 未対応 |
-| S2-02 | 低 | 不具合(dev) | SSRM でグローバルフィルターを変えると EFFECT_RELAY_TEAR(effect の名前は fillHandle) | 未対応 |
-| S5-03 | 低 | 不具合(dev) | `activeRowFollow` / 編集 / `autoHeightMeasurer` の effect から EFFECT_RELAY_TEAR と EFFECT_WRITES_OWN_SOURCE | 未対応 |
-| S3-04 | 低 | 文書(dev) | 共通の props をオブジェクトで作り直して spread すると HUGE_FAN_OUT(本番の負荷は同じ) | 未対応 |
-| S6-01 | 低 | 不具合 | タッチで checkbox / 展開トグルの端をタップしたときの当たり判定が React 版より狭い(Chromium のタッチの補正は click のリスナを持つ要素を選ぶ。React は要素に空の `onclick` を付け、Solid の委譲では `onclick` が null) | 未対応 |
-| S3-05 | 低 | 文書 | テーマ CSS のコメントが React 版のパスを指す | 未対応 |
-| S1-02 | 低 | 文書 | `setRows` の直後の `getViewRowIndex` / `startEditing` に `flush()` が要る(React 版の文書は `flushSync`) | 未対応 |
-| S4-01 | 低 | 文書 | プラグイン無しの Vitest は `resolve.conditions` / `ssr.resolve.conditions` / `ssr.resolve.externalConditions` の 3 か所に `browser` が要る | 未対応 |
-| S4-02 | 低 | 文書 | テストで signal を変えた / fireEvent を送った直後は `flush()` が要る | 未対応 |
-| S2-03 | 低 | 文書 | Solid 2 で SSR を組む手順が無い(SolidStart 2.2.3 は Solid 1 のみ) | 未対応 |
-| S2-04 | 低 | 文書 | URL と状態(`getState` / `applyState`)を同期する例が無い | 未対応 |
-| S6-05 | 低 | 文書 | 展開行の `render` を呼び直さない規則が「React 版との違い」に無い | 未対応 |
+| S5-01 | 高 | 不具合 | README どおりに `let grid!` + `ref={grid}` で受けると、最初の `createEffect` と `onSettled` ではハンドルがまだ `undefined`。呼ぶと本番でも REACTIVITY_HALTED(アプリ全体の反応が止まる)。原因は `SpreadsheetGrid.tsx` がハンドルを `onSettled` で渡していること(子の onSettled は親の後) | 直した(ハンドルを部品を作った時点で ref へ渡し、メソッドを呼んだときに描き終わっていればグリッドの最初の処理を先に済ませる = `primitives/mountGate.ts`。jsdom のテストと、再現の台本 `S3/repro-ref.cjs` を実ブラウザの dev と本番で確認: 最初の effect の `scrollToBottom()` で末尾、止まらない) |
+| S1-01 | 中 | 不具合 / 文書 | 行を `createStore` で持つと(`rows={state.rows}`)元に戻すが効かない(store のプロキシは `onRowsChange` で渡した配列と別の参照なので、`historyController` が外からの差し替えと見て履歴を消す)。dev では HUGE_FAN_IN(6,006 の依存)、1 編集 16〜24 件の STRICT_READ_UNTRACKED、IMMUTABLE_UPDATE_IN_STORE | 開発時に 1 回警告し(rows が store のとき)、README に「signal で持つ」を書いた。store への本対応はしない(使う人の声を見てから) |
+| S2-01 | 低 | 不具合(dev) | `onSortChange` / `onFiltersChange` / `onStateChange` / `onActiveCellChange` の中で signal を読むと STRICT_READ_UNTRACKED(通知が effect の中から呼ばれる) | 直した(`connectController` の update を untrack の中で呼ぶ。`S2/repro-leak/callbacks.cjs` で 7 種類の通知とも 0 件) |
+| S2-02 | 低 | 不具合(dev) | SSRM でグローバルフィルターを変えると EFFECT_RELAY_TEAR(effect の名前は fillHandle) | README と `docs/solid/README.md` の表に記録(状態を合わせ直す処理の形。直すには core のコントローラの作りを変える) |
+| S5-03 | 低 | 不具合(dev) | `activeRowFollow` / 編集 / `autoHeightMeasurer` の effect から EFFECT_RELAY_TEAR と EFFECT_WRITES_OWN_SOURCE | 同上(`S3/repro-diag.cjs` で follow / editsort に残ることを確認。edit / auto / autotail は 0 件) |
+| S3-04 | 低 | 文書(dev) | 共通の props をオブジェクトで作り直して spread すると HUGE_FAN_OUT(本番の負荷は同じ) | README に書いた |
+| S6-01 | 低 | 不具合 | タッチで checkbox / 展開トグルの端をタップしたときの当たり判定が React 版より狭い(Chromium のタッチの補正は click のリスナを持つ要素を選ぶ。React は要素に空の `onclick` を付け、Solid の委譲では `onclick` が null) | 直した(本体のセルと checkbox のセルに空の onclick = React 版と同じ。`S6/solid/dbg4.cjs` / `dbg9.cjs` の結果が React 版と同じに) |
+| S3-05 | 低 | 文書 | テーマ CSS のコメントが React 版のパスを指す | 直した(`scripts/emit-css.mjs` が写すときにパッケージ名を書き換える) |
+| S1-02 | 低 | 文書 | `setRows` の直後の `getViewRowIndex` / `startEditing` に `flush()` が要る(React 版の文書は `flushSync`) | README に書いた |
+| S4-01 | 低 | 文書 | プラグイン無しの Vitest は `resolve.conditions` / `ssr.resolve.conditions` / `ssr.resolve.externalConditions` の 3 か所に `browser` が要る | README に書いた |
+| S4-02 | 低 | 文書 | テストで signal を変えた / fireEvent を送った直後は `flush()` が要る | README に書いた |
+| S2-03 | 低 | 文書 | Solid 2 で SSR を組む手順が無い(SolidStart 2.2.3 は Solid 1 のみ) | README に書いた |
+| S2-04 | 低 | 文書 | URL と状態(`getState` / `applyState`)を同期する例が無い | README に書いた |
+| S6-05 | 低 | 文書 | 展開行の `render` を呼び直さない規則が「React 版との違い」に無い | README に書いた |
 
 ### React 版 1.2.1 も同じ
 
 | ID | 種類 | 内容 | 対応 |
 | --- | --- | --- | --- |
-| S1-03 | 不具合 | 書けるセルが 1 つも無い貼り付けでも `onRowsChange` が呼ばれ、空の元に戻すが積まれる | 未対応 |
-| S4-09 | 不具合 | 選んだ行を消した後も、行の選択のキーが残る | 未対応 |
-| S5-02 | 不具合 | 日付のフィルターで期間のプリセットを押すとフォーカスが body へ移り、Escape で閉じない | 未対応 |
-| S6-02 | 読み上げ | 展開行を開くと `.ssg-tab-exit[aria-hidden="true"]` に `tabindex="0"`(axe の aria-hidden-focus) | 未対応 |
-| S6-03 | 読み上げ | 合成列(行ドラッグ / 展開トグル)の列見出しが空(axe の empty-table-header) | 未対応 |
-| S6-04 | 読み上げ | 条件付き書式の chips の既定の色の対比が 3.95:1 | 未対応 |
-| S5-04 | 見た目 | グループ行の平均が 100px の列で省略される | 未対応 |
-| S4-04 | 型 | pnpm で `numberFormatter()` の結果を推論のまま export すると TS2883 / TS2742(`numberParser` / `restoreColumnsFromState` も同じ形) | 未対応 |
-| S4-05 | 型 | select の `options` に readonly の配列を渡せない | 未対応 |
-| S4-06 | 型 | `SpreadsheetGridProps<T>` に部品と同じ `T extends object` の制約が無い | 未対応 |
-| S4-03 | 文書 | `selectRange` / `applyState` の直後の `exportCsv` が古い範囲・並びで出る | 未対応 |
-| S4-07 | 文書 | jsdom の user-event で number の列に打つと逆順(「42」が「24」) | 未対応 |
-| S4-08 | 文書 | 値と表示名が別の列で、set フィルターの候補が生の値で並ぶ | 未対応 |
-| S3-01 | 文書 | `<dialog>` の中で body へポータルした custom エディタの一覧を押せない(ポータル先は囲む `dialog` にする) | 未対応 |
-| S3-02 | 文書 | `ctx.initialText` の中身がドキュメントより広い | 未対応 |
-| S3-03 | 未確定 | 自動化のダブルクリックで別のセルを開くと custom エディタにキーが入らない(手で組んだ操作では再現しない) | 未対応 |
+| S1-03 | 不具合 | 書けるセルが 1 つも無い貼り付けでも `onRowsChange` が呼ばれ、空の元に戻すが積まれる | React 版の次の版へ |
+| S4-09 | 不具合 | 選んだ行を消した後も、行の選択のキーが残る | React 版の次の版へ |
+| S5-02 | 不具合 | 日付のフィルターで期間のプリセットを押すとフォーカスが body へ移り、Escape で閉じない | React 版の次の版へ |
+| S6-02 | 読み上げ | 展開行を開くと `.ssg-tab-exit[aria-hidden="true"]` に `tabindex="0"`(axe の aria-hidden-focus) | React 版の次の版へ |
+| S6-03 | 読み上げ | 合成列(行ドラッグ / 展開トグル)の列見出しが空(axe の empty-table-header) | React 版の次の版へ |
+| S6-04 | 読み上げ | 条件付き書式の chips の既定の色の対比が 3.95:1 | React 版の次の版へ |
+| S5-04 | 見た目 | グループ行の平均が 100px の列で省略される | React 版の次の版へ |
+| S4-04 | 型 | pnpm で `numberFormatter()` の結果を推論のまま export すると TS2883 / TS2742(`numberParser` / `restoreColumnsFromState` も同じ形) | React 版の次の版へ |
+| S4-05 | 型 | select の `options` に readonly の配列を渡せない | React 版の次の版へ |
+| S4-06 | 型 | `SpreadsheetGridProps<T>` に部品と同じ `T extends object` の制約が無い | React 版の次の版へ |
+| S4-03 | 文書 | `selectRange` / `applyState` の直後の `exportCsv` が古い範囲・並びで出る | React 版の次の版へ |
+| S4-07 | 文書 | jsdom の user-event で number の列に打つと逆順(「42」が「24」) | React 版の次の版へ |
+| S4-08 | 文書 | 値と表示名が別の列で、set フィルターの候補が生の値で並ぶ | React 版の次の版へ |
+| S3-01 | 文書 | `<dialog>` の中で body へポータルした custom エディタの一覧を押せない(ポータル先は囲む `dialog` にする) | React 版の次の版へ |
+| S3-02 | 文書 | `ctx.initialText` の中身がドキュメントより広い | React 版の次の版へ |
+| S3-03 | 未確定 | 自動化のダブルクリックで別のセルを開くと custom エディタにキーが入らない(手で組んだ操作では再現しない) | React 版の次の版へ |
 
 要望: CSV に出さない列を選べること、展開トグルの読み上げの名前に行の識別を入れること(どちらも React 版も同じ)。
 
@@ -105,5 +105,6 @@ Solid 版だけの所見は高 1・中 1・低 12。操作の結果・見た目�
 | --- | --- |
 | 6 本のアプリで点検 | 済み(2026-11-22) |
 | 記録をリポジトリへ | このコミット |
-| 0.1.0 の前に直すものを決める | ユーザーの判断待ち |
-| 直す / ゲート / ハーネス / 再現の台本で確かめる | 未着手 |
+| 0.1.0 の前に直すものを決める | 済み(2026-11-22。Solid 版だけの所見を直す) |
+| 直す / ゲート / ハーネス / 再現の台本で確かめる | 済み(2026-11-22。Solid 版のテスト 173 / 173・型 0・eslint 0・`size:check` は上限内(solid-full 162.35 / 162.4KB、lite 90.56 / 90.7、standard 117.59 / 117.7。React 版は不変)・`types:check` / `examples:check` 全 ok。Solid 版のハーネスは Chromium 952 / 952・Firefox 876 / 876・WebKit 872 / 875(既知の BR-3・BR-4 だけ)= 直す前と同じ。React 版と core は変えていないので React 版のハーネスは回していない) |
+| PR | 出した(マージはユーザーの判断で) |

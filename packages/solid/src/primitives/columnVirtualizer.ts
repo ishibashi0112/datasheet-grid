@@ -1,7 +1,8 @@
 // @tanstack/virtual-core の Virtualizer を Solid へつなぐ薄いアダプタ(列の横の仮想化)。React 版の
 //   hooks/useVirtualizerCore.ts にあたるものです。範囲が変わったら version を上げ、items() がそれを読んで計算し直します。
 //   列の幅が変わったときの測り直し(measure)も items() の中で行います(measureKey。下のコメント)。
-import { createMemo, createRenderEffect, createSignal, onSettled, untrack } from 'solid-js';
+import { createMemo, createRenderEffect, createSignal, untrack } from 'solid-js';
+import { onGridMounted } from './mountGate';
 import {
   Virtualizer,
   elementScroll,
@@ -85,7 +86,7 @@ export function createColumnVirtualizer<TScrollElement extends Element>(
       syncing = false;
     }
   }, { name: 'columnVirtualizerElement' });
-  onSettled(() => {
+  onGridMounted(() => {
     mounted = true;
     const cleanup = instance._didMount();
     // 要素の大きさを初めて渡すときの onChange では上げない(すぐ下で 1 回だけ上げる)。

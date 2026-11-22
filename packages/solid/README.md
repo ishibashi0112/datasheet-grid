@@ -65,10 +65,21 @@ The feature names and what they enable are listed in the React version's `API_RE
 
 ## Differences from the React version
 
-- **`ref` works like Solid's DOM refs.** `let grid!: SpreadsheetGridHandle<Row>` with `ref={grid}`, or `ref={(handle) => (grid = handle)}`, gives you the handle with the same methods (there are no React ref objects).
+- **`ref` works like Solid's DOM refs.** `let grid!: SpreadsheetGridHandle<Row>` with `ref={grid}`, or `ref={(handle) => (grid = handle)}`, gives you the handle with the same methods (there are no React ref objects). The handle is set before your component's first `createEffect` and `onSettled` run, so you can call it there (for example to restore a saved state or scroll to the bottom).
 - **Render functions run only when needed.** `renderCell` runs again when its row, value or column changes, `renderHeader` when its column changes, and the bar renderers when the function changes; not on every update as in React. Positions and states in the context (`rowIndex`, `isActive`, the bar context and so on) are reactive: read them inside JSX and they stay current. Reading them in the function body makes the content re-created whenever they change.
 - **Not available:** the natural-language filter (`/ai`, `GridAskBar`).
 - Everything else (props, column options, handle methods, callbacks, CSS classes and tokens) is the same as in [`API_REFERENCE.md`](https://github.com/ishibashi0112/datasheet-grid/blob/main/packages/react/API_REFERENCE.md) of the React version.
+
+## Solid-specific notes
+
+- **Keep `rows` in a signal, not a store.** `onRowsChange` returns a new array (the same contract as the React version): put it back with `setRows(next)`. With `createStore`, the rows that come back are a store proxy instead of the array the grid returned, so the undo / redo history is cleared, and Solid prints many development diagnostics. The grid warns once in development when `rows` is a store.
+- **Writes apply in a microtask.** After `setRows(...)`, the grid sees the new rows on the next flush. To use a row you just added right away (`getViewRowIndex(key)` then `startEditing(...)`), call `flush()` from `solid-js` first (the React docs use `flushSync` for the same thing). In tests, call `flush()` after changing a signal or firing an event, before looking at the DOM.
+- **Tests (Vitest + jsdom).** Add `@solidjs/vite-plugin` to the Vitest config. Without the plugin, put `browser` in `resolve.conditions`, `ssr.resolve.conditions` and `ssr.resolve.externalConditions` (all three). Use the Solid 2 version of `@solidjs/testing-library` (1.0 release candidates) and `installJsdomLayoutStubs` from `@ishibashi0112/spreadsheet-grid-solid/testing` (jsdom has no layout).
+- **SSR.** SolidStart supports only Solid 1 at the time of writing. With Solid 2, use Vite's SSR with `@solidjs/vite-plugin` (`ssr: true`), `renderToString` or `renderToStream` with `generateHydrationScript` on the server, and `hydrate` on the client (`@solidjs/router` 2 also needs `createRequestEvent` / `provideRequestEvent` from `@solidjs/web/storage`). The server renders only the grid's frame (headers, pinned columns, placeholders); rows are drawn after hydration, as in the React version.
+- **Saving the state in the URL.** Pass the saved state as `initialState` on the first render, save it from `onStateChange`, and apply later changes (back / forward) with `grid.applyState(...)`. Reading signals inside the grid's callbacks is fine; they run outside tracking, like event handlers.
+- **Detail rows.** `detailRow.render` runs once when a row opens; it is not called again when the row changes, and `ctx.row` is the current row. Read `ctx.row` inside JSX to follow edits and undo. A field initialized with `createSignal(() => ctx.row.x)` is reset whenever the row changes, so keep unsaved input in a plain signal.
+- **Sharing props between grids.** Spread a stable object, or write the props out. Spreading an object that is re-created on every change (`{...gridProps()}`) works, but in development Solid reports `HUGE_FAN_OUT`.
+- **Development diagnostics.** In `vite dev`, Solid may print `EFFECT_RELAY_TEAR` / `EFFECT_WRITES_OWN_SOURCE` naming effects such as `autoHeightMeasurer`, `activeRowFollow`, `edit`, `serverSideRowModel` or `fillHandle`. They come from the grid re-aligning its state after a change (the React version re-renders the same way), are harmless, and do not appear in production builds.
 
 ## Rules that are easy to get wrong
 
@@ -108,10 +119,21 @@ Solid 2.0 向けの仮想化スプレッドシート / データグリッドで�
 
 ### React 版との違い
 
-- **`ref` は Solid の DOM の ref と同じです。** `let grid!: SpreadsheetGridHandle<Row>` と `ref={grid}`、または `ref={(handle) => (grid = handle)}` で、同じメソッドを持つハンドルを受け取れます(React の ref オブジェクトはありません)。
+- **`ref` は Solid の DOM の ref と同じです。** `let grid!: SpreadsheetGridHandle<Row>` と `ref={grid}`、または `ref={(handle) => (grid = handle)}` で、同じメソッドを持つハンドルを受け取れます(React の ref オブジェクトはありません)。ハンドルは利用側の部品の最初の `createEffect` と `onSettled` より前に入るので、そこで呼べます(保存した状態を戻す、末尾へスクロールする など)。
 - **描く関数は必要なときだけ呼びます。** `renderCell` は行・値・列が変わったとき、`renderHeader` は列が変わったとき、バーの関数は関数が変わったときだけ呼び直します(React 版のように更新のたびには呼びません)。文脈の位置と状態(`rowIndex` / `isActive` / バーの文脈など)は読んだときに引くので、JSX の中で読めば追従します。関数の本体で読むと、それが変わるたびに中身を作り直します。
 - **ありません:** ことばで絞り込み(`/ai` の `GridAskBar`)。
 - そのほか(props・列の定義・ハンドルのメソッド・通知・CSS のクラスとトークン)は React 版の [`API_REFERENCE.md`](https://github.com/ishibashi0112/datasheet-grid/blob/main/packages/react/API_REFERENCE.md) と同じです。
+
+### Solid で気をつけること
+
+- **`rows` は store ではなく signal で持つ。** `onRowsChange` は新しい配列を返します(React 版と同じ約束)。`setRows(next)` で戻してください。`createStore` に入れると、戻ってくる rows がグリッドの返した配列ではなく store のプロキシになるので、元に戻す / やり直しの履歴が消え、開発時に Solid の知らせが多く出ます。`rows` が store のときは開発時に 1 回警告します。
+- **書き込みはマイクロタスクで反映されます。** `setRows(...)` の後、グリッドが新しい行を見るのは次の反映のときです。足したばかりの行をすぐ使う(`getViewRowIndex(key)` → `startEditing(...)`)ときは、先に `solid-js` の `flush()` を呼んでください(React 版のドキュメントの `flushSync` と同じ)。テストでも、signal を変えた・イベントを送った後に DOM を見る前に `flush()` を呼びます。
+- **テスト(Vitest + jsdom)。** Vitest の設定に `@solidjs/vite-plugin` を入れてください。プラグイン無しなら `browser` を `resolve.conditions` / `ssr.resolve.conditions` / `ssr.resolve.externalConditions` の 3 か所すべてに書きます。`@solidjs/testing-library` は Solid 2 向けの版(1.0 の候補版)を使い、jsdom にはレイアウトが無いので `@ishibashi0112/spreadsheet-grid-solid/testing` の `installJsdomLayoutStubs` を呼びます。
+- **SSR。** 今の SolidStart は Solid 1 だけに対応しています。Solid 2 では Vite の SSR と `@solidjs/vite-plugin`(`ssr: true`)で、サーバーは `renderToString` か `renderToStream` と `generateHydrationScript`、クライアントは `hydrate` を使います(`@solidjs/router` 2 は `@solidjs/web/storage` の `createRequestEvent` / `provideRequestEvent` も要ります)。サーバーで描くのはグリッドの骨組み(見出し・固定列・読み込み中の印)だけで、行はハイドレーションの後に描きます(React 版と同じ)。
+- **状態を URL に残す。** 保存した状態は最初の描画で `initialState` に渡し、`onStateChange` で保存し、後からの変化(戻る / 進む)は `grid.applyState(...)` で入れます。グリッドの通知の中で signal を読んでかまいません(イベントのハンドラと同じく追跡の外で呼びます)。
+- **展開行。** `detailRow.render` は行を開いたときに 1 回呼び、行が変わっても呼び直しません(`ctx.row` が今の行)。編集や元に戻すに追従するには JSX の中で `ctx.row` を読んでください。`createSignal(() => ctx.row.x)` で持った入力欄の値は行が変わるたびに戻るので、保存前の入力はふつうの signal で持ちます。
+- **複数のグリッドで props を共有する。** 変わらないオブジェクトを spread するか、props を書き並べてください。変化のたびに作り直すオブジェクトを spread しても(`{...gridProps()}`)動きますが、開発時に Solid が `HUGE_FAN_OUT` を出します。
+- **開発時の Solid の知らせ。** `vite dev` では、Solid が `autoHeightMeasurer` / `activeRowFollow` / `edit` / `serverSideRowModel` / `fillHandle` などの effect の名前で `EFFECT_RELAY_TEAR` / `EFFECT_WRITES_OWN_SOURCE` を出すことがあります。変化の後にグリッドが状態を合わせ直す処理(React 版も同じ描き直しをしている)で、害は無く、本番のビルドでは出ません。
 
 ### 間違えやすいルール
 

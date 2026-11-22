@@ -2,7 +2,7 @@
 //   (React 非依存なので Solid でもそのまま使えた)。Solid 2.0 は書き込みをマイクロタスクでまとめて反映するので、
 //   イベントの後に DOM を見るときは flush() を挟みます。
 import { beforeAll, describe, expect, it, vi } from 'vitest';
-import { createSignal, flush } from 'solid-js';
+import { createEffect, createSignal, createStore, flush, onSettled } from 'solid-js';
 import { fireEvent, render } from '@solidjs/testing-library';
 import { installJsdomLayoutStubs } from '@ishibashi0112/spreadsheet-grid-core/testing';
 import { SpreadsheetGrid, type GridColumn, type SpreadsheetGridHandle } from './index';
@@ -157,5 +157,108 @@ describe('Solid 版の試作', () => {
     expect(byArray[0]).toBe(byArray[1]);
     expect(byArray[0]).not.toBe(byVariable);
     view.unmount();
+  });
+
+  it('ハンドルは利用者の最初の createEffect と onSettled で使える(0.1.0 の前の実アプリ点検 S5-01)', () => {
+    // README どおりの変数の ref。これまでは子(グリッド)の onSettled で渡していたので、利用者の最初の effect と onSettled では
+    //   undefined で、呼ぶと Solid の反応全体が止まっていた。React 版は利用者の useEffect から呼べる。
+    // eslint-disable-next-line no-unassigned-vars -- Solid のコンパイラが ref={grid} を代入に書き換える
+    let grid!: SpreadsheetGridHandle<Row>;
+    const log: string[] = [];
+    const [rows, setRows] = createSignal(makeRows(200));
+    const view = render(() => {
+      createEffect(
+        () => rows().length,
+        (count) => {
+          log.push(`effect ${count} ${typeof grid}`);
+          grid.selectCell(3, 1);
+          log.push(`active ${JSON.stringify(grid.getActiveCell())}`);
+        },
+      );
+      onSettled(() => {
+        log.push(`settled ${typeof grid}`);
+        // jsdom の scrollTo は何もしないので、スクロールは実ブラウザ(audit/dogfood/2026-11-22-solid/S3/repro-ref.cjs)で見る。
+        grid.selectRange({ start: { row: 5, col: 1 }, end: { row: 6, col: 2 } });
+        log.push(`selection ${grid.getSelection()?.type}`);
+      });
+      return <SpreadsheetGrid<Row> ref={grid} rows={rows()} columns={columns} rowKeyGetter={(row) => row.id} height={200} />;
+    });
+    flush();
+    expect(log).toEqual([
+      'effect 200 object',
+      'active {"row":3,"col":1}',
+      'settled object',
+      'selection cell',
+    ]);
+    expect(view.container.querySelector('.ssg-active-cell-overlay')).not.toBeNull();
+    // 反応が止まっていない(行を足すと effect がまた走り、表に映る)。
+    setRows(makeRows(201));
+    flush();
+    expect(log.at(-2)).toBe('effect 201 object');
+    expect(grid.getVisibleRowRange()).not.toBeNull();
+    view.unmount();
+  });
+
+  it('通知の中で signal を読んでも Solid の STRICT_READ_UNTRACKED を出さない(0.1.0 の前の実アプリ点検 S2-01)', () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const [count] = createSignal(1);
+    const seen: number[] = [];
+    let grid: SpreadsheetGridHandle<Row> | undefined;
+    const view = render(() => (
+      <SpreadsheetGrid<Row>
+        ref={(h) => {
+          grid = h;
+        }}
+        rows={makeRows(20)}
+        columns={columns}
+        rowKeyGetter={(row) => row.id}
+        onSortChange={() => seen.push(count())}
+        onStateChange={() => seen.push(count())}
+        onActiveCellChange={() => seen.push(count())}
+        height={200}
+      />
+    ));
+    flush();
+    grid?.applyState({ sort: [{ columnKey: 'qty', direction: 'desc' }] });
+    grid?.selectCell(2, 1);
+    flush();
+    expect(seen.length).toBeGreaterThanOrEqual(3);
+    expect(warn.mock.calls.filter((call) => String(call[0]).includes('STRICT_READ_UNTRACKED'))).toHaveLength(0);
+    view.unmount();
+    warn.mockRestore();
+  });
+
+  it('本体のセルと checkbox のセルは React 版と同じく空の onclick を持つ(タッチの位置合わせ。0.1.0 の前の実アプリ点検 S6-01)', () => {
+    type CheckRow = { id: number; done: boolean };
+    const view = render(() => (
+      <SpreadsheetGrid<CheckRow>
+        rows={[{ id: 1, done: false }]}
+        columns={[{ key: 'done', title: '済', width: 80, editor: { type: 'checkbox' } }]}
+        rowKeyGetter={(row) => row.id}
+        height={200}
+      />
+    ));
+    flush();
+    const cell = view.container.querySelector<HTMLElement>('.ssg-body-row [data-ssg-col-key="done"]');
+    expect(typeof cell?.onclick).toBe('function');
+    expect(typeof cell?.querySelector<HTMLElement>('.ssg-cell-checkbox')?.onclick).toBe('function');
+    view.unmount();
+  });
+
+  it('rows に store を渡すと、開発時に signal で持つように 1 回だけ案内する(0.1.0 の前の実アプリ点検 S1-01)', () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const storeWarnings = () => warn.mock.calls.filter((call) => String(call[0]).includes('createStore'));
+    const [state] = createStore({ rows: makeRows(5) });
+    const fromStore = render(() => <SpreadsheetGrid<Row> rows={state.rows} columns={columns} height={200} />);
+    flush();
+    expect(storeWarnings()).toHaveLength(1);
+    expect(String(storeWarnings()[0]?.[0])).toContain('createSignal');
+    fromStore.unmount();
+    warn.mockClear();
+    const fromArray = render(() => <SpreadsheetGrid<Row> rows={makeRows(5)} columns={columns} height={200} />);
+    flush();
+    expect(storeWarnings()).toHaveLength(0);
+    fromArray.unmount();
+    warn.mockRestore();
   });
 });

@@ -386,7 +386,13 @@ React 版の機能なしの構成と並べて、同じ props・同じ操作で D
 1.2.1 の後に、0.1.0 の前に実際のアプリで確かめるかをユーザーが決め、「アプリを 6 本作って確かめる」を選んだ(2026-11-21)。
 2026-11-22 に済み: Solid だけの退行(操作・見た目・速さ)は無く、Solid 版だけの所見は高 1(S5-01 ハンドルの時点)・中 1(S1-01
 store で持つ行)・低 12、React 版も同じは低 16。記録は `docs/audits/2026-11-22-solid/README.md`、アプリは
-`audit/dogfood/2026-11-22-solid/`。0.1.0 の前にどこまで直すかはユーザーの判断待ち。
+`audit/dogfood/2026-11-22-solid/`。2026-11-22 にユーザーが「Solid 版だけの所見を直す」を選び(React 版も同じだった低 16 件は
+React 版の次の版へ)、0.1.0 の前に直した: ハンドルを部品を作った時点で ref へ渡し、メソッドが呼ばれたら描き終わった後の最初の処理
+(コントローラの最初の update・store の購読など。`primitives/mountGate.ts` の `onGridMounted`)を先に済ませる(S5-01)/
+`connectController` の update を untrack の中で呼ぶ(通知の中で signal を読んだときの STRICT_READ_UNTRACKED。S2-01)/ rows が store の
+ときの開発時の警告(S1-01)/ 本体のセルと checkbox のセルに空の onclick(Chromium のタッチの位置合わせを React 版と同じに。
+S6-01。`primitives/clickTarget.ts`)/ テーマの CSS のコメントのパッケージ名(S3-05)/ npm の README の「Solid で気をつけること」
+(store / `flush()` / テスト / SSR / URL / 展開行 / props の共有 / 開発時の知らせ)。
 
 | # | 内容 | 状況 |
 | --- | --- | --- |
@@ -583,13 +589,13 @@ store で持つ行)・低 12、React 版も同じは低 16。記録は `docs/aud
   | `EFFECT_RELAY_TEAR` | `clampSelectionToRowCount` | 行や列が減って選択が範囲の外になったとき(3 回目から) | 選択を範囲の中へ詰める |
   | `EFFECT_RELAY_TEAR` | `reconcileColumnWidths` | 列の定義が変わって列幅の状態を合わせたとき(3 回目から) | 消えた列 / 幅を指定し直した列の手で変えた幅を捨てる |
   | `EFFECT_RELAY_TEAR` | `scrollSync` | 合計行 / 下の固定行が出たり高さが変わったりしたとき(3 回目から) | 見える高さを DOM で測り直して view スライスへ書く |
-  | `EFFECT_RELAY_TEAR` | `fillHandle` | フィルハンドルで埋めた後に選択や行が変わったとき(3 回目から) | 埋めたあとのボタンを消す(コントローラの store へ書く) |
+  | `EFFECT_RELAY_TEAR` | `fillHandle` | フィルハンドルで埋めた後に選択や行が変わったとき(3 回目から)。serverSide で並べ替え / 絞り込みが変わったときも、`serverSideRowModel` の書き込みを中継した effect としてこの名前が出る(フィルハンドルを使っていなくても。2026-11-22 の点検 S2-02) | 埋めたあとのボタンを消す(コントローラの store へ書く) |
   | `EFFECT_RELAY_TEAR` | `serverSideRowModel` | serverSide で並べ替え / 絞り込みが変わったとき(3 回目から) | 読み込んだブロックを捨てて読み直す(行モデルの store へ書く) |
 
   どれも「変化の後に状態を合わせ直す」処理で、React 版も同じ描き直しをしている(レイアウト effect / effect の中の dispatch。
   React は知らせない)。手間は DOM を 2 回書くぶん。Solid が勧める直し方(合わせ直した値を memo で
   求める)は、core のコントローラと reducer の作り(前の値を覚えて比べる・DOM を測る)を変えることになり、React 版のコードも変わる
-  ので、今は直さずに文書に書く(3-3 で Solid 版の README とドキュメントサイトにも書く)。知らせの中の名前で処理が分かるように、
+  ので、今は直さずに文書に書く(Solid 版の README の「Solid で気をつけること」に書いた。2026-11-22。ドキュメントサイトには 0.1.0 の公開と一緒に)。知らせの中の名前で処理が分かるように、
   Solid 版の effect(コントローラをつなぐ effect = `connectController` の 4 つ目の引数を含む)と、core の外部 store を写した signal
   (`createExternalStoreSignal` の 2 つ目の引数)にすべて名前を付けた(名前の無い `effect` と出るのは Solid の DOM の束縛だけ)。
   表は Solid のトラックを入れて全部のハーネスを回したときに出た知らせのすべて。
