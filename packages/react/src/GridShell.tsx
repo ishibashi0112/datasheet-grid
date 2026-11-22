@@ -150,12 +150,14 @@ import type { StickyTopInset } from '@ishibashi0112/spreadsheet-grid-core/intern
 // 追加(detail ③): 展開行(Master/Detail)の純ロジック(トグル列キー / rowKey→view index 解決 / 選択帯分割)です。
 import {
   DEFAULT_DETAIL_ROW_HEIGHT,
+  DETAIL_TOGGLE_COLUMN_KEY,
   isControlColumnKey,
   isDetailRowExpandable,
   isInsideDetailCardOf,
   isSyntheticColumnKey,
   resolveFirstDataColIndex,
 } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/detailRow';
+import { resolveDataRowNumber } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/labelRows';
 // 変更(差し込み式 段階 5): ラベル行(見出し / 区切り行)の SSRM ラッパ / 縦スクロール固定の解決 / 部品は機能セット
 //   (features.labelRow)から受け取ります。
 import type { GridBodyLabelRowLayer } from './view/GridBodyLayer';
@@ -183,7 +185,6 @@ import type {
   CellCoord,
   CellRenderState,
   GridColumn,
-  CellRenderContext,
   // 追加(C1): auto-height 実測キャッシュのキー型です。
   GridRowKey,
   // 追加(detail ③): 展開行の描画コンテキスト / セルへ渡す detail コンテキスト型です。
@@ -276,13 +277,9 @@ const EMPTY_GROUP_COLUMNS: never[] = [];
 // 追加(本体分解 E-1): 展開行トグル列(T1)のセル本体です。列定義自体は engine/columnLayout.ts が合成し、
 //   フレームワーク依存のセル描画だけをここから渡します(モジュールレベルで参照安定)。
 // 変更(英語対応): 読み上げの名前を文言(localeText)から読むため、ボタンを部品にしました。
-const renderDetailToggleCell = (ctx: CellRenderContext<unknown>) => {
-  const detail = ctx.detail;
-  if (!detail || !detail.expandable) {
-    return null;
-  }
-  return <DetailToggleButton detail={detail} />;
-};
+// 変更(1.3.0 / 要望): ボタンは renderCellContent が描きます(読み上げの名前に行見出しと同じ番号を入れるため。番号は
+//   ラベル行を数えないので、描く側の行の並びが要る)。列定義の renderCell は合成列の印として置くだけです。
+const renderDetailToggleCell = () => null;
 
 // 追加(1.0.2 / G-14): 開発時の警告を、グリッド 1 つにつき種類(id)ごとに 1 回だけ出します。
 const warnOncePerGrid = (warned: Set<string>, id: string, message: string) => {
@@ -3564,6 +3561,16 @@ export function useGridShell<T extends object>({
                 detailRows.setExpandedAt(rowKey, rowIndex, expanded),
             }
           : undefined;
+        // 追加(1.3.0 / 要望): 展開トグル列(合成列)。読み上げの名前は「行 7 の詳細を開く」(行見出しと同じ番号)。
+        if (column.key === DETAIL_TOGGLE_COLUMN_KEY) {
+          const labelViewIndexes = labelDisplay?.labelViewIndexes;
+          return detail?.expandable ? (
+            <DetailToggleButton
+              detail={detail}
+              rowNumber={labelViewIndexes ? resolveDataRowNumber(labelViewIndexes, rowIndex) : rowIndex + 1}
+            />
+          ) : null;
+        }
         return column.renderCell({
           row,
           rowIndex,
@@ -3676,6 +3683,7 @@ export function useGridShell<T extends object>({
       detailDrawable,
       detailRows,
       renderRowDragHandleCell,
+      labelDisplay,
     ],
   );
 
@@ -5153,7 +5161,9 @@ export function useGridShell<T extends object>({
           ref={tableExitRef}
           className="ssg-tab-exit"
           tabIndex={hasDetailCards ? 0 : -1}
-          aria-hidden="true"
+          // 変更(1.3.0 / S6-02): Tab の順番に入れている間は aria-hidden を付けません(フォーカスできる要素を隠すと読み上げで
+          //   迷う。axe の aria-hidden-focus)。中身は空で、フォーカスが来たらすぐ表の外へ移します。
+          aria-hidden={hasDetailCards ? undefined : 'true'}
           onFocus={handleTableExitFocus}
         />
 

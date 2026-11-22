@@ -1,9 +1,17 @@
 // 追加(英語対応): 展開行トグル列のセルのボタンです(GridShell の renderDetailToggleCell が描きます)。
 //   読み上げの名前を文言(localeText)から読むため部品にしました(react-refresh の lint のため GridShell.tsx の外)。
+//   変更(1.3.0 / 要望): 名前にどの行かを入れます(「行 7 の詳細を開く」。rowNumber は行見出しと同じ番号)。
 import type { CellRenderContext } from '../model/gridTypes';
+import { formatLocaleText } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/localeText';
 import { useGridLocaleText } from '../hooks/useGridLocaleText';
 
-export function DetailToggleButton({ detail }: { detail: NonNullable<CellRenderContext<unknown>['detail']> }) {
+export function DetailToggleButton({
+  detail,
+  rowNumber,
+}: {
+  detail: NonNullable<CellRenderContext<unknown>['detail']>;
+  rowNumber: number;
+}) {
   const texts = useGridLocaleText();
   return (
     <button
@@ -12,7 +20,7 @@ export function DetailToggleButton({ detail }: { detail: NonNullable<CellRenderC
       tabIndex={-1}
       className="ssg-detail-toggle"
       aria-expanded={detail.expanded}
-      aria-label={detail.expanded ? texts.hideDetails : texts.showDetails}
+      aria-label={formatLocaleText(detail.expanded ? texts.hideDetails : texts.showDetails, { row: rowNumber })}
       onClick={detail.toggle}
       // 変更(dogfood DF-16): ▸ / ▾ は開閉だけにして、アクティブセルと選択を動かしません(セルの pointerdown は
       //   GridBodyLayer がこのボタンから始まったものを無視する)。これまではトグル列(合成列)がアクティブセルになり、

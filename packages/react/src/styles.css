@@ -163,15 +163,16 @@
     --ssg-cf-div-negative: #e34948;
     --ssg-cf-div-mid: #f0efec;
     --ssg-cf-div-positive: #2a78d6;
+    /* 変更(1.3.0 / S6-04): チップの文字は 5 色とも背景との対比 5:1 以上(good / warning / critical を濃く。WCAG AA は 4.5:1)。 */
     --ssg-cf-neutral: #475569;
     --ssg-cf-neutral-bg: #e2e8f0;
     --ssg-cf-info: #1d4ed8;
     --ssg-cf-info-bg: #dbeafe;
-    --ssg-cf-good: #15803d;
+    --ssg-cf-good: #14703a;
     --ssg-cf-good-bg: #dcfce7;
-    --ssg-cf-warning: #b45309;
+    --ssg-cf-warning: #a14a0b;
     --ssg-cf-warning-bg: #fef3c7;
-    --ssg-cf-critical: #dc2626;
+    --ssg-cf-critical: #b91c1c;
     --ssg-cf-critical-bg: #fee2e2;
     /* その他 */
     --ssg-drop-indicator: #0f172a;
@@ -3829,6 +3830,15 @@
   }
   .ssg-header-label--filtered {
     color: var(--ssg-accent-strong);
+  }
+  /* 追加(1.3.0 / S6-03): 見た目に出さず読み上げにだけ出す文字(合成列の見出しの名前)。 */
+  .ssg-visually-hidden {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
   }
   /* ソート方向の受動表示(矢印 + 優先番号)。 */
   .ssg-header-sort {

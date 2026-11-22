@@ -18,7 +18,6 @@ import { isServer } from '@solidjs/web';
 import type {
   CellCoord,
   CellDetailContext,
-  CellRenderContext,
   EditorCommitDirection,
   GridLabelRow,
   GridRowKey,
@@ -79,12 +78,14 @@ import {
 import type { StickyTopInset } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/scrollTargets';
 import {
   DEFAULT_DETAIL_ROW_HEIGHT,
+  DETAIL_TOGGLE_COLUMN_KEY,
   isControlColumnKey,
   isDetailRowExpandable,
   isInsideDetailCardOf,
   isSyntheticColumnKey,
   resolveFirstDataColIndex,
 } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/detailRow';
+import { resolveDataRowNumber } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/labelRows';
 import {
   createSelectedRowsInOrderCounter,
   getSelectAllState,
@@ -167,12 +168,9 @@ const EMPTY_ROWS: never[] = [];
 const NEVER_EDITABLE = () => false;
 const NO_COLUMNS: never[] = [];
 const NO_COLUMN_FILTERS: Record<string, never> = {};
-// 展開トグル列(合成列)のセル。開閉できる行だけ ▸ / ▾ を出します(React 版の renderDetailToggleCell と同じ)。
-const renderDetailToggleCell = (ctx: CellRenderContext<unknown>): JSX.Element => (
-  <Show when={ctx.detail?.expandable === true}>
-    <DetailToggleButton detail={ctx.detail as CellDetailContext} />
-  </Show>
-);
+// 展開トグル列(合成列)の列定義の renderCell は印として置くだけで、ボタンは renderCellContent が描きます(読み上げの名前に
+//   行見出しと同じ番号を入れるため。番号はラベル行を数えないので行の並びが要る。React 版の renderDetailToggleCell と同じ)。
+const renderDetailToggleCell = (): JSX.Element => null;
 const noop = () => {};
 // 追加(段階 3-3 のレビュー): ref(solid-js の Ref)へハンドルを渡します。関数はそのまま呼び、配列は中の関数を順に呼ぶ
 //   (@solidjs/web の applyRef と同じ。変数の ref はコンパイラが代入の関数に書き換えて渡す)。関数でない値は何もしない。
@@ -2807,6 +2805,18 @@ function GridShellBody<T extends object>(
         toggle: () => detailRows.toggleAt(cell.rowKey, untrack(() => cell.rowIndex)),
         setExpanded: (expanded: boolean) => detailRows.setExpandedAt(cell.rowKey, untrack(() => cell.rowIndex), expanded),
       };
+      // 展開トグル列(合成列)。開閉できる行だけ ▸ / ▾ を出し、読み上げの名前は「行 7 の詳細を開く」(行見出しと同じ番号)。
+      if (column.key === DETAIL_TOGGLE_COLUMN_KEY) {
+        const rowNumber = () => {
+          const indexes = labelViewIndexes();
+          return indexes ? resolveDataRowNumber(indexes, cell.rowIndex) : cell.rowIndex + 1;
+        };
+        return (
+          <Show when={expandable()}>
+            <DetailToggleButton detail={detail} rowNumber={rowNumber()} />
+          </Show>
+        );
+      }
       return column.renderCell({
         row,
         get rowIndex() {
@@ -3408,7 +3418,9 @@ function GridShellBody<T extends object>(
             class="ssg-tab-exit"
             // Tab の順番に入れるのは展開行のカードが描かれているときだけ(段階 2 C-N2)。
             tabindex={hasDetailCards() ? 0 : -1}
-            aria-hidden="true"
+            // Tab の順番に入れている間は aria-hidden を付けない(フォーカスできる要素を隠すと読み上げで迷う。1.3.0 / S6-02)。
+            //   中身は空で、フォーカスが来たらすぐ表の外へ移す。
+            aria-hidden={hasDetailCards() ? undefined : 'true'}
             onFocus={(event) => detailRows.handleTableExitFocus(event.relatedTarget)}
           />
           <Show when={scrollHintFeature !== undefined && activeScrollHint()}>

@@ -237,8 +237,8 @@ import { localeTextEn } from '@ishibashi0112/spreadsheet-grid/locales/en';
 | `dragColumn` | `ドラッグで列を移動` | `Drag to move the column` | 見出しのつまみのツールチップ。 |
 | `columnMenu` | `列メニュー` | `Column menu` | 見出しの ⋮ のツールチップ。 |
 | `columnMenuFor` | `{column} の列メニュー` | `Column menu for {column}` | 見出しの ⋮ の読み上げの名前。 |
-| `showDetails` | `詳細を開く` | `Show details` | 展開のボタン(閉じているとき)の読み上げの名前。 |
-| `hideDetails` | `詳細を閉じる` | `Hide details` | 展開のボタン(開いているとき)の読み上げの名前。 |
+| `showDetails` | `行 {row} の詳細を開く` | `Show details for row {row}` | 展開のボタン(閉じているとき)の読み上げの名前(`{row}` = 行見出しと同じ行番号)。 |
+| `hideDetails` | `行 {row} の詳細を閉じる` | `Hide details for row {row}` | 展開のボタン(開いているとき)の読み上げの名前(`{row}` = 行見出しと同じ行番号)。 |
 | `expandGroup` | `{group} を展開` | `Expand {group}` | グループ行の ▸ の読み上げの名前。 |
 | `collapseGroup` | `{group} を折りたたみ` | `Collapse {group}` | グループ行の ▾ の読み上げの名前。 |
 | `groupRowCount` | `({count}件)` | (数で変わる) | グループ行の件数(`{count}` は桁区切りした文字)。 |
@@ -878,12 +878,12 @@ WAI-ARIA の grid パターンに沿って、表・行・セルに役割と状�
 | 表本体(`.ssg-scroll-container`) | `role="grid"`。`aria-label`(`ariaLabel`)/ `aria-rowcount`(見出し行を含む表示中の行数。固定行(`pinnedTopRows` / `pinnedBottomRows`)と合計行(`totalRow`)があればそれも含む)/ `aria-colcount`(行番号列を含む列数)/ `aria-multiselectable`(`enableRangeSelection` 時)/ `aria-readonly`(`readOnly` 時)。 |
 | フォーカスを受ける要素(`.ssg-shell`) | `role="group"`。`aria-activedescendant` はアクティブセルが描画されているときだけ、そのセルの `id`(キーボードでセルを移動すると支援技術がそのセルを読み上げる)。 |
 | 見出し行 / データ行 | `role="row"`。`aria-rowindex` は見出し行が 1、データ行は表示順 + 2(上の固定行があればその数も足す)。行選択のチェックボックスがあるときは `aria-selected`。未ロード行(SSRM のスケルトン)は `aria-busy`。 |
-| 列見出し | `role="columnheader"`。`aria-colindex`(行番号列が 1)。ソートの第 1 キーの列だけ `aria-sort`(`ascending` / `descending`)。 |
+| 列見出し | `role="columnheader"`。`aria-colindex`(行番号列が 1)。ソートの第 1 キーの列だけ `aria-sort`(`ascending` / `descending`)。行ドラッグのハンドルと展開トグルの列(合成列)の見出しは、見た目は空のまま見えない文字で名前を持つ(「移動」「詳細」。`localeText` の `rowDragColumnName` / `detailColumnName`。1.3.0 から。1.2 までは文字の無い見出しで axe の `empty-table-header` になっていた)。 |
 | 行番号 / 左上の角 | `role="rowheader"` / `role="columnheader"`。 |
 | ラベル行(`labelRow`) | 行は `role="row"` で `aria-label` は行の見出しの文(`getLabel` の値)。見出しの文が見える中身の欄が `role="rowheader"`(`aria-colindex="1"`)。左の行番号の欄と、中身を持たないペイン(固定列のペイン)の帯は `aria-hidden`(1.1.0 から。1.0.2 は文字の無い行番号の欄を `role="rowheader"` + `aria-label` にしていて、axe が空の見出し(`empty-table-header`)を出していた)。 |
 | 上部バーの絞り込みの要約 / フィルターのチップ | 押せるボタン。読み上げの名前は見えている文字の後ろに操作の説明(`aria-labelledby`。例: `絞り込み: 1 列 フィルター管理パネルを開閉`、`単価 >= 1000 単価 のフィルターを編集`。1.0.2 から。1.0.1 までは操作の説明だけ)。`getByLabelText('単価 のフィルターを編集')` のように操作の説明だけでも見つかる。 |
 | ツールパネルの「列」タブ | 列の表示 / 非表示のボタンは `aria-pressed`(表示中なら `true`。押せないときも付く。1.0.2 から)。`onColumnsChange` が無い表では、スクロールする一覧に `tabindex="0"`(中の項目が押せないため。1.0.2 から)。 |
-| 列見出しの `⋮` / グループ行の開閉ボタン / 展開トグル | `tabindex="-1"`(`Tab` の順番に入れない。グリッドのキー操作はフォーカスを受ける要素で行い、`Tab` 1 回でグリッドを出入りする)。`⋮` の `aria-label` は「`<列名> の列メニュー`」(列名の後ろに半角の空白。例: `数量 の列メニュー`。ツールチップは「列メニュー」)。キーボードでは、アクティブセルで `Alt+↓` を押すとその列の列メニューが開く。開閉ボタン / トグルは `aria-expanded` と `aria-label` を持ち、キーボードではアクティブセルでの `Enter` / `Space` で開閉する。 |
+| 列見出しの `⋮` / グループ行の開閉ボタン / 展開トグル | `tabindex="-1"`(`Tab` の順番に入れない。グリッドのキー操作はフォーカスを受ける要素で行い、`Tab` 1 回でグリッドを出入りする)。`⋮` の `aria-label` は「`<列名> の列メニュー`」(列名の後ろに半角の空白。例: `数量 の列メニュー`。ツールチップは「列メニュー」)。キーボードでは、アクティブセルで `Alt+↓` を押すとその列の列メニューが開く。開閉ボタン / トグルは `aria-expanded` と `aria-label` を持ち、キーボードではアクティブセルでの `Enter` / `Space` で開閉する。展開トグルの `aria-label` は「行 N の詳細を開く」/「行 N の詳細を閉じる」(N は行見出しと同じ番号 = ラベル行を数えない。`localeText` の `showDetails` / `hideDetails`。1.3.0 から。1.2 までは行番号の無い「詳細を開く」)。 |
 | セル | `role="gridcell"`。`aria-colindex` / `aria-selected`(選択範囲内)/ `aria-readonly`(編集できないセル)/ `aria-invalid`(検査 NG のセル。`showValidationMarks={false}` のときは付けない)/ `aria-description`(検査 NG のメッセージとメモ(`cellNote`)。ツールチップと同じ文。1.0.1)。 |
 | 行選択のチェックボックス | `role="checkbox"`。`aria-checked`(一部選択は `mixed`)/ `aria-label`(「すべての行を選択」「行 N を選択」)。チェックボックスを出すときのグループ行の行番号の欄(空)は見た目だけ(`aria-hidden`。1.2.0 から。グループの名前は自動グループ列のセル)。 |
 | `editor: { type: 'checkbox' }` のセル | `role="checkbox"`。`aria-label` は列の `title`(無ければ `key`)。 |
@@ -897,7 +897,7 @@ WAI-ARIA の grid パターンに沿って、表・行・セルに役割と状�
 | フィルハンドル(`fillHandle`) | ハンドルは `aria-hidden`(ポインタ操作。キーボードではコピー / 貼り付け)。埋めたあとのボタンは `aria-haspopup="menu"` / `aria-expanded` / `aria-label`(「オートフィル オプション(連続データ)」等)、メニューは `role="menu"`、項目は `role="menuitemradio"` + `aria-checked`。 |
 
 - 仮想化で描画していない行・列は DOM に無いため、表全体の中の位置は `aria-rowindex` / `aria-colindex` / `aria-rowcount` / `aria-colcount` で伝える。
-- 制約: 固定列(`pinned`)があると、1 つの行が左 / 中央 / 右のペインごとの `role="row"` に分かれる(どれも同じ `aria-rowindex`。読み上げの順は DOM 順でペインごと)。展開行(`detailRow`)の帯は `aria-rowindex` を持たない(データ行の番号をずらさないため)。縦固定で複製したラベル行(`labelRow.sticky`)は `aria-hidden` で、中のボタン等は `tabindex="-1"`(Tab で止まらない。マウスでは押せる。本物のラベル行はそのまま)。
+- 制約: 固定列(`pinned`)があると、1 つの行が左 / 中央 / 右のペインごとの `role="row"` に分かれる(どれも同じ `aria-rowindex`。読み上げの順は DOM 順でペインごと)。展開行(`detailRow`)の帯は `aria-rowindex` を持たない(データ行の番号をずらさないため)。表の直後の空の要素(`Tab` で展開行のカードから表の外へ出るための目印)は、カードがあって `Tab` の順番に入っている間だけ `aria-hidden` を外す(1.3.0 から。フォーカスが来たらすぐ表の外の次の要素へ移す)。縦固定で複製したラベル行(`labelRow.sticky`)は `aria-hidden` で、中のボタン等は `tabindex="-1"`(Tab で止まらない。マウスでは押せる。本物のラベル行はそのまま)。
 - 編集中は、axe などの検査ツールが表(`role="grid"`)に `aria-required-children` を出すことがある。エディタは行の外に描いて編集中のセルから `aria-owns` でつないでおり、ブラウザのアクセシビリティツリーではセルの子(Chrome で確認)だが、検査ツールは `aria-owns` で移した要素を元の親の子としても数えるため。
 
 ### ダイアログの中のグリッド(`popupContainer`)
@@ -2795,7 +2795,7 @@ function Grid(props: SpreadsheetGridProps<Row>) {
 
 - 下の表の名前が公開契約で、消す・改名する・意味を変えるのは破壊的変更。既定値(色・寸法)の調整は minor で行うことがある(CHANGELOG に書く)。
 - 表に無い `--ssg-*`(要素ごとに内部で使う変数や、`themes/*.css` の中継の `--ssg-ds-*`)は内部。
-- 既定の色のうち、パネルの補足の文字(`--ssg-panel-text-faint` / `--ssg-panel-text-muted`)と条件付き書式のチップの `--ssg-cf-critical` は WCAG AA の 4.5:1 に届かない。基準に合わせるときはライトで `--ssg-panel-text-muted: #475569` / `--ssg-panel-text-faint: #64748b` / `--ssg-cf-critical: #b91c1c`、ダーク(`.ssg-theme-dark`)で `--ssg-panel-text-faint: #909296` に上書きする(既定の色は見た目が変わるので変えていない)。
+- 既定の色のうち、パネルの補足の文字(`--ssg-panel-text-faint` / `--ssg-panel-text-muted`)は WCAG AA の 4.5:1 に届かない。基準に合わせるときはライトで `--ssg-panel-text-muted: #475569` / `--ssg-panel-text-faint: #64748b`、ダーク(`.ssg-theme-dark`)で `--ssg-panel-text-faint: #909296` に上書きする(既定の色は見た目が変わるので変えていない)。条件付き書式のチップの文字(`--ssg-cf-*`)は 1.3.0 から 5 色とも背景との対比が 5:1 以上(1.2 までの `--ssg-cf-good` / `--ssg-cf-warning` / `--ssg-cf-critical` は `#15803d` / `#b45309` / `#dc2626`)。
 - `style.css` にトークンを足したらこの表にも足す(`packages/react/src/cssContract.test.ts` が検査する)。
 
 | 部分 | トークン |

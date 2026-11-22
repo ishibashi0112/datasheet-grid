@@ -3,6 +3,7 @@
 //   - S9-02: 範囲の選択を Escape で外した後の Ctrl+C はアクティブセルの 1 セル
 //   - S7-03 / S8-04: 編集していた行が絞り込みから外れたら、打ちかけをその行へ確定し、フォーカスはグリッドに残る
 //   - RV5-3: エディタを開いたまま別のセルを押してすぐ打った文字が、そのセルのエディタに残る
+//   - ほか S12-05 / S8-05 / S8-02 / RV5-4 / S8-03 / S6-21 / 展開トグルの名前 / S6-02 / S6-03 / S6-04(各節の見出し)
 //   Solid 版は SSG_AUDIT_FRAMEWORK=solid HARNESS_BASE=http://127.0.0.1:5179/。
 import { open, check, skip, summary, waitIdle, unexpectedPageErrors, cell, cellText, header, SUPPORTS } from './pw.mjs';
 
@@ -267,6 +268,71 @@ if (SUPPORTS.clock) {
   }
   check('想定外のエラーが無い(2 つの表)', unexpectedPageErrors(errors3).length === 0, unexpectedPageErrors(errors3));
   await close3();
+}
+
+// ── 展開トグルの名前(要望)/ S6-02 表の直後の目印 / S6-03 合成列の見出し / S6-04 チップの色 ──
+//   AXE_PATH に axe-core の axe.min.js を渡すと、axe の aria-hidden-focus / empty-table-header も見る(このリポジトリには入れていない)。
+{
+  const { page: p5, close: close5, pageErrors: errors5 } = await open('detail');
+  await waitIdle(p5, 300);
+  const toggleLabel = () =>
+    p5.evaluate(() => document.querySelector('.ssg-body-row[data-row-index="0"] .ssg-detail-toggle')?.getAttribute('aria-label') ?? null);
+  const exitState = () =>
+    p5.evaluate(() => {
+      const exit = document.querySelector('.ssg-tab-exit');
+      return exit ? { tabIndex: exit.tabIndex, ariaHidden: exit.getAttribute('aria-hidden') } : null;
+    });
+  const header = await p5.evaluate(() => {
+    const label = document.querySelector('.ssg-header-cell[data-ssg-col-key="__ssg_detail_toggle__"] .ssg-header-label');
+    const hidden = label?.querySelector('.ssg-visually-hidden');
+    const rect = hidden?.getBoundingClientRect();
+    return { text: label?.textContent ?? null, hiddenSize: rect ? Math.round(rect.width * rect.height) : null };
+  });
+  check('S6-03: 展開トグルの列見出しは、見た目は空のまま読み上げの名前「詳細」を持つ', header.text === '詳細' && header.hiddenSize !== null && header.hiddenSize <= 1, header);
+  const closedLabel = await toggleLabel();
+  const exitBefore = await exitState();
+  await p5.locator('.ssg-body-row[data-row-index="0"] .ssg-detail-toggle').first().click();
+  await waitIdle(p5, 300);
+  const openedLabel = await toggleLabel();
+  const exitAfter = await exitState();
+  check('展開トグルの名前: 「行 1 の詳細を開く」/ 開くと「行 1 の詳細を閉じる」', closedLabel === '行 1 の詳細を開く' && openedLabel === '行 1 の詳細を閉じる', {
+    closedLabel,
+    openedLabel,
+  });
+  check(
+    'S6-02: 表の直後の目印は、カードがあって Tab の順番に入っている間だけ aria-hidden を外す',
+    exitBefore?.tabIndex === -1 && exitBefore.ariaHidden === 'true' && exitAfter?.tabIndex === 0 && exitAfter.ariaHidden === null,
+    { exitBefore, exitAfter },
+  );
+  const chipColors = await p5.evaluate(() => {
+    const root = document.querySelector('.ssg-root');
+    const style = root ? getComputedStyle(root) : null;
+    return ['good', 'warning', 'critical'].map((name) => style?.getPropertyValue(`--ssg-cf-${name}`).trim() ?? null);
+  });
+  check('S6-04: チップの文字の既定の色(good / warning / critical)', chipColors.join(' ') === '#14703a #a14a0b #b91c1c', { chipColors });
+  if (process.env.AXE_PATH) {
+    await p5.addScriptTag({ path: process.env.AXE_PATH });
+    const violations = await p5.evaluate(async () => {
+      const result = await window.axe.run(document.querySelector('.ssg-root'), {
+        runOnly: { type: 'rule', values: ['aria-hidden-focus', 'empty-table-header'] },
+      });
+      return result.violations.map((violation) => `${violation.id}: ${violation.nodes.length}`);
+    });
+    check('S6-02 / S6-03: axe の aria-hidden-focus / empty-table-header が無い(カードを開いた状態)', violations.length === 0, { violations });
+  } else {
+    skip('S6-02 / S6-03: axe', 'AXE_PATH が無い');
+  }
+  check('想定外のエラーが無い(展開行)', unexpectedPageErrors(errors5).length === 0, unexpectedPageErrors(errors5));
+  await close5();
+
+  const { page: p6, close: close6, pageErrors: errors6 } = await open('rowdrag');
+  await waitIdle(p6, 300);
+  const dragHeader = await p6.evaluate(
+    () => document.querySelector('.ssg-header-cell[data-ssg-col-key="__ssg_row_drag_handle__"] .ssg-header-label')?.textContent ?? null,
+  );
+  check('S6-03: 行ドラッグの列見出しは読み上げの名前「移動」を持つ', dragHeader === '移動', { dragHeader });
+  check('想定外のエラーが無い(行ドラッグ)', unexpectedPageErrors(errors6).length === 0, unexpectedPageErrors(errors6));
+  await close6();
 }
 
 summary();

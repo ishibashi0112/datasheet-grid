@@ -135,7 +135,9 @@ describe('展開行(結合)', () => {
     ]);
     const toggleHeader = headerCell(container, DETAIL_TOGGLE_COLUMN_KEY);
     expect(toggleHeader?.style.width).toBe('28px');
-    expect(toggleHeader?.textContent).toBe('');
+    // 変更(1.3.0 / S6-03): 見た目は空で、読み上げの名前だけ「詳細」(見えない文字)。
+    expect(toggleHeader?.querySelector('.ssg-header-label')?.textContent).toBe('詳細');
+    expect(toggleHeader?.querySelector('.ssg-header-label > .ssg-visually-hidden')).not.toBeNull();
     // 列メニュー(⋮)は他列にだけ出ます。
     expect(toggleHeader?.querySelector('[data-ssg-tooltip="列メニュー"]')).toBeNull();
     expect(

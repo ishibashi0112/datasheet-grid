@@ -220,7 +220,12 @@ export function GridHeaderRow<T>(props: GridHeaderRowProps<T>) {
                 {column().renderHeader
                   ? column().renderHeader?.(headerContext)
                   : isDetailToggleColumn()
-                    ? ''
+                    ? (
+                        // 見た目は空のまま、読み上げの名前だけ置く(下部バーの番地と同じ「詳細」/「移動」。1.3.0 / S6-03)。
+                        <span class="ssg-visually-hidden">
+                          {column().key === DETAIL_TOGGLE_COLUMN_KEY ? texts().detailColumnName : texts().rowDragColumnName}
+                        </span>
+                      )
                     : column().title || column().key}
               </div>
               <div class="ssg-header-status">

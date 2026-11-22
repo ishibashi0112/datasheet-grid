@@ -434,7 +434,13 @@ function GridHeaderRowInner<T>({
                     isFiltered: isColumnFiltered,
                   })
                 : isDetailToggleColumn
-                  ? ''
+                  ? (
+                      // 変更(1.3.0 / S6-03): 見た目は空のまま、読み上げの名前だけ置きます(下部バーの番地と同じ「詳細」/「移動」)。
+                      //   空の列見出しは支援技術で名前の無い見出しになっていました(axe の empty-table-header)。
+                      <span className="ssg-visually-hidden">
+                        {column.key === DETAIL_TOGGLE_COLUMN_KEY ? texts.detailColumnName : texts.rowDragColumnName}
+                      </span>
+                    )
                   : column.title || column.key}
             </div>
 

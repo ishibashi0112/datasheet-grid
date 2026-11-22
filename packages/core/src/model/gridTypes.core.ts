@@ -1790,10 +1790,10 @@ export type GridLocaleText = {
   columnMenu: string;
   /** 見出しの ⋮ の読み上げの名前。既定 `{column} の列メニュー`、英語 `Column menu for {column}`。 */
   columnMenuFor: GridLocaleTextTemplate<{ column: string }>;
-  /** 展開のボタン(閉じているとき)の読み上げの名前。既定 `詳細を開く`、英語 `Show details`。 */
-  showDetails: string;
-  /** 展開のボタン(開いているとき)の読み上げの名前。既定 `詳細を閉じる`、英語 `Hide details`。 */
-  hideDetails: string;
+  /** 展開のボタン(閉じているとき)の読み上げの名前(`{row}` = 行番号)。既定 `行 {row} の詳細を開く`、英語 `Show details for row {row}`。 */
+  showDetails: GridLocaleTextTemplate<{ row: number }>;
+  /** 展開のボタン(開いているとき)の読み上げの名前(`{row}` = 行番号)。既定 `行 {row} の詳細を閉じる`、英語 `Hide details for row {row}`。 */
+  hideDetails: GridLocaleTextTemplate<{ row: number }>;
   /** グループ行の ▸ の読み上げの名前。既定 `{group} を展開`、英語 `Expand {group}`。 */
   expandGroup: GridLocaleTextTemplate<{ group: string }>;
   /** グループ行の ▾ の読み上げの名前。既定 `{group} を折りたたみ`、英語 `Collapse {group}`。 */

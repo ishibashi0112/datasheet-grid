@@ -673,3 +673,107 @@ describe('ARIA(audit V-05 / RD-10 / V-14)', () => {
     ]);
   });
 });
+// 追加(1.3.0 / Solid 版の品質の段 2-6): 展開行と合成列の読み上げ(Solid 版は parity の同じ場面)。
+//   要望: 展開のボタンの名前にどの行かを入れる(「行 7 の詳細を開く」。行見出しと同じ番号 = ラベル行は数えない)。
+//   S6-02: 表の直後の目印(.ssg-tab-exit)を Tab の順番に入れている間は aria-hidden を付けない(axe の aria-hidden-focus)。
+//   S6-03: 合成列(展開トグル / 行ドラッグ)の列見出しに読み上げの名前(axe の empty-table-header)。
+describe('展開行と合成列の読み上げ(1.3.0)', () => {
+  let restore: () => void;
+  beforeAll(() => {
+    restore = installJsdomLayoutStubs();
+  });
+  afterAll(() => {
+    restore();
+  });
+  afterEach(() => {
+    cleanup();
+  });
+
+  type LRow = { id: string; kind?: 'label'; name: string; qty: number };
+  const detailRows: LRow[] = [
+    { id: 's1', kind: 'label', name: 'セクション 1', qty: 0 },
+    { id: 'a', name: 'alpha', qty: 1 },
+    { id: 'b', name: 'beta', qty: 2 },
+  ];
+  const detailColumns: GridColumn<LRow>[] = [
+    { key: 'name', title: '名称', width: 160 },
+    { key: 'qty', title: '数量', width: 100 },
+  ];
+  const toggleLabels = (container: HTMLElement) =>
+    Array.from(container.querySelectorAll<HTMLElement>('.ssg-detail-toggle')).map((button) =>
+      button.getAttribute('aria-label'),
+    );
+
+  it('展開のボタンの名前は行見出しと同じ番号(ラベル行は数えない)、開くと「閉じる」、文言は localeText で変えられる', () => {
+    const ref = createRef<SpreadsheetGridHandle<LRow>>();
+    const props = {
+      ref,
+      rows: detailRows,
+      columns: detailColumns,
+      rowKeyGetter: (row: LRow) => row.id,
+      labelRow: { isLabelRow: (row: LRow) => row.kind === 'label', getLabel: (row: LRow) => row.name },
+      detailRow: { height: 80, isExpandable: (row: LRow) => row.kind !== 'label', render: () => <div>詳細</div> },
+      enableRowDrag: true,
+    };
+    const { container, rerender } = render(<SpreadsheetGrid<LRow> {...props} />);
+    expect(toggleLabels(container)).toEqual(['行 1 の詳細を開く', '行 2 の詳細を開く']);
+    act(() => {
+      ref.current?.setDetailRowExpanded('b', true);
+    });
+    expect(toggleLabels(container)).toEqual(['行 1 の詳細を開く', '行 2 の詳細を閉じる']);
+    rerender(
+      <SpreadsheetGrid<LRow>
+        {...props}
+        localeText={{ showDetails: 'Open {row}', hideDetails: ({ row }) => `Close ${row}` }}
+      />,
+    );
+    expect(toggleLabels(container)).toEqual(['Open 1', 'Close 2']);
+  });
+
+  it('表の直後の目印は、Tab の順番に入れている間(カードがあるとき)だけ aria-hidden を外す', () => {
+    const ref = createRef<SpreadsheetGridHandle<LRow>>();
+    const { container } = render(
+      <SpreadsheetGrid<LRow>
+        ref={ref}
+        rows={detailRows}
+        columns={detailColumns}
+        rowKeyGetter={(row) => row.id}
+        detailRow={{ height: 80, render: () => <div>詳細</div> }}
+      />,
+    );
+    const exit = container.querySelector<HTMLElement>('.ssg-tab-exit') as HTMLElement;
+    expect(exit.tabIndex).toBe(-1);
+    expect(exit.getAttribute('aria-hidden')).toBe('true');
+    act(() => {
+      ref.current?.setDetailRowExpanded('a', true);
+    });
+    expect(exit.tabIndex).toBe(0);
+    expect(exit.hasAttribute('aria-hidden')).toBe(false);
+    act(() => {
+      ref.current?.collapseAllDetailRows();
+    });
+    expect(exit.getAttribute('aria-hidden')).toBe('true');
+  });
+
+  it('合成列(展開トグル / 行ドラッグ)の列見出しは、見た目は空のまま読み上げの名前を持つ', () => {
+    const { container } = render(
+      <SpreadsheetGrid<LRow>
+        rows={detailRows.slice(1)}
+        columns={detailColumns}
+        rowKeyGetter={(row) => row.id}
+        onRowsChange={() => {}}
+        detailRow={{ height: 80, render: () => <div>詳細</div> }}
+        enableRowDrag
+        localeText={{ rowDragColumnName: 'Move' }}
+      />,
+    );
+    const headers = Array.from(container.querySelectorAll<HTMLElement>('[role="columnheader"][data-ssg-col-key]'));
+    const names = headers.map(
+      (header) => header.querySelector('.ssg-header-label')?.textContent,
+    );
+    expect(names).toEqual(['Move', '詳細', '名称', '数量']);
+    for (const header of headers.slice(0, 2)) {
+      expect(header.querySelector('.ssg-header-label > .ssg-visually-hidden')).not.toBeNull();
+    }
+  });
+});
