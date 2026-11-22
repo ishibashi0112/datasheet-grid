@@ -7,19 +7,19 @@
 import { useCallback, useMemo } from 'react';
 import { useIsomorphicLayoutEffect } from '../hooks/useController';
 import { cx } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/cx';
-import { isSyntheticColumnKey } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/detailRow';
-import { formatLocaleText } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/localeText';
 // 追加(英語対応): 行ドラッグの機能だけが使う文言(既定は localeTextRowDrag.ts。機能の localeText でシェルが埋める)。
 import { DEFAULT_ROW_DRAG_LOCALE_TEXT } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/localeTextFeatures';
 import type { FeatureLocaleText } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/localeText';
 
 type RowDragTexts = FeatureLocaleText<typeof DEFAULT_ROW_DRAG_LOCALE_TEXT>;
-import { getCellValue } from '@ishibashi0112/spreadsheet-grid-core/internal/utils/permissions';
-import { resolveMoveTargetIndex } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/rowReorder';
+import {
+  createRowDropCheck,
+  getDragRowToken,
+  locateDragRowToken,
+  resolveRowDragLabel,
+} from '@ishibashi0112/spreadsheet-grid-core/internal/logic/rowDragTarget';
 import { useRowDragController } from '../hooks/useRowDragController';
 import type { GridFeature, GridFeatureParts, RowDragFeatureArgs, RowDragFeatureResult } from './types';
-
-type DragRowToken = { row: unknown; rowKey: unknown; rowCount: number };
 
 const useRowDragFeature = <T,>({
   rowModel,
@@ -32,85 +32,21 @@ const useRowDragFeature = <T,>({
   localeTexts,
   ...controllerArgs
 }: RowDragFeatureArgs<T>): RowDragFeatureResult<T> => {
-  // 追加(1.2.0 / 2026-11-09 実アプリの総点検 E-07): canDropRow を controller のスロット(行 i の上の境界が i)で聞ける形に
-  //   します。toIndex は onRowMove と同じ(動かした後の位置)、rowAbove / rowBelow は落とした後に掴んだ行のすぐ上 / 下の行。
+  // 変更(1.3.0 / Solid 版の品質の段 2-9): 落とせるかの判定 / ゴーストのラベル / 掴んだ行の控えと探し直しは core の
+  //   logic/rowDragTarget(Solid 版と同じ処理)。ここはメモ化だけを持ちます(コントローラは関数が変わると答えの控えを捨てる /
+  //   引いている間の行を探し直すので、変わる回数は前と同じ)。
   const canDropAt = useMemo(
-    () =>
-      canDropRow === undefined
-        ? undefined
-        : (fromIndex: number, slot: number): boolean => {
-            const toIndex = resolveMoveTargetIndex(fromIndex, slot);
-            const row = rows[fromIndex];
-            if (toIndex === null || row === undefined) return false;
-            return canDropRow({
-              row,
-              rowKey: resolveRowKey(row, fromIndex),
-              fromIndex,
-              toIndex,
-              rowAbove: slot > 0 ? rows[slot - 1] : undefined,
-              rowBelow: slot < rows.length ? rows[slot] : undefined,
-              rows,
-            });
-          },
+    () => createRowDropCheck(canDropRow, rows, resolveRowKey),
     [canDropRow, rows, resolveRowKey],
   );
-  // ゴーストのラベル: 先頭の(合成列でない)表示列の表示値。空なら「行 N」。
-  // 変更(1.0.2 / 2026-11-09 実アプリの総点検 E-06): 値を文字で出さない列(valueFormatter の無い renderCell の列 =
-  //   画像など / チェックボックスのエディタ / showValue: false のデータバー)は飛ばし、文字を出す最初の列にします
-  //   (先頭が画像の列だと、ゴーストに画像の URL が出てどの行を掴んでいるか分からなかった)。無ければ「行 N」。
   const getRowDragLabel = useCallback(
-    (viewIndex: number): string => {
-      const fallback = formatLocaleText((localeTexts as RowDragTexts).dragRowLabel, { row: viewIndex + 1 });
-      const row = rowModel.getRow(viewIndex);
-      if (!row) {
-        return fallback;
-      }
-      const column = visibleColumns.find(
-        (candidate) =>
-          !isSyntheticColumnKey(candidate.key) &&
-          (candidate.renderCell === undefined || candidate.valueFormatter !== undefined) &&
-          candidate.editor?.type !== 'checkbox' &&
-          candidate.conditionalFormat?.dataBar?.showValue !== false,
-      );
-      if (!column) {
-        return fallback;
-      }
-      const value = getCellValue(row, column);
-      const text = column.valueFormatter
-        ? column.valueFormatter({ value, row, column })
-        : String(value ?? '');
-      return text.trim().length > 0 ? text : fallback;
-    },
+    (viewIndex: number): string =>
+      resolveRowDragLabel(rowModel, visibleColumns, viewIndex, (localeTexts as RowDragTexts).dragRowLabel),
     [rowModel, visibleColumns, localeTexts],
   );
-  // 追加(1.0 前の最終チェック FC-12): 掴んだ行を控え、離すときに今の並びで探し直します(ドラッグ中にポーリング等で
-  //   行の並びが変わると、掴んだときの index のまま別の行を動かしていた)。行の参照で探し、見つからなければ
-  //   rowKeyGetter があるときだけキーで探します。どちらも無いときは、行数が同じなら掴んだときの index のまま
-  //   (行を作り直すだけの再描画で取り消さないため)、行数が変わっていれば取り消します。
-  const getDragRow = useCallback(
-    (viewIndex: number): DragRowToken | null => {
-      const row = rowModel.getRow(viewIndex);
-      if (row === undefined) return null;
-      return { row, rowKey: rowModel.getRowKey(viewIndex), rowCount: rowModel.getRowCount() };
-    },
-    [rowModel],
-  );
+  const getDragRow = useCallback((viewIndex: number) => getDragRowToken(rowModel, viewIndex), [rowModel]);
   const locateDragRow = useCallback(
-    (token: unknown, hint: number): number | null => {
-      const { row, rowKey, rowCount } = token as DragRowToken;
-      if (rowModel.getRow(hint) === row) return hint;
-      const count = rowModel.getRowCount();
-      for (let index = 0; index < count; index += 1) {
-        if (rowModel.getRow(index) === row) return index;
-      }
-      if (hasRowKeys) {
-        for (let index = 0; index < count; index += 1) {
-          if (Object.is(rowModel.getRowKey(index), rowKey)) return index;
-        }
-        return null;
-      }
-      return count === rowCount && hint < rowCount ? hint : null;
-    },
+    (token: unknown, hint: number): number | null => locateDragRowToken(rowModel, hasRowKeys, token, hint),
     [rowModel, hasRowKeys],
   );
   const {

@@ -99,6 +99,32 @@ describe('findPopupHost / resolvePopupContainer', () => {
   });
 });
 
+describe('Shadow root の中のグリッド(1.3.0 / S11-05)', () => {
+  const makeShadow = (html: string) => {
+    const host = document.createElement('div');
+    document.body.appendChild(host);
+    const shadow = host.attachShadow({ mode: 'open' });
+    shadow.innerHTML = html;
+    return shadow;
+  };
+
+  it('既定では Shadow root の直下の要素(グリッドを包む要素)へ描く。囲むダイアログがあればそちら', () => {
+    const shadow = makeShadow('<div id="app"><section><div class="ssg-root"><div id="grid"></div></div></section></div>');
+    const grid = shadow.querySelector<HTMLElement>('#grid')!;
+    expect(resolvePopupContainer(grid, 'auto')).toBe(shadow.querySelector('#app'));
+    expect(getPopupContainerFor(grid)).toBe(shadow.querySelector('#app'));
+    expect(resolvePopupContainer(grid, 'body')).toBe(document.body);
+
+    const withDialog = makeShadow('<div id="app"><div id="dlg" role="dialog"><div id="grid"></div></div></div>');
+    expect(resolvePopupContainer(withDialog.querySelector<HTMLElement>('#grid')!, 'auto')).toBe(withDialog.querySelector('#dlg'));
+  });
+
+  it('グリッドが Shadow root の直下にあるとき(包む要素が無い)は body', () => {
+    const shadow = makeShadow('<div class="ssg-root"><div id="grid"></div></div>');
+    expect(resolvePopupContainer(shadow.querySelector<HTMLElement>('#grid')!, 'auto')).toBe(document.body);
+  });
+});
+
 describe('getPopupContainerFor(ツールチップ / ゴースト)', () => {
   it('ポップアップの中の要素はそのポップアップと同じ場所、登録した表の中はその設定、ほかは auto', () => {
     const root = make(

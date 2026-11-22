@@ -182,7 +182,9 @@ describe('行ドラッグ並び替え(結合)', () => {
     ]);
     const header = headerCell(container, ROW_DRAG_HANDLE_COLUMN_KEY);
     expect(header?.style.width).toBe('28px');
-    expect(header?.textContent).toBe('');
+    // 変更(1.3.0 / S6-03): 見た目は空で、読み上げの名前だけ「移動」(見えない文字)。
+    expect(header?.querySelector('.ssg-header-label')?.textContent).toBe('移動');
+    expect(header?.querySelector('.ssg-header-label > .ssg-visually-hidden')).not.toBeNull();
     // 列メニュー(⋮)は合成列には出ません。
     expect(header?.querySelector('[data-ssg-tooltip="列メニュー"]')).toBeNull();
     for (let i = 0; i < rows.length; i += 1) {

@@ -14,10 +14,31 @@ import {
 } from '@ishibashi0112/spreadsheet-grid';
 import { localeTextEn } from '@ishibashi0112/spreadsheet-grid/locales/en';
 import '@ishibashi0112/spreadsheet-grid/style.css';
-import { baseColumns as sharedBaseColumns, lang, log, makeDataSource, makeRows, n, params, scenario, strict, type Row } from './shared';
+import shadowCss from '@ishibashi0112/spreadsheet-grid/style.css?inline';
+import { baseColumns as sharedBaseColumns, lang, log, makeDataSource, makeRows, mountPoint, n, params, scenario, strict, type Row } from './shared';
+
+// 追加(1.3.0 / RV5-4): `&hb=<列のキー>` でその列を狭く(46px)し、renderHeader の中にボタンを置く(押すと __events に hdr-btn)。
+const withHeaderButton = (columns: GridColumn<Row>[]): GridColumn<Row>[] => {
+  const key = params.get('hb');
+  return key === null
+    ? columns
+    : columns.map((column) =>
+        column.key === key
+          ? {
+              ...column,
+              width: 46,
+              renderHeader: () => (
+                <button type="button" data-testid="hdr-btn" onClick={() => log('hdr-btn')}>
+                  B
+                </button>
+              ),
+            }
+          : column,
+      );
+};
 
 function baseColumns(): GridColumn<Row>[] {
-  return sharedBaseColumns({
+  return withHeaderButton(sharedBaseColumns({
     numberFormatter,
     customEditor: (ctx) => (
       <input
@@ -30,7 +51,7 @@ function baseColumns(): GridColumn<Row>[] {
         }}
       />
     ),
-  });
+  }));
 }
 
 function GridHost({ which, extra }: { which: 1 | 2; extra?: Partial<SpreadsheetGridProps<Row>> }) {
@@ -327,5 +348,5 @@ function App() {
   );
 }
 
-const root = createRoot(document.getElementById('root')!);
+const root = createRoot(mountPoint(shadowCss));
 root.render(strict ? <StrictMode><App /></StrictMode> : <App />);

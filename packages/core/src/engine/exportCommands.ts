@@ -173,7 +173,9 @@ export const createExportCommands = <T,>(
       };
     }
     if (scope === 'selection') {
-      const sel = s.uiState.selection;
+      // 変更(1.3.0 / Solid 版の品質の段 2 S4-03): 選択は store の今の値で読みます(selectRange の直後の
+      //   exportCsv({ scope: 'selection' }) が、描き直す前の古い選択 = 空で出ていた。getSelection() と同じ)。
+      const sel = (s.getUiState?.() ?? s.uiState).selection;
       if (!sel) {
         return null;
       }
@@ -285,8 +287,9 @@ export const createExportCommands = <T,>(
   };
 
   // 自動グループ列 / 展開行トグル列(合成列)はエクスポート列から除外します。
+  // 変更(1.3.0 / 要望): 列の exportable: false も外します(CSV / TSV と getExportData だけ。範囲のコピーには出す)。
   const stripSyntheticColumns = (exportColumns: GridColumn<T>[]): GridColumn<T>[] =>
-    exportColumns.filter((column) => !isSyntheticColumnKey(column.key));
+    exportColumns.filter((column) => !isSyntheticColumnKey(column.key) && column.exportable !== false);
 
   // 追加(合計行 3A): 合計行の出力行です。includeTotalRow かつ scope 'view' で、合計行が
   //   有効なときだけ。'raw'(フィルター無視)/ 'rendered' / 'selection' は合計の対象行と一致しないため出しません。

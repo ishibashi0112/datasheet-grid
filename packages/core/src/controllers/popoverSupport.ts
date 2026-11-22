@@ -12,14 +12,17 @@
 import { isFocusInsideDetailCard } from '../logic/detailRow';
 import { IME_INPUT_ATTRIBUTE } from '../logic/domGuards';
 import { GRID_POPUP_SELECTOR } from './escapeClaimController';
+import { getActiveElement, getEventTarget } from '../utils/shadowDom';
 
 export type ReadonlyElementRef<E extends HTMLElement = HTMLElement> = {
   readonly current: E | null;
 };
 
+// 変更(1.3.0 / S11-03 / S11-04): フォーカスのある要素は Shadow root の中も見ます(core utils/shadowDom)。
 export const blurForPopover = (gridRoot: HTMLElement | null): void => {
-  if (document.activeElement instanceof HTMLElement) {
-    document.activeElement.blur();
+  const active = getActiveElement(gridRoot);
+  if (active instanceof HTMLElement) {
+    active.blur();
   }
   gridRoot?.blur();
 };
@@ -37,7 +40,7 @@ const TEXT_ENTRY_SELECTOR = 'input, textarea, select, [contenteditable]:not([con
 
 export const restoreGridFocus = (gridRootRef: ReadonlyElementRef): void => {
   const current = gridRootRef.current;
-  const focused = current?.ownerDocument.activeElement ?? null;
+  const focused = current === null ? null : getActiveElement(current);
   if (
     current !== null &&
     focused !== null &&
@@ -47,7 +50,7 @@ export const restoreGridFocus = (gridRootRef: ReadonlyElementRef): void => {
     if (focused.matches(TEXT_ENTRY_SELECTOR)) {
       queueMicrotask(() => {
         const root = gridRootRef.current;
-        const active = root?.ownerDocument.activeElement ?? null;
+        const active = root === null ? null : getActiveElement(root);
         if (root !== null && (active === null || active === root.ownerDocument.body)) {
           root.focus({ preventScroll: true });
         }
@@ -58,10 +61,10 @@ export const restoreGridFocus = (gridRootRef: ReadonlyElementRef): void => {
   }
   requestAnimationFrame(() => {
     const root = gridRootRef.current;
-    if (root === null || isFocusInsideDetailCard()) {
+    if (root === null || isFocusInsideDetailCard(root)) {
       return;
     }
-    const active = root.ownerDocument.activeElement;
+    const active = getActiveElement(root);
     if (active !== null && active !== root && root.contains(active) && active.closest('.ssg-cell-editor') !== null) {
       return;
     }
@@ -72,6 +75,17 @@ export const restoreGridFocus = (gridRootRef: ReadonlyElementRef): void => {
     }
     root.focus();
   });
+};
+
+// 追加(1.3.0 の確かめ直し): メニューの項目が開いた別のポップアップ(ツールパネル / 列フィルター)にフォーカスが移っているかです。
+//   メニュー(右クリックメニュー / 列メニュー)を閉じるときは、そのフォーカスをグリッドへ戻しません。Solid 版は利用者の
+//   onSelect を自分のフレームで呼ぶ(0.1.1 の S4-21)ので、メニューを閉じる前にツールパネルが描かれてタブへフォーカスが
+//   移っていて、閉じたときの restoreGridFocus がそれを奪っていた(React 版は開いた後の effect で移すので、閉じた後になる)。
+const OPENED_FROM_MENU_SELECTOR = '.ssg-toolpanel, .ssg-filter-popover';
+export const isFocusInPopupOpenedFromMenu = (gridRootRef: ReadonlyElementRef): boolean => {
+  const root = gridRootRef.current;
+  const active = root === null ? null : getActiveElement(root);
+  return active !== null && typeof active.closest === 'function' && active.closest(OPENED_FROM_MENU_SELECTOR) !== null;
 };
 
 export const isInsideGridRoot = (gridRootRef: ReadonlyElementRef, target: Node): boolean =>
@@ -88,7 +102,7 @@ export const handleMenuKeyNavigation = (
   event: KeyboardEvent,
   itemSelector = '[role="menuitem"]',
 ): boolean => {
-  const active = document.activeElement;
+  const active = getActiveElement(panel);
   // 変更(1.1.0 / AP-33 の回帰): パネルそのもの(マウスで開いたときのフォーカスの置き場)は「項目にフォーカスが無い」と同じに扱い、
   //   ↓ で先頭・↑ で末尾の項目へ移ります(パネルを中の要素と数えて何もしなかった)。
   const focusInside = active instanceof HTMLElement && active !== panel && panel.contains(active);
@@ -133,7 +147,7 @@ export const focusPanelIfIdle = (panel: HTMLElement | null, gridRoot?: HTMLEleme
   if (panel === null || !panel.isConnected) {
     return;
   }
-  const active = panel.ownerDocument.activeElement;
+  const active = getActiveElement(panel);
   const onGrid =
     active !== null &&
     gridRoot != null &&
@@ -141,6 +155,26 @@ export const focusPanelIfIdle = (panel: HTMLElement | null, gridRoot?: HTMLEleme
   if (active === null || active === panel.ownerDocument.body || onGrid) {
     panel.focus({ preventScroll: true });
   }
+};
+
+// 追加(1.3.0 / Solid 版の品質の段 2 S5-02): パネルの中の押しても focus を取らないボタン(pointerdown を preventDefault する
+//   日付のプリセットのチップなど)を押した結果、フォーカスのあった要素(日付の入力欄)が消えて body に落ちたときは、押した
+//   ボタンへフォーカスを置きます(body に落ちると、パネルの Escape や Tab が効かなかった)。描き直しの後(次のフレーム)に
+//   見ます。フォーカスがほかの要素へ移っていれば奪いません。
+export const keepFocusAfterPress = (trigger: HTMLElement): void => {
+  const view = trigger.ownerDocument.defaultView;
+  if (view === null) {
+    return;
+  }
+  view.requestAnimationFrame(() => {
+    if (!trigger.isConnected) {
+      return;
+    }
+    const active = getActiveElement(trigger);
+    if (active === null || active === trigger.ownerDocument.body || active === trigger.ownerDocument.documentElement) {
+      trigger.focus({ preventScroll: true });
+    }
+  });
 };
 
 export type PopoverWindowHandlers = {
@@ -157,7 +191,16 @@ export type PopoverWindowHandlers = {
   //   別の画面の上に残っていました。グリッドの要素を ResizeObserver で見張ります(開いている間だけ)。
   getGridRoot?: () => HTMLElement | null;
   onGridHidden?: () => void;
+  // 追加(1.3.0 / Solid 版の品質の段 2 S6-21): 別のグリッドのポップアップが開いたとき(渡したポップアップだけ。列メニュー・
+  //   右クリックメニュー・列フィルター)。メニューのボタンは押下を止める(stopPropagation)ので、別のグリッドのボタンを押しても
+  //   こちらの「外を押したら閉じる」に届かず、2 つのグリッドのメニューが同時に開いていた。グリッド(getGridRoot)をまたいで
+  //   1 つにします(同じグリッドの中の組み合わせは今までどおり、各コントローラが決める)。
+  onOtherGridPopupOpen?: () => void;
 };
+
+type OpenGridPopup = { owner: HTMLElement; close: () => void };
+// 開いているポップアップ(onOtherGridPopupOpen を渡したもの)。ページの中のグリッドで共有します。
+const openGridPopups: Set<OpenGridPopup> = /* @__PURE__ */ new Set();
 
 export type PopoverWindowBindings = {
   attach: () => void;
@@ -171,8 +214,11 @@ export const createPopoverWindowBindings = (
   let attached = false;
   const handleResize = () => handlers.onResize?.();
   const handleScroll = (event: Event) => handlers.onScroll?.(event);
+  // 変更(1.3.0 / S11-05): window で受けるので、Shadow root の中で押したときの target は host です。押した要素はグリッドの木へ
+  //   付け替えて見ます(グリッドの中の Web Component の中で押したらその host。グリッドの木を通らない = body に出したパネル
+  //   などは document の木の要素)。
   const handlePointerDown = (event: PointerEvent) => {
-    const target = event.target as Node | null;
+    const target = getEventTarget(event, handlers.getGridRoot?.() ?? null) as Node | null;
     if (!target) {
       return;
     }
@@ -183,6 +229,22 @@ export const createPopoverWindowBindings = (
   };
   const handleKeyDown = (event: KeyboardEvent) => handlers.onKeyDown?.(event);
   let hiddenObserver: ResizeObserver | null = null;
+  let openEntry: OpenGridPopup | null = null;
+  const claimOpenPopup = () => {
+    const onOther = handlers.onOtherGridPopupOpen;
+    const owner = handlers.getGridRoot?.() ?? null;
+    if (!onOther || !owner) {
+      return;
+    }
+    for (const entry of Array.from(openGridPopups)) {
+      if (entry.owner !== owner) {
+        openGridPopups.delete(entry);
+        entry.close();
+      }
+    }
+    openEntry = { owner, close: onOther };
+    openGridPopups.add(openEntry);
+  };
   const watchGridHidden = () => {
     const root = handlers.getGridRoot?.() ?? null;
     const onGridHidden = handlers.onGridHidden;
@@ -214,12 +276,17 @@ export const createPopoverWindowBindings = (
       window.addEventListener('pointerdown', handlePointerDown);
       window.addEventListener('keydown', handleKeyDown, true);
       watchGridHidden();
+      claimOpenPopup();
     },
     detach: () => {
       if (!attached) {
         return;
       }
       attached = false;
+      if (openEntry !== null) {
+        openGridPopups.delete(openEntry);
+        openEntry = null;
+      }
       hiddenObserver?.disconnect();
       hiddenObserver = null;
       window.removeEventListener('resize', handleResize);

@@ -68,6 +68,27 @@ const dataSource: ServerSideDataSource<Row> = {
 - set / select フィルターの**候補はクライアントが供給**します(全行を持たないため自動収集できません)。低カーディナリティ列は `filterOptions` を静的指定、サーバから取りたい列はグリッド prop `getFilterOptions`(popover を開くたびに非同期で候補を返す。[ソートとフィルター](/docs/guides/filter-sort) を参照)、高カーディナリティ列は `text` / `number` フィルターを使います。候補に `''` が無いと「(空白)」の項目が出ず、選んだ値だけを送る形(`filterOptions` のある列で値を外したときなど)では空白の行も消えるので、空白の行がある列は候補に `{ value: '', label: '(空白)' }` を入れます。
 - ソート / フィルターを塞ぎたい場合は `enableSorting` / `enableColumnFilter` / `enableGlobalFilter` を `false` にします。
 
+### 相対の日付とタイムゾーン
+
+日付の列フィルターの「今日」「今月」「過去 30 日」(相対のプリセット)は、`{ mode: 'preset', preset: 'today' }` のように**相対のまま**届きます。サーバーで範囲を決めると、「今日」は**サーバーのタイムゾーンの今日**になります(東京の利用者が 0 時〜9 時に開くと、UTC のサーバーではまだ前の日です)。利用者の今日で絞りたいときは、`getRows` はブラウザで呼ばれるので、そこで利用者のタイムゾーンを読んでリクエストに足し、サーバーはその日付で範囲を決めます。
+
+```ts
+const dataSource: ServerSideDataSource<Row> = {
+  async getRows({ startIndex, endIndex, query, signal }) {
+    const timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone; // 例: 'Asia/Tokyo'
+    const res = await fetch('/api/rows', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ startIndex, endIndex, query, timeZone }),
+      signal,
+    });
+    return res.json();
+  },
+};
+```
+
+グリッドを開いたまま日付が変わると、範囲が変わる日(「今日」は毎日、「今月」は月初)にブロックを取り直します(送る `query` は同じなので、サーバーはそのときの日付で解決し直します)。
+
 ## 書き戻し(updateRows)と楽観更新
 
 - 編集は即座に画面へ反映され(楽観値)、`updateRows` の resolve で確定します。reject すると**編集前の値へ自動ロールバック**され、保存失敗バーが表示されます。

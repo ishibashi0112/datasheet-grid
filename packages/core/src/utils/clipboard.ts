@@ -10,6 +10,7 @@ import { resolveCellParser } from '../logic/editorValues';
 import { formatCellClipboardText } from '../logic/selectLabels';
 import { decideCellWrite, type ValidationLocaleText } from '../logic/validation';
 import { isSyntheticColumnKey } from '../logic/detailRow';
+import { getDeepActiveElement } from './shadowDom';
 
 // 追加: TSV の行列データ型です。
 export type ClipboardMatrix = string[][];
@@ -264,6 +265,8 @@ export type PasteSkip<T> = {
 };
 
 // 追加: 貼り付け matrix を rows へ適用します。
+// 変更(1.3.0 / Solid 版の品質の段 2 S1-03): 1 つのセルも書かなかったときは、渡した rows をそのまま返します(呼び出し側は
+//   `next === rows` で onRowsChange と履歴を省く。書けるセルの無い貼り付けでも onRowsChange と空の「元に戻す」が積まれていた)。
 export const applyClipboardMatrixToRows = <T extends object,>(
   rows: T[],
   // 変更(DS-3-10): sourceRowIndexes: number[] → view→source 解決クロージャへ。
@@ -292,6 +295,7 @@ export const applyClipboardMatrixToRows = <T extends object,>(
   }
 
   const nextRows = [...rows];
+  let anyRowChanged = false;
   // 変更(FC-03): 列オフセット → 列 index は合成列を飛ばして数えます。
   const columnIndexes = resolvePasteColumnIndexes(
     columns,
@@ -363,10 +367,11 @@ export const applyClipboardMatrixToRows = <T extends object,>(
 
     if (rowChanged) {
       nextRows[originalRowIndex] = nextRow;
+      anyRowChanged = true;
     }
   }
 
-  return nextRows;
+  return anyRowChanged ? nextRows : rows;
 };
 
 // 追加(SSRM 書き戻し): serverSide 用に「ペーストすべきセル編集の集合」を作ります
@@ -445,7 +450,9 @@ export const buildClipboardCellEdits = <T extends object,>(
 //   ジェスチャー要件)。textarea は readonly + position: fixed + 不可視の定石構成にします
 //   (モバイルのキーボード表示・スクロールジャンプ防止)。
 export const copyTextViaExecCommand = (text: string): boolean => {
-  const { body, activeElement } = document;
+  const { body } = document;
+  // 変更(1.3.0 / S11-02): Shadow root の中のフォーカス(document.activeElement は host)へ戻します。
+  const activeElement = getDeepActiveElement();
   if (!body) {
     return false;
   }

@@ -9,6 +9,7 @@
 //   - グリッドが使わない Escape(セルを選んでいるだけ・上部バーの入力欄など)には何もしません(ダイアログが閉じる)。
 //   - 窓の capture に先に付いたリスナー(グリッドより後に開いたダイアログなど)より先には動けません。
 import type { GridSelection } from '../model/gridTypes.unbound';
+import { getEventTarget } from '../utils/shadowDom';
 
 type ReadonlyRef<T> = { readonly current: T };
 
@@ -78,7 +79,9 @@ export const createEscapeClaimController = (): EscapeClaimController => {
       return;
     }
     const root = args.gridRootRef.current;
-    const target = event.target;
+    // 変更(1.3.0 / S11-03): window で受けるので、Shadow root の中のキーの target は host です。押した要素はグリッドの木へ
+    //   付け替えて見ます(グリッドの中の Web Component の中の要素なら、その host)。
+    const target = getEventTarget(event, root);
     if (
       root === null ||
       !(target instanceof Element) ||
@@ -94,11 +97,19 @@ export const createEscapeClaimController = (): EscapeClaimController => {
       preventedAfterClaim.add(event);
       preventDefault();
     };
-    if (!target.hasAttribute(MANTINE_STOP_ATTRIBUTE)) {
-      target.setAttribute(MANTINE_STOP_ATTRIBUTE, 'true');
-      setTimeout(() => {
-        target.removeAttribute(MANTINE_STOP_ATTRIBUTE);
-      }, 0);
+    // 変更(1.3.0 の別視点のレビュー): Shadow root の中のグリッドでは、window で読む event.target(host)にも付けます
+    //   (Mantine は window で event.target の印を見る)。
+    const marked = new Set<Element>([target]);
+    if (event.target instanceof Element) {
+      marked.add(event.target);
+    }
+    for (const element of marked) {
+      if (!element.hasAttribute(MANTINE_STOP_ATTRIBUTE)) {
+        element.setAttribute(MANTINE_STOP_ATTRIBUTE, 'true');
+        setTimeout(() => {
+          element.removeAttribute(MANTINE_STOP_ATTRIBUTE);
+        }, 0);
+      }
     }
   };
 

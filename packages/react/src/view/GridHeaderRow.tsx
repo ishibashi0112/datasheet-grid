@@ -40,7 +40,7 @@ const HEADER_INLINE_ACTIONS_MIN_WIDTH = 120;
 import { useGridLocaleText } from '../hooks/useGridLocaleText';
 import { formatLocaleText } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/localeText';
 // 追加(audit V-16): renderHeader の中の操作から始まった pointerdown か(core logic/domGuards。Solid 版と共用)。
-import { isFromRenderHeaderControl } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/domGuards';
+import { isFromRenderHeaderControl, syncRenderHeaderControlHover } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/domGuards';
 
 // 追加(10-C): このヘッダーがどのペインを描画しているかの種別です。
 export type GridPaneKind = 'left' | 'center' | 'right';
@@ -371,7 +371,16 @@ function GridHeaderRowInner<T>({
             onPointerEnter={(event) =>
               onColumnHeaderPointerEnter(colIndex, event)
             }
-            onPointerLeave={() => onColumnHeaderPointerLeave(colIndex)}
+            // 追加(1.3.0 / RV5-4): renderHeader の中のボタン等の上では、ホバーで出る操作群を隠す(core logic/domGuards)。
+            onPointerMove={
+              column.renderHeader
+                ? (event) => syncRenderHeaderControlHover(event.currentTarget, event)
+                : undefined
+            }
+            onPointerLeave={(event) => {
+              if (column.renderHeader) syncRenderHeaderControlHover(event.currentTarget, null);
+              onColumnHeaderPointerLeave(colIndex);
+            }}
             onContextMenu={(event) => {
               // 追加(grouping ③): 自動グループ列では列メニューを開きません(ブラウザ標準
               //   メニューも抑止して他列と挙動を揃えます)。
@@ -425,7 +434,13 @@ function GridHeaderRowInner<T>({
                     isFiltered: isColumnFiltered,
                   })
                 : isDetailToggleColumn
-                  ? ''
+                  ? (
+                      // 変更(1.3.0 / S6-03): 見た目は空のまま、読み上げの名前だけ置きます(下部バーの番地と同じ「詳細」/「移動」)。
+                      //   空の列見出しは支援技術で名前の無い見出しになっていました(axe の empty-table-header)。
+                      <span className="ssg-visually-hidden">
+                        {column.key === DETAIL_TOGGLE_COLUMN_KEY ? texts.detailColumnName : texts.rowDragColumnName}
+                      </span>
+                    )
                   : column.title || column.key}
             </div>
 

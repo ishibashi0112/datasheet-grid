@@ -6,6 +6,7 @@
 //   ⑤端の列の Tab(既定動作に任せたもの)は既定動作の前にルートへフォーカスを戻す
 //   ⑥dispose 後の update でリスナーを付け直せる(StrictMode の二重マウント)
 //   ⑦確定した文字列は resolveEditText で直して startEdit へ渡し、null なら捨てる(全角数値)
+//   ⑧待機中に合わせた位置を次のフレームでもう一度合わせる(1.3.0。合わせた後にスクロールが来る PageDown)
 //   を検証します(CDP での実ブラウザ確認は audit/harness の t-features)。
 // @vitest-environment jsdom
 import { describe, it, expect, vi, afterEach } from 'vitest';
@@ -238,6 +239,24 @@ describe('imeInputController', () => {
     );
     input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Tab', bubbles: true, cancelable: true }));
     expect(document.activeElement).toBe(exit);
+    controller.dispose();
+  });
+
+  it('待機中に合わせた位置は、次のフレームでもう一度合わせる(合わせた後にスクロールが来る PageDown)', async () => {
+    const { root, input, args } = setup();
+    const cell = root.querySelector<HTMLElement>('.ssg-body-cell')!;
+    let cellTop = 116;
+    vi.spyOn(root, 'getBoundingClientRect').mockReturnValue(new DOMRect(0, 0, 400, 300));
+    vi.spyOn(cell, 'getBoundingClientRect').mockImplementation(() => new DOMRect(10, cellTop, 120, 32));
+    const controller = createImeInputController();
+    controller.attach(input);
+    controller.update(args());
+    expect(input.style.top).toBe('116px');
+    // 合わせた後にスクロールが来る(セルが 16px 上へ)。
+    cellTop = 100;
+    await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+    await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+    expect(input.style.top).toBe('100px');
     controller.dispose();
   });
 

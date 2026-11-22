@@ -59,6 +59,7 @@ import {
   isInsideGridRoot,
   restoreGridFocus,
 } from './popoverSupport';
+import { getActiveElement } from '../utils/shadowDom';
 
 type ReadonlyRef<V> = { readonly current: V };
 
@@ -546,7 +547,7 @@ export const createFillHandleController = <T,>(): FillHandleController<T> => {
     // メニューにフォーカスがあるまま消えるとき(外から rows / 表示が変わった等)は、フォーカスをグリッドへ戻します
     //   (消えたメニューと一緒に body へ落とさない)。
     const focusInMenu =
-      typeof document !== 'undefined' && menuPanel.current?.contains(document.activeElement) === true;
+      typeof document !== 'undefined' && menuPanel.current?.contains(getActiveElement(menuPanel.current)) === true;
     record = null;
     menuBindings.detach();
     if (store.getSnapshot().status === 'filled') {

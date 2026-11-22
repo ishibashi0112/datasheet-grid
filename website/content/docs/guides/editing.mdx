@@ -62,7 +62,7 @@ const KINDS = [{ value: 'transport', label: '交通費' }, { value: 'meal', labe
   valueFormatter: ({ value }) => KINDS.find((o) => o.value === value)?.label ?? String(value ?? '') }
 ```
 
-独自 UI で編集したい場合は `{ type: 'custom', render: (ctx) => <MyEditor ... /> }` を使います。返した要素は編集中のセルと同じ大きさの透明な枠の中に描くので、根の要素に `width: 100%` / `height: 100%` と背景色を付けてください([列の API の注意点](/docs/api/column))。`ctx.commit(value)` / `ctx.cancel()` で確定・キャンセルします。編集が終わった後(確定 / 取消 / 別のセルの編集が始まった後)に呼んだ前の編集の `ctx.commit` / `ctx.cancel` は何もしません(`ctx.commit` は `{ status: 'noop' }` を返します)。組み込みのエディタはフォーカスが外れたときに確定します。custom エディタも入力欄の `onBlur` で `ctx.commit(value)`(または `ctx.cancel()`)を呼んでください。呼ばないと、エディタを開いたままグリッドの中の別のセルや見出しを押したときにエディタが開いたまま残り、別のセルをダブルクリックするまでグリッドのキー操作が効きません。`onBlur` でサーバーの検査を待ってから `ctx.commit` を呼ぶ作りでも、値は編集していたセルに書かれます。 英字のキーで打ち始めたときはそのキーが `ctx.initialText` に入るので、入力欄の初期値にしてください。グリッドの `imeDirectInput` を使うときは、エディタの定義に `imeDirectInput: true` を付けると IME で確定した文字も `ctx.initialText` に入ります(1.2.0 から。[キーボード / タッチ操作](/docs/guides/keyboard#ime-オンのまま打ち始めるimedirectinput))。
+独自 UI で編集したい場合は `{ type: 'custom', render: (ctx) => <MyEditor ... /> }` を使います。返した要素は編集中のセルと同じ大きさの透明な枠の中に描くので、根の要素に `width: 100%` / `height: 100%` と背景色を付けてください([列の API の注意点](/docs/api/column))。`ctx.commit(value)` / `ctx.cancel()` で確定・キャンセルします。編集が終わった後(確定 / 取消 / 別のセルの編集が始まった後)に呼んだ前の編集の `ctx.commit` / `ctx.cancel` は何もしません(`ctx.commit` は `{ status: 'noop' }` を返します)。組み込みのエディタはフォーカスが外れたときに確定します。custom エディタも入力欄の `onBlur` で `ctx.commit(value)`(または `ctx.cancel()`)を呼んでください。呼ばないと、エディタを開いたままグリッドの中の別のセルや見出しを押したときにエディタが開いたまま残り、別のセルをダブルクリックするまでグリッドのキー操作が効きません。`onBlur` でサーバーの検査を待ってから `ctx.commit` を呼ぶ作りでも、値は編集していたセルに書かれます。同じ編集が続いている間は `render(ctx)` の部品を作り直しません(1.3.0 から。上に行が足されたときも)。 英字のキーで打ち始めたときはそのキーが `ctx.initialText` に入るので、入力欄の初期値にしてください。ダブルクリック / `Enter` / `F2` で開いたときの `ctx.initialText` はセルの値の文字(`String(value ?? '')`)です(打ち始めたときだけ使いたいなら `ctx.initialText !== String(ctx.value ?? '')` で見分けます)。グリッドの `imeDirectInput` を使うときは、エディタの定義に `imeDirectInput: true` を付けると IME で確定した文字も `ctx.initialText` に入ります(1.2.0 から。[キーボード / タッチ操作](/docs/guides/keyboard#ime-オンのまま打ち始めるimedirectinput))。
 
 ## 改行を含む値(`multiline`)
 
@@ -136,13 +136,23 @@ const deleteSelected = () => {
 };
 ```
 
+### 編集中に行が動いた・消えたとき
+
+編集していた行が並べ替えや上への行の追加で動いたときは、エディタも付いていきます(打ちかけはそのままで、custom エディタも作り直しません)。行が絞り込みから外れたとき(`rows` にはまだある。「今日」の絞り込みで日付が変わったときなど)は、打ちかけを確定してその行へ書き、フォーカスはグリッドに残ります(1.3.0 から)。
+
+- text / number / date のエディタは打ちかけを書きます。custom エディタは入力欄の `onBlur` で `ctx.commit` を呼んでいればその値を書き(絞り込みで表の行が減り、編集していた位置に行が残らないときは、`onBlur` より先にエディタが外れて書かれないことがあります)、select は取り消します。
+- 書けない行(`canEditCell` が `false`。渡す位置は外れる前の位置)と、検査で reject する値は書きません。
+- `rows` が別の行に替わって編集していた行が無くなったとき(行キーで探します)と serverSide では取り消します。
+
+1.2.x までは知らせずに編集を終え(打ちかけは捨てる)、フォーカスがページの `body` に落ちてキー操作が効きませんでした。
+
 ### 外から絶えず変わる表(ライブの更新)
 
 株価や在庫のように外から `rows` が絶えず変わる表は、更新を `applyRows(next, { undoable: false })` で渡します(1.1.0 から)。履歴に積まず、今の履歴も消さないので、利用者が直したメモを `Ctrl/Cmd+Z` で戻すと、その後の株価の更新は残ったままメモだけが元に戻ります(やり直すも同じ)。`rows` を作り直して `setRows` で渡すと履歴が消え、`undoable` を付けずに `applyRows` で渡すと更新の 1 つずつが履歴に積まれて `Ctrl/Cmd+Z` が株価を巻き戻します。
 
 `applyRows` は関数の形(`(prev) => next`)も受け取ります。`prev` は最後に渡した行なので、フィードのコールバックで最新の `rows` を ref に持たなくて済みます。行は `rowKeyGetter` で対応づけるので、行が増えたり消えたりする表では `rowKeyGetter` を書いてください(書かずに行の数が変わったときと、行キーが重なっているときは、1.0 と同じく編集の前の行をそのまま戻すので、外からの更新も戻ります)。
 
-```tsx
+```tsx tab="React"
 useEffect(() => {
   const unsubscribe = feed.subscribe((prices) => {
     gridRef.current?.applyRows(
@@ -155,6 +165,22 @@ useEffect(() => {
 
 <SpreadsheetGrid ref={gridRef} rows={rows} onRowsChange={setRows} rowKeyGetter={(row) => row.symbol} columns={columns} />
 ```
+```tsx tab="Solid"
+let grid!: SpreadsheetGridHandle<Quote>;
+
+// 返した関数(購読の解除)は、この部品を外したときに呼ばれる。
+onSettled(() =>
+  feed.subscribe((prices) => {
+    grid.applyRows(
+      (prev) => prev.map((row) => (prices[row.symbol] === undefined ? row : { ...row, price: prices[row.symbol] })),
+      { undoable: false },
+    );
+  }),
+);
+
+<SpreadsheetGrid ref={grid} rows={rows()} onRowsChange={(next) => setRows(next)} rowKeyGetter={(row) => row.symbol} columns={columns} />
+```
+
 
 並べ替えたまま値が変わる表(前日比の大きい順の株価ボードなど)では、既定ではアクティブセルが表示位置(何行目か)に残るので、銘柄が入れ替わるたびに別の銘柄を指します(Excel と同じ)。押した銘柄に付いていかせるには `activeCellFollows="row"` を書きます(1.2.0 から)。
 

@@ -21,6 +21,7 @@
 //   外へ出しません。ポップアップの root には pointer-events: auto を付けてあります(Mantine の inner は pointer-events: none)。
 
 import type { GridPopupContainer } from '../model/gridTypes.core';
+import { getShadowRoot } from './shadowDom';
 
 export type { GridPopupContainer };
 
@@ -91,6 +92,20 @@ export function findPopupHost(element: Element): HTMLElement | null {
   return isElementNode(host) ? escapeClippingHost(host) : null;
 }
 
+// 追加(1.3.0 / Solid 版の品質の段 2 S11-05): グリッドが Shadow root の中にあるときは、その Shadow root の直下の要素(グリッドを
+//   包む利用側の要素)へ描きます。body へ出すと Shadow root の中に入れたグリッドの CSS が効かず、ページの CSS がかかっていた。
+//   直下の要素がグリッド自身(.ssg-root)のときは使えないので null(body。popupContainer で渡す)。
+function findShadowPopupHost(element: Element): HTMLElement | null {
+  if (getShadowRoot(element) === null) {
+    return null;
+  }
+  let top: Element = element;
+  while (top.parentElement !== null) {
+    top = top.parentElement;
+  }
+  return isElementNode(top) && !top.matches('.ssg-root') ? top : null;
+}
+
 // 描く場所を決めます。グリッドの要素がまだ無いとき(描く前)は body。
 export function resolvePopupContainer(
   gridElement: HTMLElement | null | undefined,
@@ -109,7 +124,7 @@ export function resolvePopupContainer(
   if (option === 'body') {
     return body;
   }
-  return findPopupHost(gridElement) ?? body;
+  return findPopupHost(gridElement) ?? findShadowPopupHost(gridElement) ?? body;
 }
 
 // グリッドの要素ごとの「描く場所を返す関数」です(シェルが登録し、ツールチップとドラッグのゴーストが引く)。
@@ -144,7 +159,7 @@ export function getPopupContainerFor(element: Element | null | undefined): HTMLE
   if (!element) {
     return bodyOf(null);
   }
-  return findPopupHost(element) ?? bodyOf(element);
+  return findPopupHost(element) ?? findShadowPopupHost(element) ?? bodyOf(element);
 }
 
 // ポップアップの fixed の基準の原点(画面の座標)を測り、`translate` で打ち消します(上の「位置」)。描く場所が body なら

@@ -12,6 +12,7 @@ import { formatLocaleText } from '@ishibashi0112/spreadsheet-grid-core/internal/
 import { usePopupLocaleText } from '../context/localeText';
 import { createInputValue } from '../primitives/inputValue';
 import { DragHandleGlyph } from './DragHandleGlyph';
+import { getDeepActiveElement } from '@ishibashi0112/spreadsheet-grid-core/internal/utils/shadowDom';
 
 export type ColumnChooserItem = {
   key: string;
@@ -116,7 +117,7 @@ export function ColumnChooserPanel(props: ColumnChooserPanelProps) {
   // 開いている間にこのタブへ切り替えたとき(フォーカスがパネルの中にある)だけ、描いた後に検索欄へ。パネルの中にあるかは
   //   作った時点で見ます(パネルが開いたときのフォーカスの移動より前)。
   const focusSearchOnMount =
-    typeof document !== 'undefined' && document.activeElement?.closest('.ssg-toolpanel') != null;
+    typeof document !== 'undefined' && getDeepActiveElement()?.closest('.ssg-toolpanel') != null;
   let focusFrame: number | null = null;
   onSettled(() => {
     if (

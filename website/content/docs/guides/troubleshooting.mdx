@@ -1,6 +1,6 @@
 ---
 title: 困ったときは
-description: よくある質問(表が出ない・編集が残らない・元に戻せない・貼り付けた値が入らない・ダイアログの中でメニューが押せない・Next.js で 500 など)と、分かっている制限
+description: よくある質問(表が出ない・編集が残らない・元に戻せない・貼り付けた値が入らない・ダイアログや Shadow DOM の中でメニューが押せない・Next.js で 500 など)と、分かっている制限
 ---
 
 よく聞かれることと、今の版でできないことをまとめます。ここに無いことは [GitHub の Issues](https://github.com/ishibashi0112/datasheet-grid/issues) で聞いてください。
@@ -24,6 +24,21 @@ description: よくある質問(表が出ない・編集が残らない・元に
 ### ダイアログの中で列メニューやフィルターが隠れる / 押せない
 
 グリッドのポップアップ(列メニュー・列フィルター・右クリックメニュー・select の候補など)は、既定でグリッドを囲むダイアログ(`<dialog>` / `popover` 属性の要素 / `role="dialog"` / `aria-modal="true"` など)の中に出ます(1.1.0 から。1.0.x では `document.body` の直下に出て、モーダルの後ろに隠れたり押せなかったりしました)。ダイアログにその目印が無いときや、別の場所に出したいときは `popupContainer` で場所を渡します([ダイアログの中で使う](/docs/guides/dialogs))。
+
+### Shadow DOM(Web Components)の中でメニューに見た目が付かない
+
+Shadow root の外の CSS は中に届かないので、`style.css` を Shadow root の中に入れます(`<style>` か `adoptedStyleSheets`)。ポップアップは既定で、Shadow root の直下でグリッドを包む要素の中に出ます(1.3.0 から。1.2.x では `document.body` の直下に出て、見た目が付かず、ツールチップやメニューの ↑↓ も効きませんでした)。グリッドは Shadow root の直下に置かず、要素で包んでください。open の Shadow root を使います([API リファレンスの「Shadow DOM の中のグリッド」](/docs/api/props#shadow-dom-の中のグリッド))。
+
+### ページの文字が大きいと、セルの中身が切れる / 見出しと大きさが違う
+
+セル・上下のバー・ポップアップの文字は、ページの `font-size` / `line-height` / `font-family` を受け継ぎます。列見出しやメニューの項目などは px で決めていて、行の高さは `rowHeight` で決まるので、ページの文字が大きいとセルの中身が切れます。ページの指定に引きずられたくないときは、グリッドで決めます。
+
+```css
+.ssg-root {
+  font-size: 13px;
+  line-height: normal;
+}
+```
 
 ### Tailwind のクラスを `classNames` に渡しても既定の見た目が変わらない
 
@@ -112,4 +127,5 @@ jsdom はレイアウトを計算しないので、グリッドの見える大�
 - **行の移動のアニメーション**(`animateRows`)は、`autoHeight` の行と serverSide では自動で止まります。
 - **大きさ**: clientSide で約 100 万行までです。行数 × 行の高さが 15,000,000px を超えると、ブラウザの要素の高さの上限に収めるため、スクロールの位置を縮めて写します。全行の並べ替えと CSV の書き出しは時間を分けないので、100 万行では待ち時間が出ます([大量データ](/docs/guides/large-data))。
 - **サーバーの描画**は表の骨組みだけで、JavaScript が動かない環境では表の中身は出ません。
+- **iframe**: iframe の中のページでグリッドを描くのはかまいません。親のページから同じオリジンの iframe の `document` へ描く形(react-frame-component のような形)には対応しません(グリッドは描いたスクリプトの `window` で押下やキーを聞くので、列の幅のドラッグ・フィルハンドル・ツールチップ・メニューの ↑↓ と `Escape` が効きません)。
 - **対応ブラウザ**は Chrome / Edge 111 以上、Firefox 121 以上、Safari 16.4 以上です。Firefox では、カスタムの縦スクロールバー(`scrollHint`)を使っても、ブラウザの縦スクロールバーが残ります。

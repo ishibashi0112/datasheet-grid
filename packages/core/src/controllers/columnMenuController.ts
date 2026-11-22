@@ -15,9 +15,11 @@ import {
   focusPanelIfIdle,
   handleMenuKeyNavigation,
   isInsideGridRoot,
+  isFocusInPopupOpenedFromMenu,
   restoreGridFocus,
   type ReadonlyElementRef,
 } from './popoverSupport';
+import { getActiveElement } from '../utils/shadowDom';
 
 export type ColumnMenuLayout = {
   top: number;
@@ -171,7 +173,8 @@ export const createColumnMenuController = <T,>(): ColumnMenuController<T> => {
     clearOpenState();
     anchorButton = null;
     anchorPoint = null;
-    if (args !== null && restoreFocus) {
+    // 変更(1.3.0 の確かめ直し): 項目が開いたツールパネル / 列フィルターにあるフォーカスは動かしません。
+    if (args !== null && restoreFocus && !isFocusInPopupOpenedFromMenu(args.gridRootRef)) {
       restoreGridFocus(args.gridRootRef);
     }
   };
@@ -200,6 +203,8 @@ export const createColumnMenuController = <T,>(): ColumnMenuController<T> => {
     // 追加(段階 2 DF-23): グリッドが隠れたら閉じます(隠れたグリッドへフォーカスは戻さない)。
     getGridRoot: () => args?.gridRootRef.current ?? null,
     onGridHidden: () => closeWith(false),
+    // 追加(1.3.0 / S6-21): 別のグリッドのポップアップが開いたら閉じます(押した先にフォーカスを残す)。
+    onOtherGridPopupOpen: () => closeWith(false),
     onKeyDown: (event) => {
       if (event.key === 'Escape') {
         event.preventDefault();
@@ -212,7 +217,7 @@ export const createColumnMenuController = <T,>(): ColumnMenuController<T> => {
       if (!panel || handleMenuKeyNavigation(panel, event, COLUMN_MENU_ITEM)) {
         return;
       }
-      const active = document.activeElement;
+      const active = getActiveElement(panel);
       if (
         event.key === 'Tab' &&
         active instanceof HTMLElement &&

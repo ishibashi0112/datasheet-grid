@@ -351,3 +351,22 @@ export const n = Number(params.get('n') ?? (scenario === 'big' ? 1_000_000 : sce
 export const strict = params.get('strict') === '1';
 // 追加(英語対応): ?lang=en で英語の文言(localeTextEn)。
 export const lang = params.get('lang');
+// 追加(1.3.0 / Solid 版の品質の段 2 S11-01〜05): ?s=shadow はグリッドを open の Shadow root の中に描く(t-shadow.mjs)。
+//   CSS は Shadow root の中の <style>(外の CSS は中に届かない)、グリッドは Shadow root の直下の要素(.shadow-app)で包む。
+//   ページ全体の style.css(main.tsx の import)は Shadow root の中には効かない。
+export function mountPoint(shadowCss: string): HTMLElement {
+  const root = document.getElementById('root')!;
+  if (scenario !== 'shadow') {
+    return root;
+  }
+  const host = document.createElement('div');
+  host.setAttribute('data-testid', 'shadow-host');
+  root.appendChild(host);
+  const shadow = host.attachShadow({ mode: 'open' });
+  const style = document.createElement('style');
+  style.textContent = shadowCss;
+  const app = document.createElement('div');
+  app.className = 'shadow-app';
+  shadow.append(style, app);
+  return app;
+}

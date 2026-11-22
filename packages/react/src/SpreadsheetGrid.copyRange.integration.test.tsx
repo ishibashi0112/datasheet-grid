@@ -116,3 +116,25 @@ describe('motion-4: コピー範囲の動く点線(showCopyRange)', () => {
     expect(overlays()).toHaveLength(0);
   });
 });
+
+// 追加(1.3.0 / Solid 版の品質の段 2 S9-02): 範囲の選択が無いときの Ctrl+C はアクティブセルの 1 セルをコピーする。
+describe('S9-02: 1 セルを選んで Escape を押した後の Ctrl+C', () => {
+  it('選択が外れても(見た目は同じ)アクティブセルをコピーし、点線を出す', async () => {
+    const ref = createRef<SpreadsheetGridHandle<Row>>();
+    const { container } = render(<SpreadsheetGrid<Row> ref={ref} rows={rows} columns={columns} />);
+    act(() => {
+      ref.current?.selectCell(1, 1);
+    });
+    act(() => {
+      fireEvent.keyDown(shell(container), { key: 'Escape' });
+    });
+    expect(ref.current?.getSelection()).toBeNull();
+    await act(async () => {
+      fireEvent.keyDown(shell(container), { key: 'c', ctrlKey: true });
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    expect(writeText).toHaveBeenCalledWith('12');
+    expect(overlays().length).toBeGreaterThan(0);
+  });
+});

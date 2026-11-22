@@ -40,7 +40,9 @@
     "**/*.css"
   ],
   "files": [
-    "dist"
+    "dist",
+    "API_REFERENCE.md",
+    "skills"
   ],
   "exports": {
     ".": "./src/index.ts",
@@ -123,7 +125,7 @@
   "scripts": {
     "dev": "vp dev --config vite.config.ts",
     "build:demo": "vp build --config vite.config.ts",
-    "build:lib": "vp build --config vite.lib.config.ts && node scripts/build-source.mjs && tsc -p tsconfig.lib.json && node ../../scripts/fix-dts-extensions.mjs dist && node scripts/emit-css.mjs",
+    "build:lib": "vp build --config vite.lib.config.ts && node scripts/build-source.mjs && tsc -p tsconfig.lib.json && node ../../scripts/fix-dts-extensions.mjs dist && node scripts/emit-css.mjs && node scripts/emit-docs.mjs",
     "prepublishOnly": "pnpm run build:lib",
     "test": "vitest run --config vitest.config.ts",
     "test:ssr": "vitest run --config ssr/vitest.config.ts",

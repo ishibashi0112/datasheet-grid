@@ -45,7 +45,7 @@ const SELECT_PAGE_STEP = 8;
 type SelectCellEditorProps = {
   // 追加(1.0.1 / 2026-11-09 実アプリの総点検 AP-34): 入力欄の読み上げの名前(「(列名) を編集」。枠の group と同じ)。
   ariaLabel?: string;
-  options: GridSelectEditorOption[];
+  options: readonly GridSelectEditorOption[];
   // 編集開始時のセル生値です(初期ハイライトの解決に使用)。
   value: unknown;
   onCommit: (
@@ -53,6 +53,8 @@ type SelectCellEditorProps = {
     direction?: EditorCommitDirection,
   ) => EditorCommitResult | void;
   onCancel: () => void;
+  // 追加(1.3.0 / S7-03 / S8-04): 打ちかけを確定する関数を預ける先。select は預けません(null。前のエディタの関数を残さない)。
+  onRegisterFlush?: ((flush: (() => void) | null) => void) | undefined;
   align?: 'left' | 'center' | 'right';
   // ポータル root へ直接付与するテーマ修飾子('ssg-theme-dark' | 'ssg-theme-class' | undefined)です。
   themeClassName?: string;
@@ -64,6 +66,9 @@ type SelectCellEditorProps = {
   //   使い、label がその文字列で始まる最初の候補をハイライトします(一致が無ければ現在値のまま)。
   initialText?: string;
   // 追加(1.2.0): セルの高さと、上にそろえて描かれているか(背の高い行の 1 行のエディタの文字をセルの 1 行目にそろえる)。
+  // 追加(1.3.0 / S8-05): 編集しているセルの置き場所(ペインの中の座標)。開いたまま並びが変わって動いたら候補の一覧を測り直します。
+  cellTop?: number;
+  cellLeft?: number;
   cellHeight?: number;
   alignTop?: boolean;
 };
@@ -74,6 +79,7 @@ export function SelectCellEditor({
   value,
   onCommit,
   onCancel,
+  onRegisterFlush,
   align,
   themeClassName,
   popoverSlot,
@@ -81,11 +87,16 @@ export function SelectCellEditor({
   initialText,
   cellHeight = 0,
   alignTop = false,
+  cellTop = 0,
+  cellLeft = 0,
 }: SelectCellEditorProps) {
   // 追加(英語対応): 文言(localeText)。
   const texts = useGridLocaleText();
   const inputRef = useRef<HTMLInputElement | null>(null);
   useTopAlignedInput(inputRef, alignTop, cellHeight);
+  useIsomorphicLayoutEffect(() => {
+    onRegisterFlush?.(null);
+  }, [onRegisterFlush]);
   const listRef = useRef<HTMLDivElement | null>(null);
   // 追加(1.0.1 / AP-34): 候補の一覧と候補の id(aria-controls / aria-activedescendant)。
   const listId = useId();
@@ -159,6 +170,29 @@ export function SelectCellEditor({
       window.removeEventListener('scroll', update, true);
     };
   }, [options.length, optionRowHeight]);
+
+  // 追加(1.3.0 / S8-05): 開いたまま並びが変わってセルが動いたら(applyState でソートを外す・URL の戻る など。スクロールは
+  //   上の scroll で測る)、候補の一覧を測り直してエディタに付いていかせます(元の位置に残ってエディタに重なっていた)。
+  //   最初の位置は ref のコールバックが測ります。
+  const lastCellPosition = useRef<string | null>(null);
+  useIsomorphicLayoutEffect(() => {
+    const position = `${cellTop}:${cellLeft}`;
+    const previous = lastCellPosition.current;
+    lastCellPosition.current = position;
+    const element = inputRef.current;
+    if (previous === null || previous === position || !element) {
+      return;
+    }
+    setPlacement(
+      computeSelectPopoverPlacement(
+        element.getBoundingClientRect(),
+        options.length,
+        window.innerWidth,
+        window.innerHeight,
+        optionRowHeight,
+      ),
+    );
+  }, [cellTop, cellLeft, options.length, optionRowHeight]);
 
   // ハイライト移動時に候補を可視範囲へスクロールします(jsdom は scrollIntoView 未実装のため
   //   optional call)。

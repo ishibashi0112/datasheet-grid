@@ -18,7 +18,6 @@ import { isServer } from '@solidjs/web';
 import type {
   CellCoord,
   CellDetailContext,
-  CellRenderContext,
   EditorCommitDirection,
   GridLabelRow,
   GridRowKey,
@@ -79,12 +78,14 @@ import {
 import type { StickyTopInset } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/scrollTargets';
 import {
   DEFAULT_DETAIL_ROW_HEIGHT,
+  DETAIL_TOGGLE_COLUMN_KEY,
   isControlColumnKey,
   isDetailRowExpandable,
   isInsideDetailCardOf,
   isSyntheticColumnKey,
   resolveFirstDataColIndex,
 } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/detailRow';
+import { resolveDataRowNumber } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/labelRows';
 import {
   createSelectedRowsInOrderCounter,
   getSelectAllState,
@@ -167,12 +168,9 @@ const EMPTY_ROWS: never[] = [];
 const NEVER_EDITABLE = () => false;
 const NO_COLUMNS: never[] = [];
 const NO_COLUMN_FILTERS: Record<string, never> = {};
-// 展開トグル列(合成列)のセル。開閉できる行だけ ▸ / ▾ を出します(React 版の renderDetailToggleCell と同じ)。
-const renderDetailToggleCell = (ctx: CellRenderContext<unknown>): JSX.Element => (
-  <Show when={ctx.detail?.expandable === true}>
-    <DetailToggleButton detail={ctx.detail as CellDetailContext} />
-  </Show>
-);
+// 展開トグル列(合成列)の列定義の renderCell は印として置くだけで、ボタンは renderCellContent が描きます(読み上げの名前に
+//   行見出しと同じ番号を入れるため。番号はラベル行を数えないので行の並びが要る。React 版の renderDetailToggleCell と同じ)。
+const renderDetailToggleCell = (): JSX.Element => null;
 const noop = () => {};
 // 追加(段階 3-3 のレビュー): ref(solid-js の Ref)へハンドルを渡します。関数はそのまま呼び、配列は中の関数を順に呼ぶ
 //   (@solidjs/web の applyRef と同じ。変数の ref はコンパイラが代入の関数に書き換えて渡す)。関数でない値は何もしない。
@@ -1213,7 +1211,7 @@ function GridShellBody<T extends object>(
   const cellEditorDomId = `${gridDomId}-cell-editor`;
   let tooltipController: TooltipController | null = null;
   onGridMounted(() => {
-    const controller = acquireTooltipController();
+    const controller = acquireTooltipController(undefined, gridRootRef.current);
     tooltipController = controller;
     controller.setSlot(untrack(slots).tooltip);
     return () => {
@@ -1337,6 +1335,8 @@ function GridShellBody<T extends object>(
     controlledRowSelectionModel: controlledRowSelectionModel(),
     leafRowCount: leafRowCount(),
     filteredDataRows: filteredDataRows(),
+    // 追加(Solid 版 0.1.2 / S4-09): 選んだ行が rows から消えたら選択から外す(clientSide。React 版と同じ)。
+    sourceRows: isServerSide() ? undefined : { rows: rows(), rowKeyGetter: resolvedRowKeyGetter() },
     dispatch,
   }), 'render', 'rowSelectionCommands');
 
@@ -1914,6 +1914,8 @@ function GridShellBody<T extends object>(
   const keyboard = createKeyboardController<T>();
   connectController(keyboard, () => ({
     uiState: ui(),
+    // 端の固定列へ移ったときに中央の横のスクロールを端へ戻す(S12-05。React 版と同じ)。
+    scrollContainerRef,
     // イベントの時点の状態は store から読む(core controllers/liveUiState)。
     getUiState: store.getState,
     rowModel: rowModel(),
@@ -1958,6 +1960,8 @@ function GridShellBody<T extends object>(
     canEditCell: canEditCell(),
     localeTexts: localeTexts(),
     followsRow: activeRowFollowEnabled(),
+    getUiState: store.getState,
+    rowKeyGetter: resolvedRowKeyGetter(),
   }), 'render', 'edit');
   connectController(cells, () => ({
     rows: rows(),
@@ -2088,6 +2092,8 @@ function GridShellBody<T extends object>(
     columnWidths: paneResolution().effectiveColumnWidths,
     onColumnsChange: inOwnTick(props.onColumnsChange),
     dispatch,
+    // 列を変えた後、アクティブセルを列のキーに付いていかせる(S12-01。React 版と同じ)。
+    getUiState: store.getState,
     enableSorting: enableSorting(),
     sort: ui().sort,
     globalFilterText: selectGlobalFilter(ui()),
@@ -2799,6 +2805,18 @@ function GridShellBody<T extends object>(
         toggle: () => detailRows.toggleAt(cell.rowKey, untrack(() => cell.rowIndex)),
         setExpanded: (expanded: boolean) => detailRows.setExpandedAt(cell.rowKey, untrack(() => cell.rowIndex), expanded),
       };
+      // 展開トグル列(合成列)。開閉できる行だけ ▸ / ▾ を出し、読み上げの名前は「行 7 の詳細を開く」(行見出しと同じ番号)。
+      if (column.key === DETAIL_TOGGLE_COLUMN_KEY) {
+        const rowNumber = () => {
+          const indexes = labelViewIndexes();
+          return indexes ? resolveDataRowNumber(indexes, cell.rowIndex) : cell.rowIndex + 1;
+        };
+        return (
+          <Show when={expandable()}>
+            <DetailToggleButton detail={detail} rowNumber={rowNumber()} />
+          </Show>
+        );
+      }
       return column.renderCell({
         row,
         get rowIndex() {
@@ -3126,6 +3144,7 @@ function GridShellBody<T extends object>(
             slots={slots()}
             onCommit={(value: unknown, direction?: EditorCommitDirection) => edit.commitEdit(value, direction)}
             onCancel={edit.cancelEdit}
+            onRegisterFlush={edit.registerDraftFlush}
             align={editingColumn()?.align}
             enterMove={props.editorEnterMove}
             domId={cellEditorDomId}
@@ -3399,7 +3418,9 @@ function GridShellBody<T extends object>(
             class="ssg-tab-exit"
             // Tab の順番に入れるのは展開行のカードが描かれているときだけ(段階 2 C-N2)。
             tabindex={hasDetailCards() ? 0 : -1}
-            aria-hidden="true"
+            // Tab の順番に入れている間は aria-hidden を付けない(フォーカスできる要素を隠すと読み上げで迷う。1.3.0 / S6-02)。
+            //   中身は空で、フォーカスが来たらすぐ表の外へ移す。
+            aria-hidden={hasDetailCards() ? undefined : 'true'}
             onFocus={(event) => detailRows.handleTableExitFocus(event.relatedTarget)}
           />
           <Show when={scrollHintFeature !== undefined && activeScrollHint()}>

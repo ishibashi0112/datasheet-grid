@@ -54,6 +54,22 @@ describe('FilterDateField の自由入力', () => {
     expect(getInput().getAttribute('aria-invalid')).toBeNull();
   });
 
+  // 追加(1.3.0 / S8-02): セルの date エディタに打ったときと同じく、全角・年月日・ドットの書き方も読みます。
+  it.each([
+    ['２０２６／１１／２０', '2026-11-20'],
+    ['2026年11月21日', '2026-11-21'],
+    ['２０２６－１１－２２', '2026-11-22'],
+    ['2026.11.23', '2026-11-23'],
+    ['2026/11/24', '2026-11-24'],
+  ])('「%s」を %s として確定する', (text, expected) => {
+    const props = makeProps();
+    render(<FilterDateField {...props} />);
+    fireEvent.change(getInput(), { target: { value: text } });
+    fireEvent.keyDown(getInput(), { key: 'Enter' });
+    expect(props.onCommit).toHaveBeenCalledWith(expected);
+    expect(getInput().getAttribute('aria-invalid')).toBeNull();
+  });
+
   it('Escape はカレンダー非表示なら popover close を要求する', () => {
     const props = makeProps();
     render(<FilterDateField {...props} />);

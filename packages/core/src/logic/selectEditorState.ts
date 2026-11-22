@@ -20,7 +20,7 @@ export const SELECT_TYPEAHEAD_RESET_MS = 700;
 // 現在のセル値に一致する候補を初期ハイライトにします(一致なしは先頭 0)。
 //   候補 value は string 固定のため、セル生値は String 化して比較します。
 export const resolveInitialHighlight = (
-  options: GridSelectEditorOption[],
+  options: readonly GridSelectEditorOption[],
   currentValue: unknown,
 ): number => {
   const current = String(currentValue ?? '');
@@ -64,7 +64,7 @@ export const typeaheadJump = (
   state: SelectTypeaheadState,
   key: string,
   now: number,
-  options: GridSelectEditorOption[],
+  options: readonly GridSelectEditorOption[],
 ): { state: SelectTypeaheadState; index: number | null } => {
   const shouldReset = now - state.lastInputTime > SELECT_TYPEAHEAD_RESET_MS;
   const buffer = (shouldReset ? '' : state.buffer) + key.toLocaleLowerCase();
@@ -127,7 +127,7 @@ const foldComposedText = (text: string): string =>
     .replace(/\u3000/g, ' ')
     .toLocaleLowerCase();
 export const findOptionByComposedText = (
-  options: GridSelectEditorOption[],
+  options: readonly GridSelectEditorOption[],
   text: string,
 ): number | null => {
   const query = foldComposedText(text).trim();
@@ -209,7 +209,7 @@ export const moveSelectHighlight = (key: string, current: number, optionCount: n
 // 開いたときのハイライトとタイプアヘッドの状態(React 版の SelectCellEditor と同じ。React 版は大きさのため展開したまま)。印字キー / IME 確定で編集を始めたとき(initialText)は、タイプアヘッドを
 //   1 回適用した状態から始めます(続けて打つと前方一致を伸ばせるよう、バッファも引き継ぐ。audit RD-9)。一致が無ければ今の値。
 export const resolveSelectEditorStart = (
-  options: GridSelectEditorOption[],
+  options: readonly GridSelectEditorOption[],
   value: unknown,
   initialText: string | undefined,
   now: number,

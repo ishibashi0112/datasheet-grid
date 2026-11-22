@@ -5,19 +5,16 @@
 //   (createSpreadsheetGrid)、ブラウザ標準のメニューのままです。
 import { CellContextMenuPopover } from '../view/CellContextMenuPopover';
 import { useCellContextMenuController } from '../hooks/useCellContextMenuController';
+// 変更(1.3.0 / Solid 版の品質の段 2-9): params を作る処理は core(Solid 版と同じ処理)。
 import {
-  resolveContextMenuColIndex,
-  isContextMenuCellSelected,
-  isContextMenuRowSelected,
+  buildBodyContextMenuParams,
+  buildCellContextMenuParams,
 } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/contextMenuTarget';
-import { getCellValue } from '@ishibashi0112/spreadsheet-grid-core/internal/utils/permissions';
 // 追加(1.2.0 / RV3-H2): メニューの読み上げの名前の既定(機能の localeText でシェルが埋める)。
 import { DEFAULT_CONTEXT_MENU_LOCALE_TEXT } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/localeTextFeatures';
 import type { FeatureLocaleText } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/localeText';
-import type { GridContextMenuItem, GridContextMenuParams, GridContextMenuTarget } from '../model/gridTypes';
+import type { GridContextMenuItem } from '../model/gridTypes';
 import type {
-  BodyContextMenuInput,
-  CellContextMenuInput,
   CellContextMenuFeatureArgs,
   CellContextMenuFeatureResult,
   GridFeature,
@@ -63,105 +60,6 @@ const useCellContextMenuFeature = <T,>({
         }
       />
     ),
-  };
-};
-
-// 右クリックの対象(セル / 行番号のガター)を DOM(data-row-index / data-ssg-col-key)から逆引きし、メニューへ渡す
-//   params を作ります。開かないとき(ヘッダー / SSRM 未ロード行 / 範囲外)は null(ブラウザ標準メニューへ)。
-const buildBodyContextMenuParams = <T,>({
-  event,
-  rowModel,
-  orderedColumns,
-  selection,
-  activeCell,
-}: BodyContextMenuInput<T>): GridContextMenuParams<T> | null => {
-  const targetEl = event.target as HTMLElement | null;
-  if (!targetEl) {
-    return null;
-  }
-  // ボディ行コンテナ(行NO ガター含む)。ヘッダーはこれを持たないため null → 早期 return。
-  const rowEl = targetEl.closest<HTMLElement>('[data-row-index]');
-  if (!rowEl) {
-    return null;
-  }
-  const rowIndexRaw = rowEl.dataset.rowIndex;
-  if (rowIndexRaw === undefined) {
-    return null;
-  }
-  const rowIndex = Number(rowIndexRaw);
-  if (!Number.isInteger(rowIndex)) {
-    return null;
-  }
-  const row = rowModel.getRow(rowIndex);
-  // SSRM 未ロード / OOB は開きません(標準メニューへ)。
-  if (!row) {
-    return null;
-  }
-  const rowKey = rowModel.getRowKey(rowIndex) ?? rowIndex;
-
-  // セル(data-ssg-col-key あり)か、行NO ガター(なし)かで target を分けます。
-  const cellEl = targetEl.closest<HTMLElement>('[data-ssg-col-key]');
-  const colKey = cellEl?.dataset.ssgColKey;
-  if (cellEl && colKey !== undefined) {
-    const colIndex = resolveContextMenuColIndex(orderedColumns, colKey);
-    if (colIndex < 0) {
-      return null;
-    }
-    return buildCellContextMenuParams({
-      cell: { row: rowIndex, col: colIndex },
-      clientX: event.clientX,
-      clientY: event.clientY,
-      rowModel,
-      orderedColumns,
-      selection,
-      activeCell,
-    });
-  }
-  const target: GridContextMenuTarget<T> = { type: 'rowHeader', rowIndex, rowKey, row };
-  return {
-    target,
-    clientX: event.clientX,
-    clientY: event.clientY,
-    selection,
-    activeCell,
-    isTargetSelected: isContextMenuRowSelected(selection, rowIndex),
-  };
-};
-
-// 追加(1.1.0 / 2026-11-09 実アプリの総点検 AP-33): セルの座標から params を作ります(右クリックのセルと、キーボードで開く
-//   アクティブセルで共通)。行が無い(SSRM の未ロード行・グループ行・ラベル行・範囲外)ときは null(開かない)。
-const buildCellContextMenuParams = <T,>({
-  cell,
-  clientX,
-  clientY,
-  rowModel,
-  orderedColumns,
-  selection,
-  activeCell,
-}: CellContextMenuInput<T>): GridContextMenuParams<T> | null => {
-  const rowIndex = cell.row;
-  const colIndex = cell.col;
-  const row = rowModel.getRow(rowIndex);
-  const column = orderedColumns[colIndex];
-  if (!row || !column) {
-    return null;
-  }
-  const rowKey = rowModel.getRowKey(rowIndex) ?? rowIndex;
-  return {
-    target: {
-      type: 'cell',
-      rowIndex,
-      colIndex,
-      rowKey,
-      row,
-      column,
-      value: getCellValue(row, column),
-    },
-    clientX,
-    clientY,
-    selection,
-    activeCell,
-    isTargetSelected: isContextMenuCellSelected(selection, rowIndex, colIndex),
   };
 };
 

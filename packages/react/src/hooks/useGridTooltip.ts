@@ -8,18 +8,19 @@ import {
 } from '@ishibashi0112/spreadsheet-grid-core/internal/controllers/tooltipController';
 import type { GridResolvedSlot } from '../model/gridTypes';
 
-export function useGridTooltip(slot?: GridResolvedSlot) {
+// 変更(1.3.0 / S11-01): グリッドの要素を渡します(Shadow root の中なら、その Shadow root にもリスナーを付ける)。
+export function useGridTooltip(slot?: GridResolvedSlot, rootRef?: { readonly current: Element | null }) {
   const controllerRef = useRef<TooltipController | null>(null);
 
   // マウントで参照を 1 つ取得し、アンマウントで返します(StrictMode の二重実行でも対称)。
   useEffect(() => {
-    const controller = acquireTooltipController();
+    const controller = acquireTooltipController(undefined, rootRef?.current ?? null);
     controllerRef.current = controller;
     return () => {
       controller.dispose();
       controllerRef.current = null;
     };
-  }, []);
+  }, [rootRef]);
 
   // スロット変更の反映(マウント直後も上の effect の後に走ります)。
   useEffect(() => {

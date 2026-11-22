@@ -440,3 +440,32 @@ describe('右クリックメニューから編集を始める(AP-10)', () => {
     expect(document.activeElement).toBe(editor);
   });
 });
+// 追加(1.3.0 / RV5-3): エディタを開いたまま別のセルを押し、確定の後処理(次のフレーム)の前に打ち始めると、後処理が
+//   始まったばかりのエディタからフォーカスを奪い(ルートへ戻す)、続けて打った文字が捨てられていた(先頭の文字しか残らない)。
+describe('RV5-3: エディタを開いたまま別のセルを押し、次のフレームの前に打つ', () => {
+  it('新しいエディタはフォーカスを保ち、続けて打った文字と Enter の確定が効く', async () => {
+    const { container } = renderGrid(false);
+    startEditing(container, 0, 0, 'first');
+    act(() => {
+      clickCell(getCell(container, 2, 1)); // 前のエディタの blur で確定(後処理は次のフレーム)
+    });
+    act(() => {
+      fireEvent.keyDown(document.activeElement!, { key: 'x' }); // 次のフレームの前に打ち始める
+    });
+    const editor = container.querySelector<HTMLInputElement>('.ssg-cell-editor-input');
+    expect(editor?.value).toBe('x');
+    expect(document.activeElement).toBe(editor);
+    await act(async () => {
+      await nextFrame();
+    });
+    expect(document.activeElement).toBe(editor);
+    fireEvent.change(editor!, { target: { value: 'xyz' } });
+    await act(async () => {
+      fireEvent.keyDown(editor!, { key: 'Enter' });
+      await nextFrame();
+    });
+    expect(currentRows[0]?.name).toBe('first');
+    expect(currentRows[2]?.memo).toBe('xyz');
+    expect(container.querySelector('.ssg-cell-editor-input')).toBeNull();
+  });
+});

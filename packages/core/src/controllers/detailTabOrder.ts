@@ -5,6 +5,7 @@
 //   表の外へ出すときは、keydown の既定動作の前にフォーカスを表の直後の目印(シェルの中、スクロールコンテナの直後)へ
 //   移し、既定動作をそこから進めます(既定動作は今のフォーカスの位置から次へ進む。imeInputController と同じ手法)。
 import { isInsideDetailCardOf } from '../logic/detailRow';
+import { getActiveElement } from '../utils/shadowDom';
 
 const TABBABLE_SELECTOR = [
   'a[href]',
@@ -62,5 +63,5 @@ export const focusDetailCardEdge = (card: Element, edge: 'first' | 'last'): bool
     return false;
   }
   target.focus();
-  return document.activeElement === target;
+  return getActiveElement(target) === target;
 };

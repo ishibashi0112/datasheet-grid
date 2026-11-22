@@ -593,3 +593,116 @@ describe('編集を確定した後のフォーカス(editFocus)', () => {
     });
   });
 });
+// 追加(React 版 1.3.0 / Solid 版 0.1.2、品質の段 2 S5-02): 日付のプリセットのチップを押すと日付の入力欄が消え、フォーカスが
+//   body へ落ちて Escape でポップオーバーが閉じなかった。チップへフォーカスを置く(core controllers/popoverSupport の
+//   keepFocusAfterPress)。
+describe('日付のプリセットを押した後のフォーカス(S5-02)', () => {
+  it('入力欄にフォーカスがあるままチップを押すとチップへ移り、Escape で閉じる', async () => {
+    await expectParity({
+      features: ['filtering', 'columnMenu'],
+      props: () => ({
+        rows: makeRows(5),
+        columns: [
+          { key: 'name', title: '名前', width: 160 },
+          { key: 'day', title: '日付', width: 140, filterType: 'dateSet' },
+        ],
+        rowKeyGetter: (row: Row) => row.id,
+        enableColumnFilter: true,
+      }),
+      steps: async (ctx) => {
+        await openFilter(ctx, 'day');
+        const input = document.querySelector<HTMLInputElement>('.ssg-filter-popover .ssg-dp-input');
+        await ctx.act(() => {
+          input?.focus();
+        });
+        if (document.activeElement !== input) {
+          throw new Error(`[${ctx.framework}] 日付の入力欄にフォーカスがありません`);
+        }
+        ctx.snapshot('日付の入力欄にフォーカス');
+        const chip = document.querySelector<HTMLButtonElement>('.ssg-filter-popover .ssg-filter-preset-chip');
+        await ctx.act(() => {
+          if (chip) {
+            fireEvent.pointerDown(chip, pointer);
+            fireEvent.pointerUp(chip, pointer);
+          }
+        });
+        if (document.activeElement !== chip) {
+          throw new Error(`[${ctx.framework}] チップへフォーカスが移っていません: ${document.activeElement?.tagName}`);
+        }
+        ctx.snapshot('チップを押した(入力欄は消え、フォーカスはチップ)');
+        await keyOn(ctx, focused(), { key: 'Escape' });
+        if (document.querySelector('.ssg-filter-popover') !== null) {
+          throw new Error(`[${ctx.framework}] Escape で閉じていません`);
+        }
+        ctx.snapshot('Escape で閉じた');
+      },
+    });
+  }, 30_000);
+});
+// 追加(React 版 1.3.0 / Solid 版 0.1.2、品質の段 2 の確かめ直し): 右クリックメニューの項目の onSelect でツールパネルを開くと、
+//   Solid 版ではパネルのタブへ移ったフォーカスを、続けて閉じたメニューの「グリッドへ戻す」が奪っていた(Solid 版は利用者の
+//   onSelect を自分のフレームで呼ぶ = 0.1.1 の S4-21 の修正 = ので、閉じる前にパネルが描かれる。React 版は開いた後の effect で
+//   移すので閉じた後になる)。メニューを閉じるときは、項目が開いたツールパネル / 列フィルターにあるフォーカスを動かさない
+//   (core controllers/popoverSupport の isFocusInPopupOpenedFromMenu)。
+describe('メニューの項目から開いたツールパネルのフォーカス', () => {
+  it('右クリックメニューの項目の onSelect で開いたツールパネル・列メニューの「並び替えを管理…」で開いたツールパネルはタブにフォーカス', async () => {
+    let current: ParityContext | null = null;
+    await expectParity({
+      features: ['filtering', 'columnMenu', 'contextMenu', 'toolPanel'],
+      props: () => ({
+        rows: makeRows(3),
+        columns: [
+          { key: 'name', title: '名前', width: 160, filterType: 'set' },
+          { key: 'qty', title: '数量', width: 100 },
+        ],
+        rowKeyGetter: (row: Row) => row.id,
+        enableColumnFilter: true,
+        enableContextMenu: true,
+        getContextMenuItems: () => [
+          {
+            kind: 'action',
+            id: 'filters',
+            label: 'フィルターを管理',
+            onSelect: () => {
+              if (current) {
+                call(current, 'openFilterManager');
+              }
+            },
+          },
+        ],
+      }),
+      steps: async (ctx) => {
+        current = ctx;
+        try {
+          await clickCell(ctx, 0, 'name');
+          await keyOn(ctx, ctx.shell(), { key: 'F10', shiftKey: true });
+          ctx.snapshot('右クリックメニューを開いた');
+          await ctx.act(() => {
+            const item = menuItem('フィルターを管理');
+            if (!item) {
+              throw new Error(`[${ctx.framework}] 「フィルターを管理」がありません`);
+            }
+            fireEvent.click(item, { detail: 1 });
+          }, 100);
+          ctx.snapshot('右クリックメニューの項目でツールパネルを開いた(フォーカスはタブ)');
+          await keyOn(ctx, null, { key: 'Escape' });
+          ctx.snapshot('ツールパネルの Escape(フォーカスはグリッド)');
+
+          await pressColumnMenu(ctx, 'qty');
+          await ctx.act(() => {
+            const item = menuItem('並び替えを管理…');
+            if (!item) {
+              throw new Error(`[${ctx.framework}] 「並び替えを管理…」がありません`);
+            }
+            fireEvent.click(item, { detail: 1 });
+          }, 100);
+          ctx.snapshot('列メニューの項目でツールパネルを開いた(フォーカスはタブ)');
+          await keyOn(ctx, null, { key: 'Escape' });
+          ctx.snapshot('閉じた');
+        } finally {
+          current = null;
+        }
+      },
+    });
+  }, 30_000);
+});

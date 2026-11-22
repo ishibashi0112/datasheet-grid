@@ -163,15 +163,16 @@
     --ssg-cf-div-negative: #e34948;
     --ssg-cf-div-mid: #f0efec;
     --ssg-cf-div-positive: #2a78d6;
+    /* 変更(1.3.0 / S6-04): チップの文字は 5 色とも背景との対比 5:1 以上(good / warning / critical を濃く。WCAG AA は 4.5:1)。 */
     --ssg-cf-neutral: #475569;
     --ssg-cf-neutral-bg: #e2e8f0;
     --ssg-cf-info: #1d4ed8;
     --ssg-cf-info-bg: #dbeafe;
-    --ssg-cf-good: #15803d;
+    --ssg-cf-good: #14703a;
     --ssg-cf-good-bg: #dcfce7;
-    --ssg-cf-warning: #b45309;
+    --ssg-cf-warning: #a14a0b;
     --ssg-cf-warning-bg: #fef3c7;
-    --ssg-cf-critical: #dc2626;
+    --ssg-cf-critical: #b91c1c;
     --ssg-cf-critical-bg: #fee2e2;
     /* その他 */
     --ssg-drop-indicator: #0f172a;
@@ -3800,6 +3801,18 @@
       margin-right: 0;
     }
   }
+  /* 追加(1.3.0 / RV5-4): 細い見出し(--inline-actions の無い見出し)では、ポインタが renderHeader の中のボタンや入力欄の上に
+     ある間(見出しのセルに data-ssg-header-control-hover。core logic/domGuards)、重ねて出す操作群を隠し、押した所が下の
+     ボタンへ届くようにします(これまでは操作群の背景がボタンを覆い、押すと列が選ばれていた)。見出しの空いた所では今までどおり
+     出ます。タッチ(hover: none)は常に出す今の形のままです。 */
+  @media (hover: hover) {
+    .ssg-header-cell:not(.ssg-header-cell--inline-actions)[data-ssg-header-control-hover] .ssg-header-actions {
+      pointer-events: none;
+    }
+    .ssg-header-cell:not(.ssg-header-cell--inline-actions)[data-ssg-header-control-hover] .ssg-header-actions:not(:has(:focus-visible)) {
+      opacity: 0;
+    }
+  }
   /* 追加: hover で出る操作アイコン(grip / ⋮)の通常色を濃く(slate-600)して視認性を上げます。
      メニュー表示中の ⋮ のアクセント色(--active)は :not(--active) で除外し、従来どおり優先します。 */
   .ssg-header-actions .ssg-header-grip,
@@ -3817,6 +3830,15 @@
   }
   .ssg-header-label--filtered {
     color: var(--ssg-accent-strong);
+  }
+  /* 追加(1.3.0 / S6-03): 見た目に出さず読み上げにだけ出す文字(合成列の見出しの名前)。 */
+  .ssg-visually-hidden {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
   }
   /* ソート方向の受動表示(矢印 + 優先番号)。 */
   .ssg-header-sort {

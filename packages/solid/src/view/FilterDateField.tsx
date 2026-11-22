@@ -7,6 +7,7 @@
 //   - renderFilterDateInput(利用側の部品)を渡したときは使いません。
 import { For, Show, createEffect, createMemo, createSignal, onCleanup, untrack } from 'solid-js';
 import { toDateKey } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/filtering';
+import { parseFilterDateText } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/editorValues';
 import {
   buildCalendarDayCells,
   buildYearGrid,
@@ -17,6 +18,7 @@ import { isImeComposingKeyEvent } from '@ishibashi0112/spreadsheet-grid-core/int
 import { formatLocaleText } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/localeText';
 import { usePopupLocaleText } from '../context/localeText';
 import { createInputValue } from '../primitives/inputValue';
+import { getEventTarget } from '@ishibashi0112/spreadsheet-grid-core/internal/utils/shadowDom';
 
 // カレンダーの段(日 → 月 → 年)。
 type CalendarView = 'days' | 'months' | 'years';
@@ -73,7 +75,8 @@ export function FilterDateField(props: FilterDateFieldProps) {
       setIsInvalid(false);
       return;
     }
-    const key = toDateKey(raw);
+    // 変更(1.3.0 / S8-02): セルの date エディタと同じ読み方(全角・年月日・ドット)。
+    const key = parseFilterDateText(raw);
     if (key === null) {
       // 読めない入力は確定しません(赤い枠のまま編集を続ける)。
       setIsInvalid(true);
@@ -109,7 +112,8 @@ export function FilterDateField(props: FilterDateFieldProps) {
       return undefined;
     }
     const handleDocumentPointerDown = (event: PointerEvent) => {
-      const target = event.target as Node | null;
+      // 変更(1.3.0 / S11-05): Shadow root の中で押したときの target は host なので、押した要素はこの欄の木へ付け替えて見ます。
+      const target = getEventTarget(event, rootElement ?? null) as Node | null;
       if (target && rootElement?.contains(target)) {
         return;
       }

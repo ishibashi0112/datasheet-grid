@@ -13,7 +13,7 @@ vp install
 pnpm run audit:dev
 
 # 3. 別ターミナルでシナリオを実行(PASS / FAIL を標準出力に出す)
-pnpm run audit:test            # 基本 + 1M 行 + SSRM + ライフサイクル + 機能群 + 所見追試 + 集計 + 合計行 + フィルハンドル + 見送り分 + 遅延読み込み + 優先順位 + 1.0 前の最終チェック + アプリを作って確かめたチェック(段階 1 / DevBI / 段階 2)+ 英語 + ダイアログの中のポップアップ + 固定行 + 1.2.0 + ツールパネルの枠の光り
+pnpm run audit:test            # 基本 + 1M 行 + SSRM + ライフサイクル + 機能群 + 所見追試 + 集計 + 合計行 + フィルハンドル + 見送り分 + 遅延読み込み + 優先順位 + 1.0 前の最終チェック + アプリを作って確かめたチェック(段階 1 / DevBI / 段階 2)+ 英語 + ダイアログの中のポップアップ + 固定行 + 1.2.0 + ツールパネルの枠の光り + Shadow DOM の中のグリッド
 node audit/harness/t-basic.mjs # 個別に 1 本だけ
 node audit/harness/perf-big.mjs            # 1M 行の計測(dev ビルド)
 HARNESS_BASE=http://127.0.0.1:5178/ node audit/harness/perf-big.mjs  # 本番ビルド(vp build → vp preview --port 5178)に対して
@@ -36,6 +36,8 @@ HARNESS_BASE=http://127.0.0.1:5178/ node audit/harness/perf-big.mjs  # 本番ビ
 - `t-pinned.mjs` は固定行(1.1.0 `pinnedTopRows` / `pinnedBottomRows`): 3 ペインに描く / 上は列見出しのすぐ下・下は合計行のすぐ上 / スクロール範囲が固定行ぶん伸びる / スクロール・`Ctrl+Home` / `Ctrl+End` / `↑` / `scrollToRow` で本体の行が固定行の裏に隠れない / 横スクロールと固定列で見出しと揃う / 行ホバーが外れる / 押しても選択・編集が動かない / 範囲選択のドラッグを固定行の上へ動かすと上へ自動スクロール / `aria-rowcount` と行の番号 / エクスポートの `includePinnedRows` / ダークの色 / 列ドラッグ(live)で固定行のセルも付いてくる / 行が少ないとき / 100 万行(scroll-space)/ SSRM。スクリーンショット `.out/pinned-light.png` / `pinned-dark.png`。
 - `t-v120.mjs` は 1.2.0 の追加と修正: 1 セル / 2 行のコピーを範囲へ貼ると範囲を埋める・元に戻す 1 回・`pasteFillsSelection={false}` は 1 回だけ(A-08)/ `activeCellFollows` の `'position'` と `'row'`(並びが変わっても押した行に付いていく・スクロールしない・位置だけでは `onActiveCellChange` を呼ばない・矢印キーでそこまで動く。B-04)/ `isAtBottom()` と `onScroll` の `atBottom`(basic / 100 万行)/ 右クリックメニューの名前(RV3-H2)/ 背の高い行の上にそろえたセルの 1 行のエディタ / `canDropRow`(E-07)/ タッチの端末のメニューの項目の高さ(L-12。CDP のタッチの模擬)。最後に 1.2.0 の見直し(QG / QH)の修正: 全選択は並びが変わってもそのまま(QG-1)・列幅のドラッグ中に並びが変わっても付いていく(QG-4)・下の固定行の上の行のエラーの吹き出し(QH-6)・タッチの右クリックメニューが画面に収まる(QH-2)・select の候補の一覧がスクロールしない(QH-1)・右寄せの見出しの ⋮ とつまみ(QH-4)・列フィルターとツールパネルの的の大きさ(QH-5)・上が見出しに隠れたセルと拡大縮小の中の IME の変換中の入力受け(QH-3 / QH-7)。タッチと IME は Chromium だけ(ほかは skip)。
 - `t-toolpanel-flash.mjs` はツールパネルを開いたまま開き直したときの枠の光り(0.46.1 から出ていなかった。2026-11-20 に Solid 版の確認で見つけた): 開いた直後は光らない / 開き直すと光り、終われば `ssg-toolpanel--flash` が外れる / 現れるときの動きをやり直さない(パネルが薄くならない)/ 続けて開き直しても光る / `motion="off"` では光らない。
+- `t-shadow.mjs` は Shadow DOM の中のグリッド(1.3.0 / Solid 版の品質の段 2 S11-01〜05。`?s=shadow` = `shared.ts` の `mountPoint` が open の Shadow root の中に CSS の `<style>` と包む要素 `.shadow-app` を置き、その中に描く): Shadow root の中の CSS が当たる / ツールチップが出る(本物のマウス)/ 列メニュー(`Alt+↓`)と右クリックメニュー(`Shift+F10`)の ↓↑ が 1 つずつ動き、項目を本物のマウスで押せ、Shadow root の外を押すと閉じる / 列メニュー・列フィルター・右クリックメニュー・ツールパネル・ツールチップは `.shadow-app` の中に出て見た目が付く / ツールパネルを開くと選ばれたタブへフォーカス、`Escape` でグリッドへ戻る / `imeDirectInput` の変換の確定で編集が始まる(CDP の IME の模擬。Chromium だけ)。`wd.mjs` の CSS の探し方はこの host の Shadow root の中も見る(Playwright の CSS のロケーターと同じ)。
+- `t-v130.mjs` は 1.3.0(Solid 版の品質の段 2)で直した所見の実ブラウザでの確かめ(Shadow DOM は `t-shadow.mjs`): `imeDirectInput` の待機中の入力受けが `PageDown` の後もアクティブセルに重なる / 範囲を `Escape` で外した後の `Ctrl+C` はアクティブセルの 1 セル / 編集していた行が絞り込みから外れたら打ちかけをその行へ確定し、フォーカスはグリッドに残る / エディタを開いたまま別のセルを押してすぐ打った文字がそのセルのエディタに残る。React 版と Solid 版(`SSG_AUDIT_FRAMEWORK=solid HARNESS_BASE=http://127.0.0.1:5179/`)の両方で回す。axe の確認は `AXE_PATH` に axe-core の `axe.min.js` を渡したときだけ(WebDriver のブラウザでは中身をページで評価する)。headless の Firefox(geckodriver)は `hover: none` / `pointer: none` を返すので、ホバーの前提の RV5-4 は SKIP する(WebKitGTK と Chromium で見る)。
 - `t-verify.mjs` は監査所見(RD-1 / RD-2 / C-1 / L-01 / C-3 / B-01 / B-02 / B-03 / V-02 …)の再現スクリプト。修正後は FAIL → PASS に変わることを確認する回帰テストとして使う。
 
 ## 他のブラウザで回す(2026-10-28 追加)

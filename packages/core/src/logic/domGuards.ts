@@ -73,3 +73,30 @@ export const isFromRenderHeaderControl = (target: EventTarget | null, headerCell
   const label = control.closest('.ssg-header-label');
   return label !== null && label.parentElement === headerCell;
 };
+
+// 追加(1.3.0 / RV5-4): 細い列では、ホバーで出る操作群(つまみ / ⋮)が renderHeader の中のボタンを覆い、押すと列が選ばれて
+//   ボタンの onClick が呼ばれていませんでした。ポインタが renderHeader の中のボタン等の上にある間は見出しのセルにこの属性を
+//   付け、CSS(styles.css)で操作群を隠して下のボタンへ届くようにします。操作群が上に重なっていても分かるよう、要素の
+//   矩形とポインタの位置で比べます(見出しの pointermove / pointerleave から呼ぶ。外れたら point は null)。
+export const RENDER_HEADER_CONTROL_HOVER_ATTRIBUTE = 'data-ssg-header-control-hover';
+
+export const syncRenderHeaderControlHover = (
+  headerCell: Element,
+  point: { readonly clientX: number; readonly clientY: number } | null,
+): void => {
+  let over = false;
+  // 見出しのセルの最初の .ssg-header-label が直下のラベル(renderHeader の中身を入れる所)です。
+  const label = point === null ? null : headerCell.querySelector('.ssg-header-label');
+  if (label !== null && point !== null) {
+    for (const control of label.querySelectorAll(RENDER_HEADER_CONTROL_SELECTOR)) {
+      const rect = control.getBoundingClientRect();
+      if (point.clientX >= rect.left && point.clientX < rect.right && point.clientY >= rect.top && point.clientY < rect.bottom) {
+        over = true;
+        break;
+      }
+    }
+  }
+  if (headerCell.hasAttribute(RENDER_HEADER_CONTROL_HOVER_ATTRIBUTE) !== over) {
+    headerCell.toggleAttribute(RENDER_HEADER_CONTROL_HOVER_ATTRIBUTE, over);
+  }
+};

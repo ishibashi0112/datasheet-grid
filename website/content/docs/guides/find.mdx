@@ -27,12 +27,19 @@ description: find prop で Ctrl+F の検索バーを出し、ヒットを強調�
 
 `Ctrl/Cmd+F` の横取りはグリッド本体にフォーカスがあるときだけです(フィルター入力やエディタの中では効きません)。ページ側の検索を優先したい場合は `shortcut: false` にして、ツールバーのボタンなどから `handle.openFind()` で開いてください。
 
-```tsx
+```tsx tab="React"
 const ref = useRef<SpreadsheetGridHandle<Row>>(null);
 
 <button onClick={() => ref.current?.openFind()}>検索</button>
 <SpreadsheetGrid ref={ref} find={{ shortcut: false }} onFindChange={({ matchCount, currentIndex, truncated }) => setLabel(`${(currentIndex ?? 0) + 1} / ${matchCount}${truncated ? '+' : ''}`)} />
 ```
+```tsx tab="Solid"
+let grid!: SpreadsheetGridHandle<Row>;
+
+<button onClick={() => grid.openFind()}>検索</button>
+<SpreadsheetGrid ref={grid} find={{ shortcut: false }} onFindChange={({ matchCount, currentIndex, truncated }) => setLabel(`${(currentIndex ?? 0) + 1} / ${matchCount}${truncated ? '+' : ''}`)} />
+```
+
 
 `onFindChange` は `{ query, matchCount, currentIndex, open, truncated }` を渡します(`currentIndex` は 0 始まり、ヒットなしは `null`)。ヒットは 10,000 件で打ち切り、そのときは `truncated` が `true` です(組み込みのバーの「10000+」のように「+」を出すときに使います。1.2.0 から)。命令的 API は `openFind(query?)` / `closeFind()` / `findNext()` / `findPrev()` です。
 

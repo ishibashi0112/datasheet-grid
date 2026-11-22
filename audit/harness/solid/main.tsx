@@ -14,7 +14,8 @@ import {
   type SpreadsheetGridProps,
 } from '@ishibashi0112/spreadsheet-grid-solid';
 import '@ishibashi0112/spreadsheet-grid/style.css';
-import { baseColumns as sharedBaseColumns, lang, log, makeDataSource, makeRows, n, params, scenario, type Row } from '../shared';
+import shadowCss from '@ishibashi0112/spreadsheet-grid/style.css?inline';
+import { baseColumns as sharedBaseColumns, lang, log, makeDataSource, makeRows, mountPoint, n, params, scenario, type Row } from '../shared';
 // Solid 版のグリッドが受ける props の名前。変更(段階 3-3): Solid 版は core の SpreadsheetGridProps をすべて受けるようになった
 //   (packages/solid の model/gridTypes.ts の SupportedPropKeys は無くなった)ので、core の型の 1 段目の項目の名前を読む。
 import gridTypesSource from '../../../packages/core/src/model/gridTypes.core.ts?raw';
@@ -39,8 +40,28 @@ const win = window as unknown as Window & {
   __columns: () => GridColumn<Row>[];
 };
 
+// 追加(1.3.0 / RV5-4): `&hb=<列のキー>` でその列を狭く(46px)し、renderHeader の中にボタンを置く(React 版と同じ)。
+const withHeaderButton = (columns: GridColumn<Row>[]): GridColumn<Row>[] => {
+  const key = params.get('hb');
+  return key === null
+    ? columns
+    : columns.map((column) =>
+        column.key === key
+          ? {
+              ...column,
+              width: 46,
+              renderHeader: () => (
+                <button type="button" data-testid="hdr-btn" onClick={() => log('hdr-btn')}>
+                  B
+                </button>
+              ),
+            }
+          : column,
+      );
+};
+
 function baseColumns(): GridColumn<Row>[] {
-  return sharedBaseColumns({
+  return withHeaderButton(sharedBaseColumns({
     numberFormatter,
     // React 版は autoFocus。Solid は描き終わった後に入力欄へフォーカスする(autofocus は後から足した要素には効かない)。
     customEditor: (ctx) => {
@@ -60,7 +81,7 @@ function baseColumns(): GridColumn<Row>[] {
         />
       );
     },
-  }) as unknown as GridColumn<Row>[];
+  }) as unknown as GridColumn<Row>[]);
 }
 
 const contextItems = (p: ContextMenuParams) => {
@@ -363,4 +384,4 @@ if (params.get('attr') === '1') {
   const { attribution } = await import('solid-js/attribution');
   attribution.enable();
 }
-render(() => <App />, document.getElementById('root')!);
+render(() => <App />, mountPoint(shadowCss));

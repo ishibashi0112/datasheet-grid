@@ -41,7 +41,7 @@ export default defineConfig({
     alias: [
       { find: /^@ishibashi0112\/spreadsheet-grid-solid$/, replacement: SOLID_ENTRY },
       // CSS は React 版と同じファイル(Solid 版は DOM と class が同じ)。
-      { find: /^@ishibashi0112\/spreadsheet-grid\/style\.css$/, replacement: `${REPO}/packages/react/src/styles.css` },
+      { find: /^@ishibashi0112\/spreadsheet-grid\/style\.css(\?inline)?$/, replacement: `${REPO}/packages/react/src/styles.css$1` },
     ],
   },
   server: {

@@ -526,6 +526,24 @@ export const applyColumnState = <T,>(
   return reorderColumnsByPaneKeepingGroupOrder(ordered);
 };
 
+// 追加(1.3.0 / Solid 版の品質の段 2 S10-01): applyColumnState の結果が今の列と同じ並び・表示・固定・幅・グループ化か
+//   (applyState が onColumnsChange を呼ぶかを決める)。同じなら呼ばない(2 つの表の列を互いの onColumnsChange → applyState で
+//   そろえると、何も変わらなくても呼び合いが止まらず、スタックが溢れていた)。
+export const isSameColumnLayout = <T,>(current: readonly GridColumn<T>[], next: readonly GridColumn<T>[]): boolean =>
+  current.length === next.length &&
+  current.every((column, index) => {
+    const other = next[index];
+    return (
+      other !== undefined &&
+      (column === other ||
+        (column.key === other.key &&
+          column.visible === other.visible &&
+          column.pinned === other.pinned &&
+          column.width === other.width &&
+          column.rowGroup === other.rowGroup))
+    );
+  });
+
 // 追加(段階 2 の確かめ直し): 保存した状態(getState() の値)の列メタ(並び / 表示 / 固定)を列定義へ当てた新しい配列を返す
 //   公開の関数です。initialState は列メタを使わない(列は columns prop で決める)ので、マウントの前にこれで columns を作ります
 //   (これまでは方法が無く、アプリが同じ関数を自作していた)。applyState と同じ規則(保存に無い列は末尾、今の列に無い保存の

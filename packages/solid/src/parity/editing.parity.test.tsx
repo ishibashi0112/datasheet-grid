@@ -85,6 +85,9 @@ const pressInEditor = async (ctx: ParityContext, key: string, init: Record<strin
   });
 };
 
+const call = (ctx: ParityContext, name: string, ...args: unknown[]) =>
+  (ctx.handle()[name] as unknown as (...a: unknown[]) => unknown)(...args);
+
 const pressInShell = async (ctx: ParityContext, key: string, init: Record<string, unknown> = {}) => {
   await ctx.act(() => {
     fireEvent.keyDown(ctx.shell(), { key, ...init });
@@ -538,7 +541,8 @@ describe('React 版と同じエディタ', () => {
 });
 // R2-1(0.1.0 の全体レビュー): グループ化した表で編集中に上へ行が足され、編集している位置が一瞬グループ行を指しても、エディタの
 //   種類を変えない(0.1.0 はエディタの種類を行から決めていたので、text に倒れて作り直し、number / date は打ちかけを失い、
-//   複数行の入力欄はフォーカスを失った。React 版は列から決める)。custom エディタは React 版と同じく作り直す。
+//   複数行の入力欄はフォーカスを失った。React 版は列から決める)。custom エディタも作り直さない(1.3.0 / S3-21。それまでは
+//   React 版も Solid 版も、行の無い間だけ外して作り直し、打ちかけが消えていた)。
 describe('グループ化した表で、編集中の位置にグループ行が来る(R2-1)', () => {
   type GroupRow = { id: number; cat: string; qty?: number; due?: string; memo?: string };
   const base: GroupRow[] = [
@@ -581,7 +585,7 @@ describe('グループ化した表で、編集中の位置にグループ行が�
     });
   });
 
-  it('custom のエディタは React 版と同じく作り直す(フォーカスもそろう)', async () => {
+  it('custom のエディタも作り直さず、打ちかけが残る(S3-21)', async () => {
     await expectParity({
       features: ['grouping'],
       props: (framework) => ({
@@ -612,8 +616,102 @@ describe('グループ化した表で、編集中の位置にグループ行が�
         });
         ctx.snapshot('開いた');
         await ctx.setProps({ rows: [...base, added] });
-        ctx.log('custom の値', ctx.container.querySelector<HTMLInputElement>('.my-custom')?.value ?? null);
+        const kept = ctx.container.querySelector<HTMLInputElement>('.my-custom')?.value ?? null;
+        ctx.log('custom の値', kept);
+        if (kept !== '打ちかけ') {
+          throw new Error(`[${ctx.framework}] custom のエディタが作り直されました: ${String(kept)}`);
+        }
         ctx.snapshot('上に行が足された');
+      },
+    });
+  });
+});
+// 追加(1.3.0 / Solid 版の品質の段 2 S7-03 / S8-04 / RV5-3): 編集していた行が表から消えたときの終わり方と、確定の後処理の前に
+//   始めた次の編集(core controllers/editController)。React 版の元のテストは SpreadsheetGrid.lostEdit / editFocus の
+//   integration.test.tsx。
+describe('編集していた行が表から消えたとき(S7-03 / S8-04)', () => {
+  it('text / number / date の打ちかけは、絞り込みから外れた行へ確定し、フォーカスはグリッドに残る', async () => {
+    await expectParity({
+      features: ['filtering'],
+      props: props(),
+      watch: ['onRowsChange'],
+      steps: async (ctx) => {
+        const cases: readonly [string, string][] = [
+          ['name', '打ちかけの名前'],
+          ['qty', '45'],
+          ['due', '2026-12-01'],
+        ];
+        for (const [key, value] of cases) {
+          await doubleClick(ctx, 5, key);
+          await typeInto(ctx, value);
+          // 「品目 1」で絞ると 4 行(品目 1 / 10 / 11 / 12)= 編集していた 6 行目は表の外。
+          await ctx.act(() => {
+            call(ctx, 'applyState', { filters: { globalText: '品目 1' } });
+          });
+          ctx.snapshot(`${key} を打ちかけのまま絞り込んだ`);
+          await ctx.act(() => {
+            call(ctx, 'applyState', { filters: { globalText: '' } });
+          });
+        }
+        ctx.log('6 行目', ctx.rows()[5]);
+        const sixth = ctx.rows()[5] as Row | undefined;
+        if (sixth?.name !== '打ちかけの名前' || sixth.qty !== 45 || sixth.due !== '2026-12-01') {
+          throw new Error(`[${ctx.framework}] 打ちかけが書かれていません: ${JSON.stringify(sixth)}`);
+        }
+        if (document.activeElement !== ctx.shell()) {
+          throw new Error(`[${ctx.framework}] フォーカスがグリッドにありません`);
+        }
+        await pressInShell(ctx, 'ArrowDown');
+        ctx.snapshot('キー操作が効く');
+      },
+    });
+  });
+
+  it('rows が別の行に替わったら取り消し、フォーカスはグリッドに残る', async () => {
+    await expectParity({
+      props: props(),
+      watch: ['onRowsChange'],
+      steps: async (ctx) => {
+        await doubleClick(ctx, 1, 'name');
+        await typeInto(ctx, '打ちかけ');
+        await ctx.setProps({ rows: makeRows(12).map((row) => ({ ...row, id: row.id + 100, name: `別 ${row.id}` })) });
+        ctx.snapshot('rows が替わった');
+        if (document.activeElement !== ctx.shell() || ctx.rows().some((row) => (row as Row).name === '打ちかけ')) {
+          throw new Error(`[${ctx.framework}] 取り消されていないか、フォーカスがグリッドにありません`);
+        }
+        await pressInShell(ctx, 'ArrowDown');
+        ctx.snapshot('キー操作が効く');
+      },
+    });
+  });
+});
+
+describe('確定の後処理の前に始めた次の編集(RV5-3)', () => {
+  it('開いたまま別のセルを押してすぐ打つと、打った文字がそのセルのエディタに残る', async () => {
+    await expectParity({
+      props: props(),
+      watch: ['onRowsChange'],
+      steps: async (ctx) => {
+        await doubleClick(ctx, 0, 'name');
+        await typeInto(ctx, '先の値');
+        // 押してから次のフレームが来る前に打つ(バーコードリーダーや速い入力)。
+        await ctx.act(() => {
+          const target = ctx.cell(2, 'name');
+          fireEvent.pointerDown(target, pointer);
+          fireEvent.pointerUp(target, pointer);
+          fireEvent.click(target, pointer);
+        }, 0);
+        await ctx.act(() => {
+          fireEvent.keyDown(document.activeElement ?? ctx.shell(), { key: 'x' });
+        }, 0);
+        await ctx.act(() => {});
+        ctx.snapshot('次のフレームの後もエディタが開いたまま');
+        if (editorInput(ctx).value !== 'x' || document.activeElement !== editorInput(ctx)) {
+          throw new Error(`[${ctx.framework}] 打った文字がエディタに残っていません`);
+        }
+        await typeInto(ctx, 'xyz');
+        await pressInEditor(ctx, 'Enter');
+        ctx.snapshot('確定した');
       },
     });
   });

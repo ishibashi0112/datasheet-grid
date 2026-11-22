@@ -236,7 +236,8 @@ export type GetFilterOptionsParams<T, F extends GridFrameworkTypes = GridFramewo
 
 export type GetFilterOptionsResult = {
   // value は記述子の values にそのまま載る文字列。dateSet 列は 'YYYY-MM-DD'、空白(NULL)は '' を渡す。
-  options: GridSelectFilterOption[];
+  // 変更(1.3.0 / S4-05): readonly の配列も返せます。
+  options: readonly GridSelectFilterOption[];
   // 件数上限で打ち切ったら true(popover に「先頭のみ」の注記が出る。反転 = NOT IN で候補外の値も扱える)。
   truncated?: boolean | undefined;
 };
@@ -999,10 +1000,11 @@ export type GridColumnEditor<T, F extends GridFrameworkTypes = GridFrameworkType
       // select エディタ(候補ドロップダウン)。候補は静的配列 or 行依存の動的関数で指定します
       //   (動的関数はレンダー中に呼ばれるため純粋であること)。確定値は option.value(string)を
       //   列パーサへ流します(候補は「許可される値」なので rows からの自動収集はしません)。
+      // 変更(1.3.0 / S4-05): readonly の配列(`as const` など)も渡せます(filterOptions とそろえる)。
       type: 'select';
       options:
-        | GridSelectEditorOption[]
-        | ((row: T) => GridSelectEditorOption[]);
+        | readonly GridSelectEditorOption[]
+        | ((row: T) => readonly GridSelectEditorOption[]);
       // 追加(1.1.0 / 2026-11-09 実アプリの総点検 AP-08): クリップボードとのやり取りの文字です。'value'(既定)は値のまま、
       //   'label' はコピー / CSV / getExportData の text を候補の label にし、貼り付けた文字が label なら value へ読み替えます
       //   (value はそのまま通す。どちらでもない文字は生のまま)。列の formatClipboardValue / parseClipboardValue があれば
@@ -1397,6 +1399,16 @@ export type GridColumn<T, F extends GridFrameworkTypes = GridFrameworkTypes> = {
    * @defaultValue `true`
    */
   selectionAggregate?: boolean | undefined;
+  // 追加(1.3.0 / Solid 版の品質の段 2 の要望): false で CSV / TSV の書き出しと getExportData から外します(範囲のコピーには出す)。
+  /**
+   * `false` で、この列を CSV / TSV の書き出し(`exportCsv` / `downloadCsv`。scope `'selection'` も)
+   * と `getExportData` から外す(1.3.0 から)。操作のボタンの列や社内だけの ID の列に使う。
+   * 範囲を選んだコピー(`Ctrl/Cmd+C`)には今までどおり出す(選んだとおりに写す)。行を外すのは props の
+   * `isRowExportable`。
+   *
+   * @defaultValue `true`
+   */
+  exportable?: boolean | undefined;
   /**
    * 値アクセサ。`setValue` の無い列へ書き込むと値は `row[key]` へ入り、表示(`getValue`)
    * は変わらない。計算列は `editable: false` にするか `setValue` を渡す(開発時は、
@@ -1497,7 +1509,10 @@ export type GridColumn<T, F extends GridFrameworkTypes = GridFrameworkTypes> = {
    * カスタムヘッダー描画。中に置いたボタン / 入力欄 / リンク等(`button` / `input` / `select` /
    * `textarea` / `a[href]` / `label` / `contenteditable` / `role="button"` 等)
    * を押したときは列の範囲選択を始めない(既定動作も止めないため入力欄にフォーカスが入る)。
-   * それ以外の部分を押すと従来どおり列を選択する。
+   * それ以外の部分を押すと従来どおり列を選択する。細い列(120px 未満)では、
+   * ポインタが中のボタン等の上にある間はホバーで出る操作(並べ替えのつまみ / 列メニューの ⋮)を隠し、
+   * 上に重なった操作ではなく中のボタンが押されるようにする(1.3.0 から。
+   * 見出しの空いた所では今までどおり出る)。
    */
   renderHeader?: ((ctx: HeaderRenderContext<T, F>) => F['node']) | undefined;
   // 変更(12-A): 'set' を追加します。AG Grid の Set Filter 相当
@@ -1787,10 +1802,10 @@ export type GridLocaleText = {
   columnMenu: string;
   /** 見出しの ⋮ の読み上げの名前。既定 `{column} の列メニュー`、英語 `Column menu for {column}`。 */
   columnMenuFor: GridLocaleTextTemplate<{ column: string }>;
-  /** 展開のボタン(閉じているとき)の読み上げの名前。既定 `詳細を開く`、英語 `Show details`。 */
-  showDetails: string;
-  /** 展開のボタン(開いているとき)の読み上げの名前。既定 `詳細を閉じる`、英語 `Hide details`。 */
-  hideDetails: string;
+  /** 展開のボタン(閉じているとき)の読み上げの名前(`{row}` = 行番号)。既定 `行 {row} の詳細を開く`、英語 `Show details for row {row}`。 */
+  showDetails: GridLocaleTextTemplate<{ row: number }>;
+  /** 展開のボタン(開いているとき)の読み上げの名前(`{row}` = 行番号)。既定 `行 {row} の詳細を閉じる`、英語 `Hide details for row {row}`。 */
+  hideDetails: GridLocaleTextTemplate<{ row: number }>;
   /** グループ行の ▸ の読み上げの名前。既定 `{group} を展開`、英語 `Expand {group}`。 */
   expandGroup: GridLocaleTextTemplate<{ group: string }>;
   /** グループ行の ▾ の読み上げの名前。既定 `{group} を折りたたみ`、英語 `Collapse {group}`。 */
@@ -3676,7 +3691,8 @@ export type SpreadsheetGridProps<T, F extends GridFrameworkTypes = GridFramework
    * `validationMode: 'reject'` の列で検査に通らない値)/ `value`(`'invalid'` のときパーサが読んだ値)
    * / `message`(`'invalid'` のときの検査のメッセージ)。`validationMode: 'mark'`(既定)
    * の列は書いて印を付けるので入らない。表の外(`createRow` / `createOverflowColumn`
-   * が無くて足せない行 / 列)・ラベル行・グループ行は数えない。詳細は「貼り付けで読めない値」節。
+   * が無くて足せない行 / 列)・ラベル行・グループ行と、編集できないセルへ貼った空の文字(1.3.0 から)
+   * は数えない。詳細は「貼り付けで読めない値」節。
    */
   onPasteSkipped?: ((params: GridPasteSkippedParams<T>) => void) | undefined;
   // 追加(1.2.0 / 2026-11-09 実アプリの総点検 A-08): 範囲を選んで貼ったとき、コピーが範囲を割り切れれば範囲いっぱいに
@@ -3789,10 +3805,12 @@ export type SpreadsheetGridProps<T, F extends GridFrameworkTypes = GridFramework
    * ポップアップ(列メニュー / 列フィルター / 右クリックメニュー / select の候補 / ツールパネル /
    * フィルハンドルのメニュー / ツールチップ / ドラッグのゴースト)を描く場所(1.1.0 から)。`'auto'`
    * はグリッドを囲むダイアログ(`<dialog>` / `popover` / `aria-modal="true"` / `role="dialog"` /
-   * `role="alertdialog"`)の中、無ければ `document.body`。`'body'` はいつも `document.body`(1.0
-   * までと同じ)。要素ならその中、関数はグリッドの要素を受け取って描く場所を返す(`null` /
-   * `undefined` なら `document.body`。ポップアップを開いている間の描画ごとに呼ぶ。
-   * 閉じている間は呼ばない)。詳細は「ダイアログの中のグリッド」節。
+   * `role="alertdialog"`)の中、無ければ、Shadow root の中のグリッドはその Shadow root
+   * の直下でグリッドを包む要素の中(1.3.0 から)、それ以外は `document.body`。`'body'` はいつも
+   * `document.body`(1.0 までと同じ)。要素ならその中、
+   * 関数はグリッドの要素を受け取って描く場所を返す(`null` / `undefined` なら `document.body`。
+   * ポップアップを開いている間の描画ごとに呼ぶ。閉じている間は呼ばない)。
+   * 詳細は「ダイアログの中のグリッド」節。
    *
    * @defaultValue `'auto'`
    */

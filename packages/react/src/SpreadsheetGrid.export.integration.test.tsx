@@ -7,8 +7,8 @@
 //   - 'raw' がフィルターもソートも無視した全ソース行を rows 配列順で返す。
 //   既存の結合テストと同じく DOM を要するため、本ファイルは jsdom で回します。
 // @vitest-environment jsdom
-import { describe, it, expect, beforeAll, afterEach } from 'vitest';
-import { render, cleanup, act } from '@testing-library/react';
+import { describe, it, expect, beforeAll, afterEach, vi } from 'vitest';
+import { render, cleanup, act, fireEvent } from '@testing-library/react';
 import { createRef } from 'react';
 
 import { SpreadsheetGrid } from './SpreadsheetGrid';
@@ -191,5 +191,40 @@ describe('SpreadsheetGrid isRowExportable(結合・proposals ⑪)', () => {
       [3, 4],
       [4, 5],
     ]);
+  });
+});
+
+// 追加(1.3.0 / Solid 版の品質の段 2 の要望): 列の exportable: false は CSV / TSV の書き出しと getExportData から外し、
+//   範囲を選んだコピー(Ctrl/Cmd+C)には出す(Solid 版は parity の export の場面)。
+describe('SpreadsheetGrid 列の exportable(結合・1.3.0)', () => {
+  const exportColumns: GridColumn<Row>[] = [
+    { key: 'id', title: 'ID', width: 80, exportable: false },
+    { key: 'name', title: 'Name', width: 160 },
+    { key: 'qty', title: 'Qty', width: 100 },
+  ];
+
+  it("exportCsv / getExportData('view' / 'raw' / 'selection')から外し、Ctrl+C には出す", async () => {
+    const writeText = vi.fn(() => Promise.resolve());
+    Object.defineProperty(navigator, 'clipboard', { value: { writeText }, configurable: true });
+    const ref = createRef<SpreadsheetGridHandle<Row>>();
+    const { container } = render(
+      <SpreadsheetGrid ref={ref} rows={rows.slice(0, 2)} columns={exportColumns} rowKeyGetter={(row) => row.id} />,
+    );
+    expect(ref.current?.exportCsv()).toBe('Name,Qty\r\nalpha,30\r\nbeta,10');
+    expect(ref.current?.exportCsv({ scope: 'raw', delimiter: '\t' })).toBe('Name\tQty\r\nalpha\t30\r\nbeta\t10');
+    const data: GridExportData | undefined = ref.current?.getExportData();
+    expect(data?.columns.map((column) => column.key)).toEqual(['name', 'qty']);
+    expect(data?.rows[0]?.map((cell) => cell.text)).toEqual(['alpha', '30']);
+    act(() => {
+      ref.current?.selectRange({ start: { row: 0, col: 0 }, end: { row: 1, col: 1 } });
+    });
+    expect(ref.current?.exportCsv({ scope: 'selection', includeHeaders: false })).toBe('alpha\r\nbeta');
+    // 範囲のコピーは選んだとおり(ID も写す)。
+    const shell = container.querySelector<HTMLElement>('.ssg-shell') as HTMLElement;
+    await act(async () => {
+      fireEvent.keyDown(shell, { key: 'c', ctrlKey: true });
+      await Promise.resolve();
+    });
+    expect(writeText).toHaveBeenLastCalledWith('1\talpha\n2\tbeta');
   });
 });

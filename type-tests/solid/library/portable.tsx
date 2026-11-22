@@ -8,6 +8,9 @@ import {
   rowDragFeature,
   serverSideFeature,
   standardFeatures,
+  numberFormatter,
+  numberParser,
+  restoreColumnsFromState,
 } from '@ishibashi0112/spreadsheet-grid-solid';
 import type { GridColumn, SpreadsheetGridHandle, SpreadsheetGridProps } from '@ishibashi0112/spreadsheet-grid-solid';
 import { localeTextEn } from '@ishibashi0112/spreadsheet-grid-solid/locales/en';
@@ -40,3 +43,12 @@ export function EnglishGrid(props: SpreadsheetGridProps<Row>) {
 }
 export const columns = (): GridColumn<Row>[] => [{ key: 'name', width: 100, renderCell: (ctx) => <b>{ctx.row.name}</b> }];
 export const inferredColumns = [{ key: 'amount' as const, width: 100, renderCell: (ctx: { row: Row }) => <i>{ctx.row.amount}</i> }];
+
+// 組み込みの関数の結果を推論のまま export する(1.3.0 / S4-04。0.1 までは pnpm で TS2883 / TS2742 になった)
+export const amountFormatter = numberFormatter();
+export const rowAmountFormatter = numberFormatter<Row>({ maximumFractionDigits: 2 });
+export const amountParser = numberParser({ strip: ['円'] });
+export const formatterColumns = [
+  { key: 'amount', title: '金額', width: 100, valueFormatter: numberFormatter() },
+] satisfies GridColumn<Row>[];
+export const restoredColumns = (columns: GridColumn<Row>[], state: unknown) => restoreColumnsFromState(columns, state);

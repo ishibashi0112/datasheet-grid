@@ -42,6 +42,7 @@ import {
   buildGridState,
   dropUnknownColumnKeys,
   extractColumnState,
+  isSameColumnLayout,
   migrateGridStatePatch,
 } from '../logic/gridState';
 import { markUrgentFilters } from '../logic/urgentFilters';
@@ -204,7 +205,13 @@ export type GridApi<T> = {
   // 追加(Solid 版 段階 3-2): deferBottomPin のときの末尾への合わせ直し(M-05)。最後の update から総高が変わっていて、
   //   末尾固定中なら末尾へ合わせ直します。変わっていなければ何もしません。
   settleBottomPin: () => void;
+  // 追加(1.3.0 / S4-22): グリッドを外したとき(アンマウント。React は useControllerLifecycle、Solid は connectController が
+  //   呼ぶ)。次の update でつなぎ直します(React の StrictMode の二重マウント)。
+  dispose: () => void;
 };
+
+// 追加(1.3.0 / S4-22): 読むだけのメソッド(外したグリッドのハンドルでも、外したときの値を返す)。ほかは状態を変えるメソッド。
+const READ_HANDLE_METHOD = /^(get|is|can|export|download)/;
 
 
 // 追加(監査 M-05): scrollToBottom() 後に末尾へ再補正し続ける最大時間(ms)。
@@ -214,6 +221,12 @@ const BOTTOM_PIN_MS = 1000;
 //   (engine/exportCommands)。無ければ代役(空を返す)。
 export const createGridApi = <T,>(features: Pick<GridCoreFeatures, 'export' | 'grouping'> = {}): GridApi<T> => {
   let args: GridApiArgs<T> | null = null;
+  // 追加(1.3.0 / Solid 版の品質の段 2 S4-22): 外したグリッドのハンドルか(dispose の後。React の ref.current は null になるが、
+  //   ハンドルを変数に持っていると呼べる。Solid の `let grid!` + `ref={grid}` など)。状態を変えるメソッドは何もせず(開発時に
+  //   1 回知らせる)、読むメソッドは外したときの値を返します(onCleanup で getState() を保存する書き方のため)。これまでは外した
+  //   グリッドが持っていた古い行で applyRows / undo が親の行を上書きし、startEditing は true を返していた。
+  let detached = false;
+  let detachedWarned = false;
   // 追加(別視点のレビュー): applyState で onColumnsChange に渡した列(次のレンダーで columns に入るまでの間、getState() と
   //   続けて呼んだ applyState はこちらを今の列として読む)。update(次のレンダー)で外します。
   let pendingColumns: { base: GridColumn<T>[]; next: GridColumn<T>[] } | null = null;
@@ -665,10 +678,15 @@ export const createGridApi = <T,>(features: Pick<GridCoreFeatures, 'export' | 'g
       const ui = currentUi(s);
       // 列メタ(v2): onColumnsChange があり、かつ正規化後に columns があるときだけ反映(手動リサイズ幅の
       //   column.width 焼き込み込み。幅を渡さないときは今の幅で焼き込み、今の幅を保ちます)。
+      // 変更(1.3.0 / S10-01): 並び・表示・固定・幅・グループ化が今と同じなら呼びません(applyState(getState()) でも呼んでいて、
+      //   2 つの表の列を互いの onColumnsChange でそろえると呼び合いが止まらなかった)。
       if (s.onColumnsChange && patch.columns) {
-        const nextColumns = applyColumnState(currentColumns(s), patch.columns, patch.columnWidths ?? ui.columnWidths);
-        pendingColumns = { base: s.columns, next: nextColumns };
-        s.onColumnsChange(nextColumns);
+        const baseColumns = currentColumns(s);
+        const nextColumns = applyColumnState(baseColumns, patch.columns, patch.columnWidths ?? ui.columnWidths);
+        if (!isSameColumnLayout(baseColumns, nextColumns)) {
+          pendingColumns = { base: s.columns, next: nextColumns };
+          s.onColumnsChange(nextColumns);
+        }
       }
       // 幅 reset / フィルター一括 / ソート set を、渡されたものだけ dispatch(同一イベント内で自動バッチ)。
       if (patch.columnWidths) {
@@ -902,8 +920,9 @@ export const createGridApi = <T,>(features: Pick<GridCoreFeatures, 'export' | 'g
           console.warn(
             // 変更(1.0 前の最終チェック FC-33): /lite で serverSide の機能が無いと dataSource を渡しても clientSide になるので、
             //   その場合も分かる文にします。
-            '[SpreadsheetGrid] refreshServerSide は clientSide(rows)モードでは何もしません。dataSource を渡したときだけ有効です(/lite の createSpreadsheetGrid では features に serverSide: serverSideFeature も要ります)。\n' +
-              '[SpreadsheetGrid] refreshServerSide does nothing with clientSide rows. It works only when dataSource is passed (with /lite createSpreadsheetGrid, features also needs serverSide: serverSideFeature).',
+            // 変更(1.3.0 / R4-4): 入口の名前(React 版の /lite)は出しません(Solid 版は本体の入口に createSpreadsheetGrid がある)。
+            '[SpreadsheetGrid] refreshServerSide は clientSide(rows)モードでは何もしません。dataSource を渡したときだけ有効です(createSpreadsheetGrid では features に serverSide: serverSideFeature も要ります)。\n' +
+              '[SpreadsheetGrid] refreshServerSide does nothing with clientSide rows. It works only when dataSource is passed (with createSpreadsheetGrid, features also needs serverSide: serverSideFeature).',
           );
         }
         return;
@@ -921,8 +940,9 @@ export const createGridApi = <T,>(features: Pick<GridCoreFeatures, 'export' | 'g
           console.warn(
             // 変更(1.0 前の最終チェック FC-33): /lite で serverSide の機能が無いと dataSource を渡しても clientSide になるので、
             //   その場合も分かる文にします。
-            '[SpreadsheetGrid] retryServerSideLoads は clientSide(rows)モードでは何もしません。dataSource を渡したときだけ有効です(/lite の createSpreadsheetGrid では features に serverSide: serverSideFeature も要ります)。\n' +
-              '[SpreadsheetGrid] retryServerSideLoads does nothing with clientSide rows. It works only when dataSource is passed (with /lite createSpreadsheetGrid, features also needs serverSide: serverSideFeature).',
+            // 変更(1.3.0 / R4-4): 入口の名前(React 版の /lite)は出しません(Solid 版は本体の入口に createSpreadsheetGrid がある)。
+            '[SpreadsheetGrid] retryServerSideLoads は clientSide(rows)モードでは何もしません。dataSource を渡したときだけ有効です(createSpreadsheetGrid では features に serverSide: serverSideFeature も要ります)。\n' +
+              '[SpreadsheetGrid] retryServerSideLoads does nothing with clientSide rows. It works only when dataSource is passed (with createSpreadsheetGrid, features also needs serverSide: serverSideFeature).',
           );
         }
         return;
@@ -981,9 +1001,33 @@ export const createGridApi = <T,>(features: Pick<GridCoreFeatures, 'export' | 'g
     bottomPin = { ...bottomPin, pinnedTop: el.scrollTop };
   };
 
+  for (const name of Object.keys(handle) as (keyof SpreadsheetGridHandle<T>)[]) {
+    const method = handle[name] as unknown;
+    if (typeof method !== 'function' || READ_HANDLE_METHOD.test(name)) {
+      continue;
+    }
+    (handle as Record<string, unknown>)[name] = (...callArgs: unknown[]) => {
+      if (!detached) {
+        return (method as (...a: unknown[]) => unknown)(...callArgs);
+      }
+      if (process.env.NODE_ENV !== 'production' && !detachedWarned) {
+        detachedWarned = true;
+        console.warn(
+          `[spreadsheet-grid] 外したグリッドのハンドルの ${name}() は何もしません(ハンドルを変数に持ったまま、グリッドを ` +
+            '<Show> / 条件付きの描画で外した後に呼んだ)。読むメソッド(getState() など)は外したときの値を返します。\n' +
+            `[spreadsheet-grid] ${name}() on the handle of an unmounted grid does nothing (the handle was kept in a ` +
+            'variable and called after the grid was removed by <Show> or conditional rendering). Reading methods ' +
+            '(getState() and so on) return the values from when it was removed.',
+        );
+      }
+      return name === 'startEditing' ? false : undefined;
+    };
+  }
+
   return {
     update: (next) => {
       const previousHeight = args?.physicalBodyHeight;
+      detached = false;
       args = next;
       pendingColumns = null;
       if (previousHeight !== next.physicalBodyHeight) {
@@ -999,5 +1043,9 @@ export const createGridApi = <T,>(features: Pick<GridCoreFeatures, 'export' | 'g
     horizontalTargetFor,
     scrollToCellInternal,
     settleBottomPin,
+    dispose: () => {
+      detached = true;
+      bottomPin = null;
+    },
   };
 };

@@ -34,7 +34,7 @@ description: セルの範囲選択・行の選択(チェックボックス)と�
 
 ### 選択範囲の集計
 
-2 セル以上を選ぶと、下部バーの右側に平均 / データの個数 / 合計が出ます(Excel のステータスバーと同じ。既定で有効、`showSelectionAggregates={false}` で出さない)。数えるのは見えているデータ行 × データ列のセルで、合計と平均は数値と数値の文字列だけです。大きな範囲は時間を分けて数え、その間は「集計中…」と出ます。JAN・郵便番号・社員番号のように数字の文字列でも数ではない列は、列の `selectionAggregate: false` で合計と平均から外せます(データの個数には数えます。1.2.0 から)。
+2 セル以上を選ぶと、下部バーの右側に平均 / データの個数 / 合計が出ます(Excel のステータスバーと同じ。既定で有効、`showSelectionAggregates={false}` で出さない)。数えるのは見えているデータ行 × データ列のセルで、合計と平均は数値と数値の文字列だけです。大きな範囲は時間を分けて数え、その間は「集計中…」と出ます。JAN・郵便番号・社員番号のように数字の文字列でも数ではない列は、列の `selectionAggregate: false` で合計と平均から外せます(データの個数には数えます。1.2.0 から)。select エディタの列も値で数えるので、値(コード)が数字の文字列(`'10'` / `'8'`)の列は、セルに表示名(「課税 10%」)が出ていても合計と平均に入ります。そうした列にも `selectionAggregate: false` を付けてください。
 
 ## 行の選択(チェックボックス)
 
@@ -54,6 +54,7 @@ description: セルの範囲選択・行の選択(チェックボックス)と�
 - 選んだ行はハンドルの `getSelectedRowKeys()` / `getSelectedRowData()` / `getSelectedRowCount()` / `isRowSelected(rowKey)` で読みます。`onRowSelectionChange` の中で呼んでも新しい選択が返ります。
 - 選択を自分で持つときは `rowSelection`(`{ type: 'include', rowKeys }` か、全選択から外す `{ type: 'exclude', rowKeys }`)か、簡単な形の `selectedRowKeys` を渡し、`onRowSelectionChange` で受け取った値を戻します。
 - serverSide(`dataSource`)では、`getSelectedRowKeys()` / `getSelectedRowData()` は読み込んだ行だけを返します。
+- 選んだ行を `rows` から消すと、そのキーは選択から外れ、`onRowSelectionChange` が呼ばれます(1.3.0 から。行を読み込む前に渡したキーは残ります)。消した行を元に戻しても選択は戻りません。
 
 ## コピー(`Ctrl/Cmd+C`)
 
@@ -76,10 +77,10 @@ description: セルの範囲選択・行の選択(チェックボックス)と�
 ```
 
 - **貼り始める位置**: 範囲を選んでいればその左上、列を選んでいれば列の先頭のデータ行、行を選んでいれば行の先頭の列からです(選択の外にアクティブセルがあるときはアクティブセルから)。1 つのセルをコピーしてセルの範囲に貼ると、範囲いっぱいに同じ値を書きます(Excel と同じ。1.2.0 から)。範囲の行数と列数がコピーの倍数のとき(2 行のコピーを 6 行の範囲に、など)も繰り返して埋めます。列 / 行の選択と、割り切れない範囲には 1 回だけ貼ります。serverSide で範囲にまだ読み込んでいない行があるときも 1 回だけです。1.1 までと同じく左上から 1 回だけにするには `pasteFillsSelection={false}`。
-- **飛ばすもの**: 編集できないセル(`readOnly` / `editable: false` / `canEditCell`)、ラベル行とグループ行(飛ばして次のデータ行へ続けて貼る)、合成列(その右のデータ列から書く)、`validationMode: 'reject'` の列で検査に通らない値のセル。編集できないセルと検査に通らない値のセルは、`onPasteSkipped` で 1 回の貼り付けにつき 1 回まとめて知らせます(1.1.0 から。`cells[i].reason` は `'readOnly'` / `'invalid'`)。
+- **飛ばすもの**: 編集できないセル(`readOnly` / `editable: false` / `canEditCell`)、ラベル行とグループ行(飛ばして次のデータ行へ続けて貼る)、合成列(その右のデータ列から書く)、`validationMode: 'reject'` の列で検査に通らない値のセル。編集できないセルと検査に通らない値のセルは、`onPasteSkipped` で 1 回の貼り付けにつき 1 回まとめて知らせます(1.1.0 から。`cells[i].reason` は `'readOnly'` / `'invalid'`)。編集できないセルへ貼った空の文字(Excel の範囲の空のセル)は数えません(1.3.0 から)。
 - **値の読み方**: 列の `parseClipboardValue` があればそれで、無ければエディタの種類の既定のパーサで文字列を値に直します(number は全角の数字や `1,234` も数値に、date は `2026/3/15` などを `'YYYY-MM-DD'` に、checkbox は `true` / `1` がチェックあり、空はチェックなし)。Delete での空にする操作とエディタの確定も同じパーサを通ります。Excel の通貨書式の「¥12,000」「(1,200)」は既定のパーサでは読めないので、`parseClipboardValue: numberParser({ strip: ['¥', '円'], negativeParentheses: true })` にします(1.1.0 から。[GridColumn の「貼り付けで読めない値」](/docs/api/column#貼り付けで読めない値numberparser--onpasteskipped))。
 - **はみ出したとき**: 表の末尾より下は `createRow` があるときだけ行を足し、無ければ捨てます。右端より右は `createOverflowColumn` と `onColumnsChange` があるときだけ列を足します。
-- 1 回の貼り付けは `onRowsChange` を 1 回呼び、元に戻すも 1 回です(足した行も一緒に戻る。足した列は戻らない)。
+- 1 回の貼り付けは `onRowsChange` を 1 回呼び、元に戻すも 1 回です(足した行も一緒に戻る。足した列は戻らない)。書けるセルが 1 つも無い貼り付けは `onRowsChange` を呼ばず、元に戻すにも積まず、行 / 列も足しません(1.3.0 から)。
 - グリッド全体の `readOnly` では何もしません。エディタの中や、セルに置いた入力欄の中での貼り付けは、その入力欄のふつうの貼り付けです。
 - serverSide では、読み込んでいない行は飛ばし、行と列は足しません。書いた値は `dataSource.updateRows` で保存します。
 

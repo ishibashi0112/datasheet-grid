@@ -2,7 +2,6 @@
 //   - 返り値は表示文字列。元の値・編集・コピー・ソート・フィルターには一切影響しません。
 //   - 各フォーマッタは CellValueFormatter<T> を返すファクタです。将来パターン(日付/％/通貨等)は
 //     本ファイルへファクタを足し、index.ts でバレル公開すれば拡張できます。
-import type { CellValueFormatterParams, GridFrameworkTypes } from '../model/gridTypes.core';
 
 // 追加(③): numberFormatter のオプションです。
 export type NumberFormatterOptions = {
@@ -28,15 +27,21 @@ export type NumberFormatterOptions = {
 // 変更(1.0 の準備): 型は公開型(gridTypes.core)で書き、描画の束ね型 F も総称にします(React 版 / 将来の Solid 版の
 //   どちらの列にも渡せる)。内部用の束縛(gridTypes.unbound)で書くと、利用側が推論のまま export したときの d.ts が
 //   core の内部のパスを指すためです。実行時は不変です。
+// 変更(1.3.0 / S4-04): 返す関数の引数を、名前の無い構造の型(読むのは value だけ。ほかの項目も受ける)で書きます。
+//   公開型の名前(CellValueFormatterParams)で書くと、pnpm で React 版 / Solid 版だけに依存するライブラリが結果を推論のまま
+//   export したとき、d.ts に core の型の名前が要って TS2883 / TS2742 になっていました。引数の型が広いので、どの行の型・
+//   どのフレームワークの列の valueFormatter(CellValueFormatter<Row>)にもそのまま渡せます。型引数(`numberFormatter<Row>()`)
+//   は前の版との互換のために受けるだけです。
 export function numberFormatter(
   options?: NumberFormatterOptions,
-): <T, F extends GridFrameworkTypes = GridFrameworkTypes>(params: CellValueFormatterParams<T, F>) => string;
+): (params: { readonly value: unknown; readonly [key: string]: unknown }) => string;
+// eslint-disable-next-line @typescript-eslint/no-unused-vars -- 前の版の `numberFormatter<Row>()` を通すためだけの型引数
 export function numberFormatter<T>(
   options?: NumberFormatterOptions,
-): <F extends GridFrameworkTypes = GridFrameworkTypes>(params: CellValueFormatterParams<T, F>) => string;
+): (params: { readonly value: unknown; readonly [key: string]: unknown }) => string;
 export function numberFormatter(
   options: NumberFormatterOptions = {},
-): (params: { value: unknown }) => string {
+): (params: { readonly value: unknown; readonly [key: string]: unknown }) => string {
   const {
     locale,
     useGrouping = true,

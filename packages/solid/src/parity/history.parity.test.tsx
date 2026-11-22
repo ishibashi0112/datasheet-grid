@@ -265,6 +265,37 @@ describe('貼り付けで書かなかったセル(onPasteSkipped)と pasteFillsS
     }
   });
 
+  // 追加(1.3.0 / Solid 版 0.1.2 / 品質の段 2-3): 書けるセルが 1 つも無い貼り付けは onRowsChange も履歴も残さない(S1-03)、
+  //   編集できないセルへ貼った空の文字は数えない(S9-04)。
+  it('書けるセルの無い貼り付け(S1-03)と、編集できないセルへの空の文字(S9-04)', async () => {
+    await expectParity({
+      props: () => ({
+        rows: makeRows(2),
+        columns,
+        rowKeyGetter: (row: Row) => row.id,
+        height: 300,
+        createRow: () => ({ id: 100, name: '', qty: null, locked: '' }),
+      }),
+      watch: ['onRowsChange'],
+      steps: async (ctx) => {
+        const seen: unknown[] = [];
+        await ctx.setProps({
+          onPasteSkipped: (params: { cells: readonly Record<string, unknown>[] }) => {
+            seen.push(skippedSummary(params));
+          },
+        });
+        await paste(ctx, { row: 1, col: 2 }, 'L1\nL2');
+        ctx.log('書けるセルの無い貼り付け', { seen, canUndo: call(ctx, 'canUndo'), selection: call(ctx, 'getSelection') });
+        seen.length = 0;
+        await paste(ctx, { row: 0, col: 0 }, 'A\t3\t\nB\t-1\tL2');
+        ctx.log('空の文字', { seen, rows: ctx.rows() });
+        seen.length = 0;
+        await paste(ctx, { row: 0, col: 1 }, '5\t');
+        ctx.log('空の文字だけが編集できないセルに重なる', seen);
+      },
+    });
+  });
+
   it('1 セルのコピーで範囲を埋める(既定)と pasteFillsSelection={false}', async () => {
     for (const fills of [undefined, false]) {
       await expectParity({

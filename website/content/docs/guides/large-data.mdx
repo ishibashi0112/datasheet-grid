@@ -34,7 +34,7 @@ const columns: GridColumn<Row>[] = [
 
 <LogTailDemo />
 
-```tsx
+```tsx tab="React"
 const gridRef = useRef<SpreadsheetGridHandle<LogRow>>(null);
 const followRef = useRef(true);
 const [following, setFollowing] = useState(true);
@@ -60,9 +60,36 @@ useEffect(() => {
   onScroll={({ atBottom }) => setFollowing(atBottom ?? false)}
 />
 ```
+```tsx tab="Solid"
+let grid!: SpreadsheetGridHandle<LogRow>;
+let follow = true;
+const [following, setFollowing] = createSignal(true);
+
+const append = (incoming: LogRow[]) => {
+  // 足す前に、末尾にいるかを覚えておく。
+  follow = grid.isAtBottom();
+  setRows((prev) => [...prev, ...incoming]);
+};
+
+// 足した行が描かれた後に末尾へ(rows が変わった後の effect)。
+createEffect(rows, () => {
+  if (follow) {
+    grid.scrollToBottom();
+  }
+});
+
+<SpreadsheetGrid
+  ref={grid}
+  rows={rows()}
+  columns={columns}
+  // 「末尾を追う」の表示に使う(人が上へ戻すと false)。
+  onScroll={({ atBottom }) => setFollowing(atBottom ?? false)}
+/>
+```
+
 
 - `isAtBottom()` は縦のスクロールが末尾(下端)にあるかを返します(中身が見える高さより低いときも `true`)。`onScroll` の引数の `atBottom` も同じ判定です。
-- 例では `followRef` を `true` で始めるので、最初の描画の後に末尾へ飛びます。先頭から見せたいときは `false` で始めてください。effect の依存は `rows` だけにします(ほかの値を足すと、行を足していないときにも末尾へ飛びます)。
+- 例では `followRef`(Solid の例では `follow`)を `true` で始めるので、最初の描画の後に末尾へ飛びます。先頭から見せたいときは `false` で始めてください。effect の依存は `rows` だけにします(ほかの値を足すと、行を足していないときにも末尾へ飛びます)。
 - `onScroll` の `source` では判定しないでください。絞り込みや行の高さの測り直しで表が縮み、ブラウザが位置を詰めた分も `'user'` で届きます。逆に、スクロールの位置を縮めて写す表(下の「大きなデータでの注意点」)では、上へ戻して読んでいる間に行が増えると、見ている行を保つための位置の合わせ直しが `'api'` で届きます。
 
 ## 大きなデータでの注意点

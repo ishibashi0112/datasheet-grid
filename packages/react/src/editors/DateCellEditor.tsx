@@ -12,6 +12,7 @@
 // 変更(1.0.2 / A-09): 日付の入力欄は中身の幅より狭くしません(細い列で年が切れていた)。右のペインの下や表の外へ
 //   はみ出すときは左へずらします。
 import { useCallback, useRef, useState } from 'react';
+import { useIsomorphicLayoutEffect } from '../hooks/useController';
 import type {
   EditorCommitDirection,
   EditorCommitResult,
@@ -37,6 +38,8 @@ type DateCellEditorProps = {
     direction?: EditorCommitDirection,
   ) => EditorCommitResult | void;
   onCancel: () => void;
+  // 追加(1.3.0 / S7-03 / S8-04): 打ちかけを確定する関数を預ける先(CellEditorLayer から。core editController の registerDraftFlush)。
+  onRegisterFlush?: ((flush: (() => void) | null) => void) | undefined;
   align?: 'left' | 'center' | 'right';
   // 追加(enter-move ②): Enter 確定後の移動先です(未指定 = 'down')。
   enterMove?: EditorEnterMove;
@@ -51,6 +54,7 @@ export function DateCellEditor({
   initialText,
   onCommit,
   onCancel,
+  onRegisterFlush,
   align,
   enterMove,
   cellHeight = 0,
@@ -96,6 +100,12 @@ export function DateCellEditor({
       ? { status: 'rejected', message: texts.enterDate }
       : onCommit(normalized, direction);
   };
+  // 追加(1.3.0 / S7-03 / S8-04): 今の打ちかけを確定する関数をグリッドへ預けます(描くたびに預け直す。text エディタと同じ)。
+  useIsomorphicLayoutEffect(() => {
+    onRegisterFlush?.(() => {
+      commitDraft(draftValue);
+    });
+  });
 
   return (
     <>

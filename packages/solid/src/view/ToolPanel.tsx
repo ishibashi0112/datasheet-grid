@@ -22,6 +22,7 @@ import { usePopupLocaleText } from '../context/localeText';
 import { createPortalTokens } from '../primitives/portalTokens';
 import { px } from '../primitives/style';
 import { readEventKey } from '../primitives/eventKey';
+import { getActiveElement } from '@ishibashi0112/spreadsheet-grid-core/internal/utils/shadowDom';
 
 // タブ 1 つぶんの表示(badge は件数。undefined / 0 は出さない)。
 export type ToolPanelTabDescriptor = {
@@ -69,7 +70,7 @@ export function ToolPanel(props: ToolPanelProps) {
   // 開いたら選ばれているタブへフォーカスを移します(既にパネルの中にあれば動かさない)。
   onSettled(() => {
     const element = panelNode;
-    if (!element || element.contains(element.ownerDocument.activeElement)) {
+    if (!element || element.contains(getActiveElement(element))) {
       return;
     }
     const target = element.querySelector<HTMLElement>('[role="tab"][aria-selected="true"]') ?? element;

@@ -48,6 +48,7 @@ afterEach(() => {
 });
 
 let currentRows: Row[] = [];
+let rowsChanges = 0;
 
 function Harness({
   gridRef,
@@ -62,7 +63,19 @@ function Harness({
   useEffect(() => {
     currentRows = rows;
   }, [rows]);
-  return <SpreadsheetGrid ref={gridRef} rows={rows} onRowsChange={setRows} columns={gridColumns} rowKeyGetter={(r) => r.id} {...extra} />;
+  return (
+    <SpreadsheetGrid
+      ref={gridRef}
+      rows={rows}
+      onRowsChange={(next) => {
+        rowsChanges += 1;
+        setRows(next);
+      }}
+      columns={gridColumns}
+      rowKeyGetter={(r) => r.id}
+      {...extra}
+    />
+  );
 }
 
 const setup = (extra?: Partial<SpreadsheetGridProps<Row>>, gridColumns?: GridColumn<Row>[]) => {
@@ -106,6 +119,55 @@ describe('onPasteSkipped(clientSide)', () => {
     expect(cells[0]?.message).toBe('数値で入力してください');
     expect(cells[3]?.message).toBe('0 以上で入力してください');
     expect(cells[1]?.message).toBeUndefined();
+  });
+
+  // 追加(1.3.0 / Solid 版の品質の段 2 S9-04): 編集できないセルへ貼った空の文字は数えない(Excel の範囲の空のセル)。
+  it('編集できないセルへ貼った空の文字は数えない', () => {
+    const onPasteSkipped = vi.fn<(params: GridPasteSkippedParams<Row>) => void>();
+    const { ref, shell } = setup({ onPasteSkipped });
+    act(() => {
+      ref.current?.selectCell(0, 0);
+    });
+    paste(shell, 'A\t3\t\nB\t-1\tL2');
+    expect(currentRows.map((row) => [row.name, row.amount])).toEqual([
+      ['A', 3],
+      ['B', 2],
+    ]);
+    const cells = onPasteSkipped.mock.calls[0]?.[0].cells ?? [];
+    expect(cells.map(({ rowKey, columnKey, text, reason }) => ({ rowKey, columnKey, text, reason }))).toEqual([
+      { rowKey: 2, columnKey: 'amount', text: '-1', reason: 'invalid' },
+      { rowKey: 2, columnKey: 'locked', text: 'L2', reason: 'readOnly' },
+    ]);
+    // 空の文字だけが編集できないセルに重なったときは呼ばない。
+    onPasteSkipped.mockClear();
+    act(() => {
+      ref.current?.selectCell(0, 1);
+    });
+    paste(shell, '5\t');
+    expect(currentRows[0]?.amount).toBe(5);
+    expect(onPasteSkipped).not.toHaveBeenCalled();
+  });
+
+  // 追加(1.3.0 / Solid 版の品質の段 2 S1-03): 書けるセルが 1 つも無い貼り付けは、onRowsChange も履歴も残さない(Delete と同じ)。
+  it('書けるセルが 1 つも無い貼り付けは onRowsChange を呼ばず、元に戻すも積まない', () => {
+    const onPasteSkipped = vi.fn<(params: GridPasteSkippedParams<Row>) => void>();
+    const { ref, shell } = setup({
+      onPasteSkipped,
+      createRow: () => ({ id: 100, name: '', amount: null, locked: '' }),
+    });
+    rowsChanges = 0;
+    act(() => {
+      ref.current?.selectCell(1, 2);
+    });
+    // 編集できない列へ 2 行(1 行は表の外 = 足すはずだった行)。
+    paste(shell, 'L1\nL2');
+    expect(rowsChanges).toBe(0);
+    expect(currentRows).toBe(INITIAL);
+    expect(ref.current?.canUndo()).toBe(false);
+    expect(onPasteSkipped).toHaveBeenCalledTimes(1);
+    expect(onPasteSkipped.mock.calls[0]?.[0].cells.map((cell) => cell.text)).toEqual(['L1']);
+    // 選択は貼り付けた範囲(表の中)へ。
+    expect(ref.current?.getSelection()).toMatchObject({ range: { start: { row: 1, col: 2 }, end: { row: 1, col: 2 } } });
   });
 
   it('書かなかったセルが無ければ呼ばない', () => {

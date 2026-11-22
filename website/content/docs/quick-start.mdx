@@ -7,7 +7,7 @@ description: 最小構成のグリッドを動かす
 
 `rows` と `onRowsChange` を渡すと、グリッドはコントロールドコンポーネントとして動作します。列には最低限 `key` と `width` が必要です。
 
-```tsx
+```tsx tab="React"
 import { useState } from 'react'
 import { SpreadsheetGrid, type GridColumn } from '@ishibashi0112/spreadsheet-grid'
 import '@ishibashi0112/spreadsheet-grid/style.css'
@@ -35,6 +35,35 @@ export function Example() {
   )
 }
 ```
+```tsx tab="Solid"
+import { createSignal } from 'solid-js'
+import { SpreadsheetGrid, type GridColumn } from '@ishibashi0112/spreadsheet-grid-solid'
+import '@ishibashi0112/spreadsheet-grid-solid/style.css'
+
+type Row = { id: number; name: string; qty: number }
+
+const columns: GridColumn<Row>[] = [
+  { key: 'name', title: 'Name', width: 200, editable: true, filterType: 'text' },
+  { key: 'qty',  title: 'Qty',  width: 120, editable: true, filterType: 'number' },
+]
+
+export function Example() {
+  const [rows, setRows] = createSignal<Row[]>([
+    { id: 1, name: 'Apple',  qty: 3 },
+    { id: 2, name: 'Banana', qty: 5 },
+  ])
+
+  return (
+    <SpreadsheetGrid
+      rows={rows()}
+      columns={columns}
+      onRowsChange={(next) => setRows(next)}
+      rowKeyGetter={(row) => row.id}
+    />
+  )
+}
+```
+
 
 ## 動作イメージ
 

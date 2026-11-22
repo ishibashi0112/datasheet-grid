@@ -18,7 +18,7 @@ import {
 } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/detailRow';
 import { ROW_DRAG_HANDLE_COLUMN_KEY } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/rowReorder';
 import { formatLocaleText } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/localeText';
-import { isFromRenderHeaderControl } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/domGuards';
+import { isFromRenderHeaderControl, syncRenderHeaderControlHover } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/domGuards';
 import type { GridColumn, GridResolvedSlots, SolidGridTypes } from '../model/gridTypes';
 import { useGridLocaleText } from '../context/localeText';
 import { px } from '../primitives/style';
@@ -175,7 +175,14 @@ export function GridHeaderRow<T>(props: GridHeaderRowProps<T>) {
                 props.onColumnHeaderPointerDown(colIndex(), event);
               }}
               onPointerEnter={(event) => props.onColumnHeaderPointerEnter(colIndex(), event)}
-              onPointerLeave={() => props.onColumnHeaderPointerLeave(colIndex())}
+              // renderHeader の中のボタン等の上では、ホバーで出る操作群を隠す(1.3.0 / RV5-4。core logic/domGuards)。
+              onPointerMove={(event) => {
+                if (column().renderHeader) syncRenderHeaderControlHover(event.currentTarget, event);
+              }}
+              onPointerLeave={(event) => {
+                if (column().renderHeader) syncRenderHeaderControlHover(event.currentTarget, null);
+                props.onColumnHeaderPointerLeave(colIndex());
+              }}
               onContextMenu={(event) => {
                 // 合成列は列メニューの対象外(ブラウザのメニューも出さない)。ほかの列のメニューは機能(columnMenu)。
                 if (isSynthetic()) {
@@ -213,7 +220,12 @@ export function GridHeaderRow<T>(props: GridHeaderRowProps<T>) {
                 {column().renderHeader
                   ? column().renderHeader?.(headerContext)
                   : isDetailToggleColumn()
-                    ? ''
+                    ? (
+                        // 見た目は空のまま、読み上げの名前だけ置く(下部バーの番地と同じ「詳細」/「移動」。1.3.0 / S6-03)。
+                        <span class="ssg-visually-hidden">
+                          {column().key === DETAIL_TOGGLE_COLUMN_KEY ? texts().detailColumnName : texts().rowDragColumnName}
+                        </span>
+                      )
                     : column().title || column().key}
               </div>
               <div class="ssg-header-status">

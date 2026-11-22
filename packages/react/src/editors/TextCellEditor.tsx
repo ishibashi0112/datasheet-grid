@@ -36,6 +36,8 @@ type TextCellEditorProps = {
     direction?: EditorCommitDirection,
   ) => EditorCommitResult | void;
   onCancel: () => void;
+  // 追加(1.3.0 / S7-03 / S8-04): 打ちかけを確定する関数を預ける先(CellEditorLayer から。core editController の registerDraftFlush)。
+  onRegisterFlush?: ((flush: (() => void) | null) => void) | undefined;
   align?: 'left' | 'center' | 'right';
   // 追加(enter-move ②): Enter 確定後の移動先です(未指定 = 'down')。
   enterMove?: EditorEnterMove;
@@ -60,6 +62,7 @@ export function TextCellEditor({
   initialValue,
   onCommit,
   onCancel,
+  onRegisterFlush,
   align,
   enterMove,
   multiline = false,
@@ -80,6 +83,13 @@ export function TextCellEditor({
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   // 追加(1.2.0): 1 行の入力欄の文字を上にそろえる(複数行は下の effect)。
   useTopAlignedInput(inputRef, alignTop, cellHeight);
+  // 追加(1.3.0 / S7-03 / S8-04): 今の打ちかけを確定する関数をグリッドへ預けます(描くたびに預け直す)。編集していた行が絞り込みから
+  //   外れると、エディタは blur を待たずに外れるため、グリッドがこれで打ちかけをその行へ確定します。
+  useIsomorphicLayoutEffect(() => {
+    onRegisterFlush?.(() => {
+      onCommit(draftValue);
+    });
+  });
 
   // 追加(段階 2 DU-14): 複数行の入力欄は中身が変わるたびに高さを合わせます(描く前に合わせて、伸びる途中を見せない)。
   useIsomorphicLayoutEffect(() => {

@@ -49,7 +49,7 @@ import { toEditorKeyEvent } from '../primitives/eventKey';
 
 type SelectCellEditorProps = {
   ariaLabel?: string | undefined;
-  options: GridSelectEditorOption[];
+  options: readonly GridSelectEditorOption[];
   // 編集を始めたときのセルの値(開いたときのハイライトと、候補に無い値の表示に使う)。
   value: unknown;
   onCommit: EditorCommit;
@@ -64,6 +64,9 @@ type SelectCellEditorProps = {
   initialText?: string | undefined;
   cellHeight?: number | undefined;
   alignTop?: boolean | undefined;
+  // 編集しているセルの置き場所(ペインの中の座標)。開いたまま並びが変わって動いたら候補の一覧を測り直す(1.3.0 / S8-05)。
+  cellTop?: number | undefined;
+  cellLeft?: number | undefined;
 };
 
 export function SelectCellEditor(props: SelectCellEditorProps) {
@@ -133,6 +136,17 @@ export function SelectCellEditor(props: SelectCellEditorProps) {
       }
     },
     { name: 'selectEditorOptionsRefocus' },
+  );
+  // 開いたまま並びが変わってセルが動いたら(applyState でソートを外す・URL の戻る など)、候補の一覧を測り直してエディタに
+  //   付いていかせます(1.3.0 / S8-05。元の位置に残ってエディタに重なっていた。React 版と同じ)。
+  createEffect(
+    () => `${props.cellTop ?? 0}:${props.cellLeft ?? 0}`,
+    (position, previous) => {
+      if (previous !== undefined && previous !== position) {
+        measure();
+      }
+    },
+    { name: 'selectEditorFollowCell' },
   );
   // 描く場所は開いている間だけ決めます(ダイアログを後から開いたときも、開いた時点の場所になる)。
   const mount = () => (placement() !== null ? portal.container() : null);

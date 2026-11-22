@@ -24,8 +24,9 @@ import { isUnchangedEditorCommit, parseCommittedValue, writeRowsCell } from '../
 import { decideCellWrite, type ValidationLocaleText } from '../logic/validation';
 import { clamp } from '../logic/geometry';
 import { findViewRowIndexByKey, isFocusInsideDetailCard, resolveFirstDataColIndex } from '../logic/detailRow';
-import { getCellValue, isViewCellEditable } from '../utils/permissions';
+import { getCellValue, isCellEditable, isViewCellEditable } from '../utils/permissions';
 import type { ServerSideCellEditInput } from '../logic/serverSideEdits';
+import { getActiveElement } from '../utils/shadowDom';
 
 export type EditControllerArgs<T extends object> = {
   uiState: GridUiState;
@@ -49,6 +50,12 @@ export type EditControllerArgs<T extends object> = {
   // 追加(1.2.0 の確かめ直し K): activeCellFollows: 'row'。確定の後の移動(Enter / Tab)の先を、確定した時点の並びの行キーで
   //   覚え、並びが変わった後もその行へ動かします(並べ替えの列を編集すると、確定で行が動いた後に元の座標へ動いていた)。
   followsRow?: boolean | undefined;
+  // 追加(1.3.0 / RV5-3): 今の状態(store の getState)。確定の後処理(次のフレーム)の時点で、もう次の編集が始まって
+  //   いるかを見ます(未指定は update で受けた値)。
+  getUiState?: (() => GridUiState) | undefined;
+  // 追加(1.3.0 / S7-03 / S8-04): 編集していた行が表から消えたとき、その行がまだ rows にあるかを行キーで探します
+  //   (未指定は rows の index がキー)。
+  rowKeyGetter?: ((row: T, index: number) => GridRowKey) | undefined;
 };
 
 export type EditController<T extends object> = {
@@ -60,6 +67,10 @@ export type EditController<T extends object> = {
     direction?: EditorCommitDirection,
   ) => EditorCommitResult;
   cancelEdit: () => void;
+  // 追加(1.3.0 / S7-03 / S8-04): 組み込みのエディタ(text / number / date)が、打ちかけを確定する関数を預けます(描くたびに今の
+  //   打ちかけで預け直す。select / custom は null)。編集していた行が絞り込みから外れてエディタが先に外れても、その行へ確定できる
+  //   ように(エディタが外れると blur を待てない)。
+  registerDraftFlush: (flush: (() => void) | null) => void;
 };
 
 // 追加(audit RD-1 / RD-3): 編集セッションの「同一性」です。editingCell は view / 論理 index だけを
@@ -93,17 +104,24 @@ const isSelectionChangedSince = (
 //     確定したとき、クリック先の入力欄からフォーカスを奪い返さない(ポップオーバーの監査 C-3 と同じ方針)。
 //   - 展開行カード内(ルート内だが消費側の UI)→ 従来どおり奪わない。
 const shouldRestoreFocusAfterEdit = (root: HTMLElement): boolean => {
-  if (isFocusInsideDetailCard()) {
+  if (isFocusInsideDetailCard(root)) {
     return false;
   }
   const doc = root.ownerDocument;
-  const active = doc.activeElement;
+  const active = getActiveElement(root);
   return (
     active === null ||
     active === doc.body ||
     active === doc.documentElement ||
     root.contains(active)
   );
+};
+
+// 追加(1.3.0 / S7-03 / S8-04): フォーカスがどこにも無い(body / html / null = 持っていた要素が外れた)かです。
+const isFocusDropped = (root: HTMLElement): boolean => {
+  const doc = root.ownerDocument;
+  const active = getActiveElement(root);
+  return active === null || active === doc.body || active === doc.documentElement;
 };
 
 // 追加(1.0.1 / 2026-11-09 実アプリの総点検 AP-05): エディタの中でキー(Enter / Tab / Escape)を押して確定・取消したかです
@@ -114,20 +132,32 @@ const isFocusInsideEditor = (root: HTMLElement | null): root is HTMLElement => {
   if (root === null) {
     return false;
   }
-  const active = root.ownerDocument.activeElement;
+  const active = getActiveElement(root);
   return (
     active !== null &&
     active !== root &&
     root.contains(active) &&
     typeof active.closest === 'function' &&
     active.closest('.ssg-cell-editor') !== null &&
-    !isFocusInsideDetailCard()
+    !isFocusInsideDetailCard(root)
   );
 };
 
 export const createEditController = <T extends object>(): EditController<T> => {
   let args: EditControllerArgs<T> | null = null;
   let identity: EditIdentity | null = null;
+  // 追加(1.3.0 / RV5-3): まだ済んでいない確定 / 取消の後処理(次のフレーム)。その前に次の編集が始まったら superseded に
+  //   して、後処理はしません(フォーカスをルートへ戻すと、始まったばかりのエディタからフォーカスを奪い、続けて打った文字が
+  //   捨てられていた。エディタを開いたまま別のセルを押し、1 フレームの内に打つと先頭の文字しか残らなかった)。
+  let pendingAfterEdit: { superseded: boolean } | null = null;
+  // 追加(1.3.0 / S7-03 / S8-04): 編集していた行が表から消えたとき(絞り込みから外れた・rows が別の行に替わった)に、エディタの
+  //   確定(フォーカスを外して blur で受ける)を書き込む先(rows の index と列)。消えた行が rows に無ければ null(取り消し)。
+  let lostEditTarget: { sourceIndex: number; column: GridColumn<T>; cell: CellCoord; rowKey: GridRowKey } | null = null;
+  let lostEditHandled = false;
+  // finishLostEdit の中(エディタの blur の確定は lostEditTarget へ。無ければ書かない = 消えた行の座標に来た別の行へ書かない)。
+  let finishingLostEdit = false;
+  // 今のエディタの打ちかけを確定する関数(registerDraftFlush。編集が終われば null)。
+  let draftFlush: (() => void) | null = null;
 
   // 指定セルの rowKey / columnKey を読みます(行が無い = SSRM 未ロード / 範囲外なら null)。
   const readKeysAt = (
@@ -172,6 +202,7 @@ export const createEditController = <T extends object>(): EditController<T> => {
     const editingCell = next.uiState.editingCell;
     if (!editingCell) {
       identity = null;
+      draftFlush = null;
       return;
     }
     const keysHere = readKeysAt(next, editingCell);
@@ -192,6 +223,12 @@ export const createEditController = <T extends object>(): EditController<T> => {
     if (identity === null || !sameCellAsBefore) {
       // 新しい編集セッションの開始(startEdit 直後)。この時点の行 / 列を同一性として控えます。
       identity = keysHere ? { ...keysHere, cell: editingCell } : null;
+      // 追加(1.3.0 / RV5-3): 前の編集の後処理がまだなら取りやめ、再入抑止も外します(新しいエディタの確定が空振りしない)。
+      if (pendingAfterEdit !== null) {
+        pendingAfterEdit.superseded = true;
+        pendingAfterEdit = null;
+        next.editorActionGuardRef.current = false;
+      }
       return;
     }
     // 座標は変わっていないのに行 / 列のキーが変わった = 編集中に rows / columns が差し替わった。
@@ -203,9 +240,108 @@ export const createEditController = <T extends object>(): EditController<T> => {
       // 変更(1.2.0 の確かめ直し J): アクティブセルと選択も一緒に付いていく(これまでは startEdit で、選択だけ元の位置に残った)。
       next.dispatch(gridActions.retargetEdit(located, next.rowModel.getRowCount()));
     } else {
+      const lost = identity;
       identity = null;
-      next.dispatch(gridActions.stopEdit());
+      finishLostEdit(next, lost);
     }
+  };
+
+  // 追加(1.3.0 / Solid 版の品質の段 2 S7-03 / S8-04): 編集していた行が表から消えたときの終わり方です。これまでは知らせなく
+  //   編集を終え(打ちかけは捨てる)、エディタと一緒にフォーカスも消えて body に落ち、押すまでキー操作が効かなかった。
+  //   - 行がまだ rows にある(絞り込みから外れた。今日の絞り込みで 0 時をまたいだ など)→ 打ちかけを確定してその行へ書く。
+  //   - rows に無い(rows がすべて別の行に替わった)/ serverSide → 取り消す。
+  //   どちらもフォーカスはグリッドに残します。打ちかけはエディタが持っているので、組み込みのエディタは預かった関数
+  //   (registerDraftFlush)で確定し、それ以外はフォーカスをルートへ移してエディタの blur の確定を受けます。どちらの確定
+  //   (commitEdit)も lostEditTarget の行へ向けます(blur で確定しないエディタ = select は取り消し)。
+  const finishLostEdit = (next: EditControllerArgs<T>, lost: EditIdentity) => {
+    if (next.editorActionGuardRef.current) {
+      next.dispatch(gridActions.stopEdit());
+      return;
+    }
+    const column = next.visibleColumns.find((candidate) => candidate.key === lost.columnKey);
+    const sourceIndex =
+      column === undefined || next.applyServerSideCellEdits !== undefined || next.onRowsChange === undefined
+        ? -1
+        : findSourceIndexByKey(next, lost.rowKey);
+    lostEditTarget =
+      column !== undefined && sourceIndex >= 0 ? { sourceIndex, column, cell: lost.cell, rowKey: lost.rowKey } : null;
+    lostEditHandled = false;
+    const flush = draftFlush;
+    draftFlush = null;
+    finishingLostEdit = true;
+    let movedFocus: boolean;
+    try {
+      if (flush !== null) {
+        // 行が絞り込みから外れると、エディタはこの時点でもう外れている(blur は来ない)。打ちかけをここで確定し、
+        //   下の blur の確定は書かない(lostEditTarget を空に)。
+        flush();
+        lostEditTarget = null;
+      }
+      movedFocus = moveFocusToRootFromEditor();
+    } finally {
+      finishingLostEdit = false;
+      lostEditTarget = null;
+    }
+    // エディタと一緒にフォーカスが body に落ちていれば、次のフレームを待たずにルートへ戻します(すぐ打ったキーも効く)。
+    const root = next.gridRootRef.current;
+    if (!movedFocus && root !== null && root.isConnected && isFocusDropped(root)) {
+      root.focus({ preventScroll: true });
+      movedFocus = true;
+    }
+    // エディタの blur で確定 / 取り消しが済んだ(cancelEdit が後処理まで予約した)なら、ここでは何もしません。
+    if (lostEditHandled && next.editorActionGuardRef.current) {
+      lostEditHandled = false;
+      return;
+    }
+    lostEditHandled = false;
+    next.editorActionGuardRef.current = true;
+    next.dispatch(gridActions.stopEdit());
+    scheduleAfterEdit(null, null, undefined, movedFocus);
+  };
+
+  const findSourceIndexByKey = (current: EditControllerArgs<T>, rowKey: GridRowKey): number => {
+    const { rows, rowKeyGetter } = current;
+    for (let index = 0; index < rows.length; index += 1) {
+      const row = rows[index];
+      if (row !== undefined && Object.is(rowKeyGetter ? rowKeyGetter(row, index) : index, rowKey)) {
+        return index;
+      }
+    }
+    return -1;
+  };
+
+  // 消えた行への確定です(finishLostEdit の中のエディタの blur から)。書けなければ書かずに終えます。
+  const commitToLostRow = (
+    current: EditControllerArgs<T>,
+    target: NonNullable<typeof lostEditTarget>,
+    committedValue: unknown,
+  ): EditorCommitResult => {
+    const { rows, onRowsChange } = current;
+    const row = rows[target.sourceIndex];
+    if (
+      row === undefined ||
+      onRowsChange === undefined ||
+      !isCellEditable(
+        { readOnly: current.readOnly, canEditCell: current.canEditCell },
+        target.cell.row,
+        target.cell.col,
+        row,
+        target.column,
+        { sourceRowIndex: target.sourceIndex, rowKey: target.rowKey },
+      )
+    ) {
+      return { status: 'noop' };
+    }
+    if (isUnchangedEditorCommit(target.column, getCellValue(row, target.column), committedValue)) {
+      return { status: 'committed' };
+    }
+    const parsedValue = parseCommittedValue(target.column, committedValue, row);
+    const decision = decideCellWrite(target.column, row, parsedValue, current.localeTexts);
+    if (decision.action === 'reject') {
+      return { status: 'noop' };
+    }
+    onRowsChange(writeRowsCell(rows, target.sourceIndex, target.column, parsedValue));
+    return { status: 'committed' };
   };
 
   const activateSingleCell = (cell: CellCoord) => {
@@ -268,8 +404,26 @@ export const createEditController = <T extends object>(): EditController<T> => {
       return;
     }
     let done = false;
+    const pending = { superseded: false };
+    pendingAfterEdit = pending;
+    // 確定 / 取消した編集(描いた時点の editingCell。次の編集は新しい値になる)。
+    const finishedEditingCell = current.uiState.editingCell;
     const run = (final: boolean) => {
       if (done) {
+        return;
+      }
+      if (pending.superseded) {
+        done = true;
+        return;
+      }
+      // 追加(1.3.0 / RV5-3): 描く前に次の編集が始まっていれば(update がまだ受けていない)、後処理はせず再入抑止だけ外します。
+      const live = args === null ? null : (args.getUiState?.() ?? null);
+      if (live !== null && live.editingCell !== null && live.editingCell !== finishedEditingCell) {
+        done = true;
+        if (pendingAfterEdit === pending) {
+          pendingAfterEdit = null;
+        }
+        current.editorActionGuardRef.current = false;
         return;
       }
       // マイクロタスクの時点で編集の終了がまだ描かれていなければ(エディタが残っている)、次のフレームに任せます。
@@ -277,6 +431,9 @@ export const createEditController = <T extends object>(): EditController<T> => {
         return;
       }
       done = true;
+      if (pendingAfterEdit === pending) {
+        pendingAfterEdit = null;
+      }
       const root = current.gridRootRef.current;
       if (root !== null && shouldRestoreFocusAfterEdit(root)) {
         root.focus();
@@ -335,6 +492,12 @@ export const createEditController = <T extends object>(): EditController<T> => {
     } = args;
     if (editorActionGuardRef.current || !uiState.editingCell) {
       return { status: 'noop' };
+    }
+    // 追加(1.3.0 / S7-03 / S8-04): 編集していた行が表から消えた(finishLostEdit がフォーカスを外した blur)。
+    if (finishingLostEdit) {
+      const target = lostEditTarget;
+      lostEditTarget = null;
+      return target === null ? { status: 'noop' } : commitToLostRow(args, target, committedValue);
     }
 
     const editingCell = uiState.editingCell;
@@ -429,6 +592,9 @@ export const createEditController = <T extends object>(): EditController<T> => {
     if (args === null || args.editorActionGuardRef.current) {
       return;
     }
+    // finishLostEdit の中のエディタの blur の取り消し(select など)。後処理はここで予約します。
+    lostEditHandled = true;
+    lostEditTarget = null;
     // 旧実装と同じ順序: ガード → stopEdit → rAF 予約。
     args.editorActionGuardRef.current = true;
     const immediate = moveFocusToRootFromEditor();
@@ -436,5 +602,9 @@ export const createEditController = <T extends object>(): EditController<T> => {
     scheduleAfterEdit(null, null, undefined, immediate);
   };
 
-  return { update, activateSingleCell, startEditWithValue, commitEdit, cancelEdit };
+  const registerDraftFlush = (flush: (() => void) | null) => {
+    draftFlush = flush;
+  };
+
+  return { update, activateSingleCell, startEditWithValue, commitEdit, cancelEdit, registerDraftFlush };
 };

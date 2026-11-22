@@ -47,8 +47,9 @@ export const DEFAULT_GRID_LOCALE_TEXT = {
   dragColumn: 'ドラッグで列を移動',
   columnMenu: '列メニュー',
   columnMenuFor: '{column} の列メニュー',
-  showDetails: '詳細を開く',
-  hideDetails: '詳細を閉じる',
+  // 変更(1.3.0 / 要望): どの行のボタンかを読み上げる(行の選択の「行 {row} を選択」と同じ番号。ラベル行は数えない)。
+  showDetails: '行 {row} の詳細を開く',
+  hideDetails: '行 {row} の詳細を閉じる',
   editCell: '{column} を編集',
   cellInput: 'セルへの入力',
   sizingColumns: '列幅を計算中…',

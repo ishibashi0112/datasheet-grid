@@ -30,6 +30,8 @@ const csv = gridRef.current?.exportCsv({ delimiter: '\t' }); // TSV も可
 | `'selection'` | セル範囲選択中の行 |
 | `'rendered'` | 仮想化で現在描画中の行のみ(スクロール依存) |
 
+`'selection'` は呼んだ時点の選択で出します(`selectRange` の直後でもよい。1.3.0 から)。`applyState` などで並べ替え / 絞り込み / 列を変えた直後(同じ処理の中)のエクスポートは、表を描き直す前の並びで出るので、新しい並びで出すときは描き直した後(次の描画の後)に呼びます。
+
 列は**表示中の列を表示順**で出力します。値は `valueFormatter` を通さない**生の値**(`String(value ?? '')`。`1234.5` は `1,234.5` ではなく `1234.5`)で、コピー(`Ctrl/Cmd+C`)と同じ規則です。`formatClipboardValue` があればそれを使うので、画面と同じ書き方で出したい列は `formatClipboardValue` に `valueFormatter` と同じ整形を書きます。
 
 ### 行の除外(isRowExportable)
@@ -47,6 +49,22 @@ props の `isRowExportable` で「コピー(`Ctrl/Cmd+C` の TSV)/ `exportCsv` /
 ```
 
 `ctx.viewRowIndex` はフィルター / ソート適用後のビュー行 index(scope `'raw'` のみ元 `rows` 配列の index)、`ctx.rowKey` は `rowKeyGetter` の値です。
+
+### 列の除外(exportable)
+
+列の `exportable: false` で、その列を CSV / TSV の書き出し(`exportCsv` / `downloadCsv`)と `getExportData` から外せます(1.3.0 から)。操作のボタンの列や、画面には出すが書き出したくない社内だけの ID の列に使います。
+
+```tsx
+const columns: GridColumn<Order>[] = [
+  { key: 'code', title: '注文番号', width: 120 },
+  { key: 'internalId', title: '社内 ID', width: 100, exportable: false },
+  { key: 'actions', title: '', width: 80, exportable: false, renderCell: ({ row }) => <button onClick={() => remove(row)}>削除</button> },
+];
+```
+
+- scope `'selection'`(選んだ範囲の書き出し)でも外します。
+- 範囲を選んだコピー(`Ctrl/Cmd+C`)には今までどおり出します(選んだとおりに写す)。コピーからも外したい列は、表から隠すか、その列を選ばないでください。
+- 行ごと外すのは上の `isRowExportable` です。
 
 ### ラベル行(見出し行)を含める(includeLabelRows)
 

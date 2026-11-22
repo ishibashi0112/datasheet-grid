@@ -10,9 +10,12 @@
 //     エントリを保全する。監査 RD-5 / M-03)。
 //   - 固定 / 表示 / 並び順の変更は orderedColumns の視覚順(= selection / activeCell の論理 index 空間)を変えるため、
 //     選択・アクティブセル・編集を破棄します(AG Grid も pin 変更で range selection をクリア)。
+//     変更(1.3.0 / Solid 版の品質の段 2 S12-01): アクティブセルは列のキーに付いていきます(新しい列が届いた update で
+//     その列の位置へ。隠した列なら同じ位置)。選択はアクティブセルの 1 セルにし、編集は止めます。グループ化の変更は
+//     行も入れ替わるので今までどおり破棄します。
 //   - 列リセット用の「初期 column defs スナップショット」は最初の update で退避します(以後 columns が変わっても
 //     更新しない = ユーザー操作後の状態を「初期」と誤認しない。Map の挿入順が初期の並び順)。
-import type { GridColumn, GridColumnPinned, GridSortState } from '../model/gridTypes.unbound';
+import type { CellCoord, GridColumn, GridColumnPinned, GridSortState, GridUiState } from '../model/gridTypes.unbound';
 import { gridActions, type GridUiAction } from '../model/gridActions';
 import { keepGroupColumnOrder, reorderColumnsByPaneKeepingGroupOrder } from '../logic/geometry';
 import { buildResetColumns, type InitialColumnState } from '../logic/columnReset';
@@ -35,6 +38,8 @@ export type ColumnCommandsArgs<T> = {
   columnWidths: Record<string, number>;
   onColumnsChange: ((columns: GridColumn<T>[]) => void) | undefined;
   dispatch: (action: GridUiAction) => void;
+  // 追加(1.3.0 / S12-01): store の今の状態(アクティブセルを読む)。省略 = 列を変えたらアクティブセルを外す(1.2 まで)。
+  getUiState?: (() => GridUiState) | undefined;
   enableSorting: boolean;
   sort: GridSortState;
   globalFilterText: string;
@@ -121,12 +126,35 @@ export const createColumnCommands = <T,>(): ColumnCommands<T> => {
     dispatch(gridActions.activateCell(null));
   };
 
+  // 追加(1.3.0 / Solid 版の品質の段 2 S12-01): 列の並び / 固定 / 表示を変えた後、アクティブセルを列のキーに付いていかせます。
+  //   これまでは見出しのドラッグ・列メニューの固定・ツールパネルの非表示でアクティブセルと選択が消え、次の矢印キーが表の
+  //   先頭から始まっていました(利用側が columns を渡したときは表示位置に残る)。新しい列(columns)が届いた update で
+  //   その列の位置へ移します(隠した列なら同じ位置。1 秒のうちに届かなければ何もしない)。
+  let pendingFollow: { columns: GridColumn<T>[]; row: number; col: number; key: string; until: number } | null = null;
+  const FOLLOW_MS = 1000;
+  const followActiveColumn = (current: ColumnCommandsArgs<T>) => {
+    const active = current.getUiState?.().activeCell ?? null;
+    const key = active === null ? undefined : current.orderedColumns[active.col]?.key;
+    if (active === null || key === undefined) {
+      discardSelectionState(current.dispatch);
+      return;
+    }
+    current.dispatch(gridActions.stopEdit());
+    selectSingleCell(current.dispatch, active);
+    pendingFollow = { columns: current.columns, row: active.row, col: active.col, key, until: Date.now() + FOLLOW_MS };
+  };
+  const selectSingleCell = (dispatch: ColumnCommandsArgs<T>['dispatch'], cell: CellCoord) => {
+    dispatch(gridActions.startSelection(cell));
+    dispatch(gridActions.endSelection());
+    dispatch(gridActions.activateCell(cell));
+  };
+
   const applySort = (next: GridSortState, dispatch: ColumnCommandsArgs<T>['dispatch']) => {
     dispatch(next.length === 0 ? gridActions.clearSort() : gridActions.setSort(next));
   };
 
   const handleColumnMenuPinnedChange: ColumnCommands<T>['handleColumnMenuPinnedChange'] = (columnKey, nextPinned) => {
-    const { closeColumnMenu, onColumnsChange, columns, columnWidths, dispatch } = requireArgs();
+    const { closeColumnMenu, onColumnsChange, columns, columnWidths } = requireArgs();
     closeColumnMenu();
     if (!onColumnsChange) {
       return;
@@ -149,7 +177,7 @@ export const createColumnCommands = <T,>(): ColumnCommands<T> => {
       return resolvedWidth === column.width ? column : { ...column, width: resolvedWidth };
     });
     onColumnsChange(nextColumns);
-    discardSelectionState(dispatch);
+    followActiveColumn(requireArgs());
   };
 
   // 追加(段階 2 DU-24): 列メニューの「この列でグループ化」。階層は columns の並び順なので、今のグループ元の列より前に
@@ -258,7 +286,7 @@ export const createColumnCommands = <T,>(): ColumnCommands<T> => {
     columnKey,
     nextVisible,
   ) => {
-    const { onColumnsChange, columns, columnWidths, dispatch } = requireArgs();
+    const { onColumnsChange, columns, columnWidths } = requireArgs();
     if (!onColumnsChange) {
       return;
     }
@@ -284,12 +312,12 @@ export const createColumnCommands = <T,>(): ColumnCommands<T> => {
       return resolvedWidth === column.width ? column : { ...column, width: resolvedWidth };
     });
     onColumnsChange(nextColumns);
-    discardSelectionState(dispatch);
+    followActiveColumn(requireArgs());
   };
 
   // 全選択(= すべて表示)。非表示列がなければ no-op。
   const handleColumnChooserShowAll = () => {
-    const { onColumnsChange, columns, columnWidths, dispatch } = requireArgs();
+    const { onColumnsChange, columns, columnWidths } = requireArgs();
     if (!onColumnsChange) {
       return;
     }
@@ -306,7 +334,7 @@ export const createColumnCommands = <T,>(): ColumnCommands<T> => {
       return needsShow ? { ...column, width: resolvedWidth, visible: true } : { ...column, width: resolvedWidth };
     });
     onColumnsChange(nextColumns);
-    discardSelectionState(dispatch);
+    followActiveColumn(requireArgs());
   };
 
   // 全解除(視覚順先頭の 1 列だけ残して非表示)。keep 列 = 画面最左の「consumer の」表示列。
@@ -314,7 +342,7 @@ export const createColumnCommands = <T,>(): ColumnCommands<T> => {
   //   ときは consumer の columns にそのキーが無く、全列が非表示になっていた(「最後の 1 列は残す」契約の
   //   破れ)。consumer の columns に存在する最初の視覚順列を keep にする。
   const handleColumnChooserHideAll = () => {
-    const { onColumnsChange, columns, orderedColumns, columnWidths, dispatch } = requireArgs();
+    const { onColumnsChange, columns, orderedColumns, columnWidths } = requireArgs();
     if (!onColumnsChange) {
       return;
     }
@@ -337,7 +365,7 @@ export const createColumnCommands = <T,>(): ColumnCommands<T> => {
       return needsHide ? { ...column, width: resolvedWidth, visible: false } : { ...column, width: resolvedWidth };
     });
     onColumnsChange(nextColumns);
-    discardSelectionState(dispatch);
+    followActiveColumn(requireArgs());
   };
 
   // 並べ替え + 任意の pin 変更の共通 commit(13-B3-2)。
@@ -346,7 +374,7 @@ export const createColumnCommands = <T,>(): ColumnCommands<T> => {
   //   - 全列について解決済み幅を defs へ書き戻し、reorderColumnsByPane で pane 連結正規化(冪等)。
   //   - 正規化結果が現在の columns と「順序・幅・pinned」すべて一致なら no-op。
   const applyColumnOrderAndPin: ColumnCommands<T>['applyColumnOrderAndPin'] = (orderedKeys, pinOverride) => {
-    const { onColumnsChange, columns, columnWidths, dispatch } = requireArgs();
+    const { onColumnsChange, columns, columnWidths } = requireArgs();
     if (!onColumnsChange) {
       return;
     }
@@ -383,7 +411,7 @@ export const createColumnCommands = <T,>(): ColumnCommands<T> => {
       return;
     }
     onColumnsChange(normalized);
-    discardSelectionState(dispatch);
+    followActiveColumn(requireArgs());
   };
   const handleColumnChooserReorder: ColumnCommands<T>['handleColumnChooserReorder'] = (orderedKeys) => {
     applyColumnOrderAndPin(orderedKeys);
@@ -403,7 +431,7 @@ export const createColumnCommands = <T,>(): ColumnCommands<T> => {
     // 変更(監査 RD-5 / M-03): 列幅 state は columns の参照変化では消えなくなったため、リセットでは
     //   手動幅のエントリを明示的に捨てます(初期幅は nextColumns の column.width が担う)。
     dispatch(gridActions.resetColumnWidths({}));
-    discardSelectionState(dispatch);
+    followActiveColumn(requireArgs());
   };
   // 列メニュー root の「列のリセット」: 先にメニューを閉じてから同じ本体を呼びます(パネル側は閉じない)。
   const handleColumnMenuResetColumns = () => {
@@ -501,6 +529,29 @@ export const createColumnCommands = <T,>(): ColumnCommands<T> => {
   return {
     update: (next) => {
       args = next;
+      // 追加(1.3.0 / S12-01): 列を変えた後の新しい列が届いたら、アクティブセルをその列の位置へ(隠した列なら同じ位置)。
+      //   修正(1.3.0 の別視点のレビュー): 列をインラインで渡す利用側は描くたびに新しい配列が届くので、その列がまだ同じ位置に
+      //   ある間は期限まで待ちます(最初に届いた並びの変わらない配列で待つのをやめ、後から届く新しい並びに付いていかなかった)。
+      //   待つ間に利用者がアクティブセルを動かしたら、もう動かしません。
+      if (pendingFollow !== null && next.columns !== pendingFollow.columns) {
+        const follow = pendingFollow;
+        const active = next.getUiState?.().activeCell ?? null;
+        // 隠して列が減ったときは、表の詰め(B-05)が先に右端へ寄せていることがある(それは動かしたことにしない)。
+        const clamped = Math.min(follow.col, next.orderedColumns.length - 1);
+        const moved = active === null || active.row !== follow.row || (active.col !== follow.col && active.col !== clamped);
+        if (Date.now() > follow.until || moved) {
+          pendingFollow = null;
+        } else if (next.orderedColumns[follow.col]?.key === follow.key) {
+          pendingFollow = { ...follow, columns: next.columns };
+        } else {
+          pendingFollow = null;
+          const index = next.orderedColumns.findIndex((column) => column.key === follow.key);
+          const col = index >= 0 ? index : Math.min(follow.col, next.orderedColumns.length - 1);
+          if (col >= 0 && col !== follow.col) {
+            selectSingleCell(next.dispatch, { row: follow.row, col });
+          }
+        }
+      }
       // 修正(audit B-06): 列が 1 本以上届いた最初の update で初期状態を取ります(columns を非同期に流し込む利用側で
       //   初回の [] を初期状態にすると、どの列もリセット対象外になり「列のリセット」が効かなかった)。
       if (initialColumnState === null && next.columns.length > 0) {
