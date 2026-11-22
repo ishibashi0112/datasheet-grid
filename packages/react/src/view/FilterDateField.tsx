@@ -17,6 +17,7 @@ import {
 } from 'react';
 import { cx } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/cx';
 import { toDateKey } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/filtering';
+import { parseFilterDateText } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/editorValues';
 import {
   buildCalendarDayCells,
   buildYearGrid,
@@ -81,7 +82,8 @@ export function FilterDateField({
       setIsInvalid(false);
       return;
     }
-    const key = toDateKey(raw);
+    // 変更(1.3.0 / S8-02): セルの date エディタと同じ読み方(全角・年月日・ドット)。
+    const key = parseFilterDateText(raw);
     if (key === null) {
       // 解釈できない入力は確定しません(赤枠のまま編集継続)。
       setIsInvalid(true);

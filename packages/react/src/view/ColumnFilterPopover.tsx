@@ -24,6 +24,7 @@ import {
   useMemo,
   useRef,
   useState,
+  useSyncExternalStore,
   type ChangeEvent,
   type CSSProperties,
   type KeyboardEvent,
@@ -36,6 +37,8 @@ import type { ConditionDraftChangeOptions } from '@ishibashi0112/spreadsheet-gri
 // 追加(async-options): 候補の状態('loading' / 'error' を含む)。
 import type { ColumnSelectOptionsStatus } from '@ishibashi0112/spreadsheet-grid-core/internal/controllers/selectOptionsCollector';
 import { useVirtualizerCore } from '../hooks/useVirtualizerCore';
+import { useControllerLifecycle } from '../hooks/useController';
+import { createDateRolloverStore } from '@ishibashi0112/spreadsheet-grid-core/internal/controllers/dateRolloverStore';
 // 追加(SF-ENTER): set フィルター検索の一致関数と Enter 確定の振る舞い判定です(純関数)。
 //   view ファイルからの非コンポーネント export は react-refresh 制約(eslint baseline)に
 //   触れるため、logic/setFilterSearch.ts に置いて共有しています。
@@ -81,6 +84,7 @@ import {
   dateFilterOperandCount,
   filterOptionsByDateCondition,
   normalizeFilterDateInputValue,
+  resolveComboReferenceDate,
   type DateFilterConditionDraft,
   type DateFilterOperator,
 } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/dateFilterCondition';
@@ -1345,9 +1349,20 @@ export function ColumnFilterPopover({
   //   Set 本体の検索ボックスにはこちらを渡します(early return より前に置くこと)。
   const comboSearchInputRef = useRef<HTMLInputElement | null>(null);
   // 追加(filter-ext D): 相対プリセットの候補絞り(表示)用の解決基準時刻です。マウント時に
-  //   1 回だけ確保します(表示用途のみ。行の判定本体は filtering 側が再計算のたびに解決します。
-  //   日付を跨いで開きっぱなしのケースは表示のみ僅かに stale になりますが許容します)。
-  const [comboNow] = useState(() => new Date());
+  //   1 回だけ確保します(表示用途のみ。行の判定本体は filtering 側が再計算のたびに解決します)。
+  // 変更(1.3.0 / S8-03): 日付の条件が相対の期間の間は日付の変わり目を見張り、開いたまま 0 時をまたいだら新しい日で
+  //   絞り直します(core controllers/dateRolloverStore + logic/dateFilterCondition の resolveComboReferenceDate)。
+  const [comboOpenedAt] = useState(() => new Date());
+  const [comboDateRollover] = useState(createDateRolloverStore);
+  useControllerLifecycle(comboDateRollover, {
+    active: isOpen && filterType === 'dateSet' && (dateConditionDraft?.preset ?? null) !== null,
+  });
+  const comboDateKey = useSyncExternalStore(
+    comboDateRollover.subscribe,
+    comboDateRollover.getSnapshot,
+    comboDateRollover.getSnapshot,
+  );
+  const comboNow = resolveComboReferenceDate(comboOpenedAt, comboDateKey);
   // 追加(DevBI の報告): 表で決まったトークン(--ssg-*)をポップオーバーへ写します(body 直下のため継承で届かない)。
   usePortalTokens(popoverRef, isOpen && layout !== null, themeClassName, { layout });
   // 追加(1.1.0 / AP-07): 描く場所(既定はグリッドを囲むダイアログの中、無ければ body)。

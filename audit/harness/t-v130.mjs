@@ -4,7 +4,7 @@
 //   - S7-03 / S8-04: 編集していた行が絞り込みから外れたら、打ちかけをその行へ確定し、フォーカスはグリッドに残る
 //   - RV5-3: エディタを開いたまま別のセルを押してすぐ打った文字が、そのセルのエディタに残る
 //   Solid 版は SSG_AUDIT_FRAMEWORK=solid HARNESS_BASE=http://127.0.0.1:5179/。
-import { open, check, skip, summary, waitIdle, unexpectedPageErrors, cell, cellText, SUPPORTS } from './pw.mjs';
+import { open, check, skip, summary, waitIdle, unexpectedPageErrors, cell, cellText, header, SUPPORTS } from './pw.mjs';
 
 const { page, close, pageErrors } = await open('basic');
 await waitIdle(page, 300);
@@ -117,6 +117,66 @@ if (SUPPORTS.clipboardSeed) {
   check('S12-05: 横にスクロールした後の Ctrl+Home で左端へ戻る', scrollLeft === 0 && active?.row === 0 && active?.col === 0, { scrollLeft, active });
 }
 
+// ── S8-05: select の候補を開いたまま並びが変わる ──
+{
+  await cell(page, 2, 'category').dblclick();
+  await waitIdle(page, 250);
+  const gap = () =>
+    page.evaluate(() => {
+      const list = document.querySelector('.ssg-select-editor-popover')?.getBoundingClientRect();
+      const input = document.querySelector('.ssg-cell-editor-input--select')?.getBoundingClientRect();
+      return list && input ? Math.round(Math.min(Math.abs(list.top - input.bottom), Math.abs(list.bottom - input.top))) : null;
+    });
+  const before = await gap();
+  const editorTop = () => page.evaluate(() => Math.round(document.querySelector('.ssg-cell-editor-input--select')?.getBoundingClientRect().top ?? -1));
+  const topBefore = await editorTop();
+  // 先頭の行と 3 行目を入れ替える(編集している 3 行目の行が先頭へ動く。スクロールは起きない)。
+  await page.evaluate(() => {
+    const next = [...window.__rows()];
+    [next[0], next[2]] = [next[2], next[0]];
+    window.__setRows(next);
+  });
+  await waitIdle(page, 400);
+  const after = await gap();
+  const topAfter = await editorTop();
+  check('S8-05: select の候補を開いたまま並びが変わっても、候補の一覧はエディタに付いていく', before !== null && after !== null && after <= 4 && topAfter < topBefore - 30, {
+    before,
+    after,
+    topBefore,
+    topAfter,
+  });
+  await page.keyboard.press('Escape');
+  await page.evaluate(() => {
+    const next = [...window.__rows()];
+    [next[0], next[2]] = [next[2], next[0]];
+    window.__setRows(next);
+  });
+  await waitIdle(page, 300);
+}
+
+// ── S8-02: 列フィルターの日付の入力欄が全角・年月日を読む ──
+{
+  await header(page, 'date').hover();
+  await header(page, 'date').locator('.ssg-header-actions .ssg-icon-btn').click();
+  await waitIdle(page, 300);
+  await page.locator('.ssg-menu-panel [role="menuitem"]').filter({ hasText: 'フィルター' }).first().click();
+  await page.waitForSelector('.ssg-filter-popover');
+  await waitIdle(page, 400);
+  const start = page.locator('.ssg-filter-popover input[aria-label="開始日"]');
+  if ((await start.count()) === 1) {
+    await start.fill('２０２６／１１／２０');
+    await start.press('Enter');
+    await waitIdle(page, 250);
+    const invalid = await start.getAttribute('aria-invalid');
+    const value = await start.inputValue();
+    check('S8-02: 列フィルターの日付の入力欄が全角の日付を読む', invalid === null && value.includes('2026') && value.includes('20'), { invalid, value });
+  } else {
+    check('S8-02: 列フィルターの開始日の入力欄が見つかる', false, { count: await start.count() });
+  }
+  await page.keyboard.press('Escape');
+  await waitIdle(page, 200);
+}
+
 check('想定外のエラーが無い', unexpectedPageErrors(pageErrors).length === 0, unexpectedPageErrors(pageErrors));
 await close();
 
@@ -155,6 +215,35 @@ for (const key of ['qty', 'note']) {
   check(`RV5-4(${key}): 見出しの空いた所ではつまみと ⋮ が出る`, actionsShown === 1, { actionsShown });
   check(`想定外のエラーが無い(細い列 ${key})`, unexpectedPageErrors(errors2).length === 0, unexpectedPageErrors(errors2));
   await close2();
+}
+
+// ── S8-03: 「今日」のフィルターを開いたまま 0 時をまたぐ ──
+if (SUPPORTS.clock) {
+  // basic の date 列は 2026-01-01 から 7 日おき。10/14 は該当なし、10/15 は 5 行(n=500)。
+  const { page: p4, close: close4, pageErrors: errors4 } = await open('basic', {
+    query: 'n=500',
+    beforeGoto: (p) => p.clock.install({ time: new Date(2026, 9, 14, 23, 59, 30) }),
+  });
+  await p4.evaluate(() =>
+    window.__grid.applyState({ filters: { columnFilters: { date: { kind: 'dateSet', condition: { mode: 'preset', preset: 'today' }, set: null } } } }),
+  );
+  await waitIdle(p4, 300);
+  await header(p4, 'date').hover();
+  await header(p4, 'date').locator('.ssg-header-actions .ssg-icon-btn').click();
+  await waitIdle(p4, 300);
+  await p4.locator('.ssg-menu-panel [role="menuitem"]').filter({ hasText: 'フィルター' }).first().click();
+  await p4.waitForSelector('.ssg-filter-popover');
+  await waitIdle(p4, 400);
+  const matched = () => p4.evaluate(() => document.querySelector('.ssg-filter-popover')?.textContent?.match(/一致 (\d+) 件/)?.[1] ?? null);
+  const before = await matched();
+  await p4.clock.fastForward(60_000);
+  await waitIdle(p4, 500);
+  const after = await matched();
+  check('S8-03: 「今日」のフィルターを開いたまま 0 時をまたぐと、値の木も翌日に移る', before === '0' && after !== null && after !== '0', { before, after });
+  check('想定外のエラーが無い(0 時)', unexpectedPageErrors(errors4).length === 0, unexpectedPageErrors(errors4));
+  await close4();
+} else {
+  skip('S8-03: 0 時をまたぐ', '時計を進められないブラウザ');
 }
 
 // ── S6-21: 2 つのグリッドの列メニュー ──

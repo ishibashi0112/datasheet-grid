@@ -210,6 +210,8 @@ export function CellEditorLayer<T>(props: CellEditorLayerProps<T>) {
             themeClassName={props.themeClassName}
             options={selectOptions()}
             value={props.session?.value}
+            cellTop={props.rect?.top ?? 0}
+            cellLeft={props.rect?.left ?? 0}
             // 印字キー / IME 確定での開始(初期値がセルの値の文字列と違う)ならタイプアヘッドに使います。
             initialText={session ? resolveTypedStartText(initialValue, session.value) : undefined}
           />

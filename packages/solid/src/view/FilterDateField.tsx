@@ -7,6 +7,7 @@
 //   - renderFilterDateInput(利用側の部品)を渡したときは使いません。
 import { For, Show, createEffect, createMemo, createSignal, onCleanup, untrack } from 'solid-js';
 import { toDateKey } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/filtering';
+import { parseFilterDateText } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/editorValues';
 import {
   buildCalendarDayCells,
   buildYearGrid,
@@ -74,7 +75,8 @@ export function FilterDateField(props: FilterDateFieldProps) {
       setIsInvalid(false);
       return;
     }
-    const key = toDateKey(raw);
+    // 変更(1.3.0 / S8-02): セルの date エディタと同じ読み方(全角・年月日・ドット)。
+    const key = parseFilterDateText(raw);
     if (key === null) {
       // 読めない入力は確定しません(赤い枠のまま編集を続ける)。
       setIsInvalid(true);

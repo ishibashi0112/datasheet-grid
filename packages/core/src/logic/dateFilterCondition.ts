@@ -5,7 +5,7 @@ import type {
 // 追加(filter-ext D): 候補連動(条件でツリー候補を絞る)の単一値判定です。
 //   行 predicate(compileParsedDatePredicate)と同一の意味論を共有します。
 // 変更(date-input): toDateKey は日付入力スロットの onChange 正規化にも使います。
-import { matchesParsedDateFilter, toDateKey } from './filtering';
+import { formatDateKey, matchesParsedDateFilter, toDateKey } from './filtering';
 // 追加(preset-opt): プリセット構成の正規形とラベル逆引きです(カスタム対応)。
 import {
   BUILTIN_DATE_FILTER_PRESET_OPTIONS,
@@ -200,6 +200,18 @@ export const parsedDateFilterToConditionDraft = (
         preset: null,
       };
   }
+};
+
+// 追加(1.3.0 / S8-03): 列フィルターのポップアップが相対の期間(今日 / 今月 …)で候補を絞るときの基準の時刻です。開いた
+//   ときの時刻を使い、開いている間に日付が変わったら(controllers/dateRolloverStore の基準日 'YYYY-MM-DD' が開いた日と違う)
+//   その日の 0 時にします(表は列フィルターの見張りで翌日へ移るのに、値の木と「一致 N 件」は開いた日のままだった)。
+//   基準日が ''(見張っていない)なら開いたときの時刻のままです。
+export const resolveComboReferenceDate = (openedAt: Date, dateKey: string): Date => {
+  if (dateKey === '' || dateKey === formatDateKey(openedAt)) {
+    return openedAt;
+  }
+  const [year, month, day] = dateKey.split('-').map(Number);
+  return new Date(year, month - 1, day);
 };
 
 // 追加(filter-ext D): 候補連動 ── ツリー候補(正規化済み日付キー)を条件で絞ります

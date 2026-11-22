@@ -287,6 +287,8 @@ export function CellEditorLayer<T>({
         themeClassName={themeClassName}
         cellHeight={rect.height}
         alignTop={alignTop}
+        cellTop={rect.top}
+        cellLeft={rect.left}
       />
     );
   } else {

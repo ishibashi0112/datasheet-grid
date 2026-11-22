@@ -62,9 +62,11 @@ import {
   dateFilterOperandCount,
   filterOptionsByDateCondition,
   normalizeFilterDateInputValue,
+  resolveComboReferenceDate,
   type DateFilterConditionDraft,
   type DateFilterOperator,
 } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/dateFilterCondition';
+import { createDateRolloverStore } from '@ishibashi0112/spreadsheet-grid-core/internal/controllers/dateRolloverStore';
 import {
   normalizeDateFilterPresets,
   type NormalizedDateFilterPreset,
@@ -82,6 +84,8 @@ import { createColumnVirtualizer } from '../primitives/columnVirtualizer';
 import { controlledToggle, createIndeterminate, createInputValue } from '../primitives/inputValue';
 import { px } from '../primitives/style';
 import { FilterDateField } from './FilterDateField';
+import { connectController } from '../primitives/controller';
+import { createExternalStoreSignal } from '../primitives/externalStore';
 import { readEventKey } from '../primitives/eventKey';
 
 // 日付の入力欄の差し替え(columnKey は呼ぶ側が足す)。
@@ -1149,7 +1153,18 @@ export function ColumnFilterPopover(props: ColumnFilterPopoverProps) {
   // 組み合わせの列の値の一覧の検索欄(開いた後のフォーカスの先は条件の値の欄なので別に持つ)。
   const comboSearchInputRef: ElementHolder<HTMLInputElement> = { current: null };
   // 相対の期間のチップで候補を絞るときの基準の時刻(開いたときに 1 回。行の絞り込みは評価のたびに解決する)。
-  const comboNow = new Date();
+  //   日付の条件が相対の期間の間は日付の変わり目を見張り、開いたまま 0 時をまたいだら新しい日で絞り直す(1.3.0 / S8-03。
+  //   React 版と同じ)。
+  const comboOpenedAt = new Date();
+  const comboDateRollover = createDateRolloverStore();
+  connectController(
+    comboDateRollover,
+    () => ({ active: props.filterType === 'dateSet' && (props.dateConditionDraft?.preset ?? null) !== null }),
+    'render',
+    'filterDateRollover',
+  );
+  const comboDateKey = createExternalStoreSignal(comboDateRollover, 'filterDateRolloverStore');
+  const comboNow = () => resolveComboReferenceDate(comboOpenedAt, comboDateKey());
   const [panel, setPanel] = createSignal<HTMLDivElement>();
   let panelNode: HTMLDivElement | undefined;
   onCleanup(() => {
@@ -1199,7 +1214,7 @@ export function ColumnFilterPopover(props: ColumnFilterPopoverProps) {
       : isTextSetFilter()
         ? filterOptionsByTextCondition(props.selectOptions, textComboCondition())
         : isDateSetFilter()
-          ? filterOptionsByDateCondition(props.selectOptions, dateComboCondition(), comboNow, resolvedDatePresets())
+          ? filterOptionsByDateCondition(props.selectOptions, dateComboCondition(), comboNow(), resolvedDatePresets())
           : props.selectOptions,
   );
   const comboOptionsMeta = createMemo(() => {

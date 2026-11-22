@@ -10,7 +10,7 @@
 //   本テストの 1〜4 件目は修正前の実装では落ちます(イベントがハンドラへ届かない)。
 // @vitest-environment jsdom
 import { describe, it, expect, afterEach, afterAll, beforeAll, vi } from 'vitest';
-import { render, screen, fireEvent, cleanup } from '@testing-library/react';
+import { render, screen, fireEvent, cleanup, act } from '@testing-library/react';
 import { createRef } from 'react';
 
 import { ColumnFilterPopover } from './ColumnFilterPopover';
@@ -401,6 +401,24 @@ describe('ColumnFilterPopover の dateSet 複合 UI(filter-ext D)', () => {
       operator: 'onOrAfter',
       preset: null,
     });
+  });
+
+  // 追加(1.3.0 / S8-03): 「今日」のまま開いている間に 0 時をまたぐと、候補も新しい日で絞り直す(表と同じ)。
+  it('「今日」のまま開いている間に 0 時をまたぐと、候補の絞り込みも翌日に移る', () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date'] });
+    try {
+      vi.setSystemTime(new Date(2026, 1, 3, 23, 59, 30));
+      const props = makeDateSetProps({ ...DEFAULT_DATE_FILTER_DRAFT, preset: 'today' });
+      render(<ColumnFilterPopover {...props} />);
+      expect(screen.getByText('一致 1 件')).toBeTruthy();
+      act(() => {
+        vi.advanceTimersByTime(60_000);
+      });
+      // 2026-02-04 の候補は無いので、一致は 0 件になる(開いたままの値の木が 2/3 のままだった)。
+      expect(screen.getByText('一致 0 件')).toBeTruthy();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('範囲演算子では日付入力が 2 個(開始日 / 終了日)出る', () => {

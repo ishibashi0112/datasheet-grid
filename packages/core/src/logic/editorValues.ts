@@ -190,6 +190,15 @@ export const toDateInputValue = (value: unknown): string => {
   return '';
 };
 
+// 追加(1.3.0 / S8-02): 列フィルターの日付の入力欄(範囲の開始日 / 終了日・1 日)に打った文字を 'YYYY-MM-DD' へ読みます。
+//   セルの date エディタに打ち始めた文字と同じ読み方です(全角の数字・記号、「2026年11月21日」、「2026.11.23」も読む)。
+//   これまでは「2026/11/24」と「2026-11-24」の形しか読まず、同じ文字がセルでは日付になり、フィルターでは赤枠になっていました。
+//   読めなければ null。
+export const parseFilterDateText = (raw: string): string | null => {
+  const value = toDateInputValue(normalizeTypedDateText(raw));
+  return value === '' ? null : value;
+};
+
 // 追加(editor: date): date エディタの既定パーサです。'' → null / 解釈可能 → 'YYYY-MM-DD' へ
 //   正規化(ペースト経由の '2026/07/14' 等も揃う)/ 解釈不可 → 生文字列のまま(mark が拾う)。
 const parseDateEditorValue = (raw: string): unknown => {
