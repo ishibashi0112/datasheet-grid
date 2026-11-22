@@ -11,7 +11,7 @@
 //   - 部品の本体では props を直接読まない(Solid 2.0 は本体での読み取りを警告する)。props は関数や memo の中で読む。
 //   - React の onXxxCapture / onBlur / onFocus(子孫からも上がってくる)は、Solid では capture のリスナーを自分で付ける /
 //     onFocusOut / onFocusIn にします。
-import { For, Match, Show, Switch, createEffect, createMemo, createUniqueId, onCleanup, untrack } from 'solid-js';
+import { For, Match, Show, Switch, createEffect, createMemo, createSignal, createUniqueId, latest, onCleanup, untrack } from 'solid-js';
 import type { Ref } from 'solid-js';
 import type { JSX } from '@solidjs/web';
 import type {
@@ -132,6 +132,7 @@ import type {
   SpreadsheetGridSlotContext,
 } from './model/gridTypes';
 import { GridLocaleTextContext, mergeFeatureLocaleDefaults } from './context/localeText';
+import { createUserCallbacks, runHandleCall } from './primitives/userCallback';
 import { createGridStoreSignals } from './primitives/gridStoreSignals';
 import { createExternalStoreSignal } from './primitives/externalStore';
 import { createGridViewSetters } from './primitives/viewSetters';
@@ -189,10 +190,11 @@ const exposeHandle = <H extends object,>(handle: H, before: () => void): H => {
   for (const [key, value] of Object.entries(handle)) {
     exposed[key] =
       typeof value === 'function'
-        ? (...args: unknown[]) => {
-            before();
-            return (value as (...a: unknown[]) => unknown)(...args);
-          }
+        ? (...args: unknown[]) =>
+            runHandleCall(() => {
+              before();
+              return (value as (...a: unknown[]) => unknown)(...args);
+            })
         : value;
   }
   return exposed as H;
@@ -239,7 +241,31 @@ function GridShellBody<T extends object>(
   //   dataSource を外すので clientSide)。dataSource があるときは rows を空として扱う(ドキュメントどおり「無視」。React 版と同じ)。
   const serverSideFeature = features.serverSide;
   const isServerSide = createMemo(() => props.dataSource != null);
-  const rows = createMemo(() => (props.dataSource != null ? EMPTY_ROWS : (props.rows ?? EMPTY_ROWS)) as T[]);
+  // 利用側の通知は、グリッドの書き込みとは別のフレームで呼ぶ(primitives/userCallback。段階 4 の測り直し S4-21)。
+  const { wrap: inOwnTick, call: callInOwnTick } = createUserCallbacks();
+  // 変更(段階 4 の測り直し S4-21 / S5-21): rows は effect で写した値を読みます。Solid 2.0 では、利用者が通知の中で rows を
+  //   書いて action を始めると(ふつうの signal + action で保存する形)、その rows は action が終わるまで保留され、行を非同期の
+  //   createMemo で持つと、取り直しの間は保留中になります。グリッドの計算が props.rows を直接読むと、それを読む計算が全部
+  //   待たされ、グリッドが止まっていました(画面は古いまま、保存中の 2 回目の編集が前の行へ入った・取り直しの間はスクロールも
+  //   アクティブセルも動かなかった)。React 版では setRows はすぐ描かれ、取り直しの間(use + transition)も前の行のまま
+  //   操作できます。それに合わせ、effect が latest()(保留中でも今の値)で読んで写し、グリッドはその写しを読みます。effect の
+  //   中の書き込みは利用者の取引に入らないので、グリッドは止まりません。写す前(最初の値が届くまで)は props.rows をそのまま
+  //   読みます(<Loading> の中で最初の行を待つ形と、サーバーで描くときはこれまでどおり)。
+  const [relayedRows, setRelayedRows] = createSignal<{ value: T[] | undefined } | null>(null);
+  createEffect(
+    () => latest(() => props.rows) as T[] | undefined,
+    (value) => {
+      setRelayedRows({ value });
+    },
+    { name: 'relayRows' },
+  );
+  const rows = createMemo(() => {
+    if (props.dataSource != null) {
+      return EMPTY_ROWS as T[];
+    }
+    const relayed = relayedRows();
+    return ((relayed ? relayed.value : props.rows) ?? EMPTY_ROWS) as T[];
+  });
   const columns = createMemo(() => props.columns as unknown as UnboundGridColumn<T>[]);
   const density = () => props.density ?? 'standard';
   const rowHeight = () => props.rowHeight ?? GRID_DENSITY_DIMENSIONS[density()].rowHeight;
@@ -551,8 +577,8 @@ function GridShellBody<T extends object>(
     query: serverSideQuerySnapshot().query,
     queryKey: serverSideQuerySnapshot().queryKey,
     refreshToken: props.serverSideRefreshToken,
-    onLoadError: props.onServerSideLoadError,
-    onWriteError: props.onServerSideWriteError,
+    onLoadError: inOwnTick(props.onServerSideLoadError),
+    onWriteError: inOwnTick(props.onServerSideWriteError),
     // 書き戻しのセル単位の保存状態(pending → ok | failed)を saveStatusController へ。
     onWriteStateChange: engine.saveStatus.handle,
   }));
@@ -913,7 +939,7 @@ function GridShellBody<T extends object>(
   connectController(engine.scrollSync, () => ({
     scrollContainerRef,
     setViewState: store.setViewState,
-    onScroll: props.onScroll,
+    onScroll: inOwnTick(props.onScroll),
     // 見える高さは下端に固定する行(合計行 / 下の固定行)に隠れるぶんを除く。
     footerHeight: footerHeight(),
   }), 'effect', 'scrollSync');
@@ -1194,7 +1220,7 @@ function GridShellBody<T extends object>(
   connectController(engine.hoverRowNotifier, () => ({
     enableRowHover: enableRowHover(),
     isHoverControlled: props.hoveredRowIndex !== undefined,
-    onHoveredRowChange: props.onHoveredRowChange,
+    onHoveredRowChange: inOwnTick(props.onHoveredRowChange),
     setHoveredRowIndex: viewSetters.setHoveredRowIndex,
   }), 'render', 'hoverRowNotifier');
   const applyHoveredRowChange = engine.hoverRowNotifier.applyHoveredRowChange;
@@ -1282,7 +1308,7 @@ function GridShellBody<T extends object>(
     rowModel: rowModel(),
     rowSelectionState: ui().rowSelection,
     rowSelectionMode: rowSelectionMode(),
-    onRowSelectionChange: props.onRowSelectionChange,
+    onRowSelectionChange: inOwnTick(props.onRowSelectionChange),
     controlledRowSelectionModel: controlledRowSelectionModel(),
     leafRowCount: leafRowCount(),
     filteredDataRows: filteredDataRows(),
@@ -1293,7 +1319,7 @@ function GridShellBody<T extends object>(
   //   展開中の行のキーの変更の通知(初回 = マウント時の空集合は通知しない)と、rows から消えた行のキーを外す処理(DF-25)。
   connectController(
     engine.detailKeysNotifier,
-    () => ({ expandedKeys: ui().expandedDetailRowKeys, onChange: props.onExpandedDetailRowKeysChange }),
+    () => ({ expandedKeys: ui().expandedDetailRowKeys, onChange: inOwnTick(props.onExpandedDetailRowKeysChange) }),
     'effect',
     'detailKeysNotifier',
   );
@@ -1400,8 +1426,8 @@ function GridShellBody<T extends object>(
   connectController(engine.cellEventNotifier, () => ({
     rowModel: rowModel(),
     orderedColumns: orderedColumns(),
-    onCellClick: props.onCellClick,
-    onCellDoubleClick: props.onCellDoubleClick,
+    onCellClick: inOwnTick(props.onCellClick),
+    onCellDoubleClick: inOwnTick(props.onCellDoubleClick),
   }), 'render', 'cellEventNotifier');
   connectController(engine.activeRowFollow, () => ({
     enabled: activeRowFollowEnabled(),
@@ -1422,7 +1448,7 @@ function GridShellBody<T extends object>(
       editingCell: ui().editingCell,
       rowModel: rowModel(),
       orderedColumns: orderedColumns(),
-      onActiveCellChange: props.onActiveCellChange,
+      onActiveCellChange: inOwnTick(props.onActiveCellChange),
       followsRow: activeRowFollowEnabled(),
       isRowFollowPending: engine.activeRowFollow.isFollowPending,
     }),
@@ -1477,12 +1503,12 @@ function GridShellBody<T extends object>(
     rows: rows(),
     selection: ui().selection,
     activeCell: ui().activeCell,
-    onRowsChange: props.onRowsChange,
+    onRowsChange: inOwnTick(props.onRowsChange),
     dispatch,
     // サーバーサイドは rows を持たず戻す先が無いので無効(React 版と同じ)。
     enabled: (props.enableUndoRedo ?? true) && !readOnly() && !isServerSide(),
     limit: props.undoHistoryLimit ?? 100,
-    onUndoRedoStateChange: props.onUndoRedoStateChange,
+    onUndoRedoStateChange: inOwnTick(props.onUndoRedoStateChange),
     onAfterRestore: (activeCell: CellCoord | null) => {
       if (activeCell) {
         requestAnimationFrame(() => engine.gridApi.scrollToCellInternal(activeCell.row, activeCell.col, 'auto'));
@@ -1528,11 +1554,11 @@ function GridShellBody<T extends object>(
     },
     createRow: props.createRow,
     createOverflowColumn: props.createOverflowColumn,
-    onPasteSkipped: props.onPasteSkipped,
+    onPasteSkipped: inOwnTick(props.onPasteSkipped),
     localeTexts: localeTexts(),
     pasteFillsSelection: props.pasteFillsSelection,
     onRowsChange: handleRowsChange(),
-    onColumnsChange: props.onColumnsChange,
+    onColumnsChange: inOwnTick(props.onColumnsChange),
     applyServerSideCellEdits: applyServerSideCellEdits(),
     isRowExportable: props.isRowExportable,
     dispatch,
@@ -1602,7 +1628,7 @@ function GridShellBody<T extends object>(
     onNavigate: (rowIndex: number, colIndex: number) => {
       engine.gridApi.handle.selectCell(rowIndex, colIndex, { scrollIntoView: true });
     },
-    onChange: props.onFindChange,
+    onChange: inOwnTick(props.onFindChange),
   }), 'render', 'find');
   const openFindFromShortcut = () => engine.find.open();
   const closeFindAndRefocus = () => {
@@ -1767,7 +1793,9 @@ function GridShellBody<T extends object>(
     if (!items || items.length === 0) {
       return false;
     }
-    props.onContextMenuOpen?.(params);
+    if (props.onContextMenuOpen) {
+      callInOwnTick(props.onContextMenuOpen, params);
+    }
     contextMenu.open(params, items, { focus: 'firstItem' });
     return true;
   };
@@ -1838,7 +1866,9 @@ function GridShellBody<T extends object>(
     }
     // ここで初めて標準のメニューを止め、グリッドのメニューを開きます。
     event.preventDefault();
-    props.onContextMenuOpen?.(params);
+    if (props.onContextMenuOpen) {
+      callInOwnTick(props.onContextMenuOpen, params);
+    }
     contextMenu.open(params, items);
   };
   // 開いているメニュー(項目と位置と読み上げの名前)。閉じている間 / 位置が決まる前は null。
@@ -2031,7 +2061,7 @@ function GridShellBody<T extends object>(
     visibleColumns: visibleColumns(),
     orderedColumns: orderedColumns(),
     columnWidths: paneResolution().effectiveColumnWidths,
-    onColumnsChange: props.onColumnsChange,
+    onColumnsChange: inOwnTick(props.onColumnsChange),
     dispatch,
     enableSorting: enableSorting(),
     sort: ui().sort,
@@ -2164,12 +2194,14 @@ function GridShellBody<T extends object>(
     const movedRow = currentRows[fromIndex] as T;
     const nextRows = next as T[];
     onRowsChange(nextRows);
-    props.onRowMove?.({
-      rowKey: resolvedRowKeyGetter()(movedRow, fromIndex),
-      fromIndex,
-      toIndex,
-      rows: nextRows,
-    });
+    if (props.onRowMove) {
+      callInOwnTick(props.onRowMove, {
+        rowKey: resolvedRowKeyGetter()(movedRow, fromIndex),
+        fromIndex,
+        toIndex,
+        rows: nextRows,
+      });
+    }
     return true;
   };
   const moveRowByKey = (rowKey: GridRowKey, toIndex: number) => {
@@ -2327,7 +2359,7 @@ function GridShellBody<T extends object>(
     paneLayout: paneLayout(),
     orderedColumns: orderedColumns(),
     columns: columns(),
-    onColumnsChange: props.onColumnsChange,
+    onColumnsChange: inOwnTick(props.onColumnsChange),
     includeGroupingInState: props.includeGroupingInState ?? false,
     uiState: ui(),
     getUiState: store.getState,
@@ -2390,7 +2422,9 @@ function GridShellBody<T extends object>(
   //   メソッドは、描き終わっていればグリッドの最初の処理(primitives/mountGate.ts)を先に済ませてから呼びます(React 版で
   //   利用者の useEffect から呼んだときと同じ状態にする)。部品の本体の中(ref の関数の中など)で呼んだときは、まだ描いて
   //   いないので先に済ませず、そのまま呼びます(コントローラの update の前なので、多くのメソッドは何もしない)。
-  applyHandleRef(props.ref, exposeHandle(engine.gridApi.handle, () => {
+  //   変更(段階 4 の測り直し S3-22): ref は untrack で読みます(props を作り直すオブジェクトの spread で渡すと、props が merge に
+  //   なり、部品の本体で読むと開発時に Solid が STRICT_READ_UNTRACKED を出していた。ref は最初の 1 回だけ渡すもの)。
+  applyHandleRef(untrack(() => props.ref), exposeHandle(engine.gridApi.handle, () => {
     if (!mountGate.done && gridRootRef.current?.isConnected === true) {
       flushMountGate(mountGate);
     }
@@ -2407,9 +2441,9 @@ function GridShellBody<T extends object>(
       columns: columns(),
       collapsedGroupKeys: ui().collapsedGroupKeys,
       includeGroupingInState: props.includeGroupingInState ?? false,
-      onStateChange: props.onStateChange,
-      onFiltersChange: props.onFiltersChange,
-      onSortChange: props.onSortChange,
+      onStateChange: inOwnTick(props.onStateChange),
+      onFiltersChange: inOwnTick(props.onFiltersChange),
+      onSortChange: inOwnTick(props.onSortChange),
     }),
     'effect',
     'stateChangeNotifier',

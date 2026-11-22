@@ -15,8 +15,13 @@
 //   変更(同 S2-01): update は untrack の中で呼びます。update の中から利用者の通知(onSortChange など)が呼ばれ、その中で
 //   利用者が signal を読むと、開発時に Solid が STRICT_READ_UNTRACKED を出していました(利用者には直せない。イベントの
 //   ハンドラと同じく、通知は追跡の外で呼ぶ)。
-import { createEffect, createRenderEffect, untrack } from 'solid-js';
+//   変更(段階 4 の測り直し S4-21): update は runGridUpdate の中で呼びます(その中から呼ぶ利用者の通知は、反映が終わった直後に
+//   自分のフレームで呼ぶ。primitives/userCallback.ts)。イベントの中で利用者の通知を呼ぶ前後の反映(userCallback の
+//   isolatedFlush)の間は update を止めて、反映の後(イベントの処理の残りと同じフレーム)にもう 1 回 args を組み立て直して
+//   update します。React 版で 1 回のイベントの更新がまとめて描かれ、コントローラが途中の状態を見ないのと同じにするため。
+import { createEffect, createRenderEffect, createSignal, untrack } from 'solid-js';
 import { onGridMounted } from './mountGate';
+import { deferControllerUpdate, isIsolatingFlush, runGridUpdate } from './userCallback';
 
 export type ControllerLike<Args> = {
   update: (args: Args) => void;
@@ -33,23 +38,38 @@ export function connectController<Args>(
 ): void {
   let mounted = false;
   let latest: { value: Args } | null = null;
+  const [replay, setReplay] = createSignal(0, name === undefined ? undefined : { name: `${name}Replay` });
+  const requestReplay = () => {
+    setReplay((value) => value + 1);
+  };
+  const run = (value: Args) => {
+    runGridUpdate(() => untrack(() => controller.update(value)));
+  };
   const apply = (next: Args) => {
     latest = { value: next };
-    if (mounted) {
-      untrack(() => controller.update(next));
+    if (!mounted) {
+      return;
     }
+    if (isIsolatingFlush()) {
+      deferControllerUpdate(requestReplay);
+      return;
+    }
+    run(next);
+  };
+  const compute = () => {
+    replay();
+    return args();
   };
   const options = name === undefined ? undefined : { name };
   if (timing === 'render') {
-    createRenderEffect(args, apply, options);
+    createRenderEffect(compute, apply, options);
   } else {
-    createEffect(args, apply, options);
+    createEffect(compute, apply, options);
   }
   onGridMounted(() => {
     mounted = true;
     if (latest) {
-      const value = latest.value;
-      untrack(() => controller.update(value));
+      run(latest.value);
     }
     return () => controller.dispose?.();
   });

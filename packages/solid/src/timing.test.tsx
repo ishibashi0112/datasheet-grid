@@ -16,7 +16,7 @@ beforeAll(() => {
 it.each([
   ['flush なし', false],
   ['flush あり', true],
-])('ArrowDown を 3 回(%s)', (_label, withFlush) => {
+])('ArrowDown を 3 回(%s)', async (_label, withFlush) => {
   const onActiveCellChange = vi.fn();
   const { container } = render(() => (
     <SpreadsheetGrid<Row> rows={rows} columns={columns} rowKeyGetter={(row) => row.id} onActiveCellChange={onActiveCellChange} height={400} />
@@ -33,6 +33,8 @@ it.each([
     if (withFlush) flush();
   }
   flush();
+  // onActiveCellChange は描いた後の通知なので、flush の後のマイクロタスク(段階 4 の測り直し S4-21)。
+  await Promise.resolve();
   const last = onActiveCellChange.mock.calls.at(-1)?.[0];
   // 試作の最初の形では flush なしだと 1 行しか動かなかった(キー操作のコントローラが update で受けた uiState = signal の値を
   //   読み、Solid が書き込みを反映する(マイクロタスク)前の 2 回目・3 回目は古い位置から動いた)。段階 0-1 でコントローラが

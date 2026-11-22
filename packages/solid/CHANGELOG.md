@@ -8,7 +8,15 @@
 
 ## 未リリース
 
+### 挙動の変化
+
+- グリッドが描く途中で呼ぶ通知(React 版が描いた後の effect で呼ぶもの: `onActiveCellChange` / `onStateChange` / `onFiltersChange` / `onSortChange` / `onExpandedDetailRowKeysChange` ほか)は、その変化を画面に反映し終えた直後(次のマイクロタスク)に呼びます(下の「通知の中で action を始めると表が止まる」の修正のため)。テストでは、`flush()` の後に `await Promise.resolve()` などで 1 回待ってから通知を確かめてください。グリッドを外した後には呼びません。押した・打ったときにその場で呼ぶ通知(`onRowsChange` / `onCellClick` など)は、これまでどおり同じ処理の中で呼びます。
+
 ### 修正
+
+- 通知の中で `action` を始めると(`onRowsChange` から `action` + `createOptimistic` で保存する、ふつうの signal に rows を書いてから `action` で保存する など)、その action が終わるまでグリッドの表示が止まっていた。保存の間もエディタが閉じず、続けて打った文字は捨てられ、保存中に別の行を編集すると前の行のエディタへ入って 1 回目の編集を上書きしていた。グリッドの書き込みを利用者の action の取引に入れないようにしました(React 版の `startTransition` と同じく、保存の間もエディタは閉じ、続けた操作はその場で効きます)。右クリックメニューの項目の `onSelect` で `action` を始めたとき(画面の移動など)も、メニューはすぐ閉じます。
+- 行を非同期の `createMemo` / `createSignal(async)` で持つと、取り直しの間グリッドが止まっていた(スクロールしても行が描かれない、矢印キーが効かない、列メニューが開かない。届いた後にまとめて効いた)。取り直しの間も前の行のまま操作できます(React 版の `use` + transition と同じ)。最初の行を `<Loading>` の中で待つ形はこれまでどおりです。
+- 変化のたびに作り直す props のオブジェクトを spread で渡すと(`{...gridProps()}`)、開発時に Solid が `STRICT_READ_UNTRACKED` を出していた。
 
 - 自作の上部 / 下部バー(`renderTopBar` / `renderBottomBar`)の関数の本体で文脈を読んだ値(React 版の書き方の引数の分割代入 `({ derivedSummary }) => …` も)が、最初の値のまま変わらなかった。今は読んだ値が変わったときに関数を呼び直します(`renderCell` と同じ)。変わらない値(`setGlobalFilterText` など)だけを本体で読み、変わる値を JSX の中で読むときは、これまでどおりバーを作り直しません(入力欄のフォーカスと打ちかけの文字が残る)。
 - 行のグループ化をした表で、編集中に上へ行が足されて編集中の位置が一瞬グループ行を指すと、エディタが作り直され、number / date のエディタは打ちかけの文字を失い、複数行の text のエディタはフォーカスを失っていた。エディタの種類を React 版と同じく行ではなく列から決めます(custom のエディタは React 版と同じく作り直します)。

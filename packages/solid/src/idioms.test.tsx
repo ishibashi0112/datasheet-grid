@@ -246,6 +246,402 @@ describe('action と createOptimistic で保存する(Solid 2.0 の遷移)', () 
   });
 });
 
+// 段階 4 の測り直し S4-21: 通知の中で action を始めても、グリッドの書き込みはその取引に入らない(React 版の startTransition と
+//   同じく、保存の間もエディタは閉じ、続けた操作はその場で効く)。ふつうの signal に rows を書いてから action を始める形も同じ。
+const editTo = (container: HTMLElement, row: number, text: string) => {
+  const shell = container.querySelector<HTMLElement>('.ssg-shell') as HTMLElement;
+  press(cellOf(container, row, 'name') as HTMLElement);
+  fireEvent.keyDown(shell, { key: 'F2' });
+  flush();
+  const input = container.querySelector<HTMLInputElement>('.ssg-cell-editor input') as HTMLInputElement;
+  input.value = text;
+  fireEvent.input(input);
+  fireEvent.keyDown(input, { key: 'Enter' });
+  flush();
+};
+
+describe.each(['createOptimistic', 'signal'] as const)('保存の間もグリッドは止まらない(%s + action。S4-21)', (mode) => {
+  it('エディタはすぐ閉じ、保存中の 2 回目の編集はその行へ入り、両方が保存される', async () => {
+    watchConsole();
+    const saves: Array<ReturnType<typeof deferred<void>>> = [];
+    const saved: string[] = [];
+    const view = render(() => {
+      const [serverRows, setServerRows] = createSignal(makeRows(3));
+      const [optimistic, setOptimistic] = createOptimistic(() => serverRows());
+      const [plain, setPlain] = createSignal(makeRows(3));
+      const save = action(function* (next: Row[]) {
+        if (mode === 'createOptimistic') setOptimistic(() => next);
+        const request = deferred<void>();
+        saves.push(request);
+        yield request.promise;
+        saved.push(next.map((row) => row.name).join(','));
+        if (mode === 'createOptimistic') setServerRows(() => next);
+      });
+      return (
+        <SpreadsheetGrid<Row>
+          rows={mode === 'createOptimistic' ? optimistic() : plain()}
+          onRowsChange={(next) => {
+            if (mode === 'signal') setPlain(() => next);
+            save(next).catch(() => {});
+          }}
+          columns={columns}
+          rowKeyGetter={(row) => row.id}
+        />
+      );
+    });
+    flush();
+    const { container } = view;
+    editTo(container, 0, '一回目');
+    await settle();
+    expect(container.querySelector('.ssg-cell-editor')).toBeNull();
+    expect(cellOf(container, 0, 'name')?.textContent).toBe('一回目');
+    expect(cellOf(container, 1, 'name')?.getAttribute('aria-selected')).toBe('true');
+    editTo(container, 2, '二回目');
+    await settle();
+    expect(cellOf(container, 0, 'name')?.textContent).toBe('一回目');
+    expect(cellOf(container, 2, 'name')?.textContent).toBe('二回目');
+    for (const request of saves) request.resolve();
+    await settle(50);
+    expect(saved).toEqual(['一回目,品目 2,品目 3', '一回目,品目 2,二回目']);
+    expect(cellOf(container, 0, 'name')?.textContent).toBe('一回目');
+    expect(cellOf(container, 2, 'name')?.textContent).toBe('二回目');
+    view.unmount();
+    expect(logs).toEqual([]);
+  });
+});
+
+type NotifyCase = {
+  prop: 'onActiveCellChange' | 'onCellClick' | 'onRowSelectionChange';
+  extra?: { enableRowSelection: boolean };
+  act: (container: HTMLElement) => void;
+  check: (container: HTMLElement) => void;
+};
+const notifyCases: NotifyCase[] = [
+  {
+    prop: 'onActiveCellChange',
+    act: (container) => {
+      press(cellOf(container, 0, 'name') as HTMLElement);
+      fireEvent.keyDown(container.querySelector<HTMLElement>('.ssg-shell') as HTMLElement, { key: 'ArrowDown' });
+      flush();
+    },
+    check: (container) => {
+      expect([0, 1, 2].map((row) => cellOf(container, row, 'name')?.getAttribute('aria-selected'))).toEqual(['false', 'true', 'false']);
+    },
+  },
+  {
+    prop: 'onCellClick',
+    act: (container) => {
+      const cell = cellOf(container, 1, 'name') as HTMLElement;
+      press(cell);
+      fireEvent.click(cell);
+      flush();
+    },
+    check: (container) => {
+      expect([0, 1, 2].map((row) => cellOf(container, row, 'name')?.getAttribute('aria-selected'))).toEqual(['false', 'true', 'false']);
+    },
+  },
+  {
+    prop: 'onRowSelectionChange',
+    extra: { enableRowSelection: true },
+    act: (container) => {
+      const header = container.querySelector<HTMLElement>('.ssg-body-row[data-row-index="1"] .ssg-row-header-cell') as HTMLElement;
+      fireEvent.pointerDown(header, { button: 0, pointerId: 1 });
+      fireEvent.pointerUp(window, { button: 0, pointerId: 1 });
+      fireEvent.click(header);
+      flush();
+    },
+    check: (container) => {
+      expect(container.querySelectorAll('.ssg-row-checkbox[data-state="checked"]')).toHaveLength(1);
+    },
+  },
+];
+
+describe.each(notifyCases)('通知の中で action を始めても表は動く($prop。S4-21)', (tc) => {
+  it('action が終わる前に、操作の結果が画面に出る', async () => {
+    watchConsole();
+    const holds: Array<ReturnType<typeof deferred<void>>> = [];
+    const view = render(() => {
+      const wait = action(function* () {
+        const request = deferred<void>();
+        holds.push(request);
+        yield request.promise;
+      });
+      const handler = () => {
+        wait().catch(() => {});
+      };
+      return (
+        <SpreadsheetGrid<Row>
+          rows={makeRows(3)}
+          columns={columns}
+          rowKeyGetter={(row) => row.id}
+          {...{ [tc.prop]: handler }}
+          {...(tc.extra ?? {})}
+        />
+      );
+    });
+    flush();
+    tc.act(view.container);
+    await settle();
+    expect(holds.length).toBeGreaterThan(0);
+    tc.check(view.container);
+    for (const request of holds) request.resolve();
+    await settle(50);
+    tc.check(view.container);
+    view.unmount();
+    expect(logs).toEqual([]);
+  });
+});
+
+describe('保存の間のほかの操作(S4-21)', () => {
+  // 楽観的な値でグリッドの表示だけを先に出す形では、保存の間に新しく描いた行(スクロールして戻った行)の中が保存の終わりまで
+  //   読めず、押しても効かなかった(Solid の NotReadyError)。グリッドの書き込みを利用者のフレームに入れない今の形では起きない。
+  it('メニュー・検索・スクロールが効き、スクロールして描き直した行を押して編集できる', async () => {
+    watchConsole();
+    const saves: Array<ReturnType<typeof deferred<void>>> = [];
+    const errors: unknown[] = [];
+    const onError = (event: ErrorEvent) => {
+      errors.push(event.error);
+    };
+    window.addEventListener('error', onError);
+    const view = render(() => {
+      const [serverRows, setServerRows] = createSignal(makeRows(200));
+      const [rows, setRows] = createOptimistic(() => serverRows());
+      const save = action(function* (next: Row[]) {
+        setRows(() => next);
+        const request = deferred<void>();
+        saves.push(request);
+        yield request.promise;
+        setServerRows(() => next);
+      });
+      return (
+        <SpreadsheetGrid<Row>
+          rows={rows()}
+          onRowsChange={(next) => {
+            save(next).catch(() => {});
+          }}
+          columns={columns}
+          rowKeyGetter={(row) => row.id}
+          enableColumnMenu
+          enableContextMenu
+          find
+          getContextMenuItems={() => [{ kind: 'action', key: 'x', label: '項目', onSelect: () => {} }]}
+        />
+      );
+    });
+    flush();
+    const { container } = view;
+    const shell = container.querySelector<HTMLElement>('.ssg-shell') as HTMLElement;
+    const menuItems = () => document.querySelectorAll('.ssg-menu-item').length;
+    editTo(container, 0, '一回目');
+    await settle();
+    expect(saves).toHaveLength(1);
+    expect(container.querySelector('.ssg-cell-editor')).toBeNull();
+    // 右クリックメニュー
+    fireEvent.contextMenu(cellOf(container, 2, 'name') as HTMLElement, { clientX: 10, clientY: 10 });
+    await settle();
+    expect(menuItems()).toBe(1);
+    fireEvent.keyDown(document.activeElement ?? shell, { key: 'Escape' });
+    await settle();
+    expect(menuItems()).toBe(0);
+    // 列メニュー
+    const button = container.querySelector<HTMLElement>('[role="columnheader"][data-ssg-col-key="qty"] .ssg-icon-btn') as HTMLElement;
+    fireEvent.pointerDown(button, { button: 0, pointerId: 1, pointerType: 'mouse' });
+    fireEvent.pointerUp(button, { button: 0, pointerId: 1, pointerType: 'mouse' });
+    fireEvent.click(button, { detail: 1 });
+    await settle(120);
+    expect(menuItems()).toBeGreaterThan(0);
+    fireEvent.keyDown(document.activeElement ?? shell, { key: 'Escape' });
+    await settle();
+    expect(menuItems()).toBe(0);
+    // 検索
+    press(cellOf(container, 1, 'name') as HTMLElement);
+    fireEvent.keyDown(shell, { key: 'f', ctrlKey: true });
+    await settle();
+    const findInput = document.querySelector<HTMLInputElement>('.ssg-find-bar-input') as HTMLInputElement;
+    expect(findInput).not.toBeNull();
+    findInput.value = '品目 5';
+    fireEvent.input(findInput);
+    await settle(200);
+    expect(container.querySelectorAll('mark').length).toBeGreaterThan(0);
+    fireEvent.keyDown(findInput, { key: 'Escape' });
+    await settle();
+    // スクロールして戻り、描き直した行を押して編集する
+    const scroller = container.querySelector<HTMLElement>('.ssg-scroll-container') as HTMLElement;
+    scroller.scrollTop = 3000;
+    fireEvent.scroll(scroller);
+    await settle();
+    expect(cellOf(container, 90, 'name')).not.toBeNull();
+    scroller.scrollTop = 0;
+    fireEvent.scroll(scroller);
+    await settle();
+    editTo(container, 2, '二回目');
+    await settle();
+    expect(cellOf(container, 0, 'name')?.textContent).toBe('一回目');
+    expect(cellOf(container, 2, 'name')?.textContent).toBe('二回目');
+    expect(saves).toHaveLength(2);
+    for (const request of saves) request.resolve();
+    await settle(50);
+    expect(cellOf(container, 0, 'name')?.textContent).toBe('一回目');
+    expect(cellOf(container, 2, 'name')?.textContent).toBe('二回目');
+    window.removeEventListener('error', onError);
+    view.unmount();
+    expect(errors).toEqual([]);
+    expect(logs).toEqual([]);
+  });
+
+  it('右クリックメニューの項目の onSelect で action を始めても、メニューはすぐ閉じる', async () => {
+    watchConsole();
+    const holds: Array<ReturnType<typeof deferred<void>>> = [];
+    const view = render(() => {
+      const wait = action(function* () {
+        const request = deferred<void>();
+        holds.push(request);
+        yield request.promise;
+      });
+      return (
+        <SpreadsheetGrid<Row>
+          rows={makeRows(3)}
+          columns={columns}
+          rowKeyGetter={(row) => row.id}
+          enableContextMenu
+          getContextMenuItems={() => [
+            {
+              kind: 'action',
+              key: 'go',
+              label: '移動',
+              onSelect: () => {
+                wait().catch(() => {});
+              },
+            },
+          ]}
+        />
+      );
+    });
+    flush();
+    fireEvent.contextMenu(cellOf(view.container, 1, 'name') as HTMLElement, { clientX: 10, clientY: 10 });
+    await settle();
+    const item = document.querySelector<HTMLElement>('.ssg-menu-item') as HTMLElement;
+    fireEvent.click(item);
+    await settle();
+    expect(holds).toHaveLength(1);
+    expect(document.querySelectorAll('.ssg-menu-item')).toHaveLength(0);
+    for (const request of holds) request.resolve();
+    await settle(50);
+    view.unmount();
+    expect(logs).toEqual([]);
+  });
+});
+
+describe('取り直しの間も操作できる(S5-21)', () => {
+  it('行を非同期の createMemo で持ち、取り直しを待つ間も、前の行のままアクティブセルを動かせる', async () => {
+    watchConsole();
+    const loads = [deferred<Row[]>(), deferred<Row[]>()];
+    let setPage: (page: number) => void = () => {};
+    let pending: () => boolean = () => false;
+    const { container, unmount } = render(() => {
+      const [page, set] = createSignal(0);
+      setPage = set;
+      const rows = createMemo(async () => (loads[page()] as { promise: Promise<Row[]> }).promise);
+      pending = () => isPending(rows);
+      return (
+        <Loading fallback={<p class="fallback">読み込み中</p>}>
+          <SpreadsheetGrid<Row> rows={rows()} columns={columns} rowKeyGetter={(row) => row.id} />
+        </Loading>
+      );
+    });
+    loads[0]?.resolve(makeRows(5));
+    await settle();
+    setPage(1);
+    await settle();
+    expect(pending()).toBe(true);
+    const shell = container.querySelector<HTMLElement>('.ssg-shell') as HTMLElement;
+    press(cellOf(container, 1, 'name') as HTMLElement);
+    fireEvent.keyDown(shell, { key: 'ArrowDown' });
+    flush();
+    await settle();
+    // 届く前でも、前の行のまま動く(React 版の use + transition と同じ)。
+    expect(pending()).toBe(true);
+    expect(cellOf(container, 0, 'name')?.textContent).toBe('品目 1');
+    expect(cellOf(container, 2, 'name')?.getAttribute('aria-selected')).toBe('true');
+    loads[1]?.resolve(makeRows(5, 100));
+    await settle();
+    expect(pending()).toBe(false);
+    expect(cellOf(container, 0, 'name')?.textContent).toBe('品目 100');
+    unmount();
+    expect(logs).toEqual([]);
+  });
+});
+
+describe('描いた後に知らせる通知(S4-21)', () => {
+  it('グリッドを外した後には呼ばない', async () => {
+    watchConsole();
+    const onActiveCellChange = vi.fn();
+    const { container, unmount } = render(() => (
+      <SpreadsheetGrid<Row> rows={makeRows(3)} columns={columns} rowKeyGetter={(row) => row.id} onActiveCellChange={onActiveCellChange} />
+    ));
+    await settle();
+    const before = onActiveCellChange.mock.calls.length;
+    // 押した直後(通知はこの反映が終わった直後に呼ぶ)に外す。
+    press(cellOf(container, 1, 'name') as HTMLElement);
+    unmount();
+    await settle();
+    expect(onActiveCellChange.mock.calls.length).toBe(before);
+    expect(logs).toEqual([]);
+  });
+
+  it('反映が終わった直後に呼び、その中で始めた action に表は巻き込まれない', async () => {
+    watchConsole();
+    const seen: Array<number | null> = [];
+    const { container, unmount } = render(() => (
+      <SpreadsheetGrid<Row>
+        rows={makeRows(3)}
+        columns={columns}
+        rowKeyGetter={(row) => row.id}
+        onActiveCellChange={(cell) => {
+          seen.push(cell ? cell.rowIndex : null);
+        }}
+      />
+    ));
+    await settle();
+    seen.length = 0;
+    press(cellOf(container, 2, 'name') as HTMLElement);
+    expect(seen).toEqual([]);
+    await settle();
+    expect(seen).toEqual([2]);
+    unmount();
+    expect(logs).toEqual([]);
+  });
+});
+
+describe('props を作り直すオブジェクトの spread で渡す(S3-22)', () => {
+  it('開発時に Solid の知らせを出さない', async () => {
+    watchConsole();
+    let handle: SpreadsheetGridHandle<Row> | undefined;
+    let setDense: (dense: boolean) => void = () => {};
+    const { container, unmount } = render(() => {
+      const [dense, set] = createSignal(false);
+      setDense = set;
+      const gridProps = createMemo(() => ({
+        rows: makeRows(3),
+        columns,
+        rowKeyGetter: (row: Row) => row.id,
+        density: dense() ? ('compact' as const) : ('standard' as const),
+        ref: (h: SpreadsheetGridHandle<Row>) => {
+          handle = h;
+        },
+      }));
+      return <SpreadsheetGrid<Row> {...gridProps()} />;
+    });
+    await settle();
+    expect(handle).toBeDefined();
+    setDense(true);
+    await settle();
+    expect(container.querySelector('.ssg-root')).not.toBeNull();
+    unmount();
+    expect(logs).toEqual([]);
+  });
+});
+
 describe('<Show> での出し入れ', () => {
   it('何度出し入れしても、window と document のリスナーを残さず、ref は新しいグリッドのハンドルになる', async () => {
     watchConsole();
