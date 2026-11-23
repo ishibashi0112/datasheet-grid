@@ -284,6 +284,43 @@ describe('pointerInteractionsController', () => {
     controller.dispose();
   });
 
+  // 追加(1.4.1 / AP-11): 押してフォーカスをルートへ移した直後に、開いたままの custom エディタの編集を終える口を呼ぶ。
+  it('セル・行番号・列見出しの左ボタンとタッチのタップで、フォーカスを移した後に endEditLeftOpen を呼ぶ(右ボタン・スクロールでは呼ばない)', () => {
+    const controller = createPointerInteractionsController<Row>();
+    const order: string[] = [];
+    const root = document.createElement('div');
+    vi.spyOn(root, 'focus').mockImplementation(() => {
+      order.push('focus');
+    });
+    const args = makeArgs({
+      gridRootRef: { current: root },
+      endEditLeftOpen: () => {
+        order.push('end');
+      },
+    });
+    controller.update(args);
+    controller.handleCellPointerDown({ row: 1, col: 0 }, pointerEvent());
+    firePointerUp({ pointerId: 1 });
+    controller.handleRowHeaderPointerDown(2, pointerEvent());
+    firePointerUp({ pointerId: 1 });
+    controller.handleColumnHeaderPointerDown(1, pointerEvent());
+    firePointerUp({ pointerId: 1 });
+    expect(order).toEqual(['focus', 'end', 'focus', 'end', 'focus', 'end']);
+    order.length = 0;
+
+    controller.handleCellPointerDown({ row: 1, col: 0 }, pointerEvent({ button: 2 }));
+    const touch = pointerEvent({ pointerType: 'touch', pointerId: 7 });
+    controller.handleCellPointerDown({ row: 1, col: 0 }, touch);
+    expect(order).toEqual([]);
+    // 動いた(スクロール)ら呼ばない。動かずに離したタップでは呼ぶ。
+    firePointerUp({ pointerId: 7, clientX: 30, clientY: 10, timeStamp: 100 });
+    expect(order).toEqual([]);
+    controller.handleCellPointerDown({ row: 1, col: 0 }, touch);
+    firePointerUp({ pointerId: 7, clientX: 11, clientY: 10, timeStamp: 200 });
+    expect(order).toEqual(['focus', 'end']);
+    controller.dispose();
+  });
+
   it('列ヘッダーの Shift+クリックは複数ソートをトグルする', () => {
     const controller = createPointerInteractionsController<Row>();
     const args = makeArgs();

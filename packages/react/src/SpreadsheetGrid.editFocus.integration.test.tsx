@@ -7,7 +7,7 @@
 //   を imeDirectInput の有無それぞれで検証します(有効時は「グリッドへ戻る」= 入力受けへ回る)。
 //   実ブラウザでの追試は audit/harness の t-verify。
 // @vitest-environment jsdom
-import { describe, it, expect, beforeAll, afterAll, afterEach, vi } from 'vitest';
+import { describe, it, expect, beforeAll, beforeEach, afterAll, afterEach, vi } from 'vitest';
 import { render, cleanup, fireEvent, act } from '@testing-library/react';
 import { StrictMode, createRef, useEffect, useState } from 'react';
 import type { RefObject } from 'react';
@@ -267,6 +267,11 @@ describe.each([
 // 変更(1.0.1 のレビュー RA-3): 開いたままの custom エディタの編集を押したときに終える修正(AP-11)は戻した。onBlur で
 //   非同期の検査を待ってから ctx.commit する作りの値が消えていたため。onBlur で確定する作りなら、押した後に届いた値も
 //   編集していたセルに書かれる(1.0.0 と同じ)。
+// 変更(1.4.1 / AP-11): 押したらグリッドが custom エディタの編集を終え(onBlur で確定しない作りでもキー操作が効く)、その後に
+//   届いた ctx.commit は編集していたセルへ書く(RA-3 の値は消えない)。
+type BlurTiming = 'none' | 'sync' | 'microtask' | 'timeout';
+let blurTiming: BlurTiming = 'timeout';
+let lastCommitResult: unknown = null;
 describe('onBlur で遅れて確定する custom エディタ(AP-11 / RA-3)', () => {
   const customColumns: GridColumn<Row>[] = [
     {
@@ -280,10 +285,24 @@ describe('onBlur で遅れて確定する custom エディタ(AP-11 / RA-3)', ()
             className="custom-editor"
             autoFocus
             defaultValue={ctx.initialText}
+            onKeyDown={(event) => {
+              if (event.key === 'Enter') {
+                ctx.commit(event.currentTarget.value);
+              }
+            }}
             onBlur={(event) => {
               const value = event.currentTarget.value;
-              // サーバーの検査を待ってから確定する作り
-              setTimeout(() => ctx.commit(value), 10);
+              const commit = () => {
+                lastCommitResult = ctx.commit(value);
+              };
+              if (blurTiming === 'sync') {
+                commit();
+              } else if (blurTiming === 'microtask') {
+                queueMicrotask(commit);
+              } else if (blurTiming === 'timeout') {
+                // サーバーの検査を待ってから確定する作り
+                setTimeout(commit, 10);
+              }
             }}
           />
         ),
@@ -307,6 +326,67 @@ describe('onBlur で遅れて確定する custom エディタ(AP-11 / RA-3)', ()
       />
     );
   }
+
+  beforeEach(() => {
+    blurTiming = 'timeout';
+    lastCommitResult = null;
+  });
+
+  const openCustomEditor = (container: HTMLElement) => {
+    clickCell(getCell(container, 0, 0));
+    fireEvent.keyDown(document.activeElement!, { key: 'F2' });
+    const editor = container.querySelector<HTMLInputElement>('.custom-editor');
+    expect(editor).not.toBeNull();
+    fireEvent.change(editor!, { target: { value: 'draft' } });
+    return editor!;
+  };
+
+  it.each(['sync', 'microtask', 'timeout'] as const)(
+    'onBlur で確定する作り(%s)は、別のセルを押すとエディタが閉じ、値は編集していたセルに書かれ、押したセルがアクティブになる',
+    async (timing) => {
+      blurTiming = timing;
+      const ref = createRef<SpreadsheetGridHandle<Row>>();
+      const { container } = render(
+        <StrictMode>
+          <CustomHarness gridRef={ref} />
+        </StrictMode>,
+      );
+      openCustomEditor(container);
+      await act(async () => {
+        clickCell(getCell(container, 2, 1));
+        await new Promise((resolve) => setTimeout(resolve, 30));
+        await nextFrame();
+      });
+      expect(currentRows[0]?.name).toBe('draft');
+      expect(lastCommitResult).toEqual({ status: 'committed' });
+      expect(container.querySelector('.custom-editor')).toBeNull();
+      expect(ref.current?.getActiveCell()).toEqual({ row: 2, col: 1 });
+    },
+  );
+
+  it('onBlur で確定しない作りでも、別のセルを押すとエディタが閉じ(打ちかけは書かない)、キー操作が効く', async () => {
+    blurTiming = 'none';
+    const ref = createRef<SpreadsheetGridHandle<Row>>();
+    const { container } = render(
+      <StrictMode>
+        <CustomHarness gridRef={ref} />
+      </StrictMode>,
+    );
+    openCustomEditor(container);
+    await act(async () => {
+      clickCell(getCell(container, 2, 1));
+      await nextFrame();
+    });
+    expect(container.querySelector('.custom-editor')).toBeNull();
+    expect(currentRows[0]?.name).toBe('alpha');
+    expect(ref.current?.getActiveCell()).toEqual({ row: 2, col: 1 });
+    // 矢印で動く・F2 でそのセルの編集が始まる(1.4.0 までは何も効かなかった)。
+    fireEvent.keyDown(document.activeElement!, { key: 'ArrowUp' });
+    expect(ref.current?.getActiveCell()).toEqual({ row: 1, col: 1 });
+    fireEvent.keyDown(document.activeElement!, { key: 'ArrowLeft' });
+    fireEvent.keyDown(document.activeElement!, { key: 'F2' });
+    expect(container.querySelector<HTMLInputElement>('.custom-editor')?.defaultValue).toBe('beta');
+  });
 
   it('別のセルを押した後に届いた ctx.commit の値を、編集していたセルに書く', async () => {
     const ref = createRef<SpreadsheetGridHandle<Row>>();

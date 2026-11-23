@@ -589,9 +589,71 @@ describe('編集を確定した後のフォーカス(editFocus)', () => {
         await clickCell(ctx, 2, 'memo');
         await ctx.act(() => {}, 100);
         ctx.snapshot('別のセルを押して値が届いた');
+        // 変更(1.4.1 / AP-11): 値が届いた後も、押したセルがアクティブのまま(1.4.0 までは編集していたセルへ戻っていた)。
+        ctx.log('値が届いた後のアクティブセル', call(ctx, 'getActiveCell'));
       },
     });
   });
+
+  // 追加(1.4.1 / AP-11): onBlur で確定しない作り(none)と、マイクロタスクで確定する作り。押したらグリッドが編集を終え、
+  //   キー操作が効く。マイクロタスクの確定は編集していたセルへ書く。
+  it.each(['none', 'microtask'] as const)(
+    '開いたままの custom エディタ(AP-11、onBlur: %s): 別のセルを押すとエディタが閉じ、キー操作が効く',
+    async (timing) => {
+      type EditorContext = { initialText: string; commit: (value: unknown) => unknown };
+      const onBlur = (ctx: EditorContext) => (event: { currentTarget: EventTarget }) => {
+        const value = (event.currentTarget as HTMLInputElement).value;
+        if (timing === 'microtask') {
+          queueMicrotask(() => ctx.commit(value));
+        }
+      };
+      const render = (framework: Framework) =>
+        framework === 'react'
+          ? (ctx: EditorContext) =>
+              createElement('input', { className: 'custom-editor', autoFocus: true, defaultValue: ctx.initialText, onBlur: onBlur(ctx) })
+          : (ctx: EditorContext) => {
+              let input: HTMLInputElement | undefined;
+              onSettled(() => input?.focus());
+              return (
+                <input
+                  ref={(element) => {
+                    input = element;
+                  }}
+                  class="custom-editor"
+                  value={ctx.initialText}
+                  onBlur={onBlur(ctx)}
+                />
+              );
+            };
+      await expectParity({
+        watch: ['onRowsChange'],
+        props: (framework) => ({
+          rows: makeRows(4),
+          columns: [{ ...columns[0], editor: { type: 'custom', render: render(framework) } }, columns[1]],
+          rowKeyGetter: (row: Row) => row.id,
+        }),
+        steps: async (ctx) => {
+          await clickCell(ctx, 0, 'name');
+          await keyOn(ctx, null, { key: 'F2' });
+          await ctx.act(() => {
+            const input = ctx.container.querySelector<HTMLInputElement>('.custom-editor');
+            if (!input) {
+              throw new Error(`[${ctx.framework}] custom の入力欄がありません`);
+            }
+            fireEvent.input(input, { target: { value: 'draft' } });
+          });
+          await clickCell(ctx, 2, 'memo');
+          await ctx.act(() => {}, 50);
+          ctx.log('エディタ', ctx.container.querySelector('.custom-editor') === null ? 'なし' : 'あり');
+          ctx.snapshot('別のセルを押した');
+          await keyOn(ctx, null, { key: 'ArrowUp' });
+          ctx.log('矢印の後のアクティブセル', call(ctx, 'getActiveCell'));
+          await keyOn(ctx, null, { key: 'F2' });
+          ctx.log('F2 の後のエディタ', ctx.container.querySelector('.ssg-cell-editor-input') === null ? 'なし' : 'あり');
+        },
+      });
+    },
+  );
 });
 // 追加(React 版 1.3.0 / Solid 版 0.1.2、品質の段 2 S5-02): 日付のプリセットのチップを押すと日付の入力欄が消え、フォーカスが
 //   body へ落ちて Escape でポップオーバーが閉じなかった。チップへフォーカスを置く(core controllers/popoverSupport の

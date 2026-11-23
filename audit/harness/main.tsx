@@ -15,7 +15,7 @@ import {
 import { localeTextEn } from '@ishibashi0112/spreadsheet-grid/locales/en';
 import '@ishibashi0112/spreadsheet-grid/style.css';
 import shadowCss from '@ishibashi0112/spreadsheet-grid/style.css?inline';
-import { baseColumns as sharedBaseColumns, lang, log, makeDataSource, makeRows, mountPoint, n, params, scenario, strict, type Row, wide, withWideColumns } from './shared';
+import { baseColumns as sharedBaseColumns, customEditorBlur, lang, log, makeDataSource, makeRows, mountPoint, n, params, scenario, strict, type Row, wide, withWideColumns } from './shared';
 
 // 追加(1.3.0 / RV5-4): `&hb=<列のキー>` でその列を狭く(46px)し、renderHeader の中にボタンを置く(押すと __events に hdr-btn)。
 const withHeaderButton = (columns: GridColumn<Row>[]): GridColumn<Row>[] => {
@@ -53,6 +53,8 @@ function baseColumnsWithoutWide(): GridColumn<Row>[] {
           if (e.key === 'Enter') ctx.commit((e.target as HTMLInputElement).value, 'down');
           if (e.key === 'Escape') ctx.cancel();
         }}
+        // 追加(1.4.1 / AP-11): window.__customEditorBlur で onBlur の確定の仕方を切り替える(t-v141。既定は何もしない)。
+        onBlur={(e) => customEditorBlur(ctx, e.currentTarget.value)}
       />
     ),
   }));

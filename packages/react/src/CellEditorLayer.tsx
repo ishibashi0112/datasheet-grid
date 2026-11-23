@@ -19,6 +19,7 @@ import { cx } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/cx';
 import type { GridResolvedSlots } from './model/gridTypes';
 import { useGridLocaleText } from './hooks/useGridLocaleText';
 import { formatLocaleText } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/localeText';
+import type { LateEditCommitReceiver } from '@ishibashi0112/spreadsheet-grid-core/internal/controllers/editController';
 
 // 変更(editor 基盤): EditorCommitDirection は model/gridTypes.ts へ移設しました(公開型化)。
 //   既存 import 互換のため re-export を残します。
@@ -89,6 +90,9 @@ type CellEditorLayerProps<T> = {
   onCancel: () => void;
   // 追加(1.3.0 / S7-03 / S8-04): エディタの打ちかけを確定する関数を預かる先(core editController の registerDraftFlush)。
   onRegisterFlush?: ((flush: (() => void) | null) => void) | undefined;
+  // 追加(1.4.1 / AP-11): custom エディタの、遅れて届く ctx.commit の受け取り口を登録する先(core editController の
+  //   registerLateCommitReceiver)。
+  onRegisterLateCommit?: ((receiver: LateEditCommitReceiver) => () => void) | undefined;
   // 追加(③): 編集 input の text-align。列 align に追従(右寄せ数値列を編集中も右寄せ維持)。
   align?: 'left' | 'center' | 'right';
   // 追加(enter-move ②): 組み込みエディタの Enter 確定後の移動先です(未指定 = 'down')。
@@ -118,6 +122,7 @@ export function CellEditorLayer<T>({
   onCommit,
   onCancel,
   onRegisterFlush,
+  onRegisterLateCommit,
   align,
   enterMove,
   domId,
@@ -258,6 +263,7 @@ export function CellEditorLayer<T>({
         key={sessionId}
         render={editor.render}
         onRegisterFlush={onRegisterFlush}
+        onRegisterLateCommit={onRegisterLateCommit}
         context={customContext}
       />
     );

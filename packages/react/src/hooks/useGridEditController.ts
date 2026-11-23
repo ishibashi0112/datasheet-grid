@@ -4,20 +4,26 @@
 //   参照が変わっていました)。
 import {
   createEditController,
+  type EditController,
   type EditControllerArgs,
 } from '@ishibashi0112/spreadsheet-grid-core/internal/controllers/editController';
 import { useController } from './useController';
 
+// 変更(1.4.1 / AP-11): コントローラを先に作って渡せます(シェルはポインタのコントローラへ endEditLeftOpen を渡すため、この hook
+//   より前で作る)。省略はここで作る(これまでどおり)。
 export const useGridEditController = <T extends object>(
   args: EditControllerArgs<T>,
+  created?: EditController<T>,
 ) => {
-  const controller = useController(() => createEditController<T>(), args);
+  const controller = useController(() => created ?? createEditController<T>(), args);
   return {
     activateSingleCell: controller.activateSingleCell,
     startEditWithValue: controller.startEditWithValue,
     commitEdit: controller.commitEdit,
     cancelEdit: controller.cancelEdit,
     registerDraftFlush: controller.registerDraftFlush,
+    endEditLeftOpen: controller.endEditLeftOpen,
+    registerLateCommitReceiver: controller.registerLateCommitReceiver,
   };
 };
 

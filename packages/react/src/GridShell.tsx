@@ -88,6 +88,7 @@ import { useGridBarContext } from './hooks/useGridBarContext';
 import { createLocaleTextResolver, formatLocaleText } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/localeText';
 // 追加(選択範囲の集計)
 import { useGridEditController } from './hooks/useGridEditController';
+import { createEditController } from '@ishibashi0112/spreadsheet-grid-core/internal/controllers/editController';
 import { useGridHistoryController } from './hooks/useGridHistoryController';
 import { useGridKeyboardInteractions } from './hooks/useGridKeyboardInteractions';
 import { useGridPointerInteractions } from './hooks/useGridPointerInteractions';
@@ -2423,6 +2424,9 @@ export function useGridShell<T extends object>({
   // 追加(touch): セルダブルクリック処理の latest-ref(定義は下方。useEffect で同期)。
   // 変更(G-1): ダブルクリック元の DOM 標準 MouseEvent も受けます(onCellDoubleClick の params.event)。
   const cellDoubleClickRef = useRef<(cell: CellCoord, event: MouseEvent) => void>(() => {});
+  // 追加(1.4.1 / 2026-11-09 実アプリの総点検 AP-11): 編集のコントローラはここで作ります(押したときに開いたままの custom エディタの
+  //   編集を終える endEditLeftOpen をポインタのコントローラへ渡すため。最新の状態は下の useGridEditController が渡す)。
+  const [editController] = useState(() => createEditController<T>());
 
   const {
     // 追加(フィルハンドル 1A): ヒットテスト(フィルハンドルのドラッグ)。
@@ -2443,6 +2447,8 @@ export function useGridShell<T extends object>({
     // 追加(touch): セルのダブルクリック処理(handleCellDoubleClickWithController)は本フックより
     //   後ろで定義されるため、useEffect 同期の latest-ref(RS-AS 方式)で渡します。
     onCellDoubleClickRef: cellDoubleClickRef,
+    // 追加(1.4.1 / AP-11): 押してフォーカスをルートへ移した後、開いたままの custom エディタの編集を終える。
+    endEditLeftOpen: editController.endEditLeftOpen,
     // 追加(10-G): 自動スクロールは共有スクロールコンテナを動かします。
     scrollContainerRef,
     // 追加(10-E): 固定ペインの ref を渡し、clientX のペイン判定に使います。
@@ -2844,7 +2850,7 @@ export function useGridShell<T extends object>({
   );
 
   // ── edit controller ───────────────────────────────────
-  const { startEditWithValue, commitEdit, cancelEdit, registerDraftFlush } = useGridEditController({
+  const { startEditWithValue, commitEdit, cancelEdit, registerDraftFlush, registerLateCommitReceiver } = useGridEditController({
     uiState,
     rows,
     // 変更(10-E): editingCell.col は論理 index 空間のため orderedColumns で indexing します。
@@ -2872,7 +2878,7 @@ export function useGridShell<T extends object>({
     getUiState: gridStore.getState,
     // 追加(1.3.0 / S7-03 / S8-04): 編集していた行が表から消えたとき、まだ rows にあるかを行キーで探す。
     rowKeyGetter: resolvedRowKeyGetter,
-  });
+  }, editController);
   // 追加(Solid 版 段階 0-2): セルの操作のコマンド群(core engine/cellCommands)へ最新の状態を渡します。
   useControllerLifecycle(cellCommands, {
     rows,
@@ -4603,6 +4609,7 @@ export function useGridShell<T extends object>({
                   onCommit={commitEdit}
                   onCancel={cancelEdit}
                   onRegisterFlush={registerDraftFlush}
+                  onRegisterLateCommit={registerLateCommitReceiver}
                   align={editingColumn?.align}
                   enterMove={editorEnterMove}
                   domId={cellEditorDomId}
@@ -4830,6 +4837,7 @@ export function useGridShell<T extends object>({
                   onCommit={commitEdit}
                   onCancel={cancelEdit}
                   onRegisterFlush={registerDraftFlush}
+                  onRegisterLateCommit={registerLateCommitReceiver}
                   align={editingColumn?.align}
                   enterMove={editorEnterMove}
                   domId={cellEditorDomId}
@@ -5059,6 +5067,7 @@ export function useGridShell<T extends object>({
                   onCommit={commitEdit}
                   onCancel={cancelEdit}
                   onRegisterFlush={registerDraftFlush}
+                  onRegisterLateCommit={registerLateCommitReceiver}
                   align={editingColumn?.align}
                   enterMove={editorEnterMove}
                   domId={cellEditorDomId}
