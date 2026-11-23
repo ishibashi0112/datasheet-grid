@@ -422,7 +422,7 @@ AI coding assistants rarely know this new library and tend to guess from other g
 
 ## Versioning
 
-Releases follow [semver](https://semver.org). The React package and the core always share one version.
+Releases follow [semver](https://semver.org). The React package, the Solid package (from 1.4.0; it had its own 0.1.x versions before) and the core always share one version.
 
 - **Since 1.0**, breaking changes ship only in major releases (**X**.0.0), and anything to be removed is deprecated in a minor release first (`@deprecated` in the types, a one-time console warning in development builds, a 「非推奨」 (deprecated) section in the [changelog](./CHANGELOG.md)). Minor releases (X.**Y**.0) add features and deprecations; patch releases (X.Y.**Z**) only fix bugs. Before moving to a new major, read its 「削除」 (removed), 「挙動の変化」 (behavior changes) and 「core の破壊的変更」 (core breaking changes) sections in the changelog.
 - **Before 1.0** (up to 0.65.0), breaking changes shipped in minor releases; they are listed in the changelog under 「挙動の変化」 or 「core の破壊的変更」.
@@ -852,7 +852,7 @@ AI コーディングツールは新しいこのライブラリをまだほと�
 
 ### バージョンの方針
 
-版は [Semantic Versioning](https://semver.org/lang/ja/) に沿って上げます。React 版と core はいつも同じ版で出します。
+版は [Semantic Versioning](https://semver.org/lang/ja/) に沿って上げます。React 版・Solid 版・core はいつも同じ版で出します(Solid 版は 1.4.0 から。その前の 0.1.x は別の版でした)。
 
 - **1.0 から**、壊す変更は major(**X**.0.0)でだけ出します。消すものは、その前の minor で非推奨にします(型に `@deprecated`、開発ビルドだけ console の警告を 1 回、[CHANGELOG](./CHANGELOG.md) の「非推奨」の節)。minor(X.**Y**.0)は機能の追加と非推奨、patch(X.Y.**Z**)は不具合の修正だけです。major を上げるときは、CHANGELOG のその版の「削除」「挙動の変化」「core の破壊的変更」を確かめてください。
 - **1.0 より前**(0.65.0 まで)は、壊す変更も minor で出していました。CHANGELOG の「挙動の変化」か「core の破壊的変更」にあります。

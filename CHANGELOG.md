@@ -1,6 +1,6 @@
 # 変更履歴
 
-`@ishibashi0112/spreadsheet-grid`(React 版)と `@ishibashi0112/spreadsheet-grid-core`(フレームワーク非依存のコア。0.39.0 から公開)の変更履歴です。両パッケージの版は常に揃えています。Solid 版(`@ishibashi0112/spreadsheet-grid-solid`。版は別)の変更履歴は [packages/solid/CHANGELOG.md](./packages/solid/CHANGELOG.md) にあります。
+`@ishibashi0112/spreadsheet-grid`(React 版)と `@ishibashi0112/spreadsheet-grid-core`(フレームワーク非依存のコア。0.39.0 から公開)の変更履歴です。React 版と core の版は常に揃えていて、1.4.0 からは Solid 版(`@ishibashi0112/spreadsheet-grid-solid`)も同じ版です。この履歴の変更は、「React 版だけ」と書いたもの以外は Solid 版にも同じく入ります。Solid 版だけの変更と、版を揃える前の Solid 版(0.1.x)の履歴は [packages/solid/CHANGELOG.md](./packages/solid/CHANGELOG.md) にあります(GitHub の Releases には両方を載せます)。
 
 - **挙動の変化**: 公開 API は変わらないものの、見た目や動きが変わる変更です。上げる前に確かめてください。1.0 からは major でだけ出します(書いたとおりに動くよう直すものは「修正」に書きます)。
 - **core の破壊的変更**: core の入口を直接使っている場合だけ影響します。React 版だけを使っている場合は関係ありません。1.0 からは major でだけ出します(core の内部の部品 `internal/` の変更は書きません)。
@@ -10,6 +10,12 @@
 版の上げ方と公開範囲は[バージョンと互換性](https://datasheet-grid.vercel.app/docs/versioning)にあります。
 
 詳しい使い方は[ドキュメントサイト](https://datasheet-grid.vercel.app)と [API リファレンス](./packages/react/API_REFERENCE.md)を参照してください。
+
+## 未リリース
+
+### 変更
+
+- Solid 版 `@ishibashi0112/spreadsheet-grid-solid` の版を React 版・core と揃えました(Solid 版は 0.1.2 の次が 1.4.0)。これからは 3 つを同じ版で出し、GitHub の Release も 1 つ(`vX.Y.Z`)にまとめます。Solid 版だけの変更は [Solid 版の変更履歴](./packages/solid/CHANGELOG.md)にあります([バージョンと互換性](https://datasheet-grid.vercel.app/docs/versioning))。
 
 ## 1.3.0 — 2026-11-23
 

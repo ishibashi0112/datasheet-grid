@@ -104,7 +104,7 @@ This library is new, so AI coding assistants rarely know its API and tend to gue
 
 ## Versioning
 
-This package has its own version (0.x), separate from the React version and the core, and depends on the core of exactly one version. Before 1.0, minor releases may include breaking changes; they are listed in the [changelog](https://github.com/ishibashi0112/datasheet-grid/blob/main/packages/solid/CHANGELOG.md). TypeScript 5.8 or later is supported (`moduleResolution` `bundler` or `nodenext`, `jsx: "preserve"`, `jsxImportSource: "@solidjs/web"`). A library built on this package that exports inferred types should list this package and the core (the version this package depends on) in `peerDependencies`.
+From 1.4.0, this package shares one version with the React version and the core (0.1.2 was followed by 1.4.0), and depends on the core of exactly the same version. Releases follow semver: since 1.4.0, breaking changes ship only in major releases, as in the React version (before, the 0.1.x releases could include them in minor releases). Changes shared with the React version are in the [changelog](https://github.com/ishibashi0112/datasheet-grid/blob/main/CHANGELOG.md), and Solid-only changes in the [Solid changelog](https://github.com/ishibashi0112/datasheet-grid/blob/main/packages/solid/CHANGELOG.md) ([Versioning](https://datasheet-grid.vercel.app/docs/versioning), Japanese). TypeScript 5.8 or later is supported (`moduleResolution` `bundler` or `nodenext`, `jsx: "preserve"`, `jsxImportSource: "@solidjs/web"`). A library built on this package that exports inferred types should list this package and the core (the version this package depends on) in `peerDependencies`.
 
 ## License
 
@@ -171,7 +171,7 @@ Solid 2.0 向けの仮想化スプレッドシート / データグリッドで�
 
 ### バージョンの方針
 
-このパッケージは React 版・コアとは別の版(0.x)で、コアには同じ 1 つの版で依存します。1.0 より前は minor でも壊す変更が入ることがあり、[変更履歴](https://github.com/ishibashi0112/datasheet-grid/blob/main/packages/solid/CHANGELOG.md)に書きます。TypeScript は 5.8 以上(`moduleResolution` は `bundler` / `nodenext`、`jsx: "preserve"`・`jsxImportSource: "@solidjs/web"`)です。このパッケージの上に作ったライブラリが推論した型を export するときは、このパッケージと core(このパッケージが依存する版)を `peerDependencies` に入れてください。
+1.4.0 から、このパッケージは React 版・コアと同じ版で出し(0.1.2 の次が 1.4.0)、コアには同じ版で依存します。版は semver に沿って上げ、1.4.0 からは React 版と同じく壊す変更は major でだけ出します(その前の 0.1.x では minor でも出していました)。React 版と共通の変更は [CHANGELOG](https://github.com/ishibashi0112/datasheet-grid/blob/main/CHANGELOG.md)、Solid 版だけの変更は [Solid 版の変更履歴](https://github.com/ishibashi0112/datasheet-grid/blob/main/packages/solid/CHANGELOG.md)にあります([バージョンと互換性](https://datasheet-grid.vercel.app/docs/versioning))。TypeScript は 5.8 以上(`moduleResolution` は `bundler` / `nodenext`、`jsx: "preserve"`・`jsxImportSource: "@solidjs/web"`)です。このパッケージの上に作ったライブラリが推論した型を export するときは、このパッケージと core(このパッケージが依存する版)を `peerDependencies` に入れてください。
 
 ## License
 

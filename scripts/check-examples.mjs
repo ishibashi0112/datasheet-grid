@@ -5,7 +5,7 @@
 //   あわせて、サンプルが依存する版の範囲が今の版(packages/react の version)と同じ ^X.Y.Z かを確かめます
 //   (版上げのときは bump-version.mjs が書き換えます)。pack した React 版が core に同じ版(X.Y.Z)で依存しているかも確かめます。
 //   追加(Solid 版 段階 3-3): Solid 版に依存するサンプル(examples/solid)は、Solid 版の tarball を入れ、版の範囲は Solid 版の
-//   版(packages/solid の version。React 版・core とは別の版)と同じ ^X.Y.Z かを、pack した Solid 版が core に同じ版で
+//   版(packages/solid の version。1.4.0 から React 版・core と同じ版、その前の 0.1.x は別の版)と同じ ^X.Y.Z かを、pack した Solid 版が core に同じ版で
 //   依存しているかを確かめます(Solid 版の版上げは bump-version.mjs の対象外)。
 //   使い方: build:lib の後に node scripts/check-examples.mjs [サンプル名 ...](CI でも実行。ネットワークが要る)
 import { exec as execCallback, execSync } from 'node:child_process';

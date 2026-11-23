@@ -1,12 +1,16 @@
 # 変更履歴(Solid 版)
 
-`@ishibashi0112/spreadsheet-grid-solid`(Solid 2.0 向けの Solid 版)の変更履歴です。Solid 版の版は React 版・core とは別で、core には同じ 1 つの版で依存します(どの版の core かは各版の見出しの下に書きます)。React 版と core の変更履歴はリポジトリの [CHANGELOG.md](../../CHANGELOG.md) にあります。
+`@ishibashi0112/spreadsheet-grid-solid`(Solid 2.0 向けの Solid 版)の変更履歴です。1.4.0 から React 版・core と同じ版で出し(0.1.2 の次が 1.4.0)、core にはいつも同じ版で依存します。リポジトリの [CHANGELOG.md](../../CHANGELOG.md)(React 版と core の変更履歴)の変更は、「React 版だけ」と書いたもの以外は Solid 版にも同じく入ります。ここには Solid 版だけの変更を書きます(Solid 版だけの変更が無い版は、そう書いた短い節だけです)。
 
-1.0 より前は minor でも壊す変更が入ることがあります。そのときは「挙動の変化」「削除」に書きます。
+1.4.0 からは React 版と同じく、壊す変更は major でだけ出します([バージョンと互換性](https://datasheet-grid.vercel.app/docs/versioning))。版を揃える前の 0.1.x は 1.0 より前の版で、minor でも壊す変更が入ることがありました(「挙動の変化」「削除」に書いています。0.1.x の各版の見出しの下に、依存する core の版を書いています)。
 
 使い方は [Solid で使う](https://datasheet-grid.vercel.app/docs/solid) と、React 版の [API リファレンス](https://github.com/ishibashi0112/datasheet-grid/blob/main/packages/react/API_REFERENCE.md)(props とメソッドは同じ)を参照してください。
 
 ## 未リリース
+
+### 変更
+
+- 版を React 版・core と揃えました(0.1.2 の次が 1.4.0。core 1.4.0 に依存します)。これからは 3 つを同じ版で出し、壊す変更は React 版と同じく major でだけ出します。React 版と core の変更履歴の変更は、「React 版だけ」と書いたもの以外は Solid 版にも同じく入ります。
 
 ### 追加
 

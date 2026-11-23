@@ -5,7 +5,7 @@ description: Solid 2.0 向けの @ishibashi0112/spreadsheet-grid-solid
 
 **`@ishibashi0112/spreadsheet-grid-solid`** は Solid 2.0 向けのグリッドです。React 版と同じ props・列の定義・命令的なハンドル・CSS・見た目で、同じフレームワークに依らないコア(`@ishibashi0112/spreadsheet-grid-core`)の上に作っています。このサイトのガイドは、React 版と Solid 版でコードが違う所に Solid のタブがあります。タブの無いコードは、import 元を `@ishibashi0112/spreadsheet-grid-solid` に読み替えればそのまま使えます(signal は `rows={rows()}` のように呼んで渡し、命令的なハンドルは `let grid!` と `ref={grid}` で受けて `gridRef.current?.applyRows(…)` を `grid.applyRows(…)` と書きます)。API リファレンスは React 版向けに書いていますが、props とメソッドは同じです。このページには Solid 版だけのことをまとめます。
 
-版は React 版・コアとは別(0.x)です([版と変更履歴](#版と変更履歴))。
+版は 1.4.0 から React 版・コアと同じです([版と変更履歴](#版と変更履歴))。
 
 ## インストール
 
@@ -113,6 +113,6 @@ const Grid = createSpreadsheetGrid({ features: { ...standardFeatures, serverSide
 
 ## 版と変更履歴
 
-Solid 版は React 版・コアとは別の版(0.x)で、コアには同じ 1 つの版で依存します。1.0 より前は minor でも壊す変更が入ることがあり、[Solid 版の変更履歴](https://github.com/ishibashi0112/datasheet-grid/blob/main/packages/solid/CHANGELOG.md)に書きます。TypeScript は 5.8 以上(`moduleResolution` は `bundler` / `nodenext`、`jsx: "preserve"`・`jsxImportSource: "@solidjs/web"`)です。Solid 版の上に作ったライブラリが推論した型を export するときは、Solid 版と core(Solid 版が依存する版)を `peerDependencies` に入れてください。
+Solid 版は 1.4.0 から React 版・コアと同じ版で出し(0.1.2 の次が 1.4.0)、コアには同じ版で依存します。版の上げ方は React 版と同じで、1.4.0 からは壊す変更を major でだけ出します(その前の 0.1.x では minor でも出していました。[バージョンと互換性](/docs/versioning))。React 版と共通の変更は [CHANGELOG](https://github.com/ishibashi0112/datasheet-grid/blob/main/CHANGELOG.md)、Solid 版だけの変更は [Solid 版の変更履歴](https://github.com/ishibashi0112/datasheet-grid/blob/main/packages/solid/CHANGELOG.md)にあり、GitHub の Releases には両方を載せます。TypeScript は 5.8 以上(`moduleResolution` は `bundler` / `nodenext`、`jsx: "preserve"`・`jsxImportSource: "@solidjs/web"`)です。Solid 版の上に作ったライブラリが推論した型を export するときは、Solid 版と core(Solid 版が依存する版)を `peerDependencies` に入れてください。
 
 README は npm の [`@ishibashi0112/spreadsheet-grid-solid`](https://www.npmjs.com/package/@ishibashi0112/spreadsheet-grid-solid) にあります(英語と日本語)。パッケージには API リファレンス(`API_REFERENCE.md`。React 版と同じ文書で、先頭に Solid 版での読み替え)と、AI コーディングツール向けの Skill(`skills/spreadsheet-grid-solid/SKILL.md`)も同梱しています(0.1.2 から。[AI コーディングツールで使う](/docs/ai-assistants))。

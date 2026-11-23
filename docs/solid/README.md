@@ -488,6 +488,10 @@ S6-01。`primitives/clickTarget.ts`)/ テーマの CSS のコメントのパッ�
     書き換えに Solid 版の変更が混ざらないように)。`release.yml` は `solid-v*.*.*` のタグでも動き、`scripts/changelog-section.mjs` が
     `solid-vX.Y.Z` のときは Solid 版の変更履歴から節を取る(Release の「Latest」の印は React 版と core の最新版のまま)。版上げは
     手で行う(Solid 版の版上げはまだ少ないので、スクリプトは版上げが続くようになってから)。`private: true` は公開前の PR で外した。
+  - 変えたこと(2026-11-23。品質をそろえる作業の段 3-8、ユーザーの「バージョンは合わせたい」を受けて): 1.4.0 から Solid 版も React 版・core と
+    同じ版で、`bump-version.mjs` が 3 つを上げ、タグは `vX.Y.Z` の 1 つ。共通の変更はルートの CHANGELOG.md、Solid 版だけの変更は
+    `packages/solid/CHANGELOG.md`(`bump-version.mjs` が両方の「## 未リリース」を書き換える)。`vX.Y.Z` の Release の本文に Solid 版の節を
+    足す(`scripts/changelog-section.mjs`)。`solid-vX.Y.Z` は 0.1.x の Release を作り直すときだけ。
   - 公開: `private` を外すと `publish:all`(`pnpm -r publish`)に Solid 版も入る(公開済みの版は pnpm が飛ばす)。core の版を
     上げた後に Solid 版を出すと、Solid 版が依存する core の版もその版になる(`workspace:*` を pack で固定)。
   - サイトの「Solid で使う」と README / StackBlitz のリンクの小さな PR を、公開の直前にマージする(2026-11-21 ユーザー判断)。
