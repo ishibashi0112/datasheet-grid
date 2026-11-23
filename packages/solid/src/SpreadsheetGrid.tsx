@@ -650,11 +650,18 @@ function GridShellBody<T extends object>(
     query: serverSideQuerySnapshot().query,
     queryKey: serverSideQuerySnapshot().queryKey,
     refreshToken: props.serverSideRefreshToken,
+    // 追加(1.5.0): 取り直しの間の見せ方('keep' = 新しい行が届くまで前の行を薄く見せる)。
+    refetch: props.serverSideRefetch,
     onLoadError: inOwnTick(props.onServerSideLoadError),
     onWriteError: inOwnTick(props.onServerSideWriteError),
     // 書き戻しのセル単位の保存状態(pending → ok | failed)を saveStatusController へ。
     onWriteStateChange: engine.saveStatus.handle,
   }));
+  // 追加(1.5.0 / serverSideRefetch="keep"): 取り直しの間に前の行を見せているか。見せている間は編集の開始・貼り付け・削除・
+  //   フィルハンドルを止める(前の行の位置は新しい結果と合わない。行モデルも書かない)。表示(セルの読み取り専用の印 /
+  //   aria-readonly / renderCell の readOnly)は変えない(React 版と同じ)。
+  const refetchingRows = createMemo(() => isServerSide() && serverSide !== undefined && serverSide.refetching());
+  const editLocked = () => readOnly() || refetchingRows();
   // 以降はすべてこの行モデル越しに読む。サーバーサイドでラベル行を使うときは述語のラッパ(ラベル行では getRow が undefined、
   //   getLabelRow が記述子)を被せる(React 版と同じ)。
   const rowModel = createMemo(() => {
@@ -1618,7 +1625,7 @@ function GridShellBody<T extends object>(
     uiState: ui(),
     // イベントの時点の状態は store から読む(core controllers/liveUiState)。
     getUiState: store.getState,
-    readOnly: readOnly(),
+    readOnly: editLocked(),
     canEditCell: canEditCell(),
     rowKeyGetter: resolvedRowKeyGetter(),
     onCopied: (selection: NonNullable<ReturnType<typeof store.getState>['selection']>) => {
@@ -1658,7 +1665,7 @@ function GridShellBody<T extends object>(
   const fillHandleFeature = features.fillHandle;
   const fill = fillHandleFeature?.createFillHandle<T>({
     fillHandle: () => props.fillHandle,
-    readOnly,
+    readOnly: editLocked,
     isServerSide,
     rows,
     rowModel,
@@ -1979,7 +1986,7 @@ function GridShellBody<T extends object>(
     getUiState: store.getState,
     rowModel: rowModel(),
     visibleColumns: orderedColumns(),
-    readOnly: readOnly(),
+    readOnly: editLocked(),
     canEditCell: canEditCell(),
     setEditorInitialValue,
     dispatch,
@@ -2014,7 +2021,7 @@ function GridShellBody<T extends object>(
     dispatch,
     gridRootRef,
     editorActionGuardRef,
-    readOnly: readOnly(),
+    readOnly: editLocked(),
     canEditCell: canEditCell(),
     localeTexts: localeTexts(),
     followsRow: activeRowFollowEnabled(),
@@ -2027,7 +2034,7 @@ function GridShellBody<T extends object>(
     orderedColumns: orderedColumns(),
     uiState: ui(),
     getUiState: store.getState,
-    readOnly: readOnly(),
+    readOnly: editLocked(),
     canEditCell: canEditCell(),
     handleRowsChange: handleRowsChange(),
     applyServerSideCellEdits: applyServerSideCellEdits(),
@@ -2061,7 +2068,7 @@ function GridShellBody<T extends object>(
             {
               rowModel: untrack(rowModel),
               columns: untrack(orderedColumns),
-              readOnly: untrack(readOnly),
+              readOnly: untrack(editLocked),
               canEditCell: untrack(canEditCell),
             },
             cell,
@@ -3341,6 +3348,8 @@ function GridShellBody<T extends object>(
             'ssg-root--filling': fill?.filling() ?? false,
             'ssg-root--animate-rows': animateRowsActive(),
             'ssg-root--dim-readonly': props.dimReadOnlyCells ?? false,
+            // 追加(1.5.0 / serverSideRefetch="keep"): 取り直しの間に前の行を見せている(行を薄くする)。
+            'ssg-root--refetching': refetchingRows(),
             'ssg-root--fill-height': heightLayout().fillParent,
             // クロスヘア(列見出し / 行番号を選択の色で染める。列の帯は ColumnHoverOverlay)。
             'ssg-root--hover-cross': hoverCross(),
@@ -3441,6 +3450,8 @@ function GridShellBody<T extends object>(
             aria-colcount={orderedColumns().length + 1}
             aria-multiselectable={enableRangeSelection() ? 'true' : undefined}
             aria-readonly={readOnly() ? 'true' : undefined}
+            // 追加(1.5.0 / serverSideRefetch="keep"): 前の行を見せたまま取り直している間は読み込み中。
+            aria-busy={refetchingRows() ? 'true' : undefined}
             // カスタムスクロールバーのときはネイティブの縦のバーを隠し、右端にガターぶんの余白を空ける(GridScrollHint が描く)。
             class={['ssg-scroll-container', { 'ssg-scroll-container--custom-scrollbar': customScrollbar() }]}
             style={toSolidStyle(heightLayout().scrollContainerStyle)}
@@ -3587,6 +3598,24 @@ function GridShellBody<T extends object>(
               />
             </Show>
           ) : null}
+          {/* 追加(1.5.0 / serverSideRefetch="keep"): 前の行を見せたまま取り直している間、本体の見えている所を薄くする面と、
+              列見出しの下に流れる線(大きさはスクロールバーを除いた見える範囲。測る前は CSS の left / right / bottom。React 版と同じ)。 */}
+          <Show when={refetchingRows()}>
+            <div
+              class="ssg-refetch-veil"
+              aria-hidden="true"
+              style={{
+                top: `${headerHeight()}px`,
+                width: viewportWidth() > 0 ? `${viewportWidth()}px` : undefined,
+                height: viewportHeight() > headerHeight() ? `${viewportHeight() - headerHeight()}px` : undefined,
+              }}
+            />
+            <div
+              class="ssg-refetch-bar"
+              aria-hidden="true"
+              style={{ top: `${headerHeight()}px`, width: viewportWidth() > 0 ? `${viewportWidth()}px` : undefined }}
+            />
+          </Show>
           {/* IME オンのままの直接入力の入力受け(imeDirectInput が有効なときだけ)。値 / 位置 / 変換中の見た目はコントローラが
               直接扱います。Tab の順番には入れません(タブストップはシェルのまま)。 */}
           <Show when={imeDirectInputEnabled()}>

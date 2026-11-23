@@ -30,7 +30,7 @@ Solid 版(`@ishibashi0112/spreadsheet-grid-solid`)を使うときに気をつけ
 
 ## 機能を選んで組み込む
 
-`SpreadsheetGrid` は全機能入りです(初期読み込みの JS が約 168KB gzip。列フィルターのポップオーバーとツールパネルの約 16KB は後から読みます)。`createSpreadsheetGrid` では渡した機能だけを入れたグリッドを作れ、渡さなかった機能はバンドルに入りません(機能なしで約 95KB、プリセット `standardFeatures` で約 123KB)。React 版と違い、機能の部品も同じ入口から import します(`/lite` はありません)。機能の名前と中身は[バンドルを小さくする](/docs/guides/lite)のとおりです(部品の名前も同じ)。
+`SpreadsheetGrid` は全機能入りです(初期読み込みの JS が約 170KB gzip。列フィルターのポップオーバーとツールパネルの約 16KB は後から読みます)。`createSpreadsheetGrid` では渡した機能だけを入れたグリッドを作れ、渡さなかった機能はバンドルに入りません(機能なしで約 97KB、プリセット `standardFeatures` で約 124KB)。React 版と違い、機能の部品も同じ入口から import します(`/lite` はありません)。機能の名前と中身は[バンドルを小さくする](/docs/guides/lite)のとおりです(部品の名前も同じ)。
 
 ```tsx
 import { createSpreadsheetGrid, standardFeatures, serverSideFeature } from '@ishibashi0112/spreadsheet-grid-solid'

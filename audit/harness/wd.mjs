@@ -298,18 +298,25 @@ class Locator {
         const t = document.elementFromPoint(p.x, p.y);
         return !!t && (t === el || el.contains(t));
       };
-      if (!fullyVisible()) { el.scrollIntoView({ block: 'center', inline: 'center' }); await frame(); }
+      // 追加(1.5.0): スクロールした後は要素を探し直す(Playwright の locator と同じ)。Solid 版は描く範囲が変わると行の要素を
+      //   別の行に使い回すので、前に見つけた要素が別の行になっていることがある。
+      const reresolve = () => {
+        const next = __wdResolve(a.chain);
+        if (next.length > 0) el = next[0];
+      };
+      if (!fullyVisible()) { el.scrollIntoView({ block: 'center', inline: 'center' }); await frame(); reresolve(); }
       let p = pick();
       if (hits(p)) return p;
       for (const opt of [{ block: 'end', inline: 'end' }, { block: 'center', inline: 'center' }, { block: 'start', inline: 'start' }]) {
         el.scrollIntoView(opt);
         await frame();
+        reresolve();
         p = pick();
         if (hits(p)) return p;
       }
       const t = document.elementFromPoint(p.x, p.y);
       return { ...p, intercepted: t ? t.tagName + '.' + t.className : 'none' };
-    }`, { position: position ?? null, force: !!force }, { visible: !force });
+    }`, { position: position ?? null, force: !!force, chain: this._chain }, { visible: !force });
     if (p.intercepted) console.log(`WARN(wd) 操作する点が別の要素に隠れています(${p.intercepted}): ${JSON.stringify(this._chain)}`);
     return p;
   }

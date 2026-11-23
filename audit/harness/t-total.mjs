@@ -294,7 +294,10 @@ const fmtNumber = (page, v) =>
   // 途中の位置から最終行のセルを選んで見せる / 合計行の裏に来る行へ ↓ で進む
   await page.evaluate(() => window.__grid.scrollToRow(500_000, { align: 'center' }));
   await waitIdle(page, 300);
-  const mid = (await renderedRowIndexes(page))[10];
+  // 変更(1.5.0): 真ん中に見せた行(500,000)を押す。描いた行の 11 番目は上の先読みの行(画面の外)のことがあり、WebDriver の
+  //   ブラウザでは押す前の scrollIntoView が 100 万行の縮めたスクロールで遠くへ飛んで、押す点が窓の外になっていた
+  //   (Solid 版は行の要素を使い回すので、その要素が別の行になって窓の外に残る)。
+  const mid = 500_000;
   await cell(page, mid, 'qty').click();
   await page.evaluate(() => window.__grid.selectCell(999_999, 2, { scrollIntoView: true }));
   await waitIdle(page, 400);

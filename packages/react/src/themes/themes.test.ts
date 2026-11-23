@@ -59,7 +59,10 @@ const PRESET_KEPT = [
   '--ssg-save-failed',
   '--ssg-fill-line',
   '--ssg-fill-handle-ring',
+  '--ssg-refetch-bar',
+  '--ssg-refetch-bar-track',
   // 寸法 / 影 / 動き
+  '--ssg-refetch-row-opacity',
   '--ssg-icon-btn-size',
   '--ssg-cell-pad-x',
   '--ssg-bar-pad-x',

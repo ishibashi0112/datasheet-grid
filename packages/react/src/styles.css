@@ -182,6 +182,10 @@
     --ssg-skeleton-bar: #e2e8f0;
     /* 追加(motion-2 / M-8): スケルトンを流れる光の帯の色(バーより一段明るい面)。 */
     --ssg-skeleton-bar-hi: #f8fafc;
+    /* 追加(1.5.0 / serverSideRefetch="keep"): 取り直しの間に見せる前の行の濃さと、列見出しの下に流れる線 / その下地。 */
+    --ssg-refetch-row-opacity: 0.45;
+    --ssg-refetch-bar: var(--ssg-accent);
+    --ssg-refetch-bar-track: color-mix(in srgb, var(--ssg-accent) 18%, transparent);
     /* スクロール位置インジケーター(scrollHint)のカスタムスクロールバー */
     --ssg-scrollhint-track-bg: #f3f5f8;
     --ssg-scrollhint-thumb: #c3cad4;
@@ -3960,6 +3964,55 @@
   .ssg-body-row--enter > .ssg-row-header-cell {
     animation: ssg-row-in var(--ssg-motion-base) var(--ssg-motion-ease) both;
     animation-delay: calc(var(--ssg-row-enter-index, 0) * var(--ssg-motion-fast) / 6);
+  }
+  /* 追加(1.5.0 / serverSideRefetch="keep"): 取り直しの間は前の行を薄くして見せ、列見出し(と上の固定行)の下に左から右へ
+     流れる線を出します。新しい行が届くとルートの .ssg-root--refetching が外れて一度に差し替わります。motion='off' では線を
+     止めて全幅にします。
+     薄くするのは行ではなく、本体の見えている所(列見出しの下〜合計行の上。スクロールバーは除く。位置と大きさはシェルが inline
+     で与える)へ重ねる面です: 面の色はセルの背景、濃さは 1 - --ssg-refetch-row-opacity(前の行を --ssg-refetch-row-opacity の
+     濃さにしたのと同じ見た目)。行に opacity を掛けると、固定列のペインの行が透けて、下をスクロールする中央の列の文字が見えて
+     いた。面はポインタを通すので、スクロール・ホバーはそのまま。z-index は固定列のペイン(2)より上・エラーバー(5)/ 線(6)より下。 */
+  .ssg-refetch-veil {
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    z-index: 4;
+    pointer-events: none;
+    background-color: var(--ssg-cell-bg);
+    opacity: calc(1 - var(--ssg-refetch-row-opacity));
+  }
+  .ssg-refetch-bar {
+    position: absolute;
+    left: 0;
+    right: 0;
+    height: 2px;
+    z-index: 6;
+    overflow: hidden;
+    pointer-events: none;
+    background-color: var(--ssg-refetch-bar-track);
+  }
+  .ssg-refetch-bar::after {
+    content: '';
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    left: 0;
+    width: 30%;
+    background-color: var(--ssg-refetch-bar);
+    animation: ssg-refetch-slide 1.1s var(--ssg-motion-ease) infinite;
+  }
+  @keyframes ssg-refetch-slide {
+    from {
+      transform: translateX(-100%);
+    }
+    to {
+      transform: translateX(340%);
+    }
+  }
+  .ssg-motion-off .ssg-refetch-bar::after {
+    width: 100%;
+    animation: none;
   }
 
   /* ── グリッド本体シェル / スクロール(SpreadsheetGrid) ── */

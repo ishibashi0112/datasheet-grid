@@ -511,6 +511,71 @@ describe('サーバーサイドの行モデル(serverSide)', () => {
     });
   }, 20000);
 
+  // 追加(1.5.0): serverSideRefetch="keep" = 取り直しの間は前の行を薄く見せ(ルートの .ssg-root--refetching・見出しの下の線・
+  //   aria-busy)、見えている範囲が届いたら一度に差し替える。見せている間は編集・Delete・貼り付けをしない。失敗したら読み込み中の
+  //   行とエラーバー。
+  it('serverSideRefetch="keep": 取り直しの間は前の行を見せ、届いたら差し替える(編集しない・失敗のとき)', async () => {
+    let server: FakeServer = createFakeServer();
+    await expectParity({
+      features: ['serverSide'],
+      watch: ['onServerSideLoadError'],
+      props: () => {
+        server = createFakeServer();
+        return {
+          dataSource: server.dataSource,
+          columns,
+          rowKeyGetter: (row: Row) => row.id,
+          rowHeight: 30,
+          height: 360,
+          motion: 'off',
+          serverSideRefetch: 'keep',
+        };
+      },
+      steps: async (ctx) => {
+        await waitForRequests(ctx);
+        await ctx.act(() => server.respond(ctx));
+        ctx.snapshot('届いた');
+        ctx.track('1 行目(中央)', () => ctx.container.querySelector('.ssg-body-row[data-pane="center"][data-row-index="1"]'));
+        // Shift + 見出しで並べ替え: 前の行を見せたまま取り直す。
+        await ctx.act(() => {
+          const header = ctx.header('qty');
+          fireEvent.pointerDown(header, { ...pointer, shiftKey: true });
+          fireEvent.pointerUp(window, { ...pointer, shiftKey: true });
+        });
+        await ctx.act(() => undefined, 400);
+        ctx.snapshot('並べ替えた(前の行を薄く・線・aria-busy)');
+        // 前の行を見せている間は編集しない(エディタ / Delete / 貼り付け / チェックボックス)。
+        await focusCell(ctx, 1, 1);
+        await keyOnShell(ctx, { key: 'Enter' });
+        await keyOnShell(ctx, { key: 'a' });
+        await keyOnShell(ctx, { key: 'Delete' });
+        await ctx.act(() => {
+          fireEvent.paste(ctx.shell(), { clipboardData: { getData: () => 'X' } });
+        });
+        await focusCell(ctx, 1, 3);
+        await keyOnShell(ctx, { key: ' ' });
+        ctx.snapshot('前の行を見せている間は何も変わらない');
+        await waitForRequests(ctx);
+        await ctx.act(() => server.respond(ctx));
+        ctx.snapshot('並べ替えた結果が届いた(一度に差し替え)');
+        // 取り直し(位置はそのまま)が失敗したら、前の行をやめて読み込み中の行とエラーバー。
+        await ctx.act(() => {
+          call(ctx, 'refreshServerSide');
+        });
+        ctx.snapshot('取り直し中(前の行)');
+        await waitForRequests(ctx);
+        await ctx.act(() => server.fail(ctx));
+        ctx.snapshot('取り直しに失敗した');
+        await ctx.act(() => {
+          call(ctx, 'retryServerSideLoads');
+        });
+        await waitForRequests(ctx);
+        await ctx.act(() => server.respond(ctx));
+        ctx.snapshot('再試行で届いた');
+      },
+    });
+  }, 20000);
+
   it('ラベル行と一緒に使う(届いた行だけを述語で見る)', async () => {
     const rowsWithLabels: Row[] = ALL_ROWS.slice(0, 60).map((row, i) =>
       i % 10 === 0 ? { ...row, kind: 'label', name: `セクション ${i / 10 + 1}` } : row,

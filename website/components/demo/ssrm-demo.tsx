@@ -77,6 +77,8 @@ export function SSRMDemo() {
   const [failWrite, setFailWrite] = useState(false);
   // セル単位の保存状態(保存中の斜線 + スピナー → ✓ / 失敗の揺れ + ✕)。既定 true。
   const [showSaveStatus, setShowSaveStatus] = useState(true);
+  // 追加(1.5.0): 取り直しの間の見せ方(skeleton = 読み込み中の行 / keep = 前の行を薄く見せる)。
+  const [refetch, setRefetch] = useState<'skeleton' | 'keep'>('skeleton');
   const [lastEvent, setLastEvent] = useState('');
   const gridRef = useRef<SpreadsheetGridHandle<OrderRow>>(null);
 
@@ -136,6 +138,17 @@ export function SSRMDemo() {
           </select>
         </label>
         <label className="flex items-center gap-1">
+          取り直しの見せ方:
+          <select
+            className={selectClass}
+            value={refetch}
+            onChange={(e) => setRefetch(e.target.value as 'skeleton' | 'keep')}
+          >
+            <option value="skeleton">読み込み中の行(skeleton)</option>
+            <option value="keep">前の行を薄く(keep)</option>
+          </select>
+        </label>
+        <label className="flex items-center gap-1">
           <input
             type="checkbox"
             checked={failRead}
@@ -175,6 +188,7 @@ export function SSRMDemo() {
         theme="class"
         ref={gridRef}
         showSaveStatus={showSaveStatus}
+        serverSideRefetch={refetch}
         onServerSideLoadError={(_error, params) =>
           setLastEvent(
             `onServerSideLoadError: 行 ${params.startIndex}〜${params.endIndex - 1} の取得に失敗`,

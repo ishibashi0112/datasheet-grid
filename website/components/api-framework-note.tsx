@@ -44,8 +44,8 @@ export function ApiFrameworkNote() {
           から」は Solid 版でも同じ版から使えます(1.3.0 以前の版の機能は Solid 版 1.4.0 にすべて入っています)。
         </li>
         <li>
-          大きさ(KB)は React 版の値です。Solid 版は全部入りで約 168KB、機能なしで約 95KB、<code>standardFeatures</code>{' '}
-          で約 123KB です(solid-js は含めない)。
+          大きさ(KB)は React 版の値です。Solid 版は全部入りで約 170KB、機能なしで約 97KB、<code>standardFeatures</code>{' '}
+          で約 124KB です(solid-js は含めない)。
         </li>
         <li>
           Solid 版だけのこと(描く関数を呼び直す時機・書き込みの反映・テスト・SSR)は{' '}

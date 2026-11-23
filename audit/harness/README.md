@@ -13,7 +13,7 @@ vp install
 pnpm run audit:dev
 
 # 3. 別ターミナルでシナリオを実行(PASS / FAIL を標準出力に出す)
-pnpm run audit:test            # 基本 + 1M 行 + SSRM + ライフサイクル + 機能群 + 所見追試 + 集計 + 合計行 + フィルハンドル + 見送り分 + 遅延読み込み + 優先順位 + 1.0 前の最終チェック + アプリを作って確かめたチェック(段階 1 / DevBI / 段階 2)+ 英語 + ダイアログの中のポップアップ + 固定行 + 1.2.0 + ツールパネルの枠の光り + Shadow DOM の中のグリッド
+pnpm run audit:test            # 基本 + 1M 行 + SSRM + ライフサイクル + 機能群 + 所見追試 + 集計 + 合計行 + フィルハンドル + 見送り分 + 遅延読み込み + 優先順位 + 1.0 前の最終チェック + アプリを作って確かめたチェック(段階 1 / DevBI / 段階 2)+ 英語 + ダイアログの中のポップアップ + 固定行 + 1.2.0 + ツールパネルの枠の光り + Shadow DOM の中のグリッド + 1.4.1 + SSRM の取り直しの間の見せ方
 node audit/harness/t-basic.mjs # 個別に 1 本だけ
 node audit/harness/perf-big.mjs            # 1M 行の計測(dev ビルド)
 HARNESS_BASE=http://127.0.0.1:5178/ node audit/harness/perf-big.mjs  # 本番ビルド(vp build → vp preview --port 5178)に対して
@@ -39,6 +39,7 @@ HARNESS_BASE=http://127.0.0.1:5178/ node audit/harness/perf-big.mjs  # 本番ビ
 - `t-shadow.mjs` は Shadow DOM の中のグリッド(1.3.0 / Solid 版の品質の段 2 S11-01〜05。`?s=shadow` = `shared.ts` の `mountPoint` が open の Shadow root の中に CSS の `<style>` と包む要素 `.shadow-app` を置き、その中に描く): Shadow root の中の CSS が当たる / ツールチップが出る(本物のマウス)/ 列メニュー(`Alt+↓`)と右クリックメニュー(`Shift+F10`)の ↓↑ が 1 つずつ動き、項目を本物のマウスで押せ、Shadow root の外を押すと閉じる / 列メニュー・列フィルター・右クリックメニュー・ツールパネル・ツールチップは `.shadow-app` の中に出て見た目が付く / ツールパネルを開くと選ばれたタブへフォーカス、`Escape` でグリッドへ戻る / `imeDirectInput` の変換の確定で編集が始まる(CDP の IME の模擬。Chromium だけ)。`wd.mjs` の CSS の探し方はこの host の Shadow root の中も見る(Playwright の CSS のロケーターと同じ)。
 - `t-v130.mjs` は 1.3.0(Solid 版の品質の段 2)で直した所見の実ブラウザでの確かめ(Shadow DOM は `t-shadow.mjs`): `imeDirectInput` の待機中の入力受けが `PageDown` の後もアクティブセルに重なる / 範囲を `Escape` で外した後の `Ctrl+C` はアクティブセルの 1 セル / 編集していた行が絞り込みから外れたら打ちかけをその行へ確定し、フォーカスはグリッドに残る / エディタを開いたまま別のセルを押してすぐ打った文字がそのセルのエディタに残る。React 版と Solid 版(`SSG_AUDIT_FRAMEWORK=solid HARNESS_BASE=http://127.0.0.1:5179/`)の両方で回す。axe の確認は `AXE_PATH` に axe-core の `axe.min.js` を渡したときだけ(WebDriver のブラウザでは中身をページで評価する)。headless の Firefox(geckodriver)は `hover: none` / `pointer: none` を返すので、ホバーの前提の RV5-4 は SKIP する(WebKitGTK と Chromium で見る)。
 - `t-v141.mjs` は 1.4.1 で直した AP-11 の実ブラウザでの確かめ: custom エディタを開いたまま別のセル・列見出しを押すと、グリッドが編集を終えてエディタを閉じ、矢印キーが効き、フォーカスはグリッドに残る / onBlur で確定しない作り(ハーネスの既定)は打ちかけを書かない / onBlur でその場で(`window.__customEditorBlur = 'sync'`)・50ms 後に(`'timeout'`)`ctx.commit` する作りは、その値を編集していたセルに書き、押したセルがアクティブのまま / エディタの中を押しても閉じない。React 版と Solid 版(`SSG_AUDIT_FRAMEWORK=solid HARNESS_BASE=http://127.0.0.1:5179/`)の両方で回す。
+- `t-refetch.mjs` は 1.5.0 の `serverSideRefetch="keep"`(SSRM の取り直しの間に前の行を見せる)の実ブラウザでの確かめ: `?s=ssrm` に `__setProps` で渡し、`__ssrm.latency` を伸ばして取り直しの間を見る。並べ替えた後は前の行のまま、ルートに `.ssg-root--refetching`・表に `aria-busy`・本体の見えている所に薄くする面(濃さ 0.55 で、列見出しの下からスクロールバーの手前まで。行そのものは中央・固定列のペインとも不透明 = 固定列の下が透けない)・列見出しのすぐ下に 2px の流れる線 / 前の行を見せている間は Enter でエディタが開かない / 届いたら一度に差し替えて外れる / `refreshServerSide()` でも同じでスクロール位置を保つ / 見えている範囲の取得に失敗したら読み込み中の行とエラーバー、再試行で届く / `motion="off"` では線が止まって全幅 / 既定(`'skeleton'`)は読み込み中の行で何も付かない。スクリーンショットは `.out/refetch-<版>-<ブラウザ>-during.png`。React 版と Solid 版(`SSG_AUDIT_FRAMEWORK=solid`)の両方で回す。
 - `t-verify.mjs` は監査所見(RD-1 / RD-2 / C-1 / L-01 / C-3 / B-01 / B-02 / B-03 / V-02 …)の再現スクリプト。修正後は FAIL → PASS に変わることを確認する回帰テストとして使う。
 
 ## 他のブラウザで回す(2026-10-28 追加)

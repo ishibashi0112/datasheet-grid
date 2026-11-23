@@ -101,6 +101,7 @@ const FEATURE_PROPS: { [K in GridFeatureName]-?: readonly FeaturePropCheck[] } =
   serverSide: [
     { prop: 'dataSource', isUsed: (props) => props.dataSource !== undefined },
     { prop: 'serverSideRefreshToken', isUsed: (props) => props.serverSideRefreshToken !== undefined },
+    { prop: 'serverSideRefetch', isUsed: (props) => props.serverSideRefetch !== undefined },
     { prop: 'onServerSideLoadError', isUsed: (props) => props.onServerSideLoadError !== undefined },
     { prop: 'onServerSideWriteError', isUsed: (props) => props.onServerSideWriteError !== undefined },
     { prop: 'showSaveStatus', isUsed: (props) => props.showSaveStatus === true },

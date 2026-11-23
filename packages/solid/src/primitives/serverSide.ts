@@ -54,6 +54,8 @@ export function createServerSide<T>(args: () => ServerSideRowModelArgs<T>) {
     rowCount: () => snapshot().rowCount,
     loadError: createMemo(() => snapshot().loadError),
     writeError: createMemo(() => snapshot().writeError),
+    // 追加(1.5.0 / serverSideRefetch="keep"): 取り直しの間、前の行を見せているか。
+    refetching: createMemo(() => snapshot().refetching),
     isRowLoaded: controller.isRowLoaded,
     requestRange,
     refresh: controller.refresh,

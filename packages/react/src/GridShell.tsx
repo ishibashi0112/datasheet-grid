@@ -305,6 +305,8 @@ export function useGridShell<T extends object>({
   // 追加(stage ③): serverSide ソフトリフレッシュ用トークン。値を増やすと query 不変のまま
   //   キャッシュ破棄+可視レンジ取り直し(スクロール保持)。フックへ refreshToken として渡します。
   serverSideRefreshToken,
+  // 追加(1.5.0): 取り直しの間の見せ方('keep' = 新しい行が届くまで前の行を薄く見せる)。フックへ refetch として渡します。
+  serverSideRefetch,
   // 追加(batch 9): getRows 失敗の外部通知です(内蔵エラーバーとは独立)。フックへ渡します。
   onServerSideLoadError,
   onServerSideWriteError,
@@ -1329,6 +1331,7 @@ export function useGridShell<T extends object>({
     query: serverSideQuery,
     queryKey: serverSideQueryKey,
     refreshToken: serverSideRefreshToken,
+    refetch: serverSideRefetch,
     onLoadError: onServerSideLoadError,
     onWriteError: onServerSideWriteError,
     // 追加(motion-7 / M-9): セル単位の保存状態(pending → ok | failed)を saveStatusController へ。
@@ -1337,6 +1340,11 @@ export function useGridShell<T extends object>({
   // 可視レンジ通知に使う stable 参照(useCallback)だけを抜き出します。serverSide オブジェクト
   //   自体は毎 render 生成のため、effect 依存にはこの requestRange のみを使います。
   const requestServerSideRange = serverSide.requestRange;
+  // 追加(1.5.0 / serverSideRefetch="keep"): 取り直しの間に前の行を見せているか。見せている間は編集の開始・貼り付け・削除・
+  //   フィルハンドルを止めます(前の行の位置は新しい結果と合わない。行モデルも書かない)。表示(セルの読み取り専用の印 /
+  //   aria-readonly / renderCell の readOnly)は変えません(取り直しの一瞬だけ見た目が変わらないように)。
+  const refetchingRows = isServerSide && serverSide.refetching;
+  const editLocked = readOnly || refetchingRows;
   // 以降の全 consumer(rowModelRef / viewRowCount / keyboard / edit / clipboard / body /
   //   rowHeightStore)はこの rowModel シーム越しで透過に動きます。
   // 変更(label-row ②): serverSide では述語ラッパ(ラベル行の viewIndex で getRow を undefined に倒し
@@ -2592,7 +2600,7 @@ export function useGridShell<T extends object>({
       uiState,
       // 追加(Solid 版 段階 0-1): イベントの時点の状態は store から読みます(controllers/liveUiState)。
       getUiState: gridStore.getState,
-      readOnly,
+      readOnly: editLocked,
       canEditCell,
       // 追加(audit RD-4): 貼り付けで末尾へ追加した行の rowKey(canEditCell の context)用。
       rowKeyGetter: resolvedRowKeyGetter,
@@ -2637,7 +2645,7 @@ export function useGridShell<T extends object>({
   //   順番は従来どおり)。機能セットに無ければ代役(何も描かない)が受け、prop は何もしません(開発時に警告)。
   const fill = features.fillHandle.useFillHandle<T>({
     fillHandle,
-    readOnly,
+    readOnly: editLocked,
     isServerSide,
     rows,
     rowModel,
@@ -2809,7 +2817,7 @@ export function useGridShell<T extends object>({
     // 変更(10-E): キーボード移動/編集開始の col は論理 index 空間。
     //             clamp は同数なので不変、indexing 整合のため orderedColumns を渡します。
     visibleColumns: orderedColumns,
-    readOnly,
+    readOnly: editLocked,
     canEditCell,
     setEditorInitialValue,
     dispatch,
@@ -2874,7 +2882,7 @@ export function useGridShell<T extends object>({
     gridRootRef,
     editorActionGuardRef,
     // 追加(監査 RD-6): 確定時の編集可否の再評価に使います。
-    readOnly,
+    readOnly: editLocked,
     canEditCell,
     localeTexts,
     // 追加(1.2.0 の確かめ直し K): 'row' では確定の後の移動の先を行キーで覚える。
@@ -2891,7 +2899,7 @@ export function useGridShell<T extends object>({
     orderedColumns,
     uiState,
     getUiState: gridStore.getState,
-    readOnly,
+    readOnly: editLocked,
     canEditCell,
     handleRowsChange,
     applyServerSideCellEdits,
@@ -2917,7 +2925,7 @@ export function useGridShell<T extends object>({
       return column ? { colKey: column.key, align: column.align } : null;
     },
     canStartEdit: (cell: CellCoord) =>
-      imeFeature?.canStartImeEdit({ rowModel, columns: orderedColumns, readOnly, canEditCell }, cell) === true,
+      imeFeature?.canStartImeEdit({ rowModel, columns: orderedColumns, readOnly: editLocked, canEditCell }, cell) === true,
     startEdit: startEditWithValue,
     // 追加(全角数値): number 列は確定した文字列を半角の数値表記へ直して編集を始めます(読めない変換は捨てる)。
     resolveEditText: (cell: CellCoord, text: string) =>
@@ -4345,6 +4353,8 @@ export function useGridShell<T extends object>({
         hoverHighlight === 'cross' && 'ssg-root--hover-cross',
         // 追加(THEME-3): readonly 淡色表示の opt-in 修飾子(styles.css 側で :where ゲート)。
         dimReadOnlyCells && 'ssg-root--dim-readonly',
+        // 追加(1.5.0 / serverSideRefetch="keep"): 取り直しの間に前の行を見せている(行を薄くする)。
+        refetchingRows && 'ssg-root--refetching',
         // 追加(fill-height): '%' を含む height のときだけ flex column 化します(styles.css)。
         heightLayout.fillParent && 'ssg-root--fill-height',
         className,
@@ -4448,6 +4458,8 @@ export function useGridShell<T extends object>({
           aria-colcount={orderedColumns.length + 1}
           aria-multiselectable={enableRangeSelection || undefined}
           aria-readonly={readOnly || undefined}
+          // 追加(1.5.0 / serverSideRefetch="keep"): 前の行を見せたまま取り直している間は読み込み中。
+          aria-busy={refetchingRows || undefined}
           className={cx(
             'ssg-scroll-container',
             // 追加(scrollHint): カスタムスクロールバー有効時はネイティブ縦バーを隠し、
@@ -5251,6 +5263,26 @@ export function useGridShell<T extends object>({
         {/* 追加(batch 9): SSRM エラーバー(getRows 失敗の再試行 UI)/ 保存失敗バー(SSRM 書き戻し)です。
             変更(差し込み式 段階 5): 中身は機能セットの serverSide から(無い構成の代役は何も描かない)。 */}
         {isServerSide && serverSide.renderErrorBars(slots.errorBar, localeTexts)}
+        {/* 追加(1.5.0 / serverSideRefetch="keep"): 前の行を見せたまま取り直している間、本体の見えている所を薄くする面と、
+            列見出しの下に流れる線(大きさはスクロールバーを除いた見える範囲。測る前は CSS の left / right / bottom)。 */}
+        {refetchingRows && (
+          <>
+            <div
+              className="ssg-refetch-veil"
+              aria-hidden="true"
+              style={{
+                top: headerHeight,
+                width: viewportWidth > 0 ? viewportWidth : undefined,
+                height: viewportHeight > headerHeight ? viewportHeight - headerHeight : undefined,
+              }}
+            />
+            <div
+              className="ssg-refetch-bar"
+              aria-hidden="true"
+              style={{ top: headerHeight, width: viewportWidth > 0 ? viewportWidth : undefined }}
+            />
+          </>
+        )}
         {/* 追加(G-2): IME オンのままの直接入力の入力受け(imeDirectInput 有効時のみ)。非制御で、値 / 位置 / 変換中の
             表示はコントローラが直接扱います。Tab の順番には入れません(タブストップはシェルのまま)。 */}
         {imeDirectInputEnabled ? (
