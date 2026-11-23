@@ -40,7 +40,10 @@ export function createSnapshotProps<T extends object>(props: SpreadsheetGridProp
 }
 
 // ブラウザで描き終わった後に、サーバーの写しを外して骨組みを見せます(サーバーで隠していなければ何もしない)。
-export function revealServerFrame(root: Element | null | undefined): void {
+//   display は根の style の display(利用者が style で渡した値。無ければ消す)へ戻します。Solid のハイドレーションは style を
+//   書かず、その後の描画も前と同じ値なら書き直さないので、ここで消すだけだと利用者の display: none(隠したまま状態を残す形)が
+//   効かなくなっていました(段 3-9 のレビュー)。
+export function revealServerFrame(root: Element | null | undefined, display?: string | undefined): void {
   if (!root?.hasAttribute(SERVER_FRAME_ATTRIBUTE)) {
     return;
   }
@@ -49,5 +52,11 @@ export function revealServerFrame(root: Element | null | undefined): void {
     snapshot.remove();
   }
   root.removeAttribute(SERVER_FRAME_ATTRIBUTE);
-  (root as HTMLElement).style.removeProperty('display');
+  root.removeAttribute('hidden');
+  const style = (root as HTMLElement).style;
+  if (display === undefined || display === '') {
+    style.removeProperty('display');
+  } else {
+    style.setProperty('display', display);
+  }
 }

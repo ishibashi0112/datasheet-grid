@@ -17,7 +17,11 @@ beforeAll(() => {
   installJsdomLayoutStubs({ width: 800, height: 400 });
   warnSpy = vi.spyOn(console, 'warn').mockImplementation((...args: unknown[]) => {
     const message = String(args[0]);
-    // グリッドの警告だけを控える(Solid の開発ビルドの性能の知らせなどは比べない)。
+    // グリッドの警告だけを控える(Solid の開発ビルドの性能の知らせなどは比べない)。行を store で持つときだけの Solid 版の
+    //   警告(5 万行を超える store。PARITY_SOLID_ROWS=store / reconcile で回したとき)は React 版に無いので比べない。
+    if (message.includes('Solid の store(createStore)を渡しています')) {
+      return;
+    }
     if (message.startsWith('[spreadsheet-grid]') || message.startsWith('[SpreadsheetGrid]')) {
       warnings.push(message);
     }

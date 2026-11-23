@@ -307,7 +307,8 @@ function GridShellBody<T extends object>(
   const [hydrated, setHydrated] = createSignal(mode === 'snapshot' || (!isServer && !isHydrating()), { name: 'hydrated' });
   if (!untrack(hydrated)) {
     onGridMounted(() => {
-      revealServerFrame(gridRootRef.current?.parentElement);
+      // 利用者が style で渡した display はサーバーで display: none に上書きしているので、見せるときに戻す(段 3-9 のレビュー)。
+      revealServerFrame(gridRootRef.current?.parentElement, untrack(() => rootStyle().display));
       setHydrated(true);
     });
   }
@@ -3297,6 +3298,13 @@ function GridShellBody<T extends object>(
       ? (props.noRowsText ?? localeTexts().noRows)
       : (props.noMatchingRowsText ?? localeTexts().noMatchingRows);
 
+  // 根の style(段 3-5 のサーバーの骨組みでは、この上に display: none を重ねる。見せるときは revealServerFrame がこの display へ戻す)。
+  const rootStyle = (): JSX.CSSProperties => ({
+    ...toSolidStyle(heightLayout().rootStyle),
+    ...slots().root?.style,
+    ...props.style,
+  });
+
   const shellView = (
     <GridLocaleTextContext value={localeTexts}>
       <GridPortalContext value={portalContext}>
@@ -3319,12 +3327,13 @@ function GridShellBody<T extends object>(
           },
         ]}
         style={{
-          ...toSolidStyle(heightLayout().rootStyle),
-          ...slots().root?.style,
-          ...props.style,
+          ...rootStyle(),
           ...(mode === 'hiddenFrame' ? { display: 'none' } : undefined),
         }}
         // 段 3-5 の印(primitives/serverSnapshot の SERVER_FRAME_ATTRIBUTE / SERVER_SNAPSHOT_ATTRIBUTE。サーバーでだけ付く)。
+        //   隠した骨組みには hidden も付ける(兄弟を `:not([hidden])` で数える CSS = Tailwind v3 の space-y-* などが、写しを
+        //   2 つめの子として余白を付け、見せたときに位置がずれていた。段 3-9 のレビュー)。
+        hidden={mode === 'hiddenFrame' ? true : undefined}
         data-ssg-ssr={mode === 'hiddenFrame' ? '' : undefined}
         data-ssg-ssr-snapshot={mode === 'snapshot' ? '' : undefined}
       >

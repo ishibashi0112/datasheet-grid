@@ -61,6 +61,8 @@ export function textOf(html: string): string {
 //   serverRoot はサーバーの骨組みの根(ハイドレーションで使い続ける要素)。描き終わった後は、写しが外れ、骨組みが見えている。
 export async function hydrateFixture(
   name: string,
+  // 見せた後の根の style.display(利用者が style で渡した値。既定は渡さない = '')。
+  display = '',
 ): Promise<{ container: HTMLElement; serverHtml: string; serverRoot: Element | null; logs: string[] }> {
   const Fixture = fixtures[name];
   const serverHtml = serverOutput().pages[name];
@@ -89,6 +91,7 @@ export async function hydrateFixture(
   // 写しは外れ、骨組みだけが見えている(段 3-5)。
   expect(container.querySelectorAll('.ssg-root')).toHaveLength(1);
   expect(container.querySelector('[data-ssg-ssr], [data-ssg-ssr-snapshot]')).toBeNull();
-  expect(container.querySelector<HTMLElement>('.ssg-root')?.style.display).toBe('');
+  expect(container.querySelector<HTMLElement>('.ssg-root')?.style.display).toBe(display);
+  expect(container.querySelector('.ssg-root')?.hasAttribute('hidden')).toBe(false);
   return { container, serverHtml, serverRoot, logs };
 }

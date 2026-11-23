@@ -3,7 +3,7 @@
 //   外からの変更として映る(React 版で親が rows を差し替えたときと同じく、履歴は消える)。開発時の Solid の知らせも出ない。
 //   React 版と同じ操作で DOM と通知を比べるのは parity/storeRows.parity.test.tsx(と、環境変数 PARITY_SOLID_ROWS で全部の場面)。
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
-import { createStore, flush, reconcile } from 'solid-js';
+import { action, createStore, flush, reconcile } from 'solid-js';
 import { cleanup, fireEvent, render } from '@solidjs/testing-library';
 import { installJsdomLayoutStubs } from '@ishibashi0112/spreadsheet-grid-core/testing';
 import { SpreadsheetGrid, type GridColumn, type SpreadsheetGridHandle } from './index';
@@ -142,5 +142,106 @@ describe.each(['assign', 'reconcile'] as const)('rows を store で持つ(%s で
     expect(t.grid().getViewRowIndex(9999)).toBe(2500);
     expect(warn.mock.calls.map((call) => String(call[0]))).toEqual([]);
     expect(error.mock.calls.map((call) => String(call[0]))).toEqual([]);
+  });
+});
+
+// 段 3-9 のレビュー: 保存の action の中で store の中身を書く形。中身の書き込みは保存(遷移)が終わるまで保留され、グリッドの
+//   計算が保留中の中身を読んで遷移に入ると、保存中は選択も貼り付けも映らず、続けた編集が古い行から作られて前の編集を上書きして
+//   いた(0.1.2 では起きない。中身を追う計算を effect にして直した)。
+describe('action の中で store の中身を書く', () => {
+  const settle = async () => {
+    flush();
+    await new Promise((resolve) => setTimeout(resolve, 30));
+    flush();
+  };
+  const mount = (onRows: 'reconcileInAction' | 'assign') => {
+    const waits: Array<() => void> = [];
+    let grid!: SpreadsheetGridHandle<Row>;
+    let state!: { rows: Row[] };
+    let bump!: () => void;
+    const view = render(() => {
+      const [s, setState] = createStore<{ rows: Row[] }>({ rows: makeRows(5) });
+      state = s;
+      const save = action(function* (next: Row[]) {
+        setState((draft) => {
+          reconcile(next, 'id')(draft.rows);
+        });
+        yield new Promise<void>((resolve) => waits.push(resolve));
+      });
+      // 行のボタンから 1 行を変えてサーバーへ保存する形(項目を action の中で直接変える)。
+      const rename = action(function* () {
+        setState((draft) => {
+          draft.rows[0]!.name = 'renamed';
+        });
+        yield new Promise<void>((resolve) => waits.push(resolve));
+      });
+      bump = () => {
+        rename().catch(() => {});
+      };
+      return (
+        <SpreadsheetGrid<Row>
+          ref={(handle) => {
+            grid = handle;
+          }}
+          rows={s.rows}
+          columns={columns}
+          rowKeyGetter={(row) => row.id}
+          height={300}
+          onRowsChange={(next) => {
+            if (onRows === 'assign') {
+              setState((draft) => {
+                draft.rows = next;
+              });
+            } else {
+              save(next).catch(() => {});
+            }
+          }}
+        />
+      );
+    });
+    flush();
+    const shell = () => view.container.querySelector<HTMLElement>('.ssg-shell')!;
+    const cell = (row: number, key: string) =>
+      view.container.querySelector(`.ssg-body-row[data-row-index="${row}"] [data-ssg-col-key="${key}"]`);
+    const paste = async (row: number, col: number, text: string) => {
+      grid.selectCell(row, col);
+      await settle();
+      expect(cell(row, col === 0 ? 'name' : 'qty')?.getAttribute('aria-selected')).toBe('true');
+      fireEvent.paste(shell(), { clipboardData: { getData: () => text } });
+      await settle();
+    };
+    const finish = async () => {
+      for (const resolve of waits) resolve();
+      await settle();
+    };
+    return { state: () => state, cell, paste, finish, bump: () => bump(), settle };
+  };
+
+  it('reconcile で戻す保存の間も選択と貼り付けが映り、続けた編集が両方残る', async () => {
+    const t = mount('reconcileInAction');
+    await t.paste(3, 1, '100');
+    expect(t.cell(3, 'qty')?.textContent).toBe('100');
+    await t.paste(4, 1, '200');
+    expect(t.cell(3, 'qty')?.textContent).toBe('100');
+    expect(t.cell(4, 'qty')?.textContent).toBe('200');
+    await t.finish();
+    expect(t.state().rows.map((row) => row.qty)).toEqual([0, 1, 2, 100, 200]);
+  });
+
+  it('項目を action の中で変えて保存している間も、グリッドの編集が映って残る', async () => {
+    const t = mount('assign');
+    t.bump();
+    // ボタンを押した後で(別のタスクで)グリッドを操作する。同じタスクの中でグリッドへ書くと、その書き込みも利用者の action の
+    //   取引に入って保存の終わりまで保留される(Solid 2 の動き。グリッドに関係しない store を書く action でも同じ)。
+    await t.settle();
+    expect(t.cell(0, 'name')?.textContent).toBe('renamed');
+    await t.paste(3, 1, '100');
+    expect(t.cell(3, 'qty')?.textContent).toBe('100');
+    await t.paste(4, 1, '200');
+    expect(t.cell(4, 'qty')?.textContent).toBe('200');
+    await t.finish();
+    expect(t.state().rows.map((row) => row.qty)).toEqual([0, 1, 2, 100, 200]);
+    expect(t.cell(3, 'qty')?.textContent).toBe('100');
+    expect(t.cell(4, 'qty')?.textContent).toBe('200');
   });
 });

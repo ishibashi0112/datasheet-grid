@@ -1,7 +1,7 @@
 // Solid らしい使い方の確かめ(段階 4 の測り直し 1-5)。React 版には無い書き方(非同期の行と <Loading> / <Errored>、
 //   取り直しの間の古い表示、<Show> での出し入れ、1 ページに複数のグリッド)で、グリッドが壊れず、警告も出さないこと。
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
-import { Errored, Loading, Show, action, createEffect, createMemo, createOptimistic, createSignal, createStore, flush, isPending, onFlush } from 'solid-js';
+import { Errored, Loading, Show, action, createEffect, createMemo, createOptimistic, createSignal, createStore, flush, isPending, onFlush, reconcile } from 'solid-js';
 import { fireEvent, render } from '@solidjs/testing-library';
 import { installJsdomLayoutStubs } from '@ishibashi0112/spreadsheet-grid-core/testing';
 import { SpreadsheetGrid, type GridColumn, type SpreadsheetGridHandle } from './index';
@@ -331,7 +331,9 @@ const editTo = (container: HTMLElement, row: number, text: string) => {
 };
 
 // 'store' / 'storeInAction'(段 3-2 / S1-01): rows を createStore で持ち、通知の中で書く / action の中で書く形。
-describe.each(['createOptimistic', 'signal', 'store', 'storeInAction'] as const)('保存の間もグリッドは止まらない(%s + action。S4-21)', (mode) => {
+//   'storeReconcileInAction'(段 3-9 のレビュー): action の中で reconcile で戻す形(README の勧める書き方)。中身を読む追いかけが
+//   保留中の書き込みを latest を通さずに読み、グリッドの計算ごと遷移に入って止まり、保存中の 2 回目の編集が古い行から作られていた。
+describe.each(['createOptimistic', 'signal', 'store', 'storeInAction', 'storeReconcileInAction'] as const)('保存の間もグリッドは止まらない(%s + action。S4-21)', (mode) => {
   it('エディタはすぐ閉じ、保存中の 2 回目の編集はその行へ入り、両方が保存される', async () => {
     watchConsole();
     const saves: Array<ReturnType<typeof deferred<void>>> = [];
@@ -346,6 +348,11 @@ describe.each(['createOptimistic', 'signal', 'store', 'storeInAction'] as const)
         if (mode === 'storeInAction') {
           setState((draft) => {
             draft.rows = next;
+          });
+        }
+        if (mode === 'storeReconcileInAction') {
+          setState((draft) => {
+            reconcile(next, 'id')(draft.rows);
           });
         }
         const request = deferred<void>();

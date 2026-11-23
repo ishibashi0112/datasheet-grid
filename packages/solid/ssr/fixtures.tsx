@@ -1,4 +1,5 @@
 // SSR とハイドレーションの確かめ(段階 4-5)で、サーバー(render.mjs)とクライアント(hydrate.test.tsx)が同じ props で描く表。
+import { createSignal } from 'solid-js';
 import type { JSX } from '@solidjs/web';
 import { SpreadsheetGrid } from '../src/index';
 import { CLIENT_TODAY, CLIENT_TZ, SERVER_TODAY } from './timeZones';
@@ -61,6 +62,14 @@ function PinnedDates(): JSX.Element {
   );
 }
 
+// 利用者が style の display で隠す表(タブで隠したまま状態を残す形)。サーバーの骨組みは display: none で上書きするので、見せる
+//   ときに利用者の display へ戻す(段 3-9 のレビュー)。__setStyleDisplayHidden で隠す / 見せるを切り替える。
+function StyleDisplay(): JSX.Element {
+  const [hidden, setHidden] = createSignal(true);
+  (globalThis as { __setStyleDisplayHidden?: (value: boolean) => void }).__setStyleDisplayHidden = (value) => setHidden(value);
+  return <SpreadsheetGrid {...base} style={{ display: hidden() ? 'none' : undefined }} />;
+}
+
 export const fixtures: Record<string, () => JSX.Element> = {
   // OS の配色と視差効果を減らす設定で決まる theme="auto" と motion の既定 'auto'(R4-1)。
   themeMotion: () => <SpreadsheetGrid {...base} theme="auto" />,
@@ -89,6 +98,8 @@ export const fixtures: Record<string, () => JSX.Element> = {
       dataSource={{ getRows: () => new Promise(() => {}) }}
     />
   ),
+  // style の display で隠した表(段 3-9 のレビュー)。
+  styleDisplay: () => <StyleDisplay />,
   // 主な機能を有効にした構成(サーバーで現在時刻を読まない = React 版の ssrCurrentTime と同じ。ハイドレーションで警告が出ない)。
   features: () => (
     <SpreadsheetGrid
