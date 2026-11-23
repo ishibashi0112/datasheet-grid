@@ -32,7 +32,7 @@ AI の API キーをブラウザに置かないため、Next.js の Route Handle
 
 ## 画面側
 
-`GridAskBar` にグリッドの ref・同じ列定義・`ask` を渡します。画面側のコードは、どの AI を使っても同じです。Solid 版は `@ishibashi0112/spreadsheet-grid-solid/ai` から import し、`grid` にはハンドルを返す関数(`grid={() => grid}`)か signal を渡します([Solid で使う](/docs/solid))。
+`GridAskBar` にグリッドの ref・同じ列定義・`ask` を渡します。画面側のコードは、どの AI を使っても同じです。Solid 版は 1.4.0 から `@ishibashi0112/spreadsheet-grid-solid/ai` から import し、`grid` にはハンドルを返す関数(`grid={() => grid}`)か signal を渡します([Solid で使う](/docs/solid))。
 
 ```tsx tab="React"
 'use client';

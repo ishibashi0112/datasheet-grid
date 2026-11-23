@@ -16,7 +16,7 @@ description: detailRow で行の直下に任意の UI(サブグリッド / フ�
 
 ## 使い方
 
-```tsx
+```tsx tab="React"
 <SpreadsheetGrid
   rows={orders}
   columns={columns}
@@ -27,6 +27,20 @@ description: detailRow で行の直下に任意の UI(サブグリッド / フ�
     render: ({ row, collapse }) => (
       <OrderDetailCard order={row} onClose={collapse} />
     ),
+  }}
+  onExpandedDetailRowKeysChange={(keys) => save(keys)}
+/>
+```
+```tsx tab="Solid"
+<SpreadsheetGrid
+  rows={orders()}
+  columns={columns}
+  rowKeyGetter={(row) => row.id}
+  detailRow={{
+    height: 230,                                  // 帯の高さ(px・固定)
+    isExpandable: (row) => row.lines.length > 0,  // 行ごとの展開可否(省略時は全行)
+    // ctx.row は JSX の中で読む(分割代入すると、行が変わるたびにカードを作り直す)
+    render: (ctx) => <OrderDetailCard order={ctx.row} onClose={ctx.collapse} />,
   }}
   onExpandedDetailRowKeysChange={(keys) => save(keys)}
 />
@@ -43,6 +57,7 @@ const columns: GridColumn<Order>[] = [
   {
     key: 'customer',
     title: '得意先',
+    width: 200,
     renderCell: ({ value, detail }) => (
       <span style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
         {detail?.expandable && (
@@ -63,6 +78,7 @@ const columns: GridColumn<Order>[] = [
   {
     key: 'customer',
     title: '得意先',
+    width: 200,
     renderCell: (ctx) => (
       <span style={{ display: 'flex', gap: '6px', 'align-items': 'center' }}>
         <Show when={ctx.detail?.expandable}>

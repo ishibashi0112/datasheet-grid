@@ -120,11 +120,18 @@ const tax = () => Math.floor(subtotal() * 0.1);
 
 既定では含みません。`exportCsv` / `getExportData` に `includePinnedRows: true` を渡すと、上の固定行を本体の行の前、下の固定行を本体の行の後(合計行の前。`pinnedBottomRowsPlacement="belowTotal"` なら合計行の後)に出します。範囲の選択(scope `'selection'`)では出しません。
 
-```ts
+```ts tab="React"
 grid.current?.exportCsv({ includePinnedRows: true, includeTotalRow: true });
 
 const data = grid.current?.getExportData({ includePinnedRows: true });
 data?.rowKinds; // ['pinned', 'data', 'data', …, 'pinned']
+```
+```ts tab="Solid"
+// let grid!: SpreadsheetGridHandle<Row>; <SpreadsheetGrid ref={grid} ... />
+grid.exportCsv({ includePinnedRows: true, includeTotalRow: true });
+
+const data = grid.getExportData({ includePinnedRows: true });
+data.rowKinds; // ['pinned', 'data', 'data', …, 'pinned']
 ```
 
 ## 見た目

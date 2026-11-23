@@ -7,7 +7,8 @@
 //     (0.1.x の Solid 版は React 版・core と別の版で、solid-vX.Y.Z のタグを付けていた。--list は React 版と core の版だけ)。
 //   追加(Solid 版 段 3-8): 1.4.0 から Solid 版も React 版・core と同じ版で、タグは vX.Y.Z の 1 つです。その版からは、Solid 版の
 //     変更履歴に同じ版の節があれば「## Solid 版」の見出しで後ろに足します(「Solid 版だけの変更はありません」で始まる節 =
-//     bump-version.mjs が足す節は足さない)。
+//     bump-version.mjs が足す節は足さない)。版をそろえた 1.4.0 の Solid 版の節は 0.1.2 からの変更なので、見出しにそう書きます。
+//     Solid 版だけを直した版も、bump-version.mjs がルートに「React 版と core の変更はありません」の節を作るので、ここで止まりません。
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 
@@ -65,6 +66,6 @@ const aligned = !isSolid && (a0 - b0 || a1 - b1 || a2 - b2) >= 0;
 const solidBody = aligned ? readSection(readLines(true), true) : undefined;
 const withSolid =
   solidBody !== undefined && solidBody !== '' && !NO_SOLID_CHANGES.test(solidBody)
-    ? `${body}\n\n## Solid 版(\`@ishibashi0112/spreadsheet-grid-solid\`)\n\n${solidBody}`
+    ? `${body}\n\n## Solid 版(\`@ishibashi0112/spreadsheet-grid-solid\`${version === ALIGNED_FROM ? '。0.1.2 からの変更' : ''})\n\n${solidBody}`
     : body;
 console.log(withSolid);
