@@ -1,13 +1,25 @@
 ---
 title: はじめに
-description: SpreadsheetGrid — React 18.3 / 19 向けの高性能・仮想化スプレッドシート / データグリッド
+description: SpreadsheetGrid — React 18.3 / 19 と Solid 2.0 向けの高性能・仮想化スプレッドシート / データグリッド
 ---
 
-**SpreadsheetGrid**(`@ishibashi0112/spreadsheet-grid`)は、React 18.3 / 19 向けの TypeScript 製仮想化データグリッドです。サーバーサイド行モデル(書き戻し付き)・行グルーピングと集計・Master/Detail・範囲選択とクリップボードなど、他社グリッドでは商用ライセンスの機能を **MIT** で提供します。スクロール空間の仮想化により **約 100 万行** までのデータを軽快に扱え、IME に強い Excel ライクなセル編集を備えています。
+**SpreadsheetGrid** は、React 18.3 / 19 と Solid 2.0 向けの TypeScript 製仮想化データグリッドです。React 版(`@ishibashi0112/spreadsheet-grid`)と Solid 版(`@ishibashi0112/spreadsheet-grid-solid`)は、フレームワークに依らない同じコア(`@ishibashi0112/spreadsheet-grid-core`)の上に作っていて、props・列の定義・命令的なハンドル・CSS・見た目・機能が同じで、版もそろえて出しています。サーバーサイド行モデル(書き戻し付き)・行グルーピングと集計・Master/Detail・範囲選択とクリップボードなど、他社グリッドでは商用ライセンスの機能を **MIT** で提供します。スクロール空間の仮想化により **約 100 万行** までのデータを軽快に扱え、IME に強い Excel ライクなセル編集を備えています。
 
 <BasicGridDemo />
 
-※ このデモは実際のライブラリが動いています。セルをダブルクリックすると編集できます。
+※ このデモは実際のライブラリ(React 版)が動いています。セルをダブルクリックすると編集できます。Solid 版で動くデモは [Solid のクイックスタート](/docs/solid/quick-start#動作イメージ)にあります。
+
+## フレームワークを選ぶ
+
+サイドバーの一番上で React か Solid を選ぶと、インストール・クイックスタート・そのフレームワークで気をつけることのページと、サイト中のコードがそのフレームワークになります(選んだものはこのブラウザで次に来たときも覚えています)。ガイドと API リファレンスは両方で共通です。
+
+| | React 版 | Solid 版 |
+| --- | --- | --- |
+| パッケージ | `@ishibashi0112/spreadsheet-grid` | `@ishibashi0112/spreadsheet-grid-solid` |
+| 対応する版 | react / react-dom `^18.3.0 \|\| ^19.0.0` | solid-js / @solidjs/web `^2.0.0` |
+| はじめる | [インストール](/docs/react/installation) · [クイックスタート](/docs/react/quick-start) | [インストール](/docs/solid/installation) · [クイックスタート](/docs/solid/quick-start) |
+| 気をつけること | [React で気をつけること](/docs/react/notes) · [Next.js と SSR](/docs/react/nextjs) | [Solid で気をつけること](/docs/solid/notes) · [SSR](/docs/solid/ssr) |
+| ブラウザで試す | [StackBlitz(在庫表)](https://stackblitz.com/fork/github/ishibashi0112/datasheet-grid/tree/main/examples/basic?file=src/App.tsx&terminal=dev) | [StackBlitz(在庫表)](https://stackblitz.com/fork/github/ishibashi0112/datasheet-grid/tree/main/examples/solid?file=src/App.tsx&terminal=dev) |
 
 ## 主な特徴
 
@@ -21,7 +33,7 @@ description: SpreadsheetGrid — React 18.3 / 19 向けの高性能・仮想化�
 - **行グルーピング + 集計** — `rowGroup` / `aggFunc`、自動グループ列、開閉 UI
 - **合計行** — `totalRow` で表の下端に合計行を固定。列の `aggFunc` で集計し、フィルター後の行で計算し直す
 - **選択範囲の集計** — 2 セル以上を選ぶと下部バーに平均 / データの個数 / 合計(Excel のステータスバーと同じ)
-- **展開行(Master/Detail)** — `detailRow` で行の直下に任意の React UI(サブグリッド / フォーム)を開く。行順を変えない全幅カード
+- **展開行(Master/Detail)** — `detailRow` で行の直下に任意の UI(サブグリッド / フォーム)を開く。行順を変えない全幅カード
 - **ラベル行(見出し / 区切り行)** — `labelRow` で `rows` に混在させた見出し行を全幅の帯で描画。行数に数えず、ソートはセクション内に閉じ、`sticky` で見出しをヘッダー直下に固定
 - **行ドラッグ並び替え** — `enableRowDrag` でハンドル列(⋮⋮)を掴んで行を上下へ移動。`onRowsChange` に新配列が返り undo 対象
 - **サーバーサイド行モデル(SSRM)** — クエリ転送(フィルター / ソート)、ソフトリフレッシュ、ロードエラーのリトライ UI、`updateRows` による書き戻し(楽観更新 + 失敗時ロールバック)
@@ -35,20 +47,28 @@ description: SpreadsheetGrid — React 18.3 / 19 向けの高性能・仮想化�
 - **アクセシビリティ** — WAI-ARIA の grid パターン、`Tab` 1 回で出入りできるキー操作、読み上げの名前([アクセシビリティ](/docs/guides/accessibility))
 - **共存前提の CSS 設計** — Tailwind(v3 / v4)・Mantine・HeroUI・StyleX と衝突しない
 - **TypeScript ファースト** — 完全な型定義、コントロールドな API
-- **機能を選んで組み込める** — `/lite` の `createSpreadsheetGrid` で使う機能だけを入れ、初期読み込みの JS を全部入り(約 153KB)から約 90〜114KB へ([バンドルを小さくする](/docs/guides/lite))
+- **機能を選んで組み込める** — `createSpreadsheetGrid` で使う機能だけを入れ、初期読み込みの JS を全部入り(React 版 約 153KB / Solid 版 約 168KB)から約 90〜123KB へ([バンドルを小さくする](/docs/guides/lite))
 
 ## 対応環境
 
-- **react / react-dom `^18.3.0 || ^19.0.0`**(peer dependencies)
-- Solid 2.0 向けの Solid 版 `@ishibashi0112/spreadsheet-grid-solid` もあります(同じ props・同じ見た目。[Solid で使う](/docs/solid))
+- **React 版**: react / react-dom `^18.3.0 || ^19.0.0`(peer dependencies)。**Solid 版**: solid-js / @solidjs/web `^2.0.0`(peer dependencies)
 - ランタイム依存は `@tanstack/virtual-core` と、このグリッドのコア `@ishibashi0112/spreadsheet-grid-core` のみ(どちらも自動でインストールされます)
-- SSR(Next.js 等)でエラーなく描ける(サーバーの HTML は表の骨組みで、中身はハイドレーションの後。[Next.js と SSR](/docs/guides/nextjs))
-- ブラウザは Chrome / Edge 111 以降、Firefox 121 以降、Safari 16.4 以降([対応ブラウザ](/docs/installation#対応ブラウザ))
-- 版ごとの変更は[変更履歴(CHANGELOG.md)](https://github.com/ishibashi0112/datasheet-grid/blob/main/CHANGELOG.md)にまとめています
+- SSR でエラーなく描ける(React 版は [Next.js と SSR](/docs/react/nextjs)、Solid 版は [SSR](/docs/solid/ssr))
+- 版ごとの変更は[変更履歴(CHANGELOG.md)](https://github.com/ishibashi0112/datasheet-grid/blob/main/CHANGELOG.md)にまとめています(Solid 版だけの変更は [Solid 版の変更履歴](https://github.com/ishibashi0112/datasheet-grid/blob/main/packages/solid/CHANGELOG.md))
+
+### 対応ブラウザ
+
+| ブラウザ | 対応する版 |
+| --- | --- |
+| Chrome / Edge | 111 以降 |
+| Firefox | 121 以降 |
+| Safari | 16.4 以降 |
+
+React 版・Solid 版で同じです。下限は CSS(`color-mix()` / `:has()`)で決まります。これより古いブラウザでも読み込めますが、一部の色(条件付き書式のチップ、保存やエラーの印)とキーボード操作のフォーカスの表示が出ないことがあります。
 
 <Cards>
-  <Card title="インストール" href="/docs/installation" description="パッケージの導入と CSS の読み込み" />
-  <Card title="クイックスタート" href="/docs/quick-start" description="最小構成のグリッドを動かす" />
-  <Card title="Solid で使う" href="/docs/solid" description="Solid 2.0 向けの Solid 版" />
+  <Card title="React で使う" href="/docs/react/installation" description="React 18.3 / 19 向けの @ishibashi0112/spreadsheet-grid" />
+  <Card title="Solid で使う" href="/docs/solid/installation" description="Solid 2.0 向けの @ishibashi0112/spreadsheet-grid-solid" />
+  <Card title="CSS の読み込みと共存" href="/docs/css" description="Tailwind CSS・Mantine・HeroUI・StyleX と一緒に使う" />
   <Card title="AI アシスタントで使う" href="/docs/ai-assistants" description="Claude Code や Cursor に正しい使い方を渡す" />
 </Cards>

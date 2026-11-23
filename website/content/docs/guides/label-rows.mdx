@@ -30,11 +30,26 @@ description: labelRow で rows に混在させた見出し行を全幅の帯で�
 
 ## 使い方
 
-```tsx
+```tsx tab="React"
 type Row = { id: string; kind?: 'label'; code: string; name: string; qty: number };
 
 <SpreadsheetGrid
   rows={rows}                       // ラベル行はデータ行と同じ配列に混在させる
+  columns={columns}
+  rowKeyGetter={(row) => row.id}
+  labelRow={{
+    isLabelRow: (row) => row.kind === 'label',   // 必須: ラベル行の識別
+    getLabel: (row) => row.name,                 // 必須: 表示文字列(エクスポート / aria にも使う)
+    sticky: true,                                // 縦スクロール中も見出しをヘッダー直下に固定
+    height: 34,                                  // 省略時は rowHeight
+  }}
+/>
+```
+```tsx tab="Solid"
+type Row = { id: string; kind?: 'label'; code: string; name: string; qty: number };
+
+<SpreadsheetGrid
+  rows={rows()}                       // ラベル行はデータ行と同じ配列に混在させる
   columns={columns}
   rowKeyGetter={(row) => row.id}
   labelRow={{

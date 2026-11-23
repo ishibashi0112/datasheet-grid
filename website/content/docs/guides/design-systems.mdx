@@ -3,7 +3,7 @@ title: デザインシステムに合わせる
 description: Astryx / Mantine / HeroUI / shadcn/ui のテーマ変数にグリッドの配色を揃える themes/*.css
 ---
 
-グリッドは各デザインシステムや Tailwind CSS の中でそのまま使えます(グリッドの CSS はレイヤーに入れていないため、相手のリセットに崩されません。[インストール](/docs/installation#tailwind-css--heroui--mantine--stylex-との共存)を参照)。配色まで揃えたいときは、使っているデザインシステムのテーマを 1 行読み込みます。テーマは、デザインシステムの配色の変数をグリッドのトークン(`--ssg-*`)へつなぐだけの CSS です。JS は増えません。
+グリッドは各デザインシステムや Tailwind CSS の中でそのまま使えます(グリッドの CSS はレイヤーに入れていないため、相手のリセットに崩されません。[CSS の読み込みと共存](/docs/css#tailwind-css--heroui--mantine--stylex-との共存)を参照)。配色まで揃えたいときは、使っているデザインシステムのテーマを 1 行読み込みます。テーマは、デザインシステムの配色の変数をグリッドのトークン(`--ssg-*`)へつなぐだけの CSS です。JS は増えません。
 
 | デザインシステム | 読み込む CSS | 効く範囲 |
 | --- | --- | --- |
@@ -23,6 +23,8 @@ Astryx の画面は、Vite のプロジェクトとして [StackBlitz で開け�
 ## 使い方
 
 どのテーマも `style.css` の後に読み込みます(前に読み込むと効きません)。ツールチップなど一部の色はグリッドの `theme` のプリセットのままなので、ライト / ダークは `theme` にも渡します。
+
+<FrameworkOnly framework="react">React 18 の `ref` の話です。Solid 版は下の「Solid 版」を見てください。</FrameworkOnly>
 
 下の例の `function Grid(props)` のように自分のコンポーネントで包んで `ref` を渡すときは、React 18 では包む側を `forwardRef` にしてください(React 19 では `ref` が props として届きますが、React 18 では届かず、`SpreadsheetGridProps` に `ref` があるので型も通ってしまいます)。
 
@@ -46,6 +48,8 @@ const Grid = forwardRef<SpreadsheetGridHandle<Row>, SpreadsheetGridProps<Row>>(f
 - 包む部品に `forwardRef` は要りません(Solid の `ref` は props で届きます)。
 
 ### Astryx
+
+<FrameworkOnly framework="react">Astryx の React の部品(`<Theme>`)を使う例です。Solid では上の「Solid 版」のとおり属性を自分で付けます。</FrameworkOnly>
 
 ```tsx
 import '@astryxdesign/core/reset.css';
@@ -78,6 +82,8 @@ Tailwind CSS と一緒に使うときは、Astryx の README(Next.js + Tailwind)
 ```
 
 ### Mantine
+
+<FrameworkOnly framework="react">Mantine の React の部品(`MantineProvider`)を使う例です。Solid では上の「Solid 版」のとおり属性を自分で付けます。</FrameworkOnly>
 
 ```tsx
 import '@mantine/core/styles.css';

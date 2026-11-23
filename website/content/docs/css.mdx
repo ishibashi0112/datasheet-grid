@@ -1,0 +1,69 @@
+---
+title: CSS の読み込みと共存
+description: style.css / style.layer.css の読み込みと、Tailwind CSS・HeroUI・Mantine・StyleX・Astryx との共存(React 版・Solid 版で共通)
+---
+
+React 版と Solid 版の CSS は同じファイルです(`style.css` / `style.layer.css` / `themes/*.css`)。読み込むパスのパッケージ名だけが違います(React 版は `@ishibashi0112/spreadsheet-grid/…`、Solid 版は `@ishibashi0112/spreadsheet-grid-solid/…`)。
+
+## スタイルの読み込み
+
+アプリのエントリなどで一度だけ import してください。
+
+```ts tab="React"
+import '@ishibashi0112/spreadsheet-grid/style.css'
+```
+```ts tab="Solid"
+import '@ishibashi0112/spreadsheet-grid-solid/style.css'
+```
+
+ベーススタイルは `.ssg-*` クラスにスコープされた通常(未レイヤー)の CSS で、デザイントークンは特異度ゼロ(`:where(.ssg-root)`)で定義されています。そのため **import 順序に関係なく、利用側の上書きが常に勝ちます**。トークン(`--ssg-*`)での色や大きさの変え方は[テーマとスタイリング](/docs/guides/theming)にあります。
+
+## Tailwind CSS / HeroUI / Mantine / StyleX との共存
+
+- **Tailwind CSS v3(+ HeroUI)** — そのまま動きます。Preflight のリセットはクラスセレクタに特異度で負けるため、グリッドを壊せません。
+- **Tailwind CSS v4(+ HeroUI)** — そのまま動きます。`!` 修飾子なしで Tailwind ユーティリティにグリッドの既定値を上書きさせたい場合は、グリッド CSS を `utilities` より下のレイヤーに入れます:
+
+  ```css tab="React"
+  @import 'tailwindcss';
+  @import '@ishibashi0112/spreadsheet-grid/style.css' layer(components);
+  ```
+  ```css tab="Solid"
+  @import 'tailwindcss';
+  @import '@ishibashi0112/spreadsheet-grid-solid/style.css' layer(components);
+  ```
+
+  あるいはレイヤー済みバリアント `style.layer.css`(全体が `@layer ssg-base`)を使い、レイヤー順を自分で宣言する方法もあります:
+
+  ```css tab="React"
+  @layer theme, base, ssg-base, components, utilities;
+  @import 'tailwindcss';
+  @import '@ishibashi0112/spreadsheet-grid/style.layer.css';
+  ```
+  ```css tab="Solid"
+  @layer theme, base, ssg-base, components, utilities;
+  @import 'tailwindcss';
+  @import '@ishibashi0112/spreadsheet-grid-solid/style.layer.css';
+  ```
+
+  宣言は `style.layer.css` より先に読まれる必要があります。上のように宣言した CSS の中で `@import` するか、JS で読み込むときは宣言した CSS の後に `import` してください(先に読み込むと `ssg-base` が一番弱いレイヤーになります)。
+
+  `classNames` / `cellClassName` / `getRowClassName` に Tailwind のユーティリティを渡してグリッドの既定の見た目(罫線・角丸・文字色など)を変えるときも、上のどちらかの形にします。`style.css` をそのまま読み込んだ形では、レイヤーの中にある Tailwind のユーティリティは、読み込み順に関係なく未レイヤーのグリッドの CSS に負けて効きません(`!rounded-none` のように `!` を付けたものだけが効きます)。
+
+  ```tsx
+  // style.layer.css + レイヤー順の宣言の形なら効く
+  <SpreadsheetGrid classNames={{ root: 'rounded-none border-x-0', bodyCell: 'text-red-600' }} /* … */ />
+  ```
+
+- **Mantine**(React)— そのまま動きます(クラス名・リセットの衝突なし。グリッドのポップオーバーは `z-index: 1000` で Mantine の既定モーダルより上)。
+- **StyleX** — そのまま動きます(reset を持たず、生成クラスは接頭辞 `x` で衝突しません)。`classNames` / `cellClassName` / `getRowClassName` などのスロットへ `stylex.props(...)` の戻り値(`{ className, style }`)をそのまま渡せます。StyleX の atomic クラスとグリッドの基底クラスは同特異度のため、グリッド CSS を先に・StyleX の出力を後に読み込むか、`style.layer.css` を使ってください(StyleX 側で `useLayers` を使う場合は `style.layer.css` が必須)。詳細は[テーマとスタイリング](/docs/guides/theming#stylex-との併用)。
+- **Astryx**(Meta のデザインシステム。StyleX 製)— そのまま動きます(グリッドの CSS はレイヤーに入れていないため、Astryx の `@layer reset` / `@layer astryx-base` に崩されません)。
+
+配色を Astryx / Mantine / HeroUI(v3)/ shadcn/ui のテーマに揃えるときは、`style.css` の後にそれぞれのテーマ(`themes/astryx.css` ほか)を読み込みます。詳細とデモは[デザインシステムに合わせる](/docs/guides/design-systems)。
+
+プレーン CSS でグリッドの既定値を確実に上書きしたい場合は、グリッドのベースクラスに自分のクラスをチェーンして特異度で勝たせます:
+
+```css
+.ssg-body-cell.my-warn-cell {
+  background-color: #fff7ed;
+}
+```

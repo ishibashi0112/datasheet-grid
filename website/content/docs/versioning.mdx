@@ -21,7 +21,7 @@ description: 版の上げ方(semver)、公開範囲、壊す変更と非推奨�
 semver の対象は次のものです。
 
 - **React 版**: 入口(`@ishibashi0112/spreadsheet-grid` / `/lite` / `/ai` / `/locales/en` / `/testing`)から import できるもの、CSS ファイル(`style.css` / `style.layer.css` / `themes/*.css`)、[API リファレンス](/docs/api/props)に書いた props・列定義・命令的 API・型とその意味。
-- **Solid 版**: 入口(`@ishibashi0112/spreadsheet-grid-solid` / `/ai` / `/locales/en` / `/testing`)から import できるもの、CSS ファイル(React 版と同じもの)、React 版と同じ props・列定義・命令的 API・型とその意味、[Solid で使う](/docs/solid)に書いた Solid 版だけの決まり(描く関数を呼び直す時機など)。
+- **Solid 版**: 入口(`@ishibashi0112/spreadsheet-grid-solid` / `/ai` / `/locales/en` / `/testing`)から import できるもの、CSS ファイル(React 版と同じもの)、React 版と同じ props・列定義・命令的 API・型とその意味、[Solid で気をつけること](/docs/solid/notes)に書いた Solid 版だけの決まり(描く関数を呼び直す時機など)。
 - **CSS**: トークン(`--ssg-*`)と、API リファレンスの[スタイリング用の状態クラス(公開契約)](/docs/api/props#スタイリング用の状態クラス公開契約)に載せたクラスと属性。
 - **core**: 入口 `@ishibashi0112/spreadsheet-grid-core` と `/testing` から import できるもの。React 版と Solid 版は同じ版の core に依存するので、core も直接使うときは同じ版にそろえてください(違う版だと core が 2 つ入ります)。
 

@@ -1,20 +1,16 @@
 import Link from 'next/link';
 import type { Metadata } from 'next';
 import { HeroGridDemo } from '@/components/demo/hero-grid-demo';
-import { InstallCommand } from '@/components/install-command';
+import { HeroActions } from '@/components/hero-actions';
 
 export const metadata: Metadata = {
   title: 'SpreadsheetGrid — 有料グリッドの機能を、MIT で。',
   description:
-    'サーバーサイド行モデル・行グルーピングと集計・Master/Detail・範囲選択とクリップボードを MIT で。IME に強い Excel ライクな編集、100 万行の仮想化、Tailwind / Mantine / HeroUI と共存する React 18.3 / 19 向けデータグリッド。',
+    'サーバーサイド行モデル・行グルーピングと集計・Master/Detail・範囲選択とクリップボードを MIT で。IME に強い Excel ライクな編集、100 万行の仮想化、Tailwind / Mantine / HeroUI と共存する React 18.3 / 19 と Solid 2.0 向けデータグリッド。',
 };
 
 // 変更(F-1 / 打ち出し): ヒーローは「有料級の機能を MIT で」を言い切り、直下に根拠(他にない 5 つ → 他社比較表)を置く。
 const PROOF_CHIPS = ['SSRM(サーバーサイド行モデル)', '行グルーピング + 集計', 'Master/Detail', '範囲選択 + コピペ', 'set フィルター'];
-
-// 追加(広報 2): インストールなしで動かせるサンプル(リポジトリの examples/basic)を StackBlitz で開く。
-const STACKBLITZ_URL =
-  'https://stackblitz.com/fork/github/ishibashi0112/datasheet-grid/tree/main/examples/basic?file=src/App.tsx&terminal=dev';
 
 const BULLETS = [
   '100 万行対応の仮想化 + 3 ペイン固定列',
@@ -120,7 +116,7 @@ export default function HomePage() {
       <div className="mx-auto grid w-full max-w-6xl flex-1 items-center gap-10 px-6 py-12 lg:grid-cols-[5fr_7fr] lg:py-16">
         <div>
           <p className="text-xs font-bold tracking-widest text-emerald-600 dark:text-emerald-400">
-            MIT LICENSE / REACT 19 / TYPESCRIPT
+            MIT LICENSE / REACT · SOLID / TYPESCRIPT
           </p>
           <h1 className="mt-3 text-3xl font-bold leading-tight tracking-tight sm:text-4xl">
             <span className="inline-block">有料グリッドの機能を、</span>
@@ -128,7 +124,7 @@ export default function HomePage() {
           </h1>
           <p className="mt-4 text-fd-muted-foreground">
             サーバーサイド行モデル、行グルーピングと集計、Master/Detail、範囲選択とクリップボード。AG Grid なら
-            Enterprise の機能が、ライセンス不要で使えます。
+            Enterprise の機能が、ライセンス不要で使えます。React と Solid のどちらでも、同じ props・同じ見た目・同じ機能です。
             <span className="lg:hidden">下</span>
             <span className="hidden lg:inline">右</span>
             のグリッドは実物です — セルをダブルクリック(タッチはダブルタップ)して編集してみてください。
@@ -156,30 +152,8 @@ export default function HomePage() {
               </li>
             ))}
           </ul>
-          <div className="mt-6 flex flex-wrap items-center gap-3">
-            <Link
-              href="/docs"
-              className="rounded-lg bg-emerald-600 px-5 py-2.5 text-sm font-semibold text-white hover:bg-emerald-700 dark:bg-emerald-500 dark:text-emerald-950 dark:hover:bg-emerald-400"
-            >
-              はじめる
-            </Link>
-            <a
-              href={STACKBLITZ_URL}
-              target="_blank"
-              rel="noreferrer"
-              className="rounded-lg border px-5 py-2.5 text-sm font-semibold hover:bg-fd-accent"
-            >
-              StackBlitz で試す
-            </a>
-            <InstallCommand />
-          </div>
-          {/* 追加(Solid 版 0.1.0): Solid 2.0 向けの Solid 版への入口 */}
-          <p className="mt-3 text-xs text-fd-muted-foreground">
-            Solid 2.0 でも使えます —{' '}
-            <Link href="/docs/solid" className="font-medium text-fd-foreground underline underline-offset-2">
-              Solid で使う
-            </Link>
-          </p>
+          {/* 変更(Solid を対等に): React / Solid を選ぶと StackBlitz とインストールのコマンドがそのフレームワークになる */}
+          <HeroActions />
         </div>
         <HeroGridDemo />
       </div>

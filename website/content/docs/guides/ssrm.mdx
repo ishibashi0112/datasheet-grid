@@ -24,11 +24,41 @@ description: dataSource によるブロック取得・クエリ転送・書き�
 
 ## 最小実装
 
-```tsx
+```tsx tab="React"
 import {
   SpreadsheetGrid,
   type ServerSideDataSource,
-} from '@ishibashi0112/spreadsheet-grid' // Solid 版は '@ishibashi0112/spreadsheet-grid-solid'(以下は同じ)
+} from '@ishibashi0112/spreadsheet-grid'
+
+const dataSource: ServerSideDataSource<Row> = {
+  getRows: async ({ startIndex, endIndex, query, signal }) => {
+    const res = await fetch('/api/rows', {
+      method: 'POST',
+      body: JSON.stringify({ startIndex, endIndex, query }),
+      signal,
+    })
+    // { rows: Row[], totalRowCount: number } を返す
+    return res.json()
+  },
+  // 任意: 指定するとセル編集が有効になる(楽観更新 + 失敗時ロールバック)
+  updateRows: async ({ updates }) => {
+    await api.patchRows(updates)
+  },
+  initialRowCount: 50_000, // 任意: 初回 fetch 前から総高さを確保
+  blockSize: 100,          // 既定 100
+}
+
+<SpreadsheetGrid
+  dataSource={dataSource}
+  columns={columns}
+  rowKeyGetter={(row) => row.id} // 書き戻しを使うなら安定キー必須
+/>
+```
+```tsx tab="Solid"
+import {
+  SpreadsheetGrid,
+  type ServerSideDataSource,
+} from '@ishibashi0112/spreadsheet-grid-solid'
 
 const dataSource: ServerSideDataSource<Row> = {
   getRows: async ({ startIndex, endIndex, query, signal }) => {

@@ -18,6 +18,8 @@ import { pathToFileURL } from 'node:url';
 export const REFERENCE_PATH = 'packages/react/API_REFERENCE.md';
 export const PAGES_DIR = 'website/content/docs/api';
 export const SITE_DOCS_URL = 'https://datasheet-grid.vercel.app/docs/';
+// 各ページの先頭に置く React / Solid の注記(website/components/mdx.tsx に登録した部品)
+export const FRAMEWORK_NOTE = '<ApiFrameworkNote />';
 
 // サイトのページの割り当てです。sections は正本の ## 見出しの先頭の文字列(並べる順)。
 //   moveIn: 別の ## 節の ### 節を、このページの ### 節(after)の後ろへ移します(正本では列定義の節の
@@ -162,7 +164,9 @@ export function buildApiPages(reference) {
     }
     const body = parts.map((lines) => lines.join('\n')).join('\n\n');
     const frontmatter = `---\ntitle: ${page.title}\ndescription: ${page.description}\n---`;
-    pages[page.file] = `${frontmatter}\n\n${body.split(SITE_DOCS_URL).join('/docs/')}`;
+    // 変更(Solid を対等に 2026-11-23): リファレンスは React 版と Solid 版で共通なので、各ページの先頭に注記を置く
+    //   (website/components/api-framework-note.tsx。サイドバーで Solid を選んでいると Solid 版での読み替えを出す)。
+    pages[page.file] = `${frontmatter}\n\n${FRAMEWORK_NOTE}\n\n${body.split(SITE_DOCS_URL).join('/docs/')}`;
   }
   for (const section of sections) {
     if (!used.has(section)) {

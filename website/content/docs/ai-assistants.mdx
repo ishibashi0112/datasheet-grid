@@ -24,7 +24,7 @@ cp -r node_modules/@ishibashi0112/spreadsheet-grid/skills/spreadsheet-grid .clau
 
 インストール済みのパッケージにある Skill をまとめてつなぐ [skills-npm](https://github.com/antfu/skills-npm) でも見つかります(パッケージの `skills/` に置いています)。
 
-[Solid 版](/docs/solid)には Solid の書き方の Skill を同梱しています(`skills/spreadsheet-grid-solid/SKILL.md`。0.1.2 から)。GitHub からは `npx skills add https://github.com/ishibashi0112/datasheet-grid/tree/main/packages/solid/skills/spreadsheet-grid-solid`、npm のパッケージからは `node_modules/@ishibashi0112/spreadsheet-grid-solid/skills/spreadsheet-grid-solid` を写します。Solid 版の `API_REFERENCE.md` も同梱しています(React 版と同じ文書で、先頭に Solid 版での読み替えがあります)。
+[Solid 版](/docs/solid/installation)には Solid の書き方の Skill を同梱しています(`skills/spreadsheet-grid-solid/SKILL.md`。0.1.2 から)。GitHub からは `npx skills add https://github.com/ishibashi0112/datasheet-grid/tree/main/packages/solid/skills/spreadsheet-grid-solid`、npm のパッケージからは `node_modules/@ishibashi0112/spreadsheet-grid-solid/skills/spreadsheet-grid-solid` を写します。Solid 版の `API_REFERENCE.md` も同梱しています(React 版と同じ文書で、先頭に Solid 版での読み替えがあります)。
 
 <Callout>
   Skill の中身は短い手順だけで、詳しい API は同梱の `API_REFERENCE.md` を読みに行かせます。パッケージを上げたら、写した Skill も写し直してください。
@@ -47,5 +47,5 @@ Skill を使わないツールでも、プロジェクトの指示ファイル(`
 | --- | --- |
 | [llms.txt](https://datasheet-grid.vercel.app/llms.txt) | ドキュメントの全ページの目次(各ページへのリンクと説明) |
 | [llms-full.txt](https://datasheet-grid.vercel.app/llms-full.txt) | 全ページを 1 つにまとめたもの。大きいので、目次から要るページだけ渡す方が向いています |
-| 各ページの URL + `.md` | そのページの Markdown(例: [/docs/installation.md](https://datasheet-grid.vercel.app/docs/installation.md)) |
+| 各ページの URL + `.md` | そのページの Markdown(例: [/docs/react/installation.md](https://datasheet-grid.vercel.app/docs/react/installation.md)) |
 | 各ページ上部のボタン | 「Copy Markdown」(そのページを Markdown でコピー)と「Open」(ChatGPT / Claude / Cursor などでそのページを開く) |

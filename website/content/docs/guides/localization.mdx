@@ -39,6 +39,8 @@ import { localeTextEn } from '@ishibashi0112/spreadsheet-grid-solid/locales/en';
 
 ### Next.js(App Router)
 
+<FrameworkOnly framework="react">Next.js のサーバーコンポーネントの話です。Solid 版の SSR はサーバーとブラウザで同じ部品を描くので、`localeTextEn` をそのまま渡せます([SSR](/docs/solid/ssr))。</FrameworkOnly>
+
 `localeTextEn` は関数(数で変わる言い方)を含むので、サーバーコンポーネントから props で渡せません(開くと 500 になり、静的なページはビルドが止まります。型の検査は通るので書いた時点では気づけません)。グリッドを描く `'use client'` のファイルの中で import し、サーバーからは言語だけを渡します。
 
 ```tsx

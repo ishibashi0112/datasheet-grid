@@ -21,8 +21,8 @@ description: 値はコード、画面は表示名の列で、グループの見�
 
 ## 列定義
 
-```tsx
-import { SpreadsheetGrid, type GridColumn, type GridSelectEditorOption } from '@ishibashi0112/spreadsheet-grid'; // Solid 版は '@ishibashi0112/spreadsheet-grid-solid'(以下は同じ)
+```tsx tab="React"
+import { SpreadsheetGrid, type GridColumn, type GridSelectEditorOption } from '@ishibashi0112/spreadsheet-grid';
 
 const REGIONS: GridSelectEditorOption[] = [
   { value: 'kanto', label: '関東' },
@@ -45,6 +45,31 @@ const columns: GridColumn<Expense>[] = [
 ];
 
 <SpreadsheetGrid rows={rows} columns={columns} globalFilterMatch="both" />;
+```
+```tsx tab="Solid"
+import { SpreadsheetGrid, type GridColumn, type GridSelectEditorOption } from '@ishibashi0112/spreadsheet-grid-solid';
+
+const REGIONS: GridSelectEditorOption[] = [
+  { value: 'kanto', label: '関東' },
+  { value: 'chubu', label: '中部' },
+];
+const regionLabel = new Map(REGIONS.map((o) => [o.value, o.label]));
+
+const columns: GridColumn<Expense>[] = [
+  {
+    key: 'region',
+    title: '地域',
+    width: 110,
+    editable: true,
+    editor: { type: 'select', options: REGIONS, clipboard: 'label' },
+    valueFormatter: ({ value }) => regionLabel.get(String(value)) ?? String(value ?? ''),
+    rowGroup: true,
+    groupLabel: 'formatted',
+  },
+  // ...
+];
+
+<SpreadsheetGrid rows={rows()} columns={columns} globalFilterMatch="both" />;
 ```
 
 ## 細かい決まり

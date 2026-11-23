@@ -1,0 +1,39 @@
+---
+title: SSR
+description: Solid 2 でサーバーで描くとき(Vite の SSR と @solidjs/vite-plugin、サーバーで描くもの、ハイドレーション、本番の起動)
+---
+
+Solid 版はサーバーの描画(SSR)でもエラーなく描け、ハイドレーションでブラウザの表へ引き継ぎます。React 版(Next.js)のことは [Next.js と SSR](/docs/react/nextjs) にあります。
+
+## 構成
+
+今の SolidStart は Solid 1 だけに対応しています。Solid 2 では Vite の SSR と `@solidjs/vite-plugin`(`ssr: true`)で、サーバーは `renderToString` か `renderToStream` と `generateHydrationScript`、クライアントは `hydrate` を使います(`@solidjs/router` 2 は `@solidjs/web` の `createRequestEvent` と `@solidjs/web/storage` の `provideRequestEvent` も要ります)。
+
+```tsx
+// entry-server.tsx
+import { generateHydrationScript, renderToString } from '@solidjs/web'
+import { App } from './App'
+
+export function render() {
+  return { head: generateHydrationScript(), html: renderToString(() => <App />) }
+}
+```
+
+```tsx
+// entry-client.tsx
+import { hydrate } from '@solidjs/web'
+import { App } from './App'
+
+hydrate(() => <App />, document.getElementById('app')!)
+```
+
+## サーバーで描くもの
+
+- サーバーは React 版と同じものを描きます(骨組み・最初の行の行番号と固定した列のセル・件数・合計)。固定していない列はグリッドの幅が要るので、React 版と同じくブラウザで描きます。
+- サーバーの行は表示だけの写しで、ハイドレーションの後、同じタスクの中でブラウザで計算した行へ入れ替えます。サーバーとブラウザでタイムゾーンや今日が違っても(日付の条件・Date の値)、サーバーの行がページに残りません。
+- Solid のハイドレーションはクライアントで違う値になった文字を直さないので、サーバーの HTML には、ハイドレーションで使う行を空にして隠した骨組みと、その後ろの写しが並びます(写しはハイドレーションの後に外れます。React 版は食い違いをクライアントで描き直します)。`.ssg-root` が付くのは写しだけで、サーバーの HTML の `.ssg-root` は React 版と同じく 1 つです(骨組みにはハイドレーションの後に付きます。1.4.0 は両方に付いていました)。
+- 並べ替え・絞り込み・列幅の最初の値(`initialState`)はサーバーの描画から効きます。URL から最初の状態を決めるときは、サーバーで URL を読んで `initialState` に渡します([状態の保存と復元](/docs/guides/state))。
+
+## 本番の起動
+
+本番のサーバーは `NODE_ENV=production` で起動してください(または SSR のビルドに `define: { 'process.env.NODE_ENV': JSON.stringify('production') }`)。無いとサーバーが開発用の部品も描き、ハイドレーションがグリッドを引き継げません。

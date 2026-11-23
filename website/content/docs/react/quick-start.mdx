@@ -1,13 +1,13 @@
 ---
 title: クイックスタート
-description: 最小構成のグリッドを動かす
+description: React 版で最小構成のグリッドを動かす
 ---
 
 ## 最小の例
 
 `rows` と `onRowsChange` を渡すと、グリッドはコントロールドコンポーネントとして動作します。列には最低限 `key` と `width` が必要です。
 
-```tsx tab="React"
+```tsx
 import { useState } from 'react'
 import { SpreadsheetGrid, type GridColumn } from '@ishibashi0112/spreadsheet-grid'
 import '@ishibashi0112/spreadsheet-grid/style.css'
@@ -35,35 +35,8 @@ export function Example() {
   )
 }
 ```
-```tsx tab="Solid"
-import { createSignal } from 'solid-js'
-import { SpreadsheetGrid, type GridColumn } from '@ishibashi0112/spreadsheet-grid-solid'
-import '@ishibashi0112/spreadsheet-grid-solid/style.css'
 
-type Row = { id: number; name: string; qty: number }
-
-const columns: GridColumn<Row>[] = [
-  { key: 'name', title: 'Name', width: 200, editable: true, filterType: 'text' },
-  { key: 'qty',  title: 'Qty',  width: 120, editable: true, filterType: 'number' },
-]
-
-export function Example() {
-  const [rows, setRows] = createSignal<Row[]>([
-    { id: 1, name: 'Apple',  qty: 3 },
-    { id: 2, name: 'Banana', qty: 5 },
-  ])
-
-  return (
-    <SpreadsheetGrid
-      rows={rows()}
-      columns={columns}
-      onRowsChange={(next) => setRows(next)}
-      rowKeyGetter={(row) => row.id}
-    />
-  )
-}
-```
-
+列の定義(`columns`)は React 版と Solid 版で同じです。英語の文言は `@ishibashi0112/spreadsheet-grid/locales/en` の `localeTextEn` を `localeText` に渡します([英語と文言](/docs/guides/localization))。
 
 ## 動作イメージ
 
@@ -84,19 +57,8 @@ export function Example() {
 | [サーバーサイド行モデル](https://stackblitz.com/fork/github/ishibashi0112/datasheet-grid/tree/main/examples/server-side?file=src/App.tsx&terminal=dev) | 100,000 件をスクロールに合わせて取得。ソート・フィルター・検索は(擬似的な)サーバー側で処理し、編集は保存(失敗すると元に戻る) |
 | [Astryx の中のグリッド](https://stackblitz.com/fork/github/ishibashi0112/datasheet-grid/tree/main/examples/astryx?file=src/App.tsx&terminal=dev) | `themes/astryx.css` で配色を Astryx のテーマに揃え、セルに Astryx の部品を描く |
 
-同じ在庫表を Solid 版で書いたサンプルは [Solid で使う](/docs/solid#ブラウザで試すstackblitz)にあります。
+## 次に読む
 
-## Next.js で使う場合
-
-グリッドはフックを使うクライアントコンポーネントです。App Router では `'use client'` を付けたコンポーネントから利用してください。
-
-```tsx
-'use client'
-
-import { SpreadsheetGrid } from '@ishibashi0112/spreadsheet-grid'
-import '@ishibashi0112/spreadsheet-grid/style.css'
-```
-
-関数(`valueFormatter` / `renderCell` / `validate` / `getValue` など)を含む列定義も `'use client'` のファイルに置きます。サーバーコンポーネントで作ってグリッドへ渡すと、関数はクライアントへ渡せないためページがエラー(500)になります。行のデータ(関数を含まない値)はサーバーで作って props で渡せます。
-
-サーバーの描画で出るもの、ダークモード(`theme="class"`)、URL から最初の状態を決める方法、前のページへ戻ったときのスクロール位置は [Next.js と SSR](/docs/guides/nextjs) にまとめています。
+- [React で気をつけること](/docs/react/notes) — React 18 / 19 の `ref`、新しい行をすぐ使うとき、テスト、機能を選んで組み込む
+- [Next.js と SSR](/docs/react/nextjs) — App Router での `'use client'` の境界、サーバーの描画で出るもの
+- [ガイド](/docs/guides/keyboard) — 機能ごとの使い方(コードはサイドバーの一番上で選んだフレームワークで出ます)

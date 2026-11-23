@@ -67,8 +67,11 @@ IME 変換中(`isComposing`)の `Enter` / `Escape` / `Tab` は **IME の操作�
 
 既定では、編集していないセルで IME オンのまま日本語を打ち始めると、変換が始まらず最初の入力が失われます(`F2` / `Enter` / ダブルクリックで編集を始めてからなら問題ありません)。`imeDirectInput` を付けると Excel / SPREAD と同じく、セルを選んだまま日本語を打ち始められます。
 
-```tsx
+```tsx tab="React"
 <SpreadsheetGrid rows={rows} columns={columns} onRowsChange={setRows} imeDirectInput />
+```
+```tsx tab="Solid"
+<SpreadsheetGrid rows={rows()} columns={columns} onRowsChange={setRows} imeDirectInput />
 ```
 
 1. セルを選んだ状態で日本語を打つと、変換中の文字がセルの上に表示されます。
@@ -115,8 +118,11 @@ IME 変換中(`isComposing`)の `Enter` / `Escape` / `Tab` は **IME の操作�
 
 表は WAI-ARIA の grid として公開しています。矢印キーでアクティブセルを動かすと、支援技術がそのセル(列見出し・行番号・値)を読み上げます。1 画面に複数のグリッドを置くときは `ariaLabel` で表に名前を付けてください。
 
-```tsx
+```tsx tab="React"
 <SpreadsheetGrid ariaLabel="受注一覧" rows={rows} columns={columns} />
+```
+```tsx tab="Solid"
+<SpreadsheetGrid ariaLabel="受注一覧" rows={rows()} columns={columns} />
 ```
 
 付けている役割と属性の一覧は [API リファレンス](/docs/api/props#アクセシビリティ) を、ポインタでしかできない操作やアプリの側で気をつけることは [アクセシビリティ](/docs/guides/accessibility) を参照してください。

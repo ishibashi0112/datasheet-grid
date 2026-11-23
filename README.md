@@ -1,12 +1,18 @@
-# @ishibashi0112/spreadsheet-grid
+# SpreadsheetGrid
 
-[![npm version](https://img.shields.io/npm/v/@ishibashi0112/spreadsheet-grid.svg)](https://www.npmjs.com/package/@ishibashi0112/spreadsheet-grid)
+[![npm version](https://img.shields.io/npm/v/@ishibashi0112/spreadsheet-grid.svg?label=react)](https://www.npmjs.com/package/@ishibashi0112/spreadsheet-grid)
+[![npm version](https://img.shields.io/npm/v/@ishibashi0112/spreadsheet-grid-solid.svg?label=solid)](https://www.npmjs.com/package/@ishibashi0112/spreadsheet-grid-solid)
 [![license](https://img.shields.io/badge/license-MIT-blue.svg)](./LICENSE)
 [![Open in StackBlitz](https://img.shields.io/badge/Open%20in-StackBlitz-1269d3?logo=stackblitz)](https://stackblitz.com/fork/github/ishibashi0112/datasheet-grid/tree/main/examples/basic?file=src/App.tsx&terminal=dev)
 
-A high-performance, virtualized spreadsheet / data grid for **React 18.3 / 19**, written in TypeScript.
+A high-performance, virtualized spreadsheet / data grid for **React 18.3 / 19** and **Solid 2.0**, written in TypeScript. Both versions have the same props, column options, imperative handle, CSS and look, built on one framework-independent core.
 
-高性能な仮想化スプレッドシート／データグリッド（**React 18.3 / 19**・TypeScript 製）。
+高性能な仮想化スプレッドシート／データグリッド（**React 18.3 / 19** と **Solid 2.0** 向け・TypeScript 製）。どちらも同じ props・列の定義・命令的なハンドル・CSS・見た目で、フレームワークに依存しない同じコアの上にあります。
+
+| Framework | Package | Docs |
+| --- | --- | --- |
+| React 18.3 / 19 | [`@ishibashi0112/spreadsheet-grid`](./packages/react) | [Getting started](https://datasheet-grid.vercel.app/docs/react/installation) |
+| Solid 2.0 | [`@ishibashi0112/spreadsheet-grid-solid`](./packages/solid) | [Getting started](https://datasheet-grid.vercel.app/docs/solid/installation) |
 
 **[Docs & live demo](https://datasheet-grid.vercel.app)** · [Playground](https://datasheet-grid.vercel.app/playground) · [Theme builder](https://datasheet-grid.vercel.app/theme-builder) · [Changelog](./CHANGELOG.md)
 
@@ -70,7 +76,7 @@ npm install @ishibashi0112/spreadsheet-grid
 
 Requires **react** and **react-dom** `^18.3.0 || ^19.0.0` as peer dependencies (install them in your app if you have not already). `@tanstack/virtual-core` (the framework-agnostic core of TanStack Virtual) and `@ishibashi0112/spreadsheet-grid-core` (the framework-agnostic core of this grid, split out in v0.39.0) are regular dependencies and are installed automatically; you never import them directly. The React adapter is this package.
 
-**Using Solid?** [`@ishibashi0112/spreadsheet-grid-solid`](./packages/solid) is the Solid 2.0 version, with the same props, column options, handle, CSS and look ([docs](https://datasheet-grid.vercel.app/docs/solid)).
+**Using Solid?** [`@ishibashi0112/spreadsheet-grid-solid`](./packages/solid) is the Solid 2.0 version, with the same props, column options, handle, CSS and look ([docs](https://datasheet-grid.vercel.app/docs/solid/installation)).
 
 Supported browsers: **Chrome / Edge 111+, Firefox 121+, Safari 16.4+**. The floor comes from CSS (`color-mix()`, `:has()`); in older browsers the grid still loads, but some colors (conditional-format chips, save and error marks) and keyboard focus styles may be missing.
 
@@ -500,7 +506,7 @@ npm install @ishibashi0112/spreadsheet-grid
 
 peer 依存として **react** / **react-dom** `^18.3.0 || ^19.0.0` が必要です（未導入なら利用側で入れてください）。`@tanstack/virtual-core`（TanStack Virtual のフレームワーク非依存コア）と `@ishibashi0112/spreadsheet-grid-core`（本グリッドのフレームワーク非依存コア。v0.39.0 で分離）は通常依存として自動的に入ります。アプリ側で直接 import する必要はありません。本パッケージが React 向けアダプタです。
 
-**Solid で使うとき**は、Solid 2.0 向けの [`@ishibashi0112/spreadsheet-grid-solid`](./packages/solid) を使います。props・列の定義・ハンドル・CSS・見た目は同じです([Solid で使う](https://datasheet-grid.vercel.app/docs/solid))。
+**Solid で使うとき**は、Solid 2.0 向けの [`@ishibashi0112/spreadsheet-grid-solid`](./packages/solid) を使います。props・列の定義・ハンドル・CSS・見た目は同じです([Solid のインストール](https://datasheet-grid.vercel.app/docs/solid/installation))。
 
 対応ブラウザは **Chrome / Edge 111 以降、Firefox 121 以降、Safari 16.4 以降** です。下限は CSS(`color-mix()` / `:has()`)で決まります。これより古いブラウザでも読み込めますが、一部の色(条件付き書式のチップ、保存やエラーの印)とキーボード操作のフォーカスの表示が出ないことがあります。
 

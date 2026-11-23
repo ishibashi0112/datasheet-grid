@@ -42,7 +42,7 @@ Shadow root の外の CSS は中に届かないので、`style.css` を Shadow r
 
 ### Tailwind のクラスを `classNames` に渡しても既定の見た目が変わらない
 
-`style.css` はレイヤーの外の CSS なので、`@layer` の中にある Tailwind v4 のユーティリティに必ず勝ちます。`style.layer.css` と Tailwind より前のレイヤー順の宣言にするか、`!rounded-none` のように `!` を付けます([インストール](/docs/installation#tailwind-css--heroui--mantine--stylex-との共存))。
+`style.css` はレイヤーの外の CSS なので、`@layer` の中にある Tailwind v4 のユーティリティに必ず勝ちます。`style.layer.css` と Tailwind より前のレイヤー順の宣言にするか、`!rounded-none` のように `!` を付けます([CSS の読み込みと共存](/docs/css#tailwind-css--heroui--mantine--stylex-との共存))。
 
 ## 編集とデータ
 
@@ -93,17 +93,19 @@ serverSide(`dataSource`)では全行を持たないので空です(開発時に�
 
 ## React と Next.js
 
+<FrameworkOnly framework="react">Solid 版の困りごとは [Solid で気をつけること](/docs/solid/notes) にあります。</FrameworkOnly>
+
 ### `ref` が `null` のまま(React 18)
 
 グリッドに直接 `ref` を渡すときは、React 18.3 / 19 のどちらでも `forwardRef` は要りません。グリッドを自分のコンポーネントで包み、その部品へ `ref` を渡すときは、React 18 では包む部品を `forwardRef` にします(型は通りますが、React 18 は `ref` を props として渡さないため)。
 
 ### Next.js で開くと 500 になる / ビルドが止まる
 
-関数を含むもの(`valueFormatter` などを書いた列定義、`localeTextEn`、`/lite` で作ったグリッド)を、サーバーコンポーネントから props で渡しています。`'use client'` のファイルの中で作るか import します([Next.js と SSR](/docs/guides/nextjs))。
+関数を含むもの(`valueFormatter` などを書いた列定義、`localeTextEn`、`/lite` で作ったグリッド)を、サーバーコンポーネントから props で渡しています。`'use client'` のファイルの中で作るか import します([Next.js と SSR](/docs/react/nextjs))。
 
 ### ハイドレーションの前は列が出ない
 
-サーバーの描画は、行番号と固定した列だけの骨組みです。固定していない列はハイドレーションの後に描きます([Next.js と SSR](/docs/guides/nextjs#サーバーの描画で出るもの))。
+サーバーの描画は、行番号と固定した列だけの骨組みです。固定していない列はハイドレーションの後に描きます([Next.js と SSR](/docs/react/nextjs#サーバーの描画で出るもの))。
 
 ## テストと開発時の警告
 

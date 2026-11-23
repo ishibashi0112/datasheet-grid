@@ -3,6 +3,8 @@ title: preloadGridPopups と /testing
 description: ポップオーバー部品の先読みと、jsdom でグリッドを描くためのテスト支援
 ---
 
+<ApiFrameworkNote />
+
 ## ポップオーバー部品の遅延読み込み(`preloadGridPopups`)
 
 列フィルターのポップオーバーと、ツールパネル(フィルター管理 / 列の表示 / 並び替え)の部品は本体と別のチャンクに分かれていて、初期の読み込みに含まれない(初期の JS が約 1 割小さくなる。props / ハンドルは同じ)。

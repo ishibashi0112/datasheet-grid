@@ -37,10 +37,16 @@ import { ValidationDemo } from '@/components/demo/validation-demo';
 import { StateDemo } from '@/components/demo/state-demo';
 import { LiveSortDemo } from '@/components/demo/live-sort-demo';
 import { LogTailDemo } from '@/components/demo/log-tail-demo';
+import { FrameworkCodeBlockTabs } from '@/components/framework-code-tabs';
+import { SolidBasicGridDemo } from '@/components/demo/solid-basic-grid-demo';
+import { ApiFrameworkNote } from '@/components/api-framework-note';
+import { FrameworkOnly } from '@/components/framework-only';
 
 export function getMDXComponents(components?: MDXComponents) {
   return {
     ...defaultMdxComponents,
+    // React / Solid のコードのタブは選んだフレームワークで開く(lib/framework)
+    CodeBlockTabs: FrameworkCodeBlockTabs,
     // ライブデモ(MDX から <XxxDemo /> で埋め込み)
     BasicGridDemo,
     EditingDemo,
@@ -79,6 +85,11 @@ export function getMDXComponents(components?: MDXComponents) {
     StateDemo,
     LiveSortDemo,
     LogTailDemo,
+    SolidBasicGridDemo,
+    // API リファレンスの先頭の React / Solid の注記(scripts/sync-api-pages.mjs が入れる)
+    ApiFrameworkNote,
+    // 片方のフレームワークだけの話の印
+    FrameworkOnly,
     ...components,
   } satisfies MDXComponents;
 }

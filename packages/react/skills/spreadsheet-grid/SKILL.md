@@ -17,7 +17,7 @@ React 18.3 / 19 向けの仮想化データグリッドです。新しいライ�
   ```
 
 - **型の説明**: 主な型(`SpreadsheetGridProps` / `GridColumn` / `SpreadsheetGridHandle` など)のフィールドの説明は、型定義の JSDoc にもあります(API_REFERENCE.md の表と同じ内容。エディタのホバーや定義へ移動で読めます)。
-- **ガイドとデモ**: https://datasheet-grid.vercel.app 。AI 向けの目次は https://datasheet-grid.vercel.app/llms.txt です。各ページの URL の末尾に `.md` を付けると、そのページを Markdown で読めます(例: https://datasheet-grid.vercel.app/docs/installation.md )。
+- **ガイドとデモ**: https://datasheet-grid.vercel.app 。AI 向けの目次は https://datasheet-grid.vercel.app/llms.txt です。各ページの URL の末尾に `.md` を付けると、そのページを Markdown で読めます(例: https://datasheet-grid.vercel.app/docs/react/installation.md )。
 
 ## 2. 最小の形
 
