@@ -193,7 +193,35 @@ const resetDetailBandStyle = (band: HTMLElement) => {
 };
 
 type RowDropHit = { slot: number; top: number };
-type LiveBase = { index: number; baseY: number; applied?: string };
+// key は控えたときの行のキー(data-row-key)。Solid 版は端のスクロールで描く範囲が変わると行の要素を別の行に使い回すので、
+//   キーが変わった要素は基準位置を取り直します(1.5.0)。
+type LiveBase = { index: number; baseY: number; key: string | null; applied?: string };
+
+const ROW_KEY_ATTRIBUTE = 'data-row-key';
+
+// 追加(1.5.0 / Solid 版の速さ): 行の要素が別の行に使い回されていたら(行のキーが変わった)、今の index と translateY を基準に
+//   取り直します(フレームワークが新しい行の位置を書いた後なので、今の transform がその行の基準位置)。取り直せなければ false。
+const rebaseIfReused = (row: HTMLElement, base: LiveBase): boolean => {
+  const key = row.getAttribute(ROW_KEY_ATTRIBUTE);
+  if (key === base.key) return true;
+  const match = TRANSLATE_Y_PATTERN.exec(row.style.transform);
+  if (!match) return false;
+  base.index = Number(row.getAttribute('data-row-index'));
+  base.baseY = parseFloat(match[1]);
+  base.key = key;
+  base.applied = undefined;
+  return true;
+};
+
+const captureLiveBase = (row: HTMLElement): LiveBase | null => {
+  const match = TRANSLATE_Y_PATTERN.exec(row.style.transform);
+  if (!match) return null;
+  return {
+    index: Number(row.getAttribute('data-row-index')),
+    baseY: parseFloat(match[1]),
+    key: row.getAttribute(ROW_KEY_ATTRIBUTE),
+  };
+};
 
 export const createRowDragController = (): RowDragController => {
   let args: RowDragArgs | null = null;
@@ -360,6 +388,25 @@ export const createRowDragController = (): RowDragController => {
       });
   };
 
+  // 追加(1.5.0): ドラッグ中の行の淡色表示の属性を、今描いている行に合わせ直します(端のスクロールで掴んだ行が描く範囲から出て
+  //   戻ると、新しい要素に属性が無かった。Solid 版は行の要素を別の行に使い回すので、別の行に属性が残っていた)。毎フレーム呼ぶ。
+  const syncDraggingRowAttribute = () => {
+    const container = args?.scrollContainerRef.current ?? null;
+    if (!container || draggingIndex === null) return;
+    const index = String(draggingIndex);
+    const value = isLive() ? 'live' : '';
+    container.querySelectorAll<HTMLElement>(`.ssg-body-row[${DRAGGING_ROW_ATTRIBUTE}]`).forEach((row) => {
+      if (row.getAttribute('data-row-index') !== index && !isInsideDetailCardOf(container, row)) {
+        row.removeAttribute(DRAGGING_ROW_ATTRIBUTE);
+      }
+    });
+    container.querySelectorAll<HTMLElement>(`.ssg-body-row[data-row-index="${index}"]`).forEach((row) => {
+      if (row.getAttribute(DRAGGING_ROW_ATTRIBUTE) !== value && !isInsideDetailCardOf(container, row)) {
+        row.setAttribute(DRAGGING_ROW_ATTRIBUTE, value);
+      }
+    });
+  };
+
   // 追加(motion-8 / M-11): live 方式。描画中の行要素の基準 translateY を控えます(autoscroll で後から描画された行は
   //   applyLivePositions が取り込みます)。
   const captureLiveBases = (): Map<HTMLElement, LiveBase> | null => {
@@ -367,9 +414,8 @@ export const createRowDragController = (): RowDragController => {
     if (!container) return null;
     const map = new Map<HTMLElement, LiveBase>();
     for (const row of collectRowElements(container)) {
-      const match = TRANSLATE_Y_PATTERN.exec(row.style.transform);
-      if (!match) continue;
-      map.set(row, { index: Number(row.getAttribute('data-row-index')), baseY: parseFloat(match[1]) });
+      const base = captureLiveBase(row);
+      if (base) map.set(row, base);
     }
     return map;
   };
@@ -384,20 +430,19 @@ export const createRowDragController = (): RowDragController => {
     if (!container) return;
     for (const row of collectRowElements(container)) {
       if (bases.has(row)) continue;
-      const match = TRANSLATE_Y_PATTERN.exec(row.style.transform);
-      if (!match) continue;
-      bases.set(row, { index: Number(row.getAttribute('data-row-index')), baseY: parseFloat(match[1]) });
+      const base = captureLiveBase(row);
+      if (base) bases.set(row, base);
     }
     const height = args.rowMetrics.rowsHeight(from, from);
     const scrollDelta = (container.scrollTop - liveStartScrollTop) * args.verticalScaleFactor;
     const dragDelta = (dragOrigin ? pointer.y - dragOrigin.y : 0) + scrollDelta;
     const target = slot === null ? null : resolveMoveTargetIndex(from, slot);
     bases.forEach((base, row) => {
-      const { index, baseY } = base;
-      if (!row.isConnected) {
+      if (!row.isConnected || !rebaseIfReused(row, base)) {
         bases.delete(row);
         return;
       }
+      const { index, baseY } = base;
       if (index === from) {
         row.style.transition = 'none';
         row.style.transform = `translateY(${baseY + dragDelta}px)`;
@@ -560,6 +605,7 @@ export const createRowDragController = (): RowDragController => {
       }
     }
     // 端スクロールで rect が動くため、停止中の指でも毎フレーム slot を再計算します。
+    syncDraggingRowAttribute();
     updateIndicator();
     rafId = requestAnimationFrame(autoScrollTick);
   };
@@ -615,6 +661,10 @@ export const createRowDragController = (): RowDragController => {
     //   (captureRowTops が live 位置を読む)。確定しないときは基準位置へ戻します(transition 付き)。
     const bases = liveBases;
     liveBases = null;
+    // 追加(1.5.0): 最後のフレームの後に使い回された行の要素は、新しい行の基準位置へ戻します。
+    bases?.forEach((base, row) => {
+      if (row.isConnected && !rebaseIfReused(row, base)) bases.delete(row);
+    });
     // 変更(FC-02): 確定するときは、今の画面位置(追従 / 退避済み)を記録してから transform を基準位置へ戻し(transition なし)、
     //   それから並びを反映します。transform を残したままだと、行キーが index のとき React が行要素を使い回して transform を
     //   書き直さず、確定後の画面の並びがデータとずれていた(見えている行と、クリックや入力で書き換わる行が違った)。
@@ -878,7 +928,14 @@ export const createRowDragController = (): RowDragController => {
           return;
         }
         const index = Number(row.getAttribute('data-row-index'));
-        if (index === base.index && (base.applied === undefined || row.style.transform === base.applied)) return;
+        const key = row.getAttribute(ROW_KEY_ATTRIBUTE);
+        if (
+          index === base.index &&
+          key === base.key &&
+          (base.applied === undefined || row.style.transform === base.applied)
+        ) {
+          return;
+        }
         const match = TRANSLATE_Y_PATTERN.exec(row.style.transform);
         if (!match) {
           liveBases?.delete(row);
@@ -886,6 +943,7 @@ export const createRowDragController = (): RowDragController => {
         }
         base.index = index;
         base.baseY = parseFloat(match[1]);
+        base.key = key;
         base.applied = undefined;
       });
     }

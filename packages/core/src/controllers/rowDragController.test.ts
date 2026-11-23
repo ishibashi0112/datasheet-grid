@@ -327,6 +327,54 @@ describe('rowDragController', () => {
     }
   });
 
+  // 追加(1.5.0 / Solid 版の速さ): Solid 版は端のスクロールで描く範囲が変わると行の要素を別の行に使い回す(data-row-index /
+  //   data-row-key / transform が書き換わる)。淡色の属性は今描いている掴んだ行へ付け直し、live 方式の基準位置は取り直す。
+  it("行の要素が別の行に使い回されても、淡色の属性は掴んだ行に付き直し、live 方式は新しい行の位置から動かす", () => {
+    const frames: FrameRequestCallback[] = [];
+    vi.stubGlobal('requestAnimationFrame', (cb: FrameRequestCallback) => {
+      frames.push(cb);
+      return frames.length;
+    });
+    const runFrame = () => {
+      const queue = frames.splice(0);
+      for (const cb of queue) cb(0);
+    };
+    const controller = createRowDragController();
+    const { args, container, commitRowMove } = makeArgs();
+    const rows = Array.from(container.querySelectorAll<HTMLElement>('.ssg-body-row'));
+    rows.forEach((row, i) => {
+      row.style.transform = `translateY(${i * 10}px)`;
+      row.setAttribute('data-row-key', `k${i}`);
+    });
+    controller.update({ ...args, motion: 'live' });
+    controller.onRowDragHandlePointerDown(1, handleEvent());
+    dispatchPointer('pointermove', 1, 20, 17);
+    expect(rows[1].style.transform).toBe('translateY(12px)');
+    // 行 1 の要素が行 8 に、行 9 の要素が行 1 に使い回された(フレームワークが新しい行の位置を書いた)。
+    const reuse = (row: HTMLElement, index: number) => {
+      row.dataset.rowIndex = String(index);
+      row.setAttribute('data-row-key', `k${index}`);
+      row.style.transform = `translateY(${index * 10}px)`;
+    };
+    reuse(rows[1], 8);
+    reuse(rows[9], 1);
+    runFrame();
+    expect(rows[1].hasAttribute('data-ssg-row-dragging')).toBe(false);
+    expect(rows[9].getAttribute('data-ssg-row-dragging')).toBe('live');
+    dispatchPointer('pointermove', 1, 20, 18);
+    expect(rows[9].style.transform).toBe('translateY(13px)');
+    expect(rows[1].style.transform).toBe('translateY(80px)');
+    // 最後のフレームの後に使い回された要素も、離したときは新しい行の基準位置へ戻す。
+    reuse(rows[9], 9);
+    reuse(rows[1], 1);
+    dispatchPointer('pointerup', 1, 500, 18);
+    expect(commitRowMove).not.toHaveBeenCalled();
+    expect(rows[9].style.transform).toBe('translateY(90px)');
+    expect(rows[1].style.transform).toBe('translateY(10px)');
+    expect(container.querySelectorAll('[data-ssg-row-dragging]')).toHaveLength(0);
+    controller.dispose();
+  });
+
   // 追加(dogfood DF-02): live 方式で展開中の行を掴むと、その行の帯がポインタに追従し、間の行の帯は同じだけ退避する。
   //   確定 / 取り消しで帯の transform を外す。帯の高さは行メトリクス(rowsHeight)に入っている前提。
   it("motion='live': 展開行の帯も行と一緒に動き、確定 / Escape で transform を外す", () => {

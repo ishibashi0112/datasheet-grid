@@ -241,6 +241,44 @@ describe('createChangeHighlightController', () => {
     controller.dispose();
   });
 
+  // 追加(1.5.0 / Solid 版の速さ): Solid 版は行の要素を別の行に使い回す(data-row-key が書き換わる)。
+  it('光っている間に行の要素が別の行に使い回されたら、その行のセルの光りとトゥイーンをやめる', async () => {
+    const controller = createChangeHighlightController<Row>();
+    const ref = { current: container };
+    const a = { id: 1, name: 'a', qty: 10 };
+    const b = { id: 2, name: 'b', qty: 2 };
+    const qtyA = makeCell(1, 'qty', '10個');
+    const qtyB = makeCell(2, 'qty', '2個');
+    controller.update({ enabled: true, rows: [a, b], rowKeyGetter: keyOf, columns, scrollContainerRef: ref });
+    qtyA.firstElementChild!.textContent = '20個';
+    qtyB.firstElementChild!.textContent = '4個';
+    controller.update({
+      enabled: true,
+      rows: [{ ...a, qty: 20 }, { ...b, qty: 4 }],
+      rowKeyGetter: keyOf,
+      columns,
+      scrollContainerRef: ref,
+    });
+    expect(qtyA.classList.contains(CHANGED_CLASS_NAME)).toBe(true);
+    expect(qtyB.classList.contains(CHANGED_CLASS_NAME)).toBe(true);
+    // 行 1 の要素がスクロールで行 50 に使い回され、Solid が新しい行の文字を書いた。
+    const rowA = qtyA.parentElement!;
+    rowA.setAttribute('data-row-key', '50');
+    qtyA.firstElementChild!.firstChild!.nodeValue = '7個';
+    await Promise.resolve();
+    expect(qtyA.classList.contains(CHANGED_CLASS_NAME)).toBe(false);
+    expect(qtyB.classList.contains(CHANGED_CLASS_NAME)).toBe(true);
+    // トゥイーンは新しい行の文字を書き換えない(行 2 のトゥイーンは続いて最後の文字で終わる)。
+    for (let frame = 0; frame < 20 && rafQueue.length > 0; frame += 1) {
+      const queue = rafQueue;
+      rafQueue = [];
+      for (const cb of queue) cb(performance.now() + 1000);
+    }
+    expect(qtyA.textContent).toBe('7個');
+    expect(qtyB.textContent).toBe('4個');
+    controller.dispose();
+  });
+
   it('enabled=false では何も付かず、renderCell 列はフラッシュのみ(トゥイーンなし)', () => {
     const controller = createChangeHighlightController<Row>();
     const ref = { current: container };

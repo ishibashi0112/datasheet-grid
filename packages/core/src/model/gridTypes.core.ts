@@ -3595,6 +3595,25 @@ export type SpreadsheetGridProps<T, F extends GridFrameworkTypes = GridFramework
    * 命令的に呼びたい場合は同挙動のハンドル `refreshServerSide()` を使う。
    */
   serverSideRefreshToken?: number | undefined;
+  // 追加(1.5.0): serverSide の取り直し(条件の変化 / refreshServerSide() / serverSideRefreshToken)の間の見せ方です。
+  //   'keep' は新しい行が届くまで前の行を薄くして見せ続けます(core controllers/serverSideRowModel の refetch: 'keep')。
+  /**
+   * serverSide で条件(ソート / 列フィルター / グローバルフィルター)が変わったときと、
+   * 取り直し(`refreshServerSide()` / `serverSideRefreshToken`)のときの見せ方(1.5.0 から)。
+   * `'skeleton'` は読み込み中の行(1.4 までと同じ)。`'keep'`
+   * は新しい行が届くまで前の行を薄くして見せ続け(ルートに `.ssg-root--refetching`)、
+   * 列見出しの下に動く線(`.ssg-refetch-bar`)を出し、表(`role="grid"`)に `aria-busy="true"`
+   * を付ける。見えている範囲の新しい行がそろったら(そのブロックの取得に失敗したら)
+   * 一度に差し替える(一部だけ新しい行が混ざらない)。
+   * 前の行を見せている間は編集・貼り付け・削除・フィルハンドルをしない(行の位置が新しい結果と合わないため)。
+   * 初めての取得と、前の行が無いときは読み込み中の行。保存中の書き込みがあるときは、
+   * 決着してから取り直す(1.4 までと同じ)。色はトークン `--ssg-refetch-row-opacity` /
+   * `--ssg-refetch-bar` / `--ssg-refetch-bar-track`。`motion` が `'off'` なら線は動かない。
+   * clientSide では無視。詳細は「取り直しの間の見せ方」節。
+   *
+   * @defaultValue `'skeleton'`
+   */
+  serverSideRefetch?: 'skeleton' | 'keep' | undefined;
   // 追加(batch 9): serverSide の getRows が reject したときの通知です(abort は失敗扱いにせず
   //   通知しません)。利用側のトースト / ログ用で、グリッド内蔵のエラーバー(再試行 UI)とは
   //   独立に呼ばれます。毎レンダーで新しいインライン関数を渡しても問題ありません

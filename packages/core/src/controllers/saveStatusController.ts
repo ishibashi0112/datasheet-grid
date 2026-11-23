@@ -10,9 +10,12 @@
 //   - インジケーター(スピナー / バッジ)はセルの末尾に追加する実要素です(React のセル内容には触らない)。
 //   - 追加(dogfood DF-14): 保存中のセルを覚えておき、保存中の間はスクロール等で描き直されたセル(仮想化で外れて戻った
 //     行 / 列)にも保存中の印を付け直します(これまでは印が消え、保存中なのに普通のセルに見えていた)。
+//   - 追加(1.5.0 / Solid 版の速さ): 印がある間に行の要素が別の行に使い回されたら(Solid 版。data-row-key が変わる)、その行の
+//     セルの印を外し、新しい行が保存中ならその印を付け直します(React 版は要素ごと消え、描き直した行に保存中の印だけが付く)。
 import type { GridRowKey } from '../model/gridTypes.unbound';
 import { isInsideDetailCardOf } from '../logic/detailRow';
 import { DEFAULT_GRID_LOCALE_TEXT } from '../logic/localeText';
+import { observeRowRekeys } from '../utils/rowRekeyObserver';
 
 type ReadonlyRef<V> = { readonly current: V };
 
@@ -58,8 +61,11 @@ export const createSaveStatusController = (): SaveStatusController => {
   // 追加(dogfood DF-14): 保存中のセル(rowKey の文字列 → 列キー)。印を付け直すために使います。
   const pendingCells = new Map<string, Set<string>>();
   let observer: MutationObserver | null = null;
+  let stopWatchingRekeys: (() => void) | null = null;
   let observedContainer: HTMLElement | null = null;
   let reapplyFrame: number | null = null;
+  // 追加(1.5.0): 保存できた / 失敗した印(✓ / ✕)を出している数(出している間も行の要素の使い回しを見張る)。
+  let badgeCount = 0;
 
   const later = (ms: number, fn: () => void) => {
     const timer = setTimeout(() => {
@@ -153,6 +159,8 @@ export const createSaveStatusController = (): SaveStatusController => {
   const stopObserving = () => {
     observer?.disconnect();
     observer = null;
+    stopWatchingRekeys?.();
+    stopWatchingRekeys = null;
     observedContainer = null;
     if (reapplyFrame !== null) {
       if (typeof cancelAnimationFrame === 'function') {
@@ -205,9 +213,23 @@ export const createSaveStatusController = (): SaveStatusController => {
     frames.add(frameId);
   };
 
+  // 追加(1.5.0): 別の行に使い回された行の要素から、前の行の印を外します(新しい行が保存中なら付け直す)。
+  const handleRekey = (row: HTMLElement) => {
+    const container = args?.scrollContainerRef.current;
+    if (!container) {
+      return;
+    }
+    row.querySelectorAll<HTMLElement>(`.ssg-body-cell[${SAVE_STATE_ATTRIBUTE}]`).forEach((cell) => {
+      if (!isInsideDetailCardOf(container, cell)) clearCell(cell);
+    });
+    if (pendingCells.size > 0) {
+      scheduleReapply();
+    }
+  };
+
   const syncObserver = () => {
     const container = args?.scrollContainerRef.current ?? null;
-    if (pendingCells.size === 0 || !container || typeof MutationObserver !== 'function') {
+    if ((pendingCells.size === 0 && badgeCount === 0) || !container || typeof MutationObserver !== 'function') {
       stopObserving();
       return;
     }
@@ -217,6 +239,7 @@ export const createSaveStatusController = (): SaveStatusController => {
     stopObserving();
     observer = new MutationObserver(scheduleReapply);
     observer.observe(container, { childList: true, subtree: true });
+    stopWatchingRekeys = observeRowRekeys(container, handleRekey);
     observedContainer = container;
   };
 
@@ -254,20 +277,19 @@ export const createSaveStatusController = (): SaveStatusController => {
       }
       cell.setAttribute(SAVE_STATE_ATTRIBUTE, event.state);
       setIndicator(cell, event.state);
-      if (event.state === 'ok') {
-        later(OK_BADGE_MS, () => {
-          if (cell.getAttribute(SAVE_STATE_ATTRIBUTE) === 'ok') {
+      if (event.state === 'ok' || event.state === 'failed') {
+        const state = event.state;
+        badgeCount += 1;
+        later(state === 'ok' ? OK_BADGE_MS : FAILED_BADGE_MS, () => {
+          badgeCount -= 1;
+          if (cell.getAttribute(SAVE_STATE_ATTRIBUTE) === state) {
             clearCell(cell);
           }
-        });
-      } else if (event.state === 'failed') {
-        later(FAILED_BADGE_MS, () => {
-          if (cell.getAttribute(SAVE_STATE_ATTRIBUTE) === 'failed') {
-            clearCell(cell);
-          }
+          syncObserver();
         });
       }
     }
+    syncObserver();
     if (event.state === 'failed' && cells.length > 0) {
       showChip(cells[0]);
     }
@@ -301,6 +323,7 @@ export const createSaveStatusController = (): SaveStatusController => {
         clearTimeout(timer);
       }
       timers.clear();
+      badgeCount = 0;
       if (typeof cancelAnimationFrame === 'function') {
         for (const frameId of frames) {
           cancelAnimationFrame(frameId);

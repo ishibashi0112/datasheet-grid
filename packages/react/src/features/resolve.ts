@@ -241,6 +241,7 @@ const INERT_SERVER_SIDE: ServerSideFeatureResult<unknown> = {
   canUpdateRows: false,
   applyCellEdits: () => 0,
   writeError: null,
+  refetching: false,
   renderErrorBars: () => null,
 };
 

@@ -40,8 +40,8 @@ export const OrdersTable = () => <Grid columns={columns} dataSource={dataSource}
 | `filtering` | `filteringFeature` | グローバル / 列フィルター、フィルターのポップオーバー(遅延読み込み)、チップバー、非同期の候補(`enableGlobalFilter` / `enableColumnFilter` / `columns[].filterType` / `getFilterOptions` / `showFilterChipBar` / `onFiltersChange` / `manualFiltering` ほか) | +13.8KB(+ 遅延 8.2KB) |
 | `fillHandle` | `fillHandleFeature` | フィルハンドル(`fillHandle`) | +9.3KB |
 | `columnReorder` | `columnReorderFeature` | 列ヘッダーのドラッグ並べ替え(`onColumnsChange` 指定時 / `columnDragMotion`) | +6.0KB |
-| `rowDrag` | `rowDragFeature` | 行のドラッグ並べ替え(`enableRowDrag` / `isRowDraggable` / `onRowMove` / `canDropRow` / `rowDragMotion`。ハンドルの `moveRow()` は本体にあるので無くても使える) | +4.8KB |
-| `serverSide` | `serverSideFeature` | サーバーサイド行モデル(SSRM)の読み取りと書き戻し、保存状態の表示(`dataSource` / `serverSideRefreshToken` / `showSaveStatus` ほか) | +4.7KB |
+| `rowDrag` | `rowDragFeature` | 行のドラッグ並べ替え(`enableRowDrag` / `isRowDraggable` / `onRowMove` / `canDropRow` / `rowDragMotion`。ハンドルの `moveRow()` は本体にあるので無くても使える) | +5.3KB |
+| `serverSide` | `serverSideFeature` | サーバーサイド行モデル(SSRM)の読み取りと書き戻し、保存状態の表示(`dataSource` / `serverSideRefreshToken` / `showSaveStatus` ほか) | +5.1KB |
 | `columnMenu` | `columnMenuFeature` | 列メニュー(ソート・固定。幅の自動調整は `columnAutosize`、フィルターの入口は `filtering`、パネルの入口は `toolPanel` があるとき。`enableColumnMenu`) | +3.5KB |
 | `find` | `findFeature` | セル内検索(`find` / `onFindChange`) | +2.9KB |
 | `grouping` | `groupingFeature` | 行グルーピングと集計(`columns[].rowGroup` / `aggFunc`) | +2.7KB |
@@ -53,20 +53,20 @@ export const OrdersTable = () => <Grid columns={columns} dataSource={dataSource}
 | `toolPanel` | `toolPanelFeature` | ツールパネル(フィルター管理 / 列の表示 / 並び替え。部品は遅延読み込み) | +2.0KB(+ 遅延 7.1KB) |
 | `labelRow` | `labelRowFeature` | ラベル行(`labelRow`) | +1.8KB |
 | `totalRow` | `totalRowFeature` | 合計行(`totalRow`) | +1.7KB |
+| `motionExtras` | `motionExtrasFeature` | 変更のハイライト、コピー範囲の点線、十字ホバー(`highlightChanges` / `showCopyRange` / `hoverHighlight`) | +1.5KB |
 | `conditionalFormat` | `conditionalFormatFeature` | 条件付き書式とチップ(`columns[].conditionalFormat`) | +1.3KB |
 | `pinnedRows` | `pinnedRowsFeature` | 固定行(`pinnedTopRows` / `pinnedBottomRows`) | +1.3KB |
 | `imeDirectInput` | `imeDirectInputFeature` | IME オンのままの直接入力(`imeDirectInput`) | +1.2KB |
-| `motionExtras` | `motionExtrasFeature` | 変更のハイライト、コピー範囲の点線、十字ホバー(`highlightChanges` / `showCopyRange` / `hoverHighlight`) | +1.2KB |
 | `autoHeight` | `autoHeightFeature` | 行の高さの実測(`autoHeight` / `columns[].autoHeight`) | +1.2KB |
 
 サイズ(初期読み込みの JS の gzip。esbuild で minify・React は外部化・`@tanstack/virtual-core` 込み。2026-11-23 の dist で計測):
 
 | 構成 | 初期 JS(gzip) |
 | --- | --- |
-| 全部入り(`SpreadsheetGrid`) | 約 153KB |
-| `/lite` 機能なし | 約 90KB |
+| 全部入り(`SpreadsheetGrid`) | 約 155KB |
+| `/lite` 機能なし | 約 91KB |
 | `/lite` + `standardFeatures` | 約 114KB |
-| `/lite` + `standardFeatures` + `serverSideFeature` | 約 118KB |
+| `/lite` + `standardFeatures` + `serverSideFeature` | 約 119KB |
 
 - 各機能の目安は「機能なし」に 1 つだけ足したときの増え方で、組み合わせると共通部分のぶん合計より少し小さくなる。バンドラーによって数 KB 前後する(0.61.0 の全部入りの実測で、Vite 8(Rolldown)は esbuild より約 1.5KB 小さく、Vite 7(Rollup)はほぼ同じ。Next.js 16 では webpack が Turbopack より約 4KB 大きい)。
 - 使わない機能がバンドルから落ちることは、Vite 8・webpack 5・Next.js 16(既定の Turbopack)・esbuild で確かめている(バンドラーが `package.json` の `sideEffects` と `/* @__PURE__ */` を解釈する必要がある)。

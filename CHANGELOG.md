@@ -11,6 +11,16 @@
 
 詳しい使い方は[ドキュメントサイト](https://datasheet-grid.vercel.app)と [API リファレンス](./packages/react/API_REFERENCE.md)を参照してください。
 
+## 未リリース
+
+### 追加
+
+- サーバーサイドの行モデル(`dataSource`)の取り直しの間の見せ方 `serverSideRefetch`(`'skeleton'` / `'keep'`。既定 `'skeleton'` = これまでどおり)。`'keep'` にすると、並べ替え・絞り込み・`refreshServerSide()` / `serverSideRefreshToken` の後、新しい行が届くまで前の行を薄くして見せ続け、列見出しの下に流れる線を出します。見えている範囲の新しい行がそろったら一度に差し替えます(一部だけ新しい行が混ざりません)。前の行を見せている間は編集・貼り付け・削除・フィルハンドルをせず、表に `aria-busy="true"` を付けます。公開の契約にクラス `.ssg-root--refetching` / `.ssg-refetch-bar` とトークン `--ssg-refetch-row-opacity` / `--ssg-refetch-bar` / `--ssg-refetch-bar-track` を足しました([サーバーサイド行モデル](https://datasheet-grid.vercel.app/docs/guides/ssrm))。
+
+### 修正
+
+- 行のドラッグ中に、表の端へ寄せたときのスクロールで掴んだ行が描く範囲から出て戻ると、掴んだ行の淡い表示(`data-ssg-row-dragging`)が消えていたのを直しました。
+
 ## 1.4.1 — 2026-11-23
 
 ### 修正

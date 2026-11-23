@@ -9,9 +9,12 @@
 //   - 変わったセルが MAX_FLASH_CELLS を超えたら何もせず、MAX_TWEEN_CELLS を超えたらフラッシュだけ(トゥイーンなし)。
 //   - DOM は描画中のセルだけを探します(仮想化の外は触らない)。既定セル(文字ノード 1 つ)だけトゥイーンし、
 //     renderCell 列はフラッシュのみ。トゥイーン中の表示は column.valueFormatter で整形します。
+//   - 追加(1.5.0 / Solid 版の速さ): 光っている間に行の要素が別の行に使い回されたら(Solid 版。data-row-key が変わる)、その行の
+//     セルの光りとトゥイーンをやめます(新しい行のセルが光ったり、前の行の数が書かれたりしないように。React 版は要素ごと消える)。
 import type { GridColumn, GridRowKey } from '../model/gridTypes.unbound';
 import { getCellValue } from '../utils/permissions';
 import { isInsideDetailCardOf } from '../logic/detailRow';
+import { observeRowRekeys } from '../utils/rowRekeyObserver';
 
 type ReadonlyRef<V> = { readonly current: V };
 
@@ -121,6 +124,8 @@ export const createChangeHighlightController = <T,>(): ChangeHighlightController
   // 追加(FC-14 の見直し): 文字ノードごとに動いている補間の印。セルの値がまた変わったら(補間しない大きな更新でも)消して
   //   止めます(途中の文字と同じ文字を React が書くと、文字の比較だけでは気づけず古い値で終わっていた)。
   const tweenTokens = new WeakMap<Text, object>();
+  // 追加(1.5.0): 光っているセルがある間だけ、行の要素の使い回しを見張ります。
+  let stopWatchingRekeys: (() => void) | null = null;
 
   const clear = (el: HTMLElement) => {
     el.classList.remove(CHANGED_CLASS_NAME);
@@ -129,6 +134,25 @@ export const createChangeHighlightController = <T,>(): ChangeHighlightController
       clearTimeout(timer);
       timers.delete(el);
     }
+    if (timers.size === 0 && stopWatchingRekeys) {
+      stopWatchingRekeys();
+      stopWatchingRekeys = null;
+    }
+  };
+
+  const watchRekeys = (container: HTMLElement) => {
+    if (stopWatchingRekeys) {
+      return;
+    }
+    stopWatchingRekeys = observeRowRekeys(container, (row) => {
+      for (const cell of Array.from(timers.keys())) {
+        if (row.contains(cell)) {
+          const node = textNodeOf(cell);
+          if (node) tweenTokens.delete(node);
+          clear(cell);
+        }
+      }
+    });
   };
 
   const flash = (el: HTMLElement) => {
@@ -240,11 +264,16 @@ export const createChangeHighlightController = <T,>(): ChangeHighlightController
           }
         });
       }
+      if (timers.size > 0) {
+        watchRekeys(container);
+      }
     },
     dispose: () => {
       for (const el of Array.from(timers.keys())) {
         clear(el);
       }
+      stopWatchingRekeys?.();
+      stopWatchingRekeys = null;
       if (typeof cancelAnimationFrame === 'function') {
         for (const id of tweens) {
           cancelAnimationFrame(id);

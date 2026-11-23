@@ -31,6 +31,8 @@ export type UseServerSideRowModelResult<T> = {
   canUpdateRows: boolean;
   applyCellEdits: (edits: ServerSideCellEditInput<T>[]) => number;
   writeError: ServerSideWriteErrorState | null;
+  // 追加(1.5.0 / serverSideRefetch="keep"): 取り直しの間、前の行を見せているか。
+  refetching: boolean;
 };
 
 export function useServerSideRowModel<T>(
@@ -56,5 +58,6 @@ export function useServerSideRowModel<T>(
     canUpdateRows: params.dataSource?.updateRows !== undefined,
     applyCellEdits: controller.applyCellEdits,
     writeError: snapshot.writeError,
+    refetching: snapshot.refetching,
   };
 }

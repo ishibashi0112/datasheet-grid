@@ -12,6 +12,7 @@
 | `onRowsChange` | `(nextRows: T[]) => void` | — | 行が変化したとき呼ばれる(rows を controlled にする)。 |
 | `dataSource` | `ServerSideDataSource<T>` | — | serverSide(SSRM)モードのデータ供給口。指定すると可視窓近傍のブロックだけを `getRows` で都度取得し、`rows` 系の clientSide パイプラインをバイパスする。`updateRows`(任意)を持たせるとセル編集の書き戻し(楽観更新つき)が有効になる(「セル編集の書き戻し」節)。 |
 | `serverSideRefreshToken` | `number` | — | serverSide のソフトリフレッシュ用トークン。値を増やすと、クエリ(フィルター/ソート/グローバル)を変えずにキャッシュを破棄して現在の可視レンジをサーバから取り直す。スクロール位置は保持し、件数は到着ブロックの `totalRowCount` で追従する(clientSide では無視)。命令的に呼びたい場合は同挙動のハンドル `refreshServerSide()` を使う。 |
+| `serverSideRefetch` | `'skeleton' \| 'keep'` | `'skeleton'` | serverSide で条件(ソート / 列フィルター / グローバルフィルター)が変わったときと、取り直し(`refreshServerSide()` / `serverSideRefreshToken`)のときの見せ方(1.5.0 から)。`'skeleton'` は読み込み中の行(1.4 までと同じ)。`'keep'` は新しい行が届くまで前の行を薄くして見せ続け(ルートに `.ssg-root--refetching`)、列見出しの下に動く線(`.ssg-refetch-bar`)を出し、表(`role="grid"`)に `aria-busy="true"` を付ける。見えている範囲の新しい行がそろったら(そのブロックの取得に失敗したら)一度に差し替える(一部だけ新しい行が混ざらない)。前の行を見せている間は編集・貼り付け・削除・フィルハンドルをしない(行の位置が新しい結果と合わないため)。初めての取得と、前の行が無いときは読み込み中の行。保存中の書き込みがあるときは、決着してから取り直す(1.4 までと同じ)。色はトークン `--ssg-refetch-row-opacity` / `--ssg-refetch-bar` / `--ssg-refetch-bar-track`。`motion` が `'off'` なら線は動かない。clientSide では無視。詳細は「取り直しの間の見せ方」節。 |
 | `onServerSideLoadError` | `(error, params) => void` | — | serverSide の `getRows` が reject したときの通知(abort は正常キャンセルのため通知しない)。`params` は失敗した要求の view 空間レンジ `{ startIndex, endIndex }`。グリッド内蔵のエラーバー(再試行 UI)とは独立に呼ばれる(利用側トースト / ログ用)。インライン関数可(latest-ref 経由で読む)。 |
 | `onServerSideWriteError` | `(error, params) => void` | — | serverSide の `dataSource.updateRows` が reject したときの通知。グリッド側は楽観更新をロールバック済みで、`params.updates` に失敗して元に戻した行更新(`rowKey` / `changes` / `previousRow`)が入る(利用側トースト / リトライ導線用。`changes` は元に戻したセルだけで、後から同じセルを変えた編集で上書き済みの変更は入らない。`row` は今の表示の行に元に戻した変更を当てた行で、同じ行の新しい編集の値を含む)。グリッド内蔵の保存失敗バーとは独立に呼ばれる。インライン関数可(latest-ref 経由で読む)。詳細は「セル編集の書き戻し」節。 |
 | `onColumnsChange` | `(nextColumns: GridColumn<T>[]) => void` | — | 列が変化したとき呼ばれる。列メニューの固定切替はこれが指定されている場合のみ反映。列の並べ替え(ヘッダーのドラッグ / 列パネル)と `applyState` で渡る `nextColumns` は、配列順が固定列ごと(左固定 → 中央 → 右固定)に並べ直される(画面上の列順は変わらない。例: 右固定列の後ろに宣言した列があると、右固定列が配列の末尾へ移る)。列メニューの固定切替は配列順を変えず `pinned` だけを更新する。指定が無いと、列メニューの固定 / リセットと、ツールパネルの「列」タブの表示 / 非表示・並べ替え・リセットは押せない(今の状態は見える)。押せない理由のツールチップは利用者向けの文(「この表では列の固定を変えられません」など。1.0.2 から。1.0.1 までは「onColumnsChange 未指定のため…」)。 |
@@ -2193,8 +2194,22 @@ set / select / 複合(numberSet / textSet / dateSet)の候補集合はクライ�
 
 - **`queryKey` 変化との違い**: フィルター/ソート/グローバルフィルターの変更は結果セットの総入れ替えなので**先頭へスクロールリセット**してキャッシュを全破棄し block 0 から取り直す。一方ソフトリフレッシュは**スクロール位置を保持**したままキャッシュを破棄し、**現在の可視レンジ**を即時(debounce なし)取り直す。
 - **件数**: リフレッシュ時に件数はリセットせず、到着ブロックの `totalRowCount` で更新する。外部更新で件数が増減していれば縦スクロール空間が追従する。可視レンジ未確立や件数 0(空結果)からのリフレッシュでは block 0 をブートストラップとして取り直す(空になったテーブルがサーバ側でデータを得た後も復帰できる)。
-- **挙動メモ**: 取り直し中は対象行が一瞬スケルトン表示になる(purge → 再取得)。`refreshToken` は単調増加で運用する(値が変わったときだけ取り直す)。初回 mount では発火しない。
+- **挙動メモ**: 取り直し中は対象行が一瞬スケルトン表示になる(purge → 再取得)。前の行を見せたまま取り直すには `serverSideRefetch="keep"`(下の「取り直しの間の見せ方」節)。`refreshToken` は単調増加で運用する(値が変わったときだけ取り直す)。初回 mount では発火しない。
 - **用途**: 外部での編集/追加削除(mutation)後の反映トリガーとして使う想定。グリッド上の**セル編集**は `dataSource.updateRows`(下の「セル編集の書き戻し」節)で直接書き戻せるため本機能は不要。**行の追加削除**は書き戻し API を持たないため、「サーバへ反映 → `refreshServerSide()`」の運用に寄せる(AG Grid も実質この形)。
+
+### 取り直しの間の見せ方(`serverSideRefetch`)
+
+条件(ソート / 列フィルター / グローバルフィルター)を変えたときと、取り直し(`refreshServerSide()` / `serverSideRefreshToken`)のとき、既定(`'skeleton'`)では行が読み込み中の行(スケルトン)になる。`serverSideRefetch="keep"` にすると、新しい行が届くまで前の行を薄くして見せ続ける(1.5.0 から)。
+
+```tsx
+<SpreadsheetGrid dataSource={dataSource} columns={columns} rowKeyGetter={(row) => row.id} serverSideRefetch="keep" />
+```
+
+- **見せ方**: 前の行は `--ssg-refetch-row-opacity`(既定 `0.45`)の濃さに見え(本体の見えている所に、セルの背景色の面を重ねて薄くする。行の要素の `opacity` は変えないので、固定列の下に中央の列が透けない)、列見出しの下に左から右へ流れる線(`.ssg-refetch-bar`。色は `--ssg-refetch-bar`、下地は `--ssg-refetch-bar-track`)が出る。ルートには `.ssg-root--refetching`、表(`role="grid"`)には `aria-busy="true"` が付く。`motion` が `'off'` なら線は動かない(全幅の止まった線)。
+- **差し替えるとき**: 見えている範囲(描いている行)のブロックがすべて新しい条件で届いたら、一度に差し替える(件数も新しい `totalRowCount` に)。届いたブロックから順に混ぜることはしない(上が新しい並び、下が古い並び、のような表を見せないため)。見えている範囲のブロックの取得に失敗したときは、前の行をやめて失敗の表示(読み込み中の行 + エラーバー)にする。範囲の外のブロックは待たない。
+- **スクロール**: 条件が変わったときは 1.4 までと同じく先頭へ戻る(前の行の先頭を薄く見せる)。取り直しはスクロール位置を保つ。前の行を見せている間にスクロールした先が前の行の読み込み済みのブロックの外なら、そこは読み込み中の行になる。
+- **編集**: 前の行を見せている間は、編集の開始・貼り付け・削除・フィルハンドルをしない(前の行の位置が新しい結果と合わないため。編集中に取り直しが始まったときは、その編集を確定しても書かない)。セルの読み取り専用の印・`aria-readonly`・`renderCell` の `readOnly` は変えない。前の行を見せ始める前の保存中の書き込みは、決着してから取り直す(1.4 までと同じ)。その値は保存できるまで前の行に出し続ける。
+- **前の行が無いとき**: 初めての取得と、まだ 1 つもブロックが届いていないときは、`'keep'` でも読み込み中の行になる。前の行を見せている間にまた条件を変えたときは、最初の前の行を見せたまま、新しい条件で取り直す(途中まで届いた行は捨てる)。
 
 ### getRows 失敗時のエラー表示とリトライ
 
@@ -2274,8 +2289,8 @@ export const OrdersTable = () => <Grid columns={columns} dataSource={dataSource}
 | `filtering` | `filteringFeature` | グローバル / 列フィルター、フィルターのポップオーバー(遅延読み込み)、チップバー、非同期の候補(`enableGlobalFilter` / `enableColumnFilter` / `columns[].filterType` / `getFilterOptions` / `showFilterChipBar` / `onFiltersChange` / `manualFiltering` ほか) | +13.8KB(+ 遅延 8.2KB) |
 | `fillHandle` | `fillHandleFeature` | フィルハンドル(`fillHandle`) | +9.3KB |
 | `columnReorder` | `columnReorderFeature` | 列ヘッダーのドラッグ並べ替え(`onColumnsChange` 指定時 / `columnDragMotion`) | +6.0KB |
-| `rowDrag` | `rowDragFeature` | 行のドラッグ並べ替え(`enableRowDrag` / `isRowDraggable` / `onRowMove` / `canDropRow` / `rowDragMotion`。ハンドルの `moveRow()` は本体にあるので無くても使える) | +4.8KB |
-| `serverSide` | `serverSideFeature` | サーバーサイド行モデル(SSRM)の読み取りと書き戻し、保存状態の表示(`dataSource` / `serverSideRefreshToken` / `showSaveStatus` ほか) | +4.7KB |
+| `rowDrag` | `rowDragFeature` | 行のドラッグ並べ替え(`enableRowDrag` / `isRowDraggable` / `onRowMove` / `canDropRow` / `rowDragMotion`。ハンドルの `moveRow()` は本体にあるので無くても使える) | +5.3KB |
+| `serverSide` | `serverSideFeature` | サーバーサイド行モデル(SSRM)の読み取りと書き戻し、保存状態の表示(`dataSource` / `serverSideRefreshToken` / `showSaveStatus` ほか) | +5.1KB |
 | `columnMenu` | `columnMenuFeature` | 列メニュー(ソート・固定。幅の自動調整は `columnAutosize`、フィルターの入口は `filtering`、パネルの入口は `toolPanel` があるとき。`enableColumnMenu`) | +3.5KB |
 | `find` | `findFeature` | セル内検索(`find` / `onFindChange`) | +2.9KB |
 | `grouping` | `groupingFeature` | 行グルーピングと集計(`columns[].rowGroup` / `aggFunc`) | +2.7KB |
@@ -2287,20 +2302,20 @@ export const OrdersTable = () => <Grid columns={columns} dataSource={dataSource}
 | `toolPanel` | `toolPanelFeature` | ツールパネル(フィルター管理 / 列の表示 / 並び替え。部品は遅延読み込み) | +2.0KB(+ 遅延 7.1KB) |
 | `labelRow` | `labelRowFeature` | ラベル行(`labelRow`) | +1.8KB |
 | `totalRow` | `totalRowFeature` | 合計行(`totalRow`) | +1.7KB |
+| `motionExtras` | `motionExtrasFeature` | 変更のハイライト、コピー範囲の点線、十字ホバー(`highlightChanges` / `showCopyRange` / `hoverHighlight`) | +1.5KB |
 | `conditionalFormat` | `conditionalFormatFeature` | 条件付き書式とチップ(`columns[].conditionalFormat`) | +1.3KB |
 | `pinnedRows` | `pinnedRowsFeature` | 固定行(`pinnedTopRows` / `pinnedBottomRows`) | +1.3KB |
 | `imeDirectInput` | `imeDirectInputFeature` | IME オンのままの直接入力(`imeDirectInput`) | +1.2KB |
-| `motionExtras` | `motionExtrasFeature` | 変更のハイライト、コピー範囲の点線、十字ホバー(`highlightChanges` / `showCopyRange` / `hoverHighlight`) | +1.2KB |
 | `autoHeight` | `autoHeightFeature` | 行の高さの実測(`autoHeight` / `columns[].autoHeight`) | +1.2KB |
 
 サイズ(初期読み込みの JS の gzip。esbuild で minify・React は外部化・`@tanstack/virtual-core` 込み。2026-11-23 の dist で計測):
 
 | 構成 | 初期 JS(gzip) |
 | --- | --- |
-| 全部入り(`SpreadsheetGrid`) | 約 153KB |
-| `/lite` 機能なし | 約 90KB |
+| 全部入り(`SpreadsheetGrid`) | 約 155KB |
+| `/lite` 機能なし | 約 91KB |
 | `/lite` + `standardFeatures` | 約 114KB |
-| `/lite` + `standardFeatures` + `serverSideFeature` | 約 118KB |
+| `/lite` + `standardFeatures` + `serverSideFeature` | 約 119KB |
 
 - 各機能の目安は「機能なし」に 1 つだけ足したときの増え方で、組み合わせると共通部分のぶん合計より少し小さくなる。バンドラーによって数 KB 前後する(0.61.0 の全部入りの実測で、Vite 8(Rolldown)は esbuild より約 1.5KB 小さく、Vite 7(Rollup)はほぼ同じ。Next.js 16 では webpack が Turbopack より約 4KB 大きい)。
 - 使わない機能がバンドルから落ちることは、Vite 8・webpack 5・Next.js 16(既定の Turbopack)・esbuild で確かめている(バンドラーが `package.json` の `sideEffects` と `/* @__PURE__ */` を解釈する必要がある)。
@@ -2720,6 +2735,7 @@ function Grid(props: SpreadsheetGridProps<Row>) {
 | --- | --- |
 | `.ssg-root` | グリッドのルート要素(`className` prop の付与先)。 |
 | `.ssg-root--fill-height` | `height` に `%` を含む値を渡したときのルート(flex column)。 |
+| `.ssg-root--refetching` | `serverSideRefetch="keep"` で、取り直しの間に前の行を見せているときのルート(このとき本体の見えている所を `--ssg-refetch-row-opacity` の濃さに薄く見せる)。 |
 | `.ssg-root--filling` | フィルハンドル(`fillHandle`)のドラッグ中のルート(カーソルを十字に固定)。 |
 | `.ssg-theme-dark` | `theme="dark"`(または `'auto'` のダーク解決)時に root と各ポータル(popover / menu / panel / ツールチップ)へ。 |
 | `.ssg-theme-class` | `theme="class"` のとき root と各ポータル(popover / menu / panel / ツールチップ / ドラッグのゴースト)と `GridAskBar` へ。祖先に `.dark` か `[data-theme="dark"]` があるとダークのプリセットになる(`:where` で定義)。 |
@@ -2730,6 +2746,7 @@ function Grid(props: SpreadsheetGridProps<Row>) {
 | `.ssg-filter-chip-bar` | フィルターチップバー。 |
 | `.ssg-empty-state` | 0 行時の空状態。 |
 | `.ssg-ssrm-error-bar` | SSRM の読み込みエラーバー。 |
+| `.ssg-refetch-bar` | `serverSideRefetch="keep"` で前の行を見せている間、列見出しの下に出る動く線(色は `--ssg-refetch-bar` / `--ssg-refetch-bar-track`)。 |
 | `.ssg-scroll-hint` | スクロール位置インジケーター(`scrollHint`)。 |
 | `.ssg-find-bar` | セル内検索(`find`)の検索バー。 |
 | `.ssg-find-mark` / `.ssg-find-mark--current` | セル内検索のヒット / 今のヒット(`<mark>`)。 |
@@ -2817,7 +2834,7 @@ function Grid(props: SpreadsheetGridProps<Row>) {
 | 保存の印(SSRM の書き戻し) | `--ssg-save-pending` / `--ssg-save-ok` / `--ssg-save-ok-contrast` / `--ssg-save-failed` |
 | 検索とフィルハンドル | `--ssg-find-mark-bg` / `--ssg-find-mark-current-bg`、`--ssg-fill-line` / `--ssg-fill-handle-ring` |
 | 条件付き書式 | `--ssg-cf-bar` / `--ssg-cf-bar-negative`(データバー)、`--ssg-cf-seq-min` / `--ssg-cf-seq-max` / `--ssg-cf-div-negative` / `--ssg-cf-div-mid` / `--ssg-cf-div-positive`(カラースケール)、`--ssg-cf-neutral` / `--ssg-cf-neutral-bg` / `--ssg-cf-info` / `--ssg-cf-info-bg` / `--ssg-cf-good` / `--ssg-cf-good-bg` / `--ssg-cf-warning` / `--ssg-cf-warning-bg` / `--ssg-cf-critical` / `--ssg-cf-critical-bg`(チップ) |
-| 読み込み中とスクロール位置 | `--ssg-skeleton-bar` / `--ssg-skeleton-bar-hi`(SSRM のスケルトン)、`--ssg-scrollhint-track-bg` / `--ssg-scrollhint-thumb` / `--ssg-scrollhint-thumb-active`(`scrollHint`) |
+| 読み込み中とスクロール位置 | `--ssg-skeleton-bar` / `--ssg-skeleton-bar-hi`(SSRM のスケルトン)、`--ssg-refetch-row-opacity` / `--ssg-refetch-bar` / `--ssg-refetch-bar-track`(`serverSideRefetch="keep"` の前の行の濃さ / 動く線 / 線の下地)、`--ssg-scrollhint-track-bg` / `--ssg-scrollhint-thumb` / `--ssg-scrollhint-thumb-active`(`scrollHint`) |
 | モーション | `--ssg-motion-fast` / `--ssg-motion-base` / `--ssg-motion-slow` / `--ssg-motion-ease` |
 
 ## 補助型(props で参照される shape)
