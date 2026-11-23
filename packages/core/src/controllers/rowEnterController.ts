@@ -17,6 +17,9 @@
 //     いました。mountEnter のときは style 属性の変化も旧値付きで観測し、移動された行だけ旧 translateY → 新しい値を
 //     インラインで付け直して(1 回のリフローを挟む)同じ transition を走らせます。インラインの transition を持つ行
 //     (行ドラッグの settle / live 方式が管理中)とスクロール中は触りません。
+//   - 追加(1.5.0 / Solid 版の速さ): Solid 版は描く範囲だけが変わったとき、範囲から出た行の要素を入ってきた行に使い回します
+//     (行の要素の data-row-key が書き換わる。React 版では起きない)。行のキーが変わった要素は、前の行の enter を外し、
+//     新しく現れた行として扱います(React 版では新しい要素が追加されるので、同じ条件で enter が付く)。
 import { isInsideDetailCardOf } from '../logic/detailRow';
 
 type ReadonlyRef<V> = { readonly current: V };
@@ -59,6 +62,8 @@ export const transformOfStyleText = (styleText: string | null): string | null =>
 
 const isBodyRow = (node: Node): node is HTMLElement =>
   node instanceof HTMLElement && node.classList.contains('ssg-body-row');
+
+const ROW_KEY_ATTRIBUTE = 'data-row-key';
 
 // scrollSyncController がスクロール中に付ける修飾子(循環 import を避けるため文字列を重複定義。値は同一)。
 const SCROLLING_CLASS_NAME = 'ssg-scroll-container--scrolling';
@@ -142,10 +147,21 @@ export const createRowEnterController = (): RowEnterController => {
     // 同一バッチで削除もされた要素 = React の並べ替えによる DOM 移動(remove + insert)。mount ではないので除外。
     const movedRows = new Set<Node>();
     const addedRows: HTMLElement[] = [];
+    // 追加(1.5.0): 行のキーが書き換わった要素(Solid 版が別の行に使い回した)。
+    const rekeyedRows = new Set<HTMLElement>();
     for (const record of records) {
       if (record.type === 'attributes') {
         const target = record.target;
-        if (isOwnBodyRow(target) && !previousStyleByRow.has(target)) {
+        if (!isOwnBodyRow(target)) {
+          continue;
+        }
+        if (record.attributeName === ROW_KEY_ATTRIBUTE) {
+          if (record.oldValue !== null && record.oldValue !== target.getAttribute(ROW_KEY_ATTRIBUTE)) {
+            rekeyedRows.add(target);
+          }
+          continue;
+        }
+        if (!previousStyleByRow.has(target)) {
           previousStyleByRow.set(target, record.oldValue);
         }
         continue;
@@ -168,6 +184,14 @@ export const createRowEnterController = (): RowEnterController => {
           addedRows.push(node);
         }
       });
+    }
+    // 使い回した要素の前の行の enter は外し、新しく現れた行として扱います(同じバッチで追加された要素は追加の側で数える)。
+    const added = new Set(addedRows);
+    for (const el of rekeyedRows) {
+      clear(el);
+      if (el.isConnected && !added.has(el) && !el.hasAttribute('data-skeleton-row')) {
+        addedRows.push(el);
+      }
     }
     if (addedRows.length === 0) {
       return;
@@ -226,12 +250,14 @@ export const createRowEnterController = (): RowEnterController => {
       }
       observer = new MutationObserver(handleMutations);
       // mountEnter(animateRows)では DOM 移動された行の旧 transform を知るため style 属性も旧値付きで観測します。
-      observer.observe(
-        el,
-        mountEnter
-          ? { childList: true, subtree: true, attributes: true, attributeFilter: ['style'], attributeOldValue: true }
-          : { childList: true, subtree: true },
-      );
+      //   行のキー(data-row-key)はいつも旧値付きで観測します(Solid 版が行の要素を使い回したとき)。
+      observer.observe(el, {
+        childList: true,
+        subtree: true,
+        attributes: true,
+        attributeFilter: mountEnter ? ['style', ROW_KEY_ATTRIBUTE] : [ROW_KEY_ATTRIBUTE],
+        attributeOldValue: true,
+      });
       observed = el;
       observedAttributes = mountEnter;
     },

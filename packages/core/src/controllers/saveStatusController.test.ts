@@ -192,6 +192,53 @@ describe('saveStatusController', () => {
       controller.dispose();
     });
 
+    // 追加(1.5.0 / Solid 版の速さ): Solid 版は行の要素を別の行に使い回す(data-row-key が書き換わる)。
+    it('行の要素が別の行に使い回されたら前の行の印を外し、新しい行が保存中なら付け直す', async () => {
+      const controller = createSaveStatusController();
+      controller.update({ scrollContainerRef: { current: container }, shellRef: { current: shell }, enabled: true });
+      const qty1 = makeCell('r1', 'qty');
+      const qty2 = makeCell('r2', 'qty');
+      const qty3 = makeCell('r3', 'qty');
+      controller.handle({ state: 'pending', cells: [{ rowKey: 'r1', columnKeys: ['qty'] }] });
+      controller.handle({ state: 'pending', cells: [{ rowKey: 'r9', columnKeys: ['qty'] }] });
+      controller.handle({ state: 'pending', cells: [{ rowKey: 'r3', columnKeys: ['qty'] }] });
+      controller.handle({ state: 'ok', cells: [{ rowKey: 'r3', columnKeys: ['qty'] }] });
+      flushFrames();
+      expect(qty1.getAttribute(SAVE_STATE_ATTRIBUTE)).toBe('pending');
+      expect(qty3.getAttribute(SAVE_STATE_ATTRIBUTE)).toBe('ok');
+      // r1 の要素は保存中でない r5 へ、r2 の要素は保存中の r9 へ、保存できた r3 の要素は r6 へ使い回された。
+      qty1.parentElement!.setAttribute('data-row-key', 'r5');
+      qty2.parentElement!.setAttribute('data-row-key', 'r9');
+      qty3.parentElement!.setAttribute('data-row-key', 'r6');
+      await flushMutations();
+      expect(qty1.getAttribute(SAVE_STATE_ATTRIBUTE)).toBeNull();
+      expect(qty1.querySelector(`.${SAVE_INDICATOR_CLASS_NAME}`)).toBeNull();
+      expect(qty3.getAttribute(SAVE_STATE_ATTRIBUTE)).toBeNull();
+      expect(qty3.querySelector(`.${SAVE_INDICATOR_CLASS_NAME}`)).toBeNull();
+      flushFrames();
+      expect(qty2.getAttribute(SAVE_STATE_ATTRIBUTE)).toBe('pending');
+      expect(qty1.getAttribute(SAVE_STATE_ATTRIBUTE)).toBeNull();
+      controller.dispose();
+    });
+
+    it('保存できた印だけが残っている間も使い回しを見張り、印が消えたら見張りをやめる', async () => {
+      const controller = createSaveStatusController();
+      controller.update({ scrollContainerRef: { current: container }, shellRef: { current: shell }, enabled: true });
+      const qty = makeCell('r1', 'qty');
+      controller.handle({ state: 'pending', cells: [{ rowKey: 'r1', columnKeys: ['qty'] }] });
+      controller.handle({ state: 'ok', cells: [{ rowKey: 'r1', columnKeys: ['qty'] }] });
+      flushFrames();
+      expect(qty.getAttribute(SAVE_STATE_ATTRIBUTE)).toBe('ok');
+      vi.advanceTimersByTime(OK_BADGE_MS + 10);
+      expect(qty.getAttribute(SAVE_STATE_ATTRIBUTE)).toBeNull();
+      // 見張りをやめた後は、利用側が付けた属性(例)を使い回しで外さない。
+      qty.setAttribute(SAVE_STATE_ATTRIBUTE, 'ok');
+      qty.parentElement!.setAttribute('data-row-key', 'r2');
+      await flushMutations();
+      expect(qty.getAttribute(SAVE_STATE_ATTRIBUTE)).toBe('ok');
+      controller.dispose();
+    });
+
     it('無効にしたときと dispose の後は付け直さない', async () => {
       const controller = createSaveStatusController();
       controller.update({ scrollContainerRef: { current: container }, shellRef: { current: shell }, enabled: true });

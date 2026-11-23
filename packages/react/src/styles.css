@@ -3642,6 +3642,15 @@
   .ssg-scroll-container--scrolling .ssg-detail-band {
     transition: none;
   }
+  /* 追加(1.5.0 / Solid 版の速さ): Solid 版は行の並びが同じままで描く範囲だけが変わったとき(スクロール)、範囲から出た行の
+     要素を入ってきた行に使い回します。使い回した直後の 2 フレームだけ付く内部の属性で、行とその中の transition を止めます
+     (前の行の位置・データバーの幅・背景色から滑って見えないように。React 版は新しい要素なので付かない)。 */
+  .ssg-body-row[data-ssg-reused],
+  .ssg-body-row[data-ssg-reused] *,
+  .ssg-body-row[data-ssg-reused] *::before,
+  .ssg-body-row[data-ssg-reused] *::after {
+    transition: none !important;
+  }
 
   /* 追加(行選択): チェック選択された行のハイライト。行 div に背景を敷き、非ホバーの
      本体セルを透過にして下地(選択色)を見せます(ホバーセルはホバー色を優先)。

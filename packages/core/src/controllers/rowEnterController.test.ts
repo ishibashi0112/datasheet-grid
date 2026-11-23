@@ -315,6 +315,62 @@ describe('rowEnterController', () => {
     controller.dispose();
   });
 
+  // 追加(1.5.0 / Solid 版の速さ): Solid 版は行の要素を別の行に使い回す(data-row-key が書き換わる)。
+  it('行のキーが変わった要素: 前の行の enter を外し、スクロール中でなければ新しく現れた行として enter を付ける', async () => {
+    const now = vi.spyOn(Date, 'now').mockReturnValue(50_000);
+    const controller = createRowEnterController();
+    controller.update({ scrollContainerRef: { current: container }, skeletonEnter: false, mountEnter: true });
+    const row = makeRow(1, false);
+    row.setAttribute('data-row-key', 'a');
+    pane.append(row);
+    await flushObservers();
+    expect(row.classList.contains(ROW_ENTER_CLASS_NAME)).toBe(true);
+    // スクロール中に別の行(b)へ使い回された: 前の行の enter は外れ、新しくは付かない。
+    container.classList.add('ssg-scroll-container--scrolling');
+    row.setAttribute('data-row-key', 'b');
+    row.setAttribute('data-row-index', '40');
+    await flushObservers();
+    expect(row.classList.contains(ROW_ENTER_CLASS_NAME)).toBe(false);
+    expect(row.style.getPropertyValue(ROW_ENTER_INDEX_VAR)).toBe('');
+    // スクロール中でなければ、新しく現れた行と同じく付く(React 版は新しい要素が追加される)。
+    container.classList.remove('ssg-scroll-container--scrolling');
+    now.mockReturnValue(50_000 + ROW_ENTER_LIVE_WINDOW_MS * 2);
+    row.setAttribute('data-row-key', 'c');
+    await flushObservers();
+    expect(row.classList.contains(ROW_ENTER_CLASS_NAME)).toBe(true);
+    // 同じ値を書き直しただけ(キーが変わらない)では何もしない。
+    row.classList.remove(ROW_ENTER_CLASS_NAME);
+    now.mockReturnValue(50_000 + ROW_ENTER_LIVE_WINDOW_MS * 4);
+    row.setAttribute('data-row-key', 'c');
+    await flushObservers();
+    expect(row.classList.contains(ROW_ENTER_CLASS_NAME)).toBe(false);
+    controller.dispose();
+    now.mockRestore();
+  });
+
+  it('skeletonEnter だけのとき: 使い回した要素の前の行の enter を外し、スケルトンと同じ位置なら enter を付ける', async () => {
+    const controller = createRowEnterController();
+    controller.update({ scrollContainerRef: { current: container }, skeletonEnter: true, mountEnter: false });
+    const s5 = makeRow(5, true);
+    const row = makeRow(2, false);
+    row.setAttribute('data-row-key', 'a');
+    row.classList.add(ROW_ENTER_CLASS_NAME);
+    pane.append(s5, row);
+    await flushObservers();
+    // 位置 5 のスケルトンが消え、同じバッチで要素が位置 5 の行へ使い回された = 届いた行。
+    s5.remove();
+    row.setAttribute('data-row-key', 'e');
+    row.setAttribute('data-row-index', '5');
+    await flushObservers();
+    expect(row.classList.contains(ROW_ENTER_CLASS_NAME)).toBe(true);
+    // スケルトンと関係のない使い回しでは付けない(前の行の enter は外す)。
+    row.setAttribute('data-row-key', 'f');
+    row.setAttribute('data-row-index', '9');
+    await flushObservers();
+    expect(row.classList.contains(ROW_ENTER_CLASS_NAME)).toBe(false);
+    controller.dispose();
+  });
+
   it('transformOfStyleText は style 属性の文字列から transform の値を取り出す', () => {
     expect(transformOfStyleText('height: 36px; transform: translateY(76px);')).toBe('translateY(76px)');
     expect(transformOfStyleText('transform: translateY(-4.5px)')).toBe('translateY(-4.5px)');

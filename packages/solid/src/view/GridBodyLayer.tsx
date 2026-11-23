@@ -2,9 +2,10 @@
 //   データ行と、グループ行(grouping)・ラベル行(labelRow。どちらも部品は機能から)。読み込み中の行(serverSide)・
 //   auto-height(autoHeight)・条件付き書式(conditionalFormat)は機能(段階 2)で、シェルが機能の有無を props で渡します。
 //   行は rowKey、セルは列の key で対応させます(React 版の key と同じ。並びが変わっても同じ要素が新しい位置へ動くので、
-//   animateRows の transition が効く)。
+//   animateRows の transition が効く)。変更(1.5.0): 行の並びが同じままで描く範囲だけが変わったとき(スクロール)は、範囲から
+//   出たデータ行の要素とセルの部品を、入ってきた行に使い回します(primitives/rowSlots。中身の値だけを書き換える)。
 //   Solid は部品を描き直さない(細かく signal で更新する)ので、React 版の memo / 行プリミティブへの畳み込みは要らない。
-import { For, Show, createMemo, untrack } from 'solid-js';
+import { For, Show, createMemo, createRenderEffect, untrack } from 'solid-js';
 import type { JSX } from '@solidjs/web';
 import type {
   CellCoord,
@@ -40,6 +41,8 @@ import { useGridLocaleText } from '../context/localeText';
 import { px } from '../primitives/style';
 import { createMemoWhen } from '../primitives/memoWhen';
 import { markClickTarget } from '../primitives/clickTarget';
+import { assignRowSlots, type RowSlotKind, type RowSlotState } from '../primitives/rowSlots';
+import { markReusedRow } from '../primitives/reusedRow';
 import { RowSelectionCheckbox } from './RowSelectionCheckbox';
 import type { GridPaneKind } from './GridHeaderRow';
 import type { GridLabelRowRenderContent } from './GridBodyLabelRow';
@@ -83,7 +86,8 @@ const joinClasses = (...parts: Array<string | false | null | undefined>): string
 };
 
 // 飾りの無い列か(セルの書式 cellClassName・メモ cellNote・組み込みの検査の印・データバー / カラースケール・auto-height の器の
-//   どれも無い)。セルの部品の形を決めるので、セルのキー(cellKey)にも入れる(形が変わったらセルを作り直す)。
+//   どれも無い)。セルの部品の形を決めるので、セルのキー(cellKey)にも入れる(形が変わったらセルを作り直す)。renderCell の
+//   有無も同じ(renderCell の中身は行ごとに作るので、セルを作るときに決める)。
 const isPlainCellColumn = <T,>(column: PaneColumnEntry<T>['column']): boolean =>
   column.cellClassName === undefined &&
   !column.cellNote &&
@@ -92,7 +96,7 @@ const isPlainCellColumn = <T,>(column: PaneColumnEntry<T>['column']): boolean =>
   column.conditionalFormat?.colorScale === undefined &&
   column.autoHeight !== true;
 const cellKey = <T,>(entry: PaneColumnEntry<T>): string =>
-  isPlainCellColumn(entry.column) ? entry.column.key : `${entry.column.key}\u0000decorated`;
+  `${entry.column.key}\u0000${isPlainCellColumn(entry.column) ? 'plain' : 'decorated'}${entry.column.renderCell ? '+render' : ''}`;
 
 // 細い列の状態チップは余白を詰めてアイコンを外す(React 版の view/GridBodyLayer と同じ幅)。
 export const CHIP_COMPACT_MAX_WIDTH = 80;
@@ -165,8 +169,23 @@ type GridBodyLayerProps<T> = {
 
 export function GridBodyLayer<T>(props: GridBodyLayerProps<T>) {
   const texts = useGridLocaleText();
+  // 行の枠(For のキー)。行の並び(行モデル)が前と同じときだけ、範囲から出たデータ行の枠を入ってきた行に使い回します
+  //   (primitives/rowSlots)。グループ行とラベル行は使い回さない(行のキーのまま)。
+  const slotKindOf = (row: GridBodyRowItem): RowSlotKind => {
+    if (row.skeleton) {
+      return 'skeleton';
+    }
+    const model = props.rowModel;
+    return model.getGroupRow?.(row.index) !== undefined || model.getLabelRow?.(row.index) !== undefined ? 'keyed' : 'data';
+  };
+  const slotted = createMemo(
+    (prev: { state: RowSlotState<GridBodyRowItem>; model: RowModel<T> } | undefined) => {
+      const model = props.rowModel;
+      return { state: assignRowSlots(prev?.state, props.rows, slotKindOf, prev?.model === model), model };
+    },
+  );
   return (
-    <For each={props.rows} keyed={(item) => item.key}>
+    <For each={slotted().state.items} keyed={(item) => item.slot}>
       {(item) => {
         // 位置は memo で受ける(描く行の配列は作り直されるたびに新しいオブジェクトになるので、値が同じなら先へ伝えない。
         //   素の関数のままだと、ホバーやスクロールのたびに見えているすべてのセルの中身を作り直す)。
@@ -267,7 +286,18 @@ export function GridBodyLayer<T>(props: GridBodyLayerProps<T>) {
             </Show>
             <Show when={row()}>
               {(currentRow) => {
-                const rowKey = (): GridRowKey => props.rowModel.getRowKey(rowIndex()) ?? rowIndex();
+                const rowKey = createMemo((): GridRowKey => props.rowModel.getRowKey(rowIndex()) ?? rowIndex());
+                // 別の行に使い回した要素(行のキーが変わった)は、次の次のフレームまで transition を止めます(primitives/reusedRow)。
+                let rowElement: HTMLDivElement | undefined;
+                createRenderEffect(
+                  rowKey,
+                  (_next, previous) => {
+                    if (previous !== undefined && rowElement) {
+                      markReusedRow(rowElement);
+                    }
+                  },
+                  { name: 'reusedRow' },
+                );
                 const sourceRowIndex = () => props.rowModel.getSourceIndex(rowIndex()) ?? rowIndex();
                 // 行の高さは値だけの memo(項目のオブジェクトはスクロールのたびに新しくなる)。
                 const rowSize = createMemo(() => item().size ?? props.rowHeight);
@@ -331,6 +361,9 @@ export function GridBodyLayer<T>(props: GridBodyLayerProps<T>) {
                   props.labelViewIndexes ? resolveDataRowNumber(props.labelViewIndexes, rowIndex()) : rowIndex() + 1;
                 return (
                   <div
+                    ref={(element) => {
+                      rowElement = element;
+                    }}
                     data-pane={props.pane}
                     data-row-index={rowIndex()}
                     role="row"
@@ -421,7 +454,6 @@ export function GridBodyLayer<T>(props: GridBodyLayerProps<T>) {
                         //   クリックの pointerdown でアクティブセルが変わるたびに中身を作り直すと、pointerup が別の要素に落ちて
                         //   click が起きない(チェックボックスのセルや renderCell のボタンが押せない)。並べ替えで行の位置が
                         //   変わるたびに作り直すと、renderCell の中の入力欄のフォーカスが外れる。React は同じ要素を使い回す。
-                        const cellRowKey = untrack(rowKey);
                         const cellState: GridCellContentContext = {
                           get rowIndex() {
                             return rowIndex();
@@ -432,7 +464,9 @@ export function GridBodyLayer<T>(props: GridBodyLayerProps<T>) {
                           get sourceRowIndex() {
                             return sourceRowIndex();
                           },
-                          rowKey: cellRowKey,
+                          get rowKey() {
+                            return rowKey();
+                          },
                           get findRanges() {
                             return findRanges();
                           },
@@ -556,6 +590,10 @@ export function GridBodyLayer<T>(props: GridBodyLayerProps<T>) {
                             hasRenderCell: column().renderCell !== undefined,
                           });
                         const cell = () => ({ row: rowIndex(), col: colIndex() });
+                        // 利用側の renderCell(と合成列)の中身は行ごとに作ります(要素を別の行に使い回したときに、中の signal や
+                        //   入力欄の状態が別の行へ持ち越されないように。React 版は行ごとに別の要素)。行のキーを読んだ式の中で作るので、
+                        //   キーが変わると作り直す(renderCell の有無はセルのキー cellKey に入っている)。
+                        const keyedContent = untrack(() => entry().column.renderCell !== undefined);
                         // セルの中身。飾りの無い列は中身だけ(中身を作る式が読んだ値 = 行の値などが変わったときに作り直す)。
                         const cellChildren = plain
                           ? () => props.renderCellContent(currentRow, column(), cellState)
@@ -584,6 +622,12 @@ export function GridBodyLayer<T>(props: GridBodyLayerProps<T>) {
                                 </Show>
                               </>
                             );
+                        const cellContent = keyedContent
+                          ? () => {
+                              rowKey();
+                              return cellChildren();
+                            }
+                          : cellChildren;
                         return (
                           <div
                             role="gridcell"
@@ -639,7 +683,7 @@ export function GridBodyLayer<T>(props: GridBodyLayerProps<T>) {
                               'z-index': isActive() ? 3 : 1,
                             }}
                           >
-                            {cellChildren()}
+                            {cellContent()}
                           </div>
                         );
                       }}

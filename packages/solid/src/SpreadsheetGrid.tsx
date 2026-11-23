@@ -2919,9 +2919,10 @@ function GridShellBody<T extends object>(
         setValue: (nextValue: unknown) => writeRenderedCellValue(cell.rowKey, unbound, nextValue),
       });
     }
-    const row = currentRow();
-    const value = getCellValue(row, unbound);
-    const text = column.valueFormatter ? column.valueFormatter({ value, row, column }) : String(value ?? '');
+    const textOf = (row: T): string => {
+      const value = getCellValue(row, unbound);
+      return column.valueFormatter ? column.valueFormatter({ value, row, column }) : String(value ?? '');
+    };
     // セル内検索のヒットを <mark> にします(既定のセルだけ。カレントは --current)。ヒットとカレントは cell から読んだときに引く
     //   ので、変わったときは中の文字だけを描き直します(セルの箱と中身の span はそのまま)。
     const splitFind = findFeature?.splitTextByFindRanges;
@@ -2942,15 +2943,20 @@ function GridShellBody<T extends object>(
       });
     };
     // 条件付き書式: データバーの showValue: false は文字を出さない(帯は GridBodyLayer が描く)。機能セットに無ければ指定を無視。
-    //   valueFormatter は React 版と同じく先に呼ぶ。
+    //   valueFormatter は React 版と同じく呼ぶ。
     const formatRules = conditionalFormatFeature ? unbound.conditionalFormat : undefined;
     if (formatRules?.dataBar?.showValue === false) {
+      textOf(currentRow());
       return null;
     }
     // 状態チップ(値 → 色味 / 指定)。ラベルの省略時は表示の文字。チップの関数が位置や状態を読んだときは、その式だけが追従する。
+    //   行が替わったら作り直す(本体で行を読む)。
     const chips = formatRules?.chips;
     if (conditionalFormatFeature && chips) {
       const { GridChip, resolveChipSpec } = conditionalFormatFeature;
+      const row = currentRow();
+      const value = getCellValue(row, unbound);
+      const text = textOf(row);
       const chip = createMemo(() =>
         resolveChipSpec<T>(chips, {
           row,
@@ -2986,7 +2992,9 @@ function GridShellBody<T extends object>(
         </Show>
       );
     }
-    return <span class="ssg-cell-value">{highlightFind(text)}</span>;
+    // 変更(1.5.0): 既定のセルは中の文字だけが行の値に追従します(行が替わっても span を作り直さない。行の要素を別の行に
+    //   使い回したときは文字だけを書き換える)。
+    return <span class="ssg-cell-value">{highlightFind(textOf(currentRow()))}</span>;
   };
 
   const pinnedPaneStyle = (side: 'left' | 'right', width: number, hasContent: boolean): JSX.CSSProperties => ({
