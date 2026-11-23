@@ -45,13 +45,27 @@ const columns: GridColumn<Row>[] = [
 
 グルーピング中の `exportCsv` / `downloadCsv` / `getExportData` は、表示から外れているグループ元の列を先頭に入れます。どの行にもグループの値が入った平らな表になるので、Excel のピボットや読み込み直しにそのまま使えます。`includeGroupRows: true` を渡すと、各グループの先頭に小計の行(集計のある列にそのグループの集計値)も入ります(帳票向け。scope `'view'` のときだけ)。
 
-```tsx
+```tsx tab="React"
 gridRef.current?.exportCsv();
 // 地域,区分,担当,金額
 // 関東,法人,佐藤,100
 // 関東,個人,鈴木,200
 
 gridRef.current?.exportCsv({ includeGroupRows: true });
+// 地域,区分,担当,金額
+// 関東 小計,,,300
+// 関東,法人 小計,,100
+// 関東,法人,佐藤,100
+// 関東,個人 小計,,200
+// 関東,個人,鈴木,200
+```
+```tsx tab="Solid"
+grid.exportCsv(); // let grid!: SpreadsheetGridHandle<Sale> と ref={grid}
+// 地域,区分,担当,金額
+// 関東,法人,佐藤,100
+// 関東,個人,鈴木,200
+
+grid.exportCsv({ includeGroupRows: true });
 // 地域,区分,担当,金額
 // 関東 小計,,,300
 // 関東,法人 小計,,100

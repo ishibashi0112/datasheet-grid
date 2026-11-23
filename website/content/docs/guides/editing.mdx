@@ -41,8 +41,19 @@ const columns: GridColumn<Row>[] = [
 
 Excel の通貨や会計の書式のセル(`¥12,000` / `12,000円` / `(1,200)`)を貼り付ける列は、組み込みの数値のパーサ `numberParser` を `parseClipboardValue` に渡します。読み方は number 列の既定と同じ(全角・3 桁区切りも読む)で、`strip` の文字を先に外し、`negativeParentheses` でかっこの数を負の数として読みます(1.1.0 から)。貼り付けで書かなかったセル(編集できないセルと、`validationMode: 'reject'` の列で検査に通らなかった値)は `onPasteSkipped` で 1 回の貼り付けにつき 1 回まとめて受け取れるので、「3 セルは書きませんでした」のように知らせられます。
 
-```tsx
+```tsx tab="React"
 import { numberParser } from '@ishibashi0112/spreadsheet-grid';
+
+{ key: 'amount', title: '金額', width: 120, editable: true,
+  editor: { type: 'number', min: 0 }, validationMode: 'reject',
+  parseClipboardValue: numberParser({ strip: ['¥', '￥', '円'], negativeParentheses: true }) }
+
+<SpreadsheetGrid
+  onPasteSkipped={({ cells }) => toast(`${cells.length} セルは書きませんでした(${cells[0]?.message ?? '編集できないセル'})`)}
+/>
+```
+```tsx tab="Solid"
+import { numberParser } from '@ishibashi0112/spreadsheet-grid-solid';
 
 { key: 'amount', title: '金額', width: 120, editable: true,
   editor: { type: 'number', min: 0 }, validationMode: 'reject',
@@ -110,7 +121,7 @@ const switchTab = (next: string) => {
 
 「行を追加」ボタンで足した行をすぐ編集させるときは、命令的 API の `startEditing(viewRowIndex, colIndex)` を使います(`F2` と同じ。セルを選んで見える位置へスクロールし、エディタにフォーカスが移ります)。位置は表示の位置なので、並べ替えや絞り込みの中では `rows.findIndex` ではなく行キーから `getViewRowIndex(rowKey)` で、列は `getColIndex(columnKey)` で引きます。
 
-```tsx
+```tsx tab="React"
 import { flushSync } from 'react-dom';
 
 const addRow = () => {
@@ -122,6 +133,20 @@ const addRow = () => {
   if (viewRowIndex >= 0 && colIndex >= 0) grid?.startEditing(viewRowIndex, colIndex);
 };
 ```
+```tsx tab="Solid"
+import { flush } from 'solid-js';
+
+let grid!: SpreadsheetGridHandle<Row>; // <SpreadsheetGrid ref={grid} ... />
+
+const addRow = () => {
+  const row = { id: crypto.randomUUID(), name: '' };
+  setRows((prev) => [...prev, row]);
+  flush(); // グリッドが新しい行を知ってから引く(書き込みはふだんマイクロタスクで反映される)
+  const viewRowIndex = grid.getViewRowIndex(row.id);
+  const colIndex = grid.getColIndex('name');
+  if (viewRowIndex >= 0 && colIndex >= 0) grid.startEditing(viewRowIndex, colIndex);
+};
+```
 
 右クリックメニューから開いたモーダルを閉じた後など、キーがグリッドへ届かなくなったときは `focus()` でグリッドへフォーカスを戻せます(`imeDirectInput` 有効時は入力受けへ)。詳しくは [命令的 API](/docs/api/handle#フォーカス--編集の開始) を参照してください。
 
@@ -129,10 +154,16 @@ const addRow = () => {
 
 グリッドの外のボタン(「選んだ行を削除」など)で `rows` を差し替えると、元に戻すの履歴は消えます(グリッドの外の変更はグリッドが知らないため)。元に戻せるようにしたい変更は、`setRows` の代わりに命令的 API の `applyRows(nextRows)` で渡します。履歴に積んでから `onRowsChange` へ渡すので、`Ctrl/Cmd+Z` で戻せます。
 
-```tsx
+```tsx tab="React"
 const deleteSelected = () => {
   const keys = new Set(gridRef.current?.getSelectedRowKeys() ?? []);
   gridRef.current?.applyRows(rows.filter((row) => !keys.has(row.id)));
+};
+```
+```tsx tab="Solid"
+const deleteSelected = () => {
+  const keys = new Set(grid.getSelectedRowKeys());
+  grid.applyRows(rows().filter((row) => !keys.has(row.id)));
 };
 ```
 

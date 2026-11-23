@@ -9,18 +9,12 @@ import { open, check, skip, summary, cell, focusGrid, waitIdle, FRAMEWORK, SOLID
 
 // 既知の知らせ(コードと effect の名前 = connectController / createEffect の name)。React 版も同じ描き直しをしている
 //   (レイアウト effect / effect の中の setState。React は知らせない)。
+// 変更(段 3-6): グラフの外(グリッドの store・DOM)を読んで書く effect は apply の引数の数を 0 にした(primitives/effectApply)ので、
+//   EFFECT_RELAY_TEAR は console に出ない(出たら回帰)。自分の入力を書き換える 3 つの EFFECT_WRITES_OWN_SOURCE だけが残る。
 const KNOWN = [
   { code: 'EFFECT_WRITES_OWN_SOURCE', effect: 'autoHeightMeasurer' },
-  { code: 'EFFECT_RELAY_TEAR', effect: 'autoHeightMeasurer' },
   { code: 'EFFECT_WRITES_OWN_SOURCE', effect: 'activeRowFollow' },
-  { code: 'EFFECT_RELAY_TEAR', effect: 'activeRowFollow' },
   { code: 'EFFECT_WRITES_OWN_SOURCE', effect: 'edit' },
-  { code: 'EFFECT_RELAY_TEAR', effect: 'edit' },
-  { code: 'EFFECT_RELAY_TEAR', effect: 'clampSelectionToRowCount' },
-  { code: 'EFFECT_RELAY_TEAR', effect: 'reconcileColumnWidths' },
-  { code: 'EFFECT_RELAY_TEAR', effect: 'scrollSync' },
-  { code: 'EFFECT_RELAY_TEAR', effect: 'fillHandle' },
-  { code: 'EFFECT_RELAY_TEAR', effect: 'serverSideRowModel' },
 ];
 
 // console の 1 件から [CODE] と effect の名前を読む(知らせでなければ null)。

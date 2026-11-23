@@ -73,12 +73,23 @@ totalRow={{
 - 列の `renderCell` / `cellClassName` は合計行には使いません(行データが無いため)。合計行のセルの中身を変えたいときは `totalRow.renderCell` を使います。
 - 列幅の自動調整(列メニュー / 境界のダブルクリック / すべての列の自動調整)は、合計行の表示(種類 + 値)も収まる幅にします。列幅で切れた値は、ポインタを乗せるとツールチップで全体を出します。
 
-```tsx
+```tsx tab="React"
 totalRow={{
   renderCell: ({ column, value, kind, text, caption }) =>
     column.key === 'amount' ? <strong className="text-blue-700">{text}</strong> : (
       <>
         {caption && <small>{caption}</small>} {text}
+      </>
+    ),
+}}
+```
+```tsx tab="Solid"
+totalRow={{
+  // ctx の値は JSX の中で読む
+  renderCell: (ctx) =>
+    ctx.column.key === 'amount' ? <strong class="text-blue-700">{ctx.text}</strong> : (
+      <>
+        {ctx.caption && <small>{ctx.caption}</small>} {ctx.text}
       </>
     ),
 }}
@@ -98,10 +109,15 @@ totalRow={{
 
 既定では含みません。`includeTotalRow: true` を渡すと、scope `'view'`(既定)のときだけ末尾に 1 行出します。値は生値で、見出しは先頭列に値が無いときだけ先頭列に入ります。
 
-```ts
+```ts tab="React"
 gridRef.current?.exportCsv({ includeTotalRow: true });
 const data = gridRef.current?.getExportData({ includeTotalRow: true });
 data?.rowKinds; // ['data', 'data', …, 'total']
+```
+```ts tab="Solid"
+grid.exportCsv({ includeTotalRow: true }); // let grid!: SpreadsheetGridHandle<Row> と ref={grid}
+const data = grid.getExportData({ includeTotalRow: true });
+data.rowKinds; // ['data', 'data', …, 'total']
 ```
 
 ## serverSide(`dataSource`)

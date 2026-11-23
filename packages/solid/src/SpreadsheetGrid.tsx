@@ -11,7 +11,7 @@
 //   - 部品の本体では props を直接読まない(Solid 2.0 は本体での読み取りを警告する)。props は関数や memo の中で読む。
 //   - React の onXxxCapture / onBlur / onFocus(子孫からも上がってくる)は、Solid では capture のリスナーを自分で付ける /
 //     onFocusOut / onFocusIn にします。
-import { For, Match, Show, Switch, createEffect, createMemo, createSignal, createUniqueId, isHydrating, latest, onCleanup, untrack } from 'solid-js';
+import { For, Match, NoHydration, Show, Switch, createEffect, createMemo, createSignal, createUniqueId, isHydrating, latest, onCleanup, runWithOwner, untrack } from 'solid-js';
 import type { Ref } from 'solid-js';
 import type { JSX } from '@solidjs/web';
 import { isServer } from '@solidjs/web';
@@ -135,6 +135,7 @@ import type {
 } from './model/gridTypes';
 import { GridLocaleTextContext, mergeFeatureLocaleDefaults } from './context/localeText';
 import { createUserCallbacks, runHandleCall } from './primitives/userCallback';
+import { createPlainRows } from './primitives/storeRows';
 import { createGridStoreSignals } from './primitives/gridStoreSignals';
 import { createExternalStoreSignal } from './primitives/externalStore';
 import { createGridViewSetters } from './primitives/viewSetters';
@@ -145,6 +146,8 @@ import type { SolidGridFeatures } from './features/types';
 import { px, toSolidStyle } from './primitives/style';
 import { createLiveObject } from './primitives/liveObject';
 import { readEventKey } from './primitives/eventKey';
+import { createSnapshotProps, revealServerFrame } from './primitives/serverSnapshot';
+import { outsideGraphApply } from './primitives/effectApply';
 import { GridHeaderRow } from './view/GridHeaderRow';
 import {
   GridBodyLayer,
@@ -174,9 +177,13 @@ const renderDetailToggleCell = (): JSX.Element => null;
 const noop = () => {};
 // 追加(段階 3-3 のレビュー): ref(solid-js の Ref)へハンドルを渡します。関数はそのまま呼び、配列は中の関数を順に呼ぶ
 //   (@solidjs/web の applyRef と同じ。変数の ref はコンパイラが代入の関数に書き換えて渡す)。関数でない値は何もしない。
+//   変更(段 3-1): ref の関数は部品の外(owner の無いところ)で呼びます。`ref={setGrid}`(signal の setter)で受けると、部品の
+//   本体の中で signal へ書くことになり、Solid の開発ビルドが REACTIVE_WRITE_IN_OWNED_SCOPE で止めていました(DOM の要素の
+//   ref は @solidjs/web が同じ書き込みを許す形で呼ぶので、`<div ref={setEl}>` は通る)。呼ぶ時点は今までどおり部品を作った
+//   とき(利用者の最初の effect より前。S5-01)。
 const applyHandleRef = <H,>(ref: Ref<H> | undefined, handle: H): void => {
   if (typeof ref === 'function') {
-    (ref as (value: H) => void)(handle);
+    runWithOwner(null, () => untrack(() => (ref as (value: H) => void)(handle)));
   } else if (Array.isArray(ref)) {
     for (const item of ref) applyHandleRef(item, handle);
   }
@@ -222,18 +229,56 @@ const SLOT_CONTEXT_KEYS = Object.keys({
   globalFilterProgress: true,
   selectionAggregates: true,
 } satisfies Record<keyof SpreadsheetGridSlotContext<unknown>, true>) as (keyof SpreadsheetGridSlotContext<unknown>)[];
+// 追加(段 3-3 / S1-21): バーの文脈の derivedSummary も項目ごとに読んだときに引く(1 つの値のままだと、本体で並びの要約だけを
+//   読んでも、アクティブセルの番地など要約のどれかが変わるたびにバーを作り直していた)。
+const DERIVED_SUMMARY_KEYS = Object.keys({
+  rowSummaryText: true,
+  columnSummaryText: true,
+  filterSummaryText: true,
+  sortSummaryText: true,
+  activeCellLabel: true,
+  selectionLabel: true,
+  selectionStatsText: true,
+  selectedColumnsText: true,
+  selectionStats: true,
+  hasGlobalFilter: true,
+  globalFilterPreview: true,
+  activeColumnFilterCount: true,
+  hasAnyFilter: true,
+  hasSorting: true,
+  sortedColumnLabel: true,
+} satisfies Record<keyof SpreadsheetGridDerivedSummary, true>) as (keyof SpreadsheetGridDerivedSummary)[];
 
 // シェルの本体です。機能セット(features)は createSpreadsheetGrid が渡します(全部入りは下の SpreadsheetGrid)。
 export function GridShell<T extends object>(props: SpreadsheetGridProps<T>, features: SolidGridFeatures): JSX.Element {
+  // 追加(段 3-5): サーバーでは、行を空にした骨組み(ハイドレーションする)を隠し、そのすぐ後に行を入れた写し(ハイドレーション
+  //   しない)を描きます(primitives/serverSnapshot)。サーバーサイドの行モデル(dataSource)はサーバーで行を読まないので写さない。
+  const serverSnapshot = isServer && untrack(() => props.dataSource == null);
   // 追加(0.1.0 の前の実アプリ点検 S5-01): 本体の間だけ、描き終わった後の最初の処理の登録先をこのグリッドの待ち行列にします。
   const mountGate = createMountGate();
-  return runInMountGate(mountGate, () => GridShellBody(props, features, mountGate));
+  const frame = runInMountGate(mountGate, () => GridShellBody(props, features, mountGate, serverSnapshot ? 'hiddenFrame' : 'normal'));
+  // NoHydration はクライアントでも同じ位置に置く(利用者の部品の中の id の並びをサーバーとそろえる)。クライアントでは何も描かない。
+  const snapshot = (
+    <NoHydration>
+      {serverSnapshot
+        ? (() => {
+            const snapshotGate = createMountGate();
+            return runInMountGate(snapshotGate, () => GridShellBody(createSnapshotProps(props), features, snapshotGate, 'snapshot'));
+          })()
+        : null}
+    </NoHydration>
+  );
+  return [frame, snapshot] as unknown as JSX.Element;
 }
+
+// 'normal' = ふつうの描画 / 'hiddenFrame' = サーバーで隠して描く骨組み / 'snapshot' = サーバーだけで描く行を入れた写し(段 3-5)。
+type GridShellMode = 'normal' | 'hiddenFrame' | 'snapshot';
 
 function GridShellBody<T extends object>(
   props: SpreadsheetGridProps<T>,
   features: SolidGridFeatures,
   mountGate: MountGate,
+  mode: GridShellMode,
 ): JSX.Element {
   // ── props(既定値つきの読み取り。本体では読まず、関数 / memo の中で読む。既定値は React 版の GridShell と同じ) ──
   // サーバーサイドの行モデル(機能 features/serverSide。dataSource を渡したとき。無い構成では createSpreadsheetGrid が
@@ -257,9 +302,13 @@ function GridShellBody<T extends object>(
   //   食い違いをクライアントで描き直して直します。行に依らない骨組み(見出し・上下のバーの条件の表示)だけをサーバーで描き、
   //   行・件数・合計は、切り替えた後のふつうの描画で出します(どちらの側でも同じ結果になる)。サーバーで描かない描き方では
   //   最初から true です。最初に登録するので、コントローラの最初の update より前に切り替えの書き込みが入ります。
-  const [hydrated, setHydrated] = createSignal(!isServer && !isHydrating(), { name: 'hydrated' });
+  // 変更(段 3-5): サーバーは、この骨組みを隠して、すぐ後に行を入れた写し(mode 'snapshot'。サーバーだけ)を描きます。
+  //   ブラウザでは描き終わった後の最初に写しを外して骨組みを見せ(primitives/serverSnapshot)、行へ切り替えます。
+  const [hydrated, setHydrated] = createSignal(mode === 'snapshot' || (!isServer && !isHydrating()), { name: 'hydrated' });
   if (!untrack(hydrated)) {
     onGridMounted(() => {
+      // 利用者が style で渡した display はサーバーで display: none に上書きしているので、見せるときに戻す(段 3-9 のレビュー)。
+      revealServerFrame(gridRootRef.current?.parentElement, untrack(() => rootStyle().display));
       setHydrated(true);
     });
   }
@@ -278,12 +327,16 @@ function GridShellBody<T extends object>(
     },
     { name: 'relayRows' },
   );
+  // 変更(段 3-2 / S1-01): store(createStore)の rows は、グリッドの計算にプロキシではなく中身を渡します(primitives/storeRows)。
+  const plainRows = createPlainRows<T>(() => {
+    const relayed = relayedRows();
+    return (relayed ? relayed.value : props.rows) as readonly T[] | undefined;
+  });
   const rows = createMemo(() => {
     if (props.dataSource != null || !hydrated()) {
       return EMPTY_ROWS as T[];
     }
-    const relayed = relayedRows();
-    return ((relayed ? relayed.value : props.rows) ?? EMPTY_ROWS) as T[];
+    return (plainRows() ?? EMPTY_ROWS) as T[];
   });
   const columns = createMemo(() => props.columns as unknown as UnboundGridColumn<T>[]);
   const density = () => props.density ?? 'standard';
@@ -439,12 +492,13 @@ function GridShellBody<T extends object>(
 
   // 列の定義が変わったら列幅の状態を合わせる(React 版の useEffect と同じ。手で変えた幅は残す)。
   let previousColumnsForWidths: UnboundGridColumn<T>[] | null = null;
+  //   変更(段 3-6): 書く値は前の列とグリッドの store の今の幅で決まる(primitives/effectApply)。
   createEffect(
     columns,
-    (next) => {
+    outsideGraphApply((next: UnboundGridColumn<T>[]) => {
       dispatch(gridActions.reconcileColumnWidths(previousColumnsForWidths, next));
       previousColumnsForWidths = next;
-    },
+    }),
     { name: 'reconcileColumnWidths' },
   );
 
@@ -639,19 +693,23 @@ function GridShellBody<T extends object>(
   // グループ行の開閉(開閉のボタン / 行のダブルクリック / アクティブセルの Enter・Space)。
   const handleGroupToggle = (groupKey: string) => dispatch(gridActions.toggleGroupCollapsed(groupKey));
   const groupingFeature = features.grouping;
+  // 表示順(配列)が変わったときだけ作り直す(orderResolution は ui() を読むので、アクティブセルが動くたびに計算し直す。
+  //   中の order の配列は同じなので、その参照で受ける。段 3-4 / S5-22)。
+  const orderArray = createMemo(() => order());
   const getFilteredRows = createMemo(() => {
-    const currentOrder = order();
+    const currentOrder = orderArray();
     const currentRows = rows();
     let cache: T[] | null = null;
     return () => (cache ??= Array.from(currentOrder, (sourceIndex) => currentRows[sourceIndex] as T));
   });
 
   // 表示行数 / 列数が減ったら選択を範囲内へ詰める(React 版の useEffect と同じ)。
+  //   変更(段 3-6): 詰めた選択はグリッドの store の今の選択で決まる(reducer が読む。primitives/effectApply)。
   createEffect(
     () => [viewRowCount(), viewColCount()] as const,
-    ([rowCount, colCount]) => {
+    outsideGraphApply(([rowCount, colCount]: readonly [number, number]) => {
       dispatch(gridActions.clampSelectionToRowCount(rowCount, colCount));
-    },
+    }),
     { name: 'clampSelectionToRowCount' },
   );
 
@@ -698,11 +756,6 @@ function GridShellBody<T extends object>(
     detailActive: () => vertical().detailActive,
     globalFilterText,
     columnFilterCount: () => Object.keys(columnFilters()).length,
-    // 写した rows を読みます(取り直しの失敗を、写しの effect だけが <Errored> へ渡すように。S7-02)。写す前は props.rows。
-    rows: () => {
-      const relayed = relayedRows();
-      return relayed ? relayed.value : props.rows;
-    },
   });
   // ラベル行の縦スクロールの固定(labelRow.sticky)。scrollTop(論理)から今のセクションのラベル行と押し上げる量を求めて、各ペインの
   //   固定の層へ渡します。固定の帯がヘッダーの直下で行を隠す高さ(stickyTopInset)は、アクティブセルの追従と scrollToRow /
@@ -2566,6 +2619,7 @@ function GridShellBody<T extends object>(
         rowModel: rowModel(),
       }))
     : () => null;
+  const liveDerivedSummary = createLiveObject(DERIVED_SUMMARY_KEYS, derivedSummary);
   const slotContext = createMemo((): SpreadsheetGridSlotContext<T> => {
     const filteredRows = getFilteredRows();
     return {
@@ -2574,7 +2628,7 @@ function GridShellBody<T extends object>(
         return filteredRows();
       },
       setGlobalFilterText,
-      derivedSummary: derivedSummary(),
+      derivedSummary: liveDerivedSummary,
       globalFilterStatus: globalFilterStatus(),
       globalFilterProgress: globalFilterProgress(),
       selectionAggregates: selectionAggregates(),
@@ -2784,16 +2838,19 @@ function GridShellBody<T extends object>(
         />
       );
     }
-    const row = currentRow();
-    const value = getCellValue(row, unbound);
     if (column.renderCell) {
+      // 変更(段 3-3 / R5-3): ctx.row / ctx.value は読んだときに引きます(位置や状態と同じ)。これまでは行が変わるたびに
+      //   renderCell を呼び直して中身を作り直したので、セルの中の入力欄で打つたびに ctx.setValue すると 1 文字目でフォーカスが
+      //   外れていました(React 版は同じ要素を使い回す)。JSX の中で読めばその式だけが追従し、関数の本体で読めば(引数の
+      //   分割代入も)今までどおりそれが変わったときに呼び直します。
+      const cellValue = createMemo(() => getCellValue(currentRow(), unbound));
       // ctx.detail(任意のセルからの展開行の開閉の口)。detailRow の指定がある間だけ渡し、値は読んだときに引きます。
       //   開閉は押した時点の行の位置で(React 版は描いた時点の位置。描き直すたびに新しくなるので同じ)。
       //   expanded / expandable はこのセルの行の値だけの memo(開いている行の集合ぜんたいを読むと、どれか 1 行の開閉で
       //   本体でこれを読むその列のすべてのセルを作り直すため)。
       const expanded = createMemo(() => ui().expandedDetailRowKeys.has(cell.rowKey));
       const expandable = createMemo(() =>
-        isDetailRowExpandable(detailDrawable(), props.detailRow?.isExpandable, row, cell.rowKey, cell.sourceRowIndex),
+        isDetailRowExpandable(detailDrawable(), props.detailRow?.isExpandable, currentRow(), cell.rowKey, cell.sourceRowIndex),
       );
       const detail: CellDetailContext = {
         get expanded() {
@@ -2818,7 +2875,9 @@ function GridShellBody<T extends object>(
         );
       }
       return column.renderCell({
-        row,
+        get row() {
+          return currentRow();
+        },
         get rowIndex() {
           return cell.rowIndex;
         },
@@ -2832,7 +2891,9 @@ function GridShellBody<T extends object>(
         get detail() {
           return detailRowEnabled() ? detail : undefined;
         },
-        value,
+        get value() {
+          return cellValue();
+        },
         column,
         get isActive() {
           return cell.isActive;
@@ -2849,6 +2910,8 @@ function GridShellBody<T extends object>(
         setValue: (nextValue: unknown) => writeRenderedCellValue(cell.rowKey, unbound, nextValue),
       });
     }
+    const row = currentRow();
+    const value = getCellValue(row, unbound);
     const text = column.valueFormatter ? column.valueFormatter({ value, row, column }) : String(value ?? '');
     // セル内検索のヒットを <mark> にします(既定のセルだけ。カレントは --current)。ヒットとカレントは cell から読んだときに引く
     //   ので、変わったときは中の文字だけを描き直します(セルの箱と中身の span はそのまま)。
@@ -3235,6 +3298,13 @@ function GridShellBody<T extends object>(
       ? (props.noRowsText ?? localeTexts().noRows)
       : (props.noMatchingRowsText ?? localeTexts().noMatchingRows);
 
+  // 根の style(段 3-5 のサーバーの骨組みでは、この上に display: none を重ねる。見せるときは revealServerFrame がこの display へ戻す)。
+  const rootStyle = (): JSX.CSSProperties => ({
+    ...toSolidStyle(heightLayout().rootStyle),
+    ...slots().root?.style,
+    ...props.style,
+  });
+
   const shellView = (
     <GridLocaleTextContext value={localeTexts}>
       <GridPortalContext value={portalContext}>
@@ -3256,7 +3326,16 @@ function GridShellBody<T extends object>(
             'ssg-root--hover-cross': hoverCross(),
           },
         ]}
-        style={{ ...toSolidStyle(heightLayout().rootStyle), ...slots().root?.style, ...props.style }}
+        style={{
+          ...rootStyle(),
+          ...(mode === 'hiddenFrame' ? { display: 'none' } : undefined),
+        }}
+        // 段 3-5 の印(primitives/serverSnapshot の SERVER_FRAME_ATTRIBUTE / SERVER_SNAPSHOT_ATTRIBUTE。サーバーでだけ付く)。
+        //   隠した骨組みには hidden も付ける(兄弟を `:not([hidden])` で数える CSS = Tailwind v3 の space-y-* などが、写しを
+        //   2 つめの子として余白を付け、見せたときに位置がずれていた。段 3-9 のレビュー)。
+        hidden={mode === 'hiddenFrame' ? true : undefined}
+        data-ssg-ssr={mode === 'hiddenFrame' ? '' : undefined}
+        data-ssg-ssr-snapshot={mode === 'snapshot' ? '' : undefined}
       >
         {topBar()}
         {/* フィルターのチップのバー(showFilterChipBar)。適用中の列フィルターをチップで並べる(0 件なら出さない)。 */}

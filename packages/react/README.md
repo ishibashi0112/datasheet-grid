@@ -52,7 +52,7 @@ More runnable examples (server-side row model, Astryx) are in [`examples/`](http
 
 ## Smaller bundles: `/lite` (0.54.0+)
 
-`SpreadsheetGrid` includes every feature (about 140KB gzip of initial JS). The `/lite` entry builds a grid with only the features you pass; the rest is left out of your bundle (about 80KB with no features, about 102KB with the `standardFeatures` preset).
+`SpreadsheetGrid` includes every feature (about 153KB gzip of initial JS). The `/lite` entry builds a grid with only the features you pass; the rest is left out of your bundle (about 90KB with no features, about 114KB with the `standardFeatures` preset).
 
 ```tsx
 import { createSpreadsheetGrid, standardFeatures, serverSideFeature } from '@ishibashi0112/spreadsheet-grid/lite'
@@ -107,7 +107,7 @@ This library is new, so AI coding assistants rarely know its API and tend to gue
 
 ## Versioning
 
-Releases follow semver, and this package and the core always share one version. Since 1.0, breaking changes ship only in major releases and are listed in the [changelog](https://github.com/ishibashi0112/datasheet-grid/blob/main/CHANGELOG.md) (before 1.0 they shipped in minor releases, under 「挙動の変化」 / 「core の破壊的変更」). The public surface is the entry points above (`.` / `/lite` / `/ai` / `/locales/en` / `/testing`), the CSS files, `API_REFERENCE.md`, and the CSS tokens, classes and attributes listed there. TypeScript 5.8 or later is supported (`moduleResolution` `bundler` or `nodenext`). Anything to be removed is deprecated in a minor release first, with a one-time console warning in development builds. The core's building blocks (`@ishibashi0112/spreadsheet-grid-core/internal/…`; the old subpaths without `internal/` were removed in 0.61.0) are internal and may change in any release (this package depends on the core of exactly the same version). Details: [Versioning](https://datasheet-grid.vercel.app/docs/versioning) (Japanese).
+Releases follow semver, and this package, the core and the Solid version (`@ishibashi0112/spreadsheet-grid-solid`, from 1.4.0) always share one version. Since 1.0, breaking changes ship only in major releases and are listed in the [changelog](https://github.com/ishibashi0112/datasheet-grid/blob/main/CHANGELOG.md) (before 1.0 they shipped in minor releases, under 「挙動の変化」 / 「core の破壊的変更」). The public surface is the entry points above (`.` / `/lite` / `/ai` / `/locales/en` / `/testing`), the CSS files, `API_REFERENCE.md`, and the CSS tokens, classes and attributes listed there. TypeScript 5.8 or later is supported (`moduleResolution` `bundler` or `nodenext`). Anything to be removed is deprecated in a minor release first, with a one-time console warning in development builds. The core's building blocks (`@ishibashi0112/spreadsheet-grid-core/internal/…`; the old subpaths without `internal/` were removed in 0.61.0) are internal and may change in any release (this package depends on the core of exactly the same version). Details: [Versioning](https://datasheet-grid.vercel.app/docs/versioning) (Japanese).
 
 ## License
 
@@ -133,7 +133,7 @@ Astryx / Mantine / HeroUI v3 / shadcn/ui の中で使うときは、`style.css` 
 
 ### バンドルを小さくする: `/lite`(0.54.0 から)
 
-`SpreadsheetGrid` は全機能入りです(初期読み込みの JS が約 140KB gzip)。`/lite` の入口では、渡した機能だけを入れたグリッドを作れます。渡さなかった機能はバンドルに入りません(機能なしで約 80KB、プリセット `standardFeatures` で約 102KB)。
+`SpreadsheetGrid` は全機能入りです(初期読み込みの JS が約 153KB gzip)。`/lite` の入口では、渡した機能だけを入れたグリッドを作れます。渡さなかった機能はバンドルに入りません(機能なしで約 90KB、プリセット `standardFeatures` で約 114KB)。
 
 ```tsx
 import { createSpreadsheetGrid, standardFeatures, serverSideFeature } from '@ishibashi0112/spreadsheet-grid/lite'
@@ -188,4 +188,4 @@ npm パッケージに同梱されているため、オフライン(`node_module
 
 ### バージョンの方針
 
-版は semver に沿って上げ、このパッケージと core はいつも同じ版で出します。1.0 から、壊す変更は major でだけ出し、[CHANGELOG](https://github.com/ishibashi0112/datasheet-grid/blob/main/CHANGELOG.md) に書きます(1.0 より前は minor で出し、「挙動の変化」「core の破壊的変更」に書いていました)。公開範囲は上の入口(`.` / `/lite` / `/ai` / `/locales/en` / `/testing`)、CSS ファイル、`API_REFERENCE.md` と、そこに載せた CSS のトークン・クラス・属性です。TypeScript は 5.8 以上(`moduleResolution` は `bundler` か `nodenext`)。消すものは前の minor で非推奨にし、開発ビルドでだけ console に 1 回警告を出します。core の部品(`@ishibashi0112/spreadsheet-grid-core/internal/…`。`internal/` の無い旧サブパスは 0.61.0 で消しました)は内部で、どの版でも変わることがあります(このパッケージは同じ版の core に固定で依存します)。詳しくは[バージョンと互換性](https://datasheet-grid.vercel.app/docs/versioning)。
+版は semver に沿って上げ、このパッケージ・core・Solid 版(`@ishibashi0112/spreadsheet-grid-solid`。1.4.0 から)はいつも同じ版で出します。1.0 から、壊す変更は major でだけ出し、[CHANGELOG](https://github.com/ishibashi0112/datasheet-grid/blob/main/CHANGELOG.md) に書きます(1.0 より前は minor で出し、「挙動の変化」「core の破壊的変更」に書いていました)。公開範囲は上の入口(`.` / `/lite` / `/ai` / `/locales/en` / `/testing`)、CSS ファイル、`API_REFERENCE.md` と、そこに載せた CSS のトークン・クラス・属性です。TypeScript は 5.8 以上(`moduleResolution` は `bundler` か `nodenext`)。消すものは前の minor で非推奨にし、開発ビルドでだけ console に 1 回警告を出します。core の部品(`@ishibashi0112/spreadsheet-grid-core/internal/…`。`internal/` の無い旧サブパスは 0.61.0 で消しました)は内部で、どの版でも変わることがあります(このパッケージは同じ版の core に固定で依存します)。詳しくは[バージョンと互換性](https://datasheet-grid.vercel.app/docs/versioning)。

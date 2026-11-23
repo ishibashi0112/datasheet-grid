@@ -54,10 +54,10 @@ export function Inventory() {
 
 - **CSS を読み込む。** `import '@ishibashi0112/spreadsheet-grid-solid/style.css'`。無いとスタイルが当たらず、スクロールもしません。Tailwind v4 で `classNames` などにユーティリティを渡して既定の見た目を変えるときは、`style.css` では効きません(未レイヤーのグリッドの CSS が勝つ)。`@ishibashi0112/spreadsheet-grid-solid/style.layer.css` にして、それより先に読ませる CSS で `@layer theme, base, ssg-base, components, utilities;` とレイヤー順を宣言します(宣言しないと Preflight に罫線やボタンが崩されます)。
 - **バンドラ。** Vite では `@solidjs/vite-plugin` 3(Vite 8 以上)を使います。パッケージは `solid` 条件で JSX のままのソースを渡します。
-- **`rows` は signal で持つ。** 編集結果は `onRowsChange` が新しい配列で返します。その配列をそのまま `setRows(next)` で戻し、`rows={rows()}` で渡します(`map` などで作り直すと undo の履歴が消えます)。`createStore` に入れると履歴が消え、開発時に警告が出ます。
+- **`rows` は signal か store で持つ。** 編集結果は `onRowsChange` が新しい配列で返します。signal ならその配列をそのまま `setRows(next)` で戻し、`rows={rows()}` で渡します(`map` などで作り直すと undo の履歴が消えます)。`createStore` なら `rows={state.rows}` で渡し、`setState((s) => { s.rows = next })` か `reconcile(next, 'id')(s.rows)` で戻します。5 万行ほどより多い表は signal で持ちます(store は行ごとに追うので重い)。
 - **書き込みはマイクロタスクで反映される。** `setRows(...)` の直後にハンドルで足した行を使う(`getViewRowIndex(key)` → `startEditing(...)`)ときは、先に `solid-js` の `flush()` を呼びます。
 - **ハンドルは Solid の ref。** `let grid!: SpreadsheetGridHandle<Row>` と `ref={grid}`(または `ref={(handle) => (grid = handle)}`)。React の ref オブジェクト(`.current`)はありません。最初の状態は `initialState` で渡します。
-- **描く関数の本体で値を読まない。** `renderCell` などの文脈の値(`ctx.rowIndex` / `ctx.isActive` など)は JSX の中で読みます。本体で読むと、変わるたびに中身を作り直します(入力欄のフォーカスが外れる)。custom エディタの始めの値は `untrack(() => ctx.value)` か `ctx.initialText` で取ります。
+- **描く関数の本体で値を読まない。** `renderCell` などの文脈の値(`ctx.value` / `ctx.row` / `ctx.rowIndex` / `ctx.isActive`、バーの `ctx.derivedSummary.*` など)は JSX の中で読みます。本体で読むと、変わるたびに中身を作り直します(入力欄のフォーカスが外れる)。自分の部品の本体の一番上で読むと追従しません。custom エディタの始めの値は `untrack(() => ctx.value)` か `ctx.initialText` で取ります。
 - **行キー。** `rowKeyGetter` で安定したキーを返します(既定は行 index)。
 - **列の `width` は型の上で必須。** 伸縮させる列は `flex` も足します。列は既定で編集できます。止めるときは列の `editable: false` か `readOnly`、セルごとなら `canEditCell`、全体ならグリッドの `readOnly`。
 - **`rows` か `dataSource`。** `rows` はクライアントサイド、`dataSource` を渡すとサーバーサイド行モデルです。両方は渡しません。
@@ -66,7 +66,7 @@ export function Inventory() {
 - **改行を含む値の列は `editor: { type: 'text', multiline: true }`。** 既定の 1 行の入力欄はブラウザが改行を消すので、直して確定すると改行が無くなります。
 - **行のクラスは行と各セルの両方に付く。** `getRowClassName` の class と style は行・「#」セル・各セルに付きます。行を薄くするなら class を返して `.ssg-body-row.<class> { opacity: 0.5 }` と書きます(style で `opacity` を書くと 2 回掛かります)。
 - **テスト(Vitest + jsdom)。** Vitest にも `@solidjs/vite-plugin` を入れ、`/testing` の `installJsdomLayoutStubs()` を呼びます。signal を変えた・イベントを送った後は、DOM を見る前に `flush()` を呼びます(React 版の `act()` の代わり)。
-- **SSR。** SolidStart は Solid 1 だけなので、Vite の SSR と `@solidjs/vite-plugin`(`ssr: true`)で `renderToString` / `hydrate` を使います。サーバーはグリッドの骨組みだけを描き、行はハイドレーションの後に描きます。本番のサーバーは `NODE_ENV=production` で動かします(README の「SSR」)。
+- **SSR。** SolidStart は Solid 1 だけなので、Vite の SSR と `@solidjs/vite-plugin`(`ssr: true`)で `renderToString` / `hydrate` を使います。サーバーは React 版と同じく行(行番号と固定列)・件数・合計まで描き、ハイドレーションの後にブラウザで計算した行へ入れ替えます(サーバーの HTML には隠した骨組みと写しの `.ssg-root` が 2 つ)。本番のサーバーは `NODE_ENV=production` で動かします(README の「SSR」)。
 - **UI の言語。** 既定は日本語です。英語は `@ishibashi0112/spreadsheet-grid-solid/locales/en` の `localeTextEn` を `localeText` に渡します。
 
 ## 4. 入口の選び方
@@ -75,7 +75,8 @@ export function Inventory() {
 - 同じ入口の `createSpreadsheetGrid`: 使う機能だけを入れる(React 版と違い `/lite` はなく、機能の部品も本体の入口から import します)。モジュールの先頭で 1 回だけ作ります。部品の名前は「キー + `Feature`」です(例: `{ ...standardFeatures, serverSide: serverSideFeature }`)。足りない機能は開発時に `console.warn` が名指しします。
 - `@ishibashi0112/spreadsheet-grid-solid/locales/en`: 英語の文言 `localeTextEn`。
 - `@ishibashi0112/spreadsheet-grid-solid/testing`: jsdom のテストで行と列を描画させる `installJsdomLayoutStubs()`。
-- ことばで絞り込み(React 版の `/ai`)はありません。型は Solid 版から import します。コアの `@ishibashi0112/spreadsheet-grid-core` を直接使う必要はありません(`…-core/internal/…` は内部の部品で、どの版でも変わるので import しません)。
+- `@ishibashi0112/spreadsheet-grid-solid/ai`: ことばで絞り込み(`GridAskBar` / `createGridAsk`。React 版の `useGridAsk` は `createGridAsk`)。`grid` はハンドルを返す関数 `grid={() => grid}` か signal で渡します。
+- 型は Solid 版から import します。コアの `@ishibashi0112/spreadsheet-grid-core` を直接使う必要はありません(`…-core/internal/…` は内部の部品で、どの版でも変わるので import しません)。
 
 ## 5. やりたいこと → API_REFERENCE.md の見出し
 
@@ -93,6 +94,7 @@ export function Inventory() {
 | 展開行、見出し行、行のドラッグ | 「展開行(Master/Detail)」「ラベル行」「行ドラッグ並び替え」 |
 | CSV / Excel への出力 | 「CSV エクスポート」「Excel / スプレッドシート エクスポート」 |
 | スクロール・選択・undo をコードから | 「命令的 API」 |
+| ことばで絞り込み(AI に条件を作らせる) | 「ことばで絞り込み(`/ai` サブパス)」 |
 | 右クリックメニュー、セルのクリックの通知 | 「コンテキストメニュー」「セル操作の通知」 |
 | 見た目(クラス・色・デザインシステム) | 「パーツ別スロット」「デザインシステムのテーマ」「スタイリング用の状態クラス」 |
 | ダイアログの中に置く | 「ダイアログの中のグリッド」 |

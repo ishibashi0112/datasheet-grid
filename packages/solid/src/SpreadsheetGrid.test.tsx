@@ -247,17 +247,22 @@ describe('Solid 版の試作', () => {
     view.unmount();
   });
 
-  it('rows に store を渡すと、開発時に signal で持つように 1 回だけ案内する(0.1.0 の前の実アプリ点検 S1-01)', () => {
+  it('rows に store を渡しても警告せず、50,000 行を超えたときだけ signal を 1 回勧める(段 3-2 / S1-01)', () => {
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
     const storeWarnings = () => warn.mock.calls.filter((call) => String(call[0]).includes('createStore'));
-    const [state] = createStore({ rows: makeRows(5) });
-    const fromStore = render(() => <SpreadsheetGrid<Row> rows={state.rows} columns={columns} height={200} />);
+    const [small] = createStore({ rows: makeRows(5) });
+    const fromStore = render(() => <SpreadsheetGrid<Row> rows={small.rows} columns={columns} height={200} />);
+    flush();
+    expect(storeWarnings()).toHaveLength(0);
+    fromStore.unmount();
+    const [large] = createStore({ rows: makeRows(50_001) });
+    const fromLarge = render(() => <SpreadsheetGrid<Row> rows={large.rows} columns={columns} height={200} />);
     flush();
     expect(storeWarnings()).toHaveLength(1);
     expect(String(storeWarnings()[0]?.[0])).toContain('createSignal');
-    fromStore.unmount();
+    fromLarge.unmount();
     warn.mockClear();
-    const fromArray = render(() => <SpreadsheetGrid<Row> rows={makeRows(5)} columns={columns} height={200} />);
+    const fromArray = render(() => <SpreadsheetGrid<Row> rows={makeRows(50_001)} columns={columns} height={200} />);
     flush();
     expect(storeWarnings()).toHaveLength(0);
     fromArray.unmount();

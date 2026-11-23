@@ -6,6 +6,9 @@ name: Release notes
 #   「v0.53.0 v0.54.0」のような空白区切りの一覧を渡します。すでにある Release は本文だけ書き直します。
 #   追加(Solid 版 0.1.0): Solid 版のタグ solid-vX.Y.Z も同じく、packages/solid/CHANGELOG.md のその版の節で Release を作ります
 #   (手動実行の tags にも書けます。all には入りません)。「Latest」の印は React 版と core の最新版のままです。
+#   追加(Solid 版 段 3-8): 1.4.0 から Solid 版も同じ版で、タグは vX.Y.Z の 1 つです(solid-vX.Y.Z は 0.1.x の Release を
+#   作り直すときだけ)。vX.Y.Z の本文には、Solid 版の変更履歴の同じ版の節を「## Solid 版」として後ろに足します
+#   (scripts/changelog-section.mjs)。
 on:
   push:
     tags: ['v*.*.*', 'solid-v*.*.*']

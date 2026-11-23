@@ -21,6 +21,7 @@
 //   update します。React 版で 1 回のイベントの更新がまとめて描かれ、コントローラが途中の状態を見ないのと同じにするため。
 import { createEffect, createRenderEffect, createSignal, untrack } from 'solid-js';
 import { onGridMounted } from './mountGate';
+import { outsideGraphApply } from './effectApply';
 import { deferControllerUpdate, isIsolatingFlush, runGridUpdate } from './userCallback';
 
 export type ControllerLike<Args> = {
@@ -61,10 +62,12 @@ export function connectController<Args>(
     return args();
   };
   const options = name === undefined ? undefined : { name };
+  // 変更(段 3-6): コントローラは前の値を覚えて比べ、DOM を測り、自分の store を持つので、書く値は args だけでは決まらない
+  //   (primitives/effectApply。Solid の開発用の計測が、利用者には直せない EFFECT_RELAY_TEAR を console に出さないように)。
   if (timing === 'render') {
-    createRenderEffect(compute, apply, options);
+    createRenderEffect(compute, outsideGraphApply(apply), options);
   } else {
-    createEffect(compute, apply, options);
+    createEffect(compute, outsideGraphApply(apply), options);
   }
   onGridMounted(() => {
     mounted = true;

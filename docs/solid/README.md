@@ -488,6 +488,10 @@ S6-01。`primitives/clickTarget.ts`)/ テーマの CSS のコメントのパッ�
     書き換えに Solid 版の変更が混ざらないように)。`release.yml` は `solid-v*.*.*` のタグでも動き、`scripts/changelog-section.mjs` が
     `solid-vX.Y.Z` のときは Solid 版の変更履歴から節を取る(Release の「Latest」の印は React 版と core の最新版のまま)。版上げは
     手で行う(Solid 版の版上げはまだ少ないので、スクリプトは版上げが続くようになってから)。`private: true` は公開前の PR で外した。
+  - 変えたこと(2026-11-23。品質をそろえる作業の段 3-8、ユーザーの「バージョンは合わせたい」を受けて): 1.4.0 から Solid 版も React 版・core と
+    同じ版で、`bump-version.mjs` が 3 つを上げ、タグは `vX.Y.Z` の 1 つ。共通の変更はルートの CHANGELOG.md、Solid 版だけの変更は
+    `packages/solid/CHANGELOG.md`(`bump-version.mjs` が両方の「## 未リリース」を書き換える)。`vX.Y.Z` の Release の本文に Solid 版の節を
+    足す(`scripts/changelog-section.mjs`)。`solid-vX.Y.Z` は 0.1.x の Release を作り直すときだけ。
   - 公開: `private` を外すと `publish:all`(`pnpm -r publish`)に Solid 版も入る(公開済みの版は pnpm が飛ばす)。core の版を
     上げた後に Solid 版を出すと、Solid 版が依存する core の版もその版になる(`workspace:*` を pack で固定)。
   - サイトの「Solid で使う」と README / StackBlitz のリンクの小さな PR を、公開の直前にマージする(2026-11-21 ユーザー判断)。
@@ -592,14 +596,9 @@ S6-01。`primitives/clickTarget.ts`)/ テーマの CSS のコメントのパッ�
 
   | 知らせ | effect の名前 | 出るとき | なぜ出るか |
   | --- | --- | --- | --- |
-  | `EFFECT_WRITES_OWN_SOURCE` / `EFFECT_RELAY_TEAR` | `autoHeightMeasurer` | `autoHeight` の列があるとき | 描いた行の高さを DOM で測って行の高さの表へ書き、その高さで並べ直して新しく描いた行をまた測る |
-  | `EFFECT_WRITES_OWN_SOURCE` / `EFFECT_RELAY_TEAR` | `activeRowFollow` | `activeCellFollows: 'row'` で並びが変わったとき | アクティブセルを押した行の新しい位置へ付け直す |
-  | `EFFECT_WRITES_OWN_SOURCE` / `EFFECT_RELAY_TEAR` | `edit` | 編集中に並びが変わったとき | エディタとアクティブセルを編集している行の新しい位置へ付け直す |
-  | `EFFECT_RELAY_TEAR` | `clampSelectionToRowCount` | 行や列が減って選択が範囲の外になったとき(3 回目から) | 選択を範囲の中へ詰める |
-  | `EFFECT_RELAY_TEAR` | `reconcileColumnWidths` | 列の定義が変わって列幅の状態を合わせたとき(3 回目から) | 消えた列 / 幅を指定し直した列の手で変えた幅を捨てる |
-  | `EFFECT_RELAY_TEAR` | `scrollSync` | 合計行 / 下の固定行が出たり高さが変わったりしたとき(3 回目から) | 見える高さを DOM で測り直して view スライスへ書く |
-  | `EFFECT_RELAY_TEAR` | `fillHandle` | フィルハンドルで埋めた後に選択や行が変わったとき(3 回目から)。serverSide で並べ替え / 絞り込みが変わったときも、`serverSideRowModel` の書き込みを中継した effect としてこの名前が出る(フィルハンドルを使っていなくても。2026-11-22 の点検 S2-02) | 埋めたあとのボタンを消す(コントローラの store へ書く) |
-  | `EFFECT_RELAY_TEAR` | `serverSideRowModel` | serverSide で並べ替え / 絞り込みが変わったとき(3 回目から) | 読み込んだブロックを捨てて読み直す(行モデルの store へ書く) |
+  | `EFFECT_WRITES_OWN_SOURCE` | `autoHeightMeasurer` | `autoHeight` の列があるとき | 描いた行の高さを DOM で測って行の高さの表へ書き、その高さで並べ直して新しく描いた行をまた測る |
+  | `EFFECT_WRITES_OWN_SOURCE` | `activeRowFollow` | `activeCellFollows: 'row'` で並びが変わったとき | アクティブセルを押した行の新しい位置へ付け直す |
+  | `EFFECT_WRITES_OWN_SOURCE` | `edit` | 編集中に並びが変わったとき | エディタとアクティブセルを編集している行の新しい位置へ付け直す |
 
   どれも「変化の後に状態を合わせ直す」処理で、React 版も同じ描き直しをしている(レイアウト effect / effect の中の dispatch。
   React は知らせない)。手間は DOM を 2 回書くぶん。Solid が勧める直し方(合わせ直した値を memo で
@@ -608,6 +607,21 @@ S6-01。`primitives/clickTarget.ts`)/ テーマの CSS のコメントのパッ�
   Solid 版の effect(コントローラをつなぐ effect = `connectController` の 4 つ目の引数を含む)と、core の外部 store を写した signal
   (`createExternalStoreSignal` の 2 つ目の引数)にすべて名前を付けた(名前の無い `effect` と出るのは Solid の DOM の束縛だけ)。
   表は Solid のトラックを入れて全部のハーネスを回したときに出た知らせのすべて。
+
+  段 3-6(2026-11-23)で、`EFFECT_RELAY_TEAR`(effect が書いた値で別の計算が同じ変化のうちに 2 回走る)を console に出さなく
+  した。それまでの表にあった `autoHeightMeasurer` / `activeRowFollow` / `edit` / `clampSelectionToRowCount` /
+  `reconcileColumnWidths` / `scrollSync` / `fillHandle` / `serverSideRowModel` の 8 つと、利用者の通知(`onActiveCellChange` の中で
+  signal を書くと `activeCellNotifier` の名前で出た。2026-11-22 の点検 S7)。Solid の計測(`@solidjs/signals` の
+  `dev.attribution.js` の `checkRelayTear`)は、apply(effect の後半)が引数を受けるかで書き込みを見分け、受ければ「compute の結果から
+  決まる派生した状態」として 3 回目から警告し(直し方は memo)、受けなければ「DOM・時刻・ref などグラフの外を読んで書く = 測ることの
+  手間」として console に出さない(`info`)。グリッドのこれらの effect は、core のコントローラ(前の値を覚えて比べる・DOM を測る・
+  自分の store)と、グリッドの store の今の状態から決める reducer の action で、書く値は compute の結果だけでは決まらない = 後者。
+  値は今までどおり引数で受けて(compute と apply の間で値を写さない。遷移の中でも Solid が渡す値をそのまま使う)、残余引数にして
+  apply の引数の数を 0 にした(`packages/solid/src/primitives/effectApply.ts` の `outsideGraphApply`。`connectController` の 2 つと、
+  `reconcileColumnWidths` / `clampSelectionToRowCount`)。`EFFECT_WRITES_OWN_SOURCE`(自分の入力を書き換えて 2 回走る)は引数の数に
+  依らないので 3 つが残る(上の表。直すには上と同じく core の作りを変える)。ハーネス `t-solid-diagnostics.mjs` の既知の表も 3 つに
+  した(`EFFECT_RELAY_TEAR` が出たら回帰)。同じハーネスで、直す前は 10 種類(`EFFECT_RELAY_TEAR` 7 + `EFFECT_WRITES_OWN_SOURCE` 3)、
+  直した後は 3 種類。
 
 ### 3-1 で分かったこと
 

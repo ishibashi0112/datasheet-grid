@@ -25,7 +25,7 @@ npm run dev
 
 ## サンプルを直すとき
 
-- サンプルは公開版に依存するので、依存の版(`^X.Y.Z`)は版上げのときに `scripts/bump-version.mjs` が今の版へ書き換えます(solid の Solid 版の版は、Solid 版の版上げのときに手で書き換えます)。
+- サンプルは公開版に依存するので、依存の版(`^X.Y.Z`)は版上げのときに `scripts/bump-version.mjs` が今の版へ書き換えます(1.4.0 から React 版・core・Solid 版は同じ版で、solid の Solid 版への依存も一緒に書き換えます)。
 - `pnpm run build:lib` の後に `pnpm run examples:check` を実行すると、各サンプルを今のコード(pack した tarball)で型チェック + ビルドします(CI でも実行)。
 
 ドキュメント: https://datasheet-grid.vercel.app

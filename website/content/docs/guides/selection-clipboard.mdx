@@ -38,7 +38,7 @@ description: セルの範囲選択・行の選択(チェックボックス)と�
 
 ## 行の選択(チェックボックス)
 
-```tsx
+```tsx tab="React"
 <SpreadsheetGrid
   rows={rows}
   columns={columns}
@@ -46,6 +46,16 @@ description: セルの範囲選択・行の選択(チェックボックス)と�
   enableRowSelection
   onRowSelectionChange={() => setCount(gridRef.current?.getSelectedRowCount() ?? 0)}
   ref={gridRef}
+/>
+```
+```tsx tab="Solid"
+<SpreadsheetGrid
+  rows={rows()}
+  columns={columns}
+  rowKeyGetter={(row) => row.id}   // 行の選択は行キーで覚える
+  enableRowSelection
+  onRowSelectionChange={() => setCount(grid.getSelectedRowCount())}
+  ref={grid}                       // let grid!: SpreadsheetGridHandle<Row>
 />
 ```
 
@@ -88,10 +98,16 @@ description: セルの範囲選択・行の選択(チェックボックス)と�
 
 「選んだ行を削除」のようにグリッドの外から `rows` を変えるとき、`setRows` で直接差し替えると元に戻すの履歴が消えます(グリッドはその変更を知らないため)。元に戻せるようにしたいときは、ハンドルの `applyRows(next)` で渡します。
 
-```tsx
+```tsx tab="React"
 const deleteSelected = () => {
   const keys = new Set(gridRef.current?.getSelectedRowKeys() ?? []);
   gridRef.current?.applyRows(rows.filter((row) => !keys.has(row.id)));
+};
+```
+```tsx tab="Solid"
+const deleteSelected = () => {
+  const keys = new Set(grid.getSelectedRowKeys());
+  grid.applyRows(rows().filter((row) => !keys.has(row.id)));
 };
 ```
 

@@ -1,10 +1,39 @@
 # 変更履歴(Solid 版)
 
-`@ishibashi0112/spreadsheet-grid-solid`(Solid 2.0 向けの Solid 版)の変更履歴です。Solid 版の版は React 版・core とは別で、core には同じ 1 つの版で依存します(どの版の core かは各版の見出しの下に書きます)。React 版と core の変更履歴はリポジトリの [CHANGELOG.md](../../CHANGELOG.md) にあります。
+`@ishibashi0112/spreadsheet-grid-solid`(Solid 2.0 向けの Solid 版)の変更履歴です。1.4.0 から React 版・core と同じ版で出し(0.1.2 の次が 1.4.0)、core にはいつも同じ版で依存します。リポジトリの [CHANGELOG.md](../../CHANGELOG.md)(React 版と core の変更履歴)の 1.4.0 からの変更は、「React 版だけ」と書いたもの以外は Solid 版にも同じく入ります(1.3.0 までの機能はすべて Solid 版 1.4.0 に入っています)。ここには Solid 版だけの変更を書きます(Solid 版だけの変更が無い版は、そう書いた短い節だけです)。
 
-1.0 より前は minor でも壊す変更が入ることがあります。そのときは「挙動の変化」「削除」に書きます。
+1.4.0 からは React 版と同じく、壊す変更は major でだけ出します([バージョンと互換性](https://datasheet-grid.vercel.app/docs/versioning))。版を揃える前の 0.1.x は 1.0 より前の版で、minor でも壊す変更が入ることがありました(「挙動の変化」「削除」に書いています。0.1.x の各版の見出しの下に、依存する core の版を書いています)。
 
 使い方は [Solid で使う](https://datasheet-grid.vercel.app/docs/solid) と、React 版の [API リファレンス](https://github.com/ishibashi0112/datasheet-grid/blob/main/packages/react/API_REFERENCE.md)(props とメソッドは同じ)を参照してください。
+
+## 未リリース
+
+### 変更
+
+- 版を React 版・core と揃えました(0.1.2 の次が 1.4.0。core 1.4.0 に依存します)。これからは 3 つを同じ版で出し、壊す変更は React 版と同じく major でだけ出します。React 版と core の変更履歴の変更は、「React 版だけ」と書いたもの以外は Solid 版にも同じく入ります。
+
+### 追加
+
+- ことばで絞り込み(入口 `@ishibashi0112/spreadsheet-grid-solid/ai`)。React 版の `/ai` と同じ `GridAskBar` と、バーを自分で作るときの `createGridAsk`(React 版の `useGridAsk`。Solid の慣例で `create…` の名前、型は `CreateGridAskOptions` / `CreateGridAskResult`)、core の `createGridAskRequest` / `readGridAskAnswer` などです。`grid` にはハンドルを返す関数(`let grid!` と `ref={grid}` なら `grid={() => grid}`)か signal(`ref={setGrid}` と `grid={grid}`)を渡します(React の ref オブジェクトはありません)。バーの見た目・文言・答えの扱い・元に戻す / 表を手で変えた後の印は React 版と同じです(同じ操作で DOM と通知を比べるテストで確かめています)。グリッドの入口とはファイルを共有しないので、使わなければバンドルに入りません(約 15KB gzip)。英語の文言は `/locales/en` の `gridAskLocaleTextEn`(React 版と同じもの)。使い方はガイド「[ことばで絞り込み(AI)](https://datasheet-grid.vercel.app/docs/guides/ai-filter)」の Solid のタブ。
+
+- 行を Solid の store(`createStore`)で持てるようにしました。`rows={state.rows}` で渡し、`onRowsChange` で受け取った配列を `setState((s) => { s.rows = next })` か `setState((s) => { reconcile(next, 'id')(s.rows) })` で戻すと、signal で持つときと同じく元に戻す / やり直しが効きます。store の中を直接変えたとき(`s.rows[0].name = …` / `push` / `splice`)もグリッドに映り、React 版で親が rows を差し替えたときと同じく、元に戻すの履歴は消えます。これまでは store に入れるとどの編集も外からの差し替えに見えて元に戻すが効かず、開発時に Solid の知らせ(`HUGE_FAN_IN` / `STRICT_READ_UNTRACKED`)が多く出ていました(開発時に signal を勧める警告を出していました)。store は中の変化に気づくため行ごとに追うので、行が多いと編集のたびに時間がかかります(10 万行で 1 回 0.1 秒ほど)。5 万行より多い store を渡したときは、開発時に 1 回 signal を勧めます。保存の `action` の中で store を書く形(`reconcile` で戻す・項目を変える)でも、保存の間はグリッドが今の中身で動きます(`createOptimistic` で持つときと同じ)。
+
+### 挙動の変化
+
+- 行を store で持つとき、`renderCell` / `valueFormatter` などに渡る行(`ctx.row` など)は store のプロキシではなく、その時点の中身(store の `snapshot`)になりました。store の中を直接変えた行は新しいオブジェクトになり、その行のセルを描き直します(signal で持つときと同じ)。
+
+- `renderCell` の文脈の `row` / `value` を、位置や状態と同じく読んだときに引くようにしました。JSX の中で読めばその式だけが追従し、セルの中身は列が変わったときだけ作り直します。これまでは行が変わるたびに `renderCell` を呼び直して中身を作り直したので、セルの中の入力欄で打つたびに `ctx.setValue` すると 1 文字目でフォーカスが外れていました(React 版は同じ要素を使い回すので打ち続けられる)。関数の本体で読んだ値(引数の分割代入も)は、今までどおりその値が変わったときに呼び直します(読んでいない列の値が変わっただけでは呼び直さなくなりました)。**本体で読まずに、自分の部品の本体の一番上で読む書き方**(`renderCell={(ctx) => <MyCell ctx={ctx} />}` で `MyCell` の中の `const v = props.ctx.value`)は、これまでは行が変わるたびに部品ごと作り直されて追従していましたが、これからは追従しません(開発時に Solid が `STRICT_READ_UNTRACKED` を出します)。JSX の中で `props.ctx.value` を読んでください。
+- バーの関数(`renderTopBar` / `renderBottomBar`)の文脈の `derivedSummary` を、項目ごとに読んだときに引くようにしました。本体で `ctx.derivedSummary.sortSummaryText` だけを読んだとき、これまではアクティブセルの番地など要約のどれかが変わるたびに(セルを押しただけでも)バーを作り直し、バーの入力欄のフォーカスが外れていました。読んだ項目が変わったときだけ呼び直します。`ctx.derivedSummary` はいつも同じオブジェクトです(項目は読んだときの値)。
+
+- サーバーで描く(SSR)ときも、React 版と同じく行(最初の行の行番号と固定した列のセル)・件数(上下のバーの「行 2 / 4」)・合計を描くようにしました(0.1.1 から骨組みだけでした)。サーバーの HTML には `.ssg-root` が 2 つ並びます: ハイドレーションで使う骨組み(行を空にして `display: none` と `hidden`)と、そのすぐ後の行を入れた写し(ハイドレーションしない)。ブラウザでは描き終わった後、同じタスクの中で写しを外して骨組みを見せ、ブラウザで計算した行を出します(サーバーとブラウザでタイムゾーンや今日が違っても、サーバーの行は残りません = 0.1.1 の S8-01 の直しはそのまま)。サーバーの HTML の `.ssg-root` を数えるテストは直してください。サーバーサイドの行モデル(`dataSource`)は今までどおり骨組みだけです。
+
+- セルと行の `class` を、React 版と同じく 1 つの文字列で書くようにしました(速さの見直し)。外からセルや行の要素に足したクラスは、その要素の `class` が変わるとき(ホバー・選択など)に外れます(React 版と同じ)。
+
+### 修正
+
+- 遠くへのスクロールを速く、メモリを少なくしました(S5-22 / S12-03 / S12-04)。バーの文脈の `filteredRows`(表示順の行の配列)を、読まれたときだけ作るようにしました(誰も読まなくても、アクティブセルが動くたびに全部の行を並べ直していました。100 万行の `Ctrl+End` で 1 回 30ms ほど)。飾り(書式・メモ・検査の印・データバー・auto-height の器)の無い列のセルは、その部品を作りません。100 万行の `Ctrl+End` は約 72ms → 47ms(React 版は約 38ms)、約 200 列の表で縦に 3000px ずつ 120 回飛ぶときの JS は 5.8 秒 → 4.0 秒(React 版は 1.8 秒)、スクロールした後のヒープは 27.5MB → 21.2MB(React 版は 13.5MB)。いずれも手元の Chromium の本番ビルド(`audit/harness/perf-compare.mjs`)。
+- `vite dev` で Solid が出す開発時の知らせを減らしました。選択を範囲の中へ詰める・列幅を合わせる・スクロール・サーバーサイドの行モデル・フィルハンドル・`onActiveCellChange` などの通知の中で書いた signal で、`EFFECT_RELAY_TEAR` が console に出ていました(利用者には直せないもの)。書く値はグリッドの store や DOM で決まるので、Solid の計測が「測ることの手間」として扱う形にしました(動きは変わりません)。残るのは `autoHeightMeasurer` / `activeRowFollow` / `edit` の `EFFECT_WRITES_OWN_SOURCE` の 3 つで、README の「Solid で気をつけること」に書いています。
+- グリッドの `ref` に signal の setter を渡すと(`ref={setGrid}`)、Solid が `REACTIVE_WRITE_IN_OWNED_SCOPE` を投げてグリッドが描かれませんでした。ハンドルを渡す関数を、部品の中の書き込みとして扱われない所から呼ぶようにしました(ハンドルが入る時機は今までどおり、利用側の最初の `createEffect` と `onSettled` より前です)。
 
 ## 0.1.2 — 2026-11-23
 

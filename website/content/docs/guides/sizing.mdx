@@ -27,15 +27,20 @@ description: height / maxHeight でグリッドの高さを決める。'100%' �
 
 ### 高さの決まった親いっぱいに収める
 
-```tsx
+```tsx tab="React"
 <div style={{ height: 600 }}>
   <SpreadsheetGrid rows={rows} columns={columns} height="100%" />
+</div>
+```
+```tsx tab="Solid"
+<div style={{ height: '600px' }}>
+  <SpreadsheetGrid rows={rows()} columns={columns} height="100%" />
 </div>
 ```
 
 ### flex column の残りを埋める(ページヘッダーの下など)
 
-```tsx
+```tsx tab="React"
 <div style={{ display: 'flex', flexDirection: 'column', height: '100vh' }}>
   <header>…</header>
   <div style={{ flex: 1, minHeight: 0 }}>
@@ -43,16 +48,32 @@ description: height / maxHeight でグリッドの高さを決める。'100%' �
   </div>
 </div>
 ```
+```tsx tab="Solid"
+<div style={{ display: 'flex', 'flex-direction': 'column', height: '100vh' }}>
+  <header>…</header>
+  <div style={{ flex: 1, 'min-height': 0 }}>
+    <SpreadsheetGrid rows={rows()} columns={columns} height="100%" />
+  </div>
+</div>
+```
 
-`flex: 1` の子には `minHeight: 0` を付けます。付けないと、子が内容(全行)の高さまで伸びます。
+`flex: 1` の子には `minHeight: 0`(Solid の style では `'min-height': 0`)を付けます。付けないと、子が内容(全行)の高さまで伸びます。
 
 ### 横に並べる(サイドバーの隣など)
 
-```tsx
+```tsx tab="React"
 <div style={{ display: 'flex', height: '100vh' }}>
   <nav style={{ width: 240 }}>…</nav>
   <main style={{ flex: 1, minWidth: 0 }}>
     <SpreadsheetGrid rows={rows} columns={columns} height="100%" />
+  </main>
+</div>
+```
+```tsx tab="Solid"
+<div style={{ display: 'flex', height: '100vh' }}>
+  <nav style={{ width: '240px' }}>…</nav>
+  <main style={{ flex: 1, 'min-width': 0 }}>
+    <SpreadsheetGrid rows={rows()} columns={columns} height="100%" />
   </main>
 </div>
 ```

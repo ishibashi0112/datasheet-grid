@@ -8,7 +8,7 @@
 import { expect } from 'vitest';
 import { createElement, act as reactAct, useState, type ComponentType } from 'react';
 import { createRoot } from 'react-dom/client';
-import { createSignal, flush } from 'solid-js';
+import { createSignal, createStore, flush, reconcile } from 'solid-js';
 import { render } from '@solidjs/web';
 import { resetUnregisteredFeatureWarnings } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/featureWarnings';
 import * as SolidLite from '../index';
@@ -109,8 +109,15 @@ export type ParityScenario = {
   //   構成をわざと比べる場面だけ、その場面で確かめる機能のキー(警告の `キー: キーFeature` のキー)を並べる。true は
   //   警告そのものを比べる場面(どの機能でも許す)。
   allowMissingFeatures?: true | readonly string[];
+  // 追加(段 3-2 / S1-01): Solid 版の制御された行の持ち方。'signal'(既定。README の形)/ 'store'(createStore に入れ、
+  //   `setStore((s) => { s.rows = next })` で戻す)/ 'reconcile'(createStore に入れ、`reconcile(next, key)(s.rows)` で戻す)。
+  //   React 版は useState のまま(同じ結果になること = store でも元に戻すと見た目が同じことを比べる)。環境変数
+  //   PARITY_SOLID_ROWS で、指定の無いすべての場面をその持ち方で回せる(store の確かめ)。
+  solidRows?: SolidRowsHolder;
   steps: (ctx: ParityContext) => Promise<void>;
 };
+
+export type SolidRowsHolder = 'signal' | 'store' | 'reconcile';
 
 export type ParityResult = {
   snapshots: { label: string; dom: string }[];
@@ -310,16 +317,35 @@ async function runOneWatched(framework: Framework, scenario: ParityScenario): Pr
       void reactAct(() => root.unmount());
     };
   } else {
+    const holder: SolidRowsHolder = scenario.solidRows ?? (process.env.PARITY_SOLID_ROWS as SolidRowsHolder | undefined) ?? 'signal';
     unmount = render(() => {
       const [props, setProps] = createSignal(baseProps);
-      const [rows, setRows] = createSignal<readonly unknown[]>(currentRows);
+      let rows: () => readonly unknown[];
+      let setRows: (next: readonly unknown[]) => void;
+      if (holder === 'signal') {
+        const [rowsSignal, setRowsSignal] = createSignal<readonly unknown[]>(currentRows);
+        rows = rowsSignal;
+        setRows = (next) => setRowsSignal(() => next);
+      } else {
+        const [state, setState] = createStore<{ rows: unknown[] }>({ rows: currentRows as unknown[] });
+        const keyOf = (initial.rowKeyGetter as ((row: unknown) => unknown) | undefined) ?? 'id';
+        rows = () => state.rows;
+        setRows =
+          holder === 'store'
+            ? (next) => setState((draft) => {
+              draft.rows = next as unknown[];
+            })
+            : (next) => setState((draft) => {
+              reconcile(next as unknown[], keyOf)(draft.rows);
+            });
+      }
       setSolidProps = (patch) => setProps((previous) => ({ ...previous, ...wrapCallbacks(patch) }));
-      setSolidRows = (next) => setRows(() => next);
+      setSolidRows = setRows;
       const Grid = loadSolidGrid(scenario.features ?? []);
       const grid = () => (
         <Grid
           {...props()}
-          {...(controlledRows ? { rows: rows(), onRowsChange: onRowsChangeOf(props(), (next) => setRows(() => next)) } : {})}
+          {...(controlledRows ? { rows: rows(), onRowsChange: onRowsChangeOf(props(), setRows) } : {})}
           ref={(value: ParityHandle) => {
             handle = value;
           }}

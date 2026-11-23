@@ -3,7 +3,7 @@ title: 英語と文言
 description: localeText でグリッドが出す文言を英語にする・一部だけ変える(バー・メニュー・フィルター・ツールパネル・検索・読み上げの名前・検査のメッセージ)
 ---
 
-グリッドが自分で出す文言は、すべて `localeText` から来ます。既定は日本語です。英語にするときは入口 `@ishibashi0112/spreadsheet-grid/locales/en` の `localeTextEn` を渡します。英語の文言は別の入口なので、日本語のまま使うアプリの JS には入りません。
+グリッドが自分で出す文言は、すべて `localeText` から来ます。既定は日本語です。英語にするときは入口 `@ishibashi0112/spreadsheet-grid/locales/en`(Solid 版は `@ishibashi0112/spreadsheet-grid-solid/locales/en`)の `localeTextEn` を渡します。英語の文言は別の入口なので、日本語のまま使うアプリの JS には入りません。
 
 ## デモ(日本語 / 英語の切り替え)
 
@@ -14,11 +14,17 @@ description: localeText でグリッドが出す文言を英語にする・一�
 
 ## 使い方
 
-```tsx
+```tsx tab="React"
 import { SpreadsheetGrid } from '@ishibashi0112/spreadsheet-grid';
 import { localeTextEn } from '@ishibashi0112/spreadsheet-grid/locales/en';
 
 <SpreadsheetGrid rows={rows} columns={columns} localeText={localeTextEn} />
+```
+```tsx tab="Solid"
+import { SpreadsheetGrid } from '@ishibashi0112/spreadsheet-grid-solid';
+import { localeTextEn } from '@ishibashi0112/spreadsheet-grid-solid/locales/en';
+
+<SpreadsheetGrid rows={rows()} columns={columns} localeText={localeTextEn} />
 ```
 
 一部だけ変えるときは、変えたいキーだけを渡します。渡さなかったキーは既定(日本語)のままです。英語の一部を変えるときは `localeTextEn` に重ねます。
@@ -52,7 +58,7 @@ export function OrdersGrid({ lang, rows }: { lang: 'ja' | 'en'; rows: Order[] })
 ## 文言の書き方
 
 - 文字列は `{name}` の所が値に置き換わります(`rowCount` の `{shown}` / `{total}` など。使える名前はキーの一覧の説明に書いてあります)。
-- 数で言い方が変わる言語のために、値を関数にもできます。関数は値を受け取って文字列を返します。関数を入れた表は、コンポーネントの外で作るか `useMemo` で包みます(関数は参照で比べるので、描くたびに新しい関数を作ると、そのたびに文言を使う部分がすべて描き直されます)。
+- 数で言い方が変わる言語のために、値を関数にもできます。関数は値を受け取って文字列を返します。関数を入れた表は、コンポーネントの外で作るか `useMemo` で包みます(関数は参照で比べるので、描くたびに新しい関数を作ると、そのたびに文言を使う部分がすべて描き直されます)。Solid 版は部品の本体が 1 回だけ動くので、本体で作ってもかまいません。
 
 ```tsx
 // コンポーネントの外で 1 回だけ作る
@@ -85,13 +91,22 @@ const localeText = {
 
 ## AI バー(ことばで絞り込み)
 
-[ことばで絞り込み](/docs/guides/ai-filter)の `GridAskBar` / `useGridAsk` は、同じ入口の `gridAskLocaleTextEn` を `localeText` に渡します。
+[ことばで絞り込み](/docs/guides/ai-filter)の `GridAskBar` / `useGridAsk`(Solid 版は `createGridAsk`)は、同じ入口の `gridAskLocaleTextEn` を `localeText` に渡します。
 
-```tsx
+```tsx tab="React"
 import { gridAskLocaleTextEn, localeTextEn } from '@ishibashi0112/spreadsheet-grid/locales/en';
 
 <GridAskBar grid={gridRef} columns={columns} ask={ask} localeText={gridAskLocaleTextEn} />
 <SpreadsheetGrid ref={gridRef} columns={columns} rows={rows} localeText={localeTextEn} />
+```
+```tsx tab="Solid"
+import { GridAskBar } from '@ishibashi0112/spreadsheet-grid-solid/ai';
+import { gridAskLocaleTextEn, localeTextEn } from '@ishibashi0112/spreadsheet-grid-solid/locales/en';
+
+let grid!: SpreadsheetGridHandle<Row>;
+
+<GridAskBar grid={() => grid} columns={columns} ask={ask} localeText={gridAskLocaleTextEn} />
+<SpreadsheetGrid ref={grid} columns={columns} rows={rows()} localeText={localeTextEn} />
 ```
 
 ## キーの一覧

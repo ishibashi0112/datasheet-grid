@@ -46,11 +46,11 @@ type Row = { id: string; kind?: 'label'; code: string; name: string; qty: number
 />
 ```
 
-### React で装飾する(`render`)
+### 自分の部品で装飾する(`render`)
 
-`render` を渡すと中身を任意の React 要素にできます。`ctx` は `{ row, rowKey, rowIndex, sourceRowIndex, label, sectionRowCount }` で、`sectionRowCount` は(フィルター後の)そのセクションのデータ行数です。
+`render` を渡すと中身を任意の要素(React 版は React の要素、Solid 版は Solid の JSX)にできます。`ctx` は `{ row, rowKey, rowIndex, sourceRowIndex, label, sectionRowCount }` で、`sectionRowCount` は(フィルター後の)そのセクションのデータ行数です。
 
-```tsx
+```tsx tab="React"
 labelRow={{
   isLabelRow: (row) => row.kind === 'label',
   getLabel: (row) => row.name,
@@ -59,6 +59,20 @@ labelRow={{
       <span className="rounded bg-blue-600 px-1.5 text-xs text-white">節</span>
       <strong>{label}</strong>
       <span className="text-gray-500">{sectionRowCount} 件</span>
+    </>
+  ),
+  className: (row) => (row.important ? 'label-row--important' : undefined),
+}}
+```
+```tsx tab="Solid"
+labelRow={{
+  isLabelRow: (row) => row.kind === 'label',
+  getLabel: (row) => row.name,
+  render: (ctx) => (
+    <>
+      <span class="rounded bg-blue-600 px-1.5 text-xs text-white">節</span>
+      <strong>{ctx.label}</strong>
+      <span class="text-gray-500">{ctx.sectionRowCount} 件</span>
     </>
   ),
   className: (row) => (row.important ? 'label-row--important' : undefined),
@@ -105,10 +119,16 @@ TypeScript 5.5 以上なら、`(row) => row.kind === 'label'` と書くだけで
 
 既定では出力に含みません(scope `'raw'` でもデータ行としては出ません)。`includeLabelRows: true` で見出しを 1 行として出力できます。
 
-```tsx
+```tsx tab="React"
 gridRef.current?.downloadCsv('estimate.csv', { includeLabelRows: true });
 
 const { columns, rows, rowKinds } = gridRef.current!.getExportData({ includeLabelRows: true });
+// rowKinds[i] === 'label' の行は見出し。Excel 側で結合セル / 太字などを当てる
+```
+```tsx tab="Solid"
+grid.downloadCsv('estimate.csv', { includeLabelRows: true }); // let grid!: SpreadsheetGridHandle<Row> と ref={grid}
+
+const { columns, rows, rowKinds } = grid.getExportData({ includeLabelRows: true });
 // rowKinds[i] === 'label' の行は見出し。Excel 側で結合セル / 太字などを当てる
 ```
 

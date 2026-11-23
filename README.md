@@ -299,7 +299,7 @@ The preset drives the default `rowHeight` / `headerHeight` (compact: 28/32, stan
 
 ## Smaller bundles (`/lite`, 0.54.0+)
 
-`SpreadsheetGrid` includes every feature (about 140KB gzip of initial JS). `@ishibashi0112/spreadsheet-grid/lite` builds a grid with only the features you pass, and leaves the rest out of your bundle:
+`SpreadsheetGrid` includes every feature (about 153KB gzip of initial JS). `@ishibashi0112/spreadsheet-grid/lite` builds a grid with only the features you pass, and leaves the rest out of your bundle:
 
 ```tsx
 import { createSpreadsheetGrid, standardFeatures, serverSideFeature } from '@ishibashi0112/spreadsheet-grid/lite';
@@ -311,9 +311,9 @@ const Grid = createSpreadsheetGrid({ features: { ...standardFeatures, serverSide
 
 | Setup | Initial JS (gzip) |
 | --- | --- |
-| `SpreadsheetGrid` (everything) | ~140KB |
-| `/lite`, no features | ~80KB |
-| `/lite` + `standardFeatures` (filters, column menu, tool panel, column autosize, export) | ~102KB |
+| `SpreadsheetGrid` (everything) | ~153KB |
+| `/lite`, no features | ~90KB |
+| `/lite` + `standardFeatures` (filters, column menu, tool panel, column autosize, export) | ~114KB |
 
 Props, the `ref` handle and types are the same as `SpreadsheetGrid`. Props of features you did not pass do nothing, and in development a `console.warn` names the feature to add. See the [`/lite` section of the API reference](packages/react/API_REFERENCE.md#機能を選んで組み込むlite-サブパス) for the 20 features and their sizes.
 
@@ -422,7 +422,7 @@ AI coding assistants rarely know this new library and tend to guess from other g
 
 ## Versioning
 
-Releases follow [semver](https://semver.org). The React package and the core always share one version.
+Releases follow [semver](https://semver.org). The React package, the Solid package (from 1.4.0; it had its own 0.1.x versions before) and the core always share one version.
 
 - **Since 1.0**, breaking changes ship only in major releases (**X**.0.0), and anything to be removed is deprecated in a minor release first (`@deprecated` in the types, a one-time console warning in development builds, a 「非推奨」 (deprecated) section in the [changelog](./CHANGELOG.md)). Minor releases (X.**Y**.0) add features and deprecations; patch releases (X.Y.**Z**) only fix bugs. Before moving to a new major, read its 「削除」 (removed), 「挙動の変化」 (behavior changes) and 「core の破壊的変更」 (core breaking changes) sections in the changelog.
 - **Before 1.0** (up to 0.65.0), breaking changes shipped in minor releases; they are listed in the changelog under 「挙動の変化」 or 「core の破壊的変更」.
@@ -729,7 +729,7 @@ flex column の残り（ページヘッダーの下など）を埋める:
 
 ### バンドルを小さくする(`/lite`、0.54.0 から)
 
-`SpreadsheetGrid` は全機能入りです(初期読み込みの JS が約 140KB gzip)。`@ishibashi0112/spreadsheet-grid/lite` では、渡した機能だけを入れたグリッドを作れます。渡さなかった機能はバンドルに入りません:
+`SpreadsheetGrid` は全機能入りです(初期読み込みの JS が約 153KB gzip)。`@ishibashi0112/spreadsheet-grid/lite` では、渡した機能だけを入れたグリッドを作れます。渡さなかった機能はバンドルに入りません:
 
 ```tsx
 import { createSpreadsheetGrid, standardFeatures, serverSideFeature } from '@ishibashi0112/spreadsheet-grid/lite';
@@ -741,9 +741,9 @@ const Grid = createSpreadsheetGrid({ features: { ...standardFeatures, serverSide
 
 | 構成 | 初期 JS(gzip) |
 | --- | --- |
-| `SpreadsheetGrid`(全部入り) | 約 140KB |
-| `/lite` 機能なし | 約 80KB |
-| `/lite` + `standardFeatures`(フィルター・列メニュー・ツールパネル・列幅の自動調整・エクスポート) | 約 102KB |
+| `SpreadsheetGrid`(全部入り) | 約 153KB |
+| `/lite` 機能なし | 約 90KB |
+| `/lite` + `standardFeatures`(フィルター・列メニュー・ツールパネル・列幅の自動調整・エクスポート) | 約 114KB |
 
 props・`ref` ハンドル・型は `SpreadsheetGrid` と同じです。渡していない機能の prop は何もせず、開発時は足すべき機能を `console.warn` で知らせます。20 の機能とサイズは [API リファレンスの `/lite` の節](packages/react/API_REFERENCE.md#機能を選んで組み込むlite-サブパス)にあります。
 
@@ -852,7 +852,7 @@ AI コーディングツールは新しいこのライブラリをまだほと�
 
 ### バージョンの方針
 
-版は [Semantic Versioning](https://semver.org/lang/ja/) に沿って上げます。React 版と core はいつも同じ版で出します。
+版は [Semantic Versioning](https://semver.org/lang/ja/) に沿って上げます。React 版・Solid 版・core はいつも同じ版で出します(Solid 版は 1.4.0 から。その前の 0.1.x は別の版でした)。
 
 - **1.0 から**、壊す変更は major(**X**.0.0)でだけ出します。消すものは、その前の minor で非推奨にします(型に `@deprecated`、開発ビルドだけ console の警告を 1 回、[CHANGELOG](./CHANGELOG.md) の「非推奨」の節)。minor(X.**Y**.0)は機能の追加と非推奨、patch(X.Y.**Z**)は不具合の修正だけです。major を上げるときは、CHANGELOG のその版の「削除」「挙動の変化」「core の破壊的変更」を確かめてください。
 - **1.0 より前**(0.65.0 まで)は、壊す変更も minor で出していました。CHANGELOG の「挙動の変化」か「core の破壊的変更」にあります。

@@ -156,3 +156,95 @@ describe('セルと見出しの中身', () => {
     expect(renderHeader.mock.calls.length).toBe(callsBefore);
   });
 });
+
+// 段 3-3(R5-3 / S1-21): renderCell の ctx.row / ctx.value と、バーの文脈の derivedSummary の項目は、読んだときに引く。
+//   JSX の中で読めばその式だけが追従し(中身を作り直さない)、関数の本体で読めばそれが変わったときだけ呼び直す。
+describe('読んだ値が変わったときだけ呼び直す(段 3-3)', () => {
+  it('renderCell の中の入力欄で打つたびに setValue しても、同じ入力欄のまま打ち続けられる(R5-3)', () => {
+    const renderCell = vi.fn((ctx: { value: unknown; setValue: (value: unknown) => void }) => (
+      <input class="inline-input" value={String(ctx.value ?? '')} onInput={(event) => ctx.setValue(event.currentTarget.value)} />
+    ));
+    const { container, onRowsChange } = setup([
+      { key: 'id', title: 'ID', width: 60 },
+      { key: 'name', title: '品名', width: 160, renderCell },
+    ]);
+    const input = cellOf(container, 1, 'name').querySelector<HTMLInputElement>('.inline-input') as HTMLInputElement;
+    const callsBefore = renderCell.mock.calls.length;
+    input.focus();
+    for (const text of ['品目 2a', '品目 2ab', '品目 2abc']) {
+      input.value = text;
+      fireEvent.input(input);
+      flush();
+      expect(cellOf(container, 1, 'name').querySelector('.inline-input')).toBe(input);
+      expect(document.activeElement).toBe(input);
+    }
+    expect(onRowsChange).toHaveBeenCalledTimes(3);
+    expect(onRowsChange.mock.calls.at(-1)?.[0][1]).toMatchObject({ id: 2, name: '品目 2abc' });
+    expect(input.value).toBe('品目 2abc');
+    expect(renderCell.mock.calls.length).toBe(callsBefore);
+  });
+
+  it('関数の本体で読んだ値(分割代入も)は、それが変わったときに呼び直す。読んでいない項目の変化では呼び直さない', () => {
+    const renderCell = vi.fn(({ value }: { value: unknown }) => <span class="body-read">{String(value)}</span>);
+    const { container, getHandle } = setup([
+      { key: 'name', title: '品名', width: 160, renderCell },
+      { key: 'qty', title: '数量', width: 80, editor: { type: 'number' } },
+    ]);
+    const callsForRow = () => renderCell.mock.calls.length;
+    const before = callsForRow();
+    // 読んでいない列(qty)を変えても呼び直さない。
+    getHandle()?.applyRows((prev) => prev.map((row) => (row.id === 2 ? { ...row, qty: 999 } : row)));
+    flush();
+    expect(callsForRow()).toBe(before);
+    expect(cellOf(container, 1, 'qty').textContent).toBe('999');
+    // 読んだ値(name)が変わると、その行のセルだけ呼び直す。
+    getHandle()?.applyRows((prev) => prev.map((row) => (row.id === 2 ? { ...row, name: '変えた' } : row)));
+    flush();
+    expect(callsForRow()).toBe(before + 1);
+    expect(cellOf(container, 1, 'name').textContent).toBe('変えた');
+  });
+
+  it('バーの関数の本体で derivedSummary の 1 つだけを読むと、ほかの要約が変わっても呼び直さない(S1-21)', () => {
+    const renderTopBar = vi.fn((ctx: { derivedSummary: { sortSummaryText: string } }) => {
+      const sort = ctx.derivedSummary.sortSummaryText;
+      return (
+        <div class="my-bar">
+          <span class="my-sort">{sort}</span>
+          <input class="my-bar-input" />
+        </div>
+      );
+    });
+    let handle: SpreadsheetGridHandle<Row> | undefined;
+    const { container } = render(() => (
+      <SpreadsheetGrid<Row>
+        ref={(h) => {
+          handle = h;
+        }}
+        rows={makeRows(20)}
+        columns={[
+          { key: 'name', title: '品名', width: 120 },
+          { key: 'qty', title: '数量', width: 80 },
+        ]}
+        rowKeyGetter={(row) => row.id}
+        renderTopBar={renderTopBar}
+        height={300}
+      />
+    ));
+    flush();
+    const input = container.querySelector('.my-bar-input');
+    const before = renderTopBar.mock.calls.length;
+    handle?.selectCell(3, 1);
+    flush();
+    const shell = container.querySelector<HTMLElement>('.ssg-shell') as HTMLElement;
+    for (let index = 0; index < 5; index += 1) {
+      fireEvent.keyDown(shell, { key: 'ArrowDown' });
+      flush();
+    }
+    expect(renderTopBar.mock.calls.length).toBe(before);
+    expect(container.querySelector('.my-bar-input')).toBe(input);
+    handle?.applyState({ sort: [{ columnKey: 'qty', direction: 'desc' }] });
+    flush();
+    expect(renderTopBar.mock.calls.length).toBe(before + 1);
+    expect(container.querySelector('.my-sort')?.textContent).toContain('数量');
+  });
+});

@@ -12,10 +12,11 @@ const preface = `<!-- このファイルは React 版の API_REFERENCE.md を So
 >
 > この API リファレンスは React 版(\`@ishibashi0112/spreadsheet-grid\`)と同じ文書です。props・列の定義・ハンドルのメソッド・通知・CSS のクラスとトークンは Solid 版も同じなので、次のように読み替えてください。
 >
-> - import は \`@ishibashi0112/spreadsheet-grid-solid\` から。\`/lite\` の \`createSpreadsheetGrid\` と機能の部品も本体の入口にあります(\`/lite\` はありません)。\`/locales/en\` と \`/testing\` は同じ名前です。ことばで絞り込み(\`/ai\`)はありません。
+> - import は \`@ishibashi0112/spreadsheet-grid-solid\` から。\`/lite\` の \`createSpreadsheetGrid\` と機能の部品も本体の入口にあります(\`/lite\` はありません)。\`/ai\` / \`/locales/en\` / \`/testing\` は同じ名前です。\`/ai\` の \`useGridAsk\` は \`createGridAsk\`(型の \`UseGridAskOptions\` / \`UseGridAskResult\` は \`CreateGridAskOptions\` / \`CreateGridAskResult\`)で、\`grid\` はハンドルを返す関数(\`grid={() => grid}\`)か signal です。
 > - 例の \`useState\` は \`createSignal\`(\`rows={rows}\` は \`rows={rows()}\`)、\`useMemo\` は \`createMemo\`、\`useRef\` + \`ref={gridRef}\` は \`let grid!: SpreadsheetGridHandle<Row>\` + \`ref={grid}\`(\`gridRef.current\` は \`grid\`)、\`flushSync\` / テストの \`act()\` は \`solid-js\` の \`flush()\` です。
 > - 型の \`ReactNode\` は \`JSX.Element\`、\`useEffect\` は \`createEffect\` / \`onSettled\`、\`Suspense\` は \`<Loading>\`、\`createPortal\` は \`<Portal>\`(\`@solidjs/web\`)です。
-> - 「X.Y.Z から」の版は React 版とコア(\`@ishibashi0112/spreadsheet-grid-core\`)の版です。Solid 版では、そのコアの版に依存する版から使えます(Solid 版の変更履歴を見てください)。
+> - 「X.Y.Z から」の版は React 版とコア(\`@ishibashi0112/spreadsheet-grid-core\`)の版です。Solid 版は 1.4.0 から同じ版なので、1.4.0 以降の「X.Y.Z から」は Solid 版でも同じ版から使えます(1.3.0 以前の版の機能は Solid 版 1.4.0 にすべて入っています)。
+> - 「機能を選んで組み込む」の大きさ(KB)は React 版の値です。Solid 版は全部入りで約 168KB、機能なしで約 95KB、\`standardFeatures\` で約 123KB です(solid-js は含めない。README.md の「Picking features」、日本語は「機能を選んで組み込む」)。
 > - Solid 版だけのこと(描く関数を呼び直す時機・書き込みの反映・テスト・SSR)は同梱の README.md の「Differences from the React version」「Solid-specific notes」(日本語は「React 版との違い」「Solid で気をつけること」)にあります。
 
 `;

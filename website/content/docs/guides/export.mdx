@@ -11,7 +11,7 @@ description: downloadCsv / exportCsv と、ライブラリ非依存の getExport
 
 ## CSV
 
-```tsx
+```tsx tab="React"
 const gridRef = useRef<SpreadsheetGridHandle<Row>>(null);
 
 // ファイルとしてダウンロード(BOM 付き・Excel でそのまま開ける)
@@ -19,6 +19,15 @@ gridRef.current?.downloadCsv('products.csv');
 
 // 文字列が欲しい場合
 const csv = gridRef.current?.exportCsv({ delimiter: '\t' }); // TSV も可
+```
+```tsx tab="Solid"
+let grid!: SpreadsheetGridHandle<Row>; // <SpreadsheetGrid ref={grid} ... />
+
+// ファイルとしてダウンロード(BOM 付き・Excel でそのまま開ける)
+grid.downloadCsv('products.csv');
+
+// 文字列が欲しい場合
+const csv = grid.exportCsv({ delimiter: '\t' }); // TSV も可
 ```
 
 ### 出力範囲(scope)
@@ -70,16 +79,25 @@ const columns: GridColumn<Order>[] = [
 
 [ラベル行](/docs/guides/label-rows)(`labelRow`)は既定では出力に含みません(scope `'raw'` でもデータ行として出ません)。`includeLabelRows: true` を渡すと、見出しを 1 行として出力します(`exportText` 未指定なら `getLabel` の文字列を先頭列に、他列は空)。
 
-```tsx
+```tsx tab="React"
 gridRef.current?.downloadCsv('products.csv', { includeLabelRows: true });
 const data = gridRef.current?.getExportData({ includeLabelRows: true });
+// data.rowKinds[i] === 'label' で見出し行を判別 → Excel 側で結合セル / 太字を当てる
+```
+```tsx tab="Solid"
+grid.downloadCsv('products.csv', { includeLabelRows: true }); // let grid!: SpreadsheetGridHandle<Row> と ref={grid}
+const data = grid.getExportData({ includeLabelRows: true });
 // data.rowKinds[i] === 'label' で見出し行を判別 → Excel 側で結合セル / 太字を当てる
 ```
 
 ## Excel(xlsx)など
 
-```tsx
+```tsx tab="React"
 const data = gridRef.current?.getExportData(); // { columns, rows(2 次元セル) }
+// ExcelJS / SheetJS / hucre など任意のライブラリでブックを組み立てる
+```
+```tsx tab="Solid"
+const data = grid.getExportData(); // { columns, rows(2 次元セル) }。let grid!: SpreadsheetGridHandle<Row> と ref={grid}
 // ExcelJS / SheetJS / hucre など任意のライブラリでブックを組み立てる
 ```
 

@@ -15,7 +15,7 @@ import {
 import { localeTextEn } from '@ishibashi0112/spreadsheet-grid/locales/en';
 import '@ishibashi0112/spreadsheet-grid/style.css';
 import shadowCss from '@ishibashi0112/spreadsheet-grid/style.css?inline';
-import { baseColumns as sharedBaseColumns, lang, log, makeDataSource, makeRows, mountPoint, n, params, scenario, strict, type Row } from './shared';
+import { baseColumns as sharedBaseColumns, lang, log, makeDataSource, makeRows, mountPoint, n, params, scenario, strict, type Row, wide, withWideColumns } from './shared';
 
 // 追加(1.3.0 / RV5-4): `&hb=<列のキー>` でその列を狭く(46px)し、renderHeader の中にボタンを置く(押すと __events に hdr-btn)。
 const withHeaderButton = (columns: GridColumn<Row>[]): GridColumn<Row>[] => {
@@ -38,6 +38,10 @@ const withHeaderButton = (columns: GridColumn<Row>[]): GridColumn<Row>[] => {
 };
 
 function baseColumns(): GridColumn<Row>[] {
+  return withWideColumns(baseColumnsWithoutWide(), wide);
+}
+
+function baseColumnsWithoutWide(): GridColumn<Row>[] {
   return withHeaderButton(sharedBaseColumns({
     numberFormatter,
     customEditor: (ctx) => (

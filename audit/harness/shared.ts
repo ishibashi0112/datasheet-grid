@@ -227,6 +227,32 @@ export function baseColumns(deps: HarnessDeps): GridColumn<Row>[] {
   ];
 }
 
+// 追加(段 3-4 / S12-03): ?wide=<列の数> で数値の列を足す(列の多い表の速さの計測。perf-compare.mjs)。値は行の id から決め、
+//   編集した値は行の `w<番号>` に入れる。
+export function withWideColumns(columns: GridColumn<Row>[], count: number): GridColumn<Row>[] {
+  if (count <= 0) {
+    return columns;
+  }
+  const extra: GridColumn<Row>[] = Array.from({ length: count }, (_, index) => {
+    const key = `w${index}`;
+    return {
+      key,
+      title: `列 ${index + 1}`,
+      width: 84,
+      align: 'right',
+      editable: true,
+      editor: { type: 'number' },
+      getValue: (row) => {
+        const own = (row as Record<string, unknown>)[key];
+        return own === undefined ? (row.id * (index + 7)) % 1000 : own;
+      },
+      setValue: (row, value) => ({ ...row, [key]: value }) as Row,
+    };
+  });
+  const at = columns.findIndex((column) => column.pinned === 'right');
+  return at < 0 ? [...columns, ...extra] : [...columns.slice(0, at), ...extra, ...columns.slice(at)];
+}
+
 // ---------- SSRM モック ----------
 export type SsrmControl = {
   latency: number;
@@ -349,6 +375,8 @@ export const params = new URLSearchParams(location.search);
 export const scenario = params.get('s') ?? 'basic';
 export const n = Number(params.get('n') ?? (scenario === 'big' ? 1_000_000 : scenario === 'autoheight' ? 3000 : 500));
 export const strict = params.get('strict') === '1';
+// 追加(段 3-4): ?wide=<列の数>(withWideColumns)。
+export const wide = Number(params.get('wide') ?? 0);
 // 追加(英語対応): ?lang=en で英語の文言(localeTextEn)。
 export const lang = params.get('lang');
 // 追加(1.3.0 / Solid 版の品質の段 2 S11-01〜05): ?s=shadow はグリッドを open の Shadow root の中に描く(t-shadow.mjs)。

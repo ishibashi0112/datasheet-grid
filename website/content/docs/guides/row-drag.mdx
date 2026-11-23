@@ -114,8 +114,11 @@ const sectionOf = createMemo(() => {
 
 ### 命令的に動かす(`moveRow`)
 
-```tsx
+```tsx tab="React"
 gridRef.current?.moveRow('T-108', 0); // 行キー 'T-108' を先頭へ
+```
+```tsx tab="Solid"
+grid.moveRow('T-108', 0); // 行キー 'T-108' を先頭へ(let grid!: SpreadsheetGridHandle<Task> と ref={grid})
 ```
 
 `moveRow(rowKey, toIndex)` は表示状態(ソート / フィルター)に関わらず元配列上で移動し、`onRowsChange` → `onRowMove` の順に呼ばれます(`canDropRow` は効きません)。未知のキー / 同一位置 / 範囲外は何もしません。

@@ -82,6 +82,13 @@ const CONFIGS = [
     source: 'dist',
     code: "import { createSpreadsheetGrid, standardFeatures } from './packages/solid/dist/index.js'; export const Grid = createSpreadsheetGrid({ features: standardFeatures });",
   },
+  // 追加(段 3-1): Solid 版の入口 /ai(GridAskBar だけ。React 版の ai と同じ。本体のモジュールを import しない)。
+  {
+    name: 'solid-ai',
+    label: 'Solid 版 /ai(GridAskBar のみ。公開 dist)',
+    source: 'dist',
+    code: "export { GridAskBar } from './packages/solid/dist/ai.js';",
+  },
 ];
 
 const kb = (bytes) => bytes / 1024;
@@ -247,6 +254,15 @@ const checkSolidDistShape = () => {
       if (reachable.has(target)) {
         problems.push(`Solid 版の dist/${entry} から後から読むチャンク(${target.slice(SOLID_DIST.length)})へ静的 import でたどれます`);
       }
+    }
+  }
+  // 追加(段 3-1): 入口 /ai は本体とチャンクを共有しない(相対の import が無い)。共有すると全部入りの形が変わり、/ai だけを
+  //   使うときにも本体の一部を読む(React 版の src/ai と同じ決まり。src/ai は本体のモジュールを import しない)。
+  for (const entry of ['ai.js', 'source/ai.jsx']) {
+    const source = readFileSync(`${SOLID_DIST}${entry}`, 'utf8');
+    const relative = [...source.matchAll(STATIC_RELATIVE_IMPORT), ...source.matchAll(DYNAMIC_RELATIVE_IMPORT)];
+    if (relative.length > 0) {
+      problems.push(`Solid 版の dist/${entry} が本体とファイルを共有しています(${relative.map((match) => match[1] ?? match[2]).join(', ')})`);
     }
   }
   return problems;

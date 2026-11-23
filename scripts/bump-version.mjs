@@ -1,4 +1,4 @@
-// 追加(非依存化 ⑤-2): 公開パッケージ(packages/core / packages/react)の版を揃えて上げ、コミット + タグを作ります。
+// 追加(非依存化 ⑤-2): 公開パッケージ(packages/core / packages/react。1.4.0 から packages/solid も)の版を揃えて上げ、コミット + タグを作ります。
 //   旧「vp exec pnpm version minor」(単一パッケージ時代)の代替です。pnpm の version は workspace の recursive
 //   モードではコミット / タグを作らないため、ここで従来どおり「X.Y.Z」コミットと vX.Y.Z タグを作ります。
 //   使い方(作業ツリーがクリーンな状態で): node scripts/bump-version.mjs <major|minor|patch|X.Y.Z>
@@ -6,13 +6,19 @@
 //     (例: core 0.46.0 だけ旧コードで公開されたので実体は 0.46.1 にする)に使う。現行より大きい版だけ受け付ける。
 //   必ず **origin/main を取り込んだ main 上**で実行する(古い main の上で実行すると、新機能を含まないコードに
 //   新しい版番号が付いて公開されてしまう。2026-10-10 の 0.46.0 がその例)。
-//   その後の publish は `pnpm -r publish --access public`(core → react の順に、各パッケージで 2FA)。
+//   その後の publish は `pnpm -r publish --access public`(core → react → solid の順に、各パッケージで 2FA)。
 //   追加(広報 1: 入口の整備): CHANGELOG.md の「## 未リリース」の見出しを「## X.Y.Z — 今日の日付」に書き換えて同じコミットに含めます。
 //     タグを push すると .github/workflows/release.yml がこの節を本文にして GitHub Release を作ります。
 //     「未リリース」の節が無いときは警告だけ出して続けます(Release は本文が無いので作られません)。
 //   追加(広報 2: StackBlitz のサンプル): examples/*/package.json の @ishibashi0112/spreadsheet-grid も ^X.Y.Z へ書き換えて
 //     同じコミットに含めます(サンプルは npm の公開版で動くため)。版上げを main へ push してから publish するまでの間は、
 //     StackBlitz で開いたサンプルのインストールが失敗する(その版がまだ無い)ので、push の後は早めに publish します。
+//   追加(Solid 版 段 3-8): Solid 版(packages/solid)も 1.4.0 から React 版・core と同じ版にし、ここで 3 つを一緒に上げます
+//     (2026-11-23 ユーザー判断「バージョンは合わせたい」。それまでの Solid 版は別の版 0.x で、手で上げて solid-vX.Y.Z のタグを
+//     付けていた)。Solid 版の変更履歴 packages/solid/CHANGELOG.md の「## 未リリース」も「## X.Y.Z — 日付」へ書き換え、
+//     節が無ければ「Solid 版だけの変更はありません」の短い節を足します(Solid 版の利用者がどの版も変更履歴で引けるように)。
+//     examples の Solid 版への依存も ^X.Y.Z へ。React 版の版が core と違うとき、Solid 版の版が core と違うとき(そろえる前の
+//     0.x から上げる最初の 1 回は除く)は止めます。
 import { execSync } from 'node:child_process';
 import { existsSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
 import ts from 'typescript';
@@ -28,7 +34,7 @@ if (execSync('git status --porcelain').toString().trim() !== '') {
   process.exit(1);
 }
 
-const packages = ['packages/core/package.json', 'packages/react/package.json'];
+const packages = ['packages/core/package.json', 'packages/react/package.json', 'packages/solid/package.json'];
 const current = JSON.parse(readFileSync(packages[0], 'utf8')).version;
 const [major, minor, patch] = current.split('.').map(Number);
 const compareVersions = (a, b) => {
@@ -36,6 +42,20 @@ const compareVersions = (a, b) => {
   const [b0, b1, b2] = b.split('.').map(Number);
   return a0 - b0 || a1 - b1 || a2 - b2;
 };
+const reactVersion = JSON.parse(readFileSync(packages[1], 'utf8')).version;
+const solidVersion = JSON.parse(readFileSync(packages[2], 'utf8')).version;
+if (reactVersion !== current) {
+  console.error(`bump-version: React 版の版 ${reactVersion} が core の版 ${current} と違います(3 つのパッケージの版はそろえます)`);
+  process.exit(1);
+}
+const alignsSolid = solidVersion !== current;
+if (alignsSolid && !(solidVersion.startsWith('0.') && compareVersions(solidVersion, current) < 0)) {
+  console.error(`bump-version: Solid 版の版 ${solidVersion} が core の版 ${current} と違います(3 つのパッケージの版はそろえます)`);
+  process.exit(1);
+}
+// 追加(段 3-9 のレビュー): 版をそろえる最初の版は 1.4.0 と決めています(両方の CHANGELOG・README・ドキュメントに書き、
+//   scripts/changelog-section.mjs の ALIGNED_FROM もこの版から GitHub Release に Solid 版の節を足す)。違う版でそろえないよう止めます。
+const ALIGNED_FROM = '1.4.0';
 const next =
   kind === 'major'
     ? `${major + 1}.0.0`
@@ -46,6 +66,18 @@ const next =
         : kind;
 if (compareVersions(next, current) <= 0) {
   console.error(`bump-version: 指定の版 ${next} は現行 ${current} より大きくありません`);
+  process.exit(1);
+}
+if (alignsSolid && next !== ALIGNED_FROM) {
+  console.error(
+    `bump-version: Solid 版をそろえる最初の版は ${ALIGNED_FROM} です(${next} ではなく minor か ${ALIGNED_FROM} を指定してください。CHANGELOG とドキュメントが ${ALIGNED_FROM} と書いています)`,
+  );
+  process.exit(1);
+}
+// 追加(段 3-9 のレビュー): タグが先に残っていると、コミットだけができて git tag で止まるので、書く前に確かめます
+//   (git の worktree はタグを共有するので、試しに回した後の消し忘れで起きる)。
+if (execSync(`git tag --list v${next}`, { encoding: 'utf8' }).trim() !== '') {
+  console.error(`bump-version: タグ v${next} がもうあります(消してから、または別の版で実行してください)`);
   process.exit(1);
 }
 // 追加(semver / 1.0 の準備): core の旧サブパス(exports の `./*`)は 0.60.0 で非推奨にし、0.61.0 で消すと CHANGELOG と
@@ -119,23 +151,55 @@ const changelog = 'CHANGELOG.md';
 const UNRELEASED_HEADING = /^## 未リリース[ \t]*$/m;
 const changelogText = readFileSync(changelog, 'utf8');
 const staged = [...packages];
+const now = new Date();
+const today = [now.getFullYear(), now.getMonth() + 1, now.getDate()].map((part) => String(part).padStart(2, '0')).join('-');
+const SOLID_CHANGELOG = 'packages/solid/CHANGELOG.md';
+const solidChangelogText = readFileSync(SOLID_CHANGELOG, 'utf8');
+// 版の見出しの前に節を足す(無ければ末尾に)。
+const insertBeforeFirstVersion = (text, section) => {
+  const firstVersion = text.search(/^## \d+\.\d+\.\d+/m);
+  return firstVersion === -1 ? `${text}\n\n${section.trimEnd()}` : text.slice(0, firstVersion) + section + text.slice(firstVersion);
+};
 if (UNRELEASED_HEADING.test(changelogText)) {
-  const now = new Date();
-  const today = [now.getFullYear(), now.getMonth() + 1, now.getDate()].map((part) => String(part).padStart(2, '0')).join('-');
   writeFileSync(changelog, changelogText.replace(UNRELEASED_HEADING, `## ${next} — ${today}`));
-  staged.push(changelog);
+} else if (UNRELEASED_HEADING.test(solidChangelogText)) {
+  // 変更(段 3-9 のレビュー): Solid 版だけを直した版(ルートの CHANGELOG に書くことが無い)でも、ルートに版の節を作ります。
+  //   scripts/changelog-section.mjs は GitHub Release の本文をルートの節から作り、無いと止まる(Release が作られない)ため。
+  writeFileSync(
+    changelog,
+    insertBeforeFirstVersion(
+      changelogText,
+      `## ${next} — ${today}\n\nReact 版と core の変更はありません(Solid 版だけの変更は [Solid 版の変更履歴](./packages/solid/CHANGELOG.md)の ${next})。\n\n`,
+    ),
+  );
 } else {
-  console.warn('bump-version: CHANGELOG.md に「## 未リリース」の節がありません(GitHub Release の本文が作られません)');
+  console.warn('bump-version: CHANGELOG.md と packages/solid/CHANGELOG.md のどちらにも「## 未リリース」の節がありません(GitHub Release の本文が作られません)');
 }
+staged.push(changelog);
+if (UNRELEASED_HEADING.test(solidChangelogText)) {
+  writeFileSync(SOLID_CHANGELOG, solidChangelogText.replace(UNRELEASED_HEADING, `## ${next} — ${today}`));
+} else {
+  // 最初の版の見出しの前に足す(scripts/changelog-section.mjs はこの文で始まる節を GitHub Release に足さない)。
+  writeFileSync(
+    SOLID_CHANGELOG,
+    insertBeforeFirstVersion(
+      solidChangelogText,
+      `## ${next} — ${today}\n\nSolid 版だけの変更はありません(React 版と共通の変更は [CHANGELOG.md](../../CHANGELOG.md) の ${next})。\n\n`,
+    ),
+  );
+}
+staged.push(SOLID_CHANGELOG);
 const examplePackages = existsSync('examples')
   ? readdirSync('examples', { withFileTypes: true })
       .filter((entry) => entry.isDirectory() && existsSync(`examples/${entry.name}/package.json`))
       .map((entry) => `examples/${entry.name}/package.json`)
   : [];
+const EXAMPLE_DEPENDENCIES = ['@ishibashi0112/spreadsheet-grid', '@ishibashi0112/spreadsheet-grid-solid'];
 for (const file of examplePackages) {
   const pkg = JSON.parse(readFileSync(file, 'utf8'));
-  if (pkg.dependencies?.['@ishibashi0112/spreadsheet-grid'] === undefined) continue;
-  pkg.dependencies['@ishibashi0112/spreadsheet-grid'] = `^${next}`;
+  const names = EXAMPLE_DEPENDENCIES.filter((name) => pkg.dependencies?.[name] !== undefined);
+  if (names.length === 0) continue;
+  for (const name of names) pkg.dependencies[name] = `^${next}`;
   writeFileSync(file, JSON.stringify(pkg, null, 2));
   staged.push(file);
 }
@@ -143,4 +207,4 @@ execSync(`git add ${staged.join(' ')}`);
 execSync(`git commit -q -m "${next}"`);
 // 注釈付きタグにします(`git push --follow-tags` は注釈付きタグしか push しない。pnpm version と同じ挙動)。
 execSync(`git tag -a v${next} -m ${next}`);
-console.log(`bumped ${current} -> ${next} (commit + tag v${next})`);
+console.log(`bumped ${current} -> ${next} (commit + tag v${next})${alignsSolid ? `。Solid 版は ${solidVersion} -> ${next}(版をそろえた)` : ''}`);

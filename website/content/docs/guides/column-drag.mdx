@@ -14,7 +14,7 @@ description: 列ヘッダーの grip を掴んで列を左右へ移動する(onC
 
 ## 使い方
 
-```tsx
+```tsx tab="React"
 const [columns, setColumns] = useState(initialColumns);
 
 <SpreadsheetGrid
@@ -22,6 +22,16 @@ const [columns, setColumns] = useState(initialColumns);
   columns={columns}
   onColumnsChange={setColumns}   // これを渡すと grip が出て並べ替えられる
   columnDragMotion="live"        // 'ghost'(既定) | 'live'
+/>
+```
+```tsx tab="Solid"
+const [columns, setColumns] = createSignal(initialColumns);
+
+<SpreadsheetGrid
+  rows={rows()}
+  columns={columns()}
+  onColumnsChange={(next) => setColumns(next)}   // これを渡すと grip が出て並べ替えられる
+  columnDragMotion="live"                        // 'ghost'(既定) | 'live'
 />
 ```
 
