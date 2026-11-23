@@ -37,10 +37,13 @@ import { ValidationDemo } from '@/components/demo/validation-demo';
 import { StateDemo } from '@/components/demo/state-demo';
 import { LiveSortDemo } from '@/components/demo/live-sort-demo';
 import { LogTailDemo } from '@/components/demo/log-tail-demo';
+import { FrameworkCodeBlockTabs } from '@/components/framework-code-tabs';
 
 export function getMDXComponents(components?: MDXComponents) {
   return {
     ...defaultMdxComponents,
+    // React / Solid のコードのタブは選んだフレームワークで開く(lib/framework)
+    CodeBlockTabs: FrameworkCodeBlockTabs,
     // ライブデモ(MDX から <XxxDemo /> で埋め込み)
     BasicGridDemo,
     EditingDemo,
