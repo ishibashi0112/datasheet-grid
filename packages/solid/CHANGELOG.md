@@ -12,6 +12,12 @@
 
 - ことばで絞り込み(入口 `@ishibashi0112/spreadsheet-grid-solid/ai`)。React 版の `/ai` と同じ `GridAskBar` と、バーを自分で作るときの `createGridAsk`(React 版の `useGridAsk`。Solid の慣例で `create…` の名前、型は `CreateGridAskOptions` / `CreateGridAskResult`)、core の `createGridAskRequest` / `readGridAskAnswer` などです。`grid` にはハンドルを返す関数(`let grid!` と `ref={grid}` なら `grid={() => grid}`)か signal(`ref={setGrid}` と `grid={grid}`)を渡します(React の ref オブジェクトはありません)。バーの見た目・文言・答えの扱い・元に戻す / 表を手で変えた後の印は React 版と同じです(同じ操作で DOM と通知を比べるテストで確かめています)。グリッドの入口とはファイルを共有しないので、使わなければバンドルに入りません(約 15KB gzip)。英語の文言は `/locales/en` の `gridAskLocaleTextEn`(React 版と同じもの)。使い方はガイド「[ことばで絞り込み(AI)](https://datasheet-grid.vercel.app/docs/guides/ai-filter)」の Solid のタブ。
 
+- 行を Solid の store(`createStore`)で持てるようにしました。`rows={state.rows}` で渡し、`onRowsChange` で受け取った配列を `setState((s) => { s.rows = next })` か `setState((s) => { reconcile(next, 'id')(s.rows) })` で戻すと、signal で持つときと同じく元に戻す / やり直しが効きます。store の中を直接変えたとき(`s.rows[0].name = …` / `push` / `splice`)もグリッドに映り、React 版で親が rows を差し替えたときと同じく、元に戻すの履歴は消えます。これまでは store に入れるとどの編集も外からの差し替えに見えて元に戻すが効かず、開発時に Solid の知らせ(`HUGE_FAN_IN` / `STRICT_READ_UNTRACKED`)が多く出ていました(開発時に signal を勧める警告を出していました)。store は中の変化に気づくため行ごとに追うので、行が多いと編集のたびに時間がかかります(10 万行で 1 回 0.1 秒ほど)。5 万行より多い store を渡したときは、開発時に 1 回 signal を勧めます。
+
+### 挙動の変化
+
+- 行を store で持つとき、`renderCell` / `valueFormatter` などに渡る行(`ctx.row` など)は store のプロキシではなく、その時点の中身(store の `snapshot`)になりました。store の中を直接変えた行は新しいオブジェクトになり、その行のセルを描き直します(signal で持つときと同じ)。
+
 ### 修正
 
 - グリッドの `ref` に signal の setter を渡すと(`ref={setGrid}`)、Solid が `REACTIVE_WRITE_IN_OWNED_SCOPE` を投げてグリッドが描かれませんでした。ハンドルを渡す関数を、部品の中の書き込みとして扱われない所から呼ぶようにしました(ハンドルが入る時機は今までどおり、利用側の最初の `createEffect` と `onSettled` より前です)。

@@ -1,7 +1,7 @@
 // Solid らしい使い方の確かめ(段階 4 の測り直し 1-5)。React 版には無い書き方(非同期の行と <Loading> / <Errored>、
 //   取り直しの間の古い表示、<Show> での出し入れ、1 ページに複数のグリッド)で、グリッドが壊れず、警告も出さないこと。
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
-import { Errored, Loading, Show, action, createEffect, createMemo, createOptimistic, createSignal, flush, isPending, onFlush } from 'solid-js';
+import { Errored, Loading, Show, action, createEffect, createMemo, createOptimistic, createSignal, createStore, flush, isPending, onFlush } from 'solid-js';
 import { fireEvent, render } from '@solidjs/testing-library';
 import { installJsdomLayoutStubs } from '@ishibashi0112/spreadsheet-grid-core/testing';
 import { SpreadsheetGrid, type GridColumn, type SpreadsheetGridHandle } from './index';
@@ -330,7 +330,8 @@ const editTo = (container: HTMLElement, row: number, text: string) => {
   flush();
 };
 
-describe.each(['createOptimistic', 'signal'] as const)('保存の間もグリッドは止まらない(%s + action。S4-21)', (mode) => {
+// 'store' / 'storeInAction'(段 3-2 / S1-01): rows を createStore で持ち、通知の中で書く / action の中で書く形。
+describe.each(['createOptimistic', 'signal', 'store', 'storeInAction'] as const)('保存の間もグリッドは止まらない(%s + action。S4-21)', (mode) => {
   it('エディタはすぐ閉じ、保存中の 2 回目の編集はその行へ入り、両方が保存される', async () => {
     watchConsole();
     const saves: Array<ReturnType<typeof deferred<void>>> = [];
@@ -339,8 +340,14 @@ describe.each(['createOptimistic', 'signal'] as const)('保存の間もグリッ
       const [serverRows, setServerRows] = createSignal(makeRows(3));
       const [optimistic, setOptimistic] = createOptimistic(() => serverRows());
       const [plain, setPlain] = createSignal(makeRows(3));
+      const [state, setState] = createStore<{ rows: Row[] }>({ rows: makeRows(3) });
       const save = action(function* (next: Row[]) {
         if (mode === 'createOptimistic') setOptimistic(() => next);
+        if (mode === 'storeInAction') {
+          setState((draft) => {
+            draft.rows = next;
+          });
+        }
         const request = deferred<void>();
         saves.push(request);
         yield request.promise;
@@ -349,9 +356,14 @@ describe.each(['createOptimistic', 'signal'] as const)('保存の間もグリッ
       });
       return (
         <SpreadsheetGrid<Row>
-          rows={mode === 'createOptimistic' ? optimistic() : plain()}
+          rows={mode === 'createOptimistic' ? optimistic() : mode === 'signal' ? plain() : state.rows}
           onRowsChange={(next) => {
             if (mode === 'signal') setPlain(() => next);
+            if (mode === 'store') {
+              setState((draft) => {
+                draft.rows = next;
+              });
+            }
             save(next).catch(() => {});
           }}
           columns={columns}

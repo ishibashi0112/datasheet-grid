@@ -54,7 +54,7 @@ export function Inventory() {
 
 - **CSS を読み込む。** `import '@ishibashi0112/spreadsheet-grid-solid/style.css'`。無いとスタイルが当たらず、スクロールもしません。Tailwind v4 で `classNames` などにユーティリティを渡して既定の見た目を変えるときは、`style.css` では効きません(未レイヤーのグリッドの CSS が勝つ)。`@ishibashi0112/spreadsheet-grid-solid/style.layer.css` にして、それより先に読ませる CSS で `@layer theme, base, ssg-base, components, utilities;` とレイヤー順を宣言します(宣言しないと Preflight に罫線やボタンが崩されます)。
 - **バンドラ。** Vite では `@solidjs/vite-plugin` 3(Vite 8 以上)を使います。パッケージは `solid` 条件で JSX のままのソースを渡します。
-- **`rows` は signal で持つ。** 編集結果は `onRowsChange` が新しい配列で返します。その配列をそのまま `setRows(next)` で戻し、`rows={rows()}` で渡します(`map` などで作り直すと undo の履歴が消えます)。`createStore` に入れると履歴が消え、開発時に警告が出ます。
+- **`rows` は signal か store で持つ。** 編集結果は `onRowsChange` が新しい配列で返します。signal ならその配列をそのまま `setRows(next)` で戻し、`rows={rows()}` で渡します(`map` などで作り直すと undo の履歴が消えます)。`createStore` なら `rows={state.rows}` で渡し、`setState((s) => { s.rows = next })` か `reconcile(next, 'id')(s.rows)` で戻します。5 万行ほどより多い表は signal で持ちます(store は行ごとに追うので重い)。
 - **書き込みはマイクロタスクで反映される。** `setRows(...)` の直後にハンドルで足した行を使う(`getViewRowIndex(key)` → `startEditing(...)`)ときは、先に `solid-js` の `flush()` を呼びます。
 - **ハンドルは Solid の ref。** `let grid!: SpreadsheetGridHandle<Row>` と `ref={grid}`(または `ref={(handle) => (grid = handle)}`)。React の ref オブジェクト(`.current`)はありません。最初の状態は `initialState` で渡します。
 - **描く関数の本体で値を読まない。** `renderCell` などの文脈の値(`ctx.rowIndex` / `ctx.isActive` など)は JSX の中で読みます。本体で読むと、変わるたびに中身を作り直します(入力欄のフォーカスが外れる)。custom エディタの始めの値は `untrack(() => ctx.value)` か `ctx.initialText` で取ります。

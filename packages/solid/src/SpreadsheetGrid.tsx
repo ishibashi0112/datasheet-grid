@@ -135,6 +135,7 @@ import type {
 } from './model/gridTypes';
 import { GridLocaleTextContext, mergeFeatureLocaleDefaults } from './context/localeText';
 import { createUserCallbacks, runHandleCall } from './primitives/userCallback';
+import { createPlainRows } from './primitives/storeRows';
 import { createGridStoreSignals } from './primitives/gridStoreSignals';
 import { createExternalStoreSignal } from './primitives/externalStore';
 import { createGridViewSetters } from './primitives/viewSetters';
@@ -282,12 +283,16 @@ function GridShellBody<T extends object>(
     },
     { name: 'relayRows' },
   );
+  // 変更(段 3-2 / S1-01): store(createStore)の rows は、グリッドの計算にプロキシではなく中身を渡します(primitives/storeRows)。
+  const plainRows = createPlainRows<T>(() => {
+    const relayed = relayedRows();
+    return (relayed ? relayed.value : props.rows) as readonly T[] | undefined;
+  });
   const rows = createMemo(() => {
     if (props.dataSource != null || !hydrated()) {
       return EMPTY_ROWS as T[];
     }
-    const relayed = relayedRows();
-    return ((relayed ? relayed.value : props.rows) ?? EMPTY_ROWS) as T[];
+    return (plainRows() ?? EMPTY_ROWS) as T[];
   });
   const columns = createMemo(() => props.columns as unknown as UnboundGridColumn<T>[]);
   const density = () => props.density ?? 'standard';
@@ -702,11 +707,6 @@ function GridShellBody<T extends object>(
     detailActive: () => vertical().detailActive,
     globalFilterText,
     columnFilterCount: () => Object.keys(columnFilters()).length,
-    // 写した rows を読みます(取り直しの失敗を、写しの effect だけが <Errored> へ渡すように。S7-02)。写す前は props.rows。
-    rows: () => {
-      const relayed = relayedRows();
-      return relayed ? relayed.value : props.rows;
-    },
   });
   // ラベル行の縦スクロールの固定(labelRow.sticky)。scrollTop(論理)から今のセクションのラベル行と押し上げる量を求めて、各ペインの
   //   固定の層へ渡します。固定の帯がヘッダーの直下で行を隠す高さ(stickyTopInset)は、アクティブセルの追従と scrollToRow /

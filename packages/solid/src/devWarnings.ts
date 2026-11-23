@@ -8,7 +8,7 @@
 //   prop の判定表ごと消える)。React 版と core と同じ(import.meta.env.DEV はライブラリのビルド時に固定されるので使わない)。
 //   React 版の「コンポーネントの中で createSpreadsheetGrid を呼んで描くたびに作り直している」の警告は入れません(Solid の
 //   部品の関数は 1 回しか呼ばれないので、部品の中で呼んでも描き直しのたびに作り直すことは無い)。
-import { $PROXY, createEffect, createMemo } from 'solid-js';
+import { createEffect, createMemo } from 'solid-js';
 import { AUTO_HEIGHT_MAX_ROWS, MAX_BODY_PX } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/verticalGeometry';
 import { createInertExportCommands } from '@ishibashi0112/spreadsheet-grid-core/internal/engine/features';
 import {
@@ -228,13 +228,7 @@ export type ShellDevWarningArgs = {
   detailActive: () => boolean;
   globalFilterText: () => string;
   columnFilterCount: () => number;
-  // 追加(0.1.0 の前の実アプリ点検 S1-01): rows(clientSide の行の配列)。
-  rows: () => unknown;
 };
-
-// 追加(0.1.0 の前の実アプリ点検 S1-01): Solid の store(createStore)のプロキシか(store のプロキシは $PROXY を持つ)。
-const isSolidStore = (value: unknown): boolean =>
-  typeof value === 'object' && value !== null && $PROXY in value;
 
 // シェルの警告(React 版の GridShell.tsx の useEffect と同じ条件と回数)。
 function createShellDevWarningsInDev(args: ShellDevWarningArgs): void {
@@ -306,23 +300,7 @@ function createShellDevWarningsInDev(args: ShellDevWarningArgs): void {
       }
     },
   );
-  // 追加(0.1.0 の前の実アプリ点検 S1-01。Solid 版だけ): rows に store を渡したとき。グリッドは onRowsChange で新しい配列を返す
-  //   (React 版と同じ controlled の約束)。store に入れて渡すと、戻ってきた rows が渡した配列と別の参照(store のプロキシ)に
-  //   なるので、元に戻す / やり直しの履歴が外からの差し替えとして消え、開発時は Solid の知らせ(HUGE_FAN_IN /
-  //   STRICT_READ_UNTRACKED / IMMUTABLE_UPDATE_IN_STORE)が大量に出る。1 つのグリッドで 1 回。
-  createChangeEffect(
-    () => isSolidStore(args.rows()),
-    (fromStore) => {
-      if (fromStore) {
-        warnOncePerGrid(
-          warned,
-          'rowsFromStore',
-          '[SpreadsheetGrid] rows に Solid の store(createStore)を渡しています。グリッドは onRowsChange で新しい配列を返すので、store に入れると元に戻す / やり直しの履歴が消え、開発時に Solid の知らせが多く出ます。行は createSignal で持ち、受け取った配列をそのまま set してください。\n' +
-            '[SpreadsheetGrid] rows is a Solid store (createStore). The grid returns a new array from onRowsChange, so keeping it in a store loses the undo / redo history and makes Solid print many development diagnostics. Keep rows in a createSignal and set the array you receive as is.',
-        );
-      }
-    },
-  );
+  // 削除(段 3-2 / S1-01): rows に store を渡したときの警告。store の rows は中身を読むようにした(primitives/storeRows)。
   // フィルターの機能が無いのにフィルターの状態(applyState / setGlobalFilterText)が入ったとき(効かないことに気づけるように)。
   if (!args.filteringAvailable) {
     createChangeEffect(
