@@ -2,7 +2,7 @@
 
 A virtualized spreadsheet / data grid for Solid 2.0 (~1M rows, pinned columns, Excel-like editing / selection / clipboard, filters & sorting, client-side and server-side row models). It is the Solid version of [`@ishibashi0112/spreadsheet-grid`](https://www.npmjs.com/package/@ishibashi0112/spreadsheet-grid) (React): the same props, column options, imperative handle, CSS and look, built on the same framework-independent core. 日本語は下にあります。
 
-**[Docs & live demo](https://datasheet-grid.vercel.app)** (written for the React version; the props are the same. Solid notes, in Japanese: [Solid で使う](https://datasheet-grid.vercel.app/docs/solid)) · [Try on StackBlitz](https://stackblitz.com/fork/github/ishibashi0112/datasheet-grid/tree/main/examples/solid?file=src/App.tsx&terminal=dev) · [GitHub](https://github.com/ishibashi0112/datasheet-grid) · [Changelog](https://github.com/ishibashi0112/datasheet-grid/blob/main/packages/solid/CHANGELOG.md)
+**[Docs & live demo](https://datasheet-grid.vercel.app)** (the guides show a Solid tab wherever the code differs, and the API reference is written for the React version with the same props. Solid notes, in Japanese: [Solid で使う](https://datasheet-grid.vercel.app/docs/solid)) · [Try on StackBlitz](https://stackblitz.com/fork/github/ishibashi0112/datasheet-grid/tree/main/examples/solid?file=src/App.tsx&terminal=dev) · [GitHub](https://github.com/ishibashi0112/datasheet-grid) · [Changelog](https://github.com/ishibashi0112/datasheet-grid/blob/main/packages/solid/CHANGELOG.md)
 
 ## Install
 
@@ -116,7 +116,7 @@ MIT
 
 Solid 2.0 向けの仮想化スプレッドシート / データグリッドです(約 100 万行・列固定・Excel ライクな編集 / 選択 / クリップボード・フィルター / ソート・クライアントサイド / サーバーサイド行モデル)。React 版の [`@ishibashi0112/spreadsheet-grid`](https://www.npmjs.com/package/@ishibashi0112/spreadsheet-grid) と同じ props・列の定義・命令的なハンドル・CSS・見た目で、同じフレームワークに依らないコアの上に作っています。
 
-**[ドキュメントとライブデモ](https://datasheet-grid.vercel.app)**(React 版向けに書いていますが、props は同じです。Solid 版だけのことは [Solid で使う](https://datasheet-grid.vercel.app/docs/solid))· [StackBlitz で試す](https://stackblitz.com/fork/github/ishibashi0112/datasheet-grid/tree/main/examples/solid?file=src/App.tsx&terminal=dev) · [GitHub](https://github.com/ishibashi0112/datasheet-grid) · [変更履歴](https://github.com/ishibashi0112/datasheet-grid/blob/main/packages/solid/CHANGELOG.md)
+**[ドキュメントとライブデモ](https://datasheet-grid.vercel.app)**(ガイドはコードが違う所に Solid のタブがあります。API リファレンスは React 版向けですが、props は同じです。Solid 版だけのことは [Solid で使う](https://datasheet-grid.vercel.app/docs/solid))· [StackBlitz で試す](https://stackblitz.com/fork/github/ishibashi0112/datasheet-grid/tree/main/examples/solid?file=src/App.tsx&terminal=dev) · [GitHub](https://github.com/ishibashi0112/datasheet-grid) · [変更履歴](https://github.com/ishibashi0112/datasheet-grid/blob/main/packages/solid/CHANGELOG.md)
 
 `npm install @ishibashi0112/spreadsheet-grid-solid` で入れます(peer は `solid-js` / `@solidjs/web` の `^2.0.0`)。CSS は `import '@ishibashi0112/spreadsheet-grid-solid/style.css'` を 1 回読み込みます。`style.layer.css` とデザインシステムのテーマ(`themes/*.css`)は React 版と同じファイルです。
 

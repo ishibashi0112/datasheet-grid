@@ -81,7 +81,7 @@ const columns: GridColumn<Sale>[] = [
 
 小計 → 消費税 → 税込のように、合計行から続けて計算した行は、`pinnedBottomRowsPlacement="belowTotal"` で合計行の下に並べます(1.2.0 から。既定 `'aboveTotal'` は合計行のすぐ上)。
 
-```tsx
+```tsx tab="React"
 const subtotal = useMemo(() => rows.reduce((sum, row) => sum + row.amount, 0), [rows]);
 const tax = Math.floor(subtotal * 0.1);
 
@@ -92,6 +92,21 @@ const tax = Math.floor(subtotal * 0.1);
   pinnedBottomRows={[
     { id: 'tax', item: '消費税(10%)', amount: tax },
     { id: 'total', item: '税込', amount: subtotal + tax },
+  ]}
+  pinnedBottomRowsPlacement="belowTotal"
+/>
+```
+```tsx tab="Solid"
+const subtotal = createMemo(() => rows().reduce((sum, row) => sum + row.amount, 0));
+const tax = () => Math.floor(subtotal() * 0.1);
+
+<SpreadsheetGrid
+  rows={rows()}
+  columns={columns}
+  totalRow={{ label: '小計' }}
+  pinnedBottomRows={[
+    { id: 'tax', item: '消費税(10%)', amount: tax() },
+    { id: 'total', item: '税込', amount: subtotal() + tax() },
   ]}
   pinnedBottomRowsPlacement="belowTotal"
 />
@@ -136,10 +151,16 @@ data?.rowKinds; // ['pinned', 'data', 'data', …, 'pinned']
 - **列幅の自動調整**: 固定行の値も収まる幅にします。
 - **serverSide(`dataSource`)**: そのまま使えます。固定行は渡した配列から描くので、サーバーから取り直しません。
 - **Next.js のサーバーコンポーネント**: 固定行はただの行のデータなので、サーバーコンポーネントで作って props で渡せます(関数を含まない値のとき)。サーバーで描いた HTML にも固定行が入ります。
-- **`/lite`**: 機能の部品は `pinnedRowsFeature` です。
+- **`/lite`**: 機能の部品は `pinnedRowsFeature` です(Solid 版は本体の入口から)。
 
-```tsx
+```tsx tab="React"
 import { createSpreadsheetGrid, pinnedRowsFeature } from '@ishibashi0112/spreadsheet-grid/lite';
+
+const Grid = createSpreadsheetGrid({ features: { pinnedRows: pinnedRowsFeature } });
+```
+```tsx tab="Solid"
+// Solid 版は /lite の入口が無く、本体の入口から import する
+import { createSpreadsheetGrid, pinnedRowsFeature } from '@ishibashi0112/spreadsheet-grid-solid';
 
 const Grid = createSpreadsheetGrid({ features: { pinnedRows: pinnedRowsFeature } });
 ```

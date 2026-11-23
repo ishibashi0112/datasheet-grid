@@ -98,7 +98,7 @@ const columns: GridColumn<Row>[] = [
 
 内製フィールドではなくアプリの UI ライブラリで統一したい場合は、グリッドの prop `renderFilterDateInput` でピッカーごと差し替えられます(対象はフィルター popover の条件欄のみ)。
 
-```tsx
+```tsx tab="React"
 import { DatePickerInput } from '@mantine/dates';
 
 <SpreadsheetGrid
@@ -112,6 +112,20 @@ import { DatePickerInput } from '@mantine/dates';
       clearable
       popoverProps={{ withinPortal: false }}   // ★ 外側クリック対策(下記)
       style={{ flex: 1, minWidth: 0 }}
+    />
+  )}
+/>
+```
+```tsx tab="Solid"
+// 例: ネイティブの日付入力にする(Solid の UI ライブラリの日付ピッカーも同じ形で渡せる)
+<SpreadsheetGrid
+  renderFilterDateInput={(ctx) => (
+    <input
+      type="date"
+      aria-label={ctx.ariaLabel}
+      value={ctx.value}                                             // 'YYYY-MM-DD' か ''(JSX の中で読む)
+      onChange={(e) => ctx.onChange(e.currentTarget.value || null)} // '' はクリア
+      style={{ flex: 1, 'min-width': 0 }}
     />
   )}
 />

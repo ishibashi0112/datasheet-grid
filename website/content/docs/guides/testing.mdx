@@ -12,12 +12,21 @@ jsdom はレイアウトを計算しないため、素の jsdom では実グリ�
 
 ## installJsdomLayoutStubs
 
-`@ishibashi0112/spreadsheet-grid/testing` サブパスの `installJsdomLayoutStubs()` が上記をまとめて解決します(React 非依存の小さなモジュール)。
+`@ishibashi0112/spreadsheet-grid/testing` サブパス(Solid 版は `@ishibashi0112/spreadsheet-grid-solid/testing`)の `installJsdomLayoutStubs()` が上記をまとめて解決します(フレームワークに依らない小さなモジュール)。
 
-```ts
+```ts tab="React"
 // @vitest-environment jsdom
 import { beforeAll } from 'vitest';
 import { installJsdomLayoutStubs } from '@ishibashi0112/spreadsheet-grid/testing';
+
+beforeAll(() => {
+  installJsdomLayoutStubs(); // 既定 1200×600
+});
+```
+```ts tab="Solid"
+// @vitest-environment jsdom
+import { beforeAll } from 'vitest';
+import { installJsdomLayoutStubs } from '@ishibashi0112/spreadsheet-grid-solid/testing';
 
 beforeAll(() => {
   installJsdomLayoutStubs(); // 既定 1200×600
@@ -100,8 +109,17 @@ it('品名を直せる', async () => {
 
 スタブは「見えている大きさ」を決めるだけで、仮想化はそのまま効きます。既定の 1200×600 なら、描かれるのは高さ 600px に入る行と幅 1200px に入る列(それぞれ先読みの分を足した数)です。既定の行の高さ(36px)と幅 120px の列なら、約 38 行・約 18 列です。グリッドの `height` を変えても、描かれる量はスタブの大きさで決まります。
 
-```tsx
+```tsx tab="React"
 const { container } = render(<SpreadsheetGrid rows={rows} columns={columns} />);
+
+// 行・セルの描画(行は固定ペインにも描かれ、行番号は左のペインの行にあるので、中央のペインの行で数える)
+expect(container.querySelectorAll('[data-pane="center"].ssg-body-row')).toHaveLength(rows.length); // 行が少ないとき
+
+// getRowClassName / cellClassName で付与したクラス
+expect(container.querySelectorAll('.ssg-body-cell.my-warn-cell')).toHaveLength(2);
+```
+```tsx tab="Solid"
+const { container } = render(() => <SpreadsheetGrid rows={rows} columns={columns} />); // @solidjs/testing-library
 
 // 行・セルの描画(行は固定ペインにも描かれ、行番号は左のペインの行にあるので、中央のペインの行で数える)
 expect(container.querySelectorAll('[data-pane="center"].ssg-body-row')).toHaveLength(rows.length); // 行が少ないとき
@@ -134,7 +152,7 @@ fireEvent.scroll(scroller);
 | 貼り付け | グリッドは paste イベントの `clipboardData` を読みます。user-event なら、セルを押してから `await user.paste('a\tb\nc\td')`(`user.keyboard('{Control>}v{/Control}')` では貼り付きません)。fireEvent なら `fireEvent.paste(shell, { clipboardData: { getData: () => 'a\tb' } })`(`shell` は `.ssg-shell`)。 |
 | コピー | グリッドは `navigator.clipboard.writeText` で書きます。user-event の `userEvent.setup()` はクリップボードを差し替えるので、`Ctrl+C` の後に `await navigator.clipboard.readText()` で中身を確かめられます。user-event を使わないときは `navigator.clipboard` を `{ writeText: vi.fn() }` などに差し替えます。 |
 | 範囲選択 | jsdom には座標が無いので、ポインタのドラッグでは正しい範囲になりません。`Shift+矢印` / `Shift+クリック`、またはハンドルの `selectRange` を使います。 |
-| 確定・取り消しの後 | 確定(`Enter` / `Tab`)の後のアクティブセルの移動と、次の編集を受け付けるようになるのは、その後のマイクロタスクです。fireEvent で同期に続けて書くときは、間に `await act(async () => {})` を挟みます(結果を確かめるだけなら `waitFor` でも構いません)。 |
+| 確定・取り消しの後 | 確定(`Enter` / `Tab`)の後のアクティブセルの移動と、次の編集を受け付けるようになるのは、その後のマイクロタスクです。fireEvent で同期に続けて書くときは、間に `await act(async () => {})`(Solid 版は `flush()` の後に `await Promise.resolve()`)を挟みます(結果を確かめるだけなら `waitFor` でも構いません)。 |
 | エディタの入力欄を取る | 編集中は、エディタの枠(`role="group"`)と入力欄の両方が「(列名) を編集」の名前を持ちます。`getByLabelText('品名 を編集')` は 2 つに当たって落ちるので、`getByRole('textbox', { name: '品名 を編集' })`(number は `spinbutton`、select は `combobox`)で取ります。 |
 | number の列を数字から打ち始める | jsdom / happy-dom + user-event では `user.keyboard('42')` が「24」になります(1 文字目で開いた `<input type="number">` のカーソルの位置を jsdom が持たず、2 文字目が先頭に入るため。実ブラウザでは「42」)。1 文字目で開いてから入力欄へ `await user.type(input, '2')` で続けるか、`Enter` / `F2` で開いて `await user.clear(input)` と `await user.type(input, '42')` で入れます(入力欄は `getByRole('spinbutton', { name: '数量 を編集' })`)。 |
 | date エディタ | `Enter` / `F2` / ダブルクリックで開いた入力欄はネイティブの `<input type="date">` なので、`fireEvent.change(input, { target: { value: '2026-11-09' } })` で値を入れます(jsdom の一般的な制約)。 |
@@ -161,7 +179,7 @@ Jest 30 の jsdom(26)には `PointerEvent` がありません。グリッドは�
 
 列フィルターのポップオーバーとツールパネル(フィルター管理 / 列の表示 / 並び替え)の部品は、別のチャンクから遅延読み込みされます([インストール](/docs/installation#遅延読み込みされる部品))。読み込みが終わる前は表示されないため、開いた直後に**同期で**中身を確かめるテストでは、先に `preloadGridPopups()` で読み込んでおきます。
 
-```ts
+```ts tab="React"
 import { beforeAll } from 'vitest';
 import { preloadGridPopups } from '@ishibashi0112/spreadsheet-grid';
 
@@ -169,8 +187,16 @@ beforeAll(async () => {
   await preloadGridPopups();
 });
 ```
+```ts tab="Solid"
+import { beforeAll } from 'vitest';
+import { preloadGridPopups } from '@ishibashi0112/spreadsheet-grid-solid';
 
-`/lite` の `createSpreadsheetGrid` で作ったグリッドでは、`preloadGridPopups` も `@ishibashi0112/spreadsheet-grid/lite` から import してください(入口ごとに部品が別です)。
+beforeAll(async () => {
+  await preloadGridPopups();
+});
+```
+
+`/lite` の `createSpreadsheetGrid` で作ったグリッドでは、`preloadGridPopups` も `@ishibashi0112/spreadsheet-grid/lite` から import してください(入口ごとに部品が別です)。Solid 版は入口が 1 つなので、本体の入口のものが `createSpreadsheetGrid` のグリッドにも効きます。
 
 `findBy*` / `waitFor` で表示を待つテストなら、`preloadGridPopups()` は無くても動きます。
 

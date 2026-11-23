@@ -37,6 +37,14 @@ const Grid = forwardRef<SpreadsheetGridHandle<Row>, SpreadsheetGridProps<Row>>(f
 });
 ```
 
+### Solid 版
+
+テーマのファイルは Solid 版にもあり、`@ishibashi0112/spreadsheet-grid-solid/themes/<名前>.css` から読み込みます(中身は React 版と同じで、`@ishibashi0112/spreadsheet-grid-solid/style.css` の後に読み込むのも同じ)。テーマはデザインシステムの配色の CSS 変数を読むだけなので、デザインシステムの React の部品は要りません。
+
+- shadcn/ui の配色の変数(Tailwind CSS v4 の書き方)を置いたページや、HeroUI の配色の CSS(`@heroui/styles`)を読み込んだページなら、そのまま付いてきます(ライト / ダークは `theme="class"`)。
+- Astryx と Mantine のテーマは、`data-astryx-theme` / `data-mantine-color-scheme` の属性がある範囲(ふつうは `<html>`)に効きます。React では `<Theme>` / `MantineProvider` が付ける属性なので、Solid のアプリでは配色の CSS と一緒に自分で付け、ライト / ダークを `theme` に渡します。
+- 包む部品に `forwardRef` は要りません(Solid の `ref` は props で届きます)。
+
 ### Astryx
 
 ```tsx

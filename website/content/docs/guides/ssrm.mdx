@@ -28,7 +28,7 @@ description: dataSource によるブロック取得・クエリ転送・書き�
 import {
   SpreadsheetGrid,
   type ServerSideDataSource,
-} from '@ishibashi0112/spreadsheet-grid'
+} from '@ishibashi0112/spreadsheet-grid' // Solid 版は '@ishibashi0112/spreadsheet-grid-solid'(以下は同じ)
 
 const dataSource: ServerSideDataSource<Row> = {
   getRows: async ({ startIndex, endIndex, query, signal }) => {

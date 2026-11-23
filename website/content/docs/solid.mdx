@@ -3,7 +3,7 @@ title: Solid で使う
 description: Solid 2.0 向けの @ishibashi0112/spreadsheet-grid-solid
 ---
 
-**`@ishibashi0112/spreadsheet-grid-solid`** は Solid 2.0 向けのグリッドです。React 版と同じ props・列の定義・命令的なハンドル・CSS・見た目で、同じフレームワークに依らないコア(`@ishibashi0112/spreadsheet-grid-core`)の上に作っています。このサイトのガイドと API リファレンスは React 版向けに書いていますが、props とメソッドは同じなので、そのまま読み替えて使えます。このページには Solid 版だけのことをまとめます。
+**`@ishibashi0112/spreadsheet-grid-solid`** は Solid 2.0 向けのグリッドです。React 版と同じ props・列の定義・命令的なハンドル・CSS・見た目で、同じフレームワークに依らないコア(`@ishibashi0112/spreadsheet-grid-core`)の上に作っています。このサイトのガイドは、React 版と Solid 版でコードが違う所に Solid のタブがあります。タブの無いコードは、import 元を `@ishibashi0112/spreadsheet-grid-solid` に読み替えればそのまま使えます(signal は `rows={rows()}` のように呼んで渡し、命令的なハンドルは `let grid!` と `ref={grid}` で受けて `gridRef.current?.applyRows(…)` を `grid.applyRows(…)` と書きます)。API リファレンスは React 版向けに書いていますが、props とメソッドは同じです。このページには Solid 版だけのことをまとめます。
 
 版は React 版・コアとは別(0.x)です([版と変更履歴](#版と変更履歴))。
 

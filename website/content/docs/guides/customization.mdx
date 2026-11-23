@@ -1,9 +1,9 @@
 ---
 title: カスタムレンダリング
-description: セル / ヘッダー / トップ・ボトムバー / エディタ / コンテキストメニューを React で自由に描画する
+description: セル / ヘッダー / トップ・ボトムバー / エディタ / コンテキストメニューを React / Solid の部品で自由に描画する
 ---
 
-グリッドの見た目と挙動は、通常の React コンポーネントで差し替えられます。すべて「関数を渡すとコンテキストが届く」スタイルで、状態管理はグリッド側が持ちます。
+グリッドの見た目と挙動は、通常の React コンポーネント(Solid 版では Solid の部品)で差し替えられます。すべて「関数を渡すとコンテキストが届く」スタイルで、状態管理はグリッド側が持ちます。
 
 ## カスタムセル(renderCell)
 
@@ -11,7 +11,7 @@ description: セル / ヘッダー / トップ・ボトムバー / エディタ 
 
 <CustomCellsDemo />
 
-```tsx
+```tsx tab="React"
 {
   key: 'status', title: 'ステータス', width: 120,
   renderCell: ({ value }) => (
@@ -25,6 +25,25 @@ description: セル / ヘッダー / トップ・ボトムバー / エディタ 
       <button onClick={() => setValue(Number(value) - 1)}>−</button>
       <span>{Number(value)}</span>
       <button onClick={() => setValue(Number(value) + 1)}>+</button>
+    </>
+  ),
+}
+```
+```tsx tab="Solid"
+// ctx の値は JSX の中で読む(読んだ式だけが追従する。引数の分割代入で読むと値が変わるたびに中身を作り直す)
+{
+  key: 'status', title: 'ステータス', width: 120,
+  renderCell: (ctx) => (
+    <span class={badgeClass(ctx.value)}>{String(ctx.value)}</span>
+  ),
+},
+{
+  key: 'stock', title: '在庫', width: 160,
+  renderCell: (ctx) => (
+    <>
+      <button onClick={() => ctx.setValue(Number(ctx.value) - 1)}>−</button>
+      <span>{Number(ctx.value)}</span>
+      <button onClick={() => ctx.setValue(Number(ctx.value) + 1)}>+</button>
     </>
   ),
 }
@@ -91,11 +110,11 @@ const columns = [
 
 ## トップバー / ボトムバー(renderTopBar / renderBottomBar)
 
-`renderTopBar` / `renderBottomBar` でバーを丸ごと React で差し替えられます。渡ってくる `SpreadsheetGridSlotContext` に、グローバルフィルターの読み書き(`globalFilterText` / `setGlobalFilterText`)、`rows` / `filteredRows`、選択状態、そして整形済みの派生 summary である **`derivedSummary`** が入っているため、ヘルパーを import せずに実用的なバーが書けます。
+`renderTopBar` / `renderBottomBar` でバーを丸ごと自分の部品に差し替えられます。渡ってくる `SpreadsheetGridSlotContext` に、グローバルフィルターの読み書き(`globalFilterText` / `setGlobalFilterText`)、`rows` / `filteredRows`、選択状態、そして整形済みの派生 summary である **`derivedSummary`** が入っているため、ヘルパーを import せずに実用的なバーが書けます。
 
 <CustomBarsDemo />
 
-```tsx
+```tsx tab="React"
 <SpreadsheetGrid
   renderTopBar={(ctx) => (
     <div className="my-toolbar">
@@ -116,10 +135,32 @@ const columns = [
   ...
 />
 ```
+```tsx tab="Solid"
+<SpreadsheetGrid
+  renderTopBar={(ctx) => (
+    <div class="my-toolbar">
+      <input
+        value={ctx.globalFilterText}
+        onInput={(e) => ctx.setGlobalFilterText(e.currentTarget.value)}
+        placeholder="検索"
+      />
+      <span>{ctx.filteredRows.length} / {ctx.rows.length} 件</span>
+    </div>
+  )}
+  renderBottomBar={(ctx) => (
+    <div class="my-statusbar">
+      <span>{ctx.derivedSummary.rowSummaryText}</span>
+      <span>{ctx.derivedSummary.selectionStatsText}</span>
+    </div>
+  )}
+  ...
+/>
+```
 
 - `derivedSummary` には行/列/フィルター/ソートの summary 文字列、選択セルの件数などが入っています(`SpreadsheetGridDerivedSummary`)。
 - 2 セル以上を選んでいるときは **`selectionAggregates`** に選択範囲の集計(平均 / データの個数 / 合計 / 最小 / 最大)が入っています(`GridSelectionAggregates`)。既定ボトムバーはこのうち平均 / データの個数 / 合計を右側(セル / 範囲の隣の空き)に出します(`showSelectionAggregates={false}` で非表示。詳細は [API リファレンス](/docs/api/props#選択範囲の集計showselectionaggregates))。
-- `ctx` や `rows` / `filteredRows` を子コンポーネントの props にそのまま渡す(`<MyBar ctx={ctx} />` / `<MyBar rows={ctx.filteredRows} />`)のは避け、使う値だけを渡してください(件数なら `ctx.filteredRows.length` や `derivedSummary`)。React 19.2 以降の**開発ビルド**は props の差分を取るために大きな配列を走査するため、100 万行規模ではソート 1 回に数十秒かかることがあります(本番ビルドには影響しません)。上の例のようにバーの中で直接 `ctx` を読む分には問題ありません。
+- Solid 版では `ctx` の値を JSX の中で読みます(関数の本体や引数の分割代入で読むと、その値が変わるたびにバーを作り直し、入力欄のフォーカスと打ちかけの文字が消えます)。
+- React 版で `ctx` や `rows` / `filteredRows` を子コンポーネントの props にそのまま渡す(`<MyBar ctx={ctx} />` / `<MyBar rows={ctx.filteredRows} />`)のは避け、使う値だけを渡してください(件数なら `ctx.filteredRows.length` や `derivedSummary`)。React 19.2 以降の**開発ビルド**は props の差分を取るために大きな配列を走査するため、100 万行規模ではソート 1 回に数十秒かかることがあります(本番ビルドには影響しません)。上の例のようにバーの中で直接 `ctx` を読む分には問題ありません。
 - 既定バーの文言(「行 120 / 120」「セル B3」など)を変えるだけなら、バーを作らずに `localeText` で変えられます(英語にする方法は [英語と文言](/docs/guides/localization)、キーの一覧は [API リファレンス](/docs/api/props#文言localetextと英語))。`derivedSummary` の文字も同じ文言で作られます。
 - **丸ごと差し替えずに調整したい**場合は表示制御 props を使います: `showTopBar` / `showBottomBar`(マスタースイッチ)、既定バーの部品単位では `showTopBarSummary` / `showTopBarFilter` / `showFilterChipBar` など。一覧は [API リファレンス](/docs/api/props#バーの表示制御top--bottom) を参照してください。
 

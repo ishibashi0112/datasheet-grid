@@ -50,9 +50,13 @@ Shadow root の外の CSS は中に届かないので、`style.css` を Shadow r
 
 グリッドは自分で行を書き換えません。編集した結果は `onRowsChange` が新しい配列で返すので、それを `rows` に戻します。
 
-```tsx
+```tsx tab="React"
 const [rows, setRows] = useState(initialRows);
 <SpreadsheetGrid rows={rows} onRowsChange={setRows} columns={columns} />
+```
+```tsx tab="Solid"
+const [rows, setRows] = createSignal(initialRows);
+<SpreadsheetGrid rows={rows()} onRowsChange={(next) => setRows(next)} columns={columns} />
 ```
 
 編集が始まらないときは、グリッドの `readOnly`、列の `editable: false`、`canEditCell` を確かめます。
