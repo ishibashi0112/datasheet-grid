@@ -66,7 +66,7 @@ export function Inventory() {
 - **改行を含む値の列は `editor: { type: 'text', multiline: true }`。** 既定の 1 行の入力欄はブラウザが改行を消すので、直して確定すると改行が無くなります。
 - **行のクラスは行と各セルの両方に付く。** `getRowClassName` の class と style は行・「#」セル・各セルに付きます。行を薄くするなら class を返して `.ssg-body-row.<class> { opacity: 0.5 }` と書きます(style で `opacity` を書くと 2 回掛かります)。
 - **テスト(Vitest + jsdom)。** Vitest にも `@solidjs/vite-plugin` を入れ、`/testing` の `installJsdomLayoutStubs()` を呼びます。signal を変えた・イベントを送った後は、DOM を見る前に `flush()` を呼びます(React 版の `act()` の代わり)。
-- **SSR。** SolidStart は Solid 1 だけなので、Vite の SSR と `@solidjs/vite-plugin`(`ssr: true`)で `renderToString` / `hydrate` を使います。サーバーは React 版と同じく行(行番号と固定列)・件数・合計まで描き、ハイドレーションの後にブラウザで計算した行へ入れ替えます(サーバーの HTML には隠した骨組みと写しの `.ssg-root` が 2 つ)。本番のサーバーは `NODE_ENV=production` で動かします(README の「SSR」)。
+- **SSR。** SolidStart は Solid 1 だけなので、Vite の SSR と `@solidjs/vite-plugin`(`ssr: true`)で `renderToString` / `hydrate` を使います。サーバーは React 版と同じく行(行番号と固定列)・件数・合計まで描き、ハイドレーションの後にブラウザで計算した行へ入れ替えます(サーバーの HTML には隠した骨組みと写しが並ぶ。`.ssg-root` は写しだけ)。本番のサーバーは `NODE_ENV=production` で動かします(README の「SSR」)。
 - **UI の言語。** 既定は日本語です。英語は `@ishibashi0112/spreadsheet-grid-solid/locales/en` の `localeTextEn` を `localeText` に渡します。
 
 ## 4. 入口の選び方

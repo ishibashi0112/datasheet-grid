@@ -14,6 +14,11 @@ describe('サーバーで描く', () => {
     const { frame, snapshot } = splitServerHtml(server().pages.initialState ?? '');
     expect(frame?.style.display).toBe('none');
     expect(frame?.nextElementSibling).toBe(snapshot);
+    // 追加(1.4.1): サーバーの HTML の .ssg-root は写しの 1 つだけ(React 版と同じ)。隠した骨組みには付けない(見せるときに付ける)。
+    const element = document.createElement('div');
+    element.innerHTML = server().pages.initialState ?? '';
+    expect(Array.from(element.querySelectorAll('.ssg-root'))).toEqual([element.querySelector('[data-ssg-ssr-snapshot]')]);
+    expect(frame?.classList.contains('ssg-root')).toBe(false);
     // 骨組みは行と件数を持たない(ハイドレーションで使う)。
     expect(frame?.querySelectorAll('.ssg-body-row')).toHaveLength(0);
     expect(frame?.textContent).not.toMatch(/行 \d+ \/ \d+/);

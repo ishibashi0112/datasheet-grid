@@ -6,6 +6,12 @@
 
 使い方は [Solid で使う](https://datasheet-grid.vercel.app/docs/solid) と、React 版の [API リファレンス](https://github.com/ishibashi0112/datasheet-grid/blob/main/packages/react/API_REFERENCE.md)(props とメソッドは同じ)を参照してください。
 
+## 未リリース
+
+### 修正
+
+- サーバーで描いた(SSR)HTML の `.ssg-root` を、React 版と同じく 1 つにしました。1.4.0 はハイドレーションで使う隠した骨組みと、行を入れた写しの両方に付いていて、JavaScript が動く前に `document.querySelector('.ssg-root')` などで探すと、見えていない骨組みが見つかっていました。骨組みには付けず、ハイドレーションの後(写しを外して骨組みを見せるとき)に付けます。サーバーの HTML の `.ssg-root` を 2 つと数えるように直したテストは、1 つに戻してください。
+
 ## 1.4.0 — 2026-11-23
 
 ### 変更

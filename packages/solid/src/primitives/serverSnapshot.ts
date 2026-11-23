@@ -14,6 +14,8 @@ import type { SpreadsheetGridProps } from '../model/gridTypes';
 // サーバーで隠した骨組みの根(.ssg-root)の印と、そのすぐ後に置く写しの根の印(どちらも内部の印。公開の契約ではない)。
 export const SERVER_FRAME_ATTRIBUTE = 'data-ssg-ssr';
 export const SERVER_SNAPSHOT_ATTRIBUTE = 'data-ssg-ssr-snapshot';
+// グリッドの根のクラス(サーバーで隠した骨組みには付けない。1.4.1)。
+const ROOT_CLASS_NAME = 'ssg-root';
 
 const NOOP = () => {};
 const isCallbackKey = (key: string | symbol): boolean => typeof key === 'string' && /^on[A-Z]/.test(key);
@@ -40,6 +42,8 @@ export function createSnapshotProps<T extends object>(props: SpreadsheetGridProp
 }
 
 // ブラウザで描き終わった後に、サーバーの写しを外して骨組みを見せます(サーバーで隠していなければ何もしない)。
+//   変更(1.4.1): サーバーは骨組みに ssg-root を付けない(サーバーの HTML の .ssg-root を写しの 1 つだけにする)ので、ここで付けます
+//   (Solid のハイドレーションは属性を書き直さない。この後の描画で class が変わっても、ssg-root はいつも付く語なので残る)。
 //   display は根の style の display(利用者が style で渡した値。無ければ消す)へ戻します。Solid のハイドレーションは style を
 //   書かず、その後の描画も前と同じ値なら書き直さないので、ここで消すだけだと利用者の display: none(隠したまま状態を残す形)が
 //   効かなくなっていました(段 3-9 のレビュー)。
@@ -53,6 +57,7 @@ export function revealServerFrame(root: Element | null | undefined, display?: st
   }
   root.removeAttribute(SERVER_FRAME_ATTRIBUTE);
   root.removeAttribute('hidden');
+  root.classList.add(ROOT_CLASS_NAME);
   const style = (root as HTMLElement).style;
   if (display === undefined || display === '') {
     style.removeProperty('display');

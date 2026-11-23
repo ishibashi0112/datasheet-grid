@@ -3309,8 +3309,10 @@ function GridShellBody<T extends object>(
     <GridLocaleTextContext value={localeTexts}>
       <GridPortalContext value={portalContext}>
       <div
+        // 変更(1.4.1): サーバーで隠す骨組みには ssg-root を付けません(サーバーの HTML の .ssg-root を写しの 1 つだけにする =
+        //   React 版と同じ。1.4.0 は 2 つ並んでいた)。見せるときに revealServerFrame が付けます。
         class={[
-          'ssg-root',
+          mode === 'hiddenFrame' ? undefined : 'ssg-root',
           themeClassName(),
           slots().root?.className,
           props.className,
