@@ -2,7 +2,8 @@
 //   - AP-11(2026-11-09 実アプリの総点検): custom エディタを開いたまま別のセル・列見出しを押すと、グリッドが編集を終えて
 //     エディタを閉じ、キー操作が効く。onBlur で確定しない作り(ハーネスの既定)は打ちかけを書かない。onBlur でその場で /
 //     50ms 後に ctx.commit する作り(window.__customEditorBlur = 'sync' / 'timeout')は、その値を編集していたセルに書き、
-//     押したセルがアクティブのまま(1.4.0 までは遅れた確定がアクティブセルを編集していたセルへ戻していた)。
+//     押したセルがアクティブのまま(1.4.0 までは遅れた確定がアクティブセルを編集していたセルへ戻していた)。見出しの角を
+//     押したときも閉じる。
 //   Solid 版は SSG_AUDIT_FRAMEWORK=solid HARNESS_BASE=http://127.0.0.1:5179/。
 import { open, check, summary, waitIdle, unexpectedPageErrors, cell, header, events, clearEvents } from './pw.mjs';
 
@@ -71,6 +72,23 @@ for (const [mode, row] of [['none', 2], ['sync', 3], ['timeout', 4]]) {
     selection,
     afterEscape: await page.evaluate(() => window.__grid.getSelection()),
   });
+}
+
+// 見出しの角を押したときも終える(1.4.1 の見直し。onBlur で確定しない作り)。
+{
+  const opened = await openCustomEditor(8, 'v-corner');
+  await page.locator('.ssg-corner-cell').first().click();
+  await waitIdle(page, 300);
+  const closed = !(await editorOpen());
+  const focused = await shellFocused();
+  check('AP-11: 見出しの角を押してもエディタが閉じ、フォーカスはグリッド', opened && closed && focused && (await customValue(8)) !== 'v-corner', {
+    opened,
+    closed,
+    focused,
+    value: await customValue(8),
+  });
+  await page.keyboard.press('Escape');
+  await waitIdle(page, 120);
 }
 
 // エディタの中を押してもエディタは閉じない(中の入力欄はクリックを受ける)。

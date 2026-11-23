@@ -2379,6 +2379,8 @@ function GridShellBody<T extends object>(
       scrollContainerRef,
       bodyScrollRef,
       gridRootRef,
+      // 追加(1.4.1 / AP-11 のレビュー): フォーカスを移した後に、開いたままの custom エディタの編集を終える。
+      endEditLeftOpen: edit.endEditLeftOpen,
       commitRowMove: commitRowMoveFromDrag,
       ghostSlot: slots().dragGhost,
       motion: resolvedMotion() === 'off' ? 'ghost' : (props.rowDragMotion ?? 'ghost'),
@@ -2413,6 +2415,8 @@ function GridShellBody<T extends object>(
       return;
     }
     gridRootRef.current?.focus({ preventScroll: true });
+    // 追加(1.4.1 / AP-11 のレビュー): 開いたままの custom エディタの編集を終えます(セルを押したときと同じ)。
+    edit.endEditLeftOpen();
     // 全選択のチェックがあるときは、角で行の選択の全選択 / 解除を切り替えます(表全体のセルの選択より先)。
     if (enableSelectAllRows()) {
       rowSelectionCommands.handleToggleSelectAllRows();
@@ -2875,7 +2879,7 @@ function GridShellBody<T extends object>(
         };
         return (
           <Show when={expandable()}>
-            <DetailToggleButton detail={detail} rowNumber={rowNumber()} />
+            <DetailToggleButton detail={detail} rowNumber={rowNumber()} onPress={edit.endEditLeftOpen} />
           </Show>
         );
       }
@@ -3419,6 +3423,8 @@ function GridShellBody<T extends object>(
             onFocusIn={(event) => {
               if (event.target === event.currentTarget) {
                 gridRootRef.current?.focus({ preventScroll: true });
+                // 追加(1.4.1 / AP-11 のレビュー): 表の余白を押したときも、開いたままの custom エディタの編集を終えます。
+                edit.endEditLeftOpen();
               }
             }}
             role="grid"

@@ -6,7 +6,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createEditController, type EditControllerArgs } from './editController';
 import { createInitialGridUiState } from '../model/gridReducer';
 import type { GridUiAction } from '../model/gridActions';
-import type { GridColumn, RowModel } from '../model/gridTypes.unbound';
+import type { GridColumn, GridUiState, RowModel } from '../model/gridTypes.unbound';
 import { ROW_DRAG_HANDLE_COLUMN_KEY } from '../logic/rowReorder';
 
 type Row = { id: number; qty: number };
@@ -411,9 +411,17 @@ describe('editController: 開いたままの custom エディタ(AP-11)', () => 
     { id: 3, note: 'c', qty: 3 },
   ];
   const setup = (editingCell: { row: number; col: number }, rows: NoteRow[] = baseRows) => {
-    const dispatch = vi.fn<(a: GridUiAction) => void>();
+    const uiState: GridUiState = { ...createInitialGridUiState(), editingCell, activeCell: editingCell };
+    // store の代わり(getUiState はイベントの時点の状態。編集の開始 / 終わりだけを反映する)。
+    const live = { state: uiState };
+    const dispatch = vi.fn<(a: GridUiAction) => void>((action) => {
+      if (action.type === 'edit/stop') {
+        live.state = { ...live.state, editingCell: null };
+      } else if (action.type === 'edit/start') {
+        live.state = { ...live.state, editingCell: action.cell };
+      }
+    });
     const onRowsChange = vi.fn<(next: NoteRow[]) => void>();
-    const uiState = { ...createInitialGridUiState(), editingCell, activeCell: editingCell };
     const args: EditControllerArgs<NoteRow> = {
       uiState,
       rows,
@@ -424,7 +432,7 @@ describe('editController: 開いたままの custom エディタ(AP-11)', () => 
       dispatch,
       gridRootRef: { current: null },
       editorActionGuardRef: { current: false },
-      getUiState: () => uiState,
+      getUiState: () => live.state,
       rowKeyGetter: (row) => row.id,
     };
     const c = createEditController<NoteRow>();
@@ -433,7 +441,7 @@ describe('editController: 開いたままの custom エディタ(AP-11)', () => 
     const unregister = c.registerLateCommitReceiver((commit) => {
       received.push(commit);
     });
-    return { c, args, dispatch, onRowsChange, received, unregister };
+    return { c, args, dispatch, onRowsChange, received, unregister, live };
   };
 
   it('custom エディタが開いたままなら編集を終え、遅れて届いた確定を編集していたセルへ書く(1 回だけ)', () => {
@@ -531,5 +539,51 @@ describe('editController: 開いたままの custom エディタ(AP-11)', () => 
     t.c.endEditLeftOpen();
     expect(t.received[0]!('late')).toEqual({ status: 'committed' });
     expect(applyServerSideCellEdits).toHaveBeenCalledWith([{ viewIndex: 2, column: customColumns[0], value: 'late' }]);
+  });
+
+  // 追加(1.4.1 / AP-11 のレビュー)。
+  it('グリッドを外した後に届いた確定は書かない', () => {
+    const t = setup({ row: 1, col: 0 });
+    t.c.endEditLeftOpen();
+    t.c.dispose();
+    expect(t.received[0]!('late')).toEqual({ status: 'noop' });
+    expect(t.onRowsChange).not.toHaveBeenCalled();
+  });
+
+  it('描き直す前に続けて届いた 2 つの確定は、前の確定の上に書く(前の確定を消さない)', () => {
+    const t = setup({ row: 0, col: 0 });
+    t.c.endEditLeftOpen();
+    // 2 つ目のセルを開いて、また押して終える(親はまだ rows を描き直していない)。
+    t.live.state = { ...t.live.state, editingCell: { row: 2, col: 0 } };
+    t.c.update({ ...t.args, uiState: t.live.state });
+    t.c.endEditLeftOpen();
+    expect(t.received).toHaveLength(2);
+    expect(t.received[0]!('A')).toEqual({ status: 'committed' });
+    expect(t.received[1]!('C')).toEqual({ status: 'committed' });
+    expect(t.onRowsChange.mock.calls[1]![0].map((row) => row.note)).toEqual(['A', 'b', 'C']);
+    // 親が新しい rows を描いた後は、その rows の上に書く。
+    const fresh = baseRows.map((row) => ({ ...row, note: `${row.note}!` }));
+    t.c.update({ ...t.args, rows: fresh, rowModel: makeNoteRowModel(fresh), uiState: t.live.state });
+    t.live.state = { ...t.live.state, editingCell: { row: 1, col: 0 } };
+    t.c.update({ ...t.args, rows: fresh, rowModel: makeNoteRowModel(fresh), uiState: t.live.state });
+    t.c.endEditLeftOpen();
+    expect(t.received[2]!('B')).toEqual({ status: 'committed' });
+    expect(t.onRowsChange.mock.calls[2]![0].map((row) => row.note)).toEqual(['a!', 'B', 'c!']);
+  });
+
+  it('同じセルを開き直して編集している間は書かない(開き直したエディタの確定を古い値で上書きさせない)', () => {
+    const t = setup({ row: 1, col: 0 });
+    t.c.endEditLeftOpen();
+    t.c.update({ ...t.args, uiState: t.live.state });
+    t.live.state = { ...t.live.state, editingCell: { row: 1, col: 0 } };
+    t.c.update({ ...t.args, uiState: t.live.state });
+    expect(t.received[0]!('late')).toEqual({ status: 'noop' });
+    expect(t.onRowsChange).not.toHaveBeenCalled();
+    // 別のセルを編集している間は書く。
+    const other = setup({ row: 1, col: 0 });
+    other.c.endEditLeftOpen();
+    other.live.state = { ...other.live.state, editingCell: { row: 2, col: 0 } };
+    other.c.update({ ...other.args, uiState: other.live.state });
+    expect(other.received[0]!('late')).toEqual({ status: 'committed' });
   });
 });

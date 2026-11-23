@@ -14,7 +14,7 @@ import type { RefObject } from 'react';
 
 import { SpreadsheetGrid } from './SpreadsheetGrid';
 import { installJsdomLayoutStubs } from './testing';
-import type { GridColumn, SpreadsheetGridHandle } from './model/gridTypes';
+import type { GridColumn, SpreadsheetGridHandle, SpreadsheetGridProps } from './model/gridTypes';
 
 type Row = { id: number; name: string; memo: string };
 
@@ -311,7 +311,13 @@ describe('onBlur で遅れて確定する custom エディタ(AP-11 / RA-3)', ()
     { key: 'memo', title: 'メモ', width: 160 },
   ];
 
-  function CustomHarness({ gridRef }: { gridRef: RefObject<SpreadsheetGridHandle<Row> | null> }) {
+  function CustomHarness({
+    gridRef,
+    extraProps,
+  }: {
+    gridRef: RefObject<SpreadsheetGridHandle<Row> | null>;
+    extraProps?: Partial<SpreadsheetGridProps<Row>>;
+  }) {
     const [rows, setRows] = useState(initialRows);
     useEffect(() => {
       currentRows = rows;
@@ -323,6 +329,7 @@ describe('onBlur で遅れて確定する custom エディタ(AP-11 / RA-3)', ()
         onRowsChange={setRows}
         columns={customColumns}
         rowKeyGetter={(row) => row.id}
+        {...extraProps}
       />
     );
   }
@@ -386,6 +393,70 @@ describe('onBlur で遅れて確定する custom エディタ(AP-11 / RA-3)', ()
     fireEvent.keyDown(document.activeElement!, { key: 'ArrowLeft' });
     fireEvent.keyDown(document.activeElement!, { key: 'F2' });
     expect(container.querySelector<HTMLInputElement>('.custom-editor')?.defaultValue).toBe('beta');
+  });
+
+  // 追加(1.4.1 / AP-11 のレビュー): セルのほかにフォーカスをグリッドへ移す所(見出しの角・行の掴み手・展開トグル)を押しても閉じる。
+  it.each([
+    ['見出しの角', {}, '.ssg-corner-cell'],
+    ['行の掴み手', { enableRowDrag: true }, '[data-pane="center"].ssg-body-row .ssg-row-drag-handle'],
+    ['展開トグル', { detailRow: { render: () => <div /> } }, '[data-row-index="2"] .ssg-detail-toggle'],
+  ] as const)('%s を押しても custom エディタが閉じ、フォーカスはグリッドに残る', async (_name, extraProps, selector) => {
+    blurTiming = 'none';
+    const ref = createRef<SpreadsheetGridHandle<Row>>();
+    const { container } = render(
+      <StrictMode>
+        <CustomHarness gridRef={ref} extraProps={extraProps} />
+      </StrictMode>,
+    );
+    const nameCell = container.querySelector<HTMLElement>('[data-pane="center"].ssg-body-row [data-ssg-col-key="name"]');
+    clickCell(nameCell!);
+    fireEvent.keyDown(document.activeElement!, { key: 'F2' });
+    expect(container.querySelector('.custom-editor')).not.toBeNull();
+    const target = container.querySelector<HTMLElement>(selector);
+    expect(target).not.toBeNull();
+    await act(async () => {
+      fireEvent.pointerDown(target!, { button: 0, pointerType: 'mouse', pointerId: 1, clientX: 5, clientY: 5 });
+      fireEvent.pointerUp(window, { button: 0, pointerType: 'mouse', pointerId: 1, clientX: 5, clientY: 5 });
+      await nextFrame();
+    });
+    expect(container.querySelector('.custom-editor')).toBeNull();
+    expect(document.activeElement).toBe(container.querySelector('.ssg-shell'));
+    expect(currentRows[0]?.name).toBe('alpha');
+  });
+
+  it('表の余白を押した(スクロールする要素がフォーカスを受けた)ときも閉じる', async () => {
+    blurTiming = 'none';
+    const { container } = render(<CustomHarness gridRef={createRef()} />);
+    openCustomEditor(container);
+    await act(async () => {
+      container.querySelector<HTMLElement>('[role="grid"]')!.focus();
+      await nextFrame();
+    });
+    expect(container.querySelector('.custom-editor')).toBeNull();
+    expect(document.activeElement).toBe(container.querySelector('.ssg-shell'));
+  });
+
+  it('編集していたセルの余白(エディタの中身が覆わない所)を押しても閉じない', async () => {
+    blurTiming = 'none';
+    const { container } = render(<CustomHarness gridRef={createRef()} />);
+    const editor = openCustomEditor(container);
+    await act(async () => {
+      clickCell(getCell(container, 0, 0));
+      await nextFrame();
+    });
+    expect(container.querySelector('.custom-editor')).toBe(editor);
+    expect(document.activeElement).toBe(editor);
+  });
+
+  it('グリッドを外した後に届いた ctx.commit は書かない', async () => {
+    const { container, unmount } = render(<CustomHarness gridRef={createRef()} />);
+    openCustomEditor(container);
+    clickCell(getCell(container, 2, 1));
+    unmount();
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 30));
+    });
+    expect(lastCommitResult).toEqual({ status: 'noop' });
   });
 
   it('別のセルを押した後に届いた ctx.commit の値を、編集していたセルに書く', async () => {

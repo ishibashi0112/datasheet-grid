@@ -22,8 +22,6 @@ export const useGridEditController = <T extends object>(
     commitEdit: controller.commitEdit,
     cancelEdit: controller.cancelEdit,
     registerDraftFlush: controller.registerDraftFlush,
-    endEditLeftOpen: controller.endEditLeftOpen,
-    registerLateCommitReceiver: controller.registerLateCommitReceiver,
   };
 };
 

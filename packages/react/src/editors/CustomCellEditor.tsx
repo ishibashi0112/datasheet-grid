@@ -37,13 +37,12 @@ const createSessionGuard = () => {
       alive = false;
     },
     receiveLate,
-    // グリッドが終えた後の確定 / 取り消し(終えていなければ null)。取り消しは書き先を捨てる。
+    // グリッドが終えた後の確定 / 取り消し(終えていなければ null)。取り出すと書き先は無くなる(取り消しは捨てるだけ)。
     takeLate: (): LateEditCommit | null => {
       const commit = late;
       late = null;
       return commit;
     },
-    hasLate: () => late !== null,
   };
 };
 
@@ -86,18 +85,13 @@ export function CustomCellEditor<T>({
   const sessionContext: CellEditorContext<T> = {
     ...current,
     commit: (value, direction) => {
-      // グリッドが終えた後(エディタがまだ外れていない間も)は、編集していたセルへ書く(1 回だけ)。
-      if (guard.hasLate()) {
-        return guard.takeLate()?.(value) ?? { status: 'noop' };
-      }
-      return guard.isAlive() ? commit(value, direction) : { status: 'noop' };
+      // グリッドが終えた後(エディタがまだ外れていない間も)は、編集していたセルへ書く(1 回だけ。グリッドが終えた後の
+      //   commit / cancel はグリッドの編集には効かない = 下の分岐でも noop)。
+      const late = guard.takeLate();
+      return late ? late(value) : guard.isAlive() ? commit(value, direction) : { status: 'noop' };
     },
     cancel: () => {
-      if (guard.hasLate()) {
-        guard.takeLate();
-        return;
-      }
-      if (guard.isAlive()) {
+      if (guard.takeLate() === null && guard.isAlive()) {
         cancel();
       }
     },

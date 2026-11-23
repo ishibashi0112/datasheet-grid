@@ -2755,11 +2755,16 @@ export function useGridShell<T extends object>({
   );
 
   // 追加(dogfood DF-08): スクロールする要素そのものにフォーカスが来たら(余白やスクロールバーのクリックなど)、シェルへ移します。
-  const handleScrollContainerFocus = useCallback((event: FocusEvent<HTMLDivElement>) => {
-    if (event.target === event.currentTarget) {
-      gridRootRef.current?.focus({ preventScroll: true });
-    }
-  }, []);
+  const handleScrollContainerFocus = useCallback(
+    (event: FocusEvent<HTMLDivElement>) => {
+      if (event.target === event.currentTarget) {
+        gridRootRef.current?.focus({ preventScroll: true });
+        // 追加(1.4.1 / AP-11 のレビュー): 表の余白を押したときも、開いたままの custom エディタの編集を終えます。
+        editController.endEditLeftOpen();
+      }
+    },
+    [editController],
+  );
 
   // 追加(dogfood DU-01): PageUp / PageDown の移動先です(見えている本体の高さ 1 画面ぶん先の行。展開行の帯 / auto-height の
   //   行の高さも行メトリクスで数える)。
@@ -2850,7 +2855,7 @@ export function useGridShell<T extends object>({
   );
 
   // ── edit controller ───────────────────────────────────
-  const { startEditWithValue, commitEdit, cancelEdit, registerDraftFlush, registerLateCommitReceiver } = useGridEditController({
+  const { startEditWithValue, commitEdit, cancelEdit, registerDraftFlush } = useGridEditController({
     uiState,
     rows,
     // 変更(10-E): editingCell.col は論理 index 空間のため orderedColumns で indexing します。
@@ -3109,6 +3114,8 @@ export function useGridShell<T extends object>({
         return;
       }
       gridRootRef.current?.focus({ preventScroll: true }); // proposals ⑨(セル押下と同方針)
+      // 追加(1.4.1 / AP-11 のレビュー): 開いたままの custom エディタの編集を終えます(セルを押したときと同じ)。
+      editController.endEditLeftOpen();
       // 追加(行選択): 全選択チェック有効時はコーナーで行選択の全選択/解除をトグルします
       //   (従来のグリッド全体セル選択より優先)。
       if (enableSelectAllRows) {
@@ -3130,6 +3137,7 @@ export function useGridShell<T extends object>({
       visibleColumns.length,
       enableSelectAllRows,
       handleToggleSelectAllRows,
+      editController,
     ],
   );
 
@@ -3452,6 +3460,8 @@ export function useGridShell<T extends object>({
       bodyScrollRef,
       // 追加(1.0.1 / AP-15): ハンドルを押したらグリッドへフォーカスを移す。
       gridRootRef,
+      // 追加(1.4.1 / AP-11 のレビュー): 移した後に、開いたままの custom エディタの編集を終える。
+      endEditLeftOpen: editController.endEditLeftOpen,
       commitRowMove: commitRowMoveFromDrag,
       hasRowKeys: rowKeyGetter !== undefined,
       ghostSlot: slots.dragGhost,
@@ -3574,6 +3584,7 @@ export function useGridShell<T extends object>({
             <DetailToggleButton
               detail={detail}
               rowNumber={labelViewIndexes ? resolveDataRowNumber(labelViewIndexes, rowIndex) : rowIndex + 1}
+              onPress={editController.endEditLeftOpen}
             />
           ) : null;
         }
@@ -3690,6 +3701,7 @@ export function useGridShell<T extends object>({
       detailRows,
       renderRowDragHandleCell,
       labelDisplay,
+      editController,
     ],
   );
 
@@ -4609,7 +4621,7 @@ export function useGridShell<T extends object>({
                   onCommit={commitEdit}
                   onCancel={cancelEdit}
                   onRegisterFlush={registerDraftFlush}
-                  onRegisterLateCommit={registerLateCommitReceiver}
+                  onRegisterLateCommit={editController.registerLateCommitReceiver}
                   align={editingColumn?.align}
                   enterMove={editorEnterMove}
                   domId={cellEditorDomId}
@@ -4837,7 +4849,7 @@ export function useGridShell<T extends object>({
                   onCommit={commitEdit}
                   onCancel={cancelEdit}
                   onRegisterFlush={registerDraftFlush}
-                  onRegisterLateCommit={registerLateCommitReceiver}
+                  onRegisterLateCommit={editController.registerLateCommitReceiver}
                   align={editingColumn?.align}
                   enterMove={editorEnterMove}
                   domId={cellEditorDomId}
@@ -5067,7 +5079,7 @@ export function useGridShell<T extends object>({
                   onCommit={commitEdit}
                   onCancel={cancelEdit}
                   onRegisterFlush={registerDraftFlush}
-                  onRegisterLateCommit={registerLateCommitReceiver}
+                  onRegisterLateCommit={editController.registerLateCommitReceiver}
                   align={editingColumn?.align}
                   enterMove={editorEnterMove}
                   domId={cellEditorDomId}

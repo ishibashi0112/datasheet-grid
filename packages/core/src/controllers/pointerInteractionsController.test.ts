@@ -321,6 +321,46 @@ describe('pointerInteractionsController', () => {
     controller.dispose();
   });
 
+  // 追加(1.4.1 / AP-11 のレビュー): custom エディタで編集中のセルそのもの(エディタの中身が覆わない余白)を押したときは何もしない。
+  it('custom エディタで編集中のセルを押しても、フォーカスを移さず編集も終えない(ほかのセル・組み込みのエディタは従来どおり)', () => {
+    const controller = createPointerInteractionsController<Row>();
+    const order: string[] = [];
+    const root = document.createElement('div');
+    vi.spyOn(root, 'focus').mockImplementation(() => {
+      order.push('focus');
+    });
+    const customColumns: GridColumn<Row>[] = [
+      columns[0]!,
+      { ...columns[1]!, editor: { type: 'custom', render: () => null } },
+    ];
+    const editing = { ...createInitialGridUiState(), editingCell: { row: 1, col: 1 }, activeCell: { row: 1, col: 1 } };
+    const args = makeArgs({
+      gridRootRef: { current: root },
+      orderedColumns: customColumns,
+      uiState: editing,
+      endEditLeftOpen: () => {
+        order.push('end');
+      },
+    });
+    controller.update(args);
+    controller.handleCellPointerDown({ row: 1, col: 1 }, pointerEvent());
+    firePointerUp({ pointerId: 1 });
+    expect(order).toEqual([]);
+    // アクティブセルも選択も動かさない(pointerup の後始末 = selection/end などは押したかに関係なく来る)。
+    expect(args.actions.map((action) => action.type)).not.toContain('cell/activate');
+    expect(args.actions.map((action) => action.type)).not.toContain('selection/start');
+    controller.handleCellPointerDown({ row: 2, col: 1 }, pointerEvent());
+    firePointerUp({ pointerId: 1 });
+    expect(order).toEqual(['focus', 'end']);
+    order.length = 0;
+    // 組み込みのエディタ(blur で自分で確定する)の編集中のセルは従来どおり。
+    controller.update({ ...args, orderedColumns: columns });
+    controller.handleCellPointerDown({ row: 1, col: 1 }, pointerEvent());
+    firePointerUp({ pointerId: 1 });
+    expect(order).toEqual(['focus', 'end']);
+    controller.dispose();
+  });
+
   it('列ヘッダーの Shift+クリックは複数ソートをトグルする', () => {
     const controller = createPointerInteractionsController<Row>();
     const args = makeArgs();

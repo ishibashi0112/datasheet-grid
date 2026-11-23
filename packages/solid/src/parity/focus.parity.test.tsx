@@ -654,6 +654,67 @@ describe('編集を確定した後のフォーカス(editFocus)', () => {
       });
     },
   );
+
+  // 追加(1.4.1 / AP-11 のレビュー): セルのほかにフォーカスをグリッドへ移す所(見出しの角・行の掴み手・展開トグル)を押しても
+  //   閉じる。編集していたセルの余白(エディタの中身が覆わない所)を押したときは閉じず、フォーカスもエディタに残る。
+  it.each([
+    ['見出しの角', '.ssg-corner-cell'],
+    ['行の掴み手', '[data-pane="center"][data-row-index="2"] .ssg-row-drag-handle'],
+    ['展開トグル', '[data-row-index="2"] .ssg-detail-toggle'],
+    ['表の余白', '[role="grid"]'],
+    ['編集していたセルの余白', null],
+  ] as const)('開いたままの custom エディタ(AP-11): %s を押す', async (name, selector) => {
+    const render = (framework: Framework) =>
+      framework === 'react'
+        ? (ctx: { initialText: string }) =>
+            createElement('input', { className: 'custom-editor', autoFocus: true, defaultValue: ctx.initialText })
+        : (ctx: { initialText: string }) => {
+            let input: HTMLInputElement | undefined;
+            onSettled(() => input?.focus());
+            return (
+              <input
+                ref={(element) => {
+                  input = element;
+                }}
+                class="custom-editor"
+                value={ctx.initialText}
+              />
+            );
+          };
+    await expectParity({
+      features: ['rowDrag'],
+      watch: ['onRowsChange'],
+      props: (framework) => ({
+        rows: makeRows(4),
+        columns: [{ ...columns[0], editor: { type: 'custom', render: render(framework) } }, columns[1]],
+        rowKeyGetter: (row: Row) => row.id,
+        enableRowDrag: true,
+        detailRow: { render: () => null },
+      }),
+      steps: async (ctx) => {
+        await clickCell(ctx, 0, 'name');
+        await keyOn(ctx, null, { key: 'F2' });
+        const target = selector === null ? ctx.cell(0, 'name') : ctx.container.querySelector<HTMLElement>(selector);
+        if (!target) {
+          throw new Error(`[${ctx.framework}] 押す所がありません`);
+        }
+        await ctx.act(() => {
+          fireEvent.pointerDown(target, pointer);
+          // 表の余白はブラウザがスクロールする要素へフォーカスを移す(jsdom は押してもフォーカスを動かさないので移す)。
+          if (name === '表の余白') {
+            target.focus();
+          }
+          fireEvent.pointerUp(window, pointer);
+        }, 50);
+        ctx.log('エディタ', ctx.container.querySelector('.custom-editor') === null ? 'なし' : 'あり');
+        ctx.log(
+          'フォーカス',
+          focused()?.classList.contains('ssg-shell') ? 'グリッド' : focused()?.classList.contains('custom-editor') ? 'エディタ' : 'ほか',
+        );
+        ctx.snapshot('押した');
+      },
+    });
+  });
 });
 // 追加(React 版 1.3.0 / Solid 版 0.1.2、品質の段 2 S5-02): 日付のプリセットのチップを押すと日付の入力欄が消え、フォーカスが
 //   body へ落ちて Escape でポップオーバーが閉じなかった。チップへフォーカスを置く(core controllers/popoverSupport の

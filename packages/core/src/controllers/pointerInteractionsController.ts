@@ -527,6 +527,18 @@ export const createPointerInteractionsController = <T,>(): PointerInteractionsCo
     if (args === null || event.button !== 0) {
       return false;
     }
+    // 追加(1.4.1 / AP-11 のレビュー): custom エディタで編集中のセルそのもの(エディタの中身が覆わない余白)を押したときは
+    //   何もしません(フォーカスもエディタに残す。押しただけで編集を終えて打ちかけを捨てない)。
+    const editing = readLiveUiState(args).editingCell;
+    if (
+      target.kind === 'cell' &&
+      editing !== null &&
+      editing.row === target.cell.row &&
+      editing.col === target.cell.col &&
+      args.orderedColumns[editing.col]?.editor?.type === 'custom'
+    ) {
+      return false;
+    }
     lastPointerType = event.pointerType;
     if (event.pointerType === 'touch') {
       pendingTouchTap = { pointerId: event.pointerId, x: event.clientX, y: event.clientY, target };
