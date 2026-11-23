@@ -16,7 +16,7 @@ Solid 2.0 向けの仮想化データグリッドです。React 版(`@ishibashi0
   grep -nE "^#{2,3} " node_modules/@ishibashi0112/spreadsheet-grid-solid/API_REFERENCE.md
   ```
 
-- **Solid 版だけのこと**: `node_modules/@ishibashi0112/spreadsheet-grid-solid/README.md` の「Differences from the React version」「Solid-specific notes」(日本語は「React 版との違い」「Solid で気をつけること」)。ドキュメントサイトでは https://datasheet-grid.vercel.app/docs/solid 。
+- **Solid 版だけのこと**: `node_modules/@ishibashi0112/spreadsheet-grid-solid/README.md` の「Differences from the React version」「Solid-specific notes」(日本語は「React 版との違い」「Solid で気をつけること」)。ドキュメントサイトでは https://datasheet-grid.vercel.app/docs/solid/notes 。
 - **型の説明**: 主な型(`SpreadsheetGridProps` / `GridColumn` / `SpreadsheetGridHandle` など)のフィールドの説明は、型定義の JSDoc にもあります。
 - **ガイドとデモ**: https://datasheet-grid.vercel.app 。AI 向けの目次は https://datasheet-grid.vercel.app/llms.txt です(ガイドのコードは React 版で書いてあり、Solid のタブがあるページもあります)。
 
