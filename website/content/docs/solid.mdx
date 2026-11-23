@@ -109,7 +109,7 @@ const Grid = createSpreadsheetGrid({ features: { ...standardFeatures, serverSide
 - **行の外の値。** `getValue` / `valueFormatter` は行と値だけから決めてください。外の signal を読むと、セルはそれに追従しますが合計(`aggFunc`)は追従しません。その signal が変わったら列を作り直してください(`const columns = createMemo(() => makeColumns(totals()))` など)。
 - **複数のグリッドで props を共有する。** 変わらないオブジェクトを spread するか、props を書き並べてください。変化のたびに作り直すオブジェクトを spread しても動きますが、開発時に Solid が `HUGE_FAN_OUT` を出します。
 - **Shadow DOM(Web Components)。** `style.css` は Shadow root の中に入れ(`<style>` か `adoptedStyleSheets`)、グリッドは Shadow root の直下に描かずに要素で包み(ポップアップはその要素の中に出ます)、open の Shadow root を使い、`disconnectedCallback` で `render()` が返す `dispose` を呼んでください。詳しくは [API リファレンスの「Shadow DOM の中のグリッド」](/docs/api/props#shadow-dom-の中のグリッド)。
-- **開発時の Solid の知らせ。** `vite dev` では、Solid が `autoHeightMeasurer` / `activeRowFollow` / `edit` / `serverSideRowModel` / `fillHandle` / `clampSelectionToRowCount` などの effect の名前(名前は例です)で `EFFECT_RELAY_TEAR` / `EFFECT_WRITES_OWN_SOURCE` を出すことがあります。変化の後にグリッドが状態を合わせ直す処理(React 版も同じ描き直しをしている)で、害は無く、本番のビルドでは出ません。
+- **開発時の Solid の知らせ。** `vite dev` では、Solid が 3 つの effect の名前で `EFFECT_WRITES_OWN_SOURCE` を出すことがあります: `autoHeightMeasurer`(`autoHeight` の列で行を測った後)/ `activeRowFollow`(`activeCellFollows: 'row'` で並びが変わったとき)/ `edit`(編集中に並びが変わったとき)。変化の後にグリッドが状態を合わせ直す処理(React 版も同じ描き直しをしている)で、害は無く、本番のビルドでは出ません。1.4.0 から、ほかの合わせ直し(選択を範囲の中へ詰める・列幅・スクロール・サーバーサイドの行モデル・`onActiveCellChange` などの通知)は `EFFECT_RELAY_TEAR` を出しません(書く値がグリッドの store や DOM など Solid のグラフの外の状態で決まるので、Solid の計測は派生した状態ではなく「測ることの手間」として扱います)。
 
 ## 版と変更履歴
 

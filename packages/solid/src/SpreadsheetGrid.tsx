@@ -147,6 +147,7 @@ import { px, toSolidStyle } from './primitives/style';
 import { createLiveObject } from './primitives/liveObject';
 import { readEventKey } from './primitives/eventKey';
 import { createSnapshotProps, revealServerFrame } from './primitives/serverSnapshot';
+import { outsideGraphApply } from './primitives/effectApply';
 import { GridHeaderRow } from './view/GridHeaderRow';
 import {
   GridBodyLayer,
@@ -490,12 +491,13 @@ function GridShellBody<T extends object>(
 
   // 列の定義が変わったら列幅の状態を合わせる(React 版の useEffect と同じ。手で変えた幅は残す)。
   let previousColumnsForWidths: UnboundGridColumn<T>[] | null = null;
+  //   変更(段 3-6): 書く値は前の列とグリッドの store の今の幅で決まる(primitives/effectApply)。
   createEffect(
     columns,
-    (next) => {
+    outsideGraphApply((next: UnboundGridColumn<T>[]) => {
       dispatch(gridActions.reconcileColumnWidths(previousColumnsForWidths, next));
       previousColumnsForWidths = next;
-    },
+    }),
     { name: 'reconcileColumnWidths' },
   );
 
@@ -701,11 +703,12 @@ function GridShellBody<T extends object>(
   });
 
   // 表示行数 / 列数が減ったら選択を範囲内へ詰める(React 版の useEffect と同じ)。
+  //   変更(段 3-6): 詰めた選択はグリッドの store の今の選択で決まる(reducer が読む。primitives/effectApply)。
   createEffect(
     () => [viewRowCount(), viewColCount()] as const,
-    ([rowCount, colCount]) => {
+    outsideGraphApply(([rowCount, colCount]: readonly [number, number]) => {
       dispatch(gridActions.clampSelectionToRowCount(rowCount, colCount));
-    },
+    }),
     { name: 'clampSelectionToRowCount' },
   );
 

@@ -28,6 +28,7 @@
 ### 修正
 
 - 遠くへのスクロールを速く、メモリを少なくしました(S5-22 / S12-03 / S12-04)。バーの文脈の `filteredRows`(表示順の行の配列)を、読まれたときだけ作るようにしました(誰も読まなくても、アクティブセルが動くたびに全部の行を並べ直していました。100 万行の `Ctrl+End` で 1 回 30ms ほど)。飾り(書式・メモ・検査の印・データバー・auto-height の器)の無い列のセルは、その部品を作りません。100 万行の `Ctrl+End` は約 72ms → 47ms(React 版は約 38ms)、約 200 列の表で縦に 3000px ずつ 120 回飛ぶときの JS は 5.8 秒 → 4.0 秒(React 版は 1.8 秒)、スクロールした後のヒープは 27.5MB → 21.2MB(React 版は 13.5MB)。いずれも手元の Chromium の本番ビルド(`audit/harness/perf-compare.mjs`)。
+- `vite dev` で Solid が出す開発時の知らせを減らしました。選択を範囲の中へ詰める・列幅を合わせる・スクロール・サーバーサイドの行モデル・フィルハンドル・`onActiveCellChange` などの通知の中で書いた signal で、`EFFECT_RELAY_TEAR` が console に出ていました(利用者には直せないもの)。書く値はグリッドの store や DOM で決まるので、Solid の計測が「測ることの手間」として扱う形にしました(動きは変わりません)。残るのは `autoHeightMeasurer` / `activeRowFollow` / `edit` の `EFFECT_WRITES_OWN_SOURCE` の 3 つで、README の「Solid で気をつけること」に書いています。
 - グリッドの `ref` に signal の setter を渡すと(`ref={setGrid}`)、Solid が `REACTIVE_WRITE_IN_OWNED_SCOPE` を投げてグリッドが描かれませんでした。ハンドルを渡す関数を、部品の中の書き込みとして扱われない所から呼ぶようにしました(ハンドルが入る時機は今までどおり、利用側の最初の `createEffect` と `onSettled` より前です)。
 
 ## 0.1.2 — 2026-11-23
