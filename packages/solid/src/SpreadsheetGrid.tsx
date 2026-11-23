@@ -11,7 +11,7 @@
 //   - 部品の本体では props を直接読まない(Solid 2.0 は本体での読み取りを警告する)。props は関数や memo の中で読む。
 //   - React の onXxxCapture / onBlur / onFocus(子孫からも上がってくる)は、Solid では capture のリスナーを自分で付ける /
 //     onFocusOut / onFocusIn にします。
-import { For, Match, Show, Switch, createEffect, createMemo, createSignal, createUniqueId, isHydrating, latest, onCleanup, untrack } from 'solid-js';
+import { For, Match, Show, Switch, createEffect, createMemo, createSignal, createUniqueId, isHydrating, latest, onCleanup, runWithOwner, untrack } from 'solid-js';
 import type { Ref } from 'solid-js';
 import type { JSX } from '@solidjs/web';
 import { isServer } from '@solidjs/web';
@@ -174,9 +174,13 @@ const renderDetailToggleCell = (): JSX.Element => null;
 const noop = () => {};
 // 追加(段階 3-3 のレビュー): ref(solid-js の Ref)へハンドルを渡します。関数はそのまま呼び、配列は中の関数を順に呼ぶ
 //   (@solidjs/web の applyRef と同じ。変数の ref はコンパイラが代入の関数に書き換えて渡す)。関数でない値は何もしない。
+//   変更(段 3-1): ref の関数は部品の外(owner の無いところ)で呼びます。`ref={setGrid}`(signal の setter)で受けると、部品の
+//   本体の中で signal へ書くことになり、Solid の開発ビルドが REACTIVE_WRITE_IN_OWNED_SCOPE で止めていました(DOM の要素の
+//   ref は @solidjs/web が同じ書き込みを許す形で呼ぶので、`<div ref={setEl}>` は通る)。呼ぶ時点は今までどおり部品を作った
+//   とき(利用者の最初の effect より前。S5-01)。
 const applyHandleRef = <H,>(ref: Ref<H> | undefined, handle: H): void => {
   if (typeof ref === 'function') {
-    (ref as (value: H) => void)(handle);
+    runWithOwner(null, () => untrack(() => (ref as (value: H) => void)(handle)));
   } else if (Array.isArray(ref)) {
     for (const item of ref) applyHandleRef(item, handle);
   }

@@ -75,7 +75,8 @@ export function Inventory() {
 - 同じ入口の `createSpreadsheetGrid`: 使う機能だけを入れる(React 版と違い `/lite` はなく、機能の部品も本体の入口から import します)。モジュールの先頭で 1 回だけ作ります。部品の名前は「キー + `Feature`」です(例: `{ ...standardFeatures, serverSide: serverSideFeature }`)。足りない機能は開発時に `console.warn` が名指しします。
 - `@ishibashi0112/spreadsheet-grid-solid/locales/en`: 英語の文言 `localeTextEn`。
 - `@ishibashi0112/spreadsheet-grid-solid/testing`: jsdom のテストで行と列を描画させる `installJsdomLayoutStubs()`。
-- ことばで絞り込み(React 版の `/ai`)はありません。型は Solid 版から import します。コアの `@ishibashi0112/spreadsheet-grid-core` を直接使う必要はありません(`…-core/internal/…` は内部の部品で、どの版でも変わるので import しません)。
+- `@ishibashi0112/spreadsheet-grid-solid/ai`: ことばで絞り込み(`GridAskBar` / `createGridAsk`。React 版の `useGridAsk` は `createGridAsk`)。`grid` はハンドルを返す関数 `grid={() => grid}` か signal で渡します。
+- 型は Solid 版から import します。コアの `@ishibashi0112/spreadsheet-grid-core` を直接使う必要はありません(`…-core/internal/…` は内部の部品で、どの版でも変わるので import しません)。
 
 ## 5. やりたいこと → API_REFERENCE.md の見出し
 
@@ -93,6 +94,7 @@ export function Inventory() {
 | 展開行、見出し行、行のドラッグ | 「展開行(Master/Detail)」「ラベル行」「行ドラッグ並び替え」 |
 | CSV / Excel への出力 | 「CSV エクスポート」「Excel / スプレッドシート エクスポート」 |
 | スクロール・選択・undo をコードから | 「命令的 API」 |
+| ことばで絞り込み(AI に条件を作らせる) | 「ことばで絞り込み(`/ai` サブパス)」 |
 | 右クリックメニュー、セルのクリックの通知 | 「コンテキストメニュー」「セル操作の通知」 |
 | 見た目(クラス・色・デザインシステム) | 「パーツ別スロット」「デザインシステムのテーマ」「スタイリング用の状態クラス」 |
 | ダイアログの中に置く | 「ダイアログの中のグリッド」 |

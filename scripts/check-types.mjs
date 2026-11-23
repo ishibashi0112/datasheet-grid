@@ -30,7 +30,7 @@ const CORE_PACKAGE = '@ishibashi0112/spreadsheet-grid-core';
 const SOLID_PACKAGE = '@ishibashi0112/spreadsheet-grid-solid';
 // 公開する入口(package.json の exports のうち JS のもの)。
 const ENTRIES = ['', '/lite', '/ai', '/locales/en', '/testing'];
-const SOLID_ENTRIES = ['', '/locales/en', '/testing'];
+const SOLID_ENTRIES = ['', '/ai', '/locales/en', '/testing'];
 // 対応する TypeScript の下限と、確かめる最新の版(上げるときはここを書き換える)。
 const MIN_TYPESCRIPT = '5.8.3';
 const LATEST_TYPESCRIPT = '7.0.2';

@@ -952,3 +952,29 @@ describe('1 ページに複数のグリッド', () => {
     expect(logs).toEqual([]);
   });
 });
+
+// 追加(段 3-1): `ref={setGrid}`(signal の setter)でハンドルを受ける書き方。部品の本体の中で signal へ書くことになり、Solid の
+//   開発ビルドが REACTIVE_WRITE_IN_OWNED_SCOPE で止めていた(DOM の要素の `<div ref={setEl}>` は通る)。
+describe('ref に signal の setter を渡す', () => {
+  it('ハンドルが signal に入り、利用者の最初の effect から読める(知らせも出さない)', () => {
+    watchConsole();
+    const [grid, setGrid] = createSignal<SpreadsheetGridHandle<Row>>();
+    const seen: string[] = [];
+    const { unmount } = render(() => {
+      createEffect(
+        () => grid(),
+        (handle) => {
+          seen.push(handle ? `handle:${handle.getState().filters.globalText}` : 'none');
+        },
+      );
+      return <SpreadsheetGrid<Row> ref={setGrid} rows={makeRows(3)} columns={columns} rowKeyGetter={(row) => row.id} />;
+    });
+    flush();
+    expect(seen).toEqual(['handle:']);
+    grid()!.applyState({ filters: { globalText: '品目 2' } });
+    flush();
+    expect(grid()!.getState().filters.globalText).toBe('品目 2');
+    unmount();
+    expect(logs).toEqual([]);
+  });
+});

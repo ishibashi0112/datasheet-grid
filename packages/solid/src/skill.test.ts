@@ -32,7 +32,8 @@ const inlineCode = [...proseWithoutCodeBlocks.matchAll(/`([^`\n]+)`/g)].map((m) 
 const identifiers = [...new Set(inlineCode.filter((code) => /^[A-Za-z][A-Za-z0-9]*(<T>)?(\(\))?$/.test(code)))];
 
 // API_REFERENCE.md に出てこないが Skill に書いてよい名前(Solid / ツールの名前)。
-const NOT_IN_REFERENCE = new Set(['useState', 'useRef', 'createStore', 'createSignal', 'untrack', 'map', 'tsc', 'current', 'renderToString', 'hydrate']);
+// createGridAsk は Solid 版の /ai の名前(React 版の useGridAsk。段 3-1)。
+const NOT_IN_REFERENCE = new Set(['useState', 'useRef', 'createStore', 'createSignal', 'untrack', 'map', 'tsc', 'current', 'renderToString', 'hydrate', 'createGridAsk']);
 
 const appearsAsWord = (text: string, name: string): boolean =>
   new RegExp(`(?<![A-Za-z0-9_])${name}(?![A-Za-z0-9_])`).test(text);

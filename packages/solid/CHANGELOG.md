@@ -6,6 +6,16 @@
 
 使い方は [Solid で使う](https://datasheet-grid.vercel.app/docs/solid) と、React 版の [API リファレンス](https://github.com/ishibashi0112/datasheet-grid/blob/main/packages/react/API_REFERENCE.md)(props とメソッドは同じ)を参照してください。
 
+## 未リリース
+
+### 追加
+
+- ことばで絞り込み(入口 `@ishibashi0112/spreadsheet-grid-solid/ai`)。React 版の `/ai` と同じ `GridAskBar` と、バーを自分で作るときの `createGridAsk`(React 版の `useGridAsk`。Solid の慣例で `create…` の名前、型は `CreateGridAskOptions` / `CreateGridAskResult`)、core の `createGridAskRequest` / `readGridAskAnswer` などです。`grid` にはハンドルを返す関数(`let grid!` と `ref={grid}` なら `grid={() => grid}`)か signal(`ref={setGrid}` と `grid={grid}`)を渡します(React の ref オブジェクトはありません)。バーの見た目・文言・答えの扱い・元に戻す / 表を手で変えた後の印は React 版と同じです(同じ操作で DOM と通知を比べるテストで確かめています)。グリッドの入口とはファイルを共有しないので、使わなければバンドルに入りません(約 15KB gzip)。英語の文言は `/locales/en` の `gridAskLocaleTextEn`(React 版と同じもの)。使い方はガイド「[ことばで絞り込み(AI)](https://datasheet-grid.vercel.app/docs/guides/ai-filter)」の Solid のタブ。
+
+### 修正
+
+- グリッドの `ref` に signal の setter を渡すと(`ref={setGrid}`)、Solid が `REACTIVE_WRITE_IN_OWNED_SCOPE` を投げてグリッドが描かれませんでした。ハンドルを渡す関数を、部品の中の書き込みとして扱われない所から呼ぶようにしました(ハンドルが入る時機は今までどおり、利用側の最初の `createEffect` と `onSettled` より前です)。
+
 ## 0.1.2 — 2026-11-23
 
 core 1.3.0 に依存します。Solid 版の品質を React 版にそろえる作業の段 2(React 版も同じだった所見と前からの残り)で、React 版と core の 1.3.0 と同じ直しです。

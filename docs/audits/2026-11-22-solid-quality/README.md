@@ -19,6 +19,8 @@
 - 2026-11-22(段 1 の後): 段 1 の直しは今すぐ Solid 版 0.1.1 で出す(ユーザーの選択。挙動の変化 2 つは React 版 1.2.1 の RV5-1 と同じく直すための変化として patch に)。ほかはおすすめどおり: R5-3 / S1-21 は 0.2.0 で直す(今は文書の回避)、S4-23 は開発時の警告のまま、段 2 の範囲は「段 1 のまとめ」の全部(S9-03 は文書だけ)。
 - 2026-11-22 13:00Z(段 2 の前): 段 2 は React 版と core の 1.3.0(公開 API の追加 `exportable` などがあるので minor)と Solid 版の 0.1.2 で、全部を 1 回で出す(ユーザーの選択)。プレビュー「段 2 の選び方」の 6 つは答えが無いのでおすすめの案(RV5-4 は C、S6-04 は B、トグルの名前は A、S12-01 は A、S7-03 / S8-04 は A、CSV は A)。Solid 版を 0.2.0 にするかは PR のときにもう一度聞く(段 3 の候補が 0.2.0 の予定のため)。
 
+- 2026-11-23(段 2 を 1.3.0 / 0.1.2 で公開した後): 段 3 を進める(ユーザーの依頼)。**Solid 版が React 版と完全に並んだら、Solid 版の版を React 版・core とそろえる**(ユーザーの判断「バージョンは合わせたいです」)。段 3 は 0.2.0 ではなく、終わったら Solid 版を React 版・core と同じ版(次の版)で出し、以後は 3 つをいつも同じ版で出す。範囲は「全部」(2026-11-23 00:08Z にユーザーがカードで選んだ)。
+
 ## 段 1(測り直し)の進み具合
 
 | # | 内容 | 状況 |
@@ -77,6 +79,33 @@ React 版と core を直す段。React 版と core は同じ版で、Solid 版�
 | 2-10 | ドキュメント | S9-03 / S5-04 / S4-07 / S4-08 / S3-01 / S3-02、Solid 版の npm に API_REFERENCE.md と Skill(R4-5)/ R4-6、主なガイド 8 本の Solid のタブ | 済み: API リファレンスとガイドに、S9-03(select の列も値で集計に数える → `selectionAggregate: false`。選択範囲の集計 / selection-clipboard)、S5-04(グループ行の平均の小数で狭い列が切れる → `numberFormatter({ maximumFractionDigits })`。行グルーピング / grouping)、S4-07(jsdom + user-event で number の列に数字から打つと逆順 → 1 文字目の後は入力欄へ `user.type`、または `Enter` / `F2` + `clear` + `type`。S4 のアプリで React / Solid とも確かめた。テスト支援 / testing)、S4-08(set の候補は値のまま → `filterOptions` に `{ value, label }`。値と表示名が別の列 / value-labels)、S3-01(custom エディタが自分で出すポップアップは囲むダイアログへ。popupContainer / dialogs・customization)、S3-02(`ctx.initialText` はダブルクリック / `Enter` / `F2` では `String(value ?? '')`。セルエディタ / editing・customization)。R4-5: Solid 版の npm に `API_REFERENCE.md`(React 版から `scripts/emit-docs.mjs` が build:lib で写し、先頭に Solid での読み替え。git には入れない)と Skill `skills/spreadsheet-grid-solid/SKILL.md` を同梱、`src/skill.test.ts`(新。7 つ)、README(英語 / 日本語)に「AI コーディングツールで使う」、サイトの ai-assistants / solid。R4-6: `createSpreadsheetGrid` に JSDoc。Solid のタブ(コードの `tab="React"` / `tab="Solid"`): quick-start / editing / state(3 つ)/ large-data / row-drag(2 つ)/ validation / find / testing(「最初のテスト」を新しく。例は S4 のアプリで React / Solid とも通した)。ゲート: tsc 2 つ 0 / eslint 0 / vitest 288 ファイル 2,875 件 / Solid の typecheck 0・test 31 ファイル 331 件・test:ssr 8 件 / build:lib 0(Solid 版の pack に API_REFERENCE.md と skills が入る)/ website の next build 0(タブが出る) |
 | 2-11 | 確かめ | 上限(直し終えた後の実測 + 0.5KB)、別視点のレビュー 2 系統、3 つのブラウザのハーネス(React 版 / Solid 版)、`t-diff.mjs`、実アプリの確かめ直し | 済み: 実アプリ = 段 1 の 12 本を pack した tarball へ入れ替えてビルドと操作を回し直した(回帰は Solid 版だけの 1 つ: 右クリックメニュー / 列メニューの項目から開いたツールパネルへ移ったフォーカスがグリッドへ戻される。Solid 版は `onSelect` の後の反映でツールパネルをその場で描くので、メニューを閉じるときのフォーカスの戻しが後から来ていた。core `popoverSupport` の `isFocusInPopupOpenedFromMenu` でツールパネル / 列フィルターにフォーカスがあれば戻さない。Solid の比較テスト `focus.parity` に 1 つ)。別視点のレビュー A(core と React 版): グリッドの中に置いた Web Components(open の Shadow root)のイベントの判定が中の要素ではなく host を見るようになっていた回帰 → `getEventTarget(event, context)` は context の木へ付け替え、深い要素は `getDeepActiveElement` でフォーカスを戻すときだけ / 全選択(exclude)で除いた行を消して元に戻すと選ばれた状態で戻る → 除いたキーを覚えて戻ったら除き直す(`rowSelectionCommands`)/ 列の追従はインラインの `columns` の新しい配列が先に届くと待つのをやめていた → 同じ位置にある間は期限まで待つ、待つ間に動かしたらやめる(`columnCommands`)/ Escape の Mantine 向けの印を target と元の target の両方へ / 文書: 外したハンドルの `getScrollPosition()` / `isAtBottom()`、CHANGELOG の読む側への影響(readonly の `options`・`showDetails` の型)、Shadow root を包む要素が切るときの文書。別視点のレビュー B(Solid 版と文書。高・中なし): 低 9 件を直した(Solid の CHANGELOG に PageDown、英語の README と solid.mdx の追いつき、README の大きさの数字、custom エディタの打ちかけが書かれないことがある場合の文書、Skill の行数・注意点・SSR と README の見出しのテスト、emit-docs の読み替え 4 つと版の注記、ガイドの文言 2 つ)。上限は実測 + 0.5KB(切り上げ)= full 153.9 / lite 90.8 / standard 114.3 / solid-full 167.0 / solid-lite 94.7 / solid-standard 122.1KB(実測 153.35 / 90.23 / 113.77 / 166.42 / 94.15 / 121.54KB。1.2.1 から full +3.50KB、ai 14.03KB は不変)。ゲート: ルート 288 ファイル・2,880 件、Solid 31 ファイル・333 件 + SSR 8 件、examples / types 全部 ok、website のビルド 0。ハーネス(23 本): Chromium React 995 / 995・Solid 995 / 995、Firefox(geckodriver)React 908 / 908・Solid 908 / 908、WebKitGTK React 910 / 913・Solid 910 / 913(既知の BR-3・BR-4 の 3 件だけ。Solid の `agg(big)` の 200ms は前からの揺れで、回し直して通った)。`t-v130` は Firefox / WebKit でも回るように直した(WebDriver では axe を中身の評価で入れる・`Ctrl+Home` の後にハンドルでも先頭へ・headless の Firefox は `hover: none` なので RV5-4 は SKIP)。`t-diff.mjs` は 40 / 40 の列で差なし(4,800 手)。 |
 | 2-12 | PR と版上げ | React 版と core、Solid 版 | PR #80 を作った(2026-11-22)。マージはユーザーの OK を待つ。版上げ(React 版と core 1.3.0 = `pnpm run version:minor`、Solid 版 0.1.2 = 手で 1 コミット)は公開の準備ができたときに main で |
+
+## 段 3(React 版と完全に並べる)の進み具合
+
+Solid 版だけに残った違い(段 1 の所見の R5-3 / S1-21・性能の S5-22 / S12-03 / S12-04、2026-11-22 の点検の S1-01、README の「React 版との違い」)を
+埋める段。終わったら Solid 版を React 版・core と同じ版で出す(上の「決めたこと」)。作業のブランチは `claude/project-thread-lw8d5c`。
+バッチごとに 1 コミットで、Solid 版のテスト(できるものは React 版との比較テスト)を足す。
+
+| # | 内容 | 所見 | 状況 |
+| --- | --- | --- | --- |
+| 3-0 | 始める前のゲート(main 498eef9 = 1.3.0 / Solid 0.1.2 の公開物) | | 済み(PR #80 の CI が緑。その後は版の番号と変更履歴の見出しだけ) |
+| 3-1 | Solid 版の `/ai`(`GridAskBar` / `useGridAsk`。React 版 `src/ai/` と同じ見た目・同じ core の `createGridAskRequest` / `readGridAskAnswer`) | README の「ありません」、S13-01(新) | 済み: 入口 `/ai`(`src/ai.ts`・`src/ai/createGridAsk.ts`・`src/ai/GridAskBar.tsx`。名前は Solid の慣例で `createGridAsk`、`grid` はハンドルか、それを返す関数)、`/locales/en` に `gridAskLocaleTextEn`。テストは React 版の GridAskBar.integration の 28 本を写した 31 本と、React 版と同じ操作で DOM・フォーカス・状態・通知を比べる `parity/ai.parity.test.tsx` 6 本(送る〜外す〜元に戻す / 使えなかった部分 / 列の表示 / 失敗と送り直し / 聞いている間と Esc / 英語)。dist は `ai.js` と `source/ai.jsx`(本体とファイルを共有しない = `checkSolidDistShape` が検査)、大きさ `solid-ai` 14.75KB(上限 15.3KB)。`types:check` の Solid 版の入口に `/ai`(`type-tests/solid/src/ai.tsx`)。文書は Solid 版の README・Skill・emit-docs の読み替え・サイトの「Solid で使う」とガイド ai-filter の Solid のタブ。S13-01 は下 |
+| 3-2 | store で持つ行(`rows={state.rows}`)で元に戻すが効く | S1-01 | まだ |
+| 3-3 | `renderCell` とバーの関数を、読んだ値が変わったときだけ呼び直す(挙動の変化) | R5-3 / S1-21 | まだ |
+| 3-4 | 遠くへのスクロール・列の多い表の速さ・メモリ(行とセルを位置で使い回す形を試す) | S5-22 / S12-03 / S12-04 | まだ |
+| 3-5 | SSR でサーバーも行を描く(今はハイドレーションの後に描く = S8-01 の直し) | README の SSR の違い | まだ |
+| 3-6 | 開発時の Solid の知らせ(`EFFECT_RELAY_TEAR` / `EFFECT_WRITES_OWN_SOURCE`)を減らす | docs/solid の診断の一覧 | まだ |
+| 3-7 | ガイドのコード例のすべてに Solid のタブ(今は主なガイド 8 本) | | まだ |
+| 3-8 | 版をそろえる仕組み(`bump-version.mjs` に Solid 版、`examples/solid`、リリースの手順、変更履歴、release.yml、版の方針の文書) | | まだ |
+| 3-9 | 確かめ(上限、別視点のレビュー、3 つのブラウザのハーネス × 2、`t-diff.mjs`、12 本のアプリ) | | まだ |
+| 3-10 | PR と版上げ | | まだ |
+
+### 段 3 で見つけた所見
+
+- **S13-01(中、Solid 版だけ、直した)** グリッドの `ref` に signal の setter を渡すと(`const [grid, setGrid] = createSignal(); <SpreadsheetGrid ref={setGrid} />`)、
+  Solid が `REACTIVE_WRITE_IN_OWNED_SCOPE` を投げてグリッドが描かれなかった。ハンドルを渡す関数を部品の本体(owner の中)で呼んでいたため。
+  `@solidjs/web` の DOM の ref と同じく owner の外(`runWithOwner(null, …)` + `untrack`)で呼ぶようにした(時機は今までどおり = S5-01)。
+  `/ai` のテスト(`ref={setHandle}` でバーへ渡す形)で見つけた。`idioms.test.tsx` の「ref に signal の setter を渡す」。
 
 ## 全体レビューの所見(1-3)
 

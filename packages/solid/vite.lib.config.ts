@@ -14,6 +14,9 @@ export default defineConfig({
     lib: {
       entry: {
         index: resolve(import.meta.dirname, 'src/index.ts'),
+        // 追加(段 3-1): 入口 /ai(GridAskBar / createGridAsk)。本体のモジュールを import しないので、index とチャンクを
+        //   共有しません(React 版の dist/ai.js と同じ)。
+        ai: resolve(import.meta.dirname, 'src/ai.ts'),
         'locales/en': resolve(import.meta.dirname, 'src/locales/en.ts'),
         testing: resolve(import.meta.dirname, 'src/testing/index.ts'),
       },

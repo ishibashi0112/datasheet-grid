@@ -46,6 +46,7 @@
   ],
   "exports": {
     ".": "./src/index.ts",
+    "./ai": "./src/ai.ts",
     "./locales/en": "./src/locales/en.ts",
     "./testing": "./src/testing/index.ts",
     "./style.css": {
@@ -83,6 +84,11 @@
         "types": "./dist/index.d.ts",
         "solid": "./dist/source/index.jsx",
         "import": "./dist/index.js"
+      },
+      "./ai": {
+        "types": "./dist/ai.d.ts",
+        "solid": "./dist/source/ai.jsx",
+        "import": "./dist/ai.js"
       },
       "./locales/en": {
         "types": "./dist/locales/en.d.ts",

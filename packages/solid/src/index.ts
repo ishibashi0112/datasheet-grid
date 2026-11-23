@@ -3,7 +3,7 @@
 //   - 全部入りの SpreadsheetGrid と、機能を選んで組み込む createSpreadsheetGrid + 機能の部品を同じ入口から出します。
 //     使わないものは束ねたときに消えます(機能の部品とプリセットはモジュール直下の呼び出しに /* @__PURE__ */ を付けている。
 //     React 版は全部入りと /lite でチャンクを共有させないために入口を分けたが、Solid 版は 1 つのビルドなので分けない)。
-//   - `/ai`(GridAskBar)は React 版だけです。
+//   - `/ai`(GridAskBar)は別の入口 src/ai.ts です(React 版と同じ。段 3-1)。
 export { SpreadsheetGrid } from './fullGrid';
 export { createSpreadsheetGrid } from './createSpreadsheetGrid';
 export type { CreateSpreadsheetGridOptions } from './createSpreadsheetGrid';
