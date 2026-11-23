@@ -4,7 +4,8 @@
 import Link from 'next/link';
 import { FrameworkChips } from '@/components/framework-switch';
 import { InstallCommand } from '@/components/install-command';
-import { FRAMEWORK_LABEL, useFramework } from '@/lib/framework';
+import { useFramework } from '@/lib/framework';
+import { FRAMEWORK_LABEL } from '@/lib/framework-names';
 
 // インストールなしで動かせるサンプル(リポジトリの examples/basic と examples/solid)を StackBlitz で開く。
 const STACKBLITZ_URL = {

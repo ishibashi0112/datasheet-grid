@@ -1,0 +1,52 @@
+---
+title: インストール
+description: React 版(@ishibashi0112/spreadsheet-grid)の導入と CSS の読み込み
+---
+
+## パッケージのインストール
+
+```sh tab="npm"
+npm install @ishibashi0112/spreadsheet-grid
+```
+
+```sh tab="pnpm"
+pnpm add @ishibashi0112/spreadsheet-grid
+```
+
+```sh tab="yarn"
+yarn add @ishibashi0112/spreadsheet-grid
+```
+
+**react** と **react-dom** の `^18.3.0 || ^19.0.0` が peer dependencies です(アプリ側にインストールされている必要があります)。ランタイム依存の `@tanstack/virtual-core`(TanStack Virtual のフレームワーク非依存コア)と、グリッド本体のフレームワーク非依存コア `@ishibashi0112/spreadsheet-grid-core` は自動で入ります(React 版と同じ版に固定)。アプリ側で直接 import する必要はありません。対応ブラウザは[はじめに](/docs#対応ブラウザ)にあります。
+
+React 18 でグリッドを自分の関数コンポーネントで包んで `ref` を渡すときは、包む側を `forwardRef` にしてください([React で気をつけること](/docs/react/notes#ref-と-react-18--19))。
+
+## スタイルの読み込み
+
+グリッドの CSS は別ファイルとして同梱されています。アプリのエントリなどで一度だけ import してください。
+
+```ts
+import '@ishibashi0112/spreadsheet-grid/style.css'
+```
+
+ベーススタイルは `.ssg-*` クラスにスコープされた通常(未レイヤー)の CSS で、デザイントークンは特異度ゼロ(`:where(.ssg-root)`)で定義されています。そのため **import 順序に関係なく、利用側の上書きが常に勝ちます**。Tailwind CSS などと一緒に使うときの読み込み方は [CSS の読み込みと共存](/docs/css)にあります。
+
+## 遅延読み込みされる部品
+
+列フィルターのポップオーバーと、ツールパネル(フィルター管理 / 列の表示 / 並び替え)の部品は、本体とは別のチャンクに分かれていて最初の読み込みには含まれません(最初に読み込む JS が約 1 割小さくなります)。設定は不要で、動的 import(`import()`)に対応したバンドラー(Vite / webpack / Next.js / Rollup / esbuild など)ならそのまま動きます。
+
+- グリッドは表示されたあと、ブラウザが暇なときにこれらの部品を先読みします(その機能が使えるときだけ)。
+- 先読みの前に開かれたときはその場で読み込み、読み込みが終わってから表示します。
+- 画面遷移の前などに先に読み込んでおきたいときは `preloadGridPopups()` を呼べます(通常は不要)。テストでの使い方は[テスト](/docs/guides/testing#ポップオーバーを開くテスト)を参照してください。
+
+```ts
+import { preloadGridPopups } from '@ishibashi0112/spreadsheet-grid'
+
+void preloadGridPopups()
+```
+
+## 次に読む
+
+- [クイックスタート](/docs/react/quick-start) — 最小の例を動かす
+- [React で気をつけること](/docs/react/notes) — React 18 / 19 の `ref`、新しい行をすぐ使うとき、テスト
+- [Next.js と SSR](/docs/react/nextjs) — App Router での `'use client'` の境界

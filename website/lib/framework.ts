@@ -5,11 +5,7 @@
 // サーバーの描画と最初のハイドレーションは React(getServerSnapshot)で、その直後に保存した値へ切り替わる。
 import { useSyncExternalStore } from 'react';
 
-export type Framework = 'react' | 'solid';
-
-export const FRAMEWORKS: readonly Framework[] = ['react', 'solid'];
-
-export const FRAMEWORK_LABEL: Record<Framework, string> = { react: 'React', solid: 'Solid' };
+import type { Framework } from './framework-names';
 
 const STORAGE_KEY = 'ssg-framework';
 
@@ -63,11 +59,4 @@ export function setFramework(framework: Framework) {
 
 export function useFramework(): Framework {
   return useSyncExternalStore(subscribe, read, () => 'react');
-}
-
-// コードのタブの名前("React" / "Solid")からフレームワークへ。ほかの名前(npm / pnpm など)は null。
-export function frameworkOfTab(value: unknown): Framework | null {
-  if (value === 'React') return 'react';
-  if (value === 'Solid') return 'solid';
-  return null;
 }

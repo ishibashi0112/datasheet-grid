@@ -3,6 +3,8 @@ title: serverSide モード(SSRM)
 description: dataSource / クエリ配線 / リフレッシュ / エラー処理 / 書き戻し
 ---
 
+<ApiFrameworkNote />
+
 ## serverSide モード(SSRM)
 
 `dataSource` を渡すと serverSide モードになり、総行数ぶんの縦スクロール空間を保ったまま、可視窓に近いブロックだけを `getRows` で取得する(取得範囲を定数で縛りメモリを有界化)。未ロード行はスケルトン行として描画され、到着後に実データへ差し替わる。`rows`(clientSide)と `dataSource`(serverSide)は排他。セル編集は `dataSource.updateRows` を指定した場合のみ有効(楽観更新つきの書き戻し。「セル編集の書き戻し」節)。

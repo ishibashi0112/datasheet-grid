@@ -5,7 +5,8 @@
 // React / Solid 以外のタブ(npm / pnpm / yarn など)は fumadocs のまま。
 import type { ComponentProps } from 'react';
 import { CodeBlockTabs } from 'fumadocs-ui/components/codeblock';
-import { FRAMEWORK_LABEL, frameworkOfTab, setFramework, useFramework } from '@/lib/framework';
+import { setFramework, useFramework } from '@/lib/framework';
+import { FRAMEWORK_LABEL, frameworkOfTab } from '@/lib/framework-names';
 
 type Props = ComponentProps<typeof CodeBlockTabs>;
 

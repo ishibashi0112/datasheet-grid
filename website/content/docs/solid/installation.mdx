@@ -1,0 +1,56 @@
+---
+title: インストール
+description: Solid 版(@ishibashi0112/spreadsheet-grid-solid)の導入、CSS の読み込み、バンドラの設定
+---
+
+**`@ishibashi0112/spreadsheet-grid-solid`** は Solid 2.0 向けのグリッドです。React 版と同じ props・列の定義・命令的なハンドル・CSS・見た目で、同じフレームワークに依らないコア(`@ishibashi0112/spreadsheet-grid-core`)の上に作っています。版も React 版・コアと同じです(1.4.0 から)。
+
+## パッケージのインストール
+
+```sh tab="npm"
+npm install @ishibashi0112/spreadsheet-grid-solid
+```
+
+```sh tab="pnpm"
+pnpm add @ishibashi0112/spreadsheet-grid-solid
+```
+
+```sh tab="yarn"
+yarn add @ishibashi0112/spreadsheet-grid-solid
+```
+
+**solid-js** と **@solidjs/web** の `^2.0.0` が peer dependencies です。コア(`@ishibashi0112/spreadsheet-grid-core`。Solid 版と同じ版に固定)と `@tanstack/virtual-core` は自動で入ります。対応ブラウザは React 版と同じです([はじめに](/docs#対応ブラウザ))。
+
+## スタイルの読み込み
+
+CSS はアプリのエントリなどで 1 回だけ読み込みます。
+
+```ts
+import '@ishibashi0112/spreadsheet-grid-solid/style.css'
+```
+
+中身は React 版の `style.css` と同じファイルです。`style.layer.css` とデザインシステムのテーマ(`themes/astryx.css` / `themes/mantine.css` / `themes/heroui.css` / `themes/shadcn.css`)も同じ名前であります。Tailwind CSS などと一緒に使うときの読み込み方は [CSS の読み込みと共存](/docs/css)、テーマは[デザインシステムに合わせる](/docs/guides/design-systems)にあります。
+
+## バンドラの設定
+
+パッケージは Solid のライブラリの慣例どおり、`solid` 条件で JSX のままのソースを渡し、利用側のバンドラが自分の Solid の設定(DOM / SSR・開発 / 本番)でコンパイルします。Vite では `@solidjs/vite-plugin` 3(Vite 8 以上)を使ってください。`solid` 条件の無いツールは DOM 向けにコンパイル済みのビルド(ESM だけ)を読みます。
+
+Node の中(Vitest と jsdom のテストなど)では `solid` か `browser` の条件で解決してください(`@solidjs/vite-plugin` が付けます)。Node の既定の条件では `@solidjs/web` がサーバー向けのビルドになり、「Client-only API called on the server side」で止まります。
+
+TypeScript は 5.8 以上で、`moduleResolution` は `bundler` / `nodenext`、`jsx: "preserve"`・`jsxImportSource: "@solidjs/web"` にします。
+
+## 遅延読み込みされる部品
+
+列フィルターのポップオーバーとツールパネルの部品(約 16KB gzip)は、React 版と同じく本体とは別のチャンクに分かれていて、表示された後にブラウザが暇なときに先読みします(設定は不要)。画面遷移の前などに先に読み込んでおきたいときは `preloadGridPopups()` を呼べます(通常は不要。テストでの使い方は[テスト](/docs/guides/testing#ポップオーバーを開くテスト))。
+
+```ts
+import { preloadGridPopups } from '@ishibashi0112/spreadsheet-grid-solid'
+
+void preloadGridPopups()
+```
+
+## 次に読む
+
+- [クイックスタート](/docs/solid/quick-start) — 最小の例を動かす(Solid 版で動くデモ付き)
+- [Solid で気をつけること](/docs/solid/notes) — React 版との違い、signal と store、書き込みの反映、テスト
+- [SSR](/docs/solid/ssr) — Vite の SSR と `@solidjs/vite-plugin` でサーバーで描く

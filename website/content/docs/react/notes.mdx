@@ -1,0 +1,57 @@
+---
+title: React で気をつけること
+description: React 18 / 19 の ref、新しい行をすぐ使うとき、描く関数、機能を選んで組み込む、テスト
+---
+
+React 版(`@ishibashi0112/spreadsheet-grid`)を使うときに気をつけることをまとめます。props・列の定義・ハンドルのメソッド・CSS は Solid 版と同じで、違うのは状態の持ち方とハンドルの受け方、描く関数の呼ばれ方です(Solid 版は [Solid で気をつけること](/docs/solid/notes))。
+
+## `ref` と React 18 / 19
+
+命令的なハンドル(`SpreadsheetGridHandle<T>`)は `ref` prop で受け取ります。グリッドに直接 `ref` を渡すときは、React 18.3 / 19 のどちらでも `forwardRef` は要りません(React 19 は `ref` を props で受け、React 18.3 ではグリッドが内部で `forwardRef` に包みます)。
+
+```tsx
+import { useRef } from 'react'
+import { SpreadsheetGrid, type SpreadsheetGridHandle } from '@ishibashi0112/spreadsheet-grid'
+
+const gridRef = useRef<SpreadsheetGridHandle<Row>>(null)
+
+<SpreadsheetGrid ref={gridRef} /* … */ />
+// gridRef.current?.scrollToRow(0)
+```
+
+グリッドを自分の関数コンポーネントで包み(`function MyGrid(props) { return <SpreadsheetGrid {...props} /> }`)、包んだ側へ `ref` を渡すときは、React 18 では包む側を `forwardRef` にしてください。React 18 では `ref` が props として届かないため、型は通っても `ref.current` が `null` のままになります(React 19 では不要。書き方は[デザインシステムに合わせる](/docs/guides/design-systems)の例)。
+
+## 新しい行をすぐ使う(`flushSync`)
+
+`setRows(...)` の後、グリッドが新しい行を見るのは次の描画のときです。足したばかりの行をすぐ使う(`getViewRowIndex(key)` → `startEditing(...)`)ときは、`react-dom` の `flushSync` で描画を済ませてから引きます。
+
+```tsx
+import { flushSync } from 'react-dom'
+
+const addRow = () => {
+  const row = { id: crypto.randomUUID(), name: '' }
+  flushSync(() => setRows((prev) => [...prev, row])) // グリッドが新しい行を知ってから引く
+  const grid = gridRef.current
+  const viewRowIndex = grid?.getViewRowIndex(row.id) ?? -1
+  const colIndex = grid?.getColIndex('name') ?? -1
+  if (viewRowIndex >= 0 && colIndex >= 0) grid?.startEditing(viewRowIndex, colIndex)
+}
+```
+
+## 描く関数と関数を入れた設定
+
+- `renderCell` / `renderHeader` / バーの関数(`renderTopBar` など)は、グリッドが描き直すたびに呼ばれます。軽く保ち、重い計算は `useMemo` で前もって済ませてください。
+- 関数を入れた文言の表(`localeText`)は、コンポーネントの外で作るか `useMemo` で包みます([英語と文言](/docs/guides/localization))。
+- `/lite` の `createSpreadsheetGrid` はモジュールの先頭で 1 回だけ呼びます。コンポーネントの中で呼ぶと描画のたびに別のコンポーネントになり、グリッドの状態(選択・スクロール位置・編集中の値)が消えます([バンドルを小さくする](/docs/guides/lite))。
+
+## 機能を選んで組み込む(`/lite`)
+
+`SpreadsheetGrid` は全機能入りです(初期読み込みの JS が約 153KB gzip)。`@ishibashi0112/spreadsheet-grid/lite` の `createSpreadsheetGrid` では渡した機能だけを入れたグリッドを作れ、渡さなかった機能はバンドルに入りません(機能なしで約 90KB、プリセット `standardFeatures` で約 114KB)。機能の名前と中身は[バンドルを小さくする](/docs/guides/lite)にあります。
+
+## テスト
+
+Vitest と jsdom で描くときは `@ishibashi0112/spreadsheet-grid/testing` の `installJsdomLayoutStubs` を呼び、`@testing-library/react` と user-event で操作します。fireEvent で確定(`Enter` / `Tab`)の後の操作を同期に続けて書くときは、間に `await act(async () => {})` を挟みます。列フィルターやツールパネルを開くテストは、先に `preloadGridPopups()` を呼びます([テスト](/docs/guides/testing))。
+
+## Next.js と SSR
+
+グリッドはフックを使うクライアントコンポーネントです。App Router では `'use client'` のファイルから使い、関数を含む列定義もそこに置きます。サーバーの描画で出るものやダークモード、URL から最初の状態を決める方法は [Next.js と SSR](/docs/react/nextjs) にまとめています。

@@ -53,7 +53,7 @@ afterAll(restore);
 
 ## 最初のテスト
 
-セルをダブルクリックして直し、表に出ることを確かめる例です。Solid 版は Vitest の設定に `@solidjs/vite-plugin` を入れ、DOM を見る前に `flush()` を呼びます([Solid で使う](/docs/solid#solid-で気をつけること))。
+セルをダブルクリックして直し、表に出ることを確かめる例です。Solid 版は Vitest の設定に `@solidjs/vite-plugin` を入れ、DOM を見る前に `flush()` を呼びます([Solid で気をつけること](/docs/solid/notes#solid-で気をつけること))。
 
 ```tsx tab="React"
 // @vitest-environment jsdom
@@ -177,7 +177,7 @@ Jest 30 の jsdom(26)には `PointerEvent` がありません。グリッドは�
 
 ## ポップオーバーを開くテスト
 
-列フィルターのポップオーバーとツールパネル(フィルター管理 / 列の表示 / 並び替え)の部品は、別のチャンクから遅延読み込みされます([インストール](/docs/installation#遅延読み込みされる部品))。読み込みが終わる前は表示されないため、開いた直後に**同期で**中身を確かめるテストでは、先に `preloadGridPopups()` で読み込んでおきます。
+列フィルターのポップオーバーとツールパネル(フィルター管理 / 列の表示 / 並び替え)の部品は、別のチャンクから遅延読み込みされます([インストール](/docs/react/installation#遅延読み込みされる部品))。読み込みが終わる前は表示されないため、開いた直後に**同期で**中身を確かめるテストでは、先に `preloadGridPopups()` で読み込んでおきます。
 
 ```ts tab="React"
 import { beforeAll } from 'vitest';
