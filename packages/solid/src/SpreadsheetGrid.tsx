@@ -667,8 +667,11 @@ function GridShellBody<T extends object>(
   // グループ行の開閉(開閉のボタン / 行のダブルクリック / アクティブセルの Enter・Space)。
   const handleGroupToggle = (groupKey: string) => dispatch(gridActions.toggleGroupCollapsed(groupKey));
   const groupingFeature = features.grouping;
+  // 表示順(配列)が変わったときだけ作り直す(orderResolution は ui() を読むので、アクティブセルが動くたびに計算し直す。
+  //   中の order の配列は同じなので、その参照で受ける。段 3-4 / S5-22)。
+  const orderArray = createMemo(() => order());
   const getFilteredRows = createMemo(() => {
-    const currentOrder = order();
+    const currentOrder = orderArray();
     const currentRows = rows();
     let cache: T[] | null = null;
     return () => (cache ??= Array.from(currentOrder, (sourceIndex) => currentRows[sourceIndex] as T));

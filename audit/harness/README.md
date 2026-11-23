@@ -128,6 +128,23 @@ SSG_DIFF_SCENARIOS=grouping SSG_DIFF_SEED=7 SSG_DIFF_SEEDS=1 SSG_DIFF_VERBOSE=1 
 - 1 手の後は、スクロールの位置が 3 フレーム続けて変わらなくなるまで待ってから比べる(なめらかなスクロールの途中で比べると、
   ポインタの下の行が違って見える)。
 
+## 速さを比べる(React 版と Solid 版。2026-11-23 追加)
+
+`perf-compare.mjs`(段 3-4。`docs/audits/2026-11-22-solid-quality/` の S5-22 / S12-03 / S12-04)は、2 つのハーネスの本番ビルドで
+100 万行の `Ctrl+End` / `Ctrl+Home`、列の多い表(`?wide=190` = 約 200 列 × 2 万行。`shared.ts` の `withWideColumns`)で縦に
+3000px ずつ 120 回飛ぶときの JS の時間(CDP の ScriptDuration)、同じ表のヒープと DOM のノードを、交互に測ります。
+
+```bash
+vp build --config audit/harness/vite.config.ts audit/harness --outDir /tmp/h-react --emptyOutDir
+vp build --config audit/harness/solid/vite.config.ts audit/harness/solid --outDir /tmp/h-solid --emptyOutDir
+# それぞれのフォルダを静的に配る(例: vp preview --config <同じ設定> --outDir <フォルダ> --port 5181 / 5182)
+REACT_BASE=http://127.0.0.1:5181/ SOLID_BASE=http://127.0.0.1:5182/ node audit/harness/perf-compare.mjs 2
+```
+
+- マシンの混み具合で 1 割ほどぶれるので、比として見る。2026-11-23(段 3-4 の後)の値は Solid 版の CHANGELOG の 1.4.0 の「修正」。
+- どこに時間がかかっているかは `--minify false` でビルドし、CDP の Profiler で関数ごとの時間を見る(Solid 版は solid-js の実行時、
+  React 版は react-dom が別の名前で出る)。
+
 ## 出力の読み方
 
 - `PASS` / `FAIL`: 期待どおり / 不具合または回帰。`FAIL` が 0 件であることが基準。

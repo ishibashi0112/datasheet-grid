@@ -15,7 +15,7 @@ import {
 } from '@ishibashi0112/spreadsheet-grid-solid';
 import '@ishibashi0112/spreadsheet-grid/style.css';
 import shadowCss from '@ishibashi0112/spreadsheet-grid/style.css?inline';
-import { baseColumns as sharedBaseColumns, lang, log, makeDataSource, makeRows, mountPoint, n, params, scenario, type Row } from '../shared';
+import { baseColumns as sharedBaseColumns, lang, log, makeDataSource, makeRows, mountPoint, n, params, scenario, type Row, wide, withWideColumns } from '../shared';
 // Solid 版のグリッドが受ける props の名前。変更(段階 3-3): Solid 版は core の SpreadsheetGridProps をすべて受けるようになった
 //   (packages/solid の model/gridTypes.ts の SupportedPropKeys は無くなった)ので、core の型の 1 段目の項目の名前を読む。
 import gridTypesSource from '../../../packages/core/src/model/gridTypes.core.ts?raw';
@@ -61,6 +61,10 @@ const withHeaderButton = (columns: GridColumn<Row>[]): GridColumn<Row>[] => {
 };
 
 function baseColumns(): GridColumn<Row>[] {
+  return withWideColumns(baseColumnsWithoutWide(), wide);
+}
+
+function baseColumnsWithoutWide(): GridColumn<Row>[] {
   return withHeaderButton(sharedBaseColumns({
     numberFormatter,
     // React 版は autoFocus。Solid は描き終わった後に入力欄へフォーカスする(autofocus は後から足した要素には効かない)。
