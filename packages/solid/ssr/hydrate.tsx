@@ -79,7 +79,7 @@ export async function hydrateFixture(
   const container = document.createElement('div');
   container.innerHTML = serverHtml;
   document.body.append(container);
-  const serverRoot = container.querySelector('.ssg-root[data-ssg-ssr]');
+  const serverRoot = container.querySelector('[data-ssg-ssr]');
   const dispose = hydrate(() => <Fixture />, container, { renderId: name });
   cleanups.push(() => {
     dispose();

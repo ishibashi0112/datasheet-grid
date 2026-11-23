@@ -80,6 +80,9 @@ export type RowDragArgs = {
   // 追加(1.0.1 / 2026-11-09 実アプリの総点検 AP-15): ハンドルを押したときにフォーカスを移すグリッドのルート。pointerdown の
   //   既定の動作を止めるのでフォーカスが外の入力欄に残り、直後の Ctrl+Z が外の入力欄の文字を戻していた。省略時は移さない。
   gridRootRef?: ReadonlyRef<HTMLElement | null>;
+  // 追加(1.4.1 / AP-11 のレビュー): フォーカスを移した直後に呼びます(core editController の endEditLeftOpen。開いたままの
+  //   custom エディタの編集を終える。セルを押したときと同じ)。省略は何もしない。
+  endEditLeftOpen?: (() => void) | undefined;
   // 追加(1.2.0 / 2026-11-09 実アプリの総点検 E-07): その位置へ落とせるか(from は掴んだ行の index、slot はドロップスロット =
   //   行 i の上の境界が i)。false の位置は、'ghost' ではガイド線を出さずゴーストを枠の外と同じ見た目にして離しても動かさない、
   //   'live' では落とせる最後の位置に留まる(最初から落とせなければ元の位置)。同じ from / スロットは聞き直さず、関数が
@@ -766,6 +769,7 @@ export const createRowDragController = (): RowDragController => {
     event.preventDefault();
     // 追加(AP-15): セルを押したときと同じくグリッドへフォーカスを移します(行の移動を Ctrl+Z で戻せるように)。
     args.gridRootRef?.current?.focus({ preventScroll: true });
+    args.endEditLeftOpen?.();
 
     // 修正(audit C-9): ドラッグ中に別のポインタ(2 本目の指 / ペン)でハンドルを押しても始めません(前のドラッグの
     //   rAF が止められなくなり、前のポインタを離したときに新しいドラッグの行で確定してしまうため)。同じポインタ

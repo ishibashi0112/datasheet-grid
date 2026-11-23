@@ -5,7 +5,13 @@ import type { CellDetailContext } from '@ishibashi0112/spreadsheet-grid-core';
 import { formatLocaleText } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/localeText';
 import { useGridLocaleText } from '../context/localeText';
 
-export function DetailToggleButton(props: { detail: CellDetailContext; rowNumber: number }) {
+export function DetailToggleButton(props: {
+  detail: CellDetailContext;
+  rowNumber: number;
+  // 追加(1.4.1 / AP-11 のレビュー): 押してフォーカスをグリッドへ移した直後に呼びます(開いたままの custom エディタの編集を
+  //   終える。セルを押したときと同じ)。
+  onPress?: (() => void) | undefined;
+}) {
   const texts = useGridLocaleText();
   return (
     <button
@@ -27,6 +33,7 @@ export function DetailToggleButton(props: { detail: CellDetailContext; rowNumber
         }
         event.preventDefault();
         (event.currentTarget as HTMLElement).closest<HTMLElement>('.ssg-shell')?.focus({ preventScroll: true });
+        props.onPress?.();
       }}
       onDblClick={(event) => event.stopPropagation()}
     >

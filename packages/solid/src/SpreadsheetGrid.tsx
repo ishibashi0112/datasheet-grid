@@ -1534,12 +1534,18 @@ function GridShellBody<T extends object>(
     'activeCellNotifier',
   );
 
+  // 編集のコントローラはここで作ります(押したときに開いたままの custom エディタの編集を終える endEditLeftOpen をポインタへ渡す
+  //   ため。1.4.1 / AP-11。最新の状態は下の「編集」で渡す)。
+  const edit = createEditController<T>();
+
   // ── ポインタ(範囲選択 / 見出し / 行番号 / ダブルクリック) ──
   const pointer = createPointerInteractionsController<T>();
   connectController(pointer, () => ({
     gridRootRef,
     bodyScrollRef,
     onCellDoubleClickRef: cellDoubleClickRef,
+    // 押してフォーカスをルートへ移した後、開いたままの custom エディタの編集を終える(1.4.1 / AP-11)。
+    endEditLeftOpen: edit.endEditLeftOpen,
     scrollContainerRef,
     leftPaneScrollRef,
     rightPaneScrollRef,
@@ -1996,8 +2002,7 @@ function GridShellBody<T extends object>(
     onTabPastLastColumn: detailRows.handleTabPastLastColumn,
   }), 'render', 'keyboard');
 
-  // ── 編集 ──
-  const edit = createEditController<T>();
+  // ── 編集(コントローラは上のポインタの前で作っている) ──
   connectController(edit, () => ({
     uiState: ui(),
     rows: rows(),
@@ -2374,6 +2379,8 @@ function GridShellBody<T extends object>(
       scrollContainerRef,
       bodyScrollRef,
       gridRootRef,
+      // 追加(1.4.1 / AP-11 のレビュー): フォーカスを移した後に、開いたままの custom エディタの編集を終える。
+      endEditLeftOpen: edit.endEditLeftOpen,
       commitRowMove: commitRowMoveFromDrag,
       ghostSlot: slots().dragGhost,
       motion: resolvedMotion() === 'off' ? 'ghost' : (props.rowDragMotion ?? 'ghost'),
@@ -2408,6 +2415,8 @@ function GridShellBody<T extends object>(
       return;
     }
     gridRootRef.current?.focus({ preventScroll: true });
+    // 追加(1.4.1 / AP-11 のレビュー): 開いたままの custom エディタの編集を終えます(セルを押したときと同じ)。
+    edit.endEditLeftOpen();
     // 全選択のチェックがあるときは、角で行の選択の全選択 / 解除を切り替えます(表全体のセルの選択より先)。
     if (enableSelectAllRows()) {
       rowSelectionCommands.handleToggleSelectAllRows();
@@ -2870,7 +2879,7 @@ function GridShellBody<T extends object>(
         };
         return (
           <Show when={expandable()}>
-            <DetailToggleButton detail={detail} rowNumber={rowNumber()} />
+            <DetailToggleButton detail={detail} rowNumber={rowNumber()} onPress={edit.endEditLeftOpen} />
           </Show>
         );
       }
@@ -3208,6 +3217,7 @@ function GridShellBody<T extends object>(
             onCommit={(value: unknown, direction?: EditorCommitDirection) => edit.commitEdit(value, direction)}
             onCancel={edit.cancelEdit}
             onRegisterFlush={edit.registerDraftFlush}
+            onRegisterLateCommit={edit.registerLateCommitReceiver}
             align={editingColumn()?.align}
             enterMove={props.editorEnterMove}
             domId={cellEditorDomId}
@@ -3309,8 +3319,10 @@ function GridShellBody<T extends object>(
     <GridLocaleTextContext value={localeTexts}>
       <GridPortalContext value={portalContext}>
       <div
+        // 変更(1.4.1): サーバーで隠す骨組みには ssg-root を付けません(サーバーの HTML の .ssg-root を写しの 1 つだけにする =
+        //   React 版と同じ。1.4.0 は 2 つ並んでいた)。見せるときに revealServerFrame が付けます。
         class={[
-          'ssg-root',
+          mode === 'hiddenFrame' ? undefined : 'ssg-root',
           themeClassName(),
           slots().root?.className,
           props.className,
@@ -3411,6 +3423,8 @@ function GridShellBody<T extends object>(
             onFocusIn={(event) => {
               if (event.target === event.currentTarget) {
                 gridRootRef.current?.focus({ preventScroll: true });
+                // 追加(1.4.1 / AP-11 のレビュー): 表の余白を押したときも、開いたままの custom エディタの編集を終えます。
+                edit.endEditLeftOpen();
               }
             }}
             role="grid"

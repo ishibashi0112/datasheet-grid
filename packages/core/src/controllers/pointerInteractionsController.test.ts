@@ -284,6 +284,83 @@ describe('pointerInteractionsController', () => {
     controller.dispose();
   });
 
+  // 追加(1.4.1 / AP-11): 押してフォーカスをルートへ移した直後に、開いたままの custom エディタの編集を終える口を呼ぶ。
+  it('セル・行番号・列見出しの左ボタンとタッチのタップで、フォーカスを移した後に endEditLeftOpen を呼ぶ(右ボタン・スクロールでは呼ばない)', () => {
+    const controller = createPointerInteractionsController<Row>();
+    const order: string[] = [];
+    const root = document.createElement('div');
+    vi.spyOn(root, 'focus').mockImplementation(() => {
+      order.push('focus');
+    });
+    const args = makeArgs({
+      gridRootRef: { current: root },
+      endEditLeftOpen: () => {
+        order.push('end');
+      },
+    });
+    controller.update(args);
+    controller.handleCellPointerDown({ row: 1, col: 0 }, pointerEvent());
+    firePointerUp({ pointerId: 1 });
+    controller.handleRowHeaderPointerDown(2, pointerEvent());
+    firePointerUp({ pointerId: 1 });
+    controller.handleColumnHeaderPointerDown(1, pointerEvent());
+    firePointerUp({ pointerId: 1 });
+    expect(order).toEqual(['focus', 'end', 'focus', 'end', 'focus', 'end']);
+    order.length = 0;
+
+    controller.handleCellPointerDown({ row: 1, col: 0 }, pointerEvent({ button: 2 }));
+    const touch = pointerEvent({ pointerType: 'touch', pointerId: 7 });
+    controller.handleCellPointerDown({ row: 1, col: 0 }, touch);
+    expect(order).toEqual([]);
+    // 動いた(スクロール)ら呼ばない。動かずに離したタップでは呼ぶ。
+    firePointerUp({ pointerId: 7, clientX: 30, clientY: 10, timeStamp: 100 });
+    expect(order).toEqual([]);
+    controller.handleCellPointerDown({ row: 1, col: 0 }, touch);
+    firePointerUp({ pointerId: 7, clientX: 11, clientY: 10, timeStamp: 200 });
+    expect(order).toEqual(['focus', 'end']);
+    controller.dispose();
+  });
+
+  // 追加(1.4.1 / AP-11 のレビュー): custom エディタで編集中のセルそのもの(エディタの中身が覆わない余白)を押したときは何もしない。
+  it('custom エディタで編集中のセルを押しても、フォーカスを移さず編集も終えない(ほかのセル・組み込みのエディタは従来どおり)', () => {
+    const controller = createPointerInteractionsController<Row>();
+    const order: string[] = [];
+    const root = document.createElement('div');
+    vi.spyOn(root, 'focus').mockImplementation(() => {
+      order.push('focus');
+    });
+    const customColumns: GridColumn<Row>[] = [
+      columns[0]!,
+      { ...columns[1]!, editor: { type: 'custom', render: () => null } },
+    ];
+    const editing = { ...createInitialGridUiState(), editingCell: { row: 1, col: 1 }, activeCell: { row: 1, col: 1 } };
+    const args = makeArgs({
+      gridRootRef: { current: root },
+      orderedColumns: customColumns,
+      uiState: editing,
+      endEditLeftOpen: () => {
+        order.push('end');
+      },
+    });
+    controller.update(args);
+    controller.handleCellPointerDown({ row: 1, col: 1 }, pointerEvent());
+    firePointerUp({ pointerId: 1 });
+    expect(order).toEqual([]);
+    // アクティブセルも選択も動かさない(pointerup の後始末 = selection/end などは押したかに関係なく来る)。
+    expect(args.actions.map((action) => action.type)).not.toContain('cell/activate');
+    expect(args.actions.map((action) => action.type)).not.toContain('selection/start');
+    controller.handleCellPointerDown({ row: 2, col: 1 }, pointerEvent());
+    firePointerUp({ pointerId: 1 });
+    expect(order).toEqual(['focus', 'end']);
+    order.length = 0;
+    // 組み込みのエディタ(blur で自分で確定する)の編集中のセルは従来どおり。
+    controller.update({ ...args, orderedColumns: columns });
+    controller.handleCellPointerDown({ row: 1, col: 1 }, pointerEvent());
+    firePointerUp({ pointerId: 1 });
+    expect(order).toEqual(['focus', 'end']);
+    controller.dispose();
+  });
+
   it('列ヘッダーの Shift+クリックは複数ソートをトグルする', () => {
     const controller = createPointerInteractionsController<Row>();
     const args = makeArgs();

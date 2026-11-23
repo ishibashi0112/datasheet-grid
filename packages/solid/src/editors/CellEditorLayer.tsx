@@ -17,6 +17,7 @@ import type {
 import { toDateInputValue } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/editorValues';
 import { resolveTypedStartText } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/editorStart';
 import { formatLocaleText } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/localeText';
+import type { LateEditCommitReceiver } from '@ishibashi0112/spreadsheet-grid-core/internal/controllers/editController';
 import type { GridColumn, GridResolvedSlots, SolidGridTypes } from '../model/gridTypes';
 import { useGridLocaleText } from '../context/localeText';
 import { px } from '../primitives/style';
@@ -25,6 +26,8 @@ import { NumberCellEditor } from './NumberCellEditor';
 import { SelectCellEditor } from './SelectCellEditor';
 import { DateCellEditor } from './DateCellEditor';
 import { CustomCellEditor } from './CustomCellEditor';
+
+const NOOP = () => {};
 
 // ペインの列の領域の中の座標(leadingWidth を含まない)。
 export type CellEditorRect = { left: number; top: number; width: number; height: number };
@@ -60,6 +63,9 @@ type CellEditorLayerProps<T> = {
   onCancel: () => void;
   // 打ちかけを確定する関数を預ける先(core editController の registerDraftFlush。1.3.0 / S7-03 / S8-04)。
   onRegisterFlush?: ((flush: (() => void) | null) => void) | undefined;
+  // custom エディタの、遅れて届く ctx.commit の受け取り口を登録する先(core editController の registerLateCommitReceiver。
+  //   1.4.1 / AP-11)。
+  onRegisterLateCommit?: ((receiver: LateEditCommitReceiver) => () => void) | undefined;
   align?: 'left' | 'center' | 'right' | undefined;
   enterMove?: EditorEnterMove | undefined;
   // 開いているときの枠の DOM id(編集中のセルが aria-owns で子に持つ)。
@@ -143,7 +149,11 @@ export function CellEditorLayer<T>(props: CellEditorLayerProps<T>) {
     // 行が揃うまでは描きません(行の無い ctx を渡さない。揃った後は上の memo が最後の値を持つので外れない)。
     return (
       <Show when={session() !== null}>
-        <CustomCellEditor render={render} context={context} />
+        <CustomCellEditor
+          render={render}
+          context={context}
+          onRegisterLateCommit={(receiver: LateEditCommitReceiver) => props.onRegisterLateCommit?.(receiver) ?? NOOP}
+        />
       </Show>
     );
   };

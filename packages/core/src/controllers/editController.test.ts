@@ -6,7 +6,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createEditController, type EditControllerArgs } from './editController';
 import { createInitialGridUiState } from '../model/gridReducer';
 import type { GridUiAction } from '../model/gridActions';
-import type { GridColumn, RowModel } from '../model/gridTypes.unbound';
+import type { GridColumn, GridUiState, RowModel } from '../model/gridTypes.unbound';
 import { ROW_DRAG_HANDLE_COLUMN_KEY } from '../logic/rowReorder';
 
 type Row = { id: number; qty: number };
@@ -389,5 +389,201 @@ describe('editController: 確定後のアクティブセル', () => {
     c.update({ ...stopped, uiState: { ...stopped.uiState, activeCell: { row: 2, col: 0 } } });
     flushRaf();
     expect(activations(t)).toEqual([{ type: 'cell/activate', cell: { row: 1, col: 0 } }]);
+  });
+});
+// 追加(1.4.1 / 2026-11-09 実アプリの総点検 AP-11): グリッドの中を押したとき、開いたままの custom エディタの編集をグリッドが終え、
+//   その後に届いた ctx.commit(onBlur でサーバーの検査を待ってから確定する作り)は編集していたセルへ書く。
+describe('editController: 開いたままの custom エディタ(AP-11)', () => {
+  type NoteRow = { id: number; note: string; qty: number };
+  const customColumns: GridColumn<NoteRow>[] = [
+    { key: 'note', title: 'メモ', width: 120, editor: { type: 'custom', render: () => null } },
+    { key: 'qty', title: '数量', width: 80, editor: { type: 'number' } },
+  ];
+  const makeNoteRowModel = (rows: NoteRow[]): RowModel<NoteRow> => ({
+    getRow: (i) => rows[i],
+    getRowCount: () => rows.length,
+    getSourceIndex: (i) => i,
+    getRowKey: (i) => rows[i]?.id ?? i,
+  });
+  const baseRows: NoteRow[] = [
+    { id: 1, note: 'a', qty: 1 },
+    { id: 2, note: 'b', qty: 2 },
+    { id: 3, note: 'c', qty: 3 },
+  ];
+  const setup = (editingCell: { row: number; col: number }, rows: NoteRow[] = baseRows) => {
+    const uiState: GridUiState = { ...createInitialGridUiState(), editingCell, activeCell: editingCell };
+    // store の代わり(getUiState はイベントの時点の状態。編集の開始 / 終わりだけを反映する)。
+    const live = { state: uiState };
+    const dispatch = vi.fn<(a: GridUiAction) => void>((action) => {
+      if (action.type === 'edit/stop') {
+        live.state = { ...live.state, editingCell: null };
+      } else if (action.type === 'edit/start') {
+        live.state = { ...live.state, editingCell: action.cell };
+      }
+    });
+    const onRowsChange = vi.fn<(next: NoteRow[]) => void>();
+    const args: EditControllerArgs<NoteRow> = {
+      uiState,
+      rows,
+      visibleColumns: customColumns,
+      rowModel: makeNoteRowModel(rows),
+      setEditorInitialValue: vi.fn(),
+      onRowsChange,
+      dispatch,
+      gridRootRef: { current: null },
+      editorActionGuardRef: { current: false },
+      getUiState: () => live.state,
+      rowKeyGetter: (row) => row.id,
+    };
+    const c = createEditController<NoteRow>();
+    c.update(args);
+    const received: Array<(value: unknown) => unknown> = [];
+    const unregister = c.registerLateCommitReceiver((commit) => {
+      received.push(commit);
+    });
+    return { c, args, dispatch, onRowsChange, received, unregister, live };
+  };
+
+  it('custom エディタが開いたままなら編集を終え、遅れて届いた確定を編集していたセルへ書く(1 回だけ)', () => {
+    const t = setup({ row: 1, col: 0 });
+    t.c.endEditLeftOpen();
+    expect(t.dispatch.mock.calls.map(([a]) => a.type)).toEqual(['edit/stop']);
+    expect(t.received).toHaveLength(1);
+    // 押した後にアクティブセルが動き、編集が終わった状態を描いた後で、onBlur の検査を待った確定が届く。
+    t.c.update({ ...t.args, uiState: { ...t.args.uiState, editingCell: null, activeCell: { row: 2, col: 1 } } });
+    expect(t.received[0]!('late')).toEqual({ status: 'committed' });
+    expect(t.onRowsChange.mock.calls[0]![0].map((row) => row.note)).toEqual(['a', 'late', 'c']);
+    // 2 回目は書かない。アクティブセルは動かさない(後処理は移動しない)。
+    expect(t.received[0]!('again')).toEqual({ status: 'noop' });
+    expect(t.onRowsChange).toHaveBeenCalledTimes(1);
+    expect(t.dispatch.mock.calls.filter(([a]) => a.type === 'cell/activate')).toEqual([]);
+  });
+
+  it('終えた後に並びが変わっても、行のキーで編集していた行へ書く', () => {
+    const t = setup({ row: 1, col: 0 });
+    t.c.endEditLeftOpen();
+    const reordered = [baseRows[2]!, baseRows[0]!, baseRows[1]!];
+    t.c.update({
+      ...t.args,
+      rows: reordered,
+      rowModel: makeNoteRowModel(reordered),
+      uiState: { ...t.args.uiState, editingCell: null },
+    });
+    expect(t.received[0]!('late')).toEqual({ status: 'committed' });
+    const written = t.onRowsChange.mock.calls[0]![0];
+    expect(written.find((row) => row.id === 2)?.note).toBe('late');
+    expect(written.find((row) => row.id === 1)?.note).toBe('a');
+  });
+
+  it('終えた後に行が消えていれば書かない / 編集できなくなっていれば書かない', () => {
+    const gone = setup({ row: 1, col: 0 });
+    gone.c.endEditLeftOpen();
+    const rest = [baseRows[0]!];
+    gone.c.update({ ...gone.args, rows: rest, rowModel: makeNoteRowModel(rest), uiState: { ...gone.args.uiState, editingCell: null } });
+    expect(gone.received[0]!('late')).toEqual({ status: 'noop' });
+    expect(gone.onRowsChange).not.toHaveBeenCalled();
+
+    const locked = setup({ row: 1, col: 0 });
+    locked.c.endEditLeftOpen();
+    locked.c.update({ ...locked.args, readOnly: true, uiState: { ...locked.args.uiState, editingCell: null } });
+    expect(locked.received[0]!('late')).toEqual({ status: 'noop' });
+    expect(locked.onRowsChange).not.toHaveBeenCalled();
+  });
+
+  it('検査で reject する値は書かず、rejected を返す', () => {
+    const rejecting: GridColumn<NoteRow>[] = [
+      { ...customColumns[0]!, validate: ({ value }) => (value === 'ng' ? 'だめです' : true), validationMode: 'reject' },
+      customColumns[1]!,
+    ];
+    const t = setup({ row: 0, col: 0 });
+    t.c.update({ ...t.args, visibleColumns: rejecting });
+    t.c.endEditLeftOpen();
+    expect(t.received[0]!('ng')).toEqual({ status: 'rejected', message: 'だめです' });
+    expect(t.onRowsChange).not.toHaveBeenCalled();
+  });
+
+  it('組み込みのエディタ(blur で自分で確定する)・確定の直後(再入抑止中)・編集していないときは何もしない', () => {
+    const builtIn = setup({ row: 0, col: 1 });
+    builtIn.c.endEditLeftOpen();
+    expect(builtIn.dispatch).not.toHaveBeenCalled();
+    expect(builtIn.received).toEqual([]);
+
+    // onBlur で同期に ctx.commit した(押したことによる blur)後は、もう終わっている。
+    const committed = setup({ row: 0, col: 0 });
+    expect(committed.c.commitEdit('x')).toEqual({ status: 'committed' });
+    committed.c.endEditLeftOpen();
+    expect(committed.dispatch.mock.calls.map(([a]) => a.type)).toEqual(['edit/stop']);
+    expect(committed.received).toEqual([]);
+
+    const idle = setup({ row: 0, col: 0 });
+    idle.c.update({ ...idle.args, uiState: { ...idle.args.uiState, editingCell: null }, getUiState: undefined });
+    idle.c.endEditLeftOpen();
+    expect(idle.dispatch).not.toHaveBeenCalled();
+  });
+
+  it('受け取り口を外した後・次のセッションの箱が先に登録した後', () => {
+    const t = setup({ row: 0, col: 0 });
+    // 次のセッションの箱が先に登録してから、前の箱が外す(前の箱の外しは今の登録を消さない)。
+    const next: unknown[] = [];
+    t.c.registerLateCommitReceiver((commit) => next.push(commit));
+    t.unregister();
+    t.c.endEditLeftOpen();
+    expect(next).toHaveLength(1);
+    expect(t.received).toEqual([]);
+  });
+
+  it('serverSide では今の表の位置へ書き戻す(表に無ければ書かない)', () => {
+    const t = setup({ row: 2, col: 0 });
+    const applyServerSideCellEdits = vi.fn(() => 1);
+    t.c.update({ ...t.args, onRowsChange: undefined, applyServerSideCellEdits });
+    t.c.endEditLeftOpen();
+    expect(t.received[0]!('late')).toEqual({ status: 'committed' });
+    expect(applyServerSideCellEdits).toHaveBeenCalledWith([{ viewIndex: 2, column: customColumns[0], value: 'late' }]);
+  });
+
+  // 追加(1.4.1 / AP-11 のレビュー)。
+  it('グリッドを外した後に届いた確定は書かない', () => {
+    const t = setup({ row: 1, col: 0 });
+    t.c.endEditLeftOpen();
+    t.c.dispose();
+    expect(t.received[0]!('late')).toEqual({ status: 'noop' });
+    expect(t.onRowsChange).not.toHaveBeenCalled();
+  });
+
+  it('描き直す前に続けて届いた 2 つの確定は、前の確定の上に書く(前の確定を消さない)', () => {
+    const t = setup({ row: 0, col: 0 });
+    t.c.endEditLeftOpen();
+    // 2 つ目のセルを開いて、また押して終える(親はまだ rows を描き直していない)。
+    t.live.state = { ...t.live.state, editingCell: { row: 2, col: 0 } };
+    t.c.update({ ...t.args, uiState: t.live.state });
+    t.c.endEditLeftOpen();
+    expect(t.received).toHaveLength(2);
+    expect(t.received[0]!('A')).toEqual({ status: 'committed' });
+    expect(t.received[1]!('C')).toEqual({ status: 'committed' });
+    expect(t.onRowsChange.mock.calls[1]![0].map((row) => row.note)).toEqual(['A', 'b', 'C']);
+    // 親が新しい rows を描いた後は、その rows の上に書く。
+    const fresh = baseRows.map((row) => ({ ...row, note: `${row.note}!` }));
+    t.c.update({ ...t.args, rows: fresh, rowModel: makeNoteRowModel(fresh), uiState: t.live.state });
+    t.live.state = { ...t.live.state, editingCell: { row: 1, col: 0 } };
+    t.c.update({ ...t.args, rows: fresh, rowModel: makeNoteRowModel(fresh), uiState: t.live.state });
+    t.c.endEditLeftOpen();
+    expect(t.received[2]!('B')).toEqual({ status: 'committed' });
+    expect(t.onRowsChange.mock.calls[2]![0].map((row) => row.note)).toEqual(['a!', 'B', 'c!']);
+  });
+
+  it('同じセルを開き直して編集している間は書かない(開き直したエディタの確定を古い値で上書きさせない)', () => {
+    const t = setup({ row: 1, col: 0 });
+    t.c.endEditLeftOpen();
+    t.c.update({ ...t.args, uiState: t.live.state });
+    t.live.state = { ...t.live.state, editingCell: { row: 1, col: 0 } };
+    t.c.update({ ...t.args, uiState: t.live.state });
+    expect(t.received[0]!('late')).toEqual({ status: 'noop' });
+    expect(t.onRowsChange).not.toHaveBeenCalled();
+    // 別のセルを編集している間は書く。
+    const other = setup({ row: 1, col: 0 });
+    other.c.endEditLeftOpen();
+    other.live.state = { ...other.live.state, editingCell: { row: 2, col: 0 } };
+    other.c.update({ ...other.args, uiState: other.live.state });
+    expect(other.received[0]!('late')).toEqual({ status: 'committed' });
   });
 });

@@ -8,9 +8,13 @@ import { useGridLocaleText } from '../hooks/useGridLocaleText';
 export function DetailToggleButton({
   detail,
   rowNumber,
+  onPress,
 }: {
   detail: NonNullable<CellRenderContext<unknown>['detail']>;
   rowNumber: number;
+  // 追加(1.4.1 / AP-11 のレビュー): 押してフォーカスをグリッドへ移した直後に呼びます(開いたままの custom エディタの編集を
+  //   終える。core editController の endEditLeftOpen。セルを押したときと同じ)。
+  onPress?: (() => void) | undefined;
 }) {
   const texts = useGridLocaleText();
   return (
@@ -34,6 +38,7 @@ export function DetailToggleButton({
         }
         event.preventDefault();
         event.currentTarget.closest<HTMLElement>('.ssg-shell')?.focus({ preventScroll: true });
+        onPress?.();
       }}
       onDoubleClick={(event) => event.stopPropagation()}
     >

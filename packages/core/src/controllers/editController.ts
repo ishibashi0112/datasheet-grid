@@ -27,6 +27,7 @@ import { findViewRowIndexByKey, isFocusInsideDetailCard, resolveFirstDataColInde
 import { getCellValue, isCellEditable, isViewCellEditable } from '../utils/permissions';
 import type { ServerSideCellEditInput } from '../logic/serverSideEdits';
 import { getActiveElement } from '../utils/shadowDom';
+import { readLiveUiState } from './liveUiState';
 
 export type EditControllerArgs<T extends object> = {
   uiState: GridUiState;
@@ -58,6 +59,12 @@ export type EditControllerArgs<T extends object> = {
   rowKeyGetter?: ((row: T, index: number) => GridRowKey) | undefined;
 };
 
+// 追加(1.4.1 / AP-11): 開いたままの custom エディタの編集をグリッドが終えた(endEditLeftOpen)後に、そのセッションの ctx.commit
+//   を編集していたセルへ書く関数です(onBlur でサーバーの検査を待ってから確定する作りの値を捨てない)。1 回だけ効きます。
+export type LateEditCommit = (value: unknown) => EditorCommitResult;
+// custom エディタの箱が登録する受け取り口(終えたときに、そのセッションの LateEditCommit を渡す)。
+export type LateEditCommitReceiver = (commit: LateEditCommit) => void;
+
 export type EditController<T extends object> = {
   update: (args: EditControllerArgs<T>) => void;
   activateSingleCell: (cell: CellCoord) => void;
@@ -71,6 +78,19 @@ export type EditController<T extends object> = {
   //   打ちかけで預け直す。select / custom は null)。編集していた行が絞り込みから外れてエディタが先に外れても、その行へ確定できる
   //   ように(エディタが外れると blur を待てない)。
   registerDraftFlush: (flush: (() => void) | null) => void;
+  // 追加(1.4.1 / 2026-11-09 実アプリの総点検 AP-11): グリッドの中を押してフォーカスをルートへ移した直後に呼びます(core
+  //   pointerInteractionsController)。custom エディタが開いたまま(onBlur で ctx.commit / ctx.cancel を呼ばない作り)なら、
+  //   グリッドが編集を終えます(打ちかけは書かない)。これまではエディタが開いたまま残り、別のセルをダブルクリックするまで
+  //   グリッドのキー操作が効かなかった。その後に届いた ctx.commit は、登録された受け取り口へ渡す関数で編集していたセルへ書きます
+  //   (1.0.1 で押したときに終える直しを戻した理由 = レビュー RA-3 の、onBlur で非同期に確定する作りの値が消えること、への対処)。
+  //   組み込みのエディタは blur で自分で確定 / 取り消すので何もしません。
+  endEditLeftOpen: () => void;
+  // 追加(1.4.1 / AP-11): custom エディタの箱が、遅れて届く ctx.commit の受け取り口を登録します(戻り値で外す。外すのは今も
+  //   その受け取り口が登録されているときだけ = 次のセッションの箱が先に登録していても消さない)。
+  registerLateCommitReceiver: (receiver: LateEditCommitReceiver) => () => void;
+  // 追加(1.4.1 / AP-11 のレビュー): グリッドを外したときに呼びます(React の useController / Solid の connectController)。
+  //   外した後に届いた ctx.commit を書きません(1.4.0 までと同じく何もしない。古い rows で親の新しい行を上書きしない)。
+  dispose: () => void;
 };
 
 // 追加(audit RD-1 / RD-3): 編集セッションの「同一性」です。editingCell は view / 論理 index だけを
@@ -151,13 +171,19 @@ export const createEditController = <T extends object>(): EditController<T> => {
   //   捨てられていた。エディタを開いたまま別のセルを押し、1 フレームの内に打つと先頭の文字しか残らなかった)。
   let pendingAfterEdit: { superseded: boolean } | null = null;
   // 追加(1.3.0 / S7-03 / S8-04): 編集していた行が表から消えたとき(絞り込みから外れた・rows が別の行に替わった)に、エディタの
-  //   確定(フォーカスを外して blur で受ける)を書き込む先(rows の index と列)。消えた行が rows に無ければ null(取り消し)。
-  let lostEditTarget: { sourceIndex: number; column: GridColumn<T>; cell: CellCoord; rowKey: GridRowKey } | null = null;
+  //   確定(フォーカスを外して blur で受ける)を書き込む先(行と列のキー。書けなければ commitByKey が書かない)。
+  let lostEditTarget: EditIdentity | null = null;
   let lostEditHandled = false;
   // finishLostEdit の中(エディタの blur の確定は lostEditTarget へ。無ければ書かない = 消えた行の座標に来た別の行へ書かない)。
   let finishingLostEdit = false;
   // 今のエディタの打ちかけを確定する関数(registerDraftFlush。編集が終われば null)。
   let draftFlush: (() => void) | null = null;
+  // 追加(1.4.1 / AP-11): 今の custom エディタの箱が登録した、遅れて届く ctx.commit の受け取り口。
+  let lateCommitReceiver: LateEditCommitReceiver | null = null;
+  // 追加(1.4.1 / AP-11 のレビュー): 遅れた確定で最後に onRowsChange へ渡した行と、そのときの rows。親が描き直す前に次の
+  //   遅れた確定が届いたら(2 つの検査が同時に終わったなど)、渡した行の上に書きます(前の確定を消さない。history の
+  //   pendingRows と同じ考え方)。
+  let keyedWrite: { from: T[]; rows: T[] } | null = null;
 
   // 指定セルの rowKey / columnKey を読みます(行が無い = SSRM 未ロード / 範囲外なら null)。
   const readKeysAt = (
@@ -258,13 +284,7 @@ export const createEditController = <T extends object>(): EditController<T> => {
       next.dispatch(gridActions.stopEdit());
       return;
     }
-    const column = next.visibleColumns.find((candidate) => candidate.key === lost.columnKey);
-    const sourceIndex =
-      column === undefined || next.applyServerSideCellEdits !== undefined || next.onRowsChange === undefined
-        ? -1
-        : findSourceIndexByKey(next, lost.rowKey);
-    lostEditTarget =
-      column !== undefined && sourceIndex >= 0 ? { sourceIndex, column, cell: lost.cell, rowKey: lost.rowKey } : null;
+    lostEditTarget = lost;
     lostEditHandled = false;
     const flush = draftFlush;
     draftFlush = null;
@@ -308,40 +328,6 @@ export const createEditController = <T extends object>(): EditController<T> => {
       }
     }
     return -1;
-  };
-
-  // 消えた行への確定です(finishLostEdit の中のエディタの blur から)。書けなければ書かずに終えます。
-  const commitToLostRow = (
-    current: EditControllerArgs<T>,
-    target: NonNullable<typeof lostEditTarget>,
-    committedValue: unknown,
-  ): EditorCommitResult => {
-    const { rows, onRowsChange } = current;
-    const row = rows[target.sourceIndex];
-    if (
-      row === undefined ||
-      onRowsChange === undefined ||
-      !isCellEditable(
-        { readOnly: current.readOnly, canEditCell: current.canEditCell },
-        target.cell.row,
-        target.cell.col,
-        row,
-        target.column,
-        { sourceRowIndex: target.sourceIndex, rowKey: target.rowKey },
-      )
-    ) {
-      return { status: 'noop' };
-    }
-    if (isUnchangedEditorCommit(target.column, getCellValue(row, target.column), committedValue)) {
-      return { status: 'committed' };
-    }
-    const parsedValue = parseCommittedValue(target.column, committedValue, row);
-    const decision = decideCellWrite(target.column, row, parsedValue, current.localeTexts);
-    if (decision.action === 'reject') {
-      return { status: 'noop' };
-    }
-    onRowsChange(writeRowsCell(rows, target.sourceIndex, target.column, parsedValue));
-    return { status: 'committed' };
   };
 
   const activateSingleCell = (cell: CellCoord) => {
@@ -497,7 +483,7 @@ export const createEditController = <T extends object>(): EditController<T> => {
     if (finishingLostEdit) {
       const target = lostEditTarget;
       lostEditTarget = null;
-      return target === null ? { status: 'noop' } : commitToLostRow(args, target, committedValue);
+      return target === null ? { status: 'noop' } : commitByKey(args, target, committedValue, true);
     }
 
     const editingCell = uiState.editingCell;
@@ -606,5 +592,124 @@ export const createEditController = <T extends object>(): EditController<T> => {
     draftFlush = flush;
   };
 
-  return { update, activateSingleCell, startEditWithValue, commitEdit, cancelEdit, registerDraftFlush };
+  // 行と列のキーで決めたセルへの確定です。消えた行への確定(finishLostEdit の中のエディタの blur。1.3.0 / S7-03 / S8-04)と、
+  //   グリッドが終えた custom エディタの編集への遅れて届いた確定(1.4.1 / AP-11)に使います。行と列はキーで今の位置を探します
+  //   (押した後に並びが変わっても、編集していたセルへ書く)。書けない(行か列が無い・編集できない・serverSide で行が表に無い)
+  //   ときは書きません。アクティブセルとフォーカスは動かしません(押した先の操作を上書きしない)。lost は消えた行の確定
+  //   (エディタの blur が rejected を受けると取り消しへ進むため、従来どおり noop を返す)。
+  const commitByKey = (
+    current: EditControllerArgs<T>,
+    target: EditIdentity,
+    committedValue: unknown,
+    lost?: boolean,
+  ): EditorCommitResult => {
+    const column = current.visibleColumns.find((candidate) => candidate.key === target.columnKey);
+    // 遅れた確定のセルを開き直して編集している間は書きません(開き直したエディタは古い値で始まっているので、ここで書くと
+    //   その確定が書いた値を古い値で上書きする)。編集中のセルはイベントの時点の状態から読む(描き直す前でも)。
+    const editing = lost ? null : readLiveUiState(current).editingCell;
+    const editingKeys = editing && readKeysAt(current, editing);
+    if (
+      column === undefined ||
+      (editingKeys && Object.is(editingKeys.rowKey, target.rowKey) && editingKeys.columnKey === target.columnKey)
+    ) {
+      return { status: 'noop' };
+    }
+    const located = locateIdentity(current, target);
+    let row: T | undefined;
+    let sourceIndex = -1;
+    const rows = keyedWrite !== null && keyedWrite.from === current.rows ? keyedWrite.rows : current.rows;
+    if (current.applyServerSideCellEdits !== undefined) {
+      row = located === null ? undefined : current.rowModel.getRow(located.row);
+    } else if (current.onRowsChange !== undefined) {
+      sourceIndex = findSourceIndexByKey(current, target.rowKey);
+      row = sourceIndex < 0 ? undefined : rows[sourceIndex];
+    }
+    // 編集できるかは今の位置で見ます(表から外れた行は外れる前の位置。finishLostEdit と同じ)。
+    const cell = located ?? target.cell;
+    if (
+      row === undefined ||
+      !isCellEditable(
+        { readOnly: current.readOnly, canEditCell: current.canEditCell },
+        cell.row,
+        cell.col,
+        row,
+        column,
+        { sourceRowIndex: sourceIndex >= 0 ? sourceIndex : current.rowModel.getSourceIndex(cell.row), rowKey: target.rowKey },
+      )
+    ) {
+      return { status: 'noop' };
+    }
+    if (isUnchangedEditorCommit(column, getCellValue(row, column), committedValue)) {
+      return { status: 'committed' };
+    }
+    const parsedValue = parseCommittedValue(column, committedValue, row);
+    const decision = decideCellWrite(column, row, parsedValue, current.localeTexts);
+    if (decision.action === 'reject') {
+      return lost ? { status: 'noop' } : { status: 'rejected', message: decision.message };
+    }
+    if (current.applyServerSideCellEdits !== undefined && located !== null) {
+      current.applyServerSideCellEdits([{ viewIndex: located.row, column, value: parsedValue }]);
+    } else if (current.onRowsChange !== undefined && sourceIndex >= 0) {
+      const next = writeRowsCell(rows, sourceIndex, column, parsedValue);
+      keyedWrite = { from: current.rows, rows: next };
+      current.onRowsChange(next);
+    }
+    return { status: 'committed' };
+  };
+
+  const endEditLeftOpen = () => {
+    const current = args;
+    if (current === null || current.editorActionGuardRef.current) {
+      return;
+    }
+    const editingCell = readLiveUiState(current).editingCell;
+    if (editingCell === null) {
+      return;
+    }
+    const column = current.visibleColumns[editingCell.col];
+    if (column?.editor?.type !== 'custom') {
+      return;
+    }
+    const keys = identity ?? readKeysAt(current, editingCell);
+    const receiver = lateCommitReceiver;
+    if (keys !== null && receiver !== null) {
+      const target: EditIdentity = { ...keys, cell: editingCell };
+      let used = false;
+      receiver((committedValue) => {
+        if (used || args === null) {
+          return { status: 'noop' };
+        }
+        used = true;
+        return commitByKey(args, target, committedValue);
+      });
+    }
+    // 取り消しと同じ終え方(フォーカスは押した処理がルートへ移している。後処理は移動しない)。
+    current.editorActionGuardRef.current = true;
+    current.dispatch(gridActions.stopEdit());
+    scheduleAfterEdit(null);
+  };
+
+  const registerLateCommitReceiver = (receiver: LateEditCommitReceiver) => {
+    lateCommitReceiver = receiver;
+    return () => {
+      if (lateCommitReceiver === receiver) {
+        lateCommitReceiver = null;
+      }
+    };
+  };
+
+  return {
+    update,
+    activateSingleCell,
+    startEditWithValue,
+    commitEdit,
+    cancelEdit,
+    registerDraftFlush,
+    endEditLeftOpen,
+    registerLateCommitReceiver,
+    dispose: () => {
+      args = null;
+      lateCommitReceiver = null;
+    },
+  };
 };

@@ -15,7 +15,7 @@ import {
 } from '@ishibashi0112/spreadsheet-grid-solid';
 import '@ishibashi0112/spreadsheet-grid/style.css';
 import shadowCss from '@ishibashi0112/spreadsheet-grid/style.css?inline';
-import { baseColumns as sharedBaseColumns, lang, log, makeDataSource, makeRows, mountPoint, n, params, scenario, type Row, wide, withWideColumns } from '../shared';
+import { baseColumns as sharedBaseColumns, customEditorBlur, lang, log, makeDataSource, makeRows, mountPoint, n, params, scenario, type Row, wide, withWideColumns } from '../shared';
 // Solid 版のグリッドが受ける props の名前。変更(段階 3-3): Solid 版は core の SpreadsheetGridProps をすべて受けるようになった
 //   (packages/solid の model/gridTypes.ts の SupportedPropKeys は無くなった)ので、core の型の 1 段目の項目の名前を読む。
 import gridTypesSource from '../../../packages/core/src/model/gridTypes.core.ts?raw';
@@ -82,6 +82,8 @@ function baseColumnsWithoutWide(): GridColumn<Row>[] {
             if (e.key === 'Enter') ctx.commit((e.target as HTMLInputElement).value, 'down');
             if (e.key === 'Escape') ctx.cancel();
           }}
+          // 追加(1.4.1 / AP-11): window.__customEditorBlur で onBlur の確定の仕方を切り替える(t-v141。既定は何もしない)。
+          onBlur={(e) => customEditorBlur(ctx, e.currentTarget.value)}
         />
       );
     },

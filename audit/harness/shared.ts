@@ -16,6 +16,19 @@ export type CustomEditorContext = {
   commit: (value: unknown, direction?: 'down') => unknown;
   cancel: () => void;
 };
+// 追加(1.4.1 / AP-11): custom エディタの onBlur の確定の仕方(window.__customEditorBlur。t-v141)。既定(未設定)は何もしない
+//   (ハーネスのほかのテストと同じ = onBlur で確定しない作り)。'sync' はその場で、'timeout' は 50ms 後(サーバーの検査を待つ作り)
+//   に ctx.commit(値) を呼び、結果を __events の 'custom-commit' に残す。
+export function customEditorBlur(ctx: CustomEditorContext, value: string): void {
+  const mode = (window as unknown as { __customEditorBlur?: 'sync' | 'timeout' }).__customEditorBlur;
+  const commit = () => log('custom-commit', ctx.commit(value));
+  if (mode === 'sync') {
+    commit();
+  } else if (mode === 'timeout') {
+    setTimeout(commit, 50);
+  }
+}
+
 export type HarnessDeps = {
   numberFormatter: () => unknown;
   // custom エディタの中身(Enter で ctx.commit(値, 'down')、Escape で ctx.cancel()。描いたら入力欄へフォーカス)。

@@ -88,6 +88,7 @@ import { useGridBarContext } from './hooks/useGridBarContext';
 import { createLocaleTextResolver, formatLocaleText } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/localeText';
 // 追加(選択範囲の集計)
 import { useGridEditController } from './hooks/useGridEditController';
+import { createEditController } from '@ishibashi0112/spreadsheet-grid-core/internal/controllers/editController';
 import { useGridHistoryController } from './hooks/useGridHistoryController';
 import { useGridKeyboardInteractions } from './hooks/useGridKeyboardInteractions';
 import { useGridPointerInteractions } from './hooks/useGridPointerInteractions';
@@ -2423,6 +2424,9 @@ export function useGridShell<T extends object>({
   // 追加(touch): セルダブルクリック処理の latest-ref(定義は下方。useEffect で同期)。
   // 変更(G-1): ダブルクリック元の DOM 標準 MouseEvent も受けます(onCellDoubleClick の params.event)。
   const cellDoubleClickRef = useRef<(cell: CellCoord, event: MouseEvent) => void>(() => {});
+  // 追加(1.4.1 / 2026-11-09 実アプリの総点検 AP-11): 編集のコントローラはここで作ります(押したときに開いたままの custom エディタの
+  //   編集を終える endEditLeftOpen をポインタのコントローラへ渡すため。最新の状態は下の useGridEditController が渡す)。
+  const [editController] = useState(() => createEditController<T>());
 
   const {
     // 追加(フィルハンドル 1A): ヒットテスト(フィルハンドルのドラッグ)。
@@ -2443,6 +2447,8 @@ export function useGridShell<T extends object>({
     // 追加(touch): セルのダブルクリック処理(handleCellDoubleClickWithController)は本フックより
     //   後ろで定義されるため、useEffect 同期の latest-ref(RS-AS 方式)で渡します。
     onCellDoubleClickRef: cellDoubleClickRef,
+    // 追加(1.4.1 / AP-11): 押してフォーカスをルートへ移した後、開いたままの custom エディタの編集を終える。
+    endEditLeftOpen: editController.endEditLeftOpen,
     // 追加(10-G): 自動スクロールは共有スクロールコンテナを動かします。
     scrollContainerRef,
     // 追加(10-E): 固定ペインの ref を渡し、clientX のペイン判定に使います。
@@ -2749,11 +2755,16 @@ export function useGridShell<T extends object>({
   );
 
   // 追加(dogfood DF-08): スクロールする要素そのものにフォーカスが来たら(余白やスクロールバーのクリックなど)、シェルへ移します。
-  const handleScrollContainerFocus = useCallback((event: FocusEvent<HTMLDivElement>) => {
-    if (event.target === event.currentTarget) {
-      gridRootRef.current?.focus({ preventScroll: true });
-    }
-  }, []);
+  const handleScrollContainerFocus = useCallback(
+    (event: FocusEvent<HTMLDivElement>) => {
+      if (event.target === event.currentTarget) {
+        gridRootRef.current?.focus({ preventScroll: true });
+        // 追加(1.4.1 / AP-11 のレビュー): 表の余白を押したときも、開いたままの custom エディタの編集を終えます。
+        editController.endEditLeftOpen();
+      }
+    },
+    [editController],
+  );
 
   // 追加(dogfood DU-01): PageUp / PageDown の移動先です(見えている本体の高さ 1 画面ぶん先の行。展開行の帯 / auto-height の
   //   行の高さも行メトリクスで数える)。
@@ -2872,7 +2883,7 @@ export function useGridShell<T extends object>({
     getUiState: gridStore.getState,
     // 追加(1.3.0 / S7-03 / S8-04): 編集していた行が表から消えたとき、まだ rows にあるかを行キーで探す。
     rowKeyGetter: resolvedRowKeyGetter,
-  });
+  }, editController);
   // 追加(Solid 版 段階 0-2): セルの操作のコマンド群(core engine/cellCommands)へ最新の状態を渡します。
   useControllerLifecycle(cellCommands, {
     rows,
@@ -3103,6 +3114,8 @@ export function useGridShell<T extends object>({
         return;
       }
       gridRootRef.current?.focus({ preventScroll: true }); // proposals ⑨(セル押下と同方針)
+      // 追加(1.4.1 / AP-11 のレビュー): 開いたままの custom エディタの編集を終えます(セルを押したときと同じ)。
+      editController.endEditLeftOpen();
       // 追加(行選択): 全選択チェック有効時はコーナーで行選択の全選択/解除をトグルします
       //   (従来のグリッド全体セル選択より優先)。
       if (enableSelectAllRows) {
@@ -3124,6 +3137,7 @@ export function useGridShell<T extends object>({
       visibleColumns.length,
       enableSelectAllRows,
       handleToggleSelectAllRows,
+      editController,
     ],
   );
 
@@ -3446,6 +3460,8 @@ export function useGridShell<T extends object>({
       bodyScrollRef,
       // 追加(1.0.1 / AP-15): ハンドルを押したらグリッドへフォーカスを移す。
       gridRootRef,
+      // 追加(1.4.1 / AP-11 のレビュー): 移した後に、開いたままの custom エディタの編集を終える。
+      endEditLeftOpen: editController.endEditLeftOpen,
       commitRowMove: commitRowMoveFromDrag,
       hasRowKeys: rowKeyGetter !== undefined,
       ghostSlot: slots.dragGhost,
@@ -3568,6 +3584,7 @@ export function useGridShell<T extends object>({
             <DetailToggleButton
               detail={detail}
               rowNumber={labelViewIndexes ? resolveDataRowNumber(labelViewIndexes, rowIndex) : rowIndex + 1}
+              onPress={editController.endEditLeftOpen}
             />
           ) : null;
         }
@@ -3684,6 +3701,7 @@ export function useGridShell<T extends object>({
       detailRows,
       renderRowDragHandleCell,
       labelDisplay,
+      editController,
     ],
   );
 
@@ -4603,6 +4621,7 @@ export function useGridShell<T extends object>({
                   onCommit={commitEdit}
                   onCancel={cancelEdit}
                   onRegisterFlush={registerDraftFlush}
+                  onRegisterLateCommit={editController.registerLateCommitReceiver}
                   align={editingColumn?.align}
                   enterMove={editorEnterMove}
                   domId={cellEditorDomId}
@@ -4830,6 +4849,7 @@ export function useGridShell<T extends object>({
                   onCommit={commitEdit}
                   onCancel={cancelEdit}
                   onRegisterFlush={registerDraftFlush}
+                  onRegisterLateCommit={editController.registerLateCommitReceiver}
                   align={editingColumn?.align}
                   enterMove={editorEnterMove}
                   domId={cellEditorDomId}
@@ -5059,6 +5079,7 @@ export function useGridShell<T extends object>({
                   onCommit={commitEdit}
                   onCancel={cancelEdit}
                   onRegisterFlush={registerDraftFlush}
+                  onRegisterLateCommit={editController.registerLateCommitReceiver}
                   align={editingColumn?.align}
                   enterMove={editorEnterMove}
                   domId={cellEditorDomId}

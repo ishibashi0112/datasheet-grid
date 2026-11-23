@@ -107,6 +107,9 @@ export type PointerInteractionsArgs<T> = {
   // 変更(G-1): ダブルクリック元のイベント(mouse = dblclick / touch = ダブルタップを離した pointerup)も渡します
   //   (onCellDoubleClick の params.event)。
   onCellDoubleClickRef: ReadonlyRef<(cell: CellCoord, event: MouseEvent) => void>;
+  // 追加(1.4.1 / 2026-11-09 実アプリの総点検 AP-11): セル・行番号・列見出しを押してフォーカスをルートへ移した直後に呼びます
+  //   (core editController の endEditLeftOpen。開いたままの custom エディタの編集を終える)。省略は何もしない。
+  endEditLeftOpen?: (() => void) | undefined;
 };
 
 export type PointerInteractionsController<T> = {
@@ -272,6 +275,8 @@ export const createPointerInteractionsController = <T,>(): PointerInteractionsCo
       resolveFirstDataCell,
     } = args;
     gridRootRef.current?.focus({ preventScroll: true });
+    // 追加(1.4.1 / AP-11): タップでも、開いたままの custom エディタの編集を終えます(マウスの beginPointerDown と同じ)。
+    args.endEditLeftOpen?.();
     const { target } = pending;
     if (target.kind === 'cell') {
       const last = lastTouchTap;
@@ -522,12 +527,26 @@ export const createPointerInteractionsController = <T,>(): PointerInteractionsCo
     if (args === null || event.button !== 0) {
       return false;
     }
+    // 追加(1.4.1 / AP-11 のレビュー): custom エディタで編集中のセルそのもの(エディタの中身が覆わない余白)を押したときは
+    //   何もしません(フォーカスもエディタに残す。押しただけで編集を終えて打ちかけを捨てない)。
+    const editing = readLiveUiState(args).editingCell;
+    if (
+      target.kind === 'cell' &&
+      editing !== null &&
+      editing.row === target.cell.row &&
+      editing.col === target.cell.col &&
+      args.orderedColumns[editing.col]?.editor?.type === 'custom'
+    ) {
+      return false;
+    }
     lastPointerType = event.pointerType;
     if (event.pointerType === 'touch') {
       pendingTouchTap = { pointerId: event.pointerId, x: event.clientX, y: event.clientY, target };
       return false;
     }
     args.gridRootRef.current?.focus({ preventScroll: true });
+    // 追加(1.4.1 / AP-11): フォーカスを移した(エディタの blur の確定は済んだ)後も custom エディタが開いていれば終えます。
+    args.endEditLeftOpen?.();
     args.pointerClientRef.current = { x: event.clientX, y: event.clientY };
     autoScrollOrigin = { x: event.clientX, y: event.clientY };
     autoScrollArmed = false;
