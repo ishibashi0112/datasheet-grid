@@ -77,9 +77,17 @@ description: セルの範囲選択・行の選択(チェックボックス)と�
 
 ## 貼り付け(`Ctrl/Cmd+V`)
 
-```tsx
+```tsx tab="React"
 <SpreadsheetGrid
   rows={rows}
+  onRowsChange={setRows}
+  columns={columns}
+  createRow={() => ({ id: crypto.randomUUID(), name: '', qty: null })} // 末尾より下へはみ出した分の行
+/>
+```
+```tsx tab="Solid"
+<SpreadsheetGrid
+  rows={rows()}
   onRowsChange={setRows}
   columns={columns}
   createRow={() => ({ id: crypto.randomUUID(), name: '', qty: null })} // 末尾より下へはみ出した分の行

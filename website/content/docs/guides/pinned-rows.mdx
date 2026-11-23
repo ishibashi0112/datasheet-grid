@@ -18,12 +18,24 @@ description: pinnedTopRows / pinnedBottomRows で目標値・前年の行を表�
 
 ## 使い方
 
-```tsx
+```tsx tab="React"
 const target: Sale = { id: 'target', branch: '目標', apr: 1200, may: 1250, jun: 1300, jul: 1350 };
 const lastYear: Sale = { id: 'last-year', branch: '前年', apr: 1020, may: 1080, jun: 1150, jul: 1190 };
 
 <SpreadsheetGrid
   rows={rows}
+  columns={columns}
+  rowKeyGetter={(row) => row.id}
+  pinnedTopRows={[target]}
+  pinnedBottomRows={[lastYear]}
+/>
+```
+```tsx tab="Solid"
+const target: Sale = { id: 'target', branch: '目標', apr: 1200, may: 1250, jun: 1300, jul: 1350 };
+const lastYear: Sale = { id: 'last-year', branch: '前年', apr: 1020, may: 1080, jun: 1150, jul: 1190 };
+
+<SpreadsheetGrid
+  rows={rows()}
   columns={columns}
   rowKeyGetter={(row) => row.id}
   pinnedTopRows={[target]}

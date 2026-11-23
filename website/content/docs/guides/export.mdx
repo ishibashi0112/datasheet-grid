@@ -47,9 +47,18 @@ const csv = grid.exportCsv({ delimiter: '\t' }); // TSV も可
 
 props の `isRowExportable` で「コピー(`Ctrl/Cmd+C` の TSV)/ `exportCsv` / `getExportData`」の対象行を絞れます。`false` を返した行は出力から**行ごと**除かれます(表示・選択・貼り付けには影響しません)。表示上の詰め物行(プレースホルダなど)を出力から外す用途を想定しています。
 
-```tsx
+```tsx tab="React"
 <SpreadsheetGrid
   rows={rows}
+  columns={columns}
+  rowKeyGetter={(row) => row.id}
+  // プレースホルダ行はコピー / CSV / getExportData の出力から除く
+  isRowExportable={(row) => !row.isPlaceholder}
+/>
+```
+```tsx tab="Solid"
+<SpreadsheetGrid
+  rows={rows()}
   columns={columns}
   rowKeyGetter={(row) => row.id}
   // プレースホルダ行はコピー / CSV / getExportData の出力から除く

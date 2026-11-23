@@ -16,7 +16,7 @@ description: totalRow で表の下端に合計行を固定する(列ごとの集
 
 ## 使い方
 
-```tsx
+```tsx tab="React"
 const columns: GridColumn<Order>[] = [
   { key: 'product', title: '商品', width: 160, aggFunc: 'count' },
   { key: 'qty', title: '数量', width: 90, align: 'right', aggFunc: 'sum' },
@@ -25,6 +25,16 @@ const columns: GridColumn<Order>[] = [
 ];
 
 <SpreadsheetGrid rows={rows} columns={columns} totalRow />
+```
+```tsx tab="Solid"
+const columns: GridColumn<Order>[] = [
+  { key: 'product', title: '商品', width: 160, aggFunc: 'count' },
+  { key: 'qty', title: '数量', width: 90, align: 'right', aggFunc: 'sum' },
+  { key: 'price', title: '単価', width: 110, align: 'right', aggFunc: 'avg', valueFormatter: yen },
+  { key: 'amount', title: '金額', width: 120, align: 'right', aggFunc: 'sum', valueFormatter: yen },
+];
+
+<SpreadsheetGrid rows={rows()} columns={columns} totalRow />
 ```
 
 `aggFunc` の無い列は空欄です。見出し(既定「合計」)は、行ドラッグ / 展開トグルの合成列を除いた**先頭列**に出ます。先頭列に値があるときは行番号の欄へ移ります。

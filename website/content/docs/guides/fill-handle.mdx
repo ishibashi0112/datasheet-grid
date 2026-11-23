@@ -19,8 +19,11 @@ description: fillHandle で選択範囲の右下の四角を引き、連続デ�
 
 ## 使い方
 
-```tsx
+```tsx tab="React"
 <SpreadsheetGrid rows={rows} onRowsChange={setRows} columns={columns} fillHandle />
+```
+```tsx tab="Solid"
+<SpreadsheetGrid rows={rows()} onRowsChange={setRows} columns={columns} fillHandle />
 ```
 
 書き込み先が要ります。clientSide は `onRowsChange`、serverSide は `dataSource.updateRows` が無いとハンドルは出ません。`readOnly` のときも出ません。選択範囲が合成列だけ、またはラベル行 / グループ行だけのとき(埋める元の値が無いとき)も出ません。

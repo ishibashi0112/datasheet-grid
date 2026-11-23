@@ -82,8 +82,11 @@ description: height / maxHeight でグリッドの高さを決める。'100%' �
 
 ### スクロール領域を固定の高さにする
 
-```tsx
+```tsx tab="React"
 <SpreadsheetGrid rows={rows} columns={columns} height={400} />
+```
+```tsx tab="Solid"
+<SpreadsheetGrid rows={rows()} columns={columns} height={400} />
 ```
 
 数値はスクロール領域の高さです。グリッド全体はバーの分だけ高くなります。

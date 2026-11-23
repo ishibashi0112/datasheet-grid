@@ -25,9 +25,17 @@ description: 利用者が変えた列幅・フィルター・ソート・列の�
 
 ## 保存する(`onStateChange` / `getState`)
 
-```tsx
+```tsx tab="React"
 <SpreadsheetGrid
   rows={rows}
+  columns={columns}
+  onColumnsChange={setColumns}
+  onStateChange={(state) => localStorage.setItem('orders-grid', JSON.stringify(state))}
+/>
+```
+```tsx tab="Solid"
+<SpreadsheetGrid
+  rows={rows()}
   columns={columns}
   onColumnsChange={setColumns}
   onStateChange={(state) => localStorage.setItem('orders-grid', JSON.stringify(state))}
@@ -108,6 +116,8 @@ grid.applyState({ filters: { columnFilters: {} } });   // 列フィルターだ�
 - `custom` フィルターの値(`value`)はそのまま入るので、JSON にできる値にするのはアプリの側です。
 
 ## URL から戻す
+
+<FrameworkOnly framework="react">例は Next.js の App Router です。Solid では URL を読んだ値を最初の描画で `initialState` に渡します(Solid のタブの [保存する](#保存するonstatechange--getstate) と同じ)。</FrameworkOnly>
 
 並べ替えや絞り込みを URL に載せると、リンクを共有して同じ見方で開けます。`initialState` はサーバーの描画から効くので、Next.js の App Router ではサーバーコンポーネントで URL を読んで渡せます。
 

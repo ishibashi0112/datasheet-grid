@@ -5,8 +5,11 @@ description: find prop で Ctrl+F の検索バーを出し、ヒットを強調�
 
 `find` を付けると、グリッドにフォーカスがある状態の `Ctrl/Cmd+F`(または `handle.openFind()`)でグリッド右上に検索バーが出ます(**既定は無効**)。「絞り込み(フィルター)」とは別に、**行を消さずに場所を探す**操作です。ブラウザの `Ctrl+F` では探せない仮想化された行も対象になります。
 
-```tsx
+```tsx tab="React"
 <SpreadsheetGrid rows={rows} columns={columns} find />
+```
+```tsx tab="Solid"
+<SpreadsheetGrid rows={rows()} columns={columns} find />
 ```
 
 - 表示文字列(`valueFormatter` 適用後 = 画面に見えている文字)への部分一致で、ヒットをすべて強調します。大文字小文字は区別しません(`find={{ caseSensitive: true }}` で区別)。
