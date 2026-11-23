@@ -1,10 +1,12 @@
 // ハイドレーションのテストの共通の手順。Solid はページで 1 回のハイドレーションを前提にする(2 回目の hydrate() は
 //   サーバーの要素を使わずに描き直す)ので、表 1 つにつきテストのファイルを 1 つにする(ファイルごとにモジュールを読み直す)。
-import { afterEach, beforeAll, inject, vi } from 'vitest';
+import { afterEach, beforeAll, expect, inject, vi } from 'vitest';
 import { flush } from 'solid-js';
 import { hydrate } from '@solidjs/web';
 import { fixtures } from './fixtures';
 import { FIXED_NOW } from './timeZones';
+
+export { splitServerHtml } from './serverHtml';
 
 export const serverOutput = () => inject('ssrServerOutput');
 
@@ -56,6 +58,7 @@ export function textOf(html: string): string {
 
 // サーバーの HTML をページへ置き、同じ表をハイドレーションする。描く時刻は FIXED_NOW(タイムゾーンはクライアントのもの)。
 //   ハイドレーションの間と直後の console.error / console.warn(Solid の「使われなかったサーバーの要素」の警告を含む)を返す。
+//   serverRoot はサーバーの骨組みの根(ハイドレーションで使い続ける要素)。描き終わった後は、写しが外れ、骨組みが見えている。
 export async function hydrateFixture(
   name: string,
 ): Promise<{ container: HTMLElement; serverHtml: string; serverRoot: Element | null; logs: string[] }> {
@@ -74,7 +77,7 @@ export async function hydrateFixture(
   const container = document.createElement('div');
   container.innerHTML = serverHtml;
   document.body.append(container);
-  const serverRoot = container.querySelector('.ssg-root');
+  const serverRoot = container.querySelector('.ssg-root[data-ssg-ssr]');
   const dispose = hydrate(() => <Fixture />, container, { renderId: name });
   cleanups.push(() => {
     dispose();
@@ -83,5 +86,9 @@ export async function hydrateFixture(
   flush();
   await sleep(50);
   flush();
+  // 写しは外れ、骨組みだけが見えている(段 3-5)。
+  expect(container.querySelectorAll('.ssg-root')).toHaveLength(1);
+  expect(container.querySelector('[data-ssg-ssr], [data-ssg-ssr-snapshot]')).toBeNull();
+  expect(container.querySelector<HTMLElement>('.ssg-root')?.style.display).toBe('');
   return { container, serverHtml, serverRoot, logs };
 }

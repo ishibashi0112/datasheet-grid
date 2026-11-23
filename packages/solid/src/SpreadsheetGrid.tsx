@@ -11,7 +11,7 @@
 //   - 部品の本体では props を直接読まない(Solid 2.0 は本体での読み取りを警告する)。props は関数や memo の中で読む。
 //   - React の onXxxCapture / onBlur / onFocus(子孫からも上がってくる)は、Solid では capture のリスナーを自分で付ける /
 //     onFocusOut / onFocusIn にします。
-import { For, Match, Show, Switch, createEffect, createMemo, createSignal, createUniqueId, isHydrating, latest, onCleanup, runWithOwner, untrack } from 'solid-js';
+import { For, Match, NoHydration, Show, Switch, createEffect, createMemo, createSignal, createUniqueId, isHydrating, latest, onCleanup, runWithOwner, untrack } from 'solid-js';
 import type { Ref } from 'solid-js';
 import type { JSX } from '@solidjs/web';
 import { isServer } from '@solidjs/web';
@@ -146,6 +146,7 @@ import type { SolidGridFeatures } from './features/types';
 import { px, toSolidStyle } from './primitives/style';
 import { createLiveObject } from './primitives/liveObject';
 import { readEventKey } from './primitives/eventKey';
+import { createSnapshotProps, revealServerFrame } from './primitives/serverSnapshot';
 import { GridHeaderRow } from './view/GridHeaderRow';
 import {
   GridBodyLayer,
@@ -249,15 +250,34 @@ const DERIVED_SUMMARY_KEYS = Object.keys({
 
 // シェルの本体です。機能セット(features)は createSpreadsheetGrid が渡します(全部入りは下の SpreadsheetGrid)。
 export function GridShell<T extends object>(props: SpreadsheetGridProps<T>, features: SolidGridFeatures): JSX.Element {
+  // 追加(段 3-5): サーバーでは、行を空にした骨組み(ハイドレーションする)を隠し、そのすぐ後に行を入れた写し(ハイドレーション
+  //   しない)を描きます(primitives/serverSnapshot)。サーバーサイドの行モデル(dataSource)はサーバーで行を読まないので写さない。
+  const serverSnapshot = isServer && untrack(() => props.dataSource == null);
   // 追加(0.1.0 の前の実アプリ点検 S5-01): 本体の間だけ、描き終わった後の最初の処理の登録先をこのグリッドの待ち行列にします。
   const mountGate = createMountGate();
-  return runInMountGate(mountGate, () => GridShellBody(props, features, mountGate));
+  const frame = runInMountGate(mountGate, () => GridShellBody(props, features, mountGate, serverSnapshot ? 'hiddenFrame' : 'normal'));
+  // NoHydration はクライアントでも同じ位置に置く(利用者の部品の中の id の並びをサーバーとそろえる)。クライアントでは何も描かない。
+  const snapshot = (
+    <NoHydration>
+      {serverSnapshot
+        ? (() => {
+            const snapshotGate = createMountGate();
+            return runInMountGate(snapshotGate, () => GridShellBody(createSnapshotProps(props), features, snapshotGate, 'snapshot'));
+          })()
+        : null}
+    </NoHydration>
+  );
+  return [frame, snapshot] as unknown as JSX.Element;
 }
+
+// 'normal' = ふつうの描画 / 'hiddenFrame' = サーバーで隠して描く骨組み / 'snapshot' = サーバーだけで描く行を入れた写し(段 3-5)。
+type GridShellMode = 'normal' | 'hiddenFrame' | 'snapshot';
 
 function GridShellBody<T extends object>(
   props: SpreadsheetGridProps<T>,
   features: SolidGridFeatures,
   mountGate: MountGate,
+  mode: GridShellMode,
 ): JSX.Element {
   // ── props(既定値つきの読み取り。本体では読まず、関数 / memo の中で読む。既定値は React 版の GridShell と同じ) ──
   // サーバーサイドの行モデル(機能 features/serverSide。dataSource を渡したとき。無い構成では createSpreadsheetGrid が
@@ -281,9 +301,12 @@ function GridShellBody<T extends object>(
   //   食い違いをクライアントで描き直して直します。行に依らない骨組み(見出し・上下のバーの条件の表示)だけをサーバーで描き、
   //   行・件数・合計は、切り替えた後のふつうの描画で出します(どちらの側でも同じ結果になる)。サーバーで描かない描き方では
   //   最初から true です。最初に登録するので、コントローラの最初の update より前に切り替えの書き込みが入ります。
-  const [hydrated, setHydrated] = createSignal(!isServer && !isHydrating(), { name: 'hydrated' });
+  // 変更(段 3-5): サーバーは、この骨組みを隠して、すぐ後に行を入れた写し(mode 'snapshot'。サーバーだけ)を描きます。
+  //   ブラウザでは描き終わった後の最初に写しを外して骨組みを見せ(primitives/serverSnapshot)、行へ切り替えます。
+  const [hydrated, setHydrated] = createSignal(mode === 'snapshot' || (!isServer && !isHydrating()), { name: 'hydrated' });
   if (!untrack(hydrated)) {
     onGridMounted(() => {
+      revealServerFrame(gridRootRef.current?.parentElement);
       setHydrated(true);
     });
   }
@@ -3292,7 +3315,15 @@ function GridShellBody<T extends object>(
             'ssg-root--hover-cross': hoverCross(),
           },
         ]}
-        style={{ ...toSolidStyle(heightLayout().rootStyle), ...slots().root?.style, ...props.style }}
+        style={{
+          ...toSolidStyle(heightLayout().rootStyle),
+          ...slots().root?.style,
+          ...props.style,
+          ...(mode === 'hiddenFrame' ? { display: 'none' } : undefined),
+        }}
+        // 段 3-5 の印(primitives/serverSnapshot の SERVER_FRAME_ATTRIBUTE / SERVER_SNAPSHOT_ATTRIBUTE。サーバーでだけ付く)。
+        data-ssg-ssr={mode === 'hiddenFrame' ? '' : undefined}
+        data-ssg-ssr-snapshot={mode === 'snapshot' ? '' : undefined}
       >
         {topBar()}
         {/* フィルターのチップのバー(showFilterChipBar)。適用中の列フィルターをチップで並べる(0 件なら出さない)。 */}

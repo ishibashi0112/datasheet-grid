@@ -80,6 +80,15 @@ export const fixtures: Record<string, () => JSX.Element> = {
   relativeDateSameDay: () => <RelativeDate />,
   // 固定列 + Date の値の日付の範囲(サーバーとクライアントでタイムゾーンが違う。S8-01)。
   pinnedDates: () => <PinnedDates />,
+  // サーバーサイドの行モデル(サーバーでは行を読まないので、行を入れた写しを描かない。段 3-5)。
+  serverSide: () => (
+    <SpreadsheetGrid<Row>
+      columns={columns as never}
+      rowKeyGetter={(row) => row.id}
+      height={300}
+      dataSource={{ getRows: () => new Promise(() => {}) }}
+    />
+  ),
   // 主な機能を有効にした構成(サーバーで現在時刻を読まない = React 版の ssrCurrentTime と同じ。ハイドレーションで警告が出ない)。
   features: () => (
     <SpreadsheetGrid

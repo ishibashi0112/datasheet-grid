@@ -18,6 +18,10 @@ class FixedDate extends RealDate {
       super(...args);
     }
   }
+  // 行の Date の値(固定する前に作った本物の Date)も Date として扱う(core の `instanceof Date` が描いている間は FixedDate を見る)。
+  static [Symbol.hasInstance](value) {
+    return value instanceof RealDate;
+  }
   static now() {
     if (tracking) reads.push(new Error('Date.now()').stack ?? 'Date.now()');
     return FIXED_NOW;
