@@ -18,6 +18,9 @@
 
 - 行を store で持つとき、`renderCell` / `valueFormatter` などに渡る行(`ctx.row` など)は store のプロキシではなく、その時点の中身(store の `snapshot`)になりました。store の中を直接変えた行は新しいオブジェクトになり、その行のセルを描き直します(signal で持つときと同じ)。
 
+- `renderCell` の文脈の `row` / `value` を、位置や状態と同じく読んだときに引くようにしました。JSX の中で読めばその式だけが追従し、セルの中身は列が変わったときだけ作り直します。これまでは行が変わるたびに `renderCell` を呼び直して中身を作り直したので、セルの中の入力欄で打つたびに `ctx.setValue` すると 1 文字目でフォーカスが外れていました(React 版は同じ要素を使い回すので打ち続けられる)。関数の本体で読んだ値(引数の分割代入も)は、今までどおりその値が変わったときに呼び直します(読んでいない列の値が変わっただけでは呼び直さなくなりました)。**本体で読まずに、自分の部品の本体の一番上で読む書き方**(`renderCell={(ctx) => <MyCell ctx={ctx} />}` で `MyCell` の中の `const v = props.ctx.value`)は、これまでは行が変わるたびに部品ごと作り直されて追従していましたが、これからは追従しません(開発時に Solid が `STRICT_READ_UNTRACKED` を出します)。JSX の中で `props.ctx.value` を読んでください。
+- バーの関数(`renderTopBar` / `renderBottomBar`)の文脈の `derivedSummary` を、項目ごとに読んだときに引くようにしました。本体で `ctx.derivedSummary.sortSummaryText` だけを読んだとき、これまではアクティブセルの番地など要約のどれかが変わるたびに(セルを押しただけでも)バーを作り直し、バーの入力欄のフォーカスが外れていました。読んだ項目が変わったときだけ呼び直します。`ctx.derivedSummary` はいつも同じオブジェクトです(項目は読んだときの値)。
+
 ### 修正
 
 - グリッドの `ref` に signal の setter を渡すと(`ref={setGrid}`)、Solid が `REACTIVE_WRITE_IN_OWNED_SCOPE` を投げてグリッドが描かれませんでした。ハンドルを渡す関数を、部品の中の書き込みとして扱われない所から呼ぶようにしました(ハンドルが入る時機は今までどおり、利用側の最初の `createEffect` と `onSettled` より前です)。

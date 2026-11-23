@@ -227,6 +227,25 @@ const SLOT_CONTEXT_KEYS = Object.keys({
   globalFilterProgress: true,
   selectionAggregates: true,
 } satisfies Record<keyof SpreadsheetGridSlotContext<unknown>, true>) as (keyof SpreadsheetGridSlotContext<unknown>)[];
+// 追加(段 3-3 / S1-21): バーの文脈の derivedSummary も項目ごとに読んだときに引く(1 つの値のままだと、本体で並びの要約だけを
+//   読んでも、アクティブセルの番地など要約のどれかが変わるたびにバーを作り直していた)。
+const DERIVED_SUMMARY_KEYS = Object.keys({
+  rowSummaryText: true,
+  columnSummaryText: true,
+  filterSummaryText: true,
+  sortSummaryText: true,
+  activeCellLabel: true,
+  selectionLabel: true,
+  selectionStatsText: true,
+  selectedColumnsText: true,
+  selectionStats: true,
+  hasGlobalFilter: true,
+  globalFilterPreview: true,
+  activeColumnFilterCount: true,
+  hasAnyFilter: true,
+  hasSorting: true,
+  sortedColumnLabel: true,
+} satisfies Record<keyof SpreadsheetGridDerivedSummary, true>) as (keyof SpreadsheetGridDerivedSummary)[];
 
 // シェルの本体です。機能セット(features)は createSpreadsheetGrid が渡します(全部入りは下の SpreadsheetGrid)。
 export function GridShell<T extends object>(props: SpreadsheetGridProps<T>, features: SolidGridFeatures): JSX.Element {
@@ -2570,6 +2589,7 @@ function GridShellBody<T extends object>(
         rowModel: rowModel(),
       }))
     : () => null;
+  const liveDerivedSummary = createLiveObject(DERIVED_SUMMARY_KEYS, derivedSummary);
   const slotContext = createMemo((): SpreadsheetGridSlotContext<T> => {
     const filteredRows = getFilteredRows();
     return {
@@ -2578,7 +2598,7 @@ function GridShellBody<T extends object>(
         return filteredRows();
       },
       setGlobalFilterText,
-      derivedSummary: derivedSummary(),
+      derivedSummary: liveDerivedSummary,
       globalFilterStatus: globalFilterStatus(),
       globalFilterProgress: globalFilterProgress(),
       selectionAggregates: selectionAggregates(),
@@ -2788,16 +2808,19 @@ function GridShellBody<T extends object>(
         />
       );
     }
-    const row = currentRow();
-    const value = getCellValue(row, unbound);
     if (column.renderCell) {
+      // 変更(段 3-3 / R5-3): ctx.row / ctx.value は読んだときに引きます(位置や状態と同じ)。これまでは行が変わるたびに
+      //   renderCell を呼び直して中身を作り直したので、セルの中の入力欄で打つたびに ctx.setValue すると 1 文字目でフォーカスが
+      //   外れていました(React 版は同じ要素を使い回す)。JSX の中で読めばその式だけが追従し、関数の本体で読めば(引数の
+      //   分割代入も)今までどおりそれが変わったときに呼び直します。
+      const cellValue = createMemo(() => getCellValue(currentRow(), unbound));
       // ctx.detail(任意のセルからの展開行の開閉の口)。detailRow の指定がある間だけ渡し、値は読んだときに引きます。
       //   開閉は押した時点の行の位置で(React 版は描いた時点の位置。描き直すたびに新しくなるので同じ)。
       //   expanded / expandable はこのセルの行の値だけの memo(開いている行の集合ぜんたいを読むと、どれか 1 行の開閉で
       //   本体でこれを読むその列のすべてのセルを作り直すため)。
       const expanded = createMemo(() => ui().expandedDetailRowKeys.has(cell.rowKey));
       const expandable = createMemo(() =>
-        isDetailRowExpandable(detailDrawable(), props.detailRow?.isExpandable, row, cell.rowKey, cell.sourceRowIndex),
+        isDetailRowExpandable(detailDrawable(), props.detailRow?.isExpandable, currentRow(), cell.rowKey, cell.sourceRowIndex),
       );
       const detail: CellDetailContext = {
         get expanded() {
@@ -2822,7 +2845,9 @@ function GridShellBody<T extends object>(
         );
       }
       return column.renderCell({
-        row,
+        get row() {
+          return currentRow();
+        },
         get rowIndex() {
           return cell.rowIndex;
         },
@@ -2836,7 +2861,9 @@ function GridShellBody<T extends object>(
         get detail() {
           return detailRowEnabled() ? detail : undefined;
         },
-        value,
+        get value() {
+          return cellValue();
+        },
         column,
         get isActive() {
           return cell.isActive;
@@ -2853,6 +2880,8 @@ function GridShellBody<T extends object>(
         setValue: (nextValue: unknown) => writeRenderedCellValue(cell.rowKey, unbound, nextValue),
       });
     }
+    const row = currentRow();
+    const value = getCellValue(row, unbound);
     const text = column.valueFormatter ? column.valueFormatter({ value, row, column }) : String(value ?? '');
     // セル内検索のヒットを <mark> にします(既定のセルだけ。カレントは --current)。ヒットとカレントは cell から読んだときに引く
     //   ので、変わったときは中の文字だけを描き直します(セルの箱と中身の span はそのまま)。

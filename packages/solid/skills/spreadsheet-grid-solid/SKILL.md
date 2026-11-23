@@ -57,7 +57,7 @@ export function Inventory() {
 - **`rows` は signal か store で持つ。** 編集結果は `onRowsChange` が新しい配列で返します。signal ならその配列をそのまま `setRows(next)` で戻し、`rows={rows()}` で渡します(`map` などで作り直すと undo の履歴が消えます)。`createStore` なら `rows={state.rows}` で渡し、`setState((s) => { s.rows = next })` か `reconcile(next, 'id')(s.rows)` で戻します。5 万行ほどより多い表は signal で持ちます(store は行ごとに追うので重い)。
 - **書き込みはマイクロタスクで反映される。** `setRows(...)` の直後にハンドルで足した行を使う(`getViewRowIndex(key)` → `startEditing(...)`)ときは、先に `solid-js` の `flush()` を呼びます。
 - **ハンドルは Solid の ref。** `let grid!: SpreadsheetGridHandle<Row>` と `ref={grid}`(または `ref={(handle) => (grid = handle)}`)。React の ref オブジェクト(`.current`)はありません。最初の状態は `initialState` で渡します。
-- **描く関数の本体で値を読まない。** `renderCell` などの文脈の値(`ctx.rowIndex` / `ctx.isActive` など)は JSX の中で読みます。本体で読むと、変わるたびに中身を作り直します(入力欄のフォーカスが外れる)。custom エディタの始めの値は `untrack(() => ctx.value)` か `ctx.initialText` で取ります。
+- **描く関数の本体で値を読まない。** `renderCell` などの文脈の値(`ctx.value` / `ctx.row` / `ctx.rowIndex` / `ctx.isActive`、バーの `ctx.derivedSummary.*` など)は JSX の中で読みます。本体で読むと、変わるたびに中身を作り直します(入力欄のフォーカスが外れる)。自分の部品の本体の一番上で読むと追従しません。custom エディタの始めの値は `untrack(() => ctx.value)` か `ctx.initialText` で取ります。
 - **行キー。** `rowKeyGetter` で安定したキーを返します(既定は行 index)。
 - **列の `width` は型の上で必須。** 伸縮させる列は `flex` も足します。列は既定で編集できます。止めるときは列の `editable: false` か `readOnly`、セルごとなら `canEditCell`、全体ならグリッドの `readOnly`。
 - **`rows` か `dataSource`。** `rows` はクライアントサイド、`dataSource` を渡すとサーバーサイド行モデルです。両方は渡しません。
