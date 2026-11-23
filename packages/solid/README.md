@@ -52,7 +52,7 @@ A runnable example (an editable inventory table with 10,000 rows) is in [`exampl
 
 ## Picking features
 
-`SpreadsheetGrid` includes every feature (about 166KB gzip of initial JS; the column filter popover and the tool panel, about 16KB, load later). `createSpreadsheetGrid` builds a grid with only the features you pass, and the rest is left out of your bundle (about 94KB with no features, about 121KB with the `standardFeatures` preset). Unlike the React version, the parts come from the main entry (there is no `/lite`).
+`SpreadsheetGrid` includes every feature (about 168KB gzip of initial JS; the column filter popover and the tool panel, about 16KB, load later). `createSpreadsheetGrid` builds a grid with only the features you pass, and the rest is left out of your bundle (about 95KB with no features, about 123KB with the `standardFeatures` preset). Unlike the React version, the parts come from the main entry (there is no `/lite`).
 
 ```tsx
 import { createSpreadsheetGrid, standardFeatures, serverSideFeature } from '@ishibashi0112/spreadsheet-grid-solid'
@@ -128,7 +128,7 @@ Solid 2.0 向けの仮想化スプレッドシート / データグリッドで�
 
 ### 機能を選んで組み込む
 
-`SpreadsheetGrid` は全機能入りです(初期読み込みの JS が約 166KB gzip。列フィルターのポップオーバーとツールパネルの約 16KB は後から読みます)。`createSpreadsheetGrid` では渡した機能だけを入れたグリッドを作れ、渡さなかった機能はバンドルに入りません(機能なしで約 94KB、プリセット `standardFeatures` で約 121KB)。React 版と違い、機能の部品も同じ入口から import します(`/lite` はありません)。機能の名前と中身は同梱の `API_REFERENCE.md` の「機能を選んで組み込む」のとおりです(部品の名前も React 版と同じ)。グリッドはコンポーネントの中ではなく、モジュールの先頭で 1 回だけ作ってください。
+`SpreadsheetGrid` は全機能入りです(初期読み込みの JS が約 168KB gzip。列フィルターのポップオーバーとツールパネルの約 16KB は後から読みます)。`createSpreadsheetGrid` では渡した機能だけを入れたグリッドを作れ、渡さなかった機能はバンドルに入りません(機能なしで約 95KB、プリセット `standardFeatures` で約 123KB)。React 版と違い、機能の部品も同じ入口から import します(`/lite` はありません)。機能の名前と中身は同梱の `API_REFERENCE.md` の「機能を選んで組み込む」のとおりです(部品の名前も React 版と同じ)。グリッドはコンポーネントの中ではなく、モジュールの先頭で 1 回だけ作ってください。
 
 ### React 版との違い
 

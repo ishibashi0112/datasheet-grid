@@ -57,14 +57,14 @@ export const OrdersTable = () => <Grid columns={columns} dataSource={dataSource}
 | `motionExtras` | `motionExtrasFeature` | 変更のハイライト、コピー範囲の点線、十字ホバー(`highlightChanges` / `showCopyRange` / `hoverHighlight`) | +1.2KB |
 | `autoHeight` | `autoHeightFeature` | 行の高さの実測(`autoHeight` / `columns[].autoHeight`) | +1.2KB |
 
-サイズ(初期読み込みの JS の gzip。esbuild で minify・React は外部化・`@tanstack/virtual-core` 込み。2026-11-08 の dist で計測):
+サイズ(初期読み込みの JS の gzip。esbuild で minify・React は外部化・`@tanstack/virtual-core` 込み。2026-11-23 の dist で計測):
 
 | 構成 | 初期 JS(gzip) |
 | --- | --- |
-| 全部入り(`SpreadsheetGrid`) | 約 140KB |
-| `/lite` 機能なし | 約 80KB |
-| `/lite` + `standardFeatures` | 約 102KB |
-| `/lite` + `standardFeatures` + `serverSideFeature` | 約 107KB |
+| 全部入り(`SpreadsheetGrid`) | 約 153KB |
+| `/lite` 機能なし | 約 90KB |
+| `/lite` + `standardFeatures` | 約 114KB |
+| `/lite` + `standardFeatures` + `serverSideFeature` | 約 118KB |
 
 - 各機能の目安は「機能なし」に 1 つだけ足したときの増え方で、組み合わせると共通部分のぶん合計より少し小さくなる。バンドラーによって数 KB 前後する(0.61.0 の全部入りの実測で、Vite 8(Rolldown)は esbuild より約 1.5KB 小さく、Vite 7(Rollup)はほぼ同じ。Next.js 16 では webpack が Turbopack より約 4KB 大きい)。
 - 使わない機能がバンドルから落ちることは、Vite 8・webpack 5・Next.js 16(既定の Turbopack)・esbuild で確かめている(バンドラーが `package.json` の `sideEffects` と `/* @__PURE__ */` を解釈する必要がある)。

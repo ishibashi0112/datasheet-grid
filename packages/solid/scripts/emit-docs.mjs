@@ -16,6 +16,7 @@ const preface = `<!-- このファイルは React 版の API_REFERENCE.md を So
 > - 例の \`useState\` は \`createSignal\`(\`rows={rows}\` は \`rows={rows()}\`)、\`useMemo\` は \`createMemo\`、\`useRef\` + \`ref={gridRef}\` は \`let grid!: SpreadsheetGridHandle<Row>\` + \`ref={grid}\`(\`gridRef.current\` は \`grid\`)、\`flushSync\` / テストの \`act()\` は \`solid-js\` の \`flush()\` です。
 > - 型の \`ReactNode\` は \`JSX.Element\`、\`useEffect\` は \`createEffect\` / \`onSettled\`、\`Suspense\` は \`<Loading>\`、\`createPortal\` は \`<Portal>\`(\`@solidjs/web\`)です。
 > - 「X.Y.Z から」の版は React 版とコア(\`@ishibashi0112/spreadsheet-grid-core\`)の版です。Solid 版は 1.4.0 から同じ版なので、1.4.0 以降の「X.Y.Z から」は Solid 版でも同じ版から使えます(1.3.0 以前の版の機能は Solid 版 1.4.0 にすべて入っています)。
+> - 「機能を選んで組み込む」の大きさ(KB)は React 版の値です。Solid 版は全部入りで約 168KB、機能なしで約 95KB、\`standardFeatures\` で約 123KB です(solid-js は含めない。README.md の「Picking features」、日本語は「機能を選んで組み込む」)。
 > - Solid 版だけのこと(描く関数を呼び直す時機・書き込みの反映・テスト・SSR)は同梱の README.md の「Differences from the React version」「Solid-specific notes」(日本語は「React 版との違い」「Solid で気をつけること」)にあります。
 
 `;
