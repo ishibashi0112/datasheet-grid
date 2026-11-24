@@ -692,6 +692,8 @@ export function useGridShell<T extends object>({
       copiedRange,
       // 追加(作り直しの確認 N-1): 編集を始めるときのエディタの初期値(旧 useState)。
       editorInitialValue = '',
+      // 追加(1.5.0 の後): 縮めたスクロールの上限(Firefox だけ下げる。core の scrollSyncController が書く)。
+      maxBodyPx,
     },
     {
       // 注記: viewportWidth / viewportHeight は scroll / resize effect が gridStore.setViewState で
@@ -1837,6 +1839,7 @@ export function useGridShell<T extends object>({
         detailIndexCacheRef: detailIndexCacheHolder,
         labelDisplay,
         labelRowHeight: labelRowHeightOption,
+        maxBodyPx,
       }),
     [
       resolveVerticalLayout,
@@ -1859,13 +1862,16 @@ export function useGridShell<T extends object>({
       detailIndexCacheHolder,
       labelDisplay,
       labelRowHeightOption,
+      maxBodyPx,
     ],
   );
 
-  // 追加(1.0.1 / 2026-11-09 実アプリの総点検 AP-26): 行だけで論理全高の上限(MAX_BODY_PX)を超える表(約 50 万行〜)では
+  // 追加(1.0.1 / 2026-11-09 実アプリの総点検 AP-26): 行だけで論理全高の上限(MAX_BODY_PX。Firefox は view の maxBodyPx)を
+  //   超える表(約 50 万行〜。Firefox は約 22 万行〜)では
   //   展開行を描けないので、トグル(▸)を出さず、Enter / Space でも開閉しません(ctx.detail.expandable も false)。
   //   これまではトグルが出たままで、押すと ▾ になるだけでカードは出なかった。絞り込んで行が減れば出ます。
-  const detailDrawable = baseRowMetrics.totalBodyHeight <= MAX_BODY_PX;
+  const effectiveMaxBodyPx = maxBodyPx ?? MAX_BODY_PX;
+  const detailDrawable = baseRowMetrics.totalBodyHeight <= effectiveMaxBodyPx;
 
   // 追加(motion-3 / M-4・M-5): 行の並び替えアニメの実効値。auto-height(行高の実測で transform が動く)と serverSide
   //   (ブロック到着で行が差し替わる)では自動 OFF。root 修飾子(ssg-root--animate-rows)で行要素の transform に
@@ -1935,11 +1941,11 @@ export function useGridShell<T extends object>({
       warnOncePerGrid(
         devWarnedRef.current,
         'detailMaxBody',
-        `[SpreadsheetGrid] 展開行は論理全高(行高合計 + 帯高)が ${MAX_BODY_PX}px 以内のときだけ描画します(行数上限超過)。展開状態は保持されますが帯は描かれません。\n` +
-          `[SpreadsheetGrid] Detail rows are drawn only while the total height (rows + details) is at most ${MAX_BODY_PX}px (too many rows). The expanded state is kept, but the details are not drawn.`,
+        `[SpreadsheetGrid] 展開行は論理全高(行高合計 + 帯高)が ${effectiveMaxBodyPx}px 以内のときだけ描画します(行数上限超過)。展開状態は保持されますが帯は描かれません。\n` +
+          `[SpreadsheetGrid] Detail rows are drawn only while the total height (rows + details) is at most ${effectiveMaxBodyPx}px (too many rows). The expanded state is kept, but the details are not drawn.`,
       );
     }
-  }, [detailRowEnabled, detailExtras, detailActive]);
+  }, [detailRowEnabled, detailExtras, detailActive, effectiveMaxBodyPx]);
   // 追加(detail ③): カードの描画(consumer の render へ DetailRowRenderContext を渡す)と、
   //   カードの sticky 左オフセット / 幅(ビューポートの中央可視幅。列合計がそれより狭ければ列合計)。
   const detailRender = detailRow?.render;

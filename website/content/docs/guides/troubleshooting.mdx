@@ -91,6 +91,29 @@ Excel の通貨書式の「¥12,000」「12,000円」「(1,200)」は、number �
 
 serverSide(`dataSource`)では全行を持たないので空です(開発時に警告します)。サーバーで検査して、通らなければ `updateRows` を reject します([入力の検査](/docs/guides/validation))。
 
+## TypeScript
+
+### グリッドを包む部品で型エラーになる(TS2322)
+
+グリッドの部品の型引数は `T extends object`(行はオブジェクト)です。`SpreadsheetGridProps<T>` には制約が無いので、包む部品を `<T>` のまま書くと「`T` を `object` に代入できない」になります。包む部品も `<T extends object>` で書きます。
+
+```tsx tab="React"
+import { SpreadsheetGrid, type SpreadsheetGridProps } from '@ishibashi0112/spreadsheet-grid';
+
+export function CompactGrid<T extends object>(props: SpreadsheetGridProps<T>) {
+  return <SpreadsheetGrid rowHeight={32} {...props} />;
+}
+```
+```tsx tab="Solid"
+import { SpreadsheetGrid, type SpreadsheetGridProps } from '@ishibashi0112/spreadsheet-grid-solid';
+
+export function CompactGrid<T extends object>(props: SpreadsheetGridProps<T>) {
+  return <SpreadsheetGrid rowHeight={32} {...props} />;
+}
+```
+
+次の major(2.0)で、`SpreadsheetGridProps<T>` にも同じ制約を付ける候補です。`<T extends object>` で書いておけば、そのときも直さずに済みます。
+
 ## React と Next.js
 
 <FrameworkOnly framework="react">Solid 版の困りごとは [Solid で気をつけること](/docs/solid/notes) にあります。</FrameworkOnly>
@@ -131,7 +154,7 @@ jsdom はレイアウトを計算しないので、グリッドの見える大�
 - **行のドラッグ**は、並べ替え・絞り込み・行のグループ化の間は使えません(画面の順と `rows` の順が合わないため)。
 - **行番号の右クリックメニュー**はキーボードでは開けません(セルのメニューはアクティブセルで `Shift+F10` / メニューキー。[アクセシビリティ](/docs/guides/accessibility#ポインタでしかできない操作))。
 - **行の移動のアニメーション**(`animateRows`)は、`autoHeight` の行と serverSide では自動で止まります。
-- **大きさ**: clientSide で約 100 万行までです。行数 × 行の高さが 15,000,000px を超えると、ブラウザの要素の高さの上限に収めるため、スクロールの位置を縮めて写します。全行の並べ替えと CSV の書き出しは時間を分けないので、100 万行では待ち時間が出ます([大量データ](/docs/guides/large-data))。
+- **大きさ**: clientSide で約 100 万行までです。行数 × 行の高さが 15,000,000px(Firefox は 8,000,000px)を超えると、ブラウザの要素の高さの上限に収めるため、スクロールの位置を縮めて写します。全行の並べ替えと CSV の書き出しは時間を分けないので、100 万行では待ち時間が出ます([大量データ](/docs/guides/large-data))。
 - **サーバーの描画**は表の骨組みだけで、JavaScript が動かない環境では表の中身は出ません。
 - **iframe**: iframe の中のページでグリッドを描くのはかまいません。親のページから同じオリジンの iframe の `document` へ描く形(react-frame-component のような形)には対応しません(グリッドは描いたスクリプトの `window` で押下やキーを聞くので、列の幅のドラッグ・フィルハンドル・ツールチップ・メニューの ↑↓ と `Escape` が効きません)。
 - **対応ブラウザ**は Chrome / Edge 111 以上、Firefox 121 以上、Safari 16.4 以上です。Firefox では、カスタムの縦スクロールバー(`scrollHint`)を使っても、ブラウザの縦スクロールバーが残ります。

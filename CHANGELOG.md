@@ -11,6 +11,12 @@
 
 詳しい使い方は[ドキュメントサイト](https://datasheet-grid.vercel.app)と [API リファレンス](./packages/react/API_REFERENCE.md)を参照してください。
 
+## 未リリース
+
+### 修正
+
+- Firefox で、行の多い表(行の高さ 36px で約 25 万行より多い)を下の方までスクロールすると、列見出しの行が上へ流れて消えていたのを直しました(Firefox 159 / 161 で確認)。Firefox は `position: sticky` の要素を約 895 万 px より先へ追わないので、Firefox だけ、縦のスクロールを縮めて写し始める高さを 15,000,000px から 8,000,000px に下げました(行の高さ 36px なら約 22 万行から)。Chrome と Safari は変わりません。Firefox で約 22 万〜41 万行の表は、これまでの 41 万行より多い表と同じく、ホイールで進む行が増え、展開行(`detailRow`)とラベル行の高さの指定(`labelRow` の `height`)は使えなくなります([大量データ](https://datasheet-grid.vercel.app/docs/guides/large-data))。
+
 ## 1.5.0 — 2026-11-23
 
 ### 追加

@@ -10,6 +10,8 @@
 import type { GridScrollEventParams } from '../model/gridTypes.unbound';
 import type { GridViewStatePatch } from '../model/gridStore';
 import { isScrolledToBottom } from '../utils/scrollBottom';
+import { resolveBrowserMaxBodyPx } from '../utils/browserLimits';
+import { MAX_BODY_PX } from '../logic/verticalGeometry';
 
 type ReadonlyRef<V> = { readonly current: V };
 
@@ -64,10 +66,15 @@ export const createScrollSyncController = (): ScrollSyncController => {
   const attach = (el: HTMLElement) => {
     attachedElement = el;
     // center 列 flex の利用可能幅算出に使う可視幅も同時に計測します(3 値をまとめて 1 回の更新)。
+    // 追加(1.5.0 の後): 縮めたスクロールの上限をブラウザに合わせます(Firefox だけ下げる。utils/browserLimits)。既定と
+    //   同じなら書きません(Chrome / Safari では今までと同じ更新)。付けた後に書くので、サーバーで描いた HTML とハイドレーション
+    //   の最初の描画は既定の上限でそろいます(倍率が変わったときの見ている行は viewportSyncController が保つ)。
+    const maxBodyPx = resolveBrowserMaxBodyPx();
     args?.setViewState({
       scrollTop: el.scrollTop,
       viewportHeight: bodyViewportHeight(el),
       viewportWidth: el.clientWidth,
+      ...(maxBodyPx !== MAX_BODY_PX ? { maxBodyPx } : null),
     });
     const handleScroll = () => {
       args?.setViewState({ scrollTop: el.scrollTop });

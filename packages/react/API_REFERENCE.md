@@ -5,6 +5,8 @@
 
 ## SpreadsheetGrid props (`SpreadsheetGridProps<T>`)
 
+`T` は行の型(オブジェクト)。グリッドを包む汎用の部品は `function MyGrid<T extends object>(props: SpreadsheetGridProps<T>)` のように `<T extends object>` で書く(グリッドの部品の型引数は `T extends object` で、`SpreadsheetGridProps<T>` には制約が無いため、`<T>` のままでは TS2322 になる。2.0 で `SpreadsheetGridProps<T>` にも同じ制約を付ける候補)。
+
 | Name | Type | Default | Description |
 | --- | --- | --- | --- |
 | `rows` | `readonly T[]` | — | clientSide モードの行データ。readonly 配列も受け付ける(グリッドは入力配列を破壊的に変更しない。編集結果は `onRowsChange` が新配列で返す)。`dataSource` を指定した場合は無視され serverSide モードになる(両者は排他)。 |
@@ -1637,7 +1639,7 @@ const lastYear: Sale = { id: 'last-year', region: '前年', q1: 980, q2: 1110, q
 - **`renderCell` からの操作(`ctx.detail`)**: `detailRow` 有効時、`CellRenderContext` に `detail: { expanded, expandable, toggle(), setExpanded(bool) }` が入ります(無効時は `undefined`)。`showToggleColumn: false` と組み合わせて、商品名セルの横などにトグルを自前配置できます。
 - **選択 / アクティブセル**: 帯はセルではないため選択・アクティブセルの対象外です。帯を跨ぐ範囲選択のハイライトは帯を避けて分割描画されます。
 - **serverSide(`dataSource`)**: 使えますが、(1) クエリ(フィルター / ソート / グローバル)が変わると展開状態は**すべて閉じ**ます(結果セットが総入れ替えされ、未ロード行のキーを走査できないため)。(2) 未ロード行の帯は表示されません。
-- **上限**: 帯は auto-height 行と同じ可変行高ジオメトリで描画するため、`rows × rowHeight + 展開中の帯の合計` が 15,000,000px(36px 行で約 41 万行)を超える構成では帯を描画しません(開発時警告。展開状態は保持され、行数を絞ると表示されます)。行だけで 15,000,000px を超える間は、展開のトグル(▸)も出さず、`Enter` / `Space` でも開閉しません(`ctx.detail.expandable` も `false`。1.0.1 から)。
+- **上限**: 帯は auto-height 行と同じ可変行高ジオメトリで描画するため、`rows × rowHeight + 展開中の帯の合計` が 15,000,000px(36px 行で約 41 万行。Firefox は 8,000,000px = 約 22 万行)を超える構成では帯を描画しません(開発時警告。展開状態は保持され、行数を絞ると表示されます)。行だけでこの上限を超える間は、展開のトグル(▸)も出さず、`Enter` / `Space` でも開閉しません(`ctx.detail.expandable` も `false`。1.0.1 から)。
 - **行グルーピング併用**: 展開できるのは leaf 行のみ(グループ行は対象外)。
 
 ### ラベル行(見出し / 区切り行)(`labelRow`)
@@ -1698,7 +1700,7 @@ type Row = { id: string; kind?: 'label'; code: string; name: string; qty: number
 - **展開行併用**: 可。ラベル行は展開できません(データ行のみ)。
 - **serverSide(`dataSource`)**: サーバーが `getRows` の結果にラベル行を含めて返し(`totalRowCount` にも数える)、`isLabelRow` で識別します。セクションの並べ替え / `sectionRowCount` / 縦固定(`sticky`)/ ラベル行の `height` はサーバー行モデルでは適用されず、件数表示はサーバー総数のままです。
 - **エクスポート**: 既定では出力に含みません(scope `'raw'` でもデータ行として出ません)。`exportCsv` / `getExportData` の `includeLabelRows: true` で 1 行として出力し、`getExportData` は `rowKinds` で行種を返します(「Excel / スプレッドシート エクスポート」節のレシピ参照)。コピー(`Ctrl/Cmd+C`)には含まれません。
-- **上限**: `height` を指定した場合は可変行高ジオメトリで描画するため、論理全高が 15,000,000px を超える構成では上書きを諦めて `rowHeight` に戻ります。
+- **上限**: `height` を指定した場合は可変行高ジオメトリで描画するため、論理全高が 15,000,000px(Firefox は 8,000,000px)を超える構成では上書きを諦めて `rowHeight` に戻ります。
 
 ラベル行の記述子は `GridLabelRow<T>`(`{ kind: 'label', row, sourceIndex, label, sectionRowCount }`)としてバレルから公開されます(`LabelRowOptions<T>` / `LabelRowRenderContext<T>` / `LabelRowSortMode` も同様)。
 

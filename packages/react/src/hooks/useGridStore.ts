@@ -26,8 +26,9 @@ export function useGridStore(
 //   setter は旧 useState の setter と同じ呼び出し形(値 or 関数)で、参照は store に対して安定です
 //   (useMemo)。旧コードの `const [scrollTop, setScrollTop] = useState(0)` 等の置き換え先。
 //   変更(作り直しの確認 N-1): 省略可のフィールド(editorInitialValue)も setter は必ずあり、undefined は渡しません。
+//   変更(1.5.0 の後): maxBodyPx(縮めたスクロールの上限)は core の scrollSyncController だけが書くので setter を作りません。
 export type GridViewStateSetters = {
-  [K in keyof GridViewState as `set${Capitalize<K>}`]-?: (
+  [K in Exclude<keyof GridViewState, 'maxBodyPx'> as `set${Capitalize<K>}`]-?: (
     next: Updater<Exclude<GridViewState[K], undefined>>,
   ) => void;
 };

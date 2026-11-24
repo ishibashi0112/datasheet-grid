@@ -303,6 +303,54 @@ describe('シェルの振る舞い', () => {
     unmount();
   });
 
+  // 追加(1.5.0 の後): canEditCell のあるグリッドで行が変わったとき(編集・絞り込み)、セルが行モデルを直接読むと
+  //   見えているセルの 2〜3 倍の購読が行モデルに付き、開発ビルドの HUGE_FAN_OUT が出ていた(元の rows の位置を行ごとの
+  //   memo で受ける)。
+  it('canEditCell のあるグリッドで行を差し替えても、Solid の開発ビルドの HUGE_FAN_OUT を出さない', async () => {
+    const settle = () => new Promise((resolve) => setTimeout(resolve, 30));
+    installJsdomLayoutStubs({ width: 2000, height: 700 });
+    const warn = vi.spyOn(console, 'warn');
+    type Wide = { id: number } & Record<string, number>;
+    const wideColumns: GridColumn<Wide>[] = Array.from({ length: 60 }, (_, i) => ({ key: `c${i}`, title: `c${i}`, width: 40 }));
+    const makeRows = (offset: number): Wide[] =>
+      Array.from(
+        { length: 300 },
+        (_, r) => Object.fromEntries([['id', r], ...wideColumns.map((column) => [column.key, r + offset])]) as Wide,
+      );
+    let setRows: (next: Wide[]) => void = () => {};
+    const { container, unmount } = render(() => {
+      const [rows, set] = createSignal(makeRows(0));
+      setRows = set;
+      return (
+        <SpreadsheetGrid<Wide>
+          rows={rows()}
+          columns={wideColumns}
+          rowKeyGetter={(row) => row.id}
+          height={700}
+          canEditCell={(_rowIndex, colIndex) => colIndex % 2 === 0}
+        />
+      );
+    });
+    try {
+      flush();
+      await settle();
+      flush();
+      expect(container.querySelectorAll('[role="gridcell"]').length).toBeGreaterThan(1000);
+      warn.mockClear();
+      setRows(makeRows(1));
+      flush();
+      await settle();
+      flush();
+      expect(cellOf(container, 0, 'c3').textContent).toBe('1');
+      const fanOut = warn.mock.calls.map((call) => String(call[0])).filter((message) => message.includes('FAN_OUT'));
+      expect(fanOut).toEqual([]);
+    } finally {
+      unmount();
+      warn.mockRestore();
+      installJsdomLayoutStubs({ width: 800, height: 400 });
+    }
+  });
+
   it('autoHeight を切り替えても、Solid の開発ビルドの HUGE_FAN_OUT を出さない(セルは行ごとの値を読む)', async () => {
     const settle = () => new Promise((resolve) => setTimeout(resolve, 30));
     installJsdomLayoutStubs({ width: 2000, height: 700 });

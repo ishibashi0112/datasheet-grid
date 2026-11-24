@@ -6,6 +6,12 @@
 
 使い方は [Solid で使う](https://datasheet-grid.vercel.app/docs/solid) と、React 版の [API リファレンス](https://github.com/ishibashi0112/datasheet-grid/blob/main/packages/react/API_REFERENCE.md)(props とメソッドは同じ)を参照してください。
 
+## 未リリース
+
+### 修正
+
+- 開発ビルドで、`canEditCell` を渡した表の行が変わったとき(編集・絞り込み・`rows` の差し替え)に Solid の知らせ `[HUGE_FAN_OUT]` が出ることがあったのを直しました(見えているセルが多いとき)。編集できるかを決める式がセルごとに行モデルを読んでいて、行モデルが変わるたびに見えているセルの 2〜3 倍の計算が一度に走っていました。行ごとの値で受けるようにしたので、編集や絞り込みの後の計算も減ります。
+
 ## 1.5.0 — 2026-11-23
 
 ### 変更

@@ -112,6 +112,22 @@ describe('createScrollSyncController', () => {
     expect(rafQueue).toHaveLength(0);
   });
 
+  // 追加(1.5.0 の後): Firefox は sticky を約 8.9M px より先へ追わないので、縮めたスクロールの上限を下げる(付けたときに書く)。
+  it('Firefox では付けたときに maxBodyPx を書き、ほかのブラウザでは書かない', () => {
+    vi.stubGlobal('navigator', { userAgent: 'Mozilla/5.0 (X11; Linux x86_64; rv:161.0) Gecko/20100101 Firefox/161.0' });
+    const firefox = createScrollSyncController();
+    const firefoxSet = vi.fn();
+    firefox.update({ scrollContainerRef: { current: makeElement() }, setViewState: firefoxSet, onScroll: undefined });
+    expect(firefoxSet).toHaveBeenCalledWith({ scrollTop: 0, viewportHeight: 300, viewportWidth: 500, maxBodyPx: 8_000_000 });
+    firefox.dispose();
+    vi.stubGlobal('navigator', { userAgent: 'Mozilla/5.0 (Macintosh) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/26.1 Safari/605.1.15' });
+    const safari = createScrollSyncController();
+    const safariSet = vi.fn();
+    safari.update({ scrollContainerRef: { current: makeElement() }, setViewState: safariSet, onScroll: undefined });
+    expect(safariSet).toHaveBeenCalledWith({ scrollTop: 0, viewportHeight: 300, viewportWidth: 500 });
+    safari.dispose();
+  });
+
   it('ResizeObserver で viewport を再計測し、dispose でリスナー / observer を外す', () => {
     const controller = createScrollSyncController();
     const setViewState = vi.fn();

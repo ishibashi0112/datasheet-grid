@@ -35,6 +35,10 @@ export type GridViewState = {
   //   (同期で描く)が先に描かれ、エディタが 1 つ前の初期値で開いていました(React 18 ではイベントの外で常に起きた)。
   //   省略可にしているのは、利用側が自分で組んだ GridViewState を createGridStore に渡していても型が壊れないため。
   editorInitialValue?: string;
+  // 追加(1.5.0 の後): 縮めたスクロールの物理ボディ高さの上限(未設定 = MAX_BODY_PX)。スクロールコンテナを付けたときに
+  //   scrollSyncController がブラウザに合わせて書きます(Firefox だけ FIREFOX_MAX_BODY_PX。utils/browserLimits)。
+  //   省略可なのは editorInitialValue と同じ理由。
+  maxBodyPx?: number;
 };
 
 // 追加(motion-4 / M-3): コピー範囲。view はコピー時点のビュー形状を参照で控えたもの(描画側が現在値と比較)。

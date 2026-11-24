@@ -19,6 +19,14 @@ check('scrollToBottom renders last row', idx.at(-1) === N - 1, { last: idx.at(-1
 check('last row text', (await cellText(page, N - 1, 'id')) === String(N), await cellText(page, N - 1, 'id'));
 let range = await page.evaluate(() => window.__grid.getVisibleRowRange());
 check('getVisibleRowRange end at bottom', range && range.endIndex === N, range);
+// 追加(1.5.0 の後): 末尾でも列見出しの行が上に見える(Firefox は sticky を約 8,947,848px より先へ追わず、上限 15M px の
+//   縮めたスクロールの下の方で見出しの行が上へ流れて消えていた。Firefox だけ上限を 8M px に下げた)。
+const headerAtBottom = await page.evaluate(() => {
+  const sc = document.querySelector('.ssg-scroll-container');
+  const head = document.querySelector('.ssg-center-pane .ssg-header-row');
+  return { scTop: Math.round(sc.getBoundingClientRect().top), headTop: Math.round(head.getBoundingClientRect().top), scrollHeight: sc.scrollHeight };
+});
+check('header row stays visible at the bottom', Math.abs(headerAtBottom.headTop - headerAtBottom.scTop) <= 1, headerAtBottom);
 
 // 先頭へ
 await page.evaluate(() => window.__grid.scrollToTop());
