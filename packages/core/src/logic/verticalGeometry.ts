@@ -32,6 +32,14 @@
 //   押し上げてよく、その場合の差分は本定数 1 行のみです。
 export const MAX_BODY_PX = 15_000_000;
 
+// 追加(1.5.0 の後 / 2026-11-23): Firefox での物理ボディ高さの上限です。Firefox(159 / 161 で確認)は position: sticky の
+//   要素を、スクロールの位置が約 8,947,848px(2^29 の app unit = 1/60px)を超えると追わなくなり、列見出しの行など sticky の
+//   要素が上へ流れて消えます(要素の高さの上限 ≈ 17.9M より手前)。Firefox ではこの値で縮めます(行の高さ 36px なら
+//   約 22 万行から縮める)。Chrome / Safari は MAX_BODY_PX のまま(ホイールで進む量を変えない)。どちらを使うかは
+//   utils/browserLimits の resolveBrowserMaxBodyPx が決め、スクロールコンテナを付けたときに view スライスへ書きます
+//   (サーバーで描いた HTML とハイドレーションの最初の描画は MAX_BODY_PX でそろえる)。
+export const FIREFOX_MAX_BODY_PX = 8_000_000;
+
 // auto-height 行モードの行数上限です(gate)。論理全高 = 行数 × 1 行最大高(~280px)が
 //   MAX_BODY_PX を超えない範囲に行数で gate します(MAX_BODY_PX / 280 ≒ 53,571 を切り下げ)。
 //   これにより auto-height モードでは scaleFactor=1 / windowBaseOffsetPx=0 / translateY=0 が

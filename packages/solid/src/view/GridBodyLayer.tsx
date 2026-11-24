@@ -298,7 +298,10 @@ export function GridBodyLayer<T>(props: GridBodyLayerProps<T>) {
                   },
                   { name: 'reusedRow' },
                 );
-                const sourceRowIndex = () => props.rowModel.getSourceIndex(rowIndex()) ?? rowIndex();
+                // 元の rows の位置も値の memo(変更、1.5.0 の後)。セルが行モデルを直接読むと、行モデルが変わるたびに(編集・
+                //   絞り込み)見えているセルの 2〜3 倍の購読が一度に走る(canEditCell があると編集できるかの式が読む。Solid の
+                //   開発ビルドの HUGE_FAN_OUT は 2,000 から)。
+                const sourceRowIndex = createMemo(() => props.rowModel.getSourceIndex(rowIndex()) ?? rowIndex());
                 // 行の高さは値だけの memo(項目のオブジェクトはスクロールのたびに新しくなる)。
                 const rowSize = createMemo(() => item().size ?? props.rowHeight);
                 const isRowChecked = createMemo(() =>

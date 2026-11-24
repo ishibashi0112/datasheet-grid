@@ -9,7 +9,7 @@
 //   React 版の「コンポーネントの中で createSpreadsheetGrid を呼んで描くたびに作り直している」の警告は入れません(Solid の
 //   部品の関数は 1 回しか呼ばれないので、部品の中で呼んでも描き直しのたびに作り直すことは無い)。
 import { createEffect, createMemo } from 'solid-js';
-import { AUTO_HEIGHT_MAX_ROWS, MAX_BODY_PX } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/verticalGeometry';
+import { AUTO_HEIGHT_MAX_ROWS } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/verticalGeometry';
 import { createInertExportCommands } from '@ishibashi0112/spreadsheet-grid-core/internal/engine/features';
 import {
   warnUnregisteredFeatureMethod,
@@ -227,6 +227,8 @@ export type ShellDevWarningArgs = {
   detailRowEnabled: () => boolean;
   detailExtraCount: () => number;
   detailActive: () => boolean;
+  // 物理ボディ高さの上限(Firefox だけ下げる。警告の文に出す)。
+  maxBodyPx: () => number;
   globalFilterText: () => string;
   columnFilterCount: () => number;
 };
@@ -295,8 +297,8 @@ function createShellDevWarningsInDev(args: ShellDevWarningArgs): void {
         warnOncePerGrid(
           warned,
           'detailMaxBody',
-          `[SpreadsheetGrid] 展開行は論理全高(行高合計 + 帯高)が ${MAX_BODY_PX}px 以内のときだけ描画します(行数上限超過)。展開状態は保持されますが帯は描かれません。\n` +
-            `[SpreadsheetGrid] Detail rows are drawn only while the total height (rows + details) is at most ${MAX_BODY_PX}px (too many rows). The expanded state is kept, but the details are not drawn.`,
+          `[SpreadsheetGrid] 展開行は論理全高(行高合計 + 帯高)が ${args.maxBodyPx()}px 以内のときだけ描画します(行数上限超過)。展開状態は保持されますが帯は描かれません。\n` +
+            `[SpreadsheetGrid] Detail rows are drawn only while the total height (rows + details) is at most ${args.maxBodyPx()}px (too many rows). The expanded state is kept, but the details are not drawn.`,
         );
       }
     },

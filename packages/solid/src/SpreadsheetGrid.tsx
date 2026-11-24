@@ -437,6 +437,8 @@ function GridShellBody<T extends object>(
   const viewportWidth = createMemo(() => view().viewportWidth);
   const viewportHeight = createMemo(() => view().viewportHeight);
   const viewScrollTop = createMemo(() => view().scrollTop);
+  // 追加(1.5.0 の後): 縮めたスクロールの上限(Firefox だけ下げる。core の scrollSyncController が書く)。
+  const viewMaxBodyPx = createMemo(() => view().maxBodyPx);
   const viewSetters = createGridViewSetters(store);
   const { setHoveredColumnIndex, setIsCornerHovered, setEditorInitialValue } = viewSetters;
 
@@ -746,6 +748,7 @@ function GridShellBody<T extends object>(
       detailIndexCacheRef: engine.detailIndexCache,
       labelDisplay: labelDisplay(),
       labelRowHeight: labelRowHeightOption(),
+      maxBodyPx: viewMaxBodyPx(),
     }),
   );
   // 開発時の警告(React 版の GridShell.tsx と同じ条件と文言。本番では何もしない)。
@@ -761,6 +764,7 @@ function GridShellBody<T extends object>(
     detailRowEnabled,
     detailExtraCount: () => vertical().detailExtras.length,
     detailActive: () => vertical().detailActive,
+    maxBodyPx: () => viewMaxBodyPx() ?? MAX_BODY_PX,
     globalFilterText,
     columnFilterCount: () => Object.keys(columnFilters()).length,
   });
@@ -1419,7 +1423,7 @@ function GridShellBody<T extends object>(
   // 行だけで論理の全高の上限を超える表(約 50 万行〜)では展開行を描けないので、トグルを出さずキーでも開閉しない(AP-26)。
   //   どちらも memo(スクロールのたびに変わる縦のレイアウトから真偽だけを取り出す。renderCell の本体やトグル列の Show が
   //   ctx.detail.expandable を読んでも、スクロールで作り直さず、isExpandable を呼び直さないように)。
-  const detailDrawable = createMemo(() => vertical().baseRowMetrics.totalBodyHeight <= MAX_BODY_PX);
+  const detailDrawable = createMemo(() => vertical().baseRowMetrics.totalBodyHeight <= (viewMaxBodyPx() ?? MAX_BODY_PX));
   const hasDetailCards = createMemo(() => detailRowEnabled() && vertical().detailEntries.length > 0);
   // 開閉(閉じる前にカードの中のフォーカスを表へ戻す)と、カードと Tab の順は core controllers/detailRowController(React 版と共用)。
   const detailRows = createDetailRowController<T>();

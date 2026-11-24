@@ -64,6 +64,26 @@ describe('createVerticalLayoutResolver', () => {
     expect(second.detailEntries).toBe(first.detailEntries);
   });
 
+  // 追加(1.5.0 の後): 物理ボディ高さの上限(maxBodyPx。Firefox だけ下げる)。
+  it('maxBodyPx を下げると、その高さから縮めたスクロールになる(縮めない経路の展開行も使わない)', () => {
+    const resolve = createVerticalLayoutResolver<Row>(fullCoreFeatures.autoHeight);
+    // 100 行 × 32px = 3,200px。既定の上限では縮めない。
+    expect(resolve(baseInputs()).verticalScaleFactor).toBe(1);
+    const capped = resolve({ ...baseInputs(), maxBodyPx: 1_600 });
+    expect(capped.physicalBodyHeight).toBe(1_600);
+    expect(capped.verticalScaleFactor).toBeGreaterThan(1);
+    // 展開行(帯込みで上限を超える)は描かない(縮めない経路は上限まで)。
+    const detail = resolve({
+      ...baseInputs(),
+      maxBodyPx: 1_600,
+      detailRowEnabled: true,
+      expandedDetailRowKeys: new Set([1]),
+    });
+    expect(detail.detailExtras.length).toBe(1);
+    expect(detail.detailActive).toBe(false);
+    expect(resolve({ ...baseInputs(), detailRowEnabled: true, expandedDetailRowKeys: new Set([1]) }).detailActive).toBe(true);
+  });
+
   it('auto-height 経路: 行高ストアを estimate で構築し、serverSide では常に無効', () => {
     const resolve = createVerticalLayoutResolver<Row>(fullCoreFeatures.autoHeight);
     const measured = new Map<number, number>([[1, 80]]);

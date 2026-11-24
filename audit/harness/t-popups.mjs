@@ -131,7 +131,11 @@ for (const host of process.env.SSG_POPUP_HOSTS?.split(',') ?? ['native', 'radixl
   await waitIdle(page, 200);
 
   // ---- ツールチップ(⋮ にホバー)----
-  await page.mouse.move(headerBox.x + headerBox.width / 2, headerBox.y + headerBox.height / 2);
+  // 見出しの位置は測り直す(列フィルターのチップの帯が出て見出しが下がっている)。⋮ は見出しのホバーで押せるようになる
+  //   (pointer-events)ので、先に見出しの上へ置く。Firefox 161 は、ポインタを動かさずに下の要素が押せるようになっても
+  //   pointerover を出し直さない(2026-11-23。前の見出しの位置のまま ⋮ の上へ飛ぶと、ツールチップが出なかった)。
+  const hoverHeaderBox = await header(page, 'qty').boundingBox();
+  await page.mouse.move(hoverHeaderBox.x + hoverHeaderBox.width / 2, hoverHeaderBox.y + hoverHeaderBox.height / 2);
   await waitIdle(page, 100);
   const trigger = page.locator('.ssg-header-cell[data-ssg-col-key="qty"] [aria-haspopup="menu"]').first();
   const triggerBox = await trigger.boundingBox();

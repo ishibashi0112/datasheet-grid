@@ -50,3 +50,35 @@
 - Firefox: conda-forge の Firefox を落として動かそうとしたところ、このセッションでは落とした実行ファイルを動かすことが止められたので回していない。core の行モデルとシェルの変更はブラウザに依らない作り(線は CSS のアニメーション、面は絶対配置の要素)で、Chromium と WebKit で同じ結果。
 
 初期 JS(gzip、esbuild): full 154.87 / lite 90.94 / standard 114.49 / ai 14.03 / solid-full 169.75 / solid-lite 96.79 / solid-standard 124.17 / solid-ai 14.71KB(1.4.1 から full +1.00KB)。上限は実測 + 0.5KB(切り上げ)= full 155.4 / lite 91.5 / standard 115.0 / solid-full 170.3 / solid-lite 97.3 / solid-standard 124.7KB。
+
+## 1.5.0 の後の残り(2026-11-23〜24)
+
+1.5.0 で残した 3 つ(Solid 版の速さの残りの差・開発時の `EFFECT_WRITES_OWN_SOURCE`・S4-06)と、回していなかった Firefox と 12 本のアプリでの確かめ。ブランチ `claude/project-thread-7vwpfl`。
+
+### 判断
+
+- 速さ: 今のまま(ユーザーの週の使用量の都合で、試作の仕上げは見送り)。試作で分かったことは下に残す。
+- 開発時の `EFFECT_WRITES_OWN_SOURCE`(`autoHeightMeasurer` / `activeRowFollow` / `edit`): 今のまま。消すには core がアクティブセル・選択・編集中のセルを位置ではなく行のキーで持つよう作り替える必要があり、React 版の編集と選択に広く触れる(`docs/next-major.md` の「1.x のまま残すと決めたこと」)。
+- S4-06(`SpreadsheetGridProps<T>` に `T extends object` が無い): 型を狭めるのは壊す変更なので 2.0 の候補(`docs/next-major.md`)。今は API リファレンスの props の節とガイド「困ったとき」に包み部品は `<T extends object>` で書くと書き、型のテスト `type-tests/src/wrapper.tsx` / `type-tests/solid/src/wrapper.tsx` を足した。
+- Firefox で大きな表の列見出しが消える件(下の FF-1): Firefox だけ上限を下げる(ユーザー判断。ほかの案は全ブラウザで下げる / 記録だけ)。
+
+### 速さの試作(仕上げていない)
+
+本番ビルド(Chromium)で、1.5.0 の残りの差は、約 200 列 × 100 万行の少しずつのスクロールの JS が React 版 0.79 秒 / Solid 版 1.25 秒、約 200 列の横の移動 60 回が 1.28 / 2.45 秒(測ったときは別の実行と重なっていた)。プロファイルに目立つ 1 か所は無く、見えているセルごとの Solid の部品(作る・つなぐ・片付ける)と GC(横で 594 / 125ms)とスタイルの計算(約 2 倍)に分かれる。`createScrollScaleAnchor` と virtual-core の位置の読み取りが重く見えるのは、フレームに 1 回の強制レイアウトがそこで起きるだけ(どちらも 1 回)。
+
+試作(作業用のコピー。リポジトリには入れていない)で、行の上端と高さを値の memo にし(`top={rowStart()}` / `rowHeight={rowSize()}`)、`primitives/rowSlots` で同じ枠の中身が変わらない行は前の項目のオブジェクトを返し、core の `rowEnterController` で消えたのが行のときだけ親を辿るようにすると、2 万行の少しずつのスクロールで 1 回あたりの行の effect が 159 → 9、計算し直し 894 → 453、effect 282 → 132(100 万行では 1,042 → 634 / 360 → 218)。Solid 版のテストは 413 本すべて通った。横の移動は変わらない(新しいセル 1 つにつき計算し直し約 5.9・effect 約 3.3 で、作るセルの数で決まる)。時間の短縮は、空いた環境で測っていないので未確認。再開するときは、この 3 つを移して `rowSlots` に項目のオブジェクトが変わらないことのテストを足し、`perf-compare.mjs` で測って効いたものだけ入れる。
+
+### Firefox(161.0、geckodriver 0.37.1、conda-forge)
+
+ハーネスの全部: React 版・Solid 版とも 935 / 941。落ちた 6 件は 1.4.1 でも同じに落ちた(1.5.0 の回帰ではない)。
+
+| 所見 | 中身 | 対応 |
+| --- | --- | --- |
+| ツールチップ(`t-popups` mantinelike) | ハーネスの誤り。列フィルターのチップの帯で見出しが下がった後も最初に測った見出しの位置へポインタを動かしていて、⋮ の上へ外から飛んでいた。⋮ は見出しのホバーで押せるようになる(`pointer-events`)ので、Firefox 161 はポインタが止まったままでは `pointerover` を出し直さない | ハーネスを直した(見出しを測り直して先に見出しの上へ)。Firefox・Chromium(React 版 / Solid 版)とも 54 / 54 |
+| FF-1(中・前から) | 行の多い表(36px の行で約 25 万行より多い)を下の方までスクロールすると、列見出しの行が上へ流れて消える。Firefox は `position: sticky` の要素を約 8,947,848px(2^29 の app unit)より先へ追わない。縮めたスクロールの上限が 15,000,000px だった。Firefox 159.0.1 でも同じ。合計行のハーネスの確かめは見出しの位置を緩く見ていたので気づかなかった | 直した: Firefox だけ上限を 8,000,000px に(core `logic/verticalGeometry` の `FIREFOX_MAX_BODY_PX`、`utils/browserLimits`、スクロールコンテナを付けたときに `scrollSyncController` が view スライスの `maxBodyPx` へ書く = サーバーの HTML とハイドレーションの最初の描画は 15M でそろう)。Chrome / Safari は 15M のまま。`t-big` に「末尾でも見出しの行が見える」を足した(Firefox / Chromium、React 版 / Solid 版とも 22 / 22) |
+| 合計行(`t-total` big × 3) | 100 万行の末尾で最後の行が合計行に 1.8px 重なる。Firefox は 15M px の末尾へちょうどスクロールできず 1px 手前で止まる(159 は 0.8px で、確かめの 1px の余裕に収まっていた)。上限 8M でも 0.5px 手前で止まり 2.3px 重なる | 記録だけ(低) |
+| フィルハンドル(`t-fill` × 2) | BR-4(端のフィルハンドルの上に重ねて出るスクロールバーの当たり)が Firefox 161 でも出る | 記録だけ(BR-4 は様子見のまま) |
+
+### 12 本のアプリ(2026-11-22 の Solid 版の点検のアプリ)
+
+同じ台本を npm の 1.4.1 と 1.5.0 で回して出力を比べた(時間・ポート・ハッシュをならして diff)。S1〜S4 は回帰なし(行が届く間隔や取りに行くブロックの順など、時間で変わる所だけが違う)。1.5.0 では開発時の `HUGE_FAN_OUT` が S1 の 15 本の台本で出なくなった。1 か所だけ新しく出た: S1 の自作のバー(`bars.html?mode=bodysort`)で自作のグローバルフィルターに打つと、行モデルの購読が 2,000 を超えた(`canEditCell` があると、編集できるかの式がセルごとに行モデルを読む)。元の rows の位置を行ごとの memo で受けるように直した(Solid 版 `view/GridBodyLayer`。テスト `shellBehavior.test.tsx`、直す前は 2,611 の購読で落ちる。Solid 版の CHANGELOG の「修正」)。S5 以降の結果は PR に書く。
