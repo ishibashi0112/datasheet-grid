@@ -3,6 +3,8 @@
 //     全部の行を並べ直していた。100 万行の Ctrl+End で 1 回 30ms ほど)。
 //   - 飾りの無い列のセルは書式・メモ・検査の印・データバー・auto-height の器の部品を作らない。列の指定が変わって飾りが付いたら
 //     セルを作り直して、その飾りが出る(逆も)。
+//   - 追加(Solid 版の横の速さ): 中身が既定の文字だけのセル(view/GridBodyLayer の renderTextCell)。列の幅を変えても文字を
+//     作り直さない・renderCell の ctx.readOnly を読んだ中身を作り直さない・renderCell の有無で形が替わる・編集できるかに追従する。
 import { beforeAll, describe, expect, it } from 'vitest';
 import { createSignal, flush } from 'solid-js';
 import { render } from '@solidjs/testing-library';
@@ -143,5 +145,140 @@ describe('飾りの無い列のセル', () => {
     flush();
     expect(cellOf(container, 0, 'name')?.querySelector('[data-autoheight-content]')).toBeNull();
     expect(cellOf(container, 0, 'name')?.textContent).toBe('品目 1');
+  });
+});
+
+describe('文字だけのセル', () => {
+  type WideRow = Record<string, unknown> & { id: number };
+  const wideRows: WideRow[] = Array.from({ length: 20 }, (_, i) => {
+    const row: WideRow = { id: i + 1 };
+    for (let c = 0; c < 6; c += 1) {
+      row[`c${c}`] = `r${i}c${c}`;
+    }
+    return row;
+  });
+
+  it('列の幅を変えても valueFormatter を呼び直さない(幅は変わる)', () => {
+    let formatted = 0;
+    let handle: SpreadsheetGridHandle<WideRow> | undefined;
+    const columns: GridColumn<WideRow>[] = Array.from({ length: 6 }, (_, c) => ({
+      key: `c${c}`,
+      title: `c${c}`,
+      width: 100,
+      valueFormatter: ({ value }) => {
+        formatted += 1;
+        return String(value);
+      },
+    }));
+    const { container } = render(() => (
+      <SpreadsheetGrid<WideRow>
+        ref={(h) => {
+          handle = h;
+        }}
+        rows={wideRows}
+        columns={columns}
+        rowKeyGetter={(row) => row.id}
+        height={300}
+        canEditCell={() => true}
+      />
+    ));
+    flush();
+    expect(formatted).toBeGreaterThan(0);
+    const before = formatted;
+    const leftOf = (key: string) => Number.parseFloat(cellOf(container, 0, key)?.style.left ?? 'NaN');
+    const c1Left = leftOf('c1');
+    handle?.applyState({ columnWidths: { c0: 140 } });
+    flush();
+    expect(formatted).toBe(before);
+    expect(cellOf(container, 0, 'c0')?.style.width).toBe('140px');
+    expect(leftOf('c1')).toBe(c1Left + 40);
+    expect(cellOf(container, 0, 'c1')?.textContent).toBe('r0c1');
+  });
+
+  it('renderCell の本体で ctx.readOnly を読んでも、列の幅を変えたときに作り直さない', () => {
+    let calls = 0;
+    let handle: SpreadsheetGridHandle<Row> | undefined;
+    const columns: GridColumn<Row>[] = [
+      {
+        key: 'name',
+        title: '品名',
+        width: 160,
+        renderCell: (ctx) => {
+          calls += 1;
+          const readOnly = ctx.readOnly;
+          return <span class="read-only-mark">{String(readOnly)}</span>;
+        },
+      },
+      { key: 'qty', title: '数量', width: 80 },
+    ];
+    render(() => (
+      <SpreadsheetGrid<Row>
+        ref={(h) => {
+          handle = h;
+        }}
+        rows={makeRows(20)}
+        columns={columns}
+        rowKeyGetter={(row) => row.id}
+        height={300}
+        canEditCell={() => true}
+      />
+    ));
+    flush();
+    const before = calls;
+    handle?.applyState({ columnWidths: { qty: 140 } });
+    flush();
+    handle?.applyState({ columnWidths: { qty: 200, name: 200 } });
+    flush();
+    expect(calls).toBe(before);
+  });
+
+  it('列に renderCell を足すと中身が替わり、外すと既定の文字に戻る', () => {
+    const plain: GridColumn<Row>[] = [
+      { key: 'name', title: '品名', width: 160 },
+      { key: 'qty', title: '数量', width: 80 },
+    ];
+    const [columns, setColumns] = createSignal<GridColumn<Row>[]>(plain);
+    const { container } = render(() => (
+      <SpreadsheetGrid<Row> rows={makeRows(5)} columns={columns()} rowKeyGetter={(row) => row.id} height={300} />
+    ));
+    flush();
+    expect(cellOf(container, 0, 'name')?.innerHTML).toBe('<span class="ssg-cell-value">品目 1</span>');
+    setColumns([{ ...plain[0]!, renderCell: (ctx) => <b class="custom">{ctx.row.name}!</b> }, plain[1]!]);
+    flush();
+    expect(cellOf(container, 0, 'name')?.querySelector('.custom')?.textContent).toBe('品目 1!');
+    expect(cellOf(container, 0, 'name')?.querySelector('.ssg-cell-value')).toBeNull();
+    setColumns(plain);
+    flush();
+    expect(cellOf(container, 0, 'name')?.innerHTML).toBe('<span class="ssg-cell-value">品目 1</span>');
+  });
+
+  it('readOnly と canEditCell の変化に追従する', () => {
+    const [readOnly, setReadOnly] = createSignal(false);
+    const [editableQty, setEditableQty] = createSignal(true);
+    const columns: GridColumn<Row>[] = [
+      { key: 'name', title: '品名', width: 160 },
+      { key: 'qty', title: '数量', width: 80 },
+    ];
+    const { container } = render(() => (
+      <SpreadsheetGrid<Row>
+        rows={makeRows(5)}
+        columns={columns}
+        rowKeyGetter={(row) => row.id}
+        height={300}
+        readOnly={readOnly()}
+        canEditCell={editableQty() ? undefined : (_rowIndex, _colIndex, _row, column) => column.key !== 'qty'}
+      />
+    ));
+    flush();
+    expect(cellOf(container, 0, 'name')?.getAttribute('aria-readonly')).toBeNull();
+    setReadOnly(true);
+    flush();
+    expect(cellOf(container, 0, 'name')?.getAttribute('aria-readonly')).toBe('true');
+    expect(cellOf(container, 0, 'name')?.classList.contains('ssg-body-cell--readonly')).toBe(true);
+    setReadOnly(false);
+    setEditableQty(false);
+    flush();
+    expect(cellOf(container, 0, 'name')?.getAttribute('aria-readonly')).toBeNull();
+    expect(cellOf(container, 0, 'qty')?.getAttribute('aria-readonly')).toBe('true');
   });
 });

@@ -166,11 +166,22 @@ export const createRowEnterController = (): RowEnterController => {
         }
         continue;
       }
+      // 変更(Solid 版の速さ): 行の中の出入り(横のスクロールでセルが入れ替わる。見えているセルの数だけ記録が来る)は
+      //   行の出入りではないので見ません(行の親は行の層で、行の中に行は無い。入れ子のグリッドの行は展開行のカードの中)。
+      const target = record.target;
+      if (isBodyRow(target)) {
+        continue;
+      }
       // 変更(FC-15 の見直し): 入れ子のグリッドから消えた行も見ません(消えた要素は辿れないので、消えた先の親で判定)。
-      const removedFromNested =
-        observed !== null && record.target instanceof Element && isInsideDetailCardOf(observed, record.target);
+      //   変更(Solid 版の速さ): 判定は消えた行があったときだけ。
+      let removedFromNested: boolean | undefined;
       record.removedNodes.forEach((node) => {
-        if (removedFromNested || !isBodyRow(node)) {
+        if (!isBodyRow(node)) {
+          return;
+        }
+        removedFromNested ??=
+          observed !== null && target instanceof Element && isInsideDetailCardOf(observed, target);
+        if (removedFromNested) {
           return;
         }
         if (node.hasAttribute('data-skeleton-row')) {

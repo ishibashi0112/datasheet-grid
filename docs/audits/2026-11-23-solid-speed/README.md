@@ -82,3 +82,51 @@
 ### 12 本のアプリ(2026-11-22 の Solid 版の点検のアプリ)
 
 同じ台本を npm の 1.4.1 と 1.5.0 で回して出力を比べた(時間・ポート・ハッシュをならして diff)。12 本とも回帰なし(違うのは、行が届く間隔や取りに行くブロックの順、流れてくるデータの件数、乱数の ID など、時間や乱数で変わる所だけ)。1.5.0 では開発時の `HUGE_FAN_OUT` が S1 の 15 本の台本で出なくなった。1 か所だけ新しく出た: S1 の自作のバー(`bars.html?mode=bodysort`)で自作のグローバルフィルターに打つと、行モデルの購読が 2,000 を超えた(`canEditCell` があると、編集できるかの式がセルごとに行モデルを読む)。元の rows の位置を行ごとの memo で受けるように直した(Solid 版 `view/GridBodyLayer`。テスト `shellBehavior.test.tsx`、直す前は 2,611 の購読で落ちる。Solid 版の CHANGELOG の「修正」)。
+
+## 横の大きな移動の速さ(2026-11-28)
+
+1.5.0 の後の残りの差のうち、約 200 列の表で横に大きく飛ぶとき(11/23 に 1 回あたりの JS が React 版 21ms / Solid 版 41ms)をユーザーが「必要な対応をしたい」とした。数時間で区切り、Solid の流儀のまま、測って効いたものだけを入れる(列の使い回し = 案 C は前にユーザーが見送った)。ブランチ `claude/project-thread-pf1zfh`。測り方のスクリプトは `audit/harness/.out/bench/`(リポジトリに入れない)。
+
+### 分かったこと
+
+- 横に飛ぶたびに作り直す DOM は両方とも同じ(1 回に約 1,100 セル。セルの HTML も同じ)。描画(Paint)も rAF 2 回で待つと 1 回あたり 12〜19ms で同じ。React 版は描き直しを scroll の後の MessageChannel のタスクで行い、Solid 版は scroll のイベントの中で行うので、トレースの Paint の数え方が違って見える(1 回の rAF で次へ進むと React 版の描画が数えられない。入れ子の Paint を足すと Solid 版を二重に数える)。
+- 差はセルごとの Solid の部品(For の項目・属性の effect・中身の insert・行の memo へのつなぎと片付け)と GC。
+- 両方に共通の重さ: core `rowEnterController` の MutationObserver が、行の中のセルの出入りの記録(見えているセルの数だけ来る)をすべて調べ、記録ごとに `closest` で展開行のカードを辿っていた。
+- 列見出しのセルは 1 つあたり重い(svg の属性の spread・Show が 5 つ)が、全体の 3% 未満で、直しても測れる差にならないので見送った。
+
+### 入れたもの
+
+1. Solid 版 `view/GridBodyLayer`: 飾りの無い列(`isPlainCellColumn`)で中身が既定の文字だけ(シェルの `isTextCellColumn` = `renderCellContent` が最後の既定の `span` に落ちる条件)のセルを、少ない部品で作る `renderTextCell`(位置と幅は項目から読み、列だけを memo にする。中の `span` は 1 度だけ作り文字の式だけが追従する。検索のヒットは行にヒットがあるときだけ memo。いつも undefined の属性を持たない)。セルの形は列のオブジェクトごとに WeakMap に控え(控えたときと `renderCell` が違えば決め直す)、For のキーに入れる(形が変わったら作り直す)。編集できるかは、グリッドの `readOnly` と列で決まるとき(core `utils/permissions` の `isColumnEditable`)は行や位置を読まない(一般のセルも同じ)。セルが読むグリッドの設定は層の memo 2 つ(`readOnly` / `canEditCell` と、`showCellOverflowTooltip` / `bodyCell` の slot / 左の幅。どちらも中身が同じなら知らせない)、行の class / style と `bodyCell` の組み合わせは行ごとの memo。DOM は前と同じ(比較テスト `src/parity` が通る)。
+2. core `controllers/rowEnterController`: 記録の対象が行のとき(行の中のセルの出入り)は見ない(行の中に行は無い。入れ子のグリッドの行は展開行のカードの中)。入れ子のグリッドの判定は消えた行があったときだけ。React 版も速くなる。
+
+### 別視点のレビュー(1 系統)
+
+DOM を HEAD の `GridBodyLayer` と約 35 の状態で比べて同じ(選択・編集・ホバー・`readOnly` / `canEditCell`・行の値・`showCellOverflowTooltip`・`bodyCell` の slot・`getRowClassName`・列の並べ替えと幅・検索・auto-height と `verticalAlign`・遠くへのスクロールと戻り・固定列・クリックの通知)。`rowEnterController` は行の中に行が無いことを確かめて問題なし。指摘 3 件はすべて直した(テストは `src/cellShape.test.tsx` の「文字だけのセル」):
+
+| 指摘 | 直し方 |
+| --- | --- |
+| 層の memo 1 つに `readOnly` / `canEditCell` と左の幅をまとめたので、列の幅を変えるたびに `renderCell` の本体で `ctx.readOnly` を読んだ中身(と `cellClassName(ctx)` / `cellNote(ctx)`)を作り直していた | 編集できるかの 2 つを別の memo にし、どちらの memo も中身が同じなら知らせない(列の幅の変化で作り直す回数は HEAD の 1 → 0) |
+| 文字だけのセルが列と位置を項目から直接読むので、列の幅を変えるたびに見えているセルの文字を作り直していた(`valueFormatter` を見えているセルの数だけ呼ぶ。検索の印も作り直す) | 列を memo にし、検索のヒットは行にヒットがあるときだけ memo(速さの差は約 2%) |
+| セルの形の控えが `renderCell` の有無を覚えていて、キー(`renderCell` を毎回読む)とずれうる | 控えたときと `renderCell` が違えば決め直す。なお、store に入れた列のオブジェクトをその場で書き換えたとき(`s.columns[0].renderCell = …`)は、文字だけのセルは追従しない(HEAD でも `cellClassName` などは追従しない。列は React 版と同じく新しいオブジェクトで渡す前提で、ドキュメントにも書いていない)ので記録だけ |
+
+### 速さ(本番ビルド、Chromium、1440×900)
+
+| 測ったもの | React 版 前 → 後 | Solid 版 前 → 後 |
+| --- | --- | --- |
+| 横に大きく飛ぶ 60 回の JS(約 200 列 × 2 万行。11/23 と同じ測り方 = rAF 2 回ずつ、6 回の中央値) | 1,153 → 913ms(1 回あたり 19.2 → 15.2ms) | 1,894 → 1,334ms(31.6 → 22.2ms) |
+| 同じ操作の rAF までのフレーム(中央値) | 29.5 → 27.0ms | 40.7 → 30.4ms |
+| 新しい中身が出るまで待つ測り方の JS / 出るまで(中央値) | 1,132 → 918ms / 45.5 → 42.6ms | 1,965 → 1,254ms / 84.2 → 68.1ms |
+| 少しずつのスクロール 200 回の JS(約 200 列 × 100 万行、72px ずつ、4 回の中央値) | 821 → 783ms | 1,066 → 903ms |
+| 縦に遠くへ 120 回の JS(`perf-compare.mjs`) | 1.8〜2.2 秒(変わらない) | 2.1〜2.3 → 1.1 秒 |
+| 100 万行の `Ctrl+End`(`perf-compare.mjs`) | 39〜46ms(変わらない) | 47〜51 → 36〜42ms |
+| スクロールした後のヒープ(約 200 列) | 13.6MB(変わらない) | 22.8 → 17.1MB |
+
+(表はレビューの直しの前の測り。直した後は横の 60 回が約 2% 長い = 同じ実行で 1,488 → 1,523ms、React 版 1,038ms。)
+
+横の差は React 版の約 1.6 倍 → 約 1.5 倍(1 フレームの時間では 1.4 → 1.1 倍)。残りはセルごとの Solid の部品で、ここから先は形を変える直しになる(見送った案: 行の memo を 1 つにまとめてつなぎを減らす = 約 5%、セルごとの `pointerenter` を層の `pointerover` 1 つに = 約 2%、列見出しのセル = 3% 未満、縦のスクロールで使い回した行の DOM の移動とスタイルの計算 = DOM の順番が変わる、列の使い回し = 案 C)。
+
+### 確かめたこと
+
+- ゲート: tsc × 2・eslint 0 件・ルートのテスト 2,925 / 2,925・Solid 版 418 / 418(足した 4 本を含む)・SSR 11 / 11・Solid 版の型・build:lib・size:check・types:check・examples:check・website の `next build`。
+- 初期 JS: Solid 版が増えた(main から solid-full +0.87 / solid-lite +0.84 / solid-standard +0.89KB = 170.83 / 97.83 / 125.22KB。文字だけのセルの部品と memo)ので、これまでと同じく上限を今の値 + 0.5KB(切り上げ)にした(171.4 / 98.4 / 125.8KB)。React 版は full 155.10KB(+0.01KB)。
+- ハーネス(監査ハーネスの全部、dev サーバー): Chromium は React 版・Solid 版とも 1,024 / 1,024、WebKitGTK は両方とも 939 / 942(既知の BR-3 の 1 件・BR-4 の 2 件だけ。React 版の `t-total` は 1 回目に WebDriver の起動の時間切れで止まり、回し直して 52 / 52)、Firefox 161 は両方とも 936 / 942。Firefox の 6 件は BR-4 の 2 件、上の「1.5.0 の後の残り」の `t-total`(big)の 3 件、`t-pinned` の「100 万行で最後までスクロールしても最終行は下の固定行のすぐ上」の 1 件。`t-pinned` の 1 件は `t-total`(big)と同じわけ: 1.5.1 で Firefox だけ縮めたスクロールの上限を 8M にしたので物理の 1px が約 4.5px になり、scrollTop が最大の 0.5px 手前で止まると最終行が 2.3px 重なる(確かめは 15M のとき = 1px が約 2.4px を前提に 2px まで許す)。1.5.0 の後の残りのときは上限を変える前に全部を回していたので出ていなかった。今回の変更はスクロールの位置に触れない。記録だけ(低)。`t-diff.mjs` は 40 / 40(5 つのシナリオ × 種 8 個 × 120 手)。

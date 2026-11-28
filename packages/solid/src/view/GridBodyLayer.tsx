@@ -19,7 +19,7 @@ import type {
 } from '@ishibashi0112/spreadsheet-grid-core';
 import type { PaneColumnEntry } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/geometry';
 import type { SelectionSnapshot } from '@ishibashi0112/spreadsheet-grid-core/internal/model/gridSelectors';
-import { getCellValue, isCellEditable } from '@ishibashi0112/spreadsheet-grid-core/internal/utils/permissions';
+import { getCellValue, isCellEditable, isColumnEditable } from '@ishibashi0112/spreadsheet-grid-core/internal/utils/permissions';
 import { resolveIsRowSelected } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/rowSelection';
 import { resolveDataRowNumber } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/labelRows';
 import { shouldMarkCellOverflowTooltip } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/cellOverflowTooltip';
@@ -73,6 +73,9 @@ export type GridCellContentContext = CellRenderState & {
 
 const NO_SELECTED_COLUMNS: readonly [number, number] = [-1, -1];
 const EMPTY_SLOT = resolveSlotProps<JSX.CSSProperties>(undefined);
+// 飾りの無い列のセルで使わない値(セルごとに関数を作らない)。
+const NO_VALUE = (): null => null;
+const NO_SLOT = () => EMPTY_SLOT;
 
 // class の語を空白でつなぐ(偽の値と空の文字列は飛ばす)。
 const joinClasses = (...parts: Array<string | false | null | undefined>): string => {
@@ -95,8 +98,8 @@ const isPlainCellColumn = <T,>(column: PaneColumnEntry<T>['column']): boolean =>
   column.conditionalFormat?.dataBar === undefined &&
   column.conditionalFormat?.colorScale === undefined &&
   column.autoHeight !== true;
-const cellKey = <T,>(entry: PaneColumnEntry<T>): string =>
-  `${entry.column.key}\u0000${isPlainCellColumn(entry.column) ? 'plain' : 'decorated'}${entry.column.renderCell ? '+render' : ''}`;
+// セルの形: 'text' = 飾りが無く中身が既定の文字だけ(シェルの isTextCellColumn)/ 'plain' = 飾りが無い / 'decorated'。
+type CellShape = 'text' | 'plain' | 'decorated';
 
 // 細い列の状態チップは余白を詰めてアイコンを外す(React 版の view/GridBodyLayer と同じ幅)。
 export const CHIP_COMPACT_MAX_WIDTH = 80;
@@ -158,6 +161,16 @@ type GridBodyLayerProps<T> = {
   cellEditorDomId: string;
   // 行は読んだときに引く(読まない中身 = checkbox 列の既定のセルは、行の値が変わっても作り直さない)。
   renderCellContent: (row: () => T, column: GridColumn<T>, cell: GridCellContentContext) => JSX.Element;
+  // 追加(Solid 版の速さ): 中身が既定の文字だけになる列か(renderCellContent の既定の分かれ道と同じ条件)と、その文字
+  //   (セル内検索のヒットは <mark>。カレントの番号は読んだときに引く)。飾りの無いそういう列のセルは、中身の span を 1 度だけ
+  //   作り、文字の式だけが追従します(セルごとの部品を減らす。遠くへ飛ぶたびに見えているセルを作り直すため)。
+  isTextCellColumn: (column: GridColumn<T>) => boolean;
+  cellText: (
+    row: T,
+    column: GridColumn<T>,
+    findRanges: readonly FindRange[] | undefined,
+    findCurrentIndex: () => number | null,
+  ) => JSX.Element;
   onRowHeaderPointerDown: (rowIndex: number, event: PointerEvent) => void;
   onRowHeaderPointerEnter: (rowIndex: number, event: PointerEvent) => void;
   onRowHeaderPointerLeave: (rowIndex: number) => void;
@@ -169,6 +182,48 @@ type GridBodyLayerProps<T> = {
 
 export function GridBodyLayer<T>(props: GridBodyLayerProps<T>) {
   const texts = useGridLocaleText();
+  // セルの形(下の cellKey)。列のオブジェクトごとに覚える(For は描く範囲が変わるたびに見えている行 × 列の数だけキーを引く)。
+  //   キーは renderCell の有無も見るので、覚えたときと renderCell が違えば決め直す(キーとセルの形をずらさない)。
+  //   isTextCellColumn はシェルが機能セットから決めるので、層のあいだ変わらない。
+  const cellShapes = new WeakMap<object, { shape: CellShape; renderCell: unknown }>();
+  const cellShapeOf = (column: PaneColumnEntry<T>['column']): CellShape => {
+    const known = cellShapes.get(column);
+    if (known !== undefined && known.renderCell === column.renderCell) {
+      return known.shape;
+    }
+    const shape: CellShape = !isPlainCellColumn(column)
+      ? 'decorated'
+      : props.isTextCellColumn(column as unknown as GridColumn<T>)
+        ? 'text'
+        : 'plain';
+    cellShapes.set(column, { shape, renderCell: column.renderCell });
+    return shape;
+  };
+  // セルは列の key と形で対応させます(形が変わったらセルを作り直す。renderCell の有無も同じ。renderCell の中身は行ごとに
+  //   作るので、セルを作るときに決める)。
+  const cellKey = (entry: PaneColumnEntry<T>): string =>
+    `${entry.column.key}\u0000${cellShapeOf(entry.column)}${entry.column.renderCell ? '+render' : ''}`;
+  // 追加(Solid 版の速さ): セルが読むグリッドの設定を層で memo にまとめます(セルごとにシェルの props をたどると、見えている
+  //   セルの数だけ読み取りとつなぎが増える)。中身が同じなら知らせない(列の幅が変わるとシェルの値が作り直される)。
+  //   編集できるかの 2 つは別の memo(renderCell の ctx.readOnly などを読んだ式が、幅や slot の変化で作り直されないように)。
+  //   こちらはそのまま isCellEditable の第 1 引数に渡せる形。
+  const editPermission = createMemo(
+    () => ({ readOnly: props.readOnly, canEditCell: props.canEditCell }),
+    { equals: (a, b) => a.readOnly === b.readOnly && a.canEditCell === b.canEditCell },
+  );
+  const cellEnv = createMemo(
+    () => ({
+      showCellOverflowTooltip: props.showCellOverflowTooltip,
+      bodyCellSlot: props.slots.bodyCell,
+      leadingWidth: props.leadingWidth,
+    }),
+    {
+      equals: (a, b) =>
+        a.showCellOverflowTooltip === b.showCellOverflowTooltip &&
+        a.bodyCellSlot === b.bodyCellSlot &&
+        a.leadingWidth === b.leadingWidth,
+    },
+  );
   // 行の枠(For のキー)。行の並び(行モデル)が前と同じときだけ、範囲から出たデータ行の枠を入ってきた行に使い回します
   //   (primitives/rowSlots)。グループ行とラベル行は使い回さない(行のキーのまま)。
   const slotKindOf = (row: GridBodyRowItem): RowSlotKind => {
@@ -362,6 +417,94 @@ export function GridBodyLayer<T>(props: GridBodyLayerProps<T>) {
                 );
                 const rowNumber = () =>
                   props.labelViewIndexes ? resolveDataRowNumber(props.labelViewIndexes, rowIndex()) : rowIndex() + 1;
+                // 追加(Solid 版の速さ): 飾りが無く中身が既定の文字だけの列のセル(下の cellShapeOf が 'text')。下の一般のセルと
+                //   同じ DOM を、少ない部品で作ります(位置の memo・中身を作り直す式・使わない機能の値を持たない。遠くへ横に
+                //   飛ぶと見えているセルをすべて作り直すので、セルごとの部品の数がそのまま手間になる)。
+                //   - 位置と幅は項目から直接読む(箱の属性の式だけが読む)。列は memo(文字の式が読む)。
+                //   - 中身は span を 1 度だけ作り、文字の式だけが行の値・列・検索のヒットに追従する。
+                // 文字だけのセルの箱の class と style の、行で共通の部分(行の className / style とグリッドの bodyCell)。
+                const textCellBase = createMemo(() => {
+                  const slot = rowSlot();
+                  const bodyCell = cellEnv().bodyCellSlot;
+                  return {
+                    className: joinClasses('ssg-body-cell', slot.className, bodyCell?.className),
+                    style: bodyCell?.style || slot.style ? { ...bodyCell?.style, ...slot.style } : undefined,
+                  };
+                });
+                const renderTextCell = (entry: () => PaneColumnEntry<T>): JSX.Element => {
+                  // 列は memo で受ける(列の幅や並びが変わると項目が作り直されるが、列が同じなら文字を作り直さない)。
+                  const unbound = createMemo(() => entry().column);
+                  const column = () => unbound() as unknown as GridColumn<T>;
+                  const colIndex = () => entry().logicalIndex;
+                  const size = () => entry().paneLocalSize;
+                  const isActive = () => activeCol() === colIndex();
+                  const isSelected = () =>
+                    isRowSelected() ||
+                    (selectedColStart() >= 0 && colIndex() >= selectedColStart() && colIndex() <= selectedColEnd());
+                  // グリッドの readOnly と列で決まるときは、行や位置を読まない(下の一般のセルと同じ)。
+                  const readOnlyCell = (): boolean => {
+                    const env = editPermission();
+                    return (
+                      !isColumnEditable(env.readOnly, unbound()) ||
+                      (env.canEditCell !== undefined &&
+                        !isCellEditable(env, rowIndex(), colIndex(), currentRow(), unbound(), {
+                          sourceRowIndex: sourceRowIndex(),
+                          rowKey: rowKey(),
+                        }))
+                    );
+                  };
+                  // 背の高い行で上にそろえるか(auto-height のときだけ。飾りの無い列は auto-height の器を持たないので既定は真ん中)。
+                  const alignTop = () =>
+                    rowAutoHeight() &&
+                    rowSize() > props.rowHeight &&
+                    (column().verticalAlign ?? props.verticalAlign ?? 'center') === 'top';
+                  // この列の検索のヒット。行にヒットがあるときだけ memo にする(項目が作り直されても、同じヒットなら印を作り直さない)。
+                  const findRanges = createMemoWhen(
+                    () => rowFindHits() !== undefined,
+                    () => rowFindHits()?.get(colIndex()),
+                    undefined,
+                  );
+                  const cell = () => ({ row: rowIndex(), col: colIndex() });
+                  return (
+                    <div
+                      role="gridcell"
+                      aria-colindex={colIndex() + 2}
+                      aria-selected={isSelected() ? 'true' : 'false'}
+                      aria-readonly={readOnlyCell() ? 'true' : undefined}
+                      id={isActive() ? props.activeCellDomId : undefined}
+                      aria-owns={editingCol() === colIndex() ? props.cellEditorDomId : undefined}
+                      data-ssg-col-key={column().key}
+                      data-ssg-tooltip-overflow={cellEnv().showCellOverflowTooltip ? '' : undefined}
+                      class={joinClasses(
+                        textCellBase().className,
+                        column().align === 'center' && 'ssg-body-cell--align-center',
+                        column().align === 'right' && 'ssg-body-cell--align-right',
+                        alignTop() && 'ssg-body-cell--valign-top',
+                        readOnlyCell() && !isSelected() && 'ssg-body-cell--readonly',
+                        isHovered() && 'ssg-body-cell--row-hovered',
+                      )}
+                      onPointerDown={(event) => props.onCellPointerDown(cell(), event)}
+                      onPointerEnter={(event) => props.onCellPointerEnter(cell(), event)}
+                      onClick={(event) => props.onCellClick(cell(), event)}
+                      onDblClick={(event) => props.onCellDoubleClick(cell(), event)}
+                      ref={markClickTarget}
+                      style={{
+                        ...textCellBase().style,
+                        left: px(cellEnv().leadingWidth + entry().paneLocalStart),
+                        width: px(size()),
+                        'min-width': px(size()),
+                        height: px(rowSize()),
+                        'word-break': column().wordBreak,
+                        'line-break': column().lineBreak,
+                        'z-index': isActive() ? 3 : 1,
+                      }}
+                    >
+                      <span class="ssg-cell-value">
+                        {props.cellText(currentRow(), column(), findRanges(), rowFindCurrent)}
+                      </span>
+                    </div>
+                  );
+                };
                 return (
                   <div
                     ref={(element) => {
@@ -423,8 +566,12 @@ export function GridBodyLayer<T>(props: GridBodyLayerProps<T>) {
                         // 飾りの無い列のセル(下の isPlainCellColumn)は、書式・メモ・検査の印・データバー・auto-height の器の
                         //   部品を作りません(段 3-4 / S12-03。遠くへスクロールするたびに見えているセルを作り直すので、セルごとの
                         //   memo と Show の数がそのまま手間になる)。列の指定が変わって形が変わったときは、キー(cellKey)が変わって
-                        //   セルを作り直します。
-                        const plain = untrack(() => isPlainCellColumn(entry().column));
+                        //   セルを作り直します。中身が既定の文字だけならさらに部品の少ないセル(上の renderTextCell)。
+                        const shape = untrack(() => cellShapeOf(entry().column));
+                        if (shape === 'text') {
+                          return renderTextCell(entry);
+                        }
+                        const plain = shape === 'plain';
                         const unbound = createMemo(() => entry().column);
                         const column = () => unbound() as unknown as GridColumn<T>;
                         const colIndex = createMemo(() => entry().logicalIndex);
@@ -435,16 +582,20 @@ export function GridBodyLayer<T>(props: GridBodyLayerProps<T>) {
                           isRowSelected() ||
                           (selectedColStart() >= 0 && colIndex() >= selectedColStart() && colIndex() <= selectedColEnd());
                         // 編集できないセルか。memo にしません(読むのは箱の属性の計算と、中身が ctx.readOnly を読んだ式だけ。
-                        //   セルを作るたびの memo の手間を減らす。段 3-4)。
-                        const readOnlyCell = (): boolean =>
-                          !isCellEditable(
-                            { readOnly: props.readOnly, canEditCell: props.canEditCell },
-                            rowIndex(),
-                            colIndex(),
-                            currentRow(),
-                            unbound(),
-                            props.canEditCell ? { sourceRowIndex: sourceRowIndex(), rowKey: rowKey() } : undefined,
+                        //   セルを作るたびの memo の手間を減らす。段 3-4)。変更(Solid 版の速さ): グリッドの readOnly と列で
+                        //   決まるとき(canEditCell が無いときも)は、行や位置を読まない(読むと、行の値や位置が変わるたびに箱の
+                        //   属性を計算し直す)。
+                        const readOnlyCell = (): boolean => {
+                          const env = editPermission();
+                          return (
+                            !isColumnEditable(env.readOnly, unbound()) ||
+                            (env.canEditCell !== undefined &&
+                              !isCellEditable(env, rowIndex(), colIndex(), currentRow(), unbound(), {
+                                sourceRowIndex: sourceRowIndex(),
+                                rowKey: rowKey(),
+                              }))
                           );
+                        };
                         const value = () => getCellValue(currentRow(), unbound());
                         // 省略できる機能の値は、その機能を使う列(行)のセルだけ memo にします(primitives/memoWhen。遠くへスクロール
                         //   するたびに見えているセルを作り直すので、使わない機能の memo を作らない)。
@@ -491,7 +642,7 @@ export function GridBodyLayer<T>(props: GridBodyLayerProps<T>) {
                         };
                         // セルの書式とメモに渡す文脈(どちらも無い列では作らない。React 版と同じ)。
                         const needsStyleContext = () => typeof column().cellClassName === 'function' || !!column().cellNote;
-                        const styleContext = plain ? () => null : createMemoWhen(
+                        const styleContext = plain ? NO_VALUE : createMemoWhen(
                           needsStyleContext,
                           (): CellStyleContext<T, SolidGridTypes> | null => ({
                             row: currentRow(),
@@ -508,7 +659,7 @@ export function GridBodyLayer<T>(props: GridBodyLayerProps<T>) {
                           }),
                           null,
                         );
-                        const conditionalCell = plain ? () => EMPTY_SLOT : createMemoWhen(
+                        const conditionalCell = plain ? NO_SLOT : createMemoWhen(
                           () => column().cellClassName !== undefined,
                           () => {
                             const cellClassName = column().cellClassName;
@@ -522,7 +673,7 @@ export function GridBodyLayer<T>(props: GridBodyLayerProps<T>) {
                         // 条件付き書式(データバー / カラースケール)。指定のある列だけ値と集計を読みます(React 版と同じ)。
                         //   帯は .ssg-cf-bar(絶対配置・文字の下)、背景色は inline の color-mix()(文字色は変えない)。
                         const formatRules = () => (props.conditionalFormat ? column().conditionalFormat : undefined);
-                        const dataBar = plain ? () => null : createMemoWhen(
+                        const dataBar = plain ? NO_VALUE : createMemoWhen(
                           () => formatRules()?.dataBar !== undefined,
                           () => {
                             const feature = props.conditionalFormat;
@@ -533,7 +684,7 @@ export function GridBodyLayer<T>(props: GridBodyLayerProps<T>) {
                           },
                           null,
                         );
-                        const scaleBackground = plain ? () => null : createMemoWhen(
+                        const scaleBackground = plain ? NO_VALUE : createMemoWhen(
                           () => formatRules()?.colorScale !== undefined,
                           () => {
                             const feature = props.conditionalFormat;
@@ -553,12 +704,12 @@ export function GridBodyLayer<T>(props: GridBodyLayerProps<T>) {
                           const rules = formatRules()?.dataBar;
                           return bar ? (bar.negative ? rules?.negativeColor : rules?.color) : undefined;
                         };
-                        const invalidMessage = plain ? () => null : createMemoWhen(
+                        const invalidMessage = plain ? NO_VALUE : createMemoWhen(
                           () => !!props.showValidationMarks && hasCellValidation(unbound()),
                           () => getInvalidMessage(unbound(), currentRow(), value(), texts()),
                           null,
                         );
-                        const cellNote = plain ? () => null : createMemoWhen(
+                        const cellNote = plain ? NO_VALUE : createMemoWhen(
                           () => !!column().cellNote,
                           () => {
                             const note = column().cellNote;
@@ -588,7 +739,7 @@ export function GridBodyLayer<T>(props: GridBodyLayerProps<T>) {
                         const alignTop = () => (autoHeightFlags() & 2) !== 0;
                         const markOverflowTooltip = () =>
                           shouldMarkCellOverflowTooltip({
-                            enabled: props.showCellOverflowTooltip,
+                            enabled: cellEnv().showCellOverflowTooltip,
                             isAutoHeightCell: isAutoHeightCell(),
                             hasRenderCell: column().renderCell !== undefined,
                           });
@@ -649,7 +800,7 @@ export function GridBodyLayer<T>(props: GridBodyLayerProps<T>) {
                               'ssg-body-cell',
                               rowSlot().className,
                               conditionalCell().className,
-                              props.slots.bodyCell?.className,
+                              cellEnv().bodyCellSlot?.className,
                               column().align === 'center' && 'ssg-body-cell--align-center',
                               column().align === 'right' && 'ssg-body-cell--align-right',
                               dataBar() !== null && 'ssg-body-cell--cf-bar',
@@ -673,11 +824,11 @@ export function GridBodyLayer<T>(props: GridBodyLayerProps<T>) {
                             onDblClick={(event) => props.onCellDoubleClick(cell(), event)}
                             ref={markClickTarget}
                             style={{
-                              ...props.slots.bodyCell?.style,
+                              ...cellEnv().bodyCellSlot?.style,
                               ...(scaleBackground() !== null ? { 'background-color': scaleBackground() as string } : null),
                               ...rowSlot().style,
                               ...conditionalCell().style,
-                              left: px(props.leadingWidth + entry().paneLocalStart),
+                              left: px(cellEnv().leadingWidth + entry().paneLocalStart),
                               width: px(size()),
                               'min-width': px(size()),
                               height: px(rowSize()),

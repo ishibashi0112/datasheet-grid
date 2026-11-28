@@ -26,6 +26,7 @@ import type {
 } from '@ishibashi0112/spreadsheet-grid-core';
 import { createGridEngine } from '@ishibashi0112/spreadsheet-grid-core/internal/engine/createGridEngine';
 import type { GridColumn as UnboundGridColumn } from '@ishibashi0112/spreadsheet-grid-core/internal/model/gridTypes.unbound';
+import type { FindRange } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/find';
 import type { AutosizeChipOf, AutosizeTotalRowText } from '@ishibashi0112/spreadsheet-grid-core/internal/logic/columnAutosize';
 import { gridActions } from '@ishibashi0112/spreadsheet-grid-core/internal/model/gridActions';
 import { buildSelectionSnapshot, selectGlobalFilter } from '@ishibashi0112/spreadsheet-grid-core/internal/model/gridSelectors';
@@ -2838,6 +2839,50 @@ function GridShellBody<T extends object>(
       </Show>
     );
   };
+  // 既定のセルの文字(valueFormatter があれば通す)。
+  const cellTextOf = (row: T, column: GridColumn<T>): string => {
+    const value = getCellValue(row, column as unknown as UnboundGridColumn<T>);
+    return column.valueFormatter ? column.valueFormatter({ value, row, column }) : String(value ?? '');
+  };
+  // セル内検索のヒットを <mark> にします(既定のセルだけ。カレントは --current)。カレントの番号は読んだときに引くので、
+  //   変わったときは印の class だけが変わります。
+  const splitFind = findFeature?.splitTextByFindRanges;
+  const highlightFind = (
+    content: string,
+    ranges: readonly FindRange[] | undefined,
+    findCurrentIndex: () => number | null,
+  ): JSX.Element => {
+    if (!splitFind || !ranges || ranges.length === 0) {
+      return content;
+    }
+    return splitFind(content, ranges).map((segment) => {
+      const range = segment.range;
+      return range ? (
+        <mark class={['ssg-find-mark', { 'ssg-find-mark--current': range.matchIndex === findCurrentIndex() }]}>
+          {segment.text}
+        </mark>
+      ) : (
+        segment.text
+      );
+    });
+  };
+  // 追加(Solid 版の速さ): 中身が既定の文字だけになる列か(下の renderCellContent の既定の分かれ道と同じ条件。行ドラッグの
+  //   ハンドル列・checkbox 列・renderCell・状態チップ・showValue: false のデータバーでない)。GridBodyLayer は飾りの無い
+  //   そういう列のセルを、中身の span と文字の式だけで作ります(cellText)。
+  const isTextCellColumn = (column: GridColumn<T>): boolean =>
+    column.key !== ROW_DRAG_HANDLE_COLUMN_KEY &&
+    !column.renderCell &&
+    column.editor?.type !== 'checkbox' &&
+    !(
+      conditionalFormatFeature &&
+      (column.conditionalFormat?.chips !== undefined || column.conditionalFormat?.dataBar?.showValue === false)
+    );
+  const cellText = (
+    row: T,
+    column: GridColumn<T>,
+    ranges: readonly FindRange[] | undefined,
+    findCurrentIndex: () => number | null,
+  ): JSX.Element => highlightFind(cellTextOf(row, column), ranges, findCurrentIndex);
   const renderCellContent = (currentRow: () => T, column: GridColumn<T>, cell: GridCellContentContext): JSX.Element => {
     // 行ドラッグのハンドル列(合成列)の中身(機能 rowDrag)。
     if (column.key === ROW_DRAG_HANDLE_COLUMN_KEY) {
@@ -2930,29 +2975,11 @@ function GridShellBody<T extends object>(
         setValue: (nextValue: unknown) => writeRenderedCellValue(cell.rowKey, unbound, nextValue),
       });
     }
-    const textOf = (row: T): string => {
-      const value = getCellValue(row, unbound);
-      return column.valueFormatter ? column.valueFormatter({ value, row, column }) : String(value ?? '');
-    };
-    // セル内検索のヒットを <mark> にします(既定のセルだけ。カレントは --current)。ヒットとカレントは cell から読んだときに引く
-    //   ので、変わったときは中の文字だけを描き直します(セルの箱と中身の span はそのまま)。
-    const splitFind = findFeature?.splitTextByFindRanges;
-    const highlightFind = (content: string): JSX.Element => {
-      const ranges = cell.findRanges;
-      if (!splitFind || !ranges || ranges.length === 0) {
-        return content;
-      }
-      return splitFind(content, ranges).map((segment) => {
-        const range = segment.range;
-        return range ? (
-          <mark class={['ssg-find-mark', { 'ssg-find-mark--current': range.matchIndex === cell.findCurrentIndex }]}>
-            {segment.text}
-          </mark>
-        ) : (
-          segment.text
-        );
-      });
-    };
+    const textOf = (row: T): string => cellTextOf(row, column);
+    // セル内検索のヒットとカレントは cell から読んだときに引くので、変わったときは中の文字だけを描き直します(セルの箱と
+    //   中身の span はそのまま)。
+    const findCurrentIndex = () => cell.findCurrentIndex;
+    const highlightCellFind = (content: string): JSX.Element => highlightFind(content, cell.findRanges, findCurrentIndex);
     // 条件付き書式: データバーの showValue: false は文字を出さない(帯は GridBodyLayer が描く)。機能セットに無ければ指定を無視。
     //   valueFormatter は React 版と同じく呼ぶ。
     const formatRules = conditionalFormatFeature ? unbound.conditionalFormat : undefined;
@@ -2998,14 +3025,14 @@ function GridShellBody<T extends object>(
         }),
       );
       return (
-        <Show when={chip()} fallback={<span class="ssg-cell-value">{highlightFind(text)}</span>}>
-          {(spec) => <GridChip spec={spec()}>{highlightFind(spec().label ?? text)}</GridChip>}
+        <Show when={chip()} fallback={<span class="ssg-cell-value">{highlightCellFind(text)}</span>}>
+          {(spec) => <GridChip spec={spec()}>{highlightCellFind(spec().label ?? text)}</GridChip>}
         </Show>
       );
     }
     // 変更(1.5.0): 既定のセルは中の文字だけが行の値に追従します(行が替わっても span を作り直さない。行の要素を別の行に
     //   使い回したときは文字だけを書き換える)。
-    return <span class="ssg-cell-value">{highlightFind(textOf(currentRow()))}</span>;
+    return <span class="ssg-cell-value">{highlightCellFind(textOf(currentRow()))}</span>;
   };
 
   const pinnedPaneStyle = (side: 'left' | 'right', width: number, hasContent: boolean): JSX.CSSProperties => ({
@@ -3282,6 +3309,8 @@ function GridShellBody<T extends object>(
             activeCellDomId={activeCellDomId}
             cellEditorDomId={cellEditorDomId}
             renderCellContent={renderCellContent}
+            isTextCellColumn={isTextCellColumn}
+            cellText={cellText}
             onRowHeaderPointerDown={pointer.handleRowHeaderPointerDown}
             onRowHeaderPointerEnter={pointer.handleRowHeaderPointerEnter}
             onRowHeaderPointerLeave={handleRowHeaderPointerLeave}

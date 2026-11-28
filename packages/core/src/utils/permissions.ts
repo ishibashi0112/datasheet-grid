@@ -8,8 +8,12 @@ import type {
 type EditPermissionProps<T> = Pick<SpreadsheetGridProps<T>, 'readOnly' | 'canEditCell'>;
 
 // グリッド全体 / 列の静的な条件(canEditCell より前に判定し、false ならコールバックを呼びません)。
+// 変更(Solid 版の速さ): グリッドの readOnly と列だけで判定する形も公開します(Solid 版のセルは、これが false のときは
+//   行や位置を読まずに読み取り専用と決める。行や位置を読むと、それが変わるたびにセルの属性を計算し直すため)。
+export const isColumnEditable = <T,>(readOnly: boolean | undefined, column: GridColumn<T>): boolean =>
+  !readOnly && !column.readOnly && column.editable !== false;
 const isEditableByProps = <T,>(props: EditPermissionProps<T>, column: GridColumn<T>): boolean =>
-  !props.readOnly && !column.readOnly && column.editable !== false;
+  isColumnEditable(props.readOnly, column);
 
 // 追加: Grid 全体 / 列 / セル単位の条件をまとめて編集可否を判定します。
 // 変更(audit RD-4): rowIndex はビュー行 index。canEditCell へは第 5 引数 context(元 rows の index / rowKey)も
