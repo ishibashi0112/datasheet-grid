@@ -6,7 +6,7 @@
 
 使い方は [Solid で使う](https://datasheet-grid.vercel.app/docs/solid) と、React 版の [API リファレンス](https://github.com/ishibashi0112/datasheet-grid/blob/main/packages/react/API_REFERENCE.md)(props とメソッドは同じ)を参照してください。
 
-## 未リリース
+## 1.5.1 — 2026-11-28
 
 ### 変更
 
